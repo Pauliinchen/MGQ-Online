@@ -2,6 +2,7 @@
 #  battles_join_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Expected the plainer texts the player reads
 #      Paulinchen  2026-10-30: Read the players taken in from the joins stand-in
 #                            - Read what the prompt offers from a map frame and asked by the hotkey
 #                            - Handed messages through the map's gate over as the matchmaking's routes do
@@ -320,7 +321,7 @@ map_frame
 $down = []
 check("a second press asks nothing more", map_sent("pick"), [])
 coop_deliver_map(host, { "coop" => "pick_no", "bid" => "b1", "why" => "full" })
-check("a refusal tells the player why", $messages.last, "Cannot join P5's battle: it is full.")
+check("a refusal tells the player why", $messages.last, "Cannot join P5's battle.")
 check("and lets them walk on", MGQ_MpHooks.player_held?, false)
 map_frame
 $down = [0x4A]

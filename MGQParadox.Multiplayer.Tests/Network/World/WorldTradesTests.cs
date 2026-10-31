@@ -2,6 +2,7 @@
 //  WorldTradesTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Expected the plainer texts the player reads
 //      Paulinchen  2026-10-06: Tested a cancel sent right after the commit
 //                            - Created
 //
@@ -134,7 +135,7 @@ public sealed class WorldTradesTests
 
         creator.Commit(world.Id, Trade, WorldKeys.PlayerIdOf(OtherKey), Offers);
 
-        Assert.Equal("The relay did not settle the trade in time.", AwaitCommit(creator, "failed")["error"]);
+        Assert.Equal("The trade could not be completed in time.", AwaitCommit(creator, "failed")["error"]);
     }
 
     /// <summary>

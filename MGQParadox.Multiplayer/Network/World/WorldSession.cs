@@ -2,6 +2,7 @@
 //  WorldSession.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Worded what the player reads plainly, leaving causes and internals to the log
 //      Paulinchen  2026-10-30: Handed a changed boss pool to RaidBosses alone, whose ledger the game script reads
 //      Paulinchen  2026-10-28: Waited for the writer to send what was queued as the world closes and as the game ends
 //      Paulinchen  2026-10-23: Took the squad settings from MGQOnline.Game
@@ -238,17 +239,17 @@ internal sealed class WorldSession
     /// <summary>
     /// Why the game waits when the relay cannot be reached.
     /// </summary>
-    private const string RelayUnreachable = "The relay could not be reached. The game tries again until it can.";
+    private const string RelayUnreachable = "The server could not be reached. The game keeps trying.";
 
     /// <summary>
     /// Why a world code of a relay this version does not know cannot be used.
     /// </summary>
-    private const string UnknownRelay = "This world meets at a relay this version does not know. Update the mod.";
+    private const string UnknownRelay = "This world needs a newer version of MGQ Online. Update the mod.";
 
     /// <summary>
     /// Why a text that is no world code cannot be opened.
     /// </summary>
-    private const string NoWorldCode = "There is no world code to enter the world with.";
+    private const string NoWorldCode = "The world could not be entered.";
 
     /// <summary>
     /// Why a world its creator deleted cannot be entered.
@@ -273,12 +274,12 @@ internal sealed class WorldSession
     /// <summary>
     /// Why a Raid World cannot be entered by a game the relay finds without the features it needs.
     /// </summary>
-    private const string RaidUnsupported = "This world is a Raid World, which this version of the mod cannot play. Update the mod.";
+    private const string RaidUnsupported = "Update MGQ Online to play this Raid World.";
 
     /// <summary>
     /// Why the game waits while the world's creator still uploads its starting save.
     /// </summary>
-    private const string StartPending = "The world's starting save is still on its way. The game tries again until it arrived.";
+    private const string StartPending = "The world's starting save is still on its way. The game keeps trying.";
 
     /// <summary>
     /// Why the game waits after the relay took too many tries from this connection.
@@ -885,7 +886,7 @@ internal sealed class WorldSession
         HttpStatusCode.Unauthorized => TokenMismatch,
         HttpStatusCode.BadRequest when code == RaidCode => RaidUnsupported,
         HttpStatusCode.BadRequest when code == UpdateCode => Relays.UpdateNeeded,
-        HttpStatusCode.BadRequest => "The relay turned the request down. Update the mod.",
+        HttpStatusCode.BadRequest => "Update MGQ Online to enter this world.",
         HttpStatusCode.UpgradeRequired => string.IsNullOrWhiteSpace(code) ? Relays.UpdateNeeded : code,
         _ => null,
     };

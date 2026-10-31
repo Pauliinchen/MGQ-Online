@@ -112,10 +112,10 @@ The worlds box lists every public world, the hidden worlds you joined and the hi
 
 1. the Raid Worlds, in red, even above your favourites; a featured Raid World is red rather than gold;
 2. your favourites, marked `*`;
-3. the featured worlds in gold, which the relay's admins run;
+3. the featured worlds in gold, run by MGQ Online's admins;
 4. the ones you played last.
 
-Worlds you played that the relay no longer lists, such as one its creator deleted, come last.
+Worlds you played that are no longer listed, such as one its creator deleted, come last.
 
 With the cursor on a world, the right side shows its details: who made it, its password (*None*, *Needed*, or *Known* once this PC entered it with the password), its players, how new players start, the mods it needs, that your game data is compared with the creator's as you enter, and its description. The right arrow moves into the details; up and down pick the mods, the players or the description, and confirm (or a click) opens the full list or text. Every player who ever joined is listed, those online first. The left arrow or cancel goes back to the list.
 
@@ -125,7 +125,7 @@ Confirm on a world and pick *Enter the world*.
 
 - Type its password the first time, unless it has none; your game remembers it after that.
 - You continue from your latest save in that world. The first time, you start at the opening or from the creator's save, or choose where to start if the creator lets you. A save can run code on your PC, so take a creator's save only from creators you trust: before taking it, the game warns you and offers *Take*, *Start at the beginning* or *Back*.
-- A world is only entered once the list has loaded, since the list tells what the world asks of your game.
+- A world is entered only once the list has loaded.
 - **Through Discord** (with the Discord mod): while you play in a world, friends can be invited through the **+** in a Discord chat or ask to join from your profile. Accepting starts their game if it's closed and enters the world from the title screen, without its password; a friend in the middle of a game is told to go back to the title screen, which starts the game again and then opens the world. Discord offers no invite while the party it shows is full.
 
 ### Creating a world
@@ -158,7 +158,7 @@ The creator can change Max Players, Mods, *Shared Mod Settings*, *Turn off other
 - Your favourites and the hidden worlds you added are kept in `Patch\Multiplayer\Player.ini`.
 - **Taking a save home:** *Copy my latest save to my game* on a world you've played, or *Copy to my game* in the menu while you're in it, copies that world's latest save into the first free slot of your own saves. Your own Library, medals and affection stay as they are.
 - **Deleting your saves:** *Delete my saves of it* removes your saves of a world from this PC. You'd start anew there, and need its password again.
-- **The creator** can remove a player, who can then no longer enter, or delete the world for everyone. The relay's admins can edit and delete any world.
+- **The creator** can remove a player, who can then no longer enter, or delete the world for everyone. MGQ Online's admins can edit and delete any world.
 
 ### Mods of a world
 
@@ -174,26 +174,26 @@ The creator can change Max Players, Mods, *Shared Mod Settings*, *Turn off other
 | Essential | For mods that are data files without a script. Keeps nobody out; shows in gold. |
 
 - *Add a mod by name* names a mod you don't have yourself, such as a mod of data files: its row becomes a text box, **Enter** adds the name you typed, **Esc** or numpad **0** goes back. Such a mod stays in the list when unlisted; **Del** removes it.
-- The mods take 16,000 characters at most, far more than any real list; the top right of the list says when a change would pass that. **Esc** or numpad **0** goes back to the form, which shows them as the world keeps them: `!` in front of a required mod, `?` in front of an essential one.
+- The mods take 16,000 characters at most; the top right of the list says when a change would pass that. **Esc** or numpad **0** goes back to the form, which shows them as the world keeps them: `!` in front of a required mod, `?` in front of an essential one.
 
 The details show each mod in a box of its own, as many as fit the row, and count the rest in a last box.
 
-**Same version for everyone.** The relay keeps a catalog of mods its admins added, with each one's current version.
+**Same version for everyone.** MGQ Online keeps a list of mods, with each one's current version.
 
-- When you enter a world, each required mod is compared with the catalog. If one is missing or another version, the world screen says which and offers *Download*: the Mod Framework fetches the world's version, checks every file and puts it into your `Patch` folder, and you enter the world, the mod loading as you do. Only a mod that runs already, such as one that changes the title screen, needs the game to start again first, which happens by itself and enters the world. *See the mods* lists your version and the world's.
-- A required mod the catalog doesn't know is compared with the creator's copy. If yours differs, get the creator's version from the mod's author; nothing downloads it for you.
+- When you enter a world, each required mod is compared with that list. If one is missing or another version, the world screen says which and offers *Download*: the Mod Framework fetches the world's version, checks every file and puts it into your `Patch` folder, and you enter the world, the mod loading as you do. Only a mod that runs already, such as one that changes the title screen, needs the game to start again first, which happens by itself and enters the world. *See the mods* lists your version and the world's.
+- A required mod the list doesn't know is compared with the creator's copy. If yours differs, get the creator's version from the mod's author; nothing downloads it for you.
 - A new version only reaches players the next time they enter.
 
-**The creator's settings.** With *Shared Mod Settings* ticked in the create or edit form, or switched *On* in *Mod Config → MGQ Online Settings → Shared Mod Settings* while the creator plays in the world, the creator's options of the world's mods, required or listed, are the world's settings. Every player in the world gets them at once, and again whenever the creator changes an option; the notification box says what the world sets, and the menu shows those options greyed out as set by the world. Every player sees the row, but only the creator can switch it. Hotkeys and other personal options stay yours, and your own saves keep your own settings. The relay's admins can see and change a world's settings too; the creator's game then takes the admin's settings and tells the creator what changed.
+**The creator's settings.** With *Shared Mod Settings* ticked in the create or edit form, or switched *On* in *Mod Config → MGQ Online Settings → Shared Mod Settings* while the creator plays in the world, the creator's options of the world's mods, required or listed, are the world's settings. Every player in the world gets them at once, and again whenever the creator changes an option; the notification box says what the world sets, and the menu shows those options greyed out as set by the world. Every player sees the row, but only the creator can switch it. Hotkeys and other personal options stay yours, and your own saves keep your own settings. MGQ Online's admins can change a world's settings too; the creator is told what changed.
 
 ### Turning off other mods
 
 A world with *Turn off other mods* is played with the mods it names and nothing else. When you enter it, the Mod Framework loads only the mods the world names, whether listed, required or essential, and those MGQ Online's admins mark **personal**; the rest of your mods stay off until you leave the world. Nothing is moved in your `Patch` folder, and your Mods screen keeps your choices. This mod and the mod loader always stay on.
 
-- **Personal mods** stay on in every world, named or not, such as mods that only change how the game looks. The relay's admins decide which mods are personal.
+- **Personal mods** stay on in every world, named or not, such as mods that only change how the game looks. MGQ Online's admins decide which mods are personal.
 - **Mods that run from the start of the game**, such as the framework's own and mods that change the title screen as a whole, can't be left out; the notification box names them as you enter ("Wide Text is part of the framework and stays on.").
-- **The world's details** say *Other mods: turned off (2 of yours)* or *Other mods: allowed*. The mods box lists *Your mods turned off here* below the world's mods, one line per mod, saying how many scripts it has when there are several.
-- **Entering** such a world tells you in the notification box which of your mods stay off ("\<world> plays without your other mods: ... stay off until you leave it."). The world is only entered once the mod catalog has loaded, since the catalog tells which mods are personal.
+- **The world's details** say *Other mods: turned off (2 of yours)* or *Other mods: allowed*. The mods box lists *Your mods turned off here* below the world's mods, one line per mod.
+- **Entering** such a world tells you in the notification box which of your mods stay off ("\<world> plays without your other mods: ... stay off until you leave it."). The world is entered only once the mod list has loaded.
 - **Your mods come back** when you leave the world: going back to the title screen starts the game again with your own mods.
 - **When the creator or an admin changes the rule** while you're in the world, ticking *Turn off other mods* or changing the mods, and a mod you run is now turned off, the notification box says "\<world> now turns off other mods. The game starts again and enters it without them." and a few seconds later, once you're free on the map, the game starts again and enters the world: anything you haven't saved is lost.
 - **Mods an older version turned off:** a `Parked mods` folder an older version left in your game folder is emptied back into `Patch` the next time the game starts; mods in its `Conflicts` folder stay for you to sort.
@@ -214,7 +214,7 @@ A world with *Turn off other mods* is played with the mods it names and nothing 
 - **Ping** shows after each player's name, and yours above your head: green up to 100 ms, yellow up to 200 ms, red beyond; past 999 ms it says "999+ ms".
 - **Above your own head** the mod says what you're waiting for, with the seconds it still stands: "Inviting to a party (12 s) . . .", "Asking \<name> to teleport (45 s) . . .", "Challenging to a duel (9 s) . . ." and the like.
 - **The bottom left** tells who joined and left, and when the connection is being restored. A player whose connection drops stays in the world and in their party for 15 seconds, so a short break changes nothing.
-- **The world never pauses.** While you're in a menu, a shop, a battle or a story scene, the map goes on behind it: the others walk on, NPCs move, and background events and timers run. Menus show the live map instead of a still picture, except the save and load screens and while the game is short of memory; the chat, the party box and the mod's other boxes stay off it (shops, the casino and trades have a chat of their own). Anything that needs you, such as a message, a battle, a move to another map or an NPC walking into you, waits until you're back on the map.
+- **The world never pauses.** While you're in a menu, a shop, a battle or a story scene, the map goes on behind it: the others walk on, NPCs move, and background events and timers run. Menus show the live map instead of a still picture, except the save and load screens; the chat, the party box and the mod's other boxes stay off it (shops, the casino and trades have a chat of their own). Anything that needs you, such as a message, a battle, a move to another map or an NPC walking into you, waits until you're back on the map.
 
 ### Where the others are
 
@@ -252,8 +252,6 @@ The empty box names the controls, and shows the **Alt** ones while you hold it.
 | **Map** | The players on your map, "[Map]" in light pink | **/m** |
 | **Party** | Your party only, "[Party]" in blue | **/p** |
 | **Whisper** | One player, in magenta; the tab shows once you whisper or get a whisper | **/w** and a name, or **/r** |
-
-The chats take the colors World of Warcraft gives its chats.
 
 - A command, or a click on a chat's tab, picks the chat your next lines go to; the box shows which. It stays until you pick another.
 - For **/w**, a list of matching players shows above the box after the first letter of the name: **Up** and **Down** pick one, **Enter** or **Tab** takes it.
@@ -348,7 +346,7 @@ Your Formation screens show your whole team: your share of the Frontline as the 
 
 - **Followers:** only your share of the Frontline walks behind you, also on the other members' screens; with one place in front, you walk alone. The leader can show nobody but the players instead: *Mod Config → MGQ Online Settings → Party Followers*.
 - **In a Raid World** every player has a squad of their own instead, one Frontline and two Backline characters, and followers are hidden, see [On the map](RAID_WORLDS.md#on-the-map) of the Raid World page.
-- **NPCs:** on a map you share, you all see the same NPCs in the same places. Whoever of you entered the map first is its Map Owner, and the NPCs move as they do in that player's game. In the Pocket Castle it's always the leader: you see their companions, and one you don't have yourself stands there see-through, a ghost you can't talk to. Your own companions stay yours to talk to.
+- **NPCs:** on a map you share, you all see the same NPCs in the same places. The NPCs move as they do in the game of whoever of you entered the map first. In the Pocket Castle it's always the leader: you see their companions, and one you don't have yourself stands there see-through, a ghost you can't talk to. Your own companions stay yours to talk to.
 
 ### Travelling
 
@@ -364,11 +362,11 @@ Everyone goes where they like. In a Classic World the leader's story scenes brin
 
 When a battle starts for a party member, whether a random encounter, a wandering monster or a story boss, the party members playing on the same map join it; in a Raid World the players nearby join too. Who runs the battle and whose levels count depend on the world type: see [Classic Worlds](CLASSIC_WORLDS.md#co-op-battles) and [Raid Worlds](RAID_WORLDS.md#battles), whose page also explains the [raid bosses](RAID_WORLDS.md#raid-bosses).
 
-- **Fewer encounters each:** while a party member stands within 20 tiles of you (in a Raid World any player), your steps to the next random encounter are half again as long, give or take a quarter, since their encounters bring you into battles too. Players farther away on a large map don't change your steps.
+- **Fewer encounters each:** while a party member stands within 20 tiles of you (in a Raid World any player), your steps to the next random encounter are half again as long. Players farther away on a large map don't change your steps.
 - **Waiting for the party:** a random encounter waits up to 3 seconds for members on the same map who are in a menu, typing or on a vehicle. You stand still, they read "\<name> is in a battle!" in the notification box, and the battle starts as soon as they're back on the map. Whoever is still busy after 3 seconds misses it. Every member on that map stands still until they join, so nobody walks off first; "Enemies! \<name> is in a battle." shows for as long as they stand still.
-- **The waiting box** in a battle says what your game waits for, who is still to come ("Still choosing: \<name>, \<name>", "Not ready: \<name>") and how long you've waited ("12 s"). The host's game names them, and the guests' boxes show the same names. While the host waits for the others' commands, cancel takes the host back to choosing their own. After 10 seconds the last line offers to leave the battle with cancel instead, which asks first ("Leave the battle?": *Leave*, or *Stay*, or *Choose again* for the host); leaving a story battle you can't escape from loses it for you alone, while the others fight on.
-- **Connection drops:** a player whose connection drops for a moment, even while the relay restarts, stays in the battle, which waits up to 15 seconds for them; what they missed reaches them once they're back.
-- **Too late to join:** when a battle you're joining ends or can't take you in after all, the bottom left of the map says why, such as "\<name>'s battle ended before you could join.", and you're back on the map, or your own encounter starts as a battle of its own.
+- **The waiting box** in a battle says what your game waits for, who is still to come ("Still choosing: \<name>, \<name>", "Not ready: \<name>") and how long you've waited ("12 s"). While the host waits for the others' commands, cancel takes the host back to choosing their own. After 10 seconds the last line offers to leave the battle with cancel instead, which asks first ("Leave the battle?": *Leave*, or *Stay*, or *Choose again* for the host); leaving a story battle you can't escape from loses it for you alone, while the others fight on.
+- **Connection drops:** a player whose connection drops for a moment, even while the server restarts, stays in the battle, which waits up to 15 seconds for them; what they missed reaches them once they're back.
+- **Too late to join:** when a battle you're joining ends or can't take you in after all, the bottom left of the map says so, such as "\<name>'s battle ended before you could join.", and you're back on the map, or your own encounter starts as a battle of its own.
 - **Your squad fights:** your share of the Frontline fights and your share of the Backline waits. The companions past it stay out of the battle.
 - **Everyone commands their own characters** and can swap their own Backline in with *Party*, also once their own Frontline is down. The status window names each character in its player's color, yours in yellow, and another player's character by its own name; the battle's messages still add the player's name ("Alice (\<name>)"). When you swap out a character another player already chose a command for, such as a heal or a revive, that player chooses their commands again once everyone has chosen; their chat log tells them why. Their other characters' commands are cleared too, as the game's own *Party* does.
 - **Escaping:** each of you can try. Whoever gets away leaves the battle, and the others fight on without their characters. Everyone still in it reads "\<name> left the battle." at once in the battle's popup at the top, as they read "\<name> joined the battle." for a player who joins a running one; the characters leave at the next round. The one left alone fights on with their own full team.
@@ -388,9 +386,9 @@ Trade items and gold with another player on your map. Nothing changes hands unti
 - **Accept** in the wheel next to them, in the World overview, or with **Y** in the notification box; accepting takes back an offer of your own. "Waiting for \<name>'s trade (6 s) . . ." shows above your head until their game opens it. The trade screen opens for both of you.
 - **Put your offer together:** pick *Items*, *Weapons*, *Armor* or *Stones* for your bag. **Right** and **Left** offer one more or one fewer, **R** and **L** ten, and confirm offers all or none. *Gold* sets the gold digit by digit: **Left** and **Right** pick a digit, **Up** and **Down** change it. The other player's offer shows on the right as they change it. *Offers* moves into the offers to look through a long one: **Up** and **Down** scroll, **Left** and **Right** switch between yours and theirs, cancel goes back.
 - **What can be traded:** everything in your bag but key items, also enchanted and socketed equipment, which arrives with all its enchantments and stones. Equipped items and items in the storehouse aren't offered; unequip or take them out first. A trade holds a few hundred enchanted copies at most; past that, confirming says "The offers hold too many items for one trade. Take some out."
-- **Confirm** once both offers are right. Any change to either offer takes both confirmations back. Once you both confirmed, the relay completes the trade, both games save, and the screen closes: "Trade with \<player> complete, game saved". The save goes into the slot you last saved or loaded in the world, or the first free one.
+- **Confirm** once both offers are right. Any change to either offer takes both confirmations back. Once you both confirmed, the trade completes, both games save, and the screen closes: "Trade with \<player> complete, game saved". The save goes into the slot you last saved or loaded in the world, or the first free one.
 - **Cancel**, **Esc** or numpad **0** asks first ("Cancel the trade with \<player>? Both offers are lost."): *Cancel trade* ends the trade for both of you, *Keep trading* goes back to it. It also ends when the other player leaves the world for longer than 15 seconds.
-- **A cut-off trade:** if your game or connection drops right as the trade completes, the relay keeps it, and your game finishes it the next time you enter the world.
+- **A cut-off trade:** if your game or connection drops right as the trade completes, it completes the next time you enter the world.
 
 ## PvP battles
 
@@ -425,32 +423,32 @@ So that no team falls to the first hit, PvP battles and duels change a few rules
 
 ## Connection and privacy
 
-Your games meet at the mod's **relay**, a small server that passes their data on. Every game only connects out to it, which works on any internet connection: nobody has to open a port, change a router setting or install anything.
+Your games meet at the mod's **server**, which passes their data on. Every game only connects out to it, which works on any internet connection: nobody has to open a port, change a router setting or install anything.
 
-- **Private:** everything your games send each other is encrypted with a key only the players have. The relay never gets it and passes on data it can't read.
-- **The Global chat is the exception:** every line of a world's Global chat also goes to the relay as plain text, which keeps the last 200 lines of each world for its creator and the relay's admins to read. The Map, Party and Whisper chats stay between the players.
-- **What the relay keeps:** the list of worlds, with each world's name, description, mods and shared mod settings, what tells its creator's game data from another's, its players' names and who is online; a Raid World's story progress and its raid bosses' HP; and a trade's encrypted offers until both games completed it. Hidden worlds are listed only for their players and for whoever names their id. A world's password never reaches the relay, and a starting save arrives encrypted, but encryption does not make it safe: a save can run code on your PC, so take a world's starting save only from creators you trust; the game asks before taking it.
+- **Private:** everything your games send each other is encrypted with a key only the players have. The server never gets it and passes on data it can't read.
+- **The Global chat is the exception:** every line of a world's Global chat also goes to the server as plain text, which keeps the last 200 lines of each world for its creator and MGQ Online's admins to read. The Map, Party and Whisper chats stay between the players.
+- **What the server keeps:** the list of worlds, with each world's name, description, mods and shared mod settings, a summary of its creator's game data, its players' names and who is online; a Raid World's story progress and its raid bosses' HP; and a trade's encrypted offers until both games completed it. Hidden worlds are listed only for their players and for whoever names their id. A world's password never reaches the server, and a starting save arrives encrypted, but encryption does not make it safe: a save can run code on your PC, so take a world's starting save only from creators you trust; the game asks before taking it.
 - **Bug reports** (**F3** or *Report a Bug*): the title and text you type become a public issue on GitHub, with the mod's and the game's versions, the world's type, a public world's name and where in the game you were, and, when the logs go along, whether the game's last error came from the mod, another mod or the game. The screenshot and the logs, both attached unless you untick them, your name and a hidden world's name reach only the developer.
-- **No addresses:** a join code holds a random token and the relay's name, so your friend's game never learns your IP address.
+- **No addresses:** a join code holds no address, so your friend's game never learns your IP address.
 
 ## Troubleshooting
 
 | Message or problem | What to do |
 |---|---|
 | *Multiplayer* says a new version is out | Pick *Update and restart* in the Mod Framework's question: the game closes, the mod updates and the game starts again in the Multiplayer menu. Or close the game and run `Update.bat` in `Patch\Mod_Framework`. A Discord invite, or the return to a world after its mods were installed, asks the same while the mod is outdated; after updating, enter the world again yourself. |
-| "Your friend's game is not hosting with this join code right now" | Your friend stopped hosting, or hosted again, which makes a new join code: ask for the new one. Or their game is reconnecting to the relay: try again in a minute. |
+| "Your friend's game is not hosting with this join code right now" | Your friend stopped hosting, or hosted again, which makes a new join code: ask for the new one. Or their game is reconnecting: try again in a minute. |
 | "Nobody joined in time, so hosting stopped" | Hosting waits 30 minutes for a friend. Host again for a new join code. |
 | "Your team is too large to send" | Your party has more characters, skills or equipment than one PvP exchange carries. Leave a few characters out of the party and try again. |
 | "The server could not be reached" | Your internet connection is down, or something such as a firewall blocks the game from going online. |
 | "This join code comes from another version of the mod" | One of you has an older version; both need the same one. |
-| "Your friend's game uses a relay this version does not know" | Your friend has a newer version of the mod; update yours. |
+| "Your friend has a newer version of MGQ Online" | Your friend has a newer version of the mod; update yours. |
 | "\<world> is not in the list right now" | The world list hasn't loaded yet or couldn't be fetched; the top of the world screen says which. Try again once it has loaded. |
-| "Your game data differs from the creator's of \<world> in ..." | Your mods add or remove entries the creator's don't, or the other way round. You play on; the world's details list the mods it needs. |
-| "\<world> needs ...: no such script in your Patch folder" | The world requires a mod you don't have. Install it, then enter again. |
-| "The mod catalog has not loaded yet" | The world turns other mods off, and only the catalog tells which of your mods are personal. Wait until the world list has loaded and enter again. |
-| "Player.ini could not be read; close programs that hold it" | Another program, such as an antivirus, a cloud sync or an editor, holds `Patch\Multiplayer\Player.ini`. Your player key and settings in it stay as they are, but the game saves no setting and enters no world until it can read the file again, which it tries every second. Close the program, or check that the file is not damaged. |
-| "Update MGQ Online to play online." | The relay no longer serves your version of the mod. Install the newest MGQ Online release. |
-| "The relay turned the request down. Update the mod." | The relay does not let your version of the mod into this world, such as when it no longer serves it. Install the newest MGQ Online release. |
+| "Your game differs from the creator's of \<world>" | Your mods add or remove entries the creator's don't, or the other way round. You play on; the world's details list the mods it needs. |
+| "\<world> needs mods you do not have" | The world requires a mod you don't have. Install it, then enter again. |
+| "The mod list has not loaded yet" | Wait until the world list has loaded and enter again. |
+| "Player.ini could not be read; close programs that hold it" | Another program, such as an antivirus, a cloud sync or an editor, holds `Patch\Multiplayer\Player.ini`. Your settings in it stay as they are, but no setting is saved and no world entered until the file can be read again. Close the program, or check that the file is not damaged. |
+| "Update MGQ Online to play online." | Your version of the mod is too old. Install the newest MGQ Online release. |
+| "Update MGQ Online to enter this world." | Your version of the mod is too old for this world. Install the newest MGQ Online release. |
 | "This is a world code" | You pasted a world's code into a PvP join. Enter worlds through *Multiplayer* on the title screen. |
 
 **Logs:** the log is in the `Logs` folder of your game folder, one per day you played, named after the day, such as `Multiplayer 2026-10-07.log`. It tells what the mod did inside the game and what the connection did. Starting the game deletes the logs of earlier days, so send it on the day something went wrong. The quickest way is **F3** (or *Report a Bug* in the action wheel): it sends today's log and a screenshot to the developer with your report. Otherwise please attach the log of the day it went wrong to a [bug report](https://github.com/Pauliinchen/MGQ-Online/issues/new?template=bug_report.yml).

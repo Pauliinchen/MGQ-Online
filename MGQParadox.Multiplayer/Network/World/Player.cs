@@ -2,6 +2,7 @@
 //  Player.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Worded what the player reads plainly, leaving causes and internals to the log
 //      Paulinchen  2026-10-07: Logged who plays once it changes, and why a player was not taken
 //                            - Cleaned the name through PlayerName
 //      Paulinchen  2026-10-06: Read the key and name at once and named the text shown while they are not set
@@ -33,7 +34,7 @@ internal static class Player
     /// <summary>
     /// What the DLL says while the game script has not set the player.
     /// </summary>
-    public const string NotSet = "The game has not said who plays yet.";
+    public const string NotSet = "Your name is not known yet. Try again in a moment.";
 
     /// <summary>
     /// The player's key and name, swapped as one.

@@ -2,6 +2,7 @@
 #  ui_bug_report.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Worded what the player reads plainly, leaving causes and internals to the log
 #      Paulinchen  2026-10-30: Named the game version as the mod loader names it, a translation's own loader included
 #      Paulinchen  2026-10-23: Walked to the screenshot's pixels in C#, handing it the Bitmap's address
 #                            - Typed into the form through the text box in C#
@@ -105,9 +106,12 @@ module MGQ_MpBugReport
   # The friendly words for a failure, by the relay's code.
   FRIENDLY_REASONS = {
     "rate" => "you sent several reports in a short time. Try again in an hour.",
-    "off" => "the relay takes no bug reports right now.",
-    "busy" => "the relay is busy with other bug reports. Try again in a minute.",
+    "off" => "bug reports are off right now.",
+    "busy" => "too many reports at once. Try again in a minute.",
   }
+
+  # What a failure says for any other code.
+  OTHER_FAILURE = "try again later."
 
   # What the player is told when the report waits for a battle to end.
   BATTLE_TEXT = "The bug report opens after the battle."
@@ -125,10 +129,10 @@ module MGQ_MpBugReport
   NO_NAME_REFUSAL = "Bug reports need your name: pick Multiplayer on the title screen to choose one."
 
   # Why the report cannot be typed while the keyboard cannot reach the game.
-  NO_KEYBOARD_REFUSAL = "The keyboard cannot reach the game, so the report cannot be typed."
+  NO_KEYBOARD_REFUSAL = "The bug report cannot be typed right now."
 
   # Why the report is not sent once the DLL did not start sending it.
-  NOT_STARTED_REFUSAL = "The report could not be sent. Multiplayer.log tells why."
+  NOT_STARTED_REFUSAL = "The bug report could not be sent. Try again later."
 
   # Scenes a report never opens from, by their class's name: the title and game over screens,
   # which leave the game being played.
@@ -511,7 +515,7 @@ module MGQ_MpBugReport
     when "sent"
       finish(SENT_TEXT % value, "was sent as issue #{value}: #{reason}")
     when "failed"
-      finish(FAILED_TEXT % failure_text(value, reason), "failed (#{value}): #{reason}")
+      finish(FAILED_TEXT % failure_text(value), "failed (#{value}): #{reason}")
     end
   end
 
@@ -527,17 +531,12 @@ module MGQ_MpBugReport
   end
 
   # Tells why a report failed, in friendly words for the relay's rate limit, a relay that takes no
-  # reports and one busy with others.
+  # reports and one busy with others; the rest only asks to try again, the log keeps why.
   #
   # @param code [String, nil] The relay's code, or "http<status>" or "unreachable".
-  # @param reason [String, nil] The DLL's reason.
   # @return [String] The reason.
-  def self.failure_text(code, reason)
-    friendly = FRIENDLY_REASONS[code.to_s]
-    return friendly if friendly
-
-    text = reason.to_s.strip
-    text.empty? ? code.to_s : text
+  def self.failure_text(code)
+    FRIENDLY_REASONS.fetch(code.to_s, OTHER_FAILURE)
   end
 
   # Shows the sending's outcome in the notification box once it shows, so a report that ends in a

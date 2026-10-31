@@ -2,6 +2,7 @@
 #  ui_single_player.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Worded what the player reads plainly, leaving causes and internals to the log
 #      Paulinchen  2026-10-30: Started the game again through the Mod Framework, which goes on from the game kept for it
 #                            - Dropped the parked mods, which no world parks any more
 #      Paulinchen  2026-10-23: Started the game again under Wine or Proton too
@@ -34,24 +35,23 @@ module MGQ_MpSinglePlayer
   NOTICE_KEY = :single_player
 
   # What the box asks once an SP row changed.
-  RESTART_QUESTION = "Start the game again so the MGQ Online SP settings apply cleanly? " \
-                     "Your game is saved apart from your slots and goes on right here."
+  RESTART_QUESTION = "Restart the game for the new settings? You go on right here, and your save slots stay as they are."
 
   # The box's yes and no choices.
   RESTART_CHOICES = ["Restart", "Later"]
 
   # What the player reads when the game could not start itself again.
-  FAILED_TEXT = "The game could not start itself again. The settings apply as they are."
+  FAILED_TEXT = "The game could not restart. The settings apply anyway."
 
   # What the player reads when the game could not be saved for the restart.
-  SAVE_FAILED_TEXT = "The game could not be saved for the restart. The settings apply as they are."
+  SAVE_FAILED_TEXT = "The game could not restart. The settings apply anyway."
 
   # The setting in Player.ini that keeps the slot the game last saved to or loaded from while the
   # game waits in RESUME_FILE, so the Save and Load screens' cursor stays on it after the restart.
   SLOT_SETTING = "resume_slot"
 
   # What the player reads when the game kept for the restart could not be loaded.
-  RESUME_FAILED_TEXT = "The game kept for the restart could not be loaded. It is kept in %s."
+  RESUME_FAILED_TEXT = "Your game from before the restart could not be loaded. It is kept in %s."
 
   extend MGQ_MpLog
 

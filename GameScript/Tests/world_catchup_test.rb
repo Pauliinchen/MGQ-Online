@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-31: Checked that a missed companion's recruit page is played once a route finished
+#                            - Expected the plainer texts the player reads
 #                            - Checked that the rows give only the history before the world's log
 #                            - Checked that a world chest and a Makina by level are played in the player's game
 #                            - Stood in for the replay the world's track waits on
@@ -267,7 +268,7 @@ $game_actors[1].cap = 9999
 $game_actors[1].level = 250
 frames(40)
 check("at 250 Sonya joins in her Chaos persona at 250", [roster.include?(525), $game_actors[525].persona, $game_actors[525].base_level], [true, 842, 250])
-check("and says so", $messages.last, "Sonya joined: level 250 reached.")
+check("and says so", $messages.last, "Sonya joined you.")
 frames(40)
 check("never twice", roster.count(525), 1)
 

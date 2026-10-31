@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-31: Stopped telling the party the items and gold the leader's story gives, which the leader's runs bring by replay
+#                            - Worded what the player reads plainly, leaving causes and internals to the log
 #                            - Handed the leader's runs of the story to every member who follows it, as entries of the leader's story, which each member's game replays
 #                            - Sent a member's runs of the leader's story to the leader with their requests, and handed the party those the leader's story kept, named by the member
 #                            - Handed a party chest to the party as its run, which each member's game replays
@@ -252,7 +253,7 @@ module MGQ_MpCoopEvents
   OWN_COMMON_EVENTS = [2, 3, 5, 114]
 
   # What a player whose story event waits for the world's story of a telling they watched reads.
-  AWAIT_TOLD_TEXT = "Waiting a moment for the story %s told to arrive."
+  AWAIT_TOLD_TEXT = "Waiting for %s's story . . ."
 
   # The game's switch that is on while the Library replays a scene, by its id in 3.06.
   LIBRARY_REPLAY_SWITCH = 443

@@ -2,6 +2,7 @@
 #  ui_chat.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Worded what the player reads plainly, leaving causes and internals to the log
 #      Paulinchen  2026-10-23: Acted on what was typed a frame later, as the text box in C# reports it
 #                            - Sent the lines of every chat through the DLL
 #                            - Removed history and log_lines, which only the tests read
@@ -710,7 +711,7 @@ module MGQ_MpChat
   # @return [MGQ_MpActions::Option] The choice.
   def self.wheel_option
     MGQ_MpActions::Option.new("Chat (#{MGQ_MpHotkeys.label(:chat)})", available? ? lambda { start_typing } : nil,
-                              "Chat needs the keyboard, which cannot reach the game.")
+                              "Chat is not available right now.")
   end
 
   # Reports whether the chat box is open.
@@ -974,7 +975,7 @@ module MGQ_MpChat
     return if text.empty?
 
     channel = @channel
-    return refuse("You are in no party, so nobody hears the party chat.") if channel == :party && !(defined?(MGQ_MpCoop) && MGQ_MpCoop.in_party?)
+    return refuse("You are not in a party.") if channel == :party && !(defined?(MGQ_MpCoop) && MGQ_MpCoop.in_party?)
     return refuse("Type /w and a name to choose whom to whisper to.") if channel == :whisper && !@whisper_to
 
     name = MGQ_Multiplayer::Player.name.to_s

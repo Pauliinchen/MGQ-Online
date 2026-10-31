@@ -2,6 +2,7 @@
 //  SessionTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Expected the plainer texts the player reads
 //      Paulinchen  2026-10-30: Covered an unreachable relay and an outdated game for host and guest in one test each
 //      Paulinchen  2026-10-12: Covered the relay turning an outdated host or guest away
 //      Paulinchen  2026-10-07: Took the message the session handed out
@@ -199,9 +200,9 @@ public sealed class SessionTests
 
         var guestSide = AwaitSettled(guest);
         Assert.Equal("failed", guestSide["state"]);
-        Assert.Contains("relay could not be reached", guestSide["error"]);
+        Assert.Contains("server could not be reached", guestSide["error"]);
         var hostSide = AwaitSettled(host);
-        Assert.Contains("relay could not be reached", hostSide["error"]);
+        Assert.Contains("server could not be reached", hostSide["error"]);
         Assert.Equal(string.Empty, hostSide["code"]);
         Assert.Equal(string.Empty, hostSide["party"]);
     }
@@ -247,7 +248,7 @@ public sealed class SessionTests
 
         guest.Join(CodeWithoutHost, "3.06", "guest team");
 
-        Assert.Contains("does not know", AwaitSettled(guest)["error"]);
+        Assert.Contains("newer version", AwaitSettled(guest)["error"]);
     }
 
     /// <summary>

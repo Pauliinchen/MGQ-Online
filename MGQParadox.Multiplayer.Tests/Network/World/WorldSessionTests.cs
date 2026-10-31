@@ -2,6 +2,7 @@
 //  WorldSessionTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Expected the plainer texts the player reads
 //      Paulinchen  2026-10-30: Covered the world room refusals in one theory
 //      Paulinchen  2026-10-13: Covered the relay's word of a Classic world's new raid bosses setting
 //                            - Covered the relay's word of a Raid World's new squad settings
@@ -240,7 +241,7 @@ public sealed class WorldSessionTests
         Assert.True(session.Open(NewCode(4)));
         var failed = AwaitError(session);
         Assert.Equal("failed", failed["state"]);
-        Assert.Contains("relay", failed["error"]);
+        Assert.Contains("newer version", failed["error"]);
     }
 
     /// <summary>
@@ -464,8 +465,8 @@ public sealed class WorldSessionTests
     [InlineData(400, "update", "Update MGQ Online to play online.")]
     [InlineData(426, "This relay serves MGQ Online 0.7.0 and newer.", "This relay serves MGQ Online 0.7.0 and newer.")]
     [InlineData(426, null, "Update MGQ Online to play online.")]
-    [InlineData(400, null, "The relay turned the request down. Update the mod.")]
-    [InlineData(400, "something_new", "The relay turned the request down. Update the mod.")]
+    [InlineData(400, null, "Update MGQ Online to enter this world.")]
+    [InlineData(400, "something_new", "Update MGQ Online to enter this world.")]
     public void RefusedWorldRoom_EndsForGoodWithTheReason(int status, string? code, string reason)
     {
         using var relay = new TestRelay();
@@ -490,7 +491,7 @@ public sealed class WorldSessionTests
         var session = new WorldSession { RelayAddress = _ => null, Playing = () => null };
 
         Assert.False(session.Open(NewCode(4)));
-        Assert.Contains("who plays", Message.Decode(session.Describe())["error"]);
+        Assert.Contains("name is not known", Message.Decode(session.Describe())["error"]);
     }
 
     /// <summary>

@@ -2,6 +2,7 @@
 #  bug_report_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Expected the plainer texts the player reads
 #      Paulinchen  2026-10-30: Stopped loading the deleted world_mods_parking.rbx
 #                            - Expected the whole version the mod loader names
 #                            - Dropped the default hotkey and the export signatures
@@ -557,11 +558,11 @@ outcomes = [["rate", "too many"], ["off", "off"], ["busy", "busy"], ["http500", 
   report::POLL_FRAMES.times { frame }
   $notices.last[1]
 end
-check("a failure says why, in friendly words for the rate limit, a relay without reports and a busy one", outcomes,
+check("a failure says why in friendly words for the rate limit, a relay without reports and a busy one, else asks to try again", outcomes,
       ["The bug report failed: you sent several reports in a short time. Try again in an hour.",
-       "The bug report failed: the relay takes no bug reports right now.",
-       "The bug report failed: the relay is busy with other bug reports. Try again in a minute.",
-       "The bug report failed: GitHub refused the report", "The bug report failed: unreachable"])
+       "The bug report failed: bug reports are off right now.",
+       "The bug report failed: too many reports at once. Try again in a minute.",
+       "The bug report failed: try again later.", "The bug report failed: try again later."])
 reset
 
 # The flags and the refusals of sending.

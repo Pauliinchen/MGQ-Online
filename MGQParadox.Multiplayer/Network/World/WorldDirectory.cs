@@ -2,6 +2,7 @@
 //  WorldDirectory.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Worded what the player reads plainly, leaving causes and internals to the log
 //      Paulinchen  2026-10-30: Left installing a world's mods to the Mod Framework
 //      Paulinchen  2026-10-28: Refused seats out of range and squad rules that do not parse before asking the relay
 //      Paulinchen  2026-10-23: Told the DLL itself what the last action handed back
@@ -118,12 +119,12 @@ internal sealed class WorldDirectory
     /// <summary>
     /// Why an action failed when the relay could not be reached.
     /// </summary>
-    private const string Unreachable = "The relay could not be reached. Check your internet connection.";
+    private const string Unreachable = "The server could not be reached. Check your internet connection.";
 
     /// <summary>
     /// Why an action failed for a relay this version does not know.
     /// </summary>
-    private const string UnknownRelay = "This world meets at a relay this version does not know. Update the mod.";
+    private const string UnknownRelay = "This world needs a newer version of MGQ Online. Update the mod.";
 
     /// <summary>
     /// Why a starting save cannot be shared.
@@ -293,6 +294,8 @@ internal sealed class WorldDirectory
             ModCatalog? catalog = null;
             string? error = null;
             string? catalogError = null;
+            string? errorLogged = null;
+            string? catalogLogged = null;
 
             try
             {
@@ -301,6 +304,7 @@ internal sealed class WorldDirectory
             catch (Exception ex)
             {
                 error = ReasonFor("list", ex);
+                errorLogged = Failure(ex);
             }
 
             if (listing != null)
@@ -317,10 +321,11 @@ internal sealed class WorldDirectory
                 // The worlds are listed all the same; the game script then checks only whether required
                 // mods are installed.
                 catalogError = ReasonFor("catalog", ex);
+                catalogLogged = Failure(ex);
             }
 
-            var listSummary = listing != null ? ListSummary(listing) : $"world list failed: {error}";
-            var catalogSummary = catalog != null ? CatalogSummary(catalog) : $"mod catalog failed: {catalogError}";
+            var listSummary = listing != null ? ListSummary(listing) : $"world list failed: {errorLogged}";
+            var catalogSummary = catalog != null ? CatalogSummary(catalog) : $"mod catalog failed: {catalogLogged}";
             bool listChanged;
             bool catalogChanged;
 
@@ -454,7 +459,7 @@ internal sealed class WorldDirectory
         }
         catch (Exception ex)
         {
-            Log.Write($"the mods of world {Log.Short(id)} could not be read: {ReasonFor("world", ex)}");
+            Log.Write($"the mods of world {Log.Short(id)} could not be read: {Failure(ex)}");
             return false;
         }
     }
@@ -692,7 +697,7 @@ internal sealed class WorldDirectory
         }
         catch (IOException ex)
         {
-            throw new ActionException($"The starting save could not be written: {ex.Message}");
+            throw new ActionException("The starting save could not be written.", ex);
         }
 
         return null;
@@ -715,7 +720,7 @@ internal sealed class WorldDirectory
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
         {
-            throw new ActionException($"The save could not be read: {ex.Message}");
+            throw new ActionException("The save could not be read.", ex);
         }
 
         return box.Length <= StartingSave.MaxSealedBytes ? box : throw new ActionException(SaveTooLarge);
@@ -748,7 +753,7 @@ internal sealed class WorldDirectory
                 Log.Write($"could not delete world {Log.Short(id)} after its starting save failed: {deleteFailed.Message}");
             }
 
-            throw new ActionException(ex.Status == null ? Unreachable : $"The starting save could not be uploaded: {ex.Message}");
+            throw new ActionException(ex.Status == null ? Unreachable : "The starting save could not be uploaded. Try again.", ex);
         }
     }
 
@@ -772,7 +777,7 @@ internal sealed class WorldDirectory
 
         if (Relays.WorldRoomOf(token) != id)
         {
-            throw new ActionException("The world's lock is damaged.");
+            throw new ActionException("This world could not be opened.");
         }
 
         Log.Write($"opened the lock of world {Log.Short(id)} {OnOneField(world.Name)} with its password: {world.Seats.ToString(CultureInfo.InvariantCulture)} seats, starting save {world.Start}{(world.Choose ? ", players choose where to start" : string.Empty)}");
@@ -868,7 +873,7 @@ internal sealed class WorldDirectory
 
         if (squad != null && !RaidSquad.IsValid(squad))
         {
-            throw new ActionException("The squad rules are not valid.");
+            throw new ActionException("The formation limits are not valid.");
         }
     }
 
@@ -947,7 +952,7 @@ internal sealed class WorldDirectory
             }
             catch (Exception ex)
             {
-                Log.Write($"the mod settings of world {Log.Short(id)} could not be read: {ReasonFor("world", ex)}");
+                Log.Write($"the mod settings of world {Log.Short(id)} could not be read: {Failure(ex)}");
             }
 
             lock (_gate)
@@ -1111,7 +1116,7 @@ internal sealed class WorldDirectory
             catch (Exception ex)
             {
                 error = ReasonFor(kind, ex);
-                Log.Write($"world {kind} failed: {ex.GetBaseException().Message}{(ex is DirectoryException directory ? $" (status {(directory.Status is { } status ? ((int)status).ToString(CultureInfo.InvariantCulture) : "none")}{(directory.Code != null ? $", code {directory.Code}" : string.Empty)})" : string.Empty)}, the player reads: {error}{(ex is ActionException or DirectoryException ? string.Empty : $"; {ex}")}");
+                Log.Write($"world {kind} failed: {Failure(ex)}, the player reads: {error}{(ex is ActionException or DirectoryException ? string.Empty : $"; {ex}")}");
             }
 
             lock (_gate)
@@ -1162,9 +1167,19 @@ internal sealed class WorldDirectory
         DirectoryException { Status: HttpStatusCode.Forbidden } => "Only the world's creator may do this.",
         DirectoryException { Status: HttpStatusCode.TooManyRequests, Code: "rate" } => "Too many requests from your connection. Try again in a few minutes.",
         DirectoryException { Status: HttpStatusCode.TooManyRequests } when kind == "create" => "You have created as many worlds as you may. Delete one first.",
-        DirectoryException directory => $"The relay refused: {directory.Message}",
-        _ => $"Something went wrong: {ex.GetBaseException().Message}",
+        DirectoryException => "The server turned this down. Try again later.",
+        _ => "Something went wrong. Try again.",
     };
+
+    /// <summary>
+    /// Tells what went wrong for the log: the deepest message, with the relay's status and code.
+    /// </summary>
+    /// <param name="ex">What went wrong.</param>
+    /// <returns>The line.</returns>
+    private static string Failure(Exception ex) =>
+        ex.GetBaseException().Message + (ex is DirectoryException directory
+            ? $" (status {(directory.Status is { } status ? ((int)status).ToString(CultureInfo.InvariantCulture) : "none")}{(directory.Code != null ? $", code {directory.Code}" : string.Empty)})"
+            : string.Empty);
 
     /// <summary>
     /// Writes the list as the game script reads it.
@@ -1222,5 +1237,5 @@ internal sealed class WorldDirectory
     /// An action that failed for a reason the player is told as it is.
     /// </summary>
     /// <param name="reason">The reason.</param>
-    private sealed class ActionException(string reason) : Exception(reason);
+    private sealed class ActionException(string reason, Exception? cause = null) : Exception(reason, cause);
 }

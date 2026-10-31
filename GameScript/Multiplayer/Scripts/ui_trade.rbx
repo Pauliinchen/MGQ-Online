@@ -2,6 +2,7 @@
 #  ui_trade.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Worded what the player reads plainly, leaving causes and internals to the log
 #      Paulinchen  2026-10-24: Gave the help window the boxes' background opacity, the look now worn by every window
 #      Paulinchen  2026-10-22: Let the chat box open in the trade screen, whose gold digits leave the cancel to the open chat box
 #      Paulinchen  2026-10-12: Kept the bag's and the offers' pictures as tall as the rows they show
@@ -67,8 +68,8 @@ module MGQ_MpTradeUi
   def self.status_line(session)
     note = MGQ_MpTrade.note
     return note if note
-    return "Cancelling, waiting for the relay . . ." if session.leaving
-    return "Waiting for the relay . . ." if session.stage == :committing
+    return "Cancelling the trade . . ." if session.leaving
+    return "Completing the trade . . ." if session.stage == :committing
     return "Confirm once both offers are right. Any change takes both confirmations back." unless session.confirmed
 
     refusal = MGQ_MpTrade.confirm_refusal

@@ -2,6 +2,7 @@
 #  battles_duel.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Worded what the player reads plainly, leaving causes and internals to the log
 #      Paulinchen  2026-10-30: Left the duel and team duel handshake to the DLL and read its view
 #      Paulinchen  2026-10-23: Started duels without the deleted mirror match flag
 #                            - Asked no longer for the deleted PvP switch
@@ -419,7 +420,7 @@ module MGQ_MpBattlesDuel
   # and in the World overview, and challenges in the overview and the notification box.
   module Offers
     # The choice wherever duels cannot run.
-    UNAVAILABLE = MGQ_MpActions::Option.new("Duel", nil, "Duels need PvP battles, which are off or out of date.")
+    UNAVAILABLE = MGQ_MpActions::Option.new("Duel", nil, "Duels are not available right now.")
 
     # The wheel's duel choice: accepting the challenge of a player nearby, else challenging the
     # players nearby.

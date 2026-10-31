@@ -2,6 +2,7 @@
 //  WorldTrades.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Worded what the player reads plainly, leaving causes and internals to the log
 //      Paulinchen  2026-10-30: Answered the trade of the DLL with how the commit and the fetch stand
 //      Paulinchen  2026-10-07: Logged each commit, its replacement, refused starts, a lost relay once per commit and each trade fetched
 //                            - Woke a commit's wait when a newer commit replaces it and waited on the gate before each new try
@@ -74,12 +75,12 @@ internal sealed class WorldTrades : ITradeRelay
     /// <summary>
     /// Why a request failed when the relay could not be reached.
     /// </summary>
-    private const string Unreachable = "The relay could not be reached. Check your internet connection.";
+    private const string Unreachable = "The server could not be reached. Check your internet connection.";
 
     /// <summary>
     /// Why the commit failed when the relay never settled the trade.
     /// </summary>
-    private const string NoAnswer = "The relay did not settle the trade in time.";
+    private const string NoAnswer = "The trade could not be completed in time.";
 
     /// <summary>
     /// Guards every field below.
@@ -650,11 +651,11 @@ internal sealed class WorldTrades : ITradeRelay
     {
         DirectoryException { Status: null } => Unreachable,
         DirectoryException { Status: HttpStatusCode.Forbidden } => "Both players must be players of this world.",
-        DirectoryException { Status: HttpStatusCode.NotFound } => "The relay knows no such world or trade.",
+        DirectoryException { Status: HttpStatusCode.NotFound } => "This trade no longer exists.",
         DirectoryException { Status: HttpStatusCode.TooManyRequests } => "You have too many open trades. Finish one first.",
-        DirectoryException directory => $"The relay refused: {directory.Message}",
-        InvalidDataException data => data.Message,
-        _ => $"Something went wrong: {ex.GetBaseException().Message}",
+        DirectoryException => "The server turned this down. Try again later.",
+        InvalidDataException => "The offers could not be read.",
+        _ => "Something went wrong. Try again.",
     };
 
     /// <summary>

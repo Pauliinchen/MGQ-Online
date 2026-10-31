@@ -2,6 +2,7 @@
 #  world_open_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Expected the plainer texts the player reads
 #      Paulinchen  2026-10-30: Checked that the Mod Framework's restart carries an invite taken during a game
 #                            - Checked that a world enters the game only right before its save loads or its New Game starts
 #                            - Checked that backing out of a world's New Game after entering starts the game again into the world screen
@@ -455,7 +456,7 @@ end
 # What the details say.
 detail, texts = new_detail(386, 336)
 panels = detail.panels(entries[1], "me")
-check("a featured world says so beside its heading", [panels[0].title, panels[0].note], ["World", "featured: one of the relay's own"])
+check("a featured world says so beside its heading", [panels[0].title, panels[0].note], ["World", "featured"])
 check("a world without a password needs none", cell_of(panels, "Password").text, "None")
 check("made by the admin tool's player", cell_of(panels, "Creator").text, "Global")
 check("a world of the player's own is made by them", cell_of(detail.panels(entries[1], "c"), "Creator").text, "You")

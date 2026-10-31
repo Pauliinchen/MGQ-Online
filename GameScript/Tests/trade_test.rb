@@ -2,6 +2,7 @@
 #  trade_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Expected the plainer texts the player reads
 #      Paulinchen  2026-10-30: Checked the trades to recover the DLL hands over
 #                            - Checked that the relay hears of a saved trade through the DLL
 #                            - Checked the trade through the DLL's view and events, and the clamps before an offer goes to it
@@ -480,7 +481,7 @@ $bag_breaks = false
 # A world without a directory id.
 module MGQ_MpWorld; def self.world; World.new("f1", nil); end; end
 check("a world made before the world list offers no trades",
-      [trade.available?, MGQ_MpTrade::Offers.wheel_option.refusal], [false, "This world was made before the world list, so it cannot trade."])
+      [trade.available?, MGQ_MpTrade::Offers.wheel_option.refusal], [false, "Trading is off in this world."])
 
 # The save after a trade goes into a slot, never into an autosave, whose index is its name.
 MGQ_MpTrade::Saving.slot = 2

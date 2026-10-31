@@ -2,6 +2,7 @@
 #  coop_gather_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Expected the plainer texts the player reads
 #      Paulinchen  2026-10-28: Answered the calls, the hold and the offers through the bridge from their golden cases
 #                            - Took a Raid World's tellers from the relay's tellings
 #      Paulinchen  2026-10-24: Checked that a viewer follows at once a scene that runs by itself and would start again in their game
@@ -442,7 +443,7 @@ $map_free = true
 gather.come_to("Friend", [77, 1, 1, 2], false)
 gather.update
 check("a teleport to a map this game lacks tells the player so", [gather.coming?, $notices.last, $game_player.reserved],
-      [false, "Cannot teleport to Friend: this game has no map 77.", nil])
+      [false, "Cannot teleport to Friend.", nil])
 
 # A map from 1000 on lies in a folder of its own, which only the game's map_file_name finds.
 

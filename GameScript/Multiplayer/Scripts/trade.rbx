@@ -2,6 +2,7 @@
 #  trade.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Worded what the player reads plainly, leaving causes and internals to the log
 #      Paulinchen  2026-10-30: Let the DLL ask the relay for the trades to recover, by the save loaded
 #                            - Told the relay of a trade the save holds through the DLL
 #                            - Kept the trade's handshake, session and commit in the DLL, the items, the save and the screen here
@@ -1094,10 +1095,10 @@ module MGQ_MpTrade
   # wheel and in the World overview, and offers in the overview and the notification box.
   module Offers
     # The choice wherever the mod's DLL cannot run trades.
-    UNAVAILABLE = MGQ_MpActions::Option.new("Trade", nil, "Trades need the mod's DLL, which is missing or out of date.")
+    UNAVAILABLE = MGQ_MpActions::Option.new("Trade", nil, "Trading is not available.")
 
     # The choice in a world made before the world list, which the relay cannot name.
-    OLD_WORLD = MGQ_MpActions::Option.new("Trade", nil, "This world was made before the world list, so it cannot trade.")
+    OLD_WORLD = MGQ_MpActions::Option.new("Trade", nil, "Trading is off in this world.")
 
     # The choice while trades cannot run, saying why.
     #

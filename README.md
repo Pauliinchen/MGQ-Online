@@ -21,7 +21,7 @@ Play Monster Girl Quest! Paradox RPG together with friends over the internet, wi
 - **Parties:** up to four players play the leader's story together and share one team's worth of companions. Teleport to any party member once they allow it, or to the leader at once.
 - **Co-op battles:** party members on the same map join each other's battles, each commanding their own characters.
 - **Duels and PvP battles:** your team against a friend's, live, inside a world or outside one.
-- **Trading:** swap items, equipment, stones and gold with a player on your map; the relay sees to it that a disconnect never loses or copies anything.
+- **Trading:** swap items, equipment, stones and gold with a player on your map; a disconnect never loses or copies anything.
 - **Mods:** install, update and remove mods of the [website](https://mgqonline.org/mods) from the title screen, through the Mod Framework that comes with the mod.
 - **Your interface:** three looks for the mod and the game alike, Monarch, Legacy and the game's own window color, and every box of the mod moves and resizes while you hold the left **Alt**.
 
@@ -46,7 +46,7 @@ The [Mod Framework](https://github.com/Pauliinchen/MGQ-Mod-Framework) comes with
 
 You then have `!Mod_Framework.rb` and `Multiplayer.rb` in your `Patch` folder, and next to them a `Multiplayer` folder with the rest of the mod; your name and worlds go there too. The mod runs on the [Mod Framework](https://github.com/Pauliinchen/MGQ-Mod-Framework), which comes inside it and loads your other mods too, also those that keep their scripts in a folder inside `Patch`. The logs go into the `Logs` folder of the game folder.
 
-While the mod is installed, the game keeps running when its window is in the background, so no player holds the others up. A gamepad does nothing meanwhile.
+While the mod is installed, the game keeps running when its window is in the background. A gamepad does nothing meanwhile.
 
 **Update:** the Mod Framework counts the updates waiting on *Mod browser* and installs them, this mod's too. When a new release is needed, *Multiplayer* on the title screen offers it; until then PvP battles stay off too. The framework closes the game, installs the release, shows what's new and starts the game again in the Multiplayer menu; under Wine and Proton too. If the game cannot start, run `Update.bat` in `Patch\Mod_Framework`. Your name, hotkeys, favourites and worlds are kept.
 
@@ -57,7 +57,7 @@ While the mod is installed, the game keeps running when its window is in the bac
 1. Pick **Multiplayer** below *Continue* on the title screen and type the name the others see.
 2. One of you picks *Create new world*, gives it a name, picks *Classic* or *Raid* (fixed once created) and, if you like, a password.
 3. Everyone confirms on that world and picks *Enter the world*.
-4. On the map, stand next to a friend, press **B** and pick *Invite to a party*; they accept in their own wheel. You now play the leader's story together and fight co-op battles. In a Raid World a party only gets the first places in battles, since everyone plays the world's story.
+4. On the map, stand next to a friend, press **B** and pick *Invite to a party*; they accept in their own wheel. You now play the leader's story together and fight co-op battles. In a Raid World everyone plays the world's story, and a party gets the first places in battles.
 
 For a PvP battle without a world, press **F11** on the map and host; your friend joins with the join code you send them.
 

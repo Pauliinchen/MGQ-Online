@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-31: Told the starter the front state again once a player comes onto the battle channel
 #                            - Handed the setup's Strings to C# as text
+#                            - Worded what the player reads plainly, leaving causes and internals to the log
 #      Paulinchen  2026-10-30: Carried the widths of the troop's pictures in the setup, which the battle server places joining enemies by
 #                            - Wrote, read and checked the setup and the scripts' fingerprint through C#
 #                            - Read a setup's mods without C# for the battle server's child before its core opens
@@ -174,7 +175,7 @@ module MGQ_MpBattlesServed
     end
 
     # The DLL refuses a serve the relay does not answer within five seconds itself.
-    answer = MGQ_MpBattlesSync::Waiting.wait_for(scene, "Starting the battle on the server...") do
+    answer = MGQ_MpBattlesSync::Waiting.wait_for(scene, "Starting the battle...") do
       state = Link.state
       if state["state"] == "served" then true
       elsif state["state"] == "refused" then [:refused, state["code"].to_s]

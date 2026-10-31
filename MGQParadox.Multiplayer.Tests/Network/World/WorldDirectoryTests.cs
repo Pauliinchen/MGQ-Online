@@ -2,6 +2,7 @@
 //  WorldDirectoryTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Expected the plainer texts the player reads
 //      Paulinchen  2026-10-30: Cut the squad settings read from text and from JSON to one of each kind
 //      Paulinchen  2026-10-28: Covered seats out of range and squad rules that do not parse refused before the relay
 //      Paulinchen  2026-10-23: Took the squad settings from MGQOnline.Game
@@ -548,8 +549,8 @@ public sealed class WorldDirectoryTests
         var nobody = new WorldDirectory { RelayAddress = _ => relay.Address, Iterations = 1_000, Playing = () => null };
         var lost = new WorldDirectory { RelayAddress = _ => null, Iterations = 1_000, Playing = () => (CreatorKey, "Creator") };
 
-        Assert.Contains("who plays", Act(nobody, directory => directory.Create("World", "secret", 4, false, false, []))["error"]);
-        Assert.Contains("does not know", Act(lost, directory => directory.Create("World", "secret", 4, false, false, []))["error"]);
+        Assert.Contains("name is not known", Act(nobody, directory => directory.Create("World", "secret", 4, false, false, []))["error"]);
+        Assert.Contains("newer version", Act(lost, directory => directory.Create("World", "secret", 4, false, false, []))["error"]);
     }
 
     /// <summary>
@@ -568,7 +569,7 @@ public sealed class WorldDirectoryTests
 
         Assert.Equal("done", Act(creator, directory => directory.Ban(made["world"], WorldKeys.PlayerIdOf(PlayerKey(2))))["state"]);
         var banned = Act(creator, directory => directory.Ban(made["world"], WorldKeys.PlayerIdOf(PlayerKey(3))));
-        Assert.Equal(("failed", "The relay refused: a world may keep at most 1 removed players"), (banned["state"], banned["error"]));
+        Assert.Equal(("failed", "The server turned this down. Try again later."), (banned["state"], banned["error"]));
     }
 
     /// <summary>

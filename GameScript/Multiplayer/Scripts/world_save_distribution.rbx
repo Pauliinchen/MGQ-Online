@@ -2,6 +2,7 @@
 #  world_save_distribution.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Worded what the player reads plainly, leaving causes and internals to the log
 #      Paulinchen  2026-10-30: Refused a fetched starting save that names classes other than the game's before loading it
 #      Paulinchen  2026-10-23: Dropped the starting save's files as text, which the DLL takes as pairs
 #                            - Left whether a new player is asked, warned or fetches the starting save to the DLL's steps into a world
@@ -160,7 +161,7 @@ module MGQ_MpSaveDistribution
     log("the starting save of world #{world.id} cannot be loaded: #{e.class}: #{e.message}")
     discard(world)
     missing = e.message[MISSING_CLASS, 1]
-    missing ? "The starting save needs a mod you do not have, one that adds #{missing}." : "The starting save could not be loaded."
+    missing ? "The starting save needs a mod you do not have." : "The starting save could not be loaded."
   end
 
   # Deletes a fetched starting save's files from a world's folder.

@@ -2,6 +2,7 @@
 //  Session.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Worded what the player reads plainly, leaving causes and internals to the log
 //      Paulinchen  2026-10-12: Stopped hosting or joining at once when the relay turns the game away as too old
 //      Paulinchen  2026-10-07: Logged hosting, joining, cancelling, each step of the team swap and name changes
 //                            - Woke the host's waits when hosting ends, locked role and name reads, took only the read message and cleaned names through PlayerName
@@ -136,12 +137,12 @@ internal sealed class Session
     /// <summary>
     /// Why hosting or joining failed when the relay could not be reached.
     /// </summary>
-    private const string RelayUnreachable = "The relay could not be reached. Check your internet connection.";
+    private const string RelayUnreachable = "The server could not be reached. Check your internet connection.";
 
     /// <summary>
     /// Why joining failed when the join code names a relay this version does not know.
     /// </summary>
-    private const string UnknownRelay = "Your friend's game uses a relay this version does not know. Update the mod.";
+    private const string UnknownRelay = "Your friend has a newer version of MGQ Online. Update yours.";
 
     /// <summary>
     /// Why joining failed when the join code comes from another version of the mod.
@@ -788,7 +789,8 @@ internal sealed class Session
         }
         catch (Exception ex)
         {
-            Fail(generation, $"The connection broke off: {ex.GetBaseException().Message}");
+            Log.Write($"pvp connection broke off: {ex.GetBaseException().Message}");
+            Fail(generation, "The connection broke off.");
         }
         finally
         {

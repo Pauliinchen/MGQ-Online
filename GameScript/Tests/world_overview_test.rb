@@ -2,6 +2,7 @@
 #  world_overview_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Expected the plainer texts the player reads
 #      Paulinchen  2026-10-30: Answered the teleports' view and the squad from the party's stand-in
 #                            - Kept one check of the story's place
 #      Paulinchen  2026-10-28: Read the place in the story by the ids of its switches and variables
@@ -184,7 +185,7 @@ $data_mapinfos = { 5 => MapInfo.new("Ilias Village (editor)") }
 # Stands in for duels without PvP battles, which the overview greys out.
 module MGQ_MpBattlesDuel
   # Answers a greyed duel choice for every player.
-  def self.peer_option(_peer); MGQ_MpActions::Option.new("Duel", nil, "Duels need PvP battles, which are off or out of date."); end
+  def self.peer_option(_peer); MGQ_MpActions::Option.new("Duel", nil, "Duels are not available right now."); end
   # Answers that no duel is offered on the player's own row.
   def self.own_options; []; end
   # Answers that no other player challenges the player.
