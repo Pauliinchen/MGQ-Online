@@ -2,6 +2,11 @@
 #  coop_events.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Stopped telling the party the items and gold the leader's story gives, which the leader's runs bring by replay
+#                            - Handed the leader's runs of the story to every member who follows it, as entries of the leader's story, which each member's game replays
+#                            - Sent a member's runs of the leader's story to the leader with their requests, and handed the party those the leader's story kept, named by the member
+#                            - Handed a party chest to the party as its run, which each member's game replays
+#                            - Took the runs other members handed over
 #      Paulinchen  2026-10-28: Read the chests of a map, the flags of its pages and what pages do through common events from the DLL's events database
 #                            - Named a map event's page and a common event to the DLL with the length and shape of its list
 #                            - Handed the DLL the game data's fingerprint before the first question about events
@@ -121,8 +126,9 @@
 # it runs, in the DLL (MGQOnline.Game's EventSorter, over the events database the mod ships):
 # a talk (conversations, shops, the job change menu), travel (a transfer), a chest (items and its
 # own self switch), a battle without dialogue, or story (everything that moves the story on).
-# Chests are the player's own, and opening one opens it for the whole party: every member who has
-# not looted it yet gets the same items, synced with the leader's story or not. Story is the
+# Chests are the player's own, and opening one opens it for the whole party: the run that opened it
+# goes to every member, whose own game plays the chest again (story_keys.rbx, story_replay.rbx),
+# synced with the leader's story or not. Story is the
 # leader's alone for the members who follow it (see MGQ_MpCoopStory.follows_leader?); a member who
 # does not plays their own. A story scene the leader starts first gathers the members who follow it,
 # see coop_gather.rbx; the Pocket Castle's residents are sorted by coop_castle.rbx. In a Raid World
@@ -237,16 +243,6 @@ module MGQ_MpCoopEvents
   # rest, two and a half seconds, as the leader's game shows the whole page at once.
   OVERFLOW_FRAMES = 150
 
-  # The class of each kind of item a chest gives, by the letter a message writes it with.
-  ITEM_CLASSES = { "i" => RPG::Item, "w" => RPG::Weapon, "a" => RPG::Armor }
-
-  # The sound a chest plays when the player opens it, which a member who gets its items hears too
-  # when the chest's own is unknown.
-  CHEST_SOUND = "Chest"
-
-  # A sound's file name, which may hold dots, but is never a path.
-  SOUND_NAME = /\A[\w\- ]+(\.[\w\- ]+)*\z/
-
   # Messages about gathering for story scenes, which coop_gather.rbx takes.
   GATHER_MESSAGES = %w(gather follow)
 
@@ -276,10 +272,6 @@ module MGQ_MpCoopEvents
   @part_needs = {}
   # The checks of what waits for the player to be free, see give_way_to.
   @waits = []
-  # The chest the player opens: its interpreter, self switch, gains and sound.
-  @chest = nil
-  # Whether a gift runs that neither a chest nor the leader's story gives, see granting.
-  @granting = false
   # Whether the message window waits for the input that ends a page, see page_end_input.
   @page_end = false
   # The DLL's last answer that the page the window holds is not over, see page_held?.
@@ -834,8 +826,7 @@ module MGQ_MpCoopEvents
     @as_story = was
   end
 
-  # Notices the map's main event starting: keeps track of a chest's items, and as leader brings the
-  # party together for a story scene.
+  # Notices the map's main event starting: as leader brings the party together for a story scene.
   #
   # @param interpreter [Game_Interpreter] The interpreter.
   # @param list [Array<RPG::EventCommand>] Its commands.
@@ -856,7 +847,6 @@ module MGQ_MpCoopEvents
     @may_tell = WATCHED_KINDS.include?(sorted) && (following? || leading_story?) && may_tell?(list || [], event)
     hold = @telling && scene?(list, event) && !MGQ_MpCoopGather.gathered?
     MGQ_MpCoopGather.hold(interpreter) if hold
-    @chest = event && sorted == :chest && shares_chests? ? { :interpreter => interpreter, :key => chest_key(event), :gains => [] } : nil
     log_start(event, sorted, hold, list) if MGQ_MpCoop::Scope.sharing?
   end
 
@@ -993,7 +983,6 @@ module MGQ_MpCoopEvents
     notes << "the player plays their own story, not synced with the leader or leading no member who follows it" unless following? || leading_story?
     notes << "held until the party gathers" if hold
     notes << "may turn into story behind a choice, watched" if @may_tell
-    notes << "a chest, #{@chest[:key] ? "self switch #{@chest[:key].join('.')}" : 'without a self switch'}" if @chest
     log("#{what} starts as #{sorted}#{notes.empty? ? '' : ": #{notes.join(', ')}"}")
   rescue => e
     log("logging an event's start failed: #{e.class}: #{e.message}")
@@ -1845,14 +1834,12 @@ module MGQ_MpCoopEvents
   end
 
   # Tells the page kept while the player skips once it is due, shows the leader's messages once the
-  # player is free, and chests other members opened. Called after the map's update.
+  # player is free. Called after the map's update.
   def self.update
     end_stale_telling
     flush_say
     forget_former_leader
     show_heard
-    take_held_chests
-    tell_chest_news
     lift_dark_screen
   rescue => e
     log("updating the party's events failed: #{e.class}: #{e.message}")
@@ -1868,91 +1855,17 @@ module MGQ_MpCoopEvents
     MGQ_Multiplayer::Bridge.call(TELLING_END_TOPIC)
   end
 
-  # Gives what the block gives without counting it as what a chest the player opens gives, nor as
-  # what the leader's story gives the party.
+  # Gives what the block gives. The party hears of no gift, since the leader's runs bring what the
+  # story gives by replay; trade.rbx and world_catchup.rbx still give through it.
   #
-  # @yield The giving, such as a chest's items or a trade's.
+  # @yield The giving, such as a trade's.
   # @return [Object] What the block returns.
   def self.granting
-    granting = @granting
-    @granting = true
     yield
-  ensure
-    @granting = granting
-  end
-
-  # Notes that an item is being given, and whether it is the outermost of nested gifts.
-  #
-  # @return [Boolean] Whether it is the outermost.
-  def self.enter_gain
-    @gain_depth = @gain_depth.to_i + 1
-    @gain_depth == 1
-  end
-
-  # Notes that giving an item ended.
-  def self.leave_gain
-    @gain_depth = @gain_depth.to_i - 1
-  end
-
-  # Keeps an item a chest gives, and tells the party about one the leader's story gives or takes,
-  # through coop_story.rbx.
-  #
-  # An enchanted copy is left out of the story's, since it exists only in the game that made it.
-  #
-  # @param item [RPG::BaseItem, nil] The item.
-  # @param amount [Integer] How many, below zero for a loss.
-  # @param stored [Boolean] Whether it only moves between the bag and the item storage.
-  def self.gained_item(item, amount, stored = false)
-    kind = ITEM_CLASSES.keys.find { |letter| item.is_a?(ITEM_CLASSES[letter]) }
-    return unless kind
-
-    gained(kind, item.id, amount)
-    story_gave(kind, item.id, amount) unless stored || (item.respond_to?(:uniq_item?) && item.uniq_item?)
-  rescue => e
-    log("keeping an item failed: #{e.class}: #{e.message}")
-  end
-
-  # Keeps gold a chest gives, and tells the party about gold the leader's story gives or takes.
-  #
-  # @param amount [Integer] How much, below zero for a loss.
-  def self.gained_gold(amount)
-    gained("g", 0, amount)
-    story_gave("g", 0, amount)
-  end
-
-  # Tells the party about items or gold the leader's story gave or took, through coop_story.rbx;
-  # never what a member's chest gives the player.
-  #
-  # @param kind [String] "i", "w", "a", or "g" for gold.
-  # @param id [Integer] The item, 0 for gold.
-  # @param amount [Integer] How many.
-  def self.story_gave(kind, id, amount)
-    MGQ_MpCoopStory.gave(kind, id, amount) if defined?(MGQ_MpCoopStory) && !@granting
-  end
-
-  # Notes the first sound the chest the player opens plays, which the members who get its items
-  # hear too. Called after a sound effect plays.
-  #
-  # @param sound [RPG::SE] The sound.
-  def self.played_sound(sound)
-    @chest[:sound] ||= [sound.name.to_s, sound.volume.to_i, sound.pitch.to_i] if @chest && !@granting
-  end
-
-  # Keeps an item or gold a chest gives.
-  #
-  # @param kind [String] "i", "w", "a", or "g" for gold.
-  # @param id [Integer] The item, 0 for gold.
-  # @param amount [Integer] How many.
-  def self.gained(kind, id, amount)
-    @chest[:gains] << [kind, id, amount] if @chest && !@granting && amount > 0
   end
 
   # Ends the telling of the map's main event once it ended, which the DLL's telling machine hears
-  # (the telling may still go on at the story's next event, see start_telling), and tells the party
-  # about a chest the player opened; a chest left shut, such as a locked one, tells nothing.
-  #
-  # A loaded save, or the game put back after a PvP battle, runs the map's last event's list once
-  # more from its end, which would tell the party whatever message waits, such as the battle's result.
+  # (the telling may still go on at the story's next event, see start_telling).
   #
   # @param interpreter [Game_Interpreter] The interpreter that ended.
   def self.finished(interpreter)
@@ -1961,71 +1874,16 @@ module MGQ_MpCoopEvents
       MGQ_Multiplayer::Bridge.call(TELLING_END_TOPIC) if @telling
       @telling = false
     end
-    return unless @chest && @chest[:interpreter].equal?(interpreter)
-
-    chest = @chest
-    @chest = nil
-    unless chest[:key] && $game_self_switches[chest[:key]] && shares_chests?
-      reason = !chest[:key] ? "it sets no self switch" : (shares_chests? ? "it stayed shut, such as a locked one" : "no longer in a party of a Classic world")
-      return log("the chest #{chest[:key] ? chest[:key].join('.') : ''} tells the party nothing: #{reason}")
-    end
-
-    MGQ_MpCoopStory.keep_own_self_switch(chest[:key], true) if defined?(MGQ_MpCoopStory)
-    gains = chest[:gains].map { |kind, id, amount| "#{kind}#{id}x#{amount}" }.join(",")
-    sound = chest[:sound] || [CHEST_SOUND, 80, 100]
-    sent = MGQ_MpCoop.tell(-1, "chest", chest[:key].join("."), "gains" => gains, "se" => sound.join(","))
-    log("#{sent ? 'told' : 'could not tell'} the party about chest #{chest[:key].join('.')}: gave #{gains.empty? ? 'nothing' : gains}, sound #{sound.join(',')}")
-  rescue => e
-    log("telling a chest failed: #{e.class}: #{e.message}")
   end
 
-  # Takes a message about chests or the party's events. Called by coop.rbx.
+  # Takes a message about the party's events. Called by coop.rbx.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who sent it.
   # @param message [Hash] The message's fields.
   def self.take(peer, message)
-    what = message["chest"] ? "chest #{message['chest']} (gains #{message['gains']})" : "#{message['pevent']}#{message['page'] ? " page #{message['page']}" : ''}"
+    what = "#{message['pevent']}#{message['page'] ? " page #{message['page']}" : ''}"
     log("got #{what} from #{MGQ_MpOverworldSync.who(peer)} (#{MGQ_MpCoop.bytes_of(message)} bytes)")
-    message["chest"] ? take_chest(peer, message) : take_party(peer, message)
-  end
-
-  # Takes a chest another member opened: gives its items, unless the player looted it already or it
-  # gave nothing; never in a Raid World, whose chests are personal.
-  #
-  # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who opened it.
-  # @param message [Hash] The message's fields.
-  def self.take_chest(peer, message)
-    return log("ignored chest #{message['chest']} from #{MGQ_MpOverworldSync.who(peer)}: a Raid World's chests are personal") if MGQ_MpCoop::Scope.raid?
-    return log("ignored chest #{message['chest']} from #{MGQ_MpOverworldSync.who(peer)}: not a member of the party") unless MGQ_MpCoop::Party.member?(peer.state)
-    # A PvP battle puts the game back as it was before it, which would take the items again.
-    if pvp_running?
-      (@held_chests ||= []) << [peer, message]
-      return log("holding chest #{message['chest']} from #{MGQ_MpOverworldSync.who(peer)} until the PvP battle put the game back (#{@held_chests.size} waiting)")
-    end
-
-    map_id, event_id, letter = message["chest"].to_s.split(".")
-    key = [map_id.to_i, event_id.to_i, letter]
-    return log("ignored chest #{message['chest']} from #{MGQ_MpOverworldSync.who(peer)}: the player looted it already") if own_self_switch(key)
-    return log("ignored chest #{message['chest']} from #{MGQ_MpOverworldSync.who(peer)}: it gave nothing") if message["gains"].to_s.empty?
-
-    names = grant(message["gains"].to_s)
-    log("took chest #{key.join('.')} #{MGQ_MpOverworldSync.who(peer)} opened for the party: #{names.empty? ? 'nothing known' : names.join(', ')}")
-    MGQ_MpCoopStory.keep_own_self_switch(key, true) if defined?(MGQ_MpCoopStory)
-    text = names.empty? ? "#{peer.state['name']} opened a chest for the party." : "#{peer.state['name']} opened a chest for the party: #{names.join(', ')}."
-    (@chest_news ||= []) << [text, first_icon(message["gains"].to_s), message["se"].to_s]
-    tell_chest_news
-  rescue => e
-    log("taking a chest failed: #{e.class}: #{e.message}")
-  end
-
-  # Opens the chests other members opened during a PvP battle, once it put the game back.
-  def self.take_held_chests
-    return if @held_chests.nil? || @held_chests.empty? || pvp_running?
-
-    held = @held_chests
-    @held_chests = nil
-    log("the PvP battle is over, taking the #{held.size} chests other members opened meanwhile")
-    held.each { |peer, message| take_chest(peer, message) }
+    take_party(peer, message)
   end
 
   # Reports whether a PvP battle, such as a duel, runs.
@@ -2035,86 +1893,76 @@ module MGQ_MpCoopEvents
     defined?(MGQ_MpBattlesPvp) && MGQ_MpBattlesPvp::Battle.running? ? true : false
   end
 
-  # Tells the player about chests other members opened, with the chest's sound and the first item's
-  # icon, once the player is on the map; a battle keeps it until it ends.
-  def self.tell_chest_news
-    return if @chest_news.nil? || @chest_news.empty? || !SceneManager.scene.is_a?(Scene_Map)
-
-    @chest_news.each_with_index do |(text, icon, sound), index|
-      play_sound(sound) if index == 0
-      MGQ_MpOverworldSync.notice(text, icon)
-    end
-    @chest_news.clear
-  end
-
-  # Plays a chest's sound as another member's game wrote it.
+  # Hands the party a run of the player's own game as its entry, which each member's game plays
+  # again: one that changed a party key alone, such as a chest it opened, and as leader one that
+  # changed a world key, which every member who follows the player's story takes (see take_entry);
+  # never in a Raid World, whose parties share no chests and whose story is the world's. A member's
+  # run of the leader's story goes to the leader with their requests, whose story keeps it when it
+  # changed it (MGQ_MpCoopStory.keep_runs). Called by story_keys.rbx once the DLL logged the run.
   #
-  # @param text [String] The sound: file name, volume and pitch, comma separated.
-  def self.play_sound(text)
-    name, volume, pitch = text.split(",")
-    name = CHEST_SOUND unless name.to_s =~ SOUND_NAME
-    RPG::SE.new(name, [[volume.to_i, 0].max, 100].min.nonzero? || 80, [[pitch.to_i, 50].max, 150].min).play
+  # @param entry [Hash] The run's entry, see ReplayEntry.Write in the DLL.
+  def self.hand_entry(entry)
+    return unless shares_chests?
+    return MGQ_MpCoopStory.request_run(entry) if entry["scope"] == "world" && MGQ_MpCoopStory.guest?
+    return unless entry["scope"] == "party" || (entry["scope"] == "world" && MGQ_MpCoopStory.leading_synced?)
+
+    text = MGQ_MpStoryReplay.wire(entry)
+    return log("could not write entry #{entry['id']} of #{entry['site']} for the party") unless text
+
+    sent = MGQ_MpCoop.tell(-1, "replay", text)
+    log("#{sent ? 'handed' : 'could not hand'} the party entry #{entry['id']} of #{entry['site']} (#{text.bytesize} bytes)")
   rescue => e
-    log_once(:chest_sound, "playing a chest's sound failed: #{e.class}: #{e.message}")
+    log("handing a run to the party failed: #{e.class}: #{e.message}")
   end
 
-  # Finds the icon of the first item a chest gave.
+  # As leader, hands the party a member's run the player's story kept, named by the member who ran
+  # it, and plays it in the player's own game too, see MGQ_MpCoopStory.keep_runs.
   #
-  # @param gains [String] The items as written: kind, id, "x", amount, comma separated.
-  # @return [Integer, nil] The icon, nil for gold alone or nothing known.
-  def self.first_icon(gains)
-    gains.split(",").each do |entry|
-      next unless entry =~ /\A([iwa])(\d+)x\d+\z/
+  # @param entry [Hash] The run's entry, in the stream of the player's story.
+  def self.hand_kept(entry)
+    text = MGQ_MpStoryReplay.wire(entry)
+    return log("could not write entry #{entry['id']} of #{entry['site']} for the party") unless text
 
-      item = MGQ_MpGame.item(Regexp.last_match(1), Regexp.last_match(2).to_i)
-      return item.icon_index if item && item.respond_to?(:icon_index)
+    sent = MGQ_MpCoop.tell(-1, "replay", text, "opener" => entry["opener"])
+    log("#{sent ? 'handed' : 'could not hand'} the party #{entry['opener']}'s entry #{entry['id']} of #{entry['site']} the player's story kept")
+    MGQ_MpStoryReplay.receive(entry)
+  end
+
+  # Takes a run another member's game handed the party, which waits for the player to stand free
+  # and then plays in their own game, see MGQ_MpStoryReplay.receive; never in a Raid World. A run of
+  # the story is the leader's, which every member who follows the leader's story takes, behind,
+  # level or ahead, in the stream of the leader's story, so a step of the player's own story counts
+  # once there too; one the leader kept of a member's game names that member.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who ran it.
+  # @param message [Hash] The message's fields.
+  def self.take_entry(peer, message)
+    return log("ignored a run from #{MGQ_MpOverworldSync.who(peer)}: a Raid World's parties share no chests") if MGQ_MpCoop::Scope.raid?
+    return log("ignored a run from #{MGQ_MpOverworldSync.who(peer)}: not a member of the party") unless peer && MGQ_MpCoop::Party.member?(peer.state)
+
+    entry = MGQ_MpStoryReplay.unwire(message["replay"].to_s)
+    return log("ignored a run from #{MGQ_MpOverworldSync.who(peer)}: it does not read") unless entry.is_a?(Hash)
+
+    if entry["scope"] == "world"
+      lead = MGQ_MpCoop.party_leader
+      unless MGQ_MpCoopStory.follows_leader? && lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && lead.state["id"].to_s == peer.state["id"].to_s
+        return log("ignored a run of the story from #{MGQ_MpOverworldSync.who(peer)}: not the leader whose story the player follows")
+      end
+
+      entry["stream"] = "story:#{peer.state['id']}"
     end
-    nil
-  end
-
-  # Reads a self switch as it is the player's own, whether or not they play the leader's story.
-  #
-  # @param key [Array] The self switch.
-  # @return [Boolean] Its value.
-  def self.own_self_switch(key)
-    defined?(MGQ_MpCoopStory) ? MGQ_MpCoopStory.own_self_switch(key) : $game_self_switches[key]
-  end
-
-  # Gives the items of a chest.
-  #
-  # @param gains [String] The items as written: kind, id, "x", amount, comma separated.
-  # @return [Array<String>] What was given, as shown.
-  def self.grant(gains)
-    granting do
-      gains.split(",").map do |entry|
-        unless entry =~ /\A([iwag])(\d+)x(\d+)\z/
-          log("skipped #{entry.inspect} of a chest: unreadable")
-          next
-        end
-
-        kind, id, amount = Regexp.last_match(1), Regexp.last_match(2).to_i, Regexp.last_match(3).to_i
-        if kind == "g"
-          $game_party.gain_gold(amount)
-          "#{amount} #{Vocab.currency_unit}"
-        else
-          item = MGQ_MpGame.item(kind, id)
-          unless item
-            log("skipped #{entry} of a chest: not in the game")
-            next
-          end
-
-          $game_party.gain_item(item, amount)
-          amount > 1 ? "#{item.name} x#{amount}" : item.name
-        end
-      end.compact
-    end
+    entry["opener"] = (message["opener"] || peer.state["name"]).to_s
+    log("got entry #{entry['id']} of #{entry['site']} from #{MGQ_MpOverworldSync.who(peer)}")
+    MGQ_MpStoryReplay.receive(entry)
+  rescue => e
+    log("taking a run failed: #{e.class}: #{e.message}")
   end
 end
 
 # What this script takes part in of the party's messages, through coop.rbx.
 
 begin
-  MGQ_MpCoop.route("chest") { |peer, message| MGQ_MpCoopEvents.take(peer, message) }
+  MGQ_MpCoop.route("replay") { |peer, message| MGQ_MpCoopEvents.take_entry(peer, message) }
   MGQ_MpCoop.route("pevent") { |peer, message| MGQ_MpCoopEvents.take(peer, message) }
   MGQ_MpCoop.route_map("pevent") { |peer, message| MGQ_MpCoopEvents.take(peer, message) }
   MGQ_MpOverworldSync.state_fields { MGQ_MpCoopEvents.state_fields }
@@ -2146,13 +1994,6 @@ begin
   MGQ_MpHooks.after(Game_Player, :perform_transfer, "coop_events") { MGQ_MpCoopEvents.arrived }
 rescue => e
   MGQ_MpCoopEvents.log("hooks FAILED: #{e.class}: #{e.message}")
-end
-
-begin
-  # After a sound effect plays, a chest the player opens notes it for the party.
-  MGQ_MpHooks.after(RPG::SE, :play, "coop_events") { MGQ_MpCoopEvents.played_sound(self) }
-rescue => e
-  MGQ_MpCoopEvents.log("sound hook FAILED: #{e.class}: #{e.message}")
 end
 
 # Game hooks of this script alone, through core_hooks.rbx.
@@ -2204,26 +2045,4 @@ begin
   end
 rescue => e
   MGQ_MpCoopEvents.log("message hooks FAILED: #{e.class}: #{e.message}")
-end
-
-begin
-  # Around giving an item, which is kept for the party when a chest or the leader's story gives it.
-  # The game gives an enchanted item by calling this again for each copy it makes, so only the
-  # outermost call counts; the fourth argument is the game's keep_flag, set when the item only moves
-  # to or from the item storage.
-  MGQ_MpHooks.around(Game_Party, :gain_item, "coop_events") do |_party, args, original|
-    outermost = MGQ_MpCoopEvents.enter_gain
-    begin
-      result = original.call
-    ensure
-      MGQ_MpCoopEvents.leave_gain
-    end
-    MGQ_MpCoopEvents.gained_item(args[0], args[1], args[3] ? true : false) if outermost
-    result
-  end
-
-  # After gold is given, it is kept for the party when a chest or the leader's story gives it.
-  MGQ_MpHooks.after(Game_Party, :gain_gold, "coop_events") { |amount| MGQ_MpCoopEvents.gained_gold(amount) }
-rescue => e
-  MGQ_MpCoopEvents.log("party hooks FAILED: #{e.class}: #{e.message}")
 end

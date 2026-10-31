@@ -2,6 +2,8 @@
 //  EventStore.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Added the pairs the one-time repair of stuck saves completes
+//                            - Told whether a list gives and read the branches of a choice
 //      Paulinchen  2026-10-28: Handed out the relay mirror, made anew when torn or of another schema, and listed the chest flags
 //                            - Listed the cutscene maps
 //                            - Found the lists that read, write or call keys and common events of a set
@@ -440,6 +442,28 @@ public sealed class EventStore : IDisposable
     /// <param name="map">The map.</param>
     /// <returns>The chest pages by event and place.</returns>
     public IReadOnlyList<ChestRow> Chests(int map) => Select(EventTables.Chests, "WHERE map_id = ? ORDER BY event_id, page_no", map);
+
+    /// <summary>
+    /// Reads the pairs the one-time repair of stuck saves completes.
+    /// </summary>
+    /// <returns>The pairs by site, letter and switch.</returns>
+    public IReadOnlyList<RepairPairRow> RepairPairs() => Select(EventTables.RepairPairs, "ORDER BY map_id, event_id, page_no, letter, switch_id");
+
+    /// <summary>
+    /// Tells whether a map page or common event, with the common events it calls, adds to what a
+    /// player holds.
+    /// </summary>
+    /// <param name="listId">The list.</param>
+    /// <returns>Whether it does.</returns>
+    public bool Gives(int listId) => First(EventTables.Gives, "WHERE list_id = ?", listId) is not null;
+
+    /// <summary>
+    /// Reads the branches of a Show Choices command.
+    /// </summary>
+    /// <param name="listId">The list.</param>
+    /// <param name="idx">The command's place in the list.</param>
+    /// <returns>The branches by answer; none for a place that holds no choice.</returns>
+    public IReadOnlyList<ChoiceBranchRow> ChoiceBranches(int listId, int idx) => Select(EventTables.ChoiceBranches, "WHERE list_id = ? AND idx = ? ORDER BY branch", listId, idx);
 
     /// <summary>
     /// Reads a common event.

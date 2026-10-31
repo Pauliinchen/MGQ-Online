@@ -2,6 +2,9 @@
 //  StoryTrack.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Read the routes the Great Decision offers from the world's summary
+//                            - Sent the player's runs after their writes and walked the entries of the player's track from the cursor of the save's log
+//                            - Read where the world's log starts from its summary, and the world's story there from a whole track
 //      Paulinchen  2026-10-28: Stood as the telling lock of the telling machine
 //                            - Named the teller whose ended telling the game has yet to take the track of
 //      Paulinchen  2026-10-23: Created
@@ -283,7 +286,8 @@ public sealed partial class StoryTrack : ITellingLock
     /// </summary>
     /// <param name="startsAfresh">Whether the relay places the player anew by their story, as after a new game.</param>
     /// <param name="level">The player's level, <see langword="null"/> while unknown.</param>
-    public void Enter(bool startsAfresh, StoryLevel? level)
+    /// <param name="worldId">The world's id, which names the streams of its tracks.</param>
+    public void Enter(bool startsAfresh, StoryLevel? level, string worldId = "")
     {
         entered = true;
         fresh = startsAfresh;
@@ -299,6 +303,8 @@ public sealed partial class StoryTrack : ITellingLock
         }
 
         queued.Clear();
+        ForgetRuns();
+        world = worldId;
         Synced = false;
         Syncing = false;
         SendSync();
@@ -341,6 +347,7 @@ public sealed partial class StoryTrack : ITellingLock
         watchedTelling = null;
         levelSent = null;
         lastOwnTelling = null;
+        ForgetRuns();
         host.Log("story track: left the Raid World's story");
     }
 
@@ -577,6 +584,8 @@ public sealed partial class StoryTrack : ITellingLock
                 case "telling": TakeTelling(frame); break;
                 case "told": TakeTold(frame); break;
                 case "tell": TakeTellAnswer(frame); break;
+                case "runs": TakeRuns(frame); break;
+                case "run": TakeRun(frame); break;
                 case "mapping": MappingRev = Math.Max(MappingRev, Number(frame, "rev")); host.Log($"story track: the story mapping is at revision {MappingRev} now"); break;
                 case "watch": host.Log($"story track: watching seat {Number(frame, "teller")}'s telling: {Flag(frame, "watching")}"); break;
                 case "error":
@@ -657,6 +666,7 @@ public sealed partial class StoryTrack : ITellingLock
                 writer.WriteBoolean("fresh", true);
             }
 
+            WriteCursors(writer);
             if (keys is not null)
             {
                 writer.WriteStartObject("seed");
@@ -677,7 +687,8 @@ public sealed partial class StoryTrack : ITellingLock
     }
 
     /// <summary>
-    /// Sends the batches not answered yet again, then the writes that waited, once the player is synced.
+    /// Sends the writes and runs that waited, once the player is synced: each run ends the batch of
+    /// the writes queued before it.
     /// </summary>
     private void SendQueued()
     {
@@ -686,24 +697,34 @@ public sealed partial class StoryTrack : ITellingLock
             return;
         }
 
-        while (queued.Count > 0)
+        while (queued.Count > 0 || queuedRuns.Count > 0)
         {
             int count = Math.Min(queued.Count, MaxWrites);
-            List<StoryWrite> writes = queued.GetRange(0, count);
-            var batch = new Batch(nextSeq, writes);
-            if (!SendBatch(batch))
+            QueuedRun? run = queuedRuns.Count > 0 && queuedRuns[0].After <= count ? queuedRuns[0] : null;
+            count = run?.After ?? count;
+            var batch = new Batch(nextSeq, queued.GetRange(0, count), run is null ? null : RunJson(run, Track));
+            if ((batch.Writes.Count > 0 || batch.Run is not null) && !SendBatch(batch))
             {
                 return;
             }
 
             queued.RemoveRange(0, count);
-            unanswered.Add(batch);
-            nextSeq++;
+            if (run is not null)
+            {
+                queuedRuns.RemoveAt(0);
+            }
+
+            queuedRuns.ForEach(waiting => waiting.After -= count);
+            if (batch.Writes.Count > 0 || batch.Run is not null)
+            {
+                unanswered.Add(batch);
+                nextSeq++;
+            }
         }
     }
 
     /// <summary>
-    /// Sends one batch of writes on the player's track.
+    /// Sends one batch of writes on the player's track, with the run that ended after them.
     /// </summary>
     /// <param name="batch">The batch.</param>
     /// <returns>Whether it went out.</returns>
@@ -723,6 +744,11 @@ public sealed partial class StoryTrack : ITellingLock
         }
 
         writer.WriteEndArray();
+        if (batch.Run is { } run)
+        {
+            writer.WritePropertyName("run");
+            writer.WriteRawValue(run);
+        }
     });
 
     /// <summary>
@@ -766,6 +792,24 @@ public sealed partial class StoryTrack : ITellingLock
     }
 
     /// <summary>
+    /// Reads the world's story where its log starts: the track's keys with those the state names as
+    /// differing there.
+    /// </summary>
+    /// <param name="keys">The track's keys.</param>
+    /// <param name="frame">The state.</param>
+    /// <returns>Every key with its value where the log starts.</returns>
+    private static Dictionary<string, string> LogOf(IReadOnlyDictionary<string, string> keys, JsonElement frame)
+    {
+        var log = new Dictionary<string, string>(keys, StringComparer.Ordinal);
+        foreach ((string key, string value) in Pairs(frame, "log"))
+        {
+            log[key] = value;
+        }
+
+        return log;
+    }
+
+    /// <summary>
     /// Takes a whole track: the player stands on it now, every value waiting before is older, and
     /// the batches not answered go again, then the writes that waited.
     /// </summary>
@@ -790,7 +834,10 @@ public sealed partial class StoryTrack : ITellingLock
             : null;
         string why = Text(frame, "why");
         int? gate = OptionalInt(frame, "gate");
-        pendingState = new TrackState(why, track, Text(frame, "part"), gate, move, keys, chests, new HashSet<string>(ownPending.Keys, StringComparer.Ordinal));
+        pendingState = new TrackState(why, track, Text(frame, "part"), gate, move, keys, chests, new HashSet<string>(ownPending.Keys, StringComparer.Ordinal))
+        {
+            Log = frame.TryGetProperty("log", out JsonElement log) && log.ValueKind == JsonValueKind.Object ? LogOf(keys, frame) : null,
+        };
         pendingKeys.Clear();
         Synced = true;
         Syncing = false;
@@ -818,6 +865,7 @@ public sealed partial class StoryTrack : ITellingLock
         }
 
         host.Log($"story track: the relay placed the player on track {track} ({why}) at revision {TrackRev}, part {Part}{(gate is { } level ? $", gate {level}" : string.Empty)}, {keys.Count} key(s){(move is null ? string.Empty : $", moved from {move.From} to {move.To} by {move.By}")}");
+        TakeRunsState(track, Number(frame, "cursor"), Number(frame, "last"));
         Resend();
     }
 
@@ -936,6 +984,13 @@ public sealed partial class StoryTrack : ITellingLock
         foreach (StoryWrite write in writes)
         {
             Release(write.Key);
+        }
+
+        if (frame.TryGetProperty("run", out JsonElement run) && run.ValueKind == JsonValueKind.Object)
+        {
+            host.Log(run.TryGetProperty("n", out JsonElement kept) && kept.ValueKind == JsonValueKind.Number
+                ? $"story track: track {Track} keeps the run {Text(run, "id")} as entry {kept.GetInt64()}"
+                : $"story track: the run {Text(run, "id")} changed nothing of track {Track}, so nobody else gets it");
         }
 
         if (!frame.TryGetProperty("keys", out JsonElement keys) || keys.ValueKind != JsonValueKind.Object)
@@ -1118,7 +1173,7 @@ public sealed partial class StoryTrack : ITellingLock
     /// <param name="world">The summary.</param>
     /// <returns>It, read.</returns>
     private static WorldSummary SummaryOf(JsonElement world) =>
-        new(Number(world, "rev"), Text(world, "part"), Text(world, "route") is { Length: > 0 } route ? route : "none", Texts(world, "done"), Texts(world, "checkpoints"));
+        new(Number(world, "rev"), Text(world, "part"), Text(world, "route") is { Length: > 0 } route ? route : "none", Texts(world, "done"), Texts(world, "open"), Texts(world, "checkpoints"), Numbers(world, "start"));
 
     /// <summary>
     /// Reads an object of texts.
@@ -1152,6 +1207,17 @@ public sealed partial class StoryTrack : ITellingLock
         frame.TryGetProperty(name, out JsonElement found) && found.ValueKind == JsonValueKind.Array
             ? [.. found.EnumerateArray().Where(item => item.ValueKind == JsonValueKind.String).Select(item => item.GetString() ?? string.Empty)]
             : [];
+
+    /// <summary>
+    /// Reads a list of whole numbers.
+    /// </summary>
+    /// <param name="frame">The frame.</param>
+    /// <param name="name">The field.</param>
+    /// <returns>The numbers, <see langword="null"/> for none.</returns>
+    private static long[]? Numbers(JsonElement frame, string name) =>
+        frame.TryGetProperty(name, out JsonElement found) && found.ValueKind == JsonValueKind.Array
+            ? [.. found.EnumerateArray().Select(item => item.ValueKind == JsonValueKind.Number && item.TryGetInt64(out long number) ? number : 0)]
+            : null;
 
     /// <summary>
     /// Reads a field as text.
@@ -1193,7 +1259,8 @@ public sealed partial class StoryTrack : ITellingLock
     /// </summary>
     /// <param name="seq">Its number.</param>
     /// <param name="writes">Its writes.</param>
-    private sealed class Batch(long seq, List<StoryWrite> writes)
+    /// <param name="run">The JSON of the run entry that ends it, <see langword="null"/> for none.</param>
+    private sealed class Batch(long seq, List<StoryWrite> writes, string? run)
     {
         /// <summary>
         /// Gets its number.
@@ -1204,6 +1271,11 @@ public sealed partial class StoryTrack : ITellingLock
         /// Gets its writes.
         /// </summary>
         public List<StoryWrite> Writes { get; } = writes;
+
+        /// <summary>
+        /// Gets the JSON of the run entry that ends it, <see langword="null"/> for none.
+        /// </summary>
+        public string? Run { get; } = run;
 
         /// <summary>
         /// Gets or sets whether it went out over the connection open now.

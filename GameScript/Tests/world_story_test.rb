@@ -2,6 +2,8 @@
 #  world_story_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Checked that the Great Decision offers the routes the relay grants
+#                            - Checked that a run goes to the relay after its writes and that the track's runs reach the replay one at a time while the player is free
 #      Paulinchen  2026-10-28: Left the player's telling to the DLL's telling machine
 #                            - Let the DLL name whose ended telling the player's story events wait for
 #                            - Checked that a Classic world has the DLL fetch the story mapping
@@ -562,7 +564,7 @@ $game_variables[1141] = 1
 story.instance_variable_set(:@decision_roster, [1, 26])
 fake.post("story.refused", [["v1141", "route", "n0"]])
 $takes << keys_take([["v1141", "n0"], ["v1142", "n1"]], 7)
-tell_status(fake, "pending" => true, "world" => { "rev" => 7, "part" => "mr", "route" => "mr", "done" => [], "checkpoints" => ["1", "2", "3"] })
+tell_status(fake, "pending" => true, "world" => { "rev" => 7, "part" => "mr", "route" => "mr", "done" => [], "open" => ["mr"], "checkpoints" => ["1", "2", "3"] })
 $brought = []
 # Brings companions back as story_state.rbx does, noted in $brought.
 def MGQ_MpStoryState.bring(id); $brought << id; end
@@ -573,7 +575,7 @@ check("the world's route comes, the companions the player's own decision took aw
 # The world going back to the Great Decision from the route the player is on.
 $notices.clear
 $setups = []
-world_back = { "rev" => 8, "part" => "3", "route" => "none", "done" => ["mr"], "checkpoints" => ["1", "2", "3", "mr"] }
+world_back = { "rev" => 8, "part" => "3", "route" => "none", "done" => ["mr"], "open" => ["ad"], "checkpoints" => ["1", "2", "3", "mr"] }
 tell_status(fake, "world" => world_back)
 frames(1)
 $takes << keys_take([["v1142", "n0"], ["v1001", "n39"], ["s7097", "1"]], 8)
@@ -594,7 +596,7 @@ check("whose own half plays once the player is free: the Final Chapter's reset, 
       ($setups.last || []).map { |entry| entry.code }, [117, 122, 122, 201, 0])
 check("after taking the player wholly out of a scene of their own, such as their route's ending walked in a temporary party",
       $left, [[true, $setups.size - 1]])
-check("the Great Decision then offers the routes left", story.decision_routes, [0])
+check("the Great Decision then offers the routes the relay grants", story.decision_routes, [0])
 
 # Event commands may move the world's story on when they set a value that tells how far it is or a
 # variable the mapping keeps going only up, themselves or in a common event they call.
@@ -613,7 +615,7 @@ frames(story::STATE_FRAMES + 2)
 check("the relay's push fetches the shared companions, which the world's story names", story.world["comps"], [77, 80])
 $game_switches[7097] = false
 
-# The Great Decision's choice in the game's own event offers only the routes the world may still take.
+# The Great Decision's choice in the game's own event offers only the routes the relay grants.
 labels = ["Side with the Dark Goddess", "Side with the Goddess Ilias", "Search for a third way"]
 decision = [c(101, ["", 0, 0, 2]), c(102, [labels, 0]), c(402, [0, labels[0]]), c(122, [1002, 1002, 0, 0, 111], 1), c(0, [], 1),
             c(402, [1, labels[1]]), c(122, [1002, 1002, 0, 0, 112], 1), c(0, [], 1), c(402, [2, labels[2]]), c(119, ["decision"], 1), c(0, [], 1), c(404), c(0)]
@@ -622,31 +624,28 @@ interpreter = Game_Interpreter.new
 # Shows the choice of a fresh Great Decision to the hook, as the world tells its routes.
 #
 # @param interpreter [Game_Interpreter] The interpreter that runs the decision.
-# @param world [Hash] The world's route and finished routes.
+# @param world [Hash] The routes the relay grants, under "open".
 # @return [Array<RPG::EventCommand>] The interpreter's commands afterwards.
 def offered(interpreter, world)
   interpreter.setup($data_common_events[380].list)
   interpreter.instance_variable_set(:@index, 1)
-  MGQ_MpWorldStory.status = story_status("world" => { "rev" => 1, "part" => "3", "checkpoints" => [] }.merge(world))
+  MGQ_MpWorldStory.status = story_status("world" => { "rev" => 1, "part" => "3", "route" => "none", "done" => [], "checkpoints" => [] }.merge(world))
   MGQ_MpWorldStory.before_command(interpreter)
   interpreter.list
 end
-list = offered(interpreter, "route" => "none", "done" => ["ad"])
-check("after the Angelic Dominion only the Goddess Ilias's side is offered",
+list = offered(interpreter, "open" => ["mr"])
+check("a route granted alone is the only side offered",
       [list[1].parameters[0], list.select { |entry| entry.code == 402 }.map { |entry| entry.parameters }, list.count { |entry| entry.code == 122 }],
       [[labels[1]], [[0, labels[1]]], 1])
 check("its branch plays as before", list.find { |entry| entry.code == 122 }.parameters[4], 112)
 check("the game's own commands stay as they are", $data_common_events[380].list.size, decision.size)
-list = offered(interpreter, "route" => "none", "done" => ["ad", "mr"])
-check("after both routes only the third way", [list[1].parameters[0], list.select { |entry| entry.code == 402 }.map { |entry| entry.parameters[0] }], [[labels[2]], [0]])
-list = offered(interpreter, "route" => "none", "done" => [])
-check("before any route the third way is left out", list[1].parameters[0], labels[0, 2])
-list = offered(interpreter, "route" => "mr", "done" => [])
-check("a route the world locked is the only one", list[1].parameters[0], [labels[1]])
-list = offered(interpreter, "route" => "ad", "done" => ["ad"])
-check("but not once the world finished it, before its return", list[1].parameters[0], [labels[1]])
+list = offered(interpreter, "open" => ["chaos"])
+check("the third way alone", [list[1].parameters[0], list.select { |entry| entry.code == 402 }.map { |entry| entry.parameters[0] }], [[labels[2]], [0]])
+list = offered(interpreter, "open" => ["ad", "mr"])
+check("a route the relay does not grant is left out", list[1].parameters[0], labels[0, 2])
+check("every route granted offers the game's own choice", offered(interpreter, "open" => ["ad", "mr", "chaos"]).equal?($data_common_events[380].list), true)
 $raid = false
-list = offered(interpreter, "route" => "none", "done" => ["ad"])
+list = offered(interpreter, "open" => ["mr"])
 check("a Classic world offers the game's own choice", list.equal?($data_common_events[380].list), true)
 $raid = true
 
@@ -734,6 +733,30 @@ frames(1)
 check("a loaded save or a new game asks the relay to place the player again, a new game anew",
       staged("story.enter").map { |entry| entry["fresh"] }, [false, true])
 check("and their story events wait for the world's story again", story.awaits_world?, true)
+
+# A run of the player's own goes to the relay after the writes recorded before it, and the runs of
+# their track reach the replay one at a time, only while the player stands free.
+# Stands in for the replay: the runs handed to it wait in $replay_waiting, and $free tells whether
+# the player stands free.
+module MGQ_MpStoryReplay
+  def self.waiting; $replay_waiting; end
+  def self.free?; $free; end
+  def self.receive(entry); $replay_waiting << entry; end
+end
+$replay_waiting = []
+$free = false
+$walks = []
+fake.answer("story.hand_entry") { |entry| $story_staged << ["story.hand_entry", entry]; nil }
+fake.answer("story.stream") { |request| $walks << request; request["free"] && request["waiting"].empty? ? { "id" => "gift" } : nil }
+$story_staged.clear
+$game_variables[1001] = 43
+check("a run goes in a Raid World", story.hand_entry("id" => "mine"), true)
+frames(1)
+check("after the writes recorded before it", $story_staged.map { |topic, _| topic } & ["story.writes", "story.hand_entry"], ["story.writes", "story.hand_entry"])
+check("nothing reaches the replay while the player is not free", [$replay_waiting, $walks.last["free"]], [[], false])
+$free = true
+frames(2)
+check("once free, the next run reaches the replay, and none more while it waits there", [$replay_waiting, $walks.last["waiting"]], [[{ "id" => "gift" }], ["gift"]])
 
 # Closing the world: the frame's writes go to the DLL ahead of the close, as a world left for the
 # title screen closes its room before the frame ends.

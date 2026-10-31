@@ -2,6 +2,10 @@
 #  engine.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Read a world chest without its chest flags, as the C# engine does
+#                            - Played the recruit page of a companion the player missed once a route finished, as the C# engine does
+#                            - Gave from the rows only the history the world's story was past where its log starts, as the C# engine does
+#                            - Played a world chest and a Makina by level in the player's game, as the C# engine does
 #      Paulinchen  2026-10-28: Created
 #
 #----------------------------------------------------------------
@@ -79,7 +83,7 @@ module CatchupEngine
   Join = Struct.new(:actor, :persona, :site, :part, :step, :side, :marks, :gate, :rule, :index, :ran)
   Removal = Struct.new(:actor, :persona, :site, :part, :step, :side, :marks, :first, :index)
   KeyItem = Struct.new(:item, :amount, :site, :part, :step, :side, :marks, :ran)
-  Chest = Struct.new(:key, :items, :part, :step, :flags)
+  Chest = Struct.new(:key, :items, :part, :step)
   Reward = Struct.new(:kind, :id, :amount, :site, :part, :step, :side, :marks, :ran)
   Lesson = Struct.new(:actor, :skill, :site, :part, :step, :side, :marks, :ran)
   ClassLevel = Struct.new(:actor, :class_id, :level, :site, :part, :step, :side, :marks, :ran)
@@ -128,7 +132,7 @@ module CatchupEngine
     end.compact
     t.chests = rows.call("chests").map do |row|
       key = self_switch(row["key"])
-      key && ids?(row["items"]) && !row["items"].empty? && ids?(row["flags"]) && (row["step"].nil? || row["step"].is_a?(Integer)) ? Chest.new(key, row["items"], row["part"], row["step"], row["flags"]) : nil
+      key && ids?(row["items"]) && !row["items"].empty? && (row["step"].nil? || row["step"].is_a?(Integer)) ? Chest.new(key, row["items"], row["part"], row["step"]) : nil
     end.compact
     t.rewards = rows.call("rewards").map do |row|
       kind = REWARD_KINDS[row["kind"]]
@@ -251,7 +255,7 @@ module CatchupEngine
       end
     end
     t.settings.each { |row| variables << row.id unless row.kind == :encounters }
-    t.chests.each { |row| selves << row.key; switches.concat(row.flags) }
+    t.chests.each { |row| selves << row.key }
     t.counts.each do |count|
       variables << count["variable"]
       variables << count["since"][0] if count["since"]
@@ -363,6 +367,7 @@ module CatchupEngine
       @sharing = request["sharing"] || "off"
       @starts = {}
       Array(request["starts"]).each { |id, level| @starts[id] = level }
+      @log = CatchupEngine.story_of(request["log"])
       @actions = []
       @looking = true
       new_look
@@ -389,6 +394,7 @@ module CatchupEngine
         answer["sharable"] = note_roster
         answer["orbs"] = @mode == "world" && orbs_due?
         check_makina
+        missed_companions
         check_found_items
         check_counts
         lift_warp_ban
@@ -740,6 +746,13 @@ module CatchupEngine
       passed?(row, story) || (told && passed?(row, told, story)) ? true : false
     end
 
+    # @param row [Struct] A row with a place.
+    # @return [Boolean] Whether its history lies before the world's log, the only history whose rows
+    #   give what they give: the world's story was past it where its log starts.
+    def before_log?(row)
+      !@log || passed?(row, @log, @own)
+    end
+
     # @return [Boolean] Whether a story laid over the player's gives what the row gives.
     def carries?(row)
       row.ran != false
@@ -807,7 +820,7 @@ module CatchupEngine
       @t.rewards.each do |row|
         next unless row.kind == :skill && carries?(row)
         next if waits[key_of("g", row)]
-        next unless passed_any?(row, story, told)
+        next unless before_log?(row) && passed_any?(row, story, told)
 
         @actions << ["learn", row.id, key_of("g", row)]
       end
@@ -841,7 +854,7 @@ module CatchupEngine
     def missing_lessons(story, told)
       @t.lessons.each do |row|
         next unless carries?(row) && in_roster?(row.actor)
-        next unless passed_any?(row, story, told)
+        next unless before_log?(row) && passed_any?(row, story, told)
 
         @actions << ["teach", row.actor, row.skill]
       end
@@ -852,7 +865,7 @@ module CatchupEngine
     def missing_class_levels(story, told)
       @t.class_levels.each do |row|
         next unless carries?(row) && (row.actor == HERO || in_roster?(row.actor))
-        next unless passed_any?(row, story, told)
+        next unless before_log?(row) && passed_any?(row, story, told)
 
         @actions << ["class", row.actor, row.class_id, row.level]
       end
@@ -862,7 +875,7 @@ module CatchupEngine
     def missing_companions(story, told, done)
       story_joins.each do |row|
         key = key_of("j", row)
-        next unless done[key] == true && row.part && carries?(row) && !in_roster?(row.actor) && passed_any?(row, story, told)
+        next unless done[key] == true && row.part && carries?(row) && !in_roster?(row.actor) && before_log?(row) && passed_any?(row, story, told)
         next if taken_away_since?(row, story, told)
 
         done[key] = "c"
@@ -896,7 +909,7 @@ module CatchupEngine
       earlier = Hash.new { |hash, key| hash[key] = [] }
       @t.settings.each do |row|
         next if ROUTES.include?(row.part) && row.part != part
-        next unless passed_any?(row, story, told)
+        next unless before_log?(row) && passed_any?(row, story, told)
 
         key = [row.kind, row.id]
         earlier[key] << latest[key].value if latest[key]
@@ -910,9 +923,13 @@ module CatchupEngine
       end
     end
 
-    # Keeps the vehicles to the story: which of them a row behind the story gave.
+    # Keeps the vehicles to the story: true where a row behind the story before the world's log gave
+    # one, nil where only a row the log holds did, whose replay places it, false where none did.
     def check_vehicles(story, told)
-      given = (0..2).map { |id| @t.vehicles.any? { |row| row.vehicle == id && passed_any?(row, story, told) } }
+      given = (0..2).map do |id|
+        passed = @t.vehicles.select { |row| row.vehicle == id && passed_any?(row, story, told) }
+        passed.any? { |row| before_log?(row) } ? true : passed.empty? ? false : nil
+      end
       @actions << ["vehicles", given]
     end
 
@@ -930,7 +947,7 @@ module CatchupEngine
         next if done[key] || (carried && !carries?(row)) || !passed?(row, story)
 
         done[key] = true
-        next unless carried || unclaimed_prize?(row)
+        next unless (carried && before_log?(row)) || unclaimed_prize?(row)
 
         if waits
           waits[key] = ledger["capped"]
@@ -966,7 +983,7 @@ module CatchupEngine
         key = key_of("a", row)
         next if done[key] || (carried && !carries?(row)) || !passed?(row, story)
 
-        done[key] = carried ? [row.gate.to_i, capped.to_i].max : true
+        done[key] = carried && before_log?(row) ? [row.gate.to_i, capped.to_i].max : true
       end
       @t.actor_changes.each do |row|
         key = key_of("a", row)
@@ -990,7 +1007,7 @@ module CatchupEngine
         next unless mine || (told && passed?(row, told, story))
 
         done[key] = true
-        give("i", row.item, row.amount, key) if row.amount < 0 && carries?(row) && (carried || !mine)
+        give("i", row.item, row.amount, key) if row.amount < 0 && carries?(row) && (carried || !mine) && before_log?(row)
       end
       @t.chests.each do |row|
         key = key_of("c", row)
@@ -1000,11 +1017,9 @@ module CatchupEngine
         next unless mine || (told && told[2][row.key])
 
         done[key] = true
-        next unless carried || !mine
+        next unless (carried || !mine) && (!@log || @log[2][row.key])
 
-        row.items.each { |id| give("i", id, 1, key) }
-        turn_on_flags(row, key)
-        open_chest(row.key) unless mine
+        @actions << ["replay", { "chest" => "ss#{row.key.join('.')}" }, key]
       end
       restock_key_items(story, told)
       restock_unlock_items(story, told)
@@ -1014,7 +1029,7 @@ module CatchupEngine
     def restock_key_items(story, told)
       owed = {}
       @t.key_items.each do |row|
-        next unless row.amount > 0 && passed_any?(row, story, told)
+        next unless row.amount > 0 && before_log?(row) && passed_any?(row, story, told)
         next if taken_since?(row, story, story) || (told && taken_since?(row, told, story))
 
         owed[row.item] = [owed[row.item].to_i, row.amount].max
@@ -1029,7 +1044,7 @@ module CatchupEngine
     # Hands out every item unlocking a job or race a reward row gives behind its own self switch.
     def restock_unlock_items(story, told)
       unlock_rows.each do |row|
-        next unless passed_any?(row, story, told)
+        next unless before_log?(row) && passed_any?(row, story, told)
 
         key = "i#{row.id}"
         give("i", row.id, 1, "#{key_of('g', row)}:owed") if @items.key?(key) && @items[key] == 0
@@ -1057,7 +1072,7 @@ module CatchupEngine
         key = key_of("g", row)
         next unless row.kind != :skill && notes["done"][key] && !notes["waits"].key?(key) && carries?(row)
         next if TRADED_REWARDS.include?([row.kind, row.id])
-        next unless row.site.to_s.start_with?("map:") && passed?(row, story)
+        next unless row.site.to_s.start_with?("map:") && before_log?(row) && passed?(row, story)
 
         item = "#{row.kind}#{row.id}"
         next if !@items.key?(item) || (row.kind == :i && @unlock_ids.include?(row.id)) || held?(item)
@@ -1139,23 +1154,6 @@ module CatchupEngine
       story_now[1][id] = value
     end
 
-    # Turns on the chest flags a world-wide chest turns on.
-    def turn_on_flags(row, key)
-      Array(row.flags).each do |id|
-        next if story_now[0][id]
-
-        @actions << ["switch", id, true]
-        story_now[0][id] = true
-        log("turned on s#{id} of #{key}")
-      end
-    end
-
-    # Shows a world-wide chest the world opened as open in the player's story.
-    def open_chest(key)
-      @actions << ["open", key]
-      story_now[2][key] = true
-    end
-
     # Sets each count to the switches it counts.
     def check_counts
       @t.counts.each do |count|
@@ -1208,7 +1206,7 @@ module CatchupEngine
         if state.nil?
           next if carried && !carries?(row)
           next unless passed?(row, story)
-          next done[key] = true if row.part.nil?
+          next done[key] = true if row.part.nil? || (carried && !before_log?(row))
 
           fresh << row
         elsif state != true && removed[row.actor]
@@ -1247,7 +1245,7 @@ module CatchupEngine
       return unless story_now[1][PLAYTHROUGH].to_i == 0
 
       removed.each do |actor, rows|
-        lasting = rows.select { |row| row.first }
+        lasting = rows.select { |row| row.first && before_log?(row) }
         next if lasting.empty? || actor == HERO || !in_roster?(actor)
         next if fresh.any? { |row| row.actor == actor && lasting.none? { |removal| after?(removal, row) } }
 
@@ -1423,15 +1421,13 @@ module CatchupEngine
       @starts[id] || 1
     end
 
-    # Hands out every Makina found and reached, takes back extra copies.
+    # Plays the chest of every Makina found and reached that the player lacks in their game.
     def check_makina
       @t.makina.each do |row|
         key = "i#{row.item}"
-        next unless @items.key?(key) && !trim_copies(row.item)
-        next unless @items[key] == 0 && found?(row.item) && reached?(row.level)
+        next unless @items.key?(key) && @items[key] == 0 && found?(row.item) && reached?(row.level)
 
-        @actions << ["makina", row.item, "makina:#{row.item} at level #{row.level}"]
-        @items[key] += 1
+        @actions << ["replay", { "site" => row.site }, "makina:#{row.item} at level #{row.level}"]
       end
     end
 
@@ -1458,7 +1454,7 @@ module CatchupEngine
       true
     end
 
-    # Hands out every found item unlocking a job or race the player lacks.
+    # Hands out every found item unlocking a job or race the player lacks, and keeps one of each.
     def check_found_items
       found_ids.each do |id|
         key = "i#{id}"
@@ -1474,6 +1470,31 @@ module CatchupEngine
       stories << @told[2] if @told
       keys = stories.flat_map { |selfs| selfs.keys.select { |key| selfs[key] && key[0] == FOUND_MAP && key[2] == FOUND_LETTER } }
       keys.map { |key| key[1] }.uniq
+    end
+
+    # Plays the recruit page of every story companion the roster lacks once the player's story
+    # finished a route, at the join's gate, once per companion, unless the world shares none.
+    def missed_companions
+      story = story_now
+      return if @sharing.to_s == "off" || ROUTES.none? { |route| cleared?(route, story) }
+
+      done = ledger["done"]
+      story_joins.each do |row|
+        key = "m:#{row.actor}"
+        next if done[key] || in_roster?(row.actor) || !past_by_route?(row, story)
+        next if taken_away_since?(row, story, nil) || !reached?(row.gate)
+
+        done[key] = true
+        @actions << ["replay", { "site" => row.site }, key]
+      end
+    end
+
+    # @return [Boolean] Whether a finished route carried the story past the row's part, whatever its
+    #   marks, on the player's own side.
+    def past_by_route?(row, own)
+      return false if row.part.nil? || (RANKS[row.part] == RANKS["ad"] && !cleared?(row.part, own))
+
+      row.side.nil? || row.side == side_for(row, own)
     end
 
     # Follows a story written into the player's.

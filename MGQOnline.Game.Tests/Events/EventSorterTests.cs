@@ -2,6 +2,7 @@
 //  EventSorterTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Checked that a weapon's pedestal that hands out a medal by script is a chest
 //      Paulinchen  2026-10-28: Sorted the game cases and the tiny game from the events database
 //                            - Classified the hand-made lists
 //                            - Sorted over event sources
@@ -72,6 +73,22 @@ public sealed class EventSorterTests
         Assert.Equal(EventKind.Own, sorter.KindOf(battlefuck, state));
         Assert.Equal(EventKind.Story, sorter.KindOf(other, state));
         Assert.Equal(EventKind.Story, sorter.KindOf(questStep, state));
+    }
+
+    /// <summary>
+    /// Asserts that a weapon's pedestal that hands out a medal by script is a chest.
+    /// </summary>
+    [Fact]
+    public void KindOf_SortsAWeaponPedestalThatHandsOutAMedalAsAChest()
+    {
+        var sorter = new EventSorter(EventDatabases.SourceOf(new TinyGame()));
+        EventCommand[] pedestal = CommandClassifier.Classify(
+        [
+            Command(EventCodes.ShowText, 0, "", 0, 0, 2), Command(EventCodes.ChangeWeapons, 0, 4168, 0, 0, 1),
+            Command(EventCodes.ControlSelfSwitch, 0, "A", 0), Command(EventCodes.Script, 0, "gain_medal(104)"),
+        ]);
+
+        Assert.Equal(EventKind.Chest, sorter.KindOf(pedestal, new QuietState()));
     }
 
     /// <summary>

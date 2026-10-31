@@ -2,6 +2,7 @@
 //  server.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Kept the run entries of the story tracks in memory and started the tracks from the keyed story
 //      Paulinchen  2026-10-30: Handed the request's method to the update gate
 //      Paulinchen  2026-10-28: Filled the story tables that hold no rows yet from the seed files at start
 //      Paulinchen  2026-10-23: Kept the story mapping, answered its admin routes and handed it to games
@@ -397,7 +398,7 @@ export function memoryStoryStores() {
  */
 export function memoryTrackStores() {
   const worlds = new Map();
-  const worldOf = (id) => worlds.get(id) ?? worlds.set(id, { meta: undefined, keys: new Map(), players: new Map(), checkpoints: new Map() }).get(id);
+  const worldOf = (id) => worlds.get(id) ?? worlds.set(id, { meta: undefined, keys: new Map(), runs: new Map(), players: new Map(), checkpoints: new Map() }).get(id);
 
   return (id) => {
     const keysOf = (track) => worldOf(id).keys.get(track) ?? worldOf(id).keys.set(track, new Map()).get(track);
@@ -405,9 +406,10 @@ export function memoryTrackStores() {
     return {
       getMeta: async () => structuredClone(worldOf(id).meta),
       getKeys: async (track) => [...keysOf(track)],
+      getRuns: async (track) => structuredClone(worldOf(id).runs.get(track) ?? []),
       getPlayer: async (player) => structuredClone(worldOf(id).players.get(player)),
       getCheckpoint: async (part) => structuredClone(worldOf(id).checkpoints.get(part)),
-      commit: async ({ meta, keys = [], players = [], checkpoint }) => {
+      commit: async ({ meta, keys = [], runs = [], players = [], checkpoint }) => {
         const world = worldOf(id);
         world.meta = meta ? structuredClone(meta) : world.meta;
 
@@ -417,6 +419,11 @@ export function memoryTrackStores() {
           }
 
           set.forEach(([key, value]) => keysOf(track).set(key, value));
+        }
+
+        for (const { track, drop, add } of runs) {
+          const kept = drop ? [] : (world.runs.get(track) ?? []);
+          world.runs.set(track, [...kept, ...structuredClone(add)]);
         }
 
         players.forEach((record) => world.players.set(record.player, structuredClone(record)));
@@ -1509,6 +1516,7 @@ export function createRelay({
           const kept = await storyOf(id).kept();
           return { pinOf: (key) => pinOf(kept, key), keys: Object.keys(kept?.pinned ?? {}) };
         },
+        story: () => storyOf(id).keys(),
         send: (player, text) => tellWorld(id, text, (peer) => peer.tracks && peer.record.player === player),
       }));
     }

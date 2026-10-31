@@ -2,6 +2,7 @@
 //  GameSource.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Read the game's scripts
 //      Paulinchen  2026-10-30: Read whether each entry holds anything instead of whether it has a name
 //      Paulinchen  2026-10-28: Read the entries of the named parts and the names of switches and variables
 //                            - Created
@@ -30,6 +31,11 @@ internal sealed class GameSource(IGameDataFiles files)
     /// back, which the build never reads but notes.
     /// </summary>
     public const string DataExPath = "Data/DataEx.rvdata2";
+
+    /// <summary>
+    /// Where the game keeps its scripts.
+    /// </summary>
+    public const string ScriptsPath = "Data/Scripts.rvdata2";
 
     /// <summary>
     /// The named parts of the database, in the order of the game's fingerprint.
@@ -150,6 +156,31 @@ internal sealed class GameSource(IGameDataFiles files)
         }
 
         return entries;
+    }
+
+    /// <summary>
+    /// Reads the game's scripts, each inflated as one text.
+    /// </summary>
+    /// <returns>The scripts in their order; none when the game holds no scripts' file.</returns>
+    public IReadOnlyList<string> ReadScripts()
+    {
+        if (Read(ScriptsPath) is not RubyArray scripts)
+        {
+            return [];
+        }
+
+        var texts = new List<string>();
+        foreach (RubyValue script in scripts)
+        {
+            if (script is RubyArray { Count: >= 3 } fields && fields[2] is RubyString packed)
+            {
+                using var inflated = new System.IO.Compression.ZLibStream(new System.IO.MemoryStream(packed.Bytes.ToArray()), System.IO.Compression.CompressionMode.Decompress);
+                using var text = new System.IO.StreamReader(inflated, System.Text.Encoding.UTF8);
+                texts.Add(text.ReadToEnd().Replace("\r\n", "\n", StringComparison.Ordinal));
+            }
+        }
+
+        return texts;
     }
 
     /// <summary>

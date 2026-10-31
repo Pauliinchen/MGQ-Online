@@ -2,6 +2,7 @@
 #  core_game_access.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Named the interpreter a map event or common event holds and the map's parallel common events
 #      Paulinchen  2026-10-30: Named the features and effects a database entry's file holds
 #      Paulinchen  2026-10-23: Named the world's story a save built on
 #                            - Named whether a vehicle is driven
@@ -142,6 +143,11 @@ module MGQ_MpGame
     :depth => :@depth,
     :event_id => :@event_id,
     :map_id => :@map_id,
+
+    # Game_Event and Game_CommonEvent: the interpreter of a parallel page or common event; Game_Map:
+    # its parallel common events.
+    :interpreter => :@interpreter,
+    :common_events => :@common_events,
 
     # $game_system: the trades applied in this save, a field of the mod's own that its saves keep.
     :trades => :@mgq_mp_trades,

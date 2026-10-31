@@ -1,0 +1,374 @@
+//----------------------------------------------------------------
+//  RunLog.cs
+//
+//  Changelog:
+//      Paulinchen  2026-10-31: Kept the cursor of each stream of a track
+//                            - Created
+//
+//----------------------------------------------------------------
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using MGQOnline.Bridge.Ruby;
+
+namespace MGQOnline.Game.Story;
+
+/// <summary>
+/// One command that writes a range of keys back at once: Control Switches or Control Variables
+/// over more than one id, or a reset of self switches by map.
+/// </summary>
+/// <param name="Kind">What it writes.</param>
+/// <param name="From">The first switch or variable, or the first map whose self switches it writes.</param>
+/// <param name="To">The last one.</param>
+/// <param name="Value">The value it writes, as the tracks keep it.</param>
+public sealed record RunReset(StoryKeyKind Kind, int From, int To, string Value)
+{
+    /// <summary>
+    /// Tells whether the reset writes a key.
+    /// </summary>
+    /// <param name="key">The key.</param>
+    /// <returns>Whether it does.</returns>
+    public bool Covers(StoryKey key) => key.Kind == Kind && key.Id >= From && key.Id <= To;
+
+    /// <summary>
+    /// Tells whether the reset moves a key back to a value.
+    /// </summary>
+    /// <param name="key">The key.</param>
+    /// <param name="before">The value.</param>
+    /// <returns>Whether it writes the key with that value.</returns>
+    public bool MovesBack(StoryKey key, string before) => Covers(key) && Value == before;
+}
+
+/// <summary>
+/// One step of a save's log: a run's site and the party and world keys it changed, each with its
+/// value before the step, and the entry that claimed it in each stream.
+/// </summary>
+/// <param name="Site">Where the run started; a replay's is its entry's.</param>
+/// <param name="Before">The keys with their values before the step.</param>
+/// <param name="Claims">The entry that claimed it by stream.</param>
+public sealed record RunStep(ReplaySite Site, IReadOnlyDictionary<StoryKey, string> Before, Dictionary<string, string> Claims);
+
+/// <summary>
+/// A run handed to the player that waits for one of their own things.
+/// </summary>
+/// <param name="Entry">The run's entry.</param>
+/// <param name="Reads">The receiver's own things the replay read, each with the value it read.</param>
+public sealed record PendingRun(ReplayEntry Entry, IReadOnlyDictionary<string, string> Reads);
+
+/// <summary>
+/// A save's log of the steps its game took, its own runs and its replays, and of the runs handed
+/// to it that wait to be taken or wait for one of its own things ("Issue 73 chest effects.md",
+/// "Words used by every rule" and rule 2).
+/// </summary>
+/// <remarks>
+/// A step is matched by site and occurrence, never by the keys' current values, since later runs
+/// rewrite those keys; only a reset ends it.
+/// </remarks>
+public sealed class RunLog
+{
+    /// <summary>
+    /// The version of the shape the save keeps, which a log of another reads as none.
+    /// </summary>
+    public const int Version = 2;
+
+    /// <summary>
+    /// The steps, oldest first.
+    /// </summary>
+    private readonly List<RunStep> _steps = [];
+
+    /// <summary>
+    /// The runs that wait, oldest first.
+    /// </summary>
+    private readonly List<PendingRun> _pending = [];
+
+    /// <summary>
+    /// The runs handed to the player that wait to be taken, oldest first.
+    /// </summary>
+    private readonly List<ReplayEntry> _queued = [];
+
+    /// <summary>
+    /// The number of the last entry of a track the log took, by the track's stream.
+    /// </summary>
+    private readonly Dictionary<string, long> _cursors = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Initializes a log.
+    /// </summary>
+    /// <param name="start">The save's start place, see <see cref="StartPlace"/>.</param>
+    private RunLog(RunPlace? start) => StartPlace = start;
+
+    /// <summary>
+    /// Gets the save's place at its first load with a log, which stands for everything it played
+    /// before; <see langword="null"/> for none known.
+    /// </summary>
+    public RunPlace? StartPlace { get; private set; }
+
+    /// <summary>
+    /// Gets the steps that stand, oldest first.
+    /// </summary>
+    public IReadOnlyList<RunStep> Steps => _steps;
+
+    /// <summary>
+    /// Gets the runs that wait, oldest first.
+    /// </summary>
+    public IReadOnlyList<PendingRun> Pending => _pending;
+
+    /// <summary>
+    /// Gets the runs handed to the player that wait to be taken, oldest first.
+    /// </summary>
+    public IReadOnlyList<ReplayEntry> Queued => _queued;
+
+    /// <summary>
+    /// Gets the number of the last entry of a track the log took, by the track's stream: where the
+    /// track hands this save its entries from.
+    /// </summary>
+    public IReadOnlyDictionary<string, long> Cursors => _cursors;
+
+    /// <summary>
+    /// Begins the empty log of a save at its first load.
+    /// </summary>
+    /// <param name="start">The save's place then, <see langword="null"/> for none known.</param>
+    /// <returns>The log.</returns>
+    public static RunLog Begin(RunPlace? start) => new(start);
+
+    /// <summary>
+    /// Adds the step of a run of the player's own game. A run that waits for the player at the same
+    /// site claims it, so opening a chest that waits makes its run done.
+    /// </summary>
+    /// <param name="site">Where the run started.</param>
+    /// <param name="before">The party and world keys it changed, each with its value before.</param>
+    /// <param name="stream">The stream its entry is in already, <see langword="null"/> while none is.</param>
+    /// <param name="entryId">Its entry's id, <see langword="null"/> while none is in a stream.</param>
+    public void Ran(ReplaySite site, IReadOnlyDictionary<StoryKey, string> before, string? stream, string? entryId)
+    {
+        var step = new RunStep(site, new Dictionary<StoryKey, string>(before), new Dictionary<string, string>(StringComparer.Ordinal));
+        if (stream is not null && entryId is not null)
+        {
+            step.Claims[stream] = entryId;
+        }
+
+        _steps.Add(step);
+        foreach (PendingRun waiting in _pending.Where(run => run.Entry.Site == site).ToList())
+        {
+            if (step.Claims.TryAdd(waiting.Entry.Stream, waiting.Entry.Id))
+            {
+                _pending.Remove(waiting);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Decides whether a run handed to the player is done already, and takes the step that makes it
+    /// so: one this entry claimed before, any entry behind the start place, or the first standing
+    /// step of its site no entry of its stream claimed yet.
+    /// </summary>
+    /// <param name="entry">The run's entry.</param>
+    /// <returns>Whether it is done, so nothing happens.</returns>
+    public bool Claims(ReplayEntry entry)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+        if (_steps.Exists(step => step.Claims.TryGetValue(entry.Stream, out string? id) && id == entry.Id)
+            || (StartPlace is not null && entry.Place is not null && entry.Place.Behind(StartPlace)))
+        {
+            return true;
+        }
+
+        RunStep? standing = _steps.Find(step => step.Site == entry.Site && !step.Claims.ContainsKey(entry.Stream));
+        standing?.Claims.Add(entry.Stream, entry.Id);
+        return standing is not null;
+    }
+
+    /// <summary>
+    /// Adds the step of a replay, claimed by its entry.
+    /// </summary>
+    /// <param name="entry">The entry replayed.</param>
+    /// <param name="before">The step's keys with the values the replay found.</param>
+    public void Replayed(ReplayEntry entry, IReadOnlyDictionary<StoryKey, string> before)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+        _pending.RemoveAll(run => run.Entry.Id == entry.Id);
+        _steps.Add(new RunStep(entry.Site, new Dictionary<StoryKey, string>(before), new Dictionary<string, string>(StringComparer.Ordinal) { [entry.Stream] = entry.Id }));
+    }
+
+    /// <summary>
+    /// Keeps a run handed to the player until it is taken, once, and an entry of a track as the last
+    /// its stream handed.
+    /// </summary>
+    /// <param name="entry">The run's entry.</param>
+    public void Queue(ReplayEntry entry)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+        if (!_queued.Exists(queued => queued.Id == entry.Id))
+        {
+            _queued.Add(entry);
+        }
+
+        if (entry.Number is { } number && number > _cursors.GetValueOrDefault(entry.Stream))
+        {
+            _cursors[entry.Stream] = number;
+        }
+    }
+
+    /// <summary>
+    /// Drops a run from the queue once it was taken: done, waiting or replayed.
+    /// </summary>
+    /// <param name="entry">The run's entry.</param>
+    public void Taken(ReplayEntry entry)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+        _queued.RemoveAll(queued => queued.Id == entry.Id);
+    }
+
+    /// <summary>
+    /// Keeps a run that waits for one of the player's own things.
+    /// </summary>
+    /// <param name="entry">The run's entry.</param>
+    /// <param name="reads">The player's own things the replay read, each with the value it read.</param>
+    public void Pend(ReplayEntry entry, IReadOnlyDictionary<string, string> reads)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+        _pending.RemoveAll(run => run.Entry.Id == entry.Id);
+        _pending.Add(new PendingRun(entry, new Dictionary<string, string>(reads, StringComparer.Ordinal)));
+    }
+
+    /// <summary>
+    /// Lists the player's own things the waiting runs read.
+    /// </summary>
+    /// <returns>Their names, each once, in order.</returns>
+    public IReadOnlyList<string> PendingReads() => [.. _pending.SelectMany(run => run.Reads.Keys).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)];
+
+    /// <summary>
+    /// Puts the waiting runs one of whose reads changed first in the queue, to be tried again.
+    /// </summary>
+    /// <param name="current">Reads a thing's value now, <see langword="null"/> for none known.</param>
+    /// <returns>Their entries, oldest first.</returns>
+    public IReadOnlyList<ReplayEntry> Due(Func<string, string?> current)
+    {
+        ArgumentNullException.ThrowIfNull(current);
+        List<PendingRun> due = _pending.FindAll(run => run.Reads.Any(read => current(read.Key) is { } now && now != read.Value));
+        _pending.RemoveAll(due.Contains);
+        ReplayEntry[] entries = [.. due.Select(run => run.Entry)];
+        _queued.RemoveAll(queued => Array.Exists(entries, entry => entry.Id == queued.Id));
+        _queued.InsertRange(0, entries);
+        return entries;
+    }
+
+    /// <summary>
+    /// Takes a reset in a run of the save: it ends each step and drops each waiting run whose keys it
+    /// moves back, and a story marker it moves back lowers the start place.
+    /// </summary>
+    /// <param name="reset">The reset.</param>
+    public void Reset(RunReset reset)
+    {
+        ArgumentNullException.ThrowIfNull(reset);
+        _steps.RemoveAll(step => step.Before.Any(key => reset.MovesBack(key.Key, key.Value)));
+        _pending.RemoveAll(run => run.Entry.Keys.Any(key => reset.MovesBack(key.Key, key.Value)));
+        if (StartPlace is null)
+        {
+            return;
+        }
+
+        for (int index = 0; index < RunPlace.MarkerVariables.Count; index++)
+        {
+            if (reset.Covers(StoryKey.Variable(RunPlace.MarkerVariables[index])))
+            {
+                StartPlace = StartPlace.Lowered(index, ReplayView.WholeOf(reset.Value) ?? 0);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Writes the log as the save keeps it.
+    /// </summary>
+    /// <returns>{"version", "start" ([markers] or nil), "steps" ([[site, {key => before}, {stream => entry}], ...]), "pending" ([[entry, {thing => value}], ...]), "queued" ([entry, ...]), "cursors" ({stream => number})}.</returns>
+    public RubyHash Write() => new()
+    {
+        { "version", Version },
+        { "start", ReplayEntry.PlaceText(StartPlace) },
+        { "steps", new RubyArray(_steps.Select(step => (RubyValue)new RubyArray { step.Site.ToString(), ReplayEntry.HashOf(step.Before), TextsOf(step.Claims) })) },
+        { "pending", new RubyArray(_pending.Select(run => (RubyValue)new RubyArray { run.Entry.Write(), TextsOf(run.Reads) })) },
+        { "queued", new RubyArray(_queued.Select(entry => (RubyValue)entry.Write())) },
+        { "cursors", CursorsHash() },
+    };
+
+    /// <summary>
+    /// Reads a log as the save keeps it, see <see cref="Write"/>.
+    /// </summary>
+    /// <param name="value">The log.</param>
+    /// <returns>The log.</returns>
+    /// <exception cref="RubyValueException">The log is of another version or does not read.</exception>
+    public static RunLog Read(RubyValue value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        RubyHash saved = value.AsHash();
+        if (saved["version"] is not RubyInteger version || version.AsLong() != Version)
+        {
+            throw new RubyValueException("The log is of another version.");
+        }
+
+        var log = new RunLog(ReplayEntry.PlaceOf(saved["start"]));
+        foreach (RubyValue step in saved["steps"].AsArray())
+        {
+            RubyArray fields = step.AsArray();
+            log._steps.Add(new RunStep(ReplaySite.Parse(fields[0].AsText()), ReplayEntry.KeysOf(fields[1]), DictionaryOf(fields[2])));
+        }
+
+        foreach (RubyValue run in saved["pending"].AsArray())
+        {
+            RubyArray fields = run.AsArray();
+            log._pending.Add(new PendingRun(ReplayEntry.Read(fields[0]), DictionaryOf(fields[1])));
+        }
+
+        foreach (RubyValue entry in saved["queued"].AsArray())
+        {
+            log._queued.Add(ReplayEntry.Read(entry));
+        }
+
+        foreach ((RubyValue stream, RubyValue number) in saved["cursors"].AsHash())
+        {
+            log._cursors[stream.AsText()] = number.AsLong();
+        }
+
+        return log;
+    }
+
+    /// <summary>
+    /// Writes the cursors in the order of their streams.
+    /// </summary>
+    /// <returns>{stream => number}.</returns>
+    private RubyHash CursorsHash()
+    {
+        var hash = new RubyHash();
+        foreach ((string stream, long number) in _cursors.OrderBy(pair => pair.Key, StringComparer.Ordinal))
+        {
+            hash.Add(stream, number);
+        }
+
+        return hash;
+    }
+
+    /// <summary>
+    /// Writes texts by name in the order of their names.
+    /// </summary>
+    /// <param name="texts">The texts.</param>
+    /// <returns>{name => text}.</returns>
+    private static RubyHash TextsOf(IReadOnlyDictionary<string, string> texts)
+    {
+        var hash = new RubyHash();
+        foreach ((string name, string text) in texts.OrderBy(pair => pair.Key, StringComparer.Ordinal))
+        {
+            hash.Add(name, text);
+        }
+
+        return hash;
+    }
+
+    /// <summary>
+    /// Reads texts by name.
+    /// </summary>
+    /// <param name="value">{name => text}.</param>
+    /// <returns>The texts.</returns>
+    private static Dictionary<string, string> DictionaryOf(RubyValue value) =>
+        value.AsHash().ToDictionary(pair => pair.Key.AsText(), pair => pair.Value.AsText(), StringComparer.Ordinal);
+}

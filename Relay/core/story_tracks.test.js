@@ -2,6 +2,10 @@
 //  story_tracks.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Checked the routes the world's summary names as open at the Great Decision
+//                            - Checked the run entries kept on the tracks and the players' cursors
+//                            - Checked the place a world's log starts at in its summary
+//                            - Checked a world's tracks starting from its keyed story
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -64,15 +68,16 @@ const MAPPING = Object.freeze({
  * @returns {import("./story_tracks.js").TrackStore} The store.
  */
 function memoryStore() {
-  const kept = { meta: undefined, keys: new Map(), players: new Map(), checkpoints: new Map() };
+  const kept = { meta: undefined, keys: new Map(), runs: new Map(), players: new Map(), checkpoints: new Map() };
   const keysOf = (track) => kept.keys.get(track) ?? kept.keys.set(track, new Map()).get(track);
 
   return {
     getMeta: async () => structuredClone(kept.meta),
     getKeys: async (track) => [...keysOf(track)],
+    getRuns: async (track) => structuredClone(kept.runs.get(track) ?? []),
     getPlayer: async (player) => structuredClone(kept.players.get(player)),
     getCheckpoint: async (part) => structuredClone(kept.checkpoints.get(part)),
-    commit: async ({ meta, keys = [], players = [], checkpoint }) => {
+    commit: async ({ meta, keys = [], runs = [], players = [], checkpoint }) => {
       kept.meta = meta ? structuredClone(meta) : kept.meta;
 
       for (const { track, drop, set } of keys) {
@@ -81,6 +86,11 @@ function memoryStore() {
         }
 
         set.forEach(([key, value]) => keysOf(track).set(key, value));
+      }
+
+      for (const { track, drop, add } of runs) {
+        const list = drop ? [] : (kept.runs.get(track) ?? []);
+        kept.runs.set(track, [...list, ...structuredClone(add)]);
       }
 
       players.forEach((record) => kept.players.set(record.player, structuredClone(record)));
@@ -92,6 +102,7 @@ function memoryStore() {
     remove: async () => {
       kept.meta = undefined;
       kept.keys.clear();
+      kept.runs.clear();
       kept.players.clear();
       kept.checkpoints.clear();
     },
@@ -102,14 +113,15 @@ function memoryStore() {
  * Makes a world's tracks and its games: each game enters with a seat, says frames and reads what it
  * heard since it last looked.
  *
- * @param {{pins?: Object<string, string>}} [options] Keys an admin pinned, with their values.
+ * @param {{pins?: Object<string, string>, story?: Map<string, string>, store?: import("./story_tracks.js").TrackStore}} [options] Keys an admin pinned, with their values; the keys of the world's keyed story; the store, a new one in memory when left out.
  * @returns {{tracks: StoryTracks, pins: Object<string, string>, enter: (player: string, seat: number) => Promise<void>, say: (player: string, frame: object) => Promise<void>, heard: (player: string) => object[], answer: (player: string) => object | undefined}} The tracks and the games.
  */
-function makeWorld({ pins = {} } = {}) {
+function makeWorld({ pins = {}, story, store = memoryStore() } = {}) {
   const inboxes = new Map();
-  const tracks = new StoryTracks(memoryStore(), {
+  const tracks = new StoryTracks(store, {
     mapping: async () => MAPPING,
     pins: async () => ({ pinOf: (key) => pins[key], keys: Object.keys(pins) }),
+    story: async () => story,
     send: (player, text) => inboxes.get(player)?.push(JSON.parse(text.slice("track ".length))),
   });
 
@@ -262,6 +274,22 @@ test("the first route started locks it, another route and an unplayed finish are
   assert.equal(world.heard(BOB).find((frame) => frame.t === "route").granted, true, "the return to the Great Decision ended the lock");
 });
 
+test("the world's summary names the routes a route request is granted, so games offer no other", async () => {
+  const world = await startedWorld(39, [BOB]);
+  const open = () => world.heard(BOB).filter((frame) => frame.world).at(-1).world.open;
+  await world.enter(CARA, 2);
+  await world.say(CARA, { t: "sync", level: { best: 99, cap: null }, seed: { v1001: "n39" } });
+  assert.deepEqual(world.heard(CARA).find((frame) => frame.world).world.open, ["ad", "mr"], "the third way waits for both other routes");
+
+  await write(world, ALICE, 1, [["v1001", "n40"], ["v1141", "n1"]]);
+  assert.deepEqual(open(), ["ad"], "the locked route alone");
+  await write(world, ALICE, 2, [["s7096", "1"], ["v1141", "n0", "ce:154"], ["v1001", "n39", "ce:154"]]);
+  assert.deepEqual(open(), ["mr"], "the finished route is closed after the return");
+  await write(world, ALICE, 3, [["v1001", "n40"], ["v1142", "n1"]]);
+  await write(world, ALICE, 4, [["s7097", "1"], ["v1142", "n0", "ce:154"], ["v1001", "n39", "ce:154"]]);
+  assert.deepEqual(open(), ["chaos"], "both routes finished open the third way alone");
+});
+
 test("the first game to start a story event on a map tells it; the lock ends with the event or with the teller leaving", async () => {
   const world = await startedWorld(3, [BOB, CARA]);
   await world.say(ALICE, { t: "tell", telling: "e1", map: 7, event: "map:7:39:1" });
@@ -375,4 +403,135 @@ test("a player behind moves on to the next part the world played that has a chec
   assert.equal(nextPart("3", meta), WORLD_TRACK, "a finished route is never a next part");
   assert.equal(nextPart("ad", meta), WORLD_TRACK);
   assert.equal(nextPart("mr", meta), WORLD_TRACK);
+});
+
+/**
+ * Makes a run entry as a game sends it with the writes of its run.
+ *
+ * @param {string} id The entry's id.
+ * @param {string[]} keys The keys of its step.
+ * @param {number} step The value of variable 1001 its run started at.
+ * @returns {object} The entry.
+ */
+function run(id, keys, step) {
+  return { id, site: "map:7:39:1", keys, place: [step, 0, 0, 0], opener: "Ana", wire: "AAAA" };
+}
+
+test("a run entry stays only when its writes changed the track, so the second of two openers and a refused write make none", async () => {
+  const world = await startedWorld(10, [BOB]);
+  await world.say(ALICE, { t: "write", seq: 1, track: WORLD_TRACK, writes: [["v50", "n1", "map:7:39:1"]] });
+  await world.say(BOB, { t: "write", seq: 1, track: WORLD_TRACK, writes: [["v50", "n1", "map:7:39:1"]] });
+  await world.say(ALICE, { t: "write", seq: 2, track: WORLD_TRACK, run: run("first", ["v50"], 10) });
+  await world.say(BOB, { t: "write", seq: 2, track: WORLD_TRACK, run: run("second", ["v50"], 10) });
+
+  world.answer(ALICE);
+  world.answer(BOB);
+  assert.deepEqual([world.answer(ALICE).run, world.answer(BOB).run], [{ id: "first", n: 1 }, { id: "second", n: null }]);
+  assert.deepEqual(world.heard(BOB).filter((frame) => frame.t === "run").map((frame) => [frame.track, frame.run.n, frame.run.id, frame.run.opener]), [[WORLD_TRACK, 1, "first", "Ana"]], "every game on the track hears the entry kept");
+
+  await world.say(ALICE, { t: "write", seq: 3, track: WORLD_TRACK, writes: [["v1001", "n5", "map:7:39:1"]], run: run("lowered", ["v1001"], 10) });
+  assert.deepEqual(world.answer(ALICE).run, { id: "lowered", n: null }, "a one-way key the write would lower changed nothing");
+});
+
+test("a cursor moves only by its own player's word that their game took the entry, and a sync names the cursor of the game's saved log", async () => {
+  const world = await startedWorld(10, [BOB]);
+  await write(world, ALICE, 1, [["v50", "n1"]]);
+  await world.say(ALICE, { t: "write", seq: 2, track: WORLD_TRACK, run: run("gift", ["v50"], 10) });
+  await world.say(ALICE, { t: "took", track: WORLD_TRACK, n: 1 });
+
+  const rejoin = async (cursors) => {
+    await world.tracks.leave(BOB);
+    await world.enter(BOB, 1);
+    await world.say(BOB, { t: "sync", level: { best: 99, cap: null }, cursors });
+    return world.heard(BOB);
+  };
+  const [state, page] = await rejoin({ world: 0 });
+  assert.deepEqual([state.cursor, state.last, page.t, page.runs.map((entry) => entry.id), page.more], [0, 1, "runs", ["gift"], false], "another player's word moves nothing");
+
+  await world.say(BOB, { t: "took", track: WORLD_TRACK, n: 1 });
+  const again = await rejoin({ world: 1 });
+  assert.deepEqual([again.length, again[0].cursor], [1, 1], "entries the saved log took never come again");
+
+  const unsaved = await rejoin({ world: 0 });
+  assert.deepEqual([unsaved[0].cursor, unsaved[1].runs.map((entry) => entry.id)], [0, ["gift"]], "a save that never kept what the game took gets the entry again");
+});
+
+test("a track keeps every run entry, so a cursor far behind still gets the first", async () => {
+  const world = await startedWorld(10, [BOB]);
+
+  for (let index = 1; index <= 1001; index++) {
+    await world.say(ALICE, { t: "write", seq: index, track: WORLD_TRACK, writes: [["v50", `n${index}`, "map:7:39:1"]], run: run(`gift${index}`, ["v50"], 10) });
+  }
+
+  const [state, page] = await (async () => {
+    await world.tracks.leave(BOB);
+    await world.enter(BOB, 1);
+    await world.say(BOB, { t: "sync", level: { best: 99, cap: null }, cursors: { world: 0 } });
+    return world.heard(BOB);
+  })();
+  assert.deepEqual([state.last, page.runs[0].n, page.more], [1001, 1, true]);
+});
+
+test("a player who reaches the world's track from their own walks it from their world cursor, the world's runs they never played among them", async () => {
+  const world = await startedWorld(10);
+  await write(world, ALICE, 1, [["v50", "n1"]]);
+  await world.say(ALICE, { t: "write", seq: 2, track: WORLD_TRACK, run: run("early", ["v50"], 10) });
+  await write(world, ALICE, 3, [["v1001", "n19"]]);
+  await write(world, ALICE, 4, [["v60", "n1"]]);
+  await world.say(ALICE, { t: "write", seq: 5, track: WORLD_TRACK, run: run("later", ["v60"], 19) });
+
+  await world.enter(CARA, 1);
+  await world.say(CARA, { t: "sync", level: { best: 10, cap: null }, seed: { v1001: "n2" }, cursors: {} });
+  await write(world, CARA, 1, [["v1001", "n15"], ["v50", "n7"]], "t1");
+  await world.say(CARA, { t: "write", seq: 2, track: "t1", run: run("own", ["v50"], 10) });
+  assert.deepEqual(world.answer(CARA).run, { id: "own", n: 1 }, "a track of one's own keeps its own entries");
+  world.heard(CARA);
+
+  await world.say(CARA, { t: "level", best: 25, cap: null });
+  const [moved, page] = world.heard(CARA);
+  assert.deepEqual([moved.track, moved.cursor, moved.last], [WORLD_TRACK, 0, 2], "their game's log claims what they played on their own track, not their place");
+  assert.deepEqual(page.runs.map((entry) => entry.id), ["early", "later"]);
+});
+
+test("a world that kept a keyed story starts its tracks from it, with no run entries before", async () => {
+  const world = makeWorld({ story: new Map([["v1001", "n12"], ["v50", "n4"], ["s100", "1"], ["a5", "n3"]]) });
+  await world.enter(ALICE, 0);
+  await world.say(ALICE, { t: "sync", level: { best: 99, cap: null }, seed: { v1001: "n12", v50: "n9" } });
+  const [state] = world.heard(ALICE);
+  assert.deepEqual([state.why, state.keys, state.cursor, state.last], ["sync", { v1001: "n12", v50: "n4" }, 0, 0]);
+});
+
+test("a world's summary names the place its log starts at, which a world kept from before run entries takes as it stands", async () => {
+  const fresh = makeWorld();
+  await fresh.enter(ALICE, 0);
+  await fresh.say(ALICE, { t: "sync", level: { best: 99, cap: null }, seed: { v1001: "n5" } });
+  const store = memoryStore();
+  await store.commit({ meta: { rev: 3, part: "1", route: "none", done: [], checkpoints: [], next: 1 }, keys: [{ track: WORLD_TRACK, set: [["v1001", "n20"]] }] });
+  const kept = makeWorld({ store });
+  await kept.enter(ALICE, 0);
+  await kept.say(ALICE, { t: "sync", level: { best: 99, cap: null }, seed: { v1001: "n2" } });
+
+  assert.deepEqual(fresh.heard(ALICE)[0].world.start, [5, 0, 0, 0]);
+  assert.deepEqual(kept.heard(ALICE)[0].world.start, [20, 0, 0, 0]);
+});
+
+test("a state hands the world's keys at the start of its log where they differ from the keys it hands", async () => {
+  const world = await startedWorld(5, [BOB]);
+  await write(world, ALICE, 1, [["v50", "n3"], ["s3101", "1"]]);
+  await world.tracks.leave(BOB);
+  await world.enter(BOB, 1);
+  await world.say(BOB, { t: "sync", level: { best: 99, cap: null }, cursors: {} });
+  const [state] = world.heard(BOB);
+  assert.deepEqual(state.log, { v50: "n0", s3101: "0", v1354: "n0" }, "the count of s3101 came with it");
+
+  const store = memoryStore();
+  await store.commit({ meta: { rev: 3, part: "1", route: "none", done: [], checkpoints: [], next: 1 }, keys: [{ track: WORLD_TRACK, set: [["v1001", "n20"], ["v50", "n4"]] }] });
+  const kept = makeWorld({ store });
+  await kept.enter(ALICE, 0);
+  await kept.say(ALICE, { t: "sync", level: { best: 99, cap: null }, seed: { v1001: "n2" } });
+  await write(kept, ALICE, 1, [["v50", "n6"]]);
+  await kept.tracks.leave(ALICE);
+  await kept.enter(ALICE, 0);
+  await kept.say(ALICE, { t: "sync", level: { best: 99, cap: null }, cursors: {} });
+  assert.deepEqual(kept.heard(ALICE).at(-1).log, { v50: "n4" }, "a world kept from before run entries starts its log as it stands");
 });

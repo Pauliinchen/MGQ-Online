@@ -12,10 +12,10 @@ using System.Collections.Generic;
 namespace MGQOnline.Game.Story;
 
 /// <summary>
-/// How a Classic party shares the leader's story with the members who follow it: every switch,
-/// variable and self switch, but those each player keeps of their own (the lists story_state.rbx
-/// kept before they moved here). The scripts still keep the member's own choices, their map's
-/// chests and the choices' lines their own, which only the member's game knows.
+/// The Classic story's fixed ranges: every switch, variable and self switch shared, but those each
+/// player keeps of their own (the lists story_state.rbx kept before they moved here). The
+/// generator derives the frozen rows of the history before the log with them; who keeps each key
+/// in a Classic party is the reviewed list's, see <see cref="KeyScopes.Classic"/>.
 /// </summary>
 public static class ClassicStoryTable
 {

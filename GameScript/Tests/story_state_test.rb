@@ -2,6 +2,8 @@
 #  story_state_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Covered a Classic party's join of stories by the reviewed list's scopes
+#                            - Covered the one-time repair of a save the 0.6.9.2 chest path left stuck
 #      Paulinchen  2026-10-24: Covered the second accessory slot a story written past the game turns on
 #      Paulinchen  2026-10-12: Covered unpacking a packed story and its refusals
 #      Paulinchen  2026-10-10: Created
@@ -9,7 +11,7 @@
 #----------------------------------------------------------------
 
 # Covers story_state.rbx: mixing a story with the player's own chests, the skills and companions a
-# story grants, and unpacking a story another game packed.
+# story grants, unpacking a story another game packed, and the one-time repair of a stuck save.
 
 require_relative "support"
 
@@ -17,8 +19,8 @@ require_relative "support"
 # File#write does.
 module MGQ_Multiplayer; module Log; def self.write(m); $log << m; 87; end; end; end
 $log = []
-# Stands in for the battle scope: every battle is in a Raid World.
-module MGQ_MpCoop; module Scope; def self.raid?; true; end; end; end
+# Stands in for the battle scope: a Raid World unless $classic.
+module MGQ_MpCoop; module Scope; def self.raid?; !$classic; end; end; end
 # Stands in for the shared events: no event is a chest.
 module MGQ_MpCoopEvents; def self.chest_keys; []; end; def self.chest_key?(_key); false; end; end
 # Stands in for RPG::Actor.
@@ -82,6 +84,24 @@ check("a chest the player opened stays open, also one the story has shut, and th
 check("a chest the player holds shut stays shut, as a key of its own", [mixed[2].key?(kept_shut), mixed[2][kept_shut]], [true, false])
 check("and a chest the player never opened is left out, not written as an empty key", [mixed[2].key?(others), mixed[2].size], [false, 4])
 
+# In a Classic party the reviewed list's scopes decide what a join of stories keeps: the leader's
+# world keys come, while the self switches the list keeps each player's own stay the player's.
+$classic = true
+world_keys = { [1, 1001] => true, [2, [3, 1, "A"]] => true }
+MGQ_MpStoryKeys.define_singleton_method(:scope_of) do |kind, key, _site = nil|
+  world_keys[[kind, key]] ? MGQ_MpStoryKeys::SCOPE_WORLD : MGQ_MpStoryKeys::SCOPE_PLAYER
+end
+leaders = [[], [nil, nil], { [3, 1, "A"] => true, [3, 2, "B"] => true }]
+leaders[1][1001] = 30
+leaders[1][1050] = 7
+members = [[], [nil, nil], { [3, 3, "C"] => true }]
+members[1][1001] = 20
+members[1][1050] = 2
+joined = state.mix(leaders, members, [])
+check("a Classic member joining the leader's story gets its world keys and keeps their own: values, and self switches set or never set",
+      [joined[1][1001], joined[1][1050], joined[2]], [30, 2, { [3, 1, "A"] => true, [3, 3, "C"] => true }])
+$classic = false
+
 # A skipped grant answers nil whatever writing the log returns, and a granted one answers its name.
 check("a log line gives nothing back, the first time and every time after", [state.log("a line"), state.log_once(:key, "once"), state.log_once(:key, "once")], [nil, nil, nil])
 check("a skill Luka knows or the game lacks is learned by nobody", [state.learn(937), state.learn(999)], [nil, nil])
@@ -132,3 +152,39 @@ slot_on[state::EXTRA_ACCESSORY_SLOT] = true
 state.set_raw(slot_on, [], {})
 state.set_raw(slot_on.dup, [], {})
 check("a story that turns the second accessory slot on refits every character once", [$game_actors[1].refits, $game_actors[16].refits], [1, 1])
+
+# The one-time repair of a save the 0.6.9.2 chest path left stuck: the DLL names the switches to
+# turn on (StoryTopics.Repair), which the script turns on once per save.
+require_relative "bridge_support"
+MGQ_Multiplayer::Bridge.open(FakeBridge.new)
+# Stands in for the replay's asking of the DLL: each ask in $repair_asks, the answer $repair_answer.
+module MGQ_MpStoryReplay; def self.ask_with_values(topic, request); $repair_asks << [topic, request]; $repair_answer; end; end
+class Game_Switches; def []=(id, value); @data[id] = value; end; end
+# Stands in for the frame counter.
+module Graphics; def self.frame_count; 0; end; end
+$repair_asks = []
+$game_system = Object.new
+$repair_answer = { "switches" => [2045] }
+state.repair_check(false)
+state.repair
+check("a stuck save gets the switch its shut chest proves, asked of the DLL with the world it plays in",
+      [$game_switches[2045], $repair_asks, $game_system.instance_variable_get(state::REPAIRED_FIELD)],
+      [true, [["story.repair", { "world" => true, "raid" => true }]], true])
+state.repair_check(false)
+state.repair
+check("the repair runs once per save", $repair_asks.size, 1)
+$game_system = Object.new
+$game_switches = Game_Switches.new
+$repair_answer = { "unknown" => true }
+state.repair_check(false)
+state.repair
+unknown = [$repair_asks.size, $game_system.instance_variable_get(state::REPAIRED_FIELD)]
+$repair_answer = { "switches" => [] }
+state.instance_variable_set(:@repair_at, nil)
+state.repair
+check("a save the DLL cannot decide yet is asked again, and a plain save stays as it is",
+      [unknown, $game_switches[2045], $game_system.instance_variable_get(state::REPAIRED_FIELD)], [[2, nil], nil, true])
+$game_system = Object.new
+state.repair_check(true)
+state.repair
+check("a new game needs no repair", [$repair_asks.size, $game_system.instance_variable_get(state::REPAIRED_FIELD)], [3, true])

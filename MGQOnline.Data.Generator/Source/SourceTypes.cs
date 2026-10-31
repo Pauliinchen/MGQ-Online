@@ -2,6 +2,7 @@
 //  SourceTypes.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Kept the switches an enemy's actions ask for and a skill's or item's damage formula
 //      Paulinchen  2026-10-30: Kept whether an entry holds a note, features or effects instead of whether it has a name
 //      Paulinchen  2026-10-28: Kept common event names, item descriptions and enemy notes
 //                            - Created
@@ -158,7 +159,9 @@ internal sealed record SourceTroop(int Id, IReadOnlyList<SourceMember> Members, 
 /// <param name="ItemType">An item's type, 2 for a key item; 0 for any other entry.</param>
 /// <param name="Description">An item's, weapon's or armor's description; empty for any other entry.</param>
 /// <param name="Note">Its note.</param>
-internal sealed record SourceEntry(bool InUse, int ItemType, string Description, string Note);
+/// <param name="Formula">A skill's or item's damage formula; empty for any other entry.</param>
+/// <param name="ActionSwitches">The switches an enemy's actions ask to be on; none for any other entry.</param>
+internal sealed record SourceEntry(bool InUse, int ItemType, string Description, string Note, string Formula, IReadOnlyList<int> ActionSwitches);
 
 /// <summary>
 /// A map as its folder's MapInfos.rvdata2 lists it.

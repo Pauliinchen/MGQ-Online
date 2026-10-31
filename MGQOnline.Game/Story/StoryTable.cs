@@ -2,6 +2,7 @@
 //  StoryTable.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Carried the game work keys of the list
 //      Paulinchen  2026-10-28: Carried the catch-up tables the mapping came with
 //      Paulinchen  2026-10-23: Created
 //
@@ -48,9 +49,12 @@ public sealed class StoryTable
     /// <param name="gates">Each part's level gate by its id.</param>
     /// <param name="selfDefault">The class of a self switch no rule and no indexed event names.</param>
     /// <param name="catchup">The catch-up's tables the mapping came with, <see langword="null"/> for none.</param>
+    /// <param name="work">The switches and variables the game uses as working values, <see langword="null"/> for none.</param>
     public StoryTable(long rev, byte[] switches, byte[] variables, IReadOnlyDictionary<string, StoryClass> selfRules, IReadOnlySet<long> index,
-        IReadOnlyList<LocalSteps> localSteps, IReadOnlyDictionary<string, int> gates, StoryClass selfDefault = StoryClass.Personal, CatchupTables? catchup = null)
+        IReadOnlyList<LocalSteps> localSteps, IReadOnlyDictionary<string, int> gates, StoryClass selfDefault = StoryClass.Personal, CatchupTables? catchup = null,
+        IReadOnlySet<StoryKey>? work = null)
     {
+        Work = work ?? new HashSet<StoryKey>();
         SelfDefault = selfDefault;
         Rev = rev;
         Switches = switches;
@@ -71,6 +75,12 @@ public sealed class StoryTable
     /// Gets the catch-up's tables the mapping came with, empty for a table of the game's own.
     /// </summary>
     public CatchupTables Catchup { get; }
+
+    /// <summary>
+    /// Gets the switches and variables the game uses as working values (the <c>work</c> option of a
+    /// personal row), each player's own by their class.
+    /// </summary>
+    public IReadOnlySet<StoryKey> Work { get; }
 
     /// <summary>
     /// Gets the class of each switch by id; an id past the end is each player's own.

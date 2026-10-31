@@ -2486,7 +2486,7 @@
   {"op":"add","table":"keys","row":{"key":"v54","kind":"personal"},"note":"Reviewed: the camp's place, where the player stands."},
   {"op":"add","table":"keys","row":{"key":"v55","kind":"personal"},"note":"Reviewed: medals handed in, party places beyond eight, the transfer's map: PERSONAL_VARIABLES."},
   {"op":"add","table":"keys","row":{"key":"v56","kind":"personal"},"note":"Reviewed: medals handed in, party places beyond eight, the transfer's map: PERSONAL_VARIABLES."},
-  {"op":"add","table":"keys","row":{"key":"v57","kind":"personal"},"note":"Reviewed: medals handed in, party places beyond eight, the transfer's map: PERSONAL_VARIABLES."},
+  {"op":"add","table":"keys","row":{"key":"v57","kind":"personal","work":true},"note":"Reviewed: medals handed in, party places beyond eight, the transfer's map: PERSONAL_VARIABLES. Work (2026-10-31): script 148 command_201 sends the next direct transfer to map v57 and clears it, and no event reads it, so a story replay keeps it apart from the save (\"Issue 73 chest effects.md\")."},
   {"op":"add","table":"keys","row":{"key":"v58","kind":"personal"},"note":"Reviewed: scratch of one event each (post-battle affinity, equipment selection)."},
   {"op":"add","table":"keys","row":{"key":"v59","kind":"personal"},"note":"Reviewed: medals handed in, party places beyond eight, the transfer's map: PERSONAL_VARIABLES."},
   {"op":"add","table":"keys","row":{"key":"v61","kind":"personal"},"note":"Reviewed: a request scene's scratch (normal or death request), set by the request common events."},

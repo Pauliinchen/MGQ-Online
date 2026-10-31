@@ -2,6 +2,8 @@
 //  ChoiceTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Added the questions a replay asks on the decision screen
+//                            - Read where the stream that hands the player runs began
 //      Paulinchen  2026-10-28: Created
 //
 //----------------------------------------------------------------
@@ -11,6 +13,7 @@ using System.Collections.Generic;
 using System.Linq;
 using MGQOnline.Bridge;
 using MGQOnline.Bridge.Ruby;
+using MGQOnline.Game.Story;
 using MGQOnline.Game.Story.Choices;
 
 namespace MGQOnline.Game.Topics;
@@ -22,26 +25,29 @@ namespace MGQOnline.Game.Topics;
 /// of <see cref="ChoiceTable.ReadSwitches"/> that are on), <c>v</c> ([id, value] of each of
 /// <see cref="ChoiceTable.ReadVariables"/>) and <c>roster</c> (the companions of
 /// <see cref="ChoiceTable.ReadRoster"/> in the roster); one that reads the game beside carries
-/// <c>raid</c>, <c>ends</c> ([ed1, ed2]), <c>raid_route</c> and <c>world_routes</c> too.
+/// <c>raid</c>, <c>ends</c> ([ed1, ed2]), <c>raid_route</c> and <c>world_routes</c> too. One that
+/// lists or applies choices carries <c>start</c>, where the stream that hands the player runs began
+/// ([markers], nil for none), since the replay asks every choice whose run a stream hands over.
 /// </summary>
 public static class ChoiceTopics
 {
     /// <summary>
-    /// Lists the choices a catch-up carries the player past: <c>from</c>, <c>to</c> and
-    /// <c>values</c> in; the keys out, in story order.
+    /// Lists the choices a catch-up carries the player past: <c>from</c>, <c>to</c>, <c>values</c>
+    /// and <c>start</c> in; the keys out, in story order.
     /// </summary>
     public const string Passed = "choices.passed";
 
     /// <summary>
     /// Lists the choices a story passing on asks the player's own outcome of: <c>from</c>, <c>to</c>,
-    /// <c>changed</c> (the ids that changed besides), <c>raid</c>, <c>values</c> and <c>waiting</c>
-    /// (the keys asked already) in; the keys to ask out.
+    /// <c>changed</c> (the ids that changed besides), <c>raid</c>, <c>values</c>, <c>waiting</c>
+    /// (the keys asked already) and <c>start</c> in; the keys to ask out.
     /// </summary>
     public const string Prompts = "choices.prompts";
 
     /// <summary>
     /// Lists the choices a later build added that a Raid World's story is past without the save's
-    /// own outcome: <c>progress</c>, <c>raid</c>, <c>values</c> and <c>waiting</c> in; the keys out.
+    /// own outcome: <c>progress</c>, <c>raid</c>, <c>values</c>, <c>waiting</c> and <c>start</c> in;
+    /// the keys out.
     /// </summary>
     public const string Missed = "choices.missed";
 
@@ -65,8 +71,8 @@ public static class ChoiceTopics
     public const string Note = "choices.note";
 
     /// <summary>
-    /// Finds what an outcome sets and brings: the game, <c>key</c>, <c>index</c> and <c>answers</c>
-    /// in; for the side <c>side</c> ("alice" or "ilias"), else <c>title</c>, <c>label</c>,
+    /// Finds what an outcome sets and brings: the game, <c>start</c>, <c>key</c>, <c>index</c> and
+    /// <c>answers</c> in; for the side <c>side</c> ("alice" or "ilias"), else <c>title</c>, <c>label</c>,
     /// <c>switches</c> ([id, on]), <c>variables</c> and <c>least</c> ([id, value]),
     /// <c>self_switches</c> ([map, event, letter]), <c>joins</c> and <c>ship</c> ([map, x, y] or nil) out.
     /// </summary>
@@ -105,6 +111,27 @@ public static class ChoiceTopics
     public const string Table = "choices.table";
 
     /// <summary>
+    /// Opens a question a replay asks, see <see cref="ChoiceInputs"/>: <c>kind</c> ("choice",
+    /// "number", "item" or "present"), <c>opener</c> (nil for the player's own history),
+    /// <c>companion</c> (a present's), <c>visible</c> (the rows the screen has room for) and
+    /// <c>spec</c> in. The spec holds per kind <c>labels</c> and <c>cancel</c> (a choice's),
+    /// <c>digits</c> and <c>value</c> (a number's), <c>items</c> ([id, name, count, description]
+    /// each, an item's and a present's), <c>result</c> (a present's, empty for the first) and
+    /// <c>index</c> (the row a list starts on). The question out, see <see cref="InputStep"/>.
+    /// </summary>
+    public const string InputOpen = "choices.input_open";
+
+    /// <summary>
+    /// Takes a step of the player on a question: <c>input</c> (the question as answered before),
+    /// <c>action</c> (see <see cref="ChoiceInputAction"/>, in lower case), <c>at</c>, <c>notches</c>
+    /// and <c>wrap</c> in; the question out: <c>kind</c>, <c>title</c>, <c>keys</c>, <c>hint</c>,
+    /// <c>result</c>, <c>rows</c> ([answer, name, count or nil, description, cancel] each),
+    /// <c>digits</c>, <c>cursor</c>, <c>top</c>, <c>visible</c>, <c>cancel</c>, <c>answer</c> (nil
+    /// until given) and <c>cue</c>.
+    /// </summary>
+    public const string InputStep = "choices.input_step";
+
+    /// <summary>
     /// Registers the topics on a context.
     /// </summary>
     /// <param name="context">The context the handshake opened.</param>
@@ -123,6 +150,102 @@ public static class ChoiceTopics
         context.Register(OfferRefusal, (_, request) => OfferRefusalOf(request.AsHash()));
         context.Register(Lapsed, (_, request) => LapsedOf(request.AsHash()));
         context.Register(Table, (_, _) => TableOf());
+        context.Register(InputOpen, (_, request) => InputText(InputOf(request.AsHash())));
+        context.Register(InputStep, (_, request) => InputText(StepOf(request.AsHash())));
+    }
+
+    /// <summary>
+    /// Answers <see cref="InputOpen"/>.
+    /// </summary>
+    /// <param name="request">The request.</param>
+    /// <returns>The question.</returns>
+    /// <exception cref="BridgeRequestException">The kind names no input.</exception>
+    private static ChoiceInput InputOf(RubyHash request)
+    {
+        RubyHash spec = request["spec"].AsHash();
+        string? opener = request["opener"].IsNil ? null : request["opener"].AsText();
+        int visible = request["visible"].AsInt();
+        int index = spec["index"].AsInt();
+        return request["kind"].AsText() switch
+        {
+            "choice" => ChoiceInputs.Choice(opener, TextsOf(spec["labels"]), spec["cancel"].IsNil ? null : spec["cancel"].AsInt(), index, visible),
+            "number" => ChoiceInputs.Number(opener, spec["digits"].AsInt(), spec["value"].AsLong()),
+            "item" => ChoiceInputs.Item(opener, ItemsOf(spec["items"]), index, visible),
+            "present" => ChoiceInputs.Present(request["companion"].AsText(), ItemsOf(spec["items"]), spec["result"].AsText(), index, visible),
+            string kind => throw new BridgeRequestException($"{kind} is no input a replay asks."),
+        };
+    }
+
+    /// <summary>
+    /// Answers <see cref="InputStep"/>.
+    /// </summary>
+    /// <param name="request">The request.</param>
+    /// <returns>The question after the step.</returns>
+    /// <exception cref="BridgeRequestException">The action names none.</exception>
+    private static ChoiceInput StepOf(RubyHash request)
+    {
+        string name = request["action"].AsText();
+        if (!Enum.TryParse(name, true, out ChoiceInputAction action) || !Enum.IsDefined(action))
+        {
+            throw new BridgeRequestException($"{name} is no step on a question.");
+        }
+
+        return ChoiceInputs.Step(ReadInput(request["input"].AsHash()), action, request["at"].AsInt(), request["notches"].AsInt(), request["wrap"].AsBool());
+    }
+
+    /// <summary>
+    /// Reads the items of a question.
+    /// </summary>
+    /// <param name="list">[id, name, count, description] each.</param>
+    /// <returns>The items.</returns>
+    private static List<ChoiceInputItem> ItemsOf(RubyValue list) =>
+        [.. list.AsArray().Select(item => item.AsArray()).Select(item => new ChoiceInputItem(item[0].AsInt(), item[1].AsText(), item[2].AsInt(), item[3].AsText()))];
+
+    /// <summary>
+    /// Writes a question as the scripts hold it.
+    /// </summary>
+    /// <param name="input">The question.</param>
+    /// <returns>The question.</returns>
+    private static RubyHash InputText(ChoiceInput input)
+    {
+        var rows = new RubyArray(input.Rows.Select(row =>
+            (RubyValue)new RubyArray { row.Answer, row.Name, row.Count is { } count ? count : RubyNil.Value, row.Description, row.Cancel }));
+        return new RubyHash
+        {
+            { "kind", input.Kind.ToString().ToLowerInvariant() },
+            { "title", input.Title },
+            { "keys", input.Keys },
+            { "hint", input.Hint },
+            { "result", input.Result },
+            { "rows", rows },
+            { "digits", Ints(input.Digits) },
+            { "cursor", input.Cursor },
+            { "top", input.Top },
+            { "visible", input.Visible },
+            { "cancel", input.CancelAnswer is { } cancel ? cancel : RubyNil.Value },
+            { "answer", input.Answer is { } answer ? answer : RubyNil.Value },
+            { "cue", input.Cue is { } cue ? cue : RubyNil.Value },
+        };
+    }
+
+    /// <summary>
+    /// Reads a question as the scripts hold it, see <see cref="InputText"/>.
+    /// </summary>
+    /// <param name="input">The question.</param>
+    /// <returns>The question.</returns>
+    /// <exception cref="BridgeRequestException">The kind names no input.</exception>
+    private static ChoiceInput ReadInput(RubyHash input)
+    {
+        string name = input["kind"].AsText();
+        if (!Enum.TryParse(name, true, out ChoiceInputKind kind) || !Enum.IsDefined(kind))
+        {
+            throw new BridgeRequestException($"{name} is no input a replay asks.");
+        }
+
+        List<ChoiceInputRow> rows = [.. input["rows"].AsArray().Select(row => row.AsArray()).Select(row =>
+            new ChoiceInputRow(row[0].AsInt(), row[1].AsText(), row[2].IsNil ? null : row[2].AsInt(), row[3].AsText(), row[4].AsBool()))];
+        return new ChoiceInput(kind, input["title"].AsText(), input["keys"].AsText(), input["result"].AsText(), rows, Ints(input["digits"]), input["cursor"].AsInt(),
+            input["top"].AsInt(), input["visible"].AsInt(), input["cancel"].IsNil ? null : input["cancel"].AsInt(), input["answer"].IsNil ? null : input["answer"].AsInt(), null);
     }
 
     /// <summary>
@@ -131,7 +254,7 @@ public static class ChoiceTopics
     /// <param name="request">The request.</param>
     /// <returns>The keys.</returns>
     private static RubyArray PassedOf(RubyHash request) =>
-        Texts(StoryChoices.Passed(request["from"].AsInt(), request["to"].AsInt(), ValuesOf(request["values"].AsHash())));
+        Texts(StoryChoices.Passed(request["from"].AsInt(), request["to"].AsInt(), ValuesOf(request["values"].AsHash()), ReplayEntry.PlaceOf(request["start"])));
 
     /// <summary>
     /// Answers <see cref="Prompts"/>.
@@ -140,7 +263,7 @@ public static class ChoiceTopics
     /// <returns>The keys to ask.</returns>
     private static RubyArray PromptsOf(RubyHash request) =>
         Texts(StoryChoices.Prompts(request["from"].AsInt(), request["to"].AsInt(), Ints(request["changed"]).ToHashSet(), request["raid"].AsBool(),
-            ValuesOf(request["values"].AsHash()), TextsOf(request["waiting"]).ToHashSet(StringComparer.Ordinal)));
+            ValuesOf(request["values"].AsHash()), TextsOf(request["waiting"]).ToHashSet(StringComparer.Ordinal), ReplayEntry.PlaceOf(request["start"])));
 
     /// <summary>
     /// Answers <see cref="Missed"/>.
@@ -148,7 +271,8 @@ public static class ChoiceTopics
     /// <param name="request">The request.</param>
     /// <returns>The keys to ask.</returns>
     private static RubyArray MissedOf(RubyHash request) =>
-        Texts(StoryChoices.Missed(request["progress"].AsInt(), request["raid"].AsBool(), ValuesOf(request["values"].AsHash()), TextsOf(request["waiting"]).ToHashSet(StringComparer.Ordinal)));
+        Texts(StoryChoices.Missed(request["progress"].AsInt(), request["raid"].AsBool(), ValuesOf(request["values"].AsHash()), TextsOf(request["waiting"]).ToHashSet(StringComparer.Ordinal),
+            ReplayEntry.PlaceOf(request["start"])));
 
     /// <summary>
     /// Answers <see cref="Offered"/>.
@@ -289,7 +413,7 @@ public static class ChoiceTopics
     {
         RubyArray ends = request["ends"].AsArray();
         return new ChoiceContext(request["raid"].AsBool(), ValuesOf(request["values"].AsHash()), ends[0].AsBool(), ends[1].AsBool(),
-            request["raid_route"].IsNil ? null : request["raid_route"].AsInt(), request["world_routes"].IsNil ? null : Ints(request["world_routes"]));
+            request["raid_route"].IsNil ? null : request["raid_route"].AsInt(), request["world_routes"].IsNil ? null : Ints(request["world_routes"]), ReplayEntry.PlaceOf(request["start"]));
     }
 
     /// <summary>

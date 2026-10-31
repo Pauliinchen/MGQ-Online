@@ -2,6 +2,7 @@
 //  ChoiceTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Checked a question of a replay through the topics
 //      Paulinchen  2026-10-28: Created
 //
 //----------------------------------------------------------------
@@ -83,6 +84,21 @@ public sealed class ChoiceTopicsTests
         int length = _context.Call(Encoding.UTF8.GetBytes(ChoiceTopics.Offered), RubyMarshal.Write(request), buffer);
 
         Assert.Equal("bad_request", RubyMarshal.Read(buffer.AsSpan(0, length)).AsHash()["error"].AsText());
+    }
+
+    /// <summary>
+    /// Asserts that a question opened and stepped through the topics answers the item clicked.
+    /// </summary>
+    [Fact]
+    public void Input_AnswersTheItemClickedThroughTheTopics()
+    {
+        var spec = new RubyHash { { "items", new RubyArray { new RubyArray { 12, "Silver Ring", 1, "A ring." } } }, { "index", 0 } };
+        RubyValue input = Call(ChoiceTopics.InputOpen, new RubyHash { { "kind", "item" }, { "opener", "Ana" }, { "companion", RubyNil.Value }, { "visible", 4 }, { "spec", spec } });
+        RubyHash step = new() { { "input", input }, { "action", "click" }, { "at", 0 }, { "notches", 0 }, { "wrap", false } };
+
+        RubyHash answered = Call(ChoiceTopics.InputStep, step).AsHash();
+
+        Assert.Equal((12, "ok"), (answered["answer"].AsInt(), answered["cue"].AsText()));
     }
 
     /// <summary>

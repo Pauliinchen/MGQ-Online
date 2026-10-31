@@ -2,6 +2,7 @@
 //  StoryMapping.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Read the work option of a personal row
 //      Paulinchen  2026-10-28: Read the catch-up tables with the mapping
 //      Paulinchen  2026-10-23: Created
 //
@@ -59,6 +60,7 @@ public static class StoryMapping
         var index = new HashSet<long>();
         var localSteps = new List<LocalSteps>();
         var gates = new Dictionary<string, int>(StringComparer.Ordinal);
+        var work = new HashSet<StoryKey>();
         JsonElement tables = root.TryGetProperty("tables", out JsonElement found) && found.ValueKind == JsonValueKind.Object ? found : default;
 
         foreach (JsonElement row in RowsOf(tables, "keys"))
@@ -66,6 +68,11 @@ public static class StoryMapping
             if (!StoryKey.TryParse(Text(row, "key"), out StoryKey key) || !Kinds.TryGetValue(Text(row, "kind"), out StoryClass kind))
             {
                 continue;
+            }
+
+            if (kind == StoryClass.Personal && On(row, "work"))
+            {
+                work.Add(key);
             }
 
             kind |= On(row, "wholeWorld") ? StoryClass.WholeWorld : StoryClass.Personal;
@@ -107,7 +114,7 @@ public static class StoryMapping
             }
         }
 
-        return new StoryTable(rev, [.. switches], [.. variables], selfRules, index, localSteps, gates, catchup: CatchupTables.Read(tables));
+        return new StoryTable(rev, [.. switches], [.. variables], selfRules, index, localSteps, gates, catchup: CatchupTables.Read(tables), work: work);
     }
 
     /// <summary>

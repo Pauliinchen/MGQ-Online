@@ -2,6 +2,7 @@
 #  world.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Forgot the runs handed to the player once a world closed
 #      Paulinchen  2026-10-30: Measured the game data again once a world's mods loaded
 #                            - Carried a Discord invite taken during a game through the Mod Framework's restart
 #                            - Asked the Mod Framework for the release to play in place of the update offer
@@ -611,6 +612,7 @@ module MGQ_MpWorld
     return unless @world
 
     MGQ_MpWorldStory.close if defined?(MGQ_MpWorldStory)
+    MGQ_MpStoryReplay.forget if defined?(MGQ_MpStoryReplay)
     Link.close
     System.leave
     log("left world #{@world.id} (#{@world.name}): #{reason}")

@@ -2,6 +2,8 @@
 #  story_keys_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Kept a Classic leader's writes by the scopes of the reviewed list
+#                            - Checked that a run that changed a world key goes to its story's stream, and its entry to the world's or the party's story
 #      Paulinchen  2026-10-28: Checked that a Classic party's table is asked of the DLL with nothing of the scripts' own
 #                            - Checked that a Classic party's table is built anew once the chest flags came
 #      Paulinchen  2026-10-23: Created
@@ -12,8 +14,9 @@
 # up as the relay's tracks look keys up (fixtures/story/classes.json), and the one hook on the
 # game's writes: which writes a story records, with the event that wrote them, which it never
 # records (the multiplayer's own, a lost battle's defeat scene, another object's), one batch a
-# frame for the DLL, the writes before the mapping came, a Classic leader's writes, and a Classic
-# party's table built anew once the chest flags came.
+# frame for the DLL, the writes before the mapping came, a Classic leader's writes, a Classic
+# party's table built anew once the chest flags came, and the stream a run that changed a world key
+# goes to with where its entry is handed.
 
 require_relative "support"
 require_relative "story_support"
@@ -208,8 +211,17 @@ MGQ_Multiplayer::Bridge.frame
 check("the writes before the story mapping came wait, and go by the mapping once it came",
       [before, staged("story.writes")], [[], [[["s7096", "1", "map:7:39:2"], ["v1001", "n12", "map:7:39:2"], ["ss7.39.A", "1", "map:7:39:2"]]]])
 
-# A Classic party's leader hands the party's story the writes its table shares.
+# A Classic party's leader hands the party's story the writes the reviewed list makes the world's,
+# by the scopes the DLL builds of it.
 $raid = false
+module MGQ_MpOverworldSync; def self.in_world?; true; end; end
+fake.answer("story.replay_scopes") do |_request|
+  switches = "\0" * 8000
+  switches.setbyte(7096, keys::SCOPE_WORLD)
+  variables = "\0" * 4000
+  variables.setbyte(1001, keys::SCOPE_WORLD)
+  { "switches" => switches, "variables" => variables, "keys" => {}, "self" => {}, "index" => [], "self_default" => keys::SCOPE_WORLD }
+end
 $story_staged.clear
 keys.recording = :classic
 event.frame = lambda do |interpreter|
@@ -247,3 +259,42 @@ MGQ_MpStoryState.rewards
 later = keys.bridge_classic_table
 check("a Classic party's table is asked of the DLL with no request, kept while the rewards stay and asked again once they changed",
       [requests, first.switches.getbyte(2045), kept.equal?(first), later.switches.getbyte(2045), later.switches.getbyte(7102)], [[nil, nil], 8, true, 1, 8])
+
+# A run of the player's own game that changed a world key is logged with the DLL, which decides by
+# the events database whether it gives, and its entry goes on by its story: a Raid World's to the
+# world's story, on the track the player plays; a Classic world's to the co-op events, on the
+# leader's story or the player's own while they lead it.
+module MGQ_MpWorldStory; def self.track; $track; end; def self.hand_entry(entry); $world_handed << entry; end; end
+module MGQ_MpCoopEvents; def self.hand_entry(entry); $coop_handed << entry; end; end
+module MGQ_MpCoopStory; def self.leader; $leader; end; def self.guest?; false; end; end
+module MGQ_MpCoop; def self.in_party?; false; end; end
+module MGQ_MpOverworldSync; def self.in_world?; true; end; module Me; def self.id; "me1"; end; end; end
+Peer = Struct.new(:state)
+$world_handed = []
+$coop_handed = []
+world_switches = "\0" * 8000
+world_switches.setbyte(300, keys::SCOPE_WORLD)
+fake.answer("story.replay_scopes") { |_request| { "switches" => world_switches, "variables" => "\0" * 4000, "keys" => {}, "self" => {}, "index" => [], "self_default" => 0 } }
+fake.answer("story.replay_reads") { |_request| [] }
+fake.answer("story.replay_reset") { |_request| nil }
+ran = []
+fake.answer("story.replay_ran") { |request| ran << request; { "id" => "e#{ran.size}", "site" => request["site"], "scope" => "world", "stream" => request["stream"] } }
+story_run = lambda do
+  keys.instance_variable_set(:@scopes, nil)
+  story = Game_Interpreter.new
+  story.setup(pages[0], 39)
+  story.run { $game_switches[300] = !$game_switches[300] }
+end
+$raid = true
+$track = "t2"
+story_run.call
+$raid = false
+$leader = Peer.new({ "id" => "lead1" })
+story_run.call
+$leader = :me
+story_run.call
+check("a run that changed a world key goes to its story's stream: the player's own track in a Raid World, the leader's story in a Classic party, their own while they lead",
+      ran.map { |request| [request["site"], request["stream"], request["owner"], request["changed"].keys] },
+      [["map:7:39:1", "t2", false, ["s300"]], ["map:7:39:1", "story:lead1", false, ["s300"]], ["map:7:39:1", "story:me1", true, ["s300"]]])
+check("and its entry is handed on: a Raid World's to the world's story, a Classic world's to the co-op events",
+      [$world_handed.map { |entry| entry["id"] }, $coop_handed.map { |entry| entry["id"] }], [["e1"], ["e2", "e3"]])

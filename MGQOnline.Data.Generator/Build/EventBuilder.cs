@@ -2,6 +2,9 @@
 //  EventBuilder.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Failed the build on a command or script root the story replay does not class
+//                            - Wrote the pairs the one-time repair of stuck saves completes, as version 3
+//                            - Wrote the lists that give and the branches of each choice, as version 4
 //      Paulinchen  2026-10-30: Counted the entries of the named parts by what they hold and the two skills the game appends
 //      Paulinchen  2026-10-28: Derived the flags, the chests and the raid tables after the lists
 //                            - Took the translations' names of the cutscene roots too
@@ -10,6 +13,7 @@
 //----------------------------------------------------------------
 
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using MGQOnline.Bridge.Ruby;
 using MGQOnline.Data.Events;
@@ -46,7 +50,7 @@ internal static class EventBuilder
     /// <summary>
     /// The generator's version, which grows with each change of what it writes.
     /// </summary>
-    public const int Version = 2;
+    public const int Version = 4;
 
     /// <summary>
     /// The command that marks a common event, which the game puts first in every common event's list.
@@ -68,7 +72,8 @@ internal static class EventBuilder
     public static EventRows Build(IGameDataFiles files, BuildOptions options) => Read(files, options).Rows;
 
     /// <summary>
-    /// Reads a game's data into rows, keeping the lists read for the rules that walk them.
+    /// Reads a game's data into rows, keeping the lists read for the rules that walk them; a command
+    /// code or script root the story replay does not class fails the build (<see cref="ReplayChannels"/>).
     /// </summary>
     /// <param name="files">The game's data files.</param>
     /// <param name="options">What the build is told about the game.</param>
@@ -103,6 +108,11 @@ internal static class EventBuilder
 
         rows.FingerprintParts.AddRange(GameFingerprint.Parts(PartIds(source, troops, normalised, maps, out int actors)));
         BuiltGame game = DerivedBuild.Derive(rows, lists, source, commons, actors);
+        if (ReplayChannels.Unclassed(game) is { Count: > 0 } unclassed)
+        {
+            throw new InvalidDataException("The story replay classes no channel of: " + string.Join("; ", unclassed));
+        }
+
         rows.Counts["actors"] = actors;
         rows.Counts["switches"] = rows.Switches.Count + 1;
         rows.Counts["variables"] = rows.Variables.Count + 1;

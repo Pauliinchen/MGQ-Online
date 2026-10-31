@@ -2,6 +2,7 @@
 #  raid_difficulty_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Expected a Classic party to keep the difficulty each player's own, by the reviewed list
 #      Paulinchen  2026-10-30: Expected the forms without the game data's fields
 #                            - Left the hints fitting their lines to world_data_test.rb
 #      Paulinchen  2026-10-23: Left the calls a new world and an edit hand the directory to the DLL's tests
@@ -489,5 +490,5 @@ mixed = state.mix(story, mine, [])
 check("a teller's Labyrinth, Colosseum and difficulty never reach the player, the story does",
       [mixed[0][41], mixed[0][28], mixed[1][902], mixed[1][149], mixed[1][1001]], [nil, nil, 4, 5, 30])
 MGQ_MpWorld.instance_variable_set(:@world, plain_world)
-check("a Classic world's party stories stay as they were", [state.personal_variable?(902), state.personal_switch?(41)], [false, false])
+check("a Classic world's party keeps them each player's own too, by the same reviewed list", [state.personal_variable?(902), state.personal_switch?(41)], [true, true])
 MGQ_MpWorld.instance_variable_set(:@world, nil)

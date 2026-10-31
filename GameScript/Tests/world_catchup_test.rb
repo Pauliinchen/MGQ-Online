@@ -2,6 +2,10 @@
 #  world_catchup_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Checked that a missed companion's recruit page is played once a route finished
+#                            - Checked that the rows give only the history before the world's log
+#                            - Checked that a world chest and a Makina by level are played in the player's game
+#                            - Stood in for the replay the world's track waits on
 #      Paulinchen  2026-10-28: Dropped the stand-in for the telling that may go on after a move
 #                            - Checked that the rules of the catch-up come from the DLL once per revision of the mapping
 #                            - Checked that the tables built from the rows before the rules came are kept, and built again once
@@ -77,6 +81,15 @@
 # vehicles and Makina, each once.
 
 require_relative "catchup_support"
+
+# Stands in for story_replay.rbx: the pages the catch-up hands the player's game to play, in
+# $derived as [fields, why], with no run of the world's track waiting.
+module MGQ_MpStoryReplay
+  def self.derive(fields, why); ($derived ||= []) << [fields, why]; end
+  def self.running?; false; end
+  def self.waiting; []; end
+  def self.free?; false; end
+end
 
 story = MGQ_MpWorldStory
 catchup = MGQ_MpWorldCatchup
@@ -220,14 +233,15 @@ relay({ "rev" => 4, "wrev" => 4, "p" => 26, "part" => "2" }, packed({ 1001 => 26
 frames(40)
 check("a player in the world's story gets every key item it gave, and loses what it took",
       [$game_party.items[502], $game_party.items[503], $game_party.items[504]], [1, 0, 0])
-check("and the story chests the world opened, which show open for them too", [$game_party.items[501], $game_self_switches[[30, 4, "A"]]], [1, true])
-check("with the chest flags they turn on, such as an ore the Chaos forge asks for", $game_switches[7102], true)
+check("and the story chests the world opened are played in their own game, which gives what each gives, such as an ore the Chaos forge asks for",
+      [$derived, $game_party.items[501], $game_switches[7102]], [[[{ "chest" => "ss30.4.A" }, "c:30.4.A"]], 0, false])
 frames(40)
 story.pushed(MGQ_MpOverworldSync::STORY_FIELD => "5", :relay => true)
 frames(1)
 relay({ "rev" => 5, "wrev" => 5, "p" => 31, "part" => "2" }, packed({ 1001 => 31 }, [], { [30, 4, "A"] => true }))
 frames(40)
-check("each once, the next only as the world gives it", [$game_party.items[502], $game_party.items[501], $game_party.items[504]], [1, 1, 1])
+check("each once, the next only as the world gives it", [$game_party.items[502], $derived.size, $game_party.items[504]], [1, 1, 1])
+$derived = nil
 
 # Companions join by their gates, Sonya's Chaos return at 250 among them.
 sonya = REAL_JOINS.find { |row| row.persona == 842 && row.site == "map:1834:20:1" }
@@ -403,6 +417,33 @@ frames(1)
 relay({ "rev" => 16, "wrev" => 16, "p" => 40, "part" => "3", "clear" => "ad", "done" => "ad" }, packed({ 1001 => 40 }, [7096]))
 frames(40)
 check("a finished route's rows count while the story is back at the Great Decision", MGQ_MpStoryState.knows?($game_actors[1], 930), true)
+
+# The rows give only the history the world's story was past where its log starts, side content
+# without a step too; the world's track replays the runs after.
+tables(:REWARDS => [reward.new(:i, 600, 1, "map:36:18:1", "2", 20, nil, [[:v, 1001, 20]], true),
+                    reward.new(:i, 601, 1, "map:36:19:1", "2", 30, nil, [[:v, 1001, 30]], true),
+                    reward.new(:i, 700, 1, "map:40:2:1", nil, nil, nil, [[:s, 3000]], true),
+                    reward.new(:i, 701, 1, "map:40:3:1", nil, nil, nil, [[:s, 3001]], true)])
+new_game({ 1001 => 10 }, [], 40)
+frames(1)
+relay({ "rev" => 17, "wrev" => 17, "p" => 32, "part" => "2", "start" => [25, 0, 0, 0], "log" => packed({ 1001 => 25 }, [3000], {}).merge("s3001" => "0") },
+      packed({ 1001 => 32 }, [3000, 3001]))
+frames(80)
+check("a story laid over the player's gives a row of the history the world was past where its log starts once, and nothing of a row whose run the log holds",
+      [600, 601, 700, 701].map { |id| $game_party.items[id] }, [1, 0, 1, 0])
+
+# A companion the player missed joins by their recruit page played in the player's game once their
+# story finished a route, whose fight counts as won there (story_replay.rbx).
+tables(:JOINS => [join.new(77, 77, "map:132:23:1", "1", 7, nil, [[:v, 1001, 7], [:v, 1056, 4]], 7, :start, 525, true)])
+$sharing = :story
+new_game({ 1001 => 39 }, [], 40)
+frames(1)
+relay({ "rev" => 18, "wrev" => 18, "p" => 40, "part" => "3", "clear" => "ad", "done" => "ad" }, packed({ 1001 => 40 }, [7096]))
+frames(80)
+check("a companion the player missed has their recruit page played in the player's game once a route finished, once",
+      [$derived, roster.include?(77)], [[[{ "site" => "map:132:23:1" }, "m:77"]], false])
+$derived = nil
+$sharing = :off
 
 # A join and a removal of one event go by their order in its list.
 tables(:REMOVALS => [removal.new(16, 16, "map:483:86:1", "2", 24, nil, [[:v, 1001, 24]], true, 262),
@@ -856,25 +897,28 @@ $game_party.gain_item($data_items[701], 3)
 frames(1)
 relay({ "rev" => 30, "wrev" => 30, "p" => 9, "part" => "1" }, packed({ 1001 => 9 }))
 frames(40)
-check("a Makina no player of the world got stays away, and copies beyond the first of one the player got go",
-      [$game_party.items[700], $game_party.items[701], $game_self_switches[[0, 701, "F"]], $messages.grep(/Makina/)], [0, 1, true, []])
+check("a Makina no player of the world got stays away, and the copies the player got stay theirs",
+      [$game_party.items[700], $game_party.items[701], $game_self_switches[[0, 701, "F"]], $derived, $messages.grep(/Makina/)], [0, 3, true, nil, []])
 $game_self_switches[[0, 700, "F"]] = true
 frames(40)
-check("once another player got it, it comes as the player's level reaches its area level, without a notice", [$game_party.items[700], $messages.grep(/Makina/)], [1, []])
+check("once another player got it and the player's level reaches its area level, its chest plays in the player's game, without a notice",
+      [$derived.uniq, $messages.grep(/Makina/)], [[[{ "site" => "map:215:23:1" }, "makina:700 at level 6"]], []])
+$derived = nil
 $game_self_switches[[0, 701, "F"]] = nil
 $game_party.items[701] = 1
 catchup.instance_variable_set(:@audit_due, true)
 frames(40)
 check("a Makina the player held before the world noted it counts as found on the next look, as on entering or after a load", $game_self_switches[[0, 701, "F"]], true)
 $game_party.gain_item($data_items[700], 1)
+$derived = nil
 frames(40)
-check("a chest giving one held already leaves one", $game_party.items[700], 1)
+check("a Makina the player holds plays no chest", $derived, nil)
 $game_party.lose_item($data_items[701], 1)
 frames(40)
-check("one above the player's level does not come", $game_party.items[701], 0)
+check("one above the player's level plays none", $derived, nil)
 $game_actors[1].cap = 10
 frames(40)
-check("nor one above a cap of another mod the player is held at", $game_party.items[701], 0)
+check("nor one above a cap of another mod the player is held at", $derived, nil)
 $game_actors[1].cap = 9999
 
 # An item unlocking a job or a race any player got is the whole world's.
@@ -891,11 +935,11 @@ new_game({ 1001 => 9 }, [], 1)
 frames(1)
 relay({ "rev" => 31, "wrev" => 31, "p" => 9, "part" => "1" }, packed({ 1001 => 9 }, [], { [0, 616, "F"] => true }))
 frames(40)
-check("another player gets it with the world's story, whatever their level, without a notice",
+check("another player gets it with the world's story, whatever their level, without a notice, as a battle's drop no run hands over",
       [$game_party.items[616], $messages], [1, []])
 $game_party.gain_item($data_items[616], 1)
 frames(40)
-check("its chest opened afterwards leaves one", $game_party.items[616], 1)
+check("the replay of the run that found it, which gives another, leaves one", $game_party.items[616], 1)
 new_game({ 1001 => 9 }, [], 10)
 $game_party.items[616] = 1
 MGQ_MpWorldCatchup.instance_variable_set(:@unlock_ids, nil)
@@ -1022,9 +1066,9 @@ new_game({ 1001 => 9 }, [], 10)
 frames(1)
 relay({ "rev" => 31, "part" => "1", "comps" => "80" }, packed({ 1001 => 9 }, [], { [0, 700, "F"] => true }))
 frames(40)
-check("the Levels page lists by level the Makina a player of the world got, the companions of joins the world's story got past and those it shares, never a join it has not reached",
+check("the Levels page lists by level the Makina a player of the world got, due while its chest waits to play, the companions of joins the world's story got past and those it shares, never a join it has not reached",
       catchup.unlocks.map { |unlock| [unlock.level, unlock.kind, unlock.name, unlock.got, unlock.due] },
-      [[6, :makina, "Auto Crossbow", true, false], [7, :companion, "Slime", true, false], [9, :companion, "Harpy", true, false]])
+      [[6, :makina, "Auto Crossbow", false, true], [7, :companion, "Slime", true, false], [9, :companion, "Harpy", true, false]])
 check("with the level the catch-up counts", catchup.counted_level, 10)
 new_game({ 1001 => 9 }, [], 10)
 frames(1)

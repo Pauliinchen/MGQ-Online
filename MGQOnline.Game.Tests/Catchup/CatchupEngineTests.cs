@@ -2,6 +2,9 @@
 //  CatchupEngineTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Covered a missed companion who joins by the replay of their recruit page
+//                            - Covered the history the world's log holds, which gives nothing from its row
+//                            - Covered a world chest played in the player's game
 //      Paulinchen  2026-10-28: Covered the return point in free order
 //                            - Covered a prize marked by a prize switch
 //                            - Covered a world chest the game shuts by a switch
@@ -92,12 +95,11 @@ public sealed class CatchupEngineTests
     }
 
     /// <summary>
-    /// Asserts that a world chest the game shuts by a switch gives its items once the world's story
-    /// turned the switch on, and shuts the chest in the player's game by that switch, while the
-    /// player who opened it gets nothing more.
+    /// Asserts that a world chest the game shuts by a switch plays in the player's game once the
+    /// world's story turned the switch on, while the player who opened it gets nothing more.
     /// </summary>
     [Fact]
-    public void SwitchChest_GivesItsItemsOnceTheWorldOpenedIt()
+    public void SwitchChest_PlaysOnceTheWorldOpenedIt()
     {
         CatchupTables tables = Read("""
             {"chests": [{"key": "s2719", "items": [767], "part": "mr", "step": 51, "flags": []}]}
@@ -118,9 +120,9 @@ public sealed class CatchupEngineTests
 
         RubyArray given = Actions(false);
 
-        Assert.Contains(given, action => action.Equals(new RubyArray { "give", "i", 767, 1, "c:s2719", true }));
-        Assert.Contains(given, action => action.Equals(new RubyArray { "switch", 2719, true }));
-        Assert.DoesNotContain(Actions(true), action => action.AsArray()[0].AsText() is "give" or "switch");
+        Assert.Contains(given, action => action.Equals(new RubyArray { "replay", new RubyHash { { "chest", "s2719" } }, "c:s2719" }));
+        Assert.DoesNotContain(given, action => action.AsArray()[0].AsText() is "give" or "switch");
+        Assert.DoesNotContain(Actions(true), action => action.AsArray()[0].AsText() is "replay");
     }
 
     /// <summary>
@@ -182,6 +184,88 @@ public sealed class CatchupEngineTests
 
         Assert.Empty(Settled("""{"rule": "free_order", "value": [{"part": "chaos", "step": 21}]}"""));
         Assert.Equal(new RubyArray { new RubyArray { "setting", "v", 1002, 137, "map:1900:37:1" } }, Settled(""));
+    }
+
+    /// <summary>
+    /// Asserts that a story laid over the player's gives the rows of the history the world's story
+    /// was past where its log starts once, side content without a step among them, and nothing of a
+    /// row whose run the log holds, which the world's track replays instead.
+    /// </summary>
+    [Fact]
+    public void LoggedHistory_GivesNothingFromItsRow()
+    {
+        CatchupTables tables = Read("""
+            {"rewards": [{"kind": "item", "id": 600, "amount": 1, "site": "map:36:18:1", "part": "2", "step": 20, "side": null, "marks": [["v", 1001, 20]], "ran": true},
+                         {"kind": "item", "id": 601, "amount": 1, "site": "map:36:19:1", "part": "2", "step": 30, "side": null, "marks": [["v", 1001, 30]], "ran": true},
+                         {"kind": "item", "id": 602, "amount": 1, "site": "map:40:2:1", "part": null, "step": null, "side": null, "marks": [["s", 3000]], "ran": true},
+                         {"kind": "item", "id": 603, "amount": 1, "site": "map:40:3:1", "part": null, "step": null, "side": null, "marks": [["s", 3001]], "ran": true}]}
+            """);
+        static RubyHash At(long progress, params int[] on) => new() { { "s", new RubyArray(on.Select(id => (RubyValue)id)) }, { "v", new RubyArray { new RubyArray { 1001, progress } } }, { "ss", new RubyArray() } };
+        RubyHash request = Request(new RubyArray());
+        request["look"] = "carried";
+        request["before"] = At(10);
+        request["own"] = At(32, 3000, 3001);
+        request["told"] = At(32, 3000, 3001);
+        request["log"] = At(25, 3000);
+        request["items"] = new RubyHash { { "i600", 0 }, { "i601", 0 }, { "i602", 0 }, { "i603", 0 } };
+        var engine = new CatchupEngine { Ledger = new RubyHash { { "world", "w1" }, { "rewards_repaired", true } } };
+
+        RubyArray first = engine.Check(tables, request)["actions"].AsArray();
+        RubyArray again = engine.Check(tables, request)["actions"].AsArray();
+
+        Assert.Equal(new RubyArray { new RubyArray { "give", "i", 600, 1, "g:map:36:18:1:i600", true }, new RubyArray { "give", "i", 602, 1, "g:map:40:2:1:i602", true } },
+            new RubyArray(first.Where(action => action.AsArray()[0].AsText() == "give")));
+        Assert.DoesNotContain(again, action => action.AsArray()[0].AsText() == "give");
+    }
+
+    /// <summary>
+    /// Asserts that a companion the player missed joins by the replay of their recruit page once a
+    /// route finished, once, whose fight the derived entry counts as won, and that the companion
+    /// setting Off adds no one.
+    /// </summary>
+    [Fact]
+    public void MissedCompanion_JoinsByReplayingTheRecruitPage()
+    {
+        CatchupTables tables = Read("""
+            {"joins": [{"actor": 241, "persona": 241, "site": "map:132:23:1", "part": "1", "step": 7, "side": null, "marks": [["v", 1001, 7], ["v", 1056, 4], ["s", 5028]], "gate": 31, "rule": "start", "index": 525, "ran": true}]}
+            """);
+        var engine = new CatchupEngine { Ledger = new RubyHash { { "world", "w1" }, { "rewards_repaired", true } } };
+        RubyArray Look(string sharing)
+        {
+            RubyHash request = Request(new RubyArray { new RubyArray { 1, 1, 40, RubyNil.Value } });
+            request["own"].AsHash()["s"] = new RubyArray { 7096 };
+            request["sharing"] = sharing;
+            return engine.Check(tables, request)["actions"].AsArray();
+        }
+
+        Assert.DoesNotContain(Look("off"), action => action.AsArray()[0].AsText() is "replay" or "join");
+        RubyArray first = Look("story");
+        Assert.Contains(first, action => action.Equals(new RubyArray { "replay", new RubyHash { { "site", "map:132:23:1" } }, "m:241" }));
+        Assert.DoesNotContain(first, action => action.AsArray()[0].AsText() == "join");
+        Assert.DoesNotContain(Look("story"), action => action.AsArray()[0].AsText() == "replay");
+    }
+
+    /// <summary>
+    /// Asserts that a job item any player of the world found, also as a battle's drop that no run
+    /// hands over, comes to a player who holds none, and that it counts once, so a replay that gives
+    /// it again leaves one.
+    /// </summary>
+    [Fact]
+    public void FoundJobItem_CountsOnceForEveryPlayer()
+    {
+        var engine = new CatchupEngine { Ledger = new RubyHash { { "world", "w1" }, { "rewards_repaired", true } } };
+        RubyArray Look(long held)
+        {
+            RubyHash request = Request(new RubyArray());
+            request["own"].AsHash()["ss"] = new RubyArray { new RubyArray { 0, 616, "F" } };
+            request["items"] = new RubyHash { { "i616", held } };
+            request["unlocks"] = new RubyArray { 616 };
+            return new RubyArray(engine.Check(CatchupTables.Empty, request)["actions"].AsArray().Where(action => action.AsArray()[0].AsText() is "give" or "trim"));
+        }
+
+        Assert.Equal(new RubyArray { new RubyArray { "give", "i", 616, 1, "found:616", false } }, Look(0));
+        Assert.Equal(new RubyArray { new RubyArray { "trim", 616, 1 } }, Look(2));
+        Assert.Empty(Look(1));
     }
 
     /// <summary>

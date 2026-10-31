@@ -2,6 +2,9 @@
 //  StoryTrackTypes.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Kept the routes the Great Decision offers in the world's summary
+//                            - Kept where the world's log starts in its summary, and the world's story there with a whole track
+//                            - Read the cursors of the save's log
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -11,7 +14,7 @@ using System.Collections.Generic;
 namespace MGQOnline.Game.Story;
 
 /// <summary>
-/// What a track reaches outside itself: the world room and the log.
+/// What a track reaches outside itself: the world room, the log and the save's log of runs.
 /// </summary>
 public interface IStoryTrackHost
 {
@@ -27,6 +30,12 @@ public interface IStoryTrackHost
     /// </summary>
     /// <param name="line">The line, starting with what wrote it.</param>
     void Log(string line);
+
+    /// <summary>
+    /// Reads the cursors of the save's log, see <see cref="RunLog.Cursors"/>.
+    /// </summary>
+    /// <returns>The number of the last entry of a track the log took, by the track's stream; none by default.</returns>
+    IReadOnlyDictionary<string, long> Cursors() => new Dictionary<string, long>();
 }
 
 /// <summary>
@@ -51,8 +60,10 @@ public sealed record StoryWrite(string Key, string Value, string Site);
 /// <param name="Part">The part it is in.</param>
 /// <param name="Route">The route locked, "none" for none.</param>
 /// <param name="Done">The routes it finished, in their order.</param>
+/// <param name="Open">The routes the relay grants at the Great Decision, in their order.</param>
 /// <param name="Checkpoints">The parts it keeps a checkpoint of.</param>
-public sealed record WorldSummary(long Rev, string Part, string Route, IReadOnlyList<string> Done, IReadOnlyList<string> Checkpoints);
+/// <param name="Start">The story markers (variables 1001, 1141, 1142 and 1143) where the world's log starts; <see langword="null"/> for a relay that tells none.</param>
+public sealed record WorldSummary(long Rev, string Part, string Route, IReadOnlyList<string> Done, IReadOnlyList<string> Open, IReadOnlyList<string> Checkpoints, IReadOnlyList<long>? Start);
 
 /// <summary>
 /// The relay moving a player behind on by their level.
@@ -75,7 +86,14 @@ public sealed record StoryMove(string From, string To, int? Gate, string By);
 /// <param name="Chests">The player's chest flags.</param>
 /// <param name="Held">The keys the player's own unanswered requests wrote, which keep the player's values.</param>
 public sealed record TrackState(string Why, string Track, string Part, int? Gate, StoryMove? Move, IReadOnlyDictionary<string, string> Keys,
-    IReadOnlyDictionary<string, string> Chests, IReadOnlySet<string> Held);
+    IReadOnlyDictionary<string, string> Chests, IReadOnlySet<string> Held)
+{
+    /// <summary>
+    /// Gets the world's story where its log starts, every key with its value there;
+    /// <see langword="null"/> for a relay that tells none.
+    /// </summary>
+    public IReadOnlyDictionary<string, string>? Log { get; init; }
+}
 
 /// <summary>
 /// What waits to be written into the game's story, in order: a whole track first, then single keys.

@@ -2,6 +2,7 @@
 //  PartyRewards.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Named the party chests that gave a key item, which a member behind plays
 //      Paulinchen  2026-10-28: Created
 //
 //----------------------------------------------------------------
@@ -11,17 +12,33 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using MGQOnline.Bridge.Ruby;
+using MGQOnline.Data.Events;
 using MGQOnline.Game.Story;
 
 namespace MGQOnline.Game.Catchup;
 
 /// <summary>
-/// The rewards of the game's events a party member of a Classic world catches up with
-/// (coop_story.rbx), written from the catch-up's tables as the scripts read them, in the shapes the
-/// constants of coop_story_rewards.rbx had.
+/// A party chest that gave a key item: the page that closes it, its self switch and the key items
+/// it gives.
+/// </summary>
+/// <param name="Site">The page that closes it.</param>
+/// <param name="Key">Its self switch.</param>
+/// <param name="Items">The key items asked for that it gives.</param>
+public sealed record KeyItemChest(ReplaySite Site, StoryKey Key, IReadOnlyList<int> Items);
+
+/// <summary>
+/// The rewards of the game's events a member behind a Classic leader catches up with once, the
+/// frozen rows of the leader's history before the log (coop_story.rbx), written from the catch-up's
+/// tables as the scripts read them, in the shapes the constants of coop_story_rewards.rbx had. What
+/// the leader's runs give from then on reaches the member by replay.
 /// </summary>
 public static class PartyRewards
 {
+    /// <summary>
+    /// The command that changes the party's items.
+    /// </summary>
+    private const int ChangeItems = 126;
+
     /// <summary>
     /// The item kinds by the letter the scripts name an item with.
     /// </summary>
@@ -68,6 +85,66 @@ public static class PartyRewards
     /// </summary>
     /// <param name="reward">The reward.</param>
     /// <returns>Such as "i501".</returns>
+    /// <summary>
+    /// Names the party chests that gave the leader a key item a member behind lacks, which the
+    /// member's game plays as runs of their own history: each chest open in the leader's story whose
+    /// closing page, with the common events it calls, gives one of the items.
+    /// </summary>
+    /// <param name="store">The events database.</param>
+    /// <param name="opened">The party chests' self switches that are on in the leader's story.</param>
+    /// <param name="items">The key items the member lacks.</param>
+    /// <returns>The chests, in the order given.</returns>
+    public static IReadOnlyList<KeyItemChest> KeyItemChests(EventStore store, IEnumerable<StoryKey> opened, IReadOnlyCollection<int> items)
+    {
+        ArgumentNullException.ThrowIfNull(store);
+        ArgumentNullException.ThrowIfNull(opened);
+        ArgumentNullException.ThrowIfNull(items);
+        var match = new PageMatch(store);
+        var chests = new List<KeyItemChest>();
+        foreach (StoryKey key in opened)
+        {
+            if (match.ChestPage(key) is not { } site || store.ListOf(site.MapId, site.EventId, site.PageNo) is not { } list)
+            {
+                continue;
+            }
+
+            int[] given = [.. ItemsGiven(store, list.ListId).Where(items.Contains).Distinct().Order()];
+            if (given.Length > 0)
+            {
+                chests.Add(new KeyItemChest(site, key, given));
+            }
+        }
+
+        return chests;
+    }
+
+    /// <summary>
+    /// Lists the items a list gives by Change Items, with the common events it calls.
+    /// </summary>
+    /// <param name="store">The events database.</param>
+    /// <param name="listId">The list.</param>
+    /// <returns>The items, each as often as a command gives it.</returns>
+    private static IEnumerable<int> ItemsGiven(EventStore store, int listId)
+    {
+        var lists = new Queue<int>([listId]);
+        var seen = new HashSet<int> { listId };
+        while (lists.TryDequeue(out int next))
+        {
+            foreach (CommandRow command in store.Commands(next).Where(command => command.Code == ChangeItems && command.P1 == 0))
+            {
+                yield return (int)command.P0;
+            }
+
+            foreach (ListCallRow call in store.RowsOf(next).Calls)
+            {
+                if (store.Common(call.CommonId) is { } common && seen.Add(common.ListId))
+                {
+                    lists.Enqueue(common.ListId);
+                }
+            }
+        }
+    }
+
     private static string ItemKey(EventReward reward) => ItemLetters[reward.Kind] + reward.Id.ToString(CultureInfo.InvariantCulture);
 
     /// <summary>

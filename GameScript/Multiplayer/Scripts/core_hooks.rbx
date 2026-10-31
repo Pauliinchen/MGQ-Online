@@ -2,6 +2,7 @@
 #  core_hooks.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Kept the game's own method of each hooked one, which plain names
 #      Paulinchen  2026-10-30: Let every hook stand aside while the mod sleeps
 #      Paulinchen  2026-10-12: Let around run the original with other arguments
 #      Paulinchen  2026-10-08: Counted and named the distinct methods in report
@@ -33,6 +34,9 @@ module MGQ_MpHooks
 
   # The original of each wrapped method by method.
   @originals ||= {}
+
+  # The game's own method of each hooked method by method: the name of the first alias a wrap made.
+  @plain ||= {}
 
   # How many methods around wrapped, which names each one's original.
   @arounds ||= 0
@@ -135,6 +139,7 @@ module MGQ_MpHooks
     before_label = "before #{owner}##{name}"
     after_label = "after #{owner}##{name}"
     owner.send(:alias_method, original, name)
+    @plain[[owner, name]] ||= original
     owner.send(:define_method, name) do |*args, &block|
       next send(original, *args, &block) if MGQ_MpHooks.asleep?
 
@@ -173,6 +178,7 @@ module MGQ_MpHooks
     original = :"mgq_mp_hooks_around_#{@arounds + 1}_#{name.to_s.gsub(/[?!=]/, '_')}"
     was_private = owner.private_method_defined?(name)
     owner.send(:alias_method, original, name)
+    @plain[[owner, name]] ||= original
     @arounds += 1
     cell = [body]
     owner.send(:define_method, name) do |*args, &block|
@@ -183,6 +189,23 @@ module MGQ_MpHooks
     owner.send(:private, name) if was_private
     @bodies[key] = cell
     count(script, 1, owner, name)
+  end
+
+  # Names the game's own method of a hooked method, which runs it without any script's hooks.
+  #
+  # @param owner [Module] The class the hooks were registered on.
+  # @param name [Symbol] The method.
+  # @return [Symbol] The alias that holds the game's method, the name itself for a method no hook wraps.
+  def self.plain(owner, name)
+    @plain[[owner, name]] || name
+  end
+
+  # Lists the methods of a class that hooks wrap.
+  #
+  # @param owner [Module] The class the hooks were registered on.
+  # @return [Array<Symbol>] The methods.
+  def self.hooked(owner)
+    @plain.keys.select { |hooked_owner, _name| hooked_owner.equal?(owner) }.map { |_owner, name| name }
   end
 
   # Notes a method a script followed or wrapped, for report.

@@ -2,6 +2,7 @@
 //  story_mapping.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Let a personal key be one of the game's working values
 //      Paulinchen  2026-10-28: Filled each table that holds no rows from seed rows, once
 //      Paulinchen  2026-10-23: Let shared and one-way keys be the whole world's, players behind included
 //                            - Kept the common events and the game's names with the derived index, which the battle server sends
@@ -352,7 +353,8 @@ const ORDER = whole(0, 1_000_000_000);
  * The kinds of story_keys, each with what it fits (switches, variables), the options it takes and
  * the option it needs:
  * - `personal`: each player's own, as a key without a row; a row only carries an option or a
- *   reviewed decision.
+ *   reviewed decision. With `work` it is one of the game's working values, which a story replay
+ *   keeps apart from the save; released builds read it as personal.
  * - `shared`: the world's story shares it.
  * - `one_way`: shared and only goes up (world_catchup_data.rbx ONE_WAY_VARIABLES, and the
  *   companions' affection, world_affection.rbx).
@@ -363,7 +365,7 @@ const ORDER = whole(0, 1_000_000_000);
  * - `count`: how many switches of a range are on, which the relay counts (world_catchup.rbx COUNTS).
  */
 export const KEY_KINDS = Object.freeze({
-  personal: Object.freeze({ switches: true, variables: true, options: ["defeatWrite"] }),
+  personal: Object.freeze({ switches: true, variables: true, options: ["defeatWrite", "work"] }),
   shared: Object.freeze({ switches: true, variables: true, options: ["defeatWrite", "wholeWorld", "routeReturnClears", "defeatReturns", "battleScene", "localSteps"] }),
   one_way: Object.freeze({ switches: false, variables: true, options: ["defeatWrite", "wholeWorld", "routeReturnClears", "defeatReturns", "battleScene", "localSteps"] }),
   scene: Object.freeze({ switches: true, variables: false, options: ["defeatWrite"] }),
@@ -403,6 +405,9 @@ const KEY_FIELDS = Object.freeze({
   // The game's post-defeat processing (common event 3000) writes it, and a frozen fight's undo
   // leaves it as the defeat set it (battles_raid_freeze_data.rbx DEFEAT_WRITES).
   defeatWrite: optional(ON),
+  // One of the game's working values, such as the transfer's map (v57): each game keeps its own,
+  // and a story replay never leaves one changed.
+  work: optional(ON),
   // Players behind the world share it with the world too, as the companions' affection, which is
   // the highest any player of the world reached (story_tracks.js).
   wholeWorld: optional(ON),

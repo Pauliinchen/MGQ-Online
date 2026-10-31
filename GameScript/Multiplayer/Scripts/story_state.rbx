@@ -2,6 +2,10 @@
 #  story_state.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Read what is each player's own in a Classic party from the reviewed list's scopes instead of the Classic story's ranges
+#                            - Kept the player's own self switches when a story is joined with theirs
+#                            - Kept every party chest's self switch the player's own in a Classic party, not only those of the map
+#                            - Repaired a save the 0.6.9.2 chest path left stuck, once, at its first load
 #      Paulinchen  2026-10-28: Read the rewards a party member catches up with, every chest and the chest flags from the catch-up tables the DLL holds
 #      Paulinchen  2026-10-24: Shared the second accessory slot (445) as a Raid World's story
 #                            - Gave the characters the second accessory slot once a story written past the game turned it on
@@ -62,9 +66,7 @@ module MGQ_MpStoryState
   EXTRA_ACCESSORY_SLOT = defined?(NWConst::Sw::EXTRA_ACCESSORY_SLOT) ? NWConst::Sw::EXTRA_ACCESSORY_SLOT : 445
 
   # Switches the game turns on for good and never off, which a track written over the player's
-  # story keeps on (see MGQ_MpWorldStory.kept_unlock?). Outside a Raid World they stay each player's
-  # own by the Classic party's table: a party's member borrows the leader's story and gets their own
-  # back, and the slot coming and going would move their equipment.
+  # story keeps on (see MGQ_MpWorldStory.kept_unlock?).
   UNLOCK_SWITCHES = [EXTRA_ACCESSORY_SLOT]
 
   # First variable that holds a companion's affection, one per companion.
@@ -96,6 +98,15 @@ module MGQ_MpStoryState
 
   # The topic that hands the rewards a party member catches up with, see PartyRewards in the DLL.
   REWARDS_TOPIC = "story.rewards"
+
+  # The topic of the one-time repair of a save the 0.6.9.2 chest path left stuck, see StoryTopics.Repair in the DLL.
+  REPAIR_TOPIC = "story.repair"
+
+  # The field of $game_system that tells the save was repaired, or needs no repair.
+  REPAIRED_FIELD = :@mgq_mp_repaired
+
+  # Frames between two tries of the repair while the DLL cannot decide it yet, a second.
+  REPAIR_FRAMES = 60
 
   # Frames between two looks whether the DLL holds newer rewards, five seconds.
   REWARDS_FRAMES = 300
@@ -160,6 +171,15 @@ module MGQ_MpStoryState
       end
       @chests = answer["chests"]
       @chest_flags = answer["chest_flags"]
+    end
+
+    # Reports whether a self switch is a chest's.
+    #
+    # @param key [Array] The self switch: map, event and letter.
+    # @return [Boolean] Whether it is.
+    def chest?(key)
+      @chest_set ||= Hash[@chests.map { |chest| [chest, true] }]
+      @chest_set.key?(key)
     end
 
     # Names the lists of a Hash by Symbols, as the constants did.
@@ -239,7 +259,7 @@ module MGQ_MpStoryState
   # @param story [Array] The switches, variables and self switches of the story.
   # @param personal [Array] Those of the player, whose own values win.
   # @param chests [Array<Array>] The self switches of the chests that stay the player's own, those
-  #   on the map by default; a chest the player never opened is left out.
+  #   on the map by default; a self switch of the player's own the player never set is left out.
   # @return [Array] The joined switches, variables and self switches.
   def self.mix(story, personal, chests = chest_keys)
     switches = story[0].dup
@@ -247,7 +267,7 @@ module MGQ_MpStoryState
     [personal[0].size, switches.size].max.times { |id| switches[id] = personal[0][id] if personal_switch?(id, story[1]) }
     [personal[1].size, variables.size].max.times { |id| variables[id] = personal[1][id] if personal_variable?(id) }
     self_switches = story[2].dup
-    (chests | (story[2].keys | personal[2].keys).select { |key| choice_self_switch?(key) }).each do |key|
+    (chests | (story[2].keys | personal[2].keys).select { |key| personal_self_switch?(key) }).each do |key|
       if personal[2].key?(key)
         self_switches[key] = personal[2][key]
       else
@@ -257,15 +277,29 @@ module MGQ_MpStoryState
     [switches, variables, self_switches]
   end
 
-  # Reports whether a switch is the player's own, by the open world's table (MGQ_MpStoryKeys): a
-  # Raid World's story mapping, a Classic party's table, whose side switches are the player's own
-  # until the Great Decision; in a Classic party also the outcomes of the member's own choices.
+  # Reports whether a switch is the player's own: in a Raid World by its story mapping
+  # (MGQ_MpStoryKeys), whose side switches are the player's own until the Great Decision; in a
+  # Classic party unless the reviewed list makes it the leader's story (classic_world?), and also
+  # the outcomes of the member's own choices.
   #
   # @param id [Integer] The switch.
   # @param variables [Array, nil] The variables of the story it belongs to, nil for the one played.
   # @return [Boolean] Whether it is.
   def self.personal_switch?(id, variables = nil)
-    !MGQ_MpStoryKeys.shared?(0, id, variables) || (!MGQ_MpCoop::Scope.raid? && choice_key?(:s, id))
+    return !MGQ_MpStoryKeys.shared?(0, id, variables) if MGQ_MpCoop::Scope.raid?
+
+    !classic_world?(0, id) || choice_key?(:s, id)
+  end
+
+  # Reports whether a key is the leader's story in a Classic party: a world key by the scopes of
+  # the reviewed list (MGQ_MpStoryKeys.scope_of), which the leader's story mirrors to every member
+  # who follows it. Every other key, a chest's too, is each member's own.
+  #
+  # @param kind [Integer] 0 for a switch, 1 for a variable, 2 for a self switch.
+  # @param key [Integer, Array] Its id or key.
+  # @return [Boolean] Whether it is; false before the list came.
+  def self.classic_world?(kind, key)
+    MGQ_MpStoryKeys.scope_of(kind, key) == MGQ_MpStoryKeys::SCOPE_WORLD
   end
 
   # Reports whether a switch is a chest flag, which only chests turn on.
@@ -333,26 +367,25 @@ module MGQ_MpStoryState
     defined?(MGQ_MpCoopChoices) && MGQ_MpCoopChoices.personal?(kind, id) ? true : false
   end
 
-  # Reports whether a variable is the player's own, by the open world's table; in a Classic party
-  # also the outcomes of the member's own choices.
+  # Reports whether a variable is the player's own, see personal_switch?.
   #
   # @param id [Integer] The variable.
   # @return [Boolean] Whether it is.
   def self.personal_variable?(id)
-    !MGQ_MpStoryKeys.shared?(1, id) || (!MGQ_MpCoop::Scope.raid? && choice_key?(:v, id))
+    return !MGQ_MpStoryKeys.shared?(1, id) if MGQ_MpCoop::Scope.raid?
+
+    !classic_world?(1, id) || choice_key?(:v, id)
   end
 
-  # Reports whether a self switch is the player's own, by the open world's table; in a Classic
-  # party also a chest's on the map, through coop_events.rbx, and one of a choice's lines, through
-  # coop_choices.rbx.
+  # Reports whether a self switch is the player's own, see personal_switch?; in a Classic party
+  # also one of a choice's lines, through coop_choices.rbx.
   #
   # @param key [Array] The self switch: map, event and letter.
   # @return [Boolean] Whether it is.
   def self.personal_self_switch?(key)
-    return true unless MGQ_MpStoryKeys.shared?(2, key)
-    return false if MGQ_MpCoop::Scope.raid?
+    return !MGQ_MpStoryKeys.shared?(2, key) if MGQ_MpCoop::Scope.raid?
 
-    ($game_map && MGQ_MpCoopEvents.chest_key?(key)) || choice_self_switch?(key) ? true : false
+    !classic_world?(2, key) || choice_self_switch?(key)
   end
 
   # Reports whether a switch, variable or self switch is the player's own.
@@ -796,6 +829,41 @@ module MGQ_MpStoryState
     "item #{key}"
   end
 
+  # Repairs a save the 0.6.9.2 chest path left stuck, once per save ("Issue 73 chest effects.md",
+  # E2): the DLL names the switches its chests prove on that the save holds off, the player's own
+  # alone in a world, and they are turned on, a log line each and no notice. A save the plain game
+  # made holds none. Tried after the map's update until the DLL could decide it.
+  def self.repair
+    return unless @repair_due && $game_system && MGQ_Multiplayer::Bridge.open? && defined?(MGQ_MpStoryReplay)
+    return if @repair_at && Graphics.frame_count >= @repair_at && Graphics.frame_count - @repair_at < REPAIR_FRAMES
+
+    @repair_at = Graphics.frame_count
+    raid = defined?(MGQ_MpCoop::Scope) && MGQ_MpCoop::Scope.raid? ? true : false
+    world = raid || (defined?(MGQ_MpOverworldSync) && MGQ_MpOverworldSync.in_world?) ? true : false
+    answer = MGQ_MpStoryReplay.ask_with_values(REPAIR_TOPIC, "world" => world, "raid" => raid)
+    return unless answer.is_a?(Hash) && answer["switches"]
+
+    MGQ_MpStoryKeys.as("repair") do
+      answer["switches"].each do |id|
+        $game_switches[id] = true
+        log("repaired the save: turned switch #{id} on, which a chest the save holds shut turns on")
+      end
+    end
+    $game_system.instance_variable_set(REPAIRED_FIELD, true)
+    @repair_due = false
+  rescue => e
+    log_once([:repair, e.class], "repairing the save failed: #{e.class}: #{e.message}")
+  end
+
+  # Notes whether a save loaded or a new game still needs the repair: a new game never does.
+  #
+  # @param new_game [Boolean] Whether a new game started.
+  def self.repair_check(new_game)
+    $game_system.instance_variable_set(REPAIRED_FIELD, true) if new_game && $game_system
+    @repair_due = $game_system && !$game_system.instance_variable_get(REPAIRED_FIELD) ? true : false
+    @repair_at = nil
+  end
+
   # Says how far a story is for the log: the main story and the three routes' progress.
   #
   # @param variables [Array] The story's variables.
@@ -805,4 +873,17 @@ module MGQ_MpStoryState
   rescue
     "unknown progress"
   end
+end
+
+# Game hooks of this script alone, through core_hooks.rbx.
+
+begin
+  # A save's first load in this build repairs it once the player is on the map; a new game needs none.
+  if defined?(DataManager)
+    MGQ_MpHooks.after(DataManager.singleton_class, :extract_save_contents, "story_state") { |_contents| MGQ_MpStoryState.repair_check(false) }
+    MGQ_MpHooks.after(DataManager.singleton_class, :setup_new_game, "story_state") { MGQ_MpStoryState.repair_check(true) }
+  end
+  MGQ_MpHooks.after(Game_Map, :update, "story_state") { |*_args| MGQ_MpStoryState.repair }
+rescue => e
+  MGQ_MpStoryState.log("repair hooks FAILED: #{e.class}: #{e.message}")
 end

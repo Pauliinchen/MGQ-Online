@@ -2,6 +2,9 @@
 //  ListBuild.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Handed each list's script roots on
+//                            - Handed on what each list's scripts do to self switches
+//                            - Handed on each list's scripts that touch what a player holds
 //      Paulinchen  2026-10-28: Moved the folder rule of transfers to the game data paths
 //                            - Handed each list on to the derived rows
 //                            - Created
@@ -99,7 +102,7 @@ internal static class ListBuild
         }
 
         (List<ForcedTransfer> forced, List<int> scriptSwitches) = ScriptTexts.Of(list);
-        return new BuiltList(rows.Lists[^1], commands, forced, scriptSwitches);
+        return new BuiltList(rows.Lists[^1], commands, forced, scriptSwitches, ScriptRoots.In(list), ScriptTexts.SelfSwitchesOf(list), Gives.ScriptsOf(list));
     }
 
     /// <summary>

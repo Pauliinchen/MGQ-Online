@@ -37,7 +37,9 @@ public readonly record struct ShipPlace(int Map, int X, int Y);
 public sealed record DecisionRoute(int Route, int? Side, int? Return, int? Map);
 
 /// <summary>
-/// An outcome of a choice: what it sets and brings.
+/// An outcome of a choice: the label and the note the decision screen shows, and the frozen rows of
+/// what it sets and brings, which only a choice from before the save's log applies (see
+/// <see cref="StoryChoices.Logged"/>).
 /// </summary>
 /// <param name="Label">What the screen calls it.</param>
 /// <param name="Note">What it brings, for the screen's line below it.</param>
@@ -63,9 +65,10 @@ public sealed record ChoiceBranch(string Key, string Title, int Point, string Hi
 
 /// <summary>
 /// The story's choices a player makes for themselves, whatever the leader or the world chose, as
-/// coop_choices.rbx kept them: each choice's outcomes, what Succubus Village brings by who is with
-/// the player, the companions only a player's own outcome brings, and the routes of the Great
-/// Decision.
+/// coop_choices.rbx kept them: each choice's labels, notes and hints for the decision screen, the
+/// frozen rows of its outcomes for history from before the save's log, what Succubus Village brings
+/// by who is with the player, the companions only a player's own outcome brings, and the routes of
+/// the Great Decision.
 /// </summary>
 public static class ChoiceTable
 {

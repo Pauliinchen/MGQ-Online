@@ -2,6 +2,8 @@
 //  StoryTrackTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Checked the routes the Great Decision offers
+//                            - Checked the place where the world's log starts
 //      Paulinchen  2026-10-28: Checked whose ended telling the game waits for the take of
 //      Paulinchen  2026-10-23: Created
 //
@@ -93,6 +95,40 @@ public sealed class StoryTrackTests
         track.Write([new StoryWrite("v50", "n3", "ce:20")]);
 
         Assert.Null(track.Take());
+    }
+
+    /// <summary>
+    /// Asserts that the world's summary tells the story markers where the world's log starts, and
+    /// none for a relay that tells none.
+    /// </summary>
+    [Fact]
+    public void State_TellsWhereTheWorldsLogStarts()
+    {
+        StoryTrack Told(string start)
+        {
+            var track = new StoryTrack(new Host(), () => "t1");
+            track.Enter(false, null);
+            track.Connection(true);
+            track.Receive($$"""{"t":"state","why":"sync","track":"world","rev":2,"part":"1","gate":null,"world":{"rev":2,"part":"1","route":"none","done":[],"checkpoints":[]{{start}}},"mapping":7,"seq":0,"keys":{},"chests":{},"tellings":[]}""");
+            return track;
+        }
+
+        Assert.Equal([12L, 0L, 3L, 0L], Told(""","start":[12,0,3,0]""").World!.Start);
+        Assert.Null(Told("").World!.Start);
+    }
+
+    /// <summary>
+    /// Asserts that the world's summary keeps the routes the relay grants at the Great Decision.
+    /// </summary>
+    [Fact]
+    public void State_TellsTheRoutesTheGreatDecisionOffers()
+    {
+        var track = new StoryTrack(new Host(), () => "t1");
+        track.Enter(false, null);
+        track.Connection(true);
+        track.Receive("""{"t":"state","why":"sync","track":"world","rev":2,"part":"3","gate":null,"world":{"rev":2,"part":"3","route":"none","done":["ad"],"open":["mr"],"checkpoints":[]},"mapping":7,"seq":0,"keys":{},"chests":{},"tellings":[]}""");
+
+        Assert.Equal(["mr"], track.World!.Open);
     }
 
     /// <summary>

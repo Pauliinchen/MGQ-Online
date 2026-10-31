@@ -2,6 +2,9 @@
 //  CatchupLook.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Played the recruit page of a companion the player missed once a route finished
+//                            - Gave from the rows only the history the world's story was past where its log starts, which the world's track replays after
+//                            - Played a world chest and a Makina by level in the player's game instead of handing out their items
 //      Paulinchen  2026-10-28: Left the player's own values alone where the latest row lies in free order
 //                            - Gave a prize marked by a prize switch as one marked by a prize variable
 //                            - Opened a world chest the game shuts by a switch
@@ -31,7 +34,8 @@ namespace MGQOnline.Game.Catchup;
 /// on, "v" [id, value] each, "ss" the self switches on), "roster" ([id, persona, base level, cap]
 /// each), "items" (counts by "i", "w" or "a" and the id), "worn", "unlocks" (the items unlocking a
 /// job or race), "map", "encounters", "summary" (the world's summary),
-/// "sharing" and "starts" ([companion, start level] each).
+/// "sharing", "starts" ([companion, start level] each) and "start" (the story markers where the
+/// world's log starts, nil while nothing is logged).
 /// </remarks>
 internal sealed class CatchupLook
 {
@@ -184,6 +188,11 @@ internal sealed class CatchupLook
     private readonly Dictionary<long, long> _starts = [];
 
     /// <summary>
+    /// The world's story where its log starts, <see langword="null"/> while nothing is logged.
+    /// </summary>
+    private readonly StoryValues? _log;
+
+    /// <summary>
     /// The actions answered so far.
     /// </summary>
     private readonly RubyArray _actions = [];
@@ -240,6 +249,8 @@ internal sealed class CatchupLook
                 _starts[start.AsArray()[0].AsLong()] = start.AsArray()[1].AsLong();
             }
         }
+
+        _log = StoryOf(request["log"]);
     }
 
     /// <summary>
@@ -291,6 +302,7 @@ internal sealed class CatchupLook
             answer["sharable"] = new RubyArray(NoteRoster().Select(id => (RubyValue)id));
             answer["orbs"] = _mode == "world" && OrbsDue();
             CheckMakina();
+            MissedCompanions();
             CheckFoundItems();
             CheckCounts();
             LiftWarpBan();
@@ -524,6 +536,15 @@ internal sealed class CatchupLook
     /// <param name="told">The world's story, <see langword="null"/> when it does not count.</param>
     /// <returns>Whether one is.</returns>
     private bool PassedAny(StoryPlace place, StoryValues story, StoryValues? told) => Passed(place, story) || (told is not null && Passed(place, told, story));
+
+    /// <summary>
+    /// Reports whether a row's history lies before the world's log, the only history whose rows give
+    /// what they give: the world's story was past it where its log starts. The world's track
+    /// replays the runs its log holds.
+    /// </summary>
+    /// <param name="place">The row's place.</param>
+    /// <returns>Whether it does.</returns>
+    private bool BeforeLog(StoryPlace place) => _log is null || Passed(place, _log, _own);
 
     /// <summary>
     /// Names a row in the notes.
@@ -790,7 +811,7 @@ internal sealed class CatchupLook
         foreach (CatchupReward row in _tables.Rewards.Where(row => row.Kind == "skill" && row.Ran))
         {
             string key = KeyOf(row);
-            if (!Truthy(waits[key]) && PassedAny(row.Place, story, told))
+            if (!Truthy(waits[key]) && BeforeLog(row.Place) && PassedAny(row.Place, story, told))
             {
                 Act("learn", row.Id, key);
             }
@@ -826,7 +847,7 @@ internal sealed class CatchupLook
     /// <param name="told">The world's story while the player plays it.</param>
     private void MissingLessons(StoryValues story, StoryValues? told)
     {
-        foreach (CatchupLesson row in _tables.Lessons.Where(row => row.Ran && InRoster(row.Actor) && PassedAny(row.Place, story, told)))
+        foreach (CatchupLesson row in _tables.Lessons.Where(row => row.Ran && InRoster(row.Actor) && BeforeLog(row.Place) && PassedAny(row.Place, story, told)))
         {
             Act("teach", row.Actor, row.Skill);
         }
@@ -839,7 +860,7 @@ internal sealed class CatchupLook
     /// <param name="told">The world's story while the player plays it.</param>
     private void MissingClassLevels(StoryValues story, StoryValues? told)
     {
-        foreach (CatchupClassLevel row in _tables.ClassLevels.Where(row => row.Ran && (row.Actor == Hero || InRoster(row.Actor)) && PassedAny(row.Place, story, told)))
+        foreach (CatchupClassLevel row in _tables.ClassLevels.Where(row => row.Ran && (row.Actor == Hero || InRoster(row.Actor)) && BeforeLog(row.Place) && PassedAny(row.Place, story, told)))
         {
             Act("class", row.Actor, row.Class, row.Level);
         }
@@ -856,7 +877,7 @@ internal sealed class CatchupLook
         foreach (CatchupJoin row in _tables.Index.StoryJoins)
         {
             string key = KeyOf("j", row);
-            if (!IsTrue(done[key]) || row.Place.Part is null || !row.Ran || InRoster(row.Actor) || !PassedAny(row.Place, story, told) || TakenAwaySince(row, story, told))
+            if (!IsTrue(done[key]) || row.Place.Part is null || !row.Ran || InRoster(row.Actor) || !BeforeLog(row.Place) || !PassedAny(row.Place, story, told) || TakenAwaySince(row, story, told))
             {
                 continue;
             }
@@ -917,7 +938,7 @@ internal sealed class CatchupLook
         var earlier = new Dictionary<(string, int), List<RubyValue>>();
         foreach (CatchupSetting row in _tables.Settings)
         {
-            if ((row.Place.Part is { } rowPart && StoryParts.Routes.Contains(rowPart) && rowPart != part) || !PassedAny(row.Place, story, told))
+            if ((row.Place.Part is { } rowPart && StoryParts.Routes.Contains(rowPart) && rowPart != part) || !BeforeLog(row.Place) || !PassedAny(row.Place, story, told))
             {
                 continue;
             }
@@ -969,7 +990,9 @@ internal sealed class CatchupLook
     private static RubyValue ValueOf(CatchupSetting row) => row.Kind == "variable" ? row.Number : row.On;
 
     /// <summary>
-    /// Finds which vehicles a row behind the player's story or the world's gave.
+    /// Finds which vehicles a row behind the player's story or the world's gave: true where a row
+    /// before the world's log did, nil where only a row the log holds did, whose replay places it,
+    /// and false where none did.
     /// </summary>
     /// <param name="story">The player's story.</param>
     /// <param name="told">The world's story while the player plays it.</param>
@@ -978,7 +1001,8 @@ internal sealed class CatchupLook
         var given = new RubyArray();
         foreach (string vehicle in (string[])["boat", "ship", "airship"])
         {
-            given.Add(_tables.Vehicles.Any(row => row.Vehicle == vehicle && PassedAny(row.Place, story, told)));
+            CatchupVehicle[] passed = [.. _tables.Vehicles.Where(row => row.Vehicle == vehicle && PassedAny(row.Place, story, told))];
+            given.Add(passed.Any(row => BeforeLog(row.Place)) ? true : passed.Length > 0 ? RubyNil.Value : false);
         }
 
         Act("vehicles", given);
@@ -1005,7 +1029,7 @@ internal sealed class CatchupLook
             }
 
             done[key] = true;
-            if (!carried && !UnclaimedPrize(row))
+            if (!(carried && BeforeLog(row.Place)) && !UnclaimedPrize(row))
             {
                 continue;
             }
@@ -1085,7 +1109,7 @@ internal sealed class CatchupLook
                 continue;
             }
 
-            done[key] = carried ? Math.Max(row.Gate ?? 0, capped) : true;
+            done[key] = carried && BeforeLog(row.Place) ? Math.Max(row.Gate ?? 0, capped) : true;
         }
 
         foreach (CatchupActorChange row in _tables.ActorChanges)
@@ -1103,7 +1127,7 @@ internal sealed class CatchupLook
     }
 
     /// <summary>
-    /// Gives the world's key items and the items of its story chests.
+    /// Gives the world's key items, and plays the world's story chests in the player's game.
     /// </summary>
     /// <param name="story">The player's story.</param>
     /// <param name="carried">Whether a story laid over theirs carried them past what is new.</param>
@@ -1126,7 +1150,7 @@ internal sealed class CatchupLook
             }
 
             done[key] = true;
-            if (row.Amount < 0 && row.Ran && (carried || !mine))
+            if (row.Amount < 0 && row.Ran && (carried || !mine) && BeforeLog(row.Place))
             {
                 Give("i", row.Item, row.Amount, key);
             }
@@ -1148,21 +1172,12 @@ internal sealed class CatchupLook
             }
 
             done[key] = true;
-            if (!carried && mine)
+            if ((!carried && mine) || !(_log is null || _log.Holds(opened)))
             {
                 continue;
             }
 
-            foreach (int item in row.Items)
-            {
-                Give("i", item, 1, key);
-            }
-
-            TurnOnFlags(row, key);
-            if (!mine)
-            {
-                Open(row.Key);
-            }
+            Act("replay", new RubyHash { { "chest", row.Key.ToString() } }, key);
         }
 
         RestockKeyItems(story, told);
@@ -1179,7 +1194,7 @@ internal sealed class CatchupLook
         var owed = new List<(int Item, int Amount)>();
         foreach (CatchupKeyItem row in _tables.KeyItems)
         {
-            if (row.Amount <= 0 || !PassedAny(row.Place, story, told) || TakenSince(row, story, story) || (told is not null && TakenSince(row, told, story)))
+            if (row.Amount <= 0 || !BeforeLog(row.Place) || !PassedAny(row.Place, story, told) || TakenSince(row, story, story) || (told is not null && TakenSince(row, told, story)))
             {
                 continue;
             }
@@ -1223,7 +1238,7 @@ internal sealed class CatchupLook
     {
         foreach (CatchupReward row in _tables.Rewards.Where(row => row.Kind == "item" && row.Ran && OwnSwitchMark(row.Place) && _unlockIds.Contains(row.Id)))
         {
-            if (PassedAny(row.Place, story, told) && _items.TryGetValue("i" + row.Id, out long count) && count == 0)
+            if (BeforeLog(row.Place) && PassedAny(row.Place, story, told) && _items.TryGetValue("i" + row.Id, out long count) && count == 0)
             {
                 Give("i", row.Id, 1, KeyOf(row) + ":owed");
             }
@@ -1267,7 +1282,7 @@ internal sealed class CatchupLook
         {
             string key = KeyOf(row);
             string item = KindOf(row) + row.Id;
-            if (row.Kind == "skill" || !Truthy(done[key]) || waits.ContainsKey(key) || !row.Ran || item == "w4112" || !row.Place.Site.StartsWith("map:", StringComparison.Ordinal) || !Passed(row.Place, story))
+            if (row.Kind == "skill" || !Truthy(done[key]) || waits.ContainsKey(key) || !row.Ran || item == "w4112" || !row.Place.Site.StartsWith("map:", StringComparison.Ordinal) || !BeforeLog(row.Place) || !Passed(row.Place, story))
             {
                 continue;
             }
@@ -1325,39 +1340,6 @@ internal sealed class CatchupLook
     {
         Act("set", id, value);
         _own.SetVariable(id, value);
-    }
-
-    /// <summary>
-    /// Shuts a world-wide chest in the player's game: its self switch, or its switch for a chest the
-    /// game shuts by a switch.
-    /// </summary>
-    /// <param name="key">The chest's key.</param>
-    private void Open(StoryKey key)
-    {
-        if (key.Kind == StoryKeyKind.Switch)
-        {
-            Act("switch", key.Id, true);
-            _own.SetSwitch(key.Id, true);
-            return;
-        }
-
-        Act("open", SelfSwitchOf(key));
-        _own.SetSelfSwitch(key);
-    }
-
-    /// <summary>
-    /// Turns on the chest flags a world-wide chest turns on.
-    /// </summary>
-    /// <param name="row">The chest.</param>
-    /// <param name="key">Its row, for the log.</param>
-    private void TurnOnFlags(CatchupChest row, string key)
-    {
-        foreach (int id in row.Flags.Where(id => !_own.Switch(id)))
-        {
-            Act("switch", id, true);
-            _own.SetSwitch(id, true);
-            Log($"turned on s{id} of {key}");
-        }
     }
 
     /// <summary>
@@ -1456,7 +1438,7 @@ internal sealed class CatchupLook
                     continue;
                 }
 
-                if (row.Place.Part is null)
+                if (row.Place.Part is null || (carried && !BeforeLog(row.Place)))
                 {
                     done[key] = true;
                     continue;
@@ -1532,7 +1514,7 @@ internal sealed class CatchupLook
 
         foreach (int actor in order)
         {
-            CatchupRemoval[] lasting = [.. removed[actor].Where(row => row.First)];
+            CatchupRemoval[] lasting = [.. removed[actor].Where(row => row.First && BeforeLog(row.Place))];
             if (lasting.Length == 0 || actor == Hero || !InRoster(actor))
             {
                 continue;
@@ -1771,20 +1753,19 @@ internal sealed class CatchupLook
     private long StartLevel(long id) => _starts.TryGetValue(id, out long level) ? level : 1;
 
     /// <summary>
-    /// Hands out every Makina found and reached, and takes back extra copies.
+    /// Plays the chest of every Makina found and reached that the player lacks in their own game.
     /// </summary>
     private void CheckMakina()
     {
         foreach (CatchupMakina row in _tables.Makina)
         {
             string key = "i" + row.Item;
-            if (!_items.ContainsKey(key) || TrimCopies(row.Item) || _items[key] != 0 || !Found(row.Item) || !Reached(row.Level))
+            if (!_items.ContainsKey(key) || _items[key] != 0 || !Found(row.Item) || !Reached(row.Level))
             {
                 continue;
             }
 
-            Act("makina", row.Item, $"makina:{row.Item} at level {row.Level}");
-            _items[key] += 1;
+            Act("replay", new RubyHash { { "site", row.Site } }, $"makina:{row.Item} at level {row.Level}");
         }
     }
 
@@ -1822,8 +1803,11 @@ internal sealed class CatchupLook
     }
 
     /// <summary>
-    /// Hands out every found item unlocking a job or race the player lacks.
+    /// Hands out every found item unlocking a job or race the player lacks, and keeps one of each.
     /// </summary>
+    /// <remarks>
+    /// A found mark notes a gain wherever it happened, a battle's drop too, which no run hands over.
+    /// </remarks>
     private void CheckFoundItems()
     {
         foreach (long id in FoundIds())
@@ -1851,6 +1835,32 @@ internal sealed class CatchupLook
         }
 
         return keys.Where(key => key.Id == FoundMap && key.Letter == FoundLetter).Select(key => (long)key.Event).Distinct().ToList();
+    }
+
+    /// <summary>
+    /// Plays in the player's game the recruit page of every story companion the roster lacks once
+    /// their story finished a route, at the join's gate, once per companion, unless the world shares
+    /// no companions.
+    /// </summary>
+    private void MissedCompanions()
+    {
+        if (_sharing == "off" || !StoryParts.Routes.Any(_own.Cleared))
+        {
+            return;
+        }
+
+        RubyHash done = Done();
+        foreach (CatchupJoin row in _tables.Index.StoryJoins)
+        {
+            string key = $"m:{row.Actor}";
+            if (IsTrue(done[key]) || InRoster(row.Actor) || !StoryRows.PastByRoute(row.Place, _own, NotedSide()) || TakenAwaySince(row, _own, null) || !Reached(row.Gate))
+            {
+                continue;
+            }
+
+            done[key] = true;
+            Act("replay", new RubyHash { { "site", row.Place.Site } }, key);
+        }
     }
 
     /// <summary>

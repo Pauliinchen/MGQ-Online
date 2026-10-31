@@ -2,6 +2,7 @@
 //  StoryTrackRelayTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Checked a run one game hands over reaching the other through the relay's walk, once
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -113,6 +114,37 @@ public sealed class StoryTrackRelayTests : IDisposable
     }
 
     /// <summary>
+    /// Asserts that a run one game hands over after its writes reaches the other game's walk with its
+    /// opener, and its own too, and that the same run of a second opener, whose writes changed
+    /// nothing, reaches nobody.
+    /// </summary>
+    [Fact]
+    public void TwoGames_HandARunOverThroughTheRelaysTrack()
+    {
+        Assert.SkipWhen(relay is null, "Node is not installed.");
+        StoryTrack alice = Join("a1", 0, true, new Dictionary<string, string> { ["v1001"] = "n5" });
+        StoryTrack bob = Join("b2", 1, false, new Dictionary<string, string> { ["v1001"] = "n5" });
+        StoryKey.TryParse("v1001", out StoryKey key);
+        ReplayEntry Run(string id) => new(id, ReplaySite.Page(7, 39, 0), "story", StoryScope.World, null, new Dictionary<StoryKey, string> { [key] = "n5" },
+            new RunPlace([5, 0, 0, 0]), new Dictionary<StoryKey, string>(), [], false);
+
+        alice.Write([new StoryWrite("v1001", "n6", "map:7:39:1")]);
+        alice.Hand(Run("gift"), "Ana");
+        bob.Write([new StoryWrite("v1001", "n6", "map:7:39:1")]);
+        bob.Hand(Run("again"), "Bo");
+        Pump();
+        ReplayEntry? received = bob.NextRun(true, []);
+        ReplayEntry? own = alice.NextRun(true, []);
+        ReplayEntry? after = bob.NextRun(true, []);
+        Pump();
+
+        Assert.Equal(("gift", "Ana", "raid:w1:world"), (received?.Id, received?.Opener, received?.Stream));
+        Assert.Equal("gift", own?.Id);
+        Assert.Null(after);
+        Assert.Contains(games["b2"].Host.Received, frame => frame.Contains("\"id\":\"again\",\"n\":null", StringComparison.Ordinal));
+    }
+
+    /// <summary>
     /// Finds the repository's root folder above the tests.
     /// </summary>
     /// <returns>The folder, <see langword="null"/> when it is not found.</returns>
@@ -143,7 +175,7 @@ public sealed class StoryTrackRelayTests : IDisposable
         var track = new StoryTrack(host, () => $"{player}t");
         games[player] = (track, host);
         Step(new { op = "enter", player, seat });
-        track.Enter(fresh, new StoryLevel(10, null));
+        track.Enter(fresh, new StoryLevel(10, null), "w1");
         track.Connection(true);
         Pump();
         Assert.True(track.NeedsSeed);

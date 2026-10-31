@@ -2,6 +2,7 @@
 #  hooks_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Checked that the game's own method of a hooked one runs without the hooks
 #      Paulinchen  2026-10-30: Checked that the hooks stand aside while the mod sleeps
 #      Paulinchen  2026-10-12: Checked around with other arguments
 #      Paulinchen  2026-10-08: Checked the hook report and a wrap of a method defined later
@@ -15,7 +16,8 @@
 
 # Covers core_hooks.rbx: the blocks run on the object with the method's arguments, in the order
 # nested wraps would run them, the method's result and visibility stay, a failing block is logged
-# once and keeps the others running, and a second registration replaces the first.
+# once and keeps the others running, a second registration replaces the first, and the game's own
+# method of a hooked one runs without any hook.
 
 require_relative "support"
 
@@ -155,3 +157,10 @@ check("while asleep a before and after hook and an around stand aside, the metho
 $asleep = false
 $calls.clear
 check("awake they run again", [Scene_Test.new.update(2), Scene_Late.new.value, $calls.size], [4, 2, 5])
+
+# The game's own method of a hooked one, which the story replay runs without the hooks.
+$calls.clear
+plain = [Scene_Test.new.send(MGQ_MpHooks.plain(Scene_Test, :update), 3), Scene_Around.new.send(MGQ_MpHooks.plain(Scene_Around, :double), 2)]
+check("the game's own method of a followed and of a wrapped method runs without their hooks", [plain, $calls], [[6, 4], [[:update, 3]]])
+check("a method no hook wraps is its own plain method, and the hooked methods of a class are listed",
+      [MGQ_MpHooks.plain(Scene_Test, :to_s), MGQ_MpHooks.hooked(Scene_Around).sort], [:to_s, [:double, :hidden]])

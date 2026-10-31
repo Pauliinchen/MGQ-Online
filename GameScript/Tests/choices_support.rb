@@ -2,6 +2,8 @@
 #  choices_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Stood in for the game's window base the screen of a question builds on
+#                            - Left the choices a stream hands the run of out, as C# does
 #      Paulinchen  2026-10-28: Created
 #
 #----------------------------------------------------------------
@@ -12,6 +14,10 @@
 # case of that file as this file loads, so it cannot drift from what C# answers.
 
 require_relative "rules_support"
+
+# The game's window base, which the screen of a question in coop_choices.rbx builds on, for the
+# tests that load that script without a window of their own; it draws nothing.
+class Window_Base; def initialize(*); end; end unless defined?(Window_Base)
 
 # The golden cases of the story's choices, with the table the rules read.
 CHOICES_CASES = rule_cases("choices", "cases.json")
@@ -35,7 +41,7 @@ module ChoicesStandIn
   # @return [Object] The reply.
   def self.answer(topic, request)
     case topic
-    when "choices.passed" then passed(request["from"], request["to"], request["values"])
+    when "choices.passed" then passed(request["from"], request["to"], request["values"], request["start"])
     when "choices.prompts" then prompts(request)
     when "choices.missed" then missed(request)
     when "choices.offered" then offered(request)
@@ -109,14 +115,26 @@ module ChoicesStandIn
      branch["outcomes"].map { |outcome| (outcome["variables"] || []).map { |id, _value| id } }.flatten.uniq]
   end
 
-  # Lists the choices a catch-up carries the player past, which their own story has not made.
+  # Reports whether a stream hands the player the run of a choice: one does, and the choice's point
+  # lies past the main story's progress where it began.
+  #
+  # @param key [String] The choice.
+  # @param start [Array<Integer>, nil] Where the stream began, nil for none.
+  # @return [Boolean] Whether it does.
+  def self.logged?(key, start)
+    start ? branch(key)["point"] > start[0] : false
+  end
+
+  # Lists the choices a catch-up carries the player past, which their own story has not made and
+  # the save's log does not cover.
   #
   # @param from [Integer] The progress before.
   # @param to [Integer] The progress after.
   # @param values [Hash] The player's own story.
+  # @param start [Array<Integer>, nil] Where the stream that hands the player runs began.
   # @return [Array<String>] The choices.
-  def self.passed(from, to, values)
-    BRANCHES.select { |branch| from < branch["point"] && to >= branch["point"] && !made?(branch["key"], values) }.map { |branch| branch["key"] }
+  def self.passed(from, to, values, start)
+    BRANCHES.select { |branch| from < branch["point"] && to >= branch["point"] && !made?(branch["key"], values) && !logged?(branch["key"], start) }.map { |branch| branch["key"] }
   end
 
   # Lists the choices a story passing on asks the player's own outcome of.
@@ -125,13 +143,13 @@ module ChoicesStandIn
   # @return [Array<String>] The choices.
   def self.prompts(request)
     values = request["values"]
-    keys = passed(request["from"], request["to"], values) - (request["raid"] ? ["decision"] : ["side", "decision"])
+    keys = passed(request["from"], request["to"], values, request["start"]) - (request["raid"] ? ["decision"] : ["side", "decision"])
     BRANCHES.each do |branch|
       next if %w(side decision).include?(branch["key"]) || keys.include?(branch["key"]) || made?(branch["key"], values)
 
       keys << branch["key"] if (keys_of(branch).flatten & request["changed"]).any?
     end
-    keys - request["waiting"]
+    keys.reject { |key| request["waiting"].include?(key) || logged?(key, request["start"]) }
   end
 
   # Lists the choices a later build added that a Raid World's story is past without the save's own
@@ -142,7 +160,9 @@ module ChoicesStandIn
   def self.missed(request)
     return [] unless request["raid"]
 
-    TABLE["later_branches"].select { |key| request["progress"] >= branch(key)["point"] && !made?(key, request["values"]) && !request["waiting"].include?(key) }
+    TABLE["later_branches"].select do |key|
+      request["progress"] >= branch(key)["point"] && !made?(key, request["values"]) && !request["waiting"].include?(key) && !logged?(key, request["start"])
+    end
   end
 
   # Reports whether both endings are cleared.
@@ -255,6 +275,11 @@ module ChoicesStandIn
     return { "side" => index == 0 ? "alice" : "ilias" } if key == "side"
 
     found = branch(key)
+    if logged?(key, request["start"])
+      return { "title" => found["title"], "label" => offered(request)["labels"][index], "switches" => [], "variables" => [], "least" => [], "self_switches" => [],
+               "joins" => [], "ship" => nil }
+    end
+
     if key == "succubus"
       lily, lucia = magistea_companions(request["answers"], request["values"])
       chosen = TABLE["succubus"].find { |entry| entry["side"] == index && entry["with"] == (index == 0 ? lily : lucia) }

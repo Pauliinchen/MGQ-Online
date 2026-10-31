@@ -2,6 +2,7 @@
 //  story.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Covered the keys a keyed story hands its story tracks
 //      Paulinchen  2026-10-23: Covered the affection of a keyed story keeping the highest value written
 //                            - Checked partOf against the golden parts the game's StoryParts passes too
 //      Paulinchen  2026-10-21: Covered the pins an older relay kept as rules
@@ -710,11 +711,12 @@ test("a sealed story moves to keys with a write on its own revision, after which
   await accepted(story, 0, { p: 5 });
   await accepted(story, 1, { p: 6 }, OTHER_BLOB);
   assert.equal((await story.write(ALICE, { base: 1, counters: counters({ p: 6 }), set: { v: "1001:n6" } })).body.code, "rev", "only on the sealed story's revision");
-  assert.equal(await story.keyed(), false);
+  assert.deepEqual([await story.keyed(), await story.keys()], [false, undefined]);
   const moved = await wrote(story, ALICE, 2, { v: "1001:n6,70:n1" }, { p: 6 });
   assert.equal(moved.push.delta.v, "1001:n6,70:n1");
   const fetched = (await story.get()).body;
   assert.deepEqual([fetched.keyed, fetched.blob, fetched.keys.v, await story.keyed()], [true, undefined, "1001:n6,70:n1", true]);
+  assert.deepEqual([...(await story.keys())], [["v1001", "n6"], ["v70", "n1"]], "a keyed story hands its keys to the story tracks");
   const sealed = await story.write(BOB, { base: 3, counters: counters({ p: 7 }), blob: BLOB });
   assert.deepEqual([sealed.status, sealed.body.code], [409, "update"]);
   assert.equal(await sealedGameRefused(story, ["raid"]), true);

@@ -2,6 +2,7 @@
 #  catchup_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Told the place where the world's log starts with the world's summary
 #      Paulinchen  2026-10-28: Read the generated tables from fixtures/catchup/generated in place of the deleted world_catchup_data.rbx
 #                            - Answered the DLL's catch-up topics from the catch-up engine over the tests' tables, and recorded its answers
 #                            - Created
@@ -510,7 +511,9 @@ end
 # summary, and the shared companions the DLL's state names.
 #
 # @param fields [Hash] The world's summary and companions that differ from an empty story: "rev",
-#   "part", "route", "done" and "checkpoints" (each separated by commas) and "comps".
+#   "part", "route", "done" and "checkpoints" (each separated by commas), "comps", "start" (the
+#   story markers where the world's log starts) and "log" (the keys where it starts that differ
+#   from the track's).
 # @param keys [Hash{String => String}] The track's keys, see packed.
 def relay(fields, keys = {})
   world = { "rev" => 1, "part" => "1", "route" => "none", "done" => "", "checkpoints" => "", "comps" => "" }.merge(fields)
@@ -549,8 +552,9 @@ end
 # @param state [Hash] The state's fields that differ, see track_take.
 def hand_track(world, keys, state)
   list = lambda { |text| text.to_s.split(",") }
-  summary = { "rev" => world["rev"], "part" => world["part"].to_s, "route" => world["route"].to_s, "done" => list.call(world["done"]), "checkpoints" => list.call(world["checkpoints"]) }
-  $takes << track_take(keys, state, world["rev"])
+  summary = { "rev" => world["rev"], "part" => world["part"].to_s, "route" => world["route"].to_s, "done" => list.call(world["done"]), "checkpoints" => list.call(world["checkpoints"]),
+              "start" => world["start"] }
+  $takes << track_take(keys, world["log"] ? state.merge("log" => world["log"]) : state, world["rev"])
   $fake.post("story.status", story_status("track" => state["track"], "part" => state["part"], "gate" => state["gate"], "rev" => world["rev"], "world" => summary, "pending" => true))
   $state = "world=w1\nrev=#{world['rev']}\ncomps=#{world['comps']}\nfetch=done#{world['companions'] ? "\ncompanions=#{world['companions']}" : ''}\n\n"
 end

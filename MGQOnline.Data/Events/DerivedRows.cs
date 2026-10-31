@@ -2,6 +2,8 @@
 //  DerivedRows.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Added the pairs the one-time repair of stuck saves completes
+//                            - Added the lists that give and the branches of each choice
 //      Paulinchen  2026-10-28: Added the rows of the views
 //                            - Created
 //
@@ -122,6 +124,44 @@ public readonly record struct DefeatWriteRow(int CommonId, KeyKind? Kind, int? F
 /// <param name="Letter">The self switch it turns on.</param>
 /// <param name="ListId">Its list.</param>
 public readonly record struct ChestRow(int MapId, int EventId, int PageNo, string Letter, int ListId);
+
+/// <summary>
+/// A gift page whose self switch, once on, proves a switch on, which the one-time repair of saves
+/// stuck by the 0.6.9.2 chest path turns on where the save holds the self switch on and the switch
+/// off (table repair_pairs).
+/// </summary>
+/// <param name="MapId">The map.</param>
+/// <param name="EventId">The event.</param>
+/// <param name="PageNo">The page's place, from 0.</param>
+/// <param name="Letter">The self switch it turns on.</param>
+/// <param name="SwitchId">The switch the self switch proves on.</param>
+public readonly record struct RepairPairRow(int MapId, int EventId, int PageNo, string Letter, int SwitchId);
+
+/// <summary>
+/// A map page or common event that, with the common events it calls, holds a command that adds to
+/// what a player holds: items, gold, companions, skills, levels, experience, classes or medals
+/// (table gives).
+/// </summary>
+/// <remarks>
+/// A page gives too when it writes a key a player keeps, which only the live scopes tell, so the
+/// DLL adds that part.
+/// </remarks>
+/// <param name="ListId">The list.</param>
+public readonly record struct GivesRow(int ListId);
+
+/// <summary>
+/// One branch of a Show Choices command of a map page or common event (table choice_branches): the
+/// commands it runs, whose writes and calls the list's tables hold, and what it does to what a
+/// player holds.
+/// </summary>
+/// <param name="ListId">The list.</param>
+/// <param name="Idx">The Show Choices command's place in the list.</param>
+/// <param name="Branch">The answer that runs it, as the game hands it on: the choice's place, 4 for cancel.</param>
+/// <param name="FirstIdx">The place of its first command.</param>
+/// <param name="LastIdx">The place of its last command.</param>
+/// <param name="Holdings">Its commands that add to or take from what a player holds, each as code and numbers, and the
+/// common events it calls that do; empty for none.</param>
+public readonly record struct ChoiceBranchRow(int ListId, int Idx, int Branch, int FirstIdx, int LastIdx, string Holdings);
 
 /// <summary>
 /// What the game uses a switch for (table switches).

@@ -2,6 +2,7 @@
 //  CatchupTables.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Read a world chest without its chest flags, which only released builds read
 //      Paulinchen  2026-10-28: Read the steps of the story in free order
 //                            - Read the switches of prizes handed out once
 //                            - Read a world chest the game shuts by a switch
@@ -352,8 +353,8 @@ public sealed class CatchupTables
     /// <returns>The chest, <see langword="null"/> for a row that does not read.</returns>
     private static CatchupChest? ChestOf(JsonElement row) =>
         StoryKey.TryParse(Text(row, "key"), out StoryKey key) && key.Kind is StoryKeyKind.SelfSwitch or StoryKeyKind.Switch && Numbers(row, "items", out List<long> items) && items.Count > 0
-            && WholeOrNull(row, "step", out long? step) && Numbers(row, "flags", out List<long> flags)
-            ? new CatchupChest(key, Ints(items), TextOrNull(row, "part"), step, Ints(flags))
+            && WholeOrNull(row, "step", out long? step)
+            ? new CatchupChest(key, Ints(items), TextOrNull(row, "part"), step)
             : null;
 
     /// <summary>

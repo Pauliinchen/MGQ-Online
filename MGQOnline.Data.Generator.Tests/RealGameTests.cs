@@ -2,6 +2,7 @@
 //  RealGameTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Covered the story replay's gate over the untranslated copy and the installed game
 //      Paulinchen  2026-10-28: Covered the offline sort over the untranslated copy
 //                            - Shared the game folder settings with the parity tests
 //                            - Created
@@ -92,6 +93,25 @@ public sealed class RealGameTests
         string[] sorted = [.. lines.Take(database.Pages.Count).Select(line => JsonDocument.Parse(line).RootElement.GetProperty("kind").GetString()!)];
         string[] built = [.. database.Pages.Select(page => ((EventKind)page.KindNewGame!.Value).ToString().ToLowerInvariant())];
         Assert.Empty(Enumerable.Range(0, built.Length).Where(index => built[index] != sorted[index]).Select(index => lines[index]));
+    }
+
+    /// <summary>
+    /// Asserts that the story replay's gate classes every command code and script root of the
+    /// untranslated copy and of the installed game, and that the only key a closed command writes
+    /// is v57, which the reviewed story key list must mark as work.
+    /// </summary>
+    /// <param name="setting">The environment setting that names the game folder.</param>
+    [Theory]
+    [InlineData(SourceSetting)]
+    [InlineData(GameSetting)]
+    public void ReplayGate_ClassesTheGameData(string setting)
+    {
+        string folder = FolderOrSkip(setting);
+
+        BuiltGame game = EventBuilder.Read(new GameFolderFiles(folder), new BuildOptions()).Game;
+
+        Assert.Empty(ReplayChannels.Unclassed(game));
+        Assert.Equal(["v57"], ReplayChannels.ClosedWrites(game));
     }
 
     /// <summary>

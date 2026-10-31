@@ -2,6 +2,7 @@
 //  story.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Handed a keyed story's keys to the story tracks that start from it
 //      Paulinchen  2026-10-23: Kept the highest affection any write of a keyed story named
 //                            - Shared the value patterns, the first counters and the clear switches with the story tracks
 //      Paulinchen  2026-10-21: Let an admin set switches, variables and self switches of a keyed story by id as a revision every game takes
@@ -1389,6 +1390,16 @@ export class WorldStory {
    */
   async kept() {
     return this.exclusive(() => this.store.get());
+  }
+
+  /**
+   * Reads a keyed story's keys, which the world's story tracks start from.
+   *
+   * @returns {Promise<Map<string, string> | undefined>} The keys, see readLists; undefined before the first write and for a sealed story.
+   */
+  async keys() {
+    const story = await this.kept();
+    return story?.lists ? readLists(story.lists, this.limits).keys : undefined;
   }
 
   /**

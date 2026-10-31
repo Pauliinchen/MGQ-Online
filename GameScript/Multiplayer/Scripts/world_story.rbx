@@ -2,6 +2,11 @@
 #  world_story.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Offered at the Great Decision the routes the relay grants, in place of a copy of its route rules
+#                            - Told the catch-up whether a lost raid boss battle holds the story
+#                            - Dropped the lift of the refusal of recruits that older worlds' story handed over
+#                            - Handed the player's runs to their track and the track's entries to the replay in order
+#                            - Told the catch-up where the world's log starts, and the world's story there
 #      Paulinchen  2026-10-28: Told the part of the player's track
 #                            - Left the player's telling to the DLL's telling machine
 #                            - Told the player's track in their state and read the tellings on it from the DLL
@@ -72,6 +77,10 @@
 # written straight into the game's story once the player is free: no event of their own, battle or
 # transfer runs. Nothing is merged; the keys the mapping keeps no row of are the player's own.
 #
+# The runs of the player's own events that changed the story go to their track after their writes,
+# and the track's runs reach the replay (story_replay.rbx) one at a time, in their order, while the
+# player stands free; the DLL walks the track from the player's cursor.
+#
 # The Great Decision: the first route a write takes is the world's; the game's own choice offers
 # only the routes the world may still take, and a player the world's story carries past the
 # decision picks it on the screen of coop_choices.rbx. A finished route takes the world back to the
@@ -115,6 +124,8 @@ module MGQ_MpWorldStory
   SEED_TOPIC = "story.seed"
   WATCH_TOPIC = "story.watch"
   TAKE_TOPIC = "story.take"
+  HAND_TOPIC = "story.hand_entry"
+  STREAM_TOPIC = "story.stream"
 
   # The topic that has the DLL fetch the story mapping of a Classic world's relay, see StoryTopics.
   MAPPING_TOPIC = "story.mapping"
@@ -221,9 +232,6 @@ module MGQ_MpWorldStory
   # Where a cleared collab returns the player: the Pocket Castle below its start, facing down.
   COLLAB_RETURN = [228, 24, 27, 2]
 
-  # Lime, the first recruit, whose joining turns ALLY_REJECTION off.
-  FIRST_RECRUIT = 53
-
   # Where a return to the Great Decision takes the player: the map, x and y.
   DECISION_PLACE = [407, 25, 25]
 
@@ -254,6 +262,7 @@ module MGQ_MpWorldStory
     @route_refused = false
     @decision_roster = nil
     @world = nil
+    @log_story = nil
     @caps = nil
     @clock ||= 0
     @awaited_since = reason ? @clock : nil
@@ -322,16 +331,19 @@ module MGQ_MpWorldStory
 
   # The world's story as the relay tells it, for the catch-up and the World overview.
   #
-  # @return [Hash, nil] "rev", "part", "route" ("none" for none), "done" and "checkpoints" as the
-  #   relay's summary tells them, "comps" (the companions the world shares) and "caps" (the level
-  #   caps the player's story unlocked); nil before the relay told any.
+  # @return [Hash, nil] "rev", "part", "route" ("none" for none), "done", "open" (the routes the
+  #   relay grants at the Great Decision) and "checkpoints" as the relay's summary tells them,
+  #   "start" (the story markers where the world's log starts, nil for none), "comps" (the
+  #   companions the world shares) and "caps" (the level caps the player's story unlocked); nil
+  #   before the relay told any.
   def self.world
     summary = @status && @status["world"]
     return nil unless summary
 
     @world ||= {
       "rev" => summary["rev"].to_i, "part" => summary["part"].to_s, "route" => summary["route"].to_s,
-      "done" => summary["done"].to_a, "checkpoints" => summary["checkpoints"].to_a, "comps" => @comps.to_a, "caps" => caps,
+      "done" => summary["done"].to_a, "open" => summary["open"].to_a, "checkpoints" => summary["checkpoints"].to_a, "start" => summary["start"],
+      "comps" => @comps.to_a, "caps" => caps,
     }
   end
 
@@ -354,43 +366,15 @@ module MGQ_MpWorldStory
     nil
   end
 
-  # Lists the routes the world may still take at the Great Decision, see open_routes.
+  # Lists the routes the world may still take at the Great Decision, as the relay's summary names
+  # them: the relay keeps the route rules.
   #
   # @return [Array<Integer>, nil] The routes' places in ROUTES, nil outside a Raid World, before
   #   the relay told the world's summary or when none is open.
   def self.decision_routes
     world = active? ? self.world : nil
-    return nil unless world
-
-    routes = open_routes(world)
+    routes = world ? world["open"].map { |route| ROUTES.index(route) }.compact : []
     routes.empty? ? nil : routes
-  end
-
-  # Lists the routes a world may take at the Great Decision, as the relay's lock allows them: the
-  # locked one alone while the world has not returned from it, else those not finished, the third
-  # way once both others are, and every route once the world finished all of them.
-  #
-  # @param world [Hash] The world's summary.
-  # @return [Array<Integer>] The routes' places in ROUTES.
-  def self.open_routes(world)
-    done = world["done"]
-    every = every_route_done?(done)
-    locked = ROUTES.index(world["route"])
-    return [locked] if locked && (every || !done.include?(ROUTES[locked]))
-    return (0...ROUTES.size).to_a if every
-
-    routes = [0, 1].reject { |index| done.include?(ROUTES[index]) }
-    routes << 2 if done.include?(ROUTES[0]) && done.include?(ROUTES[1]) && !done.include?(ROUTES[2])
-    routes
-  end
-
-  # Reports whether a world finished every route, which opens each of them again (as everyRouteDone
-  # in Relay/core/story.js).
-  #
-  # @param done [Array<String>] The routes the world finished.
-  # @return [Boolean] Whether it finished all of them.
-  def self.every_route_done?(done)
-    (ROUTES - done).empty?
   end
 
   # Takes how the story on tracks stands, which the DLL posts whenever it changed.
@@ -495,6 +479,7 @@ module MGQ_MpWorldStory
     note_teller
     take_pending if quiet?
     play_queued
+    walk_stream
     if @clock - @checked >= CHECK_FRAMES
       @checked = @clock
       send_level
@@ -632,12 +617,14 @@ module MGQ_MpWorldStory
 
   # Writes what the relay handed into the player's story: a whole track over every key the mapping
   # keeps, then the keys pushed or answered; then follows what it brought: the player's track, the
-  # frozen fights, the scene switches left on, the catch-up, the choices and routes it carried them
-  # past. The frozen fights' write journal leaves every kind of these writes out.
+  # world's story where its log starts, the frozen fights, the scene switches left on, the catch-up,
+  # the choices and routes it carried them past. The frozen fights' write journal leaves every kind
+  # of these writes out.
   #
   # @param take [Hash] The take, see StoryTopics.TakeOf in the DLL.
   def self.apply(take)
     state = take["state"]
+    @log_story = story_of_keys(state["log"]) if state
     before = MGQ_MpStoryState.deep_copy(MGQ_MpStoryState.raw_state)
     own = local_counters(before)
     first = @mode.nil?
@@ -665,6 +652,34 @@ module MGQ_MpWorldStory
     followed(own, after, first && state ? true : false, state && state["move"] ? true : false)
     @returned_route = nil
     route_taken if @route_refused
+  end
+
+  # The world's story where its log starts, as the last whole track handed it, for the catch-up.
+  #
+  # @return [Array, nil] The switches, variables and self switches, each by key; nil while the
+  #   relay named none.
+  def self.log_story
+    @log_story
+  end
+
+  # Reads a story from keys as the tracks name them.
+  #
+  # @param keys [Hash{String => String}, nil] Each key with its value, nil for none.
+  # @return [Array, nil] The switches on, the variables and the self switches on, each by key; nil
+  #   for none.
+  def self.story_of_keys(keys)
+    return nil unless keys
+
+    story = [{}, {}, {}]
+    keys.each do |name, value|
+      kind, key = MGQ_MpStoryKeys.key_of(name)
+      if kind == 1
+        story[1][key] = MGQ_MpStoryState.decode_value(value)
+      elsif kind && kind < 3 && value == "1"
+        story[kind][key] = true
+      end
+    end
+    story
   end
 
   # Writes a whole track into the player's story: every key the mapping keeps at the track's value,
@@ -873,15 +888,15 @@ module MGQ_MpWorldStory
     MGQ_MpStoryKeys.request("f#{troop}", text, "game:freeze")
   end
 
-  # Reports whether the world's story waits while a lost raid boss battle's defeat runs, which sets
-  # back what the battle's undo puts again (see battles_raid_freeze.rbx). Logs once as a hold starts
-  # and as it ends.
+  # Reports whether the world's story and the catch-up wait while a lost raid boss battle's defeat
+  # runs, which sets back what the battle's undo puts again and takes the items it gives back (see
+  # battles_raid_freeze.rbx). Logs once as a hold starts and as it ends.
   #
-  # @return [Boolean] Whether it waits.
+  # @return [Boolean] Whether they wait.
   def self.holding?
     holding = defined?(MGQ_MpRaidFreeze) && MGQ_MpRaidFreeze.holding_writes? ? true : false
     if holding != (@holding ? true : false)
-      log(holding ? "a lost raid boss battle's defeat runs: the world's story waits until its undo ran" : "the lost raid boss battle's defeat ended: the world's story goes on")
+      log(holding ? "a lost raid boss battle's defeat runs: the world's story and the catch-up wait until its undo ran" : "the lost raid boss battle's defeat ended: the world's story and the catch-up go on")
     end
     @holding = holding
   rescue => e
@@ -898,31 +913,12 @@ module MGQ_MpWorldStory
     defined?(MGQ_MpRaidFreeze) ? MGQ_MpRaidFreeze.unjournaled { yield } : yield
   end
 
-  # Turns off the refusal of recruits the world's story once handed over and ends a collab the
-  # world's story cleared, once no event of the player's runs.
+  # Ends a collab the world's story cleared, once no event of the player's runs.
   def self.restore
-    return if holding?
-
-    lifted = lift_ally_rejection
-    left = leave_cleared_collab
-    return unless lifted || left
+    return if holding? || !leave_cleared_collab
 
     $game_map.need_refresh = true
-    log("turned Ally Rejection (switch #{ALLY_REJECTION}) off: the player recruited Lime and plays with their own party") if lifted
-    log("left the collab scenario the world's story cleared: gave back the stored items and equipment and returned to the Pocket Castle") if left
-  end
-
-  # Turns off the refusal of every recruit that the world's story handed over before it was each
-  # player's own: once the player recruited Lime, only a scenario with a party of its own, such as
-  # the Pocket Castle's collab, keeps it on.
-  #
-  # @return [Boolean] Whether it turned it off.
-  def self.lift_ally_rejection
-    return false unless $game_switches[ALLY_REJECTION] && $game_party.respond_to?(:follow?) && $game_party.follow?(FIRST_RECRUIT)
-    return false if $game_party.respond_to?(:temp_actors_use?) && $game_party.temp_actors_use?
-
-    $game_switches[ALLY_REJECTION] = false
-    true
+    log("left the collab scenario the world's story cleared: gave back the stored items and equipment and returned to the Pocket Castle")
   end
 
   # Refuses the Pocket Castle's event that starts the collab scenario in a Raid World, telling the
@@ -1018,6 +1014,32 @@ module MGQ_MpWorldStory
     MGQ_MpCoopScene::Own.leave("the world went back to the Great Decision", true) if defined?(MGQ_MpCoopScene::Own)
     log("playing #{commands.map { |entry| entry.code }.join(' ')} now")
     $game_map.interpreter.setup(commands, 0)
+  end
+
+  # Hands a run of the player's own game that changed the world's story to the relay, after the
+  # writes recorded before it. Called by story_keys.rbx with the entry the DLL answered for the run.
+  #
+  # @param entry [Hash] The run's entry, see ReplayEntry.Write in the DLL.
+  # @return [Boolean] Whether it went: false outside a Raid World's story.
+  def self.hand_entry(entry)
+    return false unless active?
+
+    MGQ_MpStoryKeys.flush
+    MGQ_Multiplayer::Bridge.stage(HAND_TOPIC, entry)
+    true
+  rescue => e
+    log_once([:hand_entry, e.class], "handing a run over failed: #{e.class}: #{e.message}")
+    false
+  end
+
+  # Hands the replay the next run of the player's track, which the DLL gives once the replay took
+  # the one before and while the player stands free.
+  def self.walk_stream
+    return unless defined?(MGQ_MpStoryReplay)
+
+    waiting = MGQ_MpStoryReplay.waiting.map { |entry| entry["id"] }
+    entry = MGQ_Multiplayer::Bridge.call(STREAM_TOPIC, "free" => MGQ_MpStoryReplay.free?, "waiting" => waiting)
+    MGQ_MpStoryReplay.receive(entry) if entry.is_a?(Hash)
   end
 
   # Tells the player that the world took another route before theirs reached the relay, and takes

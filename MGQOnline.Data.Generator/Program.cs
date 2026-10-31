@@ -2,6 +2,7 @@
 //  Program.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Printed the game data's proposals of work keys after a build
 //      Paulinchen  2026-10-28: Added the ordinals command, which rewrites the relay's join and removal indexes into ords
 //                            - Added the sort, names and export commands of the tools
 //                            - Created
@@ -119,7 +120,8 @@ internal static class Program
     }
 
     /// <summary>
-    /// Builds the database and writes it, then tells its size and how long the build took.
+    /// Builds the database and writes it, then tells its size, how long the build took and the game
+    /// data's proposals of work keys for the story key list's review.
     /// </summary>
     /// <param name="game">The game folder.</param>
     /// <param name="file">The file to write.</param>
@@ -128,13 +130,29 @@ internal static class Program
     private static int BuildFile(string game, string file, BuildOptions options)
     {
         var clock = Stopwatch.StartNew();
-        EventRows rows = EventBuilder.Build(new GameFolderFiles(game), options);
+        (EventRows rows, BuiltGame built) = EventBuilder.Read(new GameFolderFiles(game), options);
         TimeSpan read = clock.Elapsed;
         EventDatabaseWriter.Write(rows, file);
         Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"wrote {Path.GetFullPath(file)}: {new FileInfo(file).Length:N0} bytes, {rows.Lists.Count:N0} lists, {rows.Commands.Count:N0} kept commands"));
         Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"read the game in {read.TotalSeconds:F1} s, wrote the file in {(clock.Elapsed - read).TotalSeconds:F1} s"));
         Console.WriteLine(rows.Build.Fingerprint);
+        Console.WriteLine(WorkProposals(rows, built));
         return Done;
+    }
+
+    /// <summary>
+    /// Writes the game data's proposals of work keys for the review of the story key list: the keys
+    /// a command the story replay closes writes, and the switches and variables the game names as
+    /// scratch.
+    /// </summary>
+    /// <param name="rows">The rows built.</param>
+    /// <param name="built">The game read.</param>
+    /// <returns>The line.</returns>
+    private static string WorkProposals(EventRows rows, BuiltGame built)
+    {
+        IEnumerable<string> scratch = rows.Switches.Where(row => row.Scratch).Select(row => string.Create(CultureInfo.InvariantCulture, $"s{row.Id}"))
+            .Concat(rows.Variables.Where(row => row.Scratch).Select(row => string.Create(CultureInfo.InvariantCulture, $"v{row.Id}")));
+        return $"work keys to review: {string.Join(", ", ReplayChannels.ClosedWrites(built))} (a command the story replay closes writes them); scratch by the game's names: {string.Join(", ", scratch)}";
     }
 
     /// <summary>

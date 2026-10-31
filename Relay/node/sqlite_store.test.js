@@ -2,6 +2,8 @@
 //  sqlite_store.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Covered the story tracks' run entries kept over a restart and dropped with their track
+//                            - Covered the place a world's log starts at kept over a restart
 //      Paulinchen  2026-10-23: Covered the story mapping, its rows' changes and its index kept over a restart, and a batch that fails kept not at all
 //                            - Covered a Raid World's story tracks kept over a restart, a dropped track and a removed world
 //      Paulinchen  2026-10-22: Covered the release control kept over a restart beside the newest release seen
@@ -250,28 +252,32 @@ test("a Raid World's story tracks outlast a restart, a player's track goes with 
   const tracks = tracksOver(first);
   await tracks.enter(alice, 0);
   await tracks.frame(alice, `track ${JSON.stringify({ t: "sync", level: { best: 9, cap: null }, seed: { v1001: "n10" } })}`);
-  await tracks.frame(alice, `track ${JSON.stringify({ t: "write", seq: 1, track: "world", writes: [["v50", "n1", "map:7:39:1"], ["v1001", "n19", "map:7:39:1"]] })}`);
+  const run = (id) => ({ id, site: "map:7:39:1", keys: ["v50"], place: [10, 0, 0, 0], opener: null, wire: "AAAA" });
+  await tracks.frame(alice, `track ${JSON.stringify({ t: "write", seq: 1, track: "world", writes: [["v50", "n1", "map:7:39:1"], ["v1001", "n19", "map:7:39:1"]], run: run("r1") })}`);
   await tracks.enter(bob, 1);
   await tracks.frame(bob, `track ${JSON.stringify({ t: "sync", level: { best: 3, cap: null }, seed: { v1001: "n2" } })}`);
+  await tracks.frame(bob, `track ${JSON.stringify({ t: "write", seq: 1, track: "t1", writes: [["v50", "n2", "map:7:39:1"]], run: run("r2") })}`);
   first.close();
 
   const second = openSqliteStores(path);
   const store = second.tracks(WORLD);
-  assert.deepEqual(await store.getMeta(), { rev: 2, part: "2", route: "none", done: [], checkpoints: ["1"], next: 2 });
+  assert.deepEqual(await store.getMeta(), { rev: 2, part: "2", route: "none", done: [], checkpoints: ["1"], next: 2, start: [10, 0, 0, 0] });
   assert.deepEqual(new Map(await store.getKeys("world")), new Map([["v1001", "n19"], ["v50", "n1"]]));
-  assert.deepEqual([(await store.getPlayer(bob)).track, (await store.getPlayer(alice)).seq], [{ id: "t1", part: "1", rev: 1 }, 1]);
-  assert.deepEqual(await store.getKeys("t1"), [["v1001", "n10"]]);
+  assert.deepEqual([(await store.getPlayer(bob)).track, (await store.getPlayer(alice)).seq], [{ id: "t1", part: "1", rev: 2 }, 1]);
+  assert.deepEqual(new Map(await store.getKeys("t1")), new Map([["v1001", "n10"], ["v50", "n2"]]));
   assert.deepEqual(await store.getCheckpoint("1"), [["v1001", "n10"]]);
+  assert.deepEqual([(await store.getRuns("world")).map((entry) => [entry.n, entry.id]), (await store.getRuns("t1")).map((entry) => [entry.n, entry.id])], [[[1, "r1"]], [[1, "r2"]]]);
   assert.deepEqual(await second.tracks("f".repeat(32)).getMeta(), undefined, "another world has tracks of its own");
 
   const reopened = tracksOver(second);
   await reopened.enter(bob, 1);
   await reopened.frame(bob, `track ${JSON.stringify({ t: "sync", level: { best: 30, cap: null } })}`);
-  assert.deepEqual([heard.at(-1).why, heard.at(-1).track], ["moved", "world"]);
-  assert.deepEqual(await store.getKeys("t1"), [], "the track's keys went with it");
+  const moved = heard.findLast((frame) => frame.t === "state");
+  assert.deepEqual([moved.why, moved.track], ["moved", "world"]);
+  assert.deepEqual([await store.getKeys("t1"), await store.getRuns("t1")], [[], []], "the track's keys and run entries went with it");
 
   await reopened.remove();
-  assert.deepEqual([await store.getMeta(), await store.getKeys("world"), await store.getPlayer(alice), await store.getCheckpoint("1")], [undefined, [], undefined, undefined]);
+  assert.deepEqual([await store.getMeta(), await store.getKeys("world"), await store.getRuns("world"), await store.getPlayer(alice), await store.getCheckpoint("1")], [undefined, [], [], undefined, undefined]);
   second.close();
 });
 

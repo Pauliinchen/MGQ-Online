@@ -2,6 +2,8 @@
 //  DerivedBuild.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Derived the pairs the one-time repair of stuck saves completes
+//                            - Derived the lists that give and the branches of each choice
 //      Paulinchen  2026-10-28: Created
 //
 //----------------------------------------------------------------
@@ -18,7 +20,8 @@ namespace MGQOnline.Data.Generator.Build;
 /// <summary>
 /// Derives the rows the rules read once the lists are read: the flags per switch, variable, item
 /// and enemy, the common events' and the pages' flags with the chests of a new game, and the raid
-/// sites' alternatives and scene entries.
+/// sites' alternatives and scene entries; the pairs the one-time repair of stuck saves completes; and
+/// the lists that give and the branches of each choice, which the story replay reads.
 /// </summary>
 internal static class DerivedBuild
 {
@@ -82,6 +85,11 @@ internal static class DerivedBuild
         var raid = new RaidSites(game);
         rows.SiteAlternatives.AddRange(raid.Alternatives());
         rows.SceneEntries.AddRange(raid.SceneEntries());
+
+        SwitchUses uses = SwitchUses.Of(source.ReadScripts(), source.ReadInUse(GameSource.NamedParts[0].Path), GameSource.NamedParts.SelectMany(part => source.ReadEntries(part.Path)));
+        rows.RepairPairs.AddRange(RepairPairs.Of(game, uses));
+        rows.Gives.AddRange(Gives.Of(game));
+        rows.ChoiceBranches.AddRange(ChoiceAsks.Of(game));
         return game;
     }
 }

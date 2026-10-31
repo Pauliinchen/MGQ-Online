@@ -2,6 +2,7 @@
 //  ToolsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Ran scripts the story replay classes
 //      Paulinchen  2026-10-28: Checked the rewrite of the relay's join and removal indexes into ords
 //                            - Created
 //
@@ -173,12 +174,12 @@ public sealed class ToolsTests
     {
         EventRows copy = EventBuilder.Build(
             new TinyGame()
-                .Event(1, C(101, "", 0, 0, 2), C(401, "Hi."), C(401, "More."), C(129, 5, 0, false), C(355, "x = 1"), C(655, "add_actor(6)"))
+                .Event(1, C(101, "", 0, 0, 2), C(401, "Hi."), C(401, "More."), C(129, 5, 0, false), C(355, "x = 1"), C(655, "add_actor_ex(6)"))
                 .Common(10, C(129, 7, 1, false))
                 .Files(),
             new BuildOptions());
         using EventStore database = StoreOf(new TinyGame()
-            .Event(1, C(101, "", 0, 0, 2), C(401, "Hi."), C(129, 5, 0, false), C(355, "x = 1"), C(655, "add_actor(6)"))
+            .Event(1, C(101, "", 0, 0, 2), C(401, "Hi."), C(129, 5, 0, false), C(355, "x = 1"), C(655, "add_actor_ex(6)"))
             .Common(10, C(129, 7, 1, false)));
         string seed = """
             [

@@ -2,6 +2,10 @@
 //  StoryTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Told the scripts the routes the Great Decision offers
+//                            - Answered the replay of runs handed over, in StoryTopics.Replay.cs
+//                            - Sent the player's Raid World runs to their track and handed the scripts its entries in order from the cursors of the save's log
+//                            - Told the scripts where the world's log starts, and the world's story there
 //      Paulinchen  2026-10-28: Kept the story mapping in the relay mirror and read it back at the first fetch
 //                            - Built a Classic party's table from the counts of the events database and the chest flags of the mapping held
 //                            - Followed the chain of a story event from the events database, from the keys of its list there
@@ -43,7 +47,7 @@ namespace MGQParadox.Multiplayer;
 /// catch up with, and a Classic party's table) and of the player's telling
 /// (<see cref="TellingMachine"/>), which takes the relay's telling lock through the track.
 /// </summary>
-internal sealed class StoryTopics : IStoryTrackHost
+internal sealed partial class StoryTopics : IStoryTrackHost
 {
     /// <summary>
     /// The topic that starts the player's story on tracks: {"world" (the directory's id), "fresh", "level" ({"best", "cap"} or nil)}.
@@ -148,6 +152,19 @@ internal sealed class StoryTopics : IStoryTrackHost
     /// else <c>{"leaves", "why"}</c> (nil while it stays).
     /// </summary>
     public const string LeavesPartTopic = "story.leaves_part";
+
+    /// <summary>
+    /// The topic that hands a run of the player's own game in a Raid World to the relay, after the
+    /// writes recorded before it: its entry, see <see cref="ReplayEntry.Write"/>. Answers nil.
+    /// </summary>
+    public const string HandEntryTopic = "story.hand_entry";
+
+    /// <summary>
+    /// The topic that walks the entries of the player's track, see <see cref="StoryTrack.NextRun"/>:
+    /// <c>{"free", "waiting"}</c>, whether the player stands free on the map and the ids of the runs
+    /// the game holds waiting. Answers the next entry, nil while none is due.
+    /// </summary>
+    public const string StreamTopic = "story.stream";
 
     /// <summary>
     /// The event of how the story on tracks stands, see <see cref="StatusOf"/>.
@@ -294,6 +311,12 @@ internal sealed class StoryTopics : IStoryTrackHost
     internal Action<Action> Run { get; set; } = work => Threads.Start("MultiplayerStoryMapping", work);
 
     /// <summary>
+    /// Gets or sets how the player's name is found, which the receivers of their runs read; tests
+    /// hand out their own.
+    /// </summary>
+    internal Func<string?> OpenerName { get; set; } = () => Player.Current()?.Name;
+
+    /// <summary>
     /// Registers the topics and the frame step on a context, over the game's world connection.
     /// </summary>
     /// <param name="context">The context the handshake opened.</param>
@@ -364,6 +387,13 @@ internal sealed class StoryTopics : IStoryTrackHost
         context.Register(MappingTopic, (_, request) => topics.FollowClassic(request.IsNil ? null : request.AsText()));
         context.Register(RewardsTopic, (_, request) => topics._table is { } table && (request.IsNil || request.AsLong() != table.Rev) ? RewardsOf(table) : null);
         context.Register(LeavesPartTopic, (_, request) => topics.LeavesPart(request.AsHash()));
+        context.Register(HandEntryTopic, (_, request) =>
+        {
+            topics._track.Hand(ReplayEntry.Read(request), topics.OpenerName());
+            return null;
+        });
+        context.Register(StreamTopic, (_, request) => topics.NextRun(request.AsHash()));
+        RegisterReplay(context, topics);
         context.EveryFrame(_ => topics.Step());
         return topics;
     }
@@ -444,6 +474,9 @@ internal sealed class StoryTopics : IStoryTrackHost
     /// <inheritdoc />
     void IStoryTrackHost.Log(string line) => Log.Write(line);
 
+    /// <inheritdoc />
+    IReadOnlyDictionary<string, long> IStoryTrackHost.Cursors() => _log.Cursors;
+
     /// <summary>
     /// Writes a story table as the scripts look keys up in it.
     /// </summary>
@@ -486,7 +519,7 @@ internal sealed class StoryTopics : IStoryTrackHost
     /// Writes what waits to be written into the game's story as the scripts apply it.
     /// </summary>
     /// <param name="take">The take.</param>
-    /// <returns>{"state" (nil, or {"why", "track", "part", "gate", "move" ({"from", "to", "gate", "by"} or nil), "keys" and "chests" (key => value), "held" ([key, ...])}), "keys" ([[key, value], ...] in order), "rev"}.</returns>
+    /// <returns>{"state" (nil, or {"why", "track", "part", "gate", "move" ({"from", "to", "gate", "by"} or nil), "keys" and "chests" (key => value), "held" ([key, ...]), "log" (key => value of the world's story where its log starts, nil for none)}), "keys" ([[key, value], ...] in order), "rev"}.</returns>
     internal static RubyHash TakeOf(StoryTake take)
     {
         RubyValue state = RubyNil.Value;
@@ -502,6 +535,7 @@ internal sealed class StoryTopics : IStoryTrackHost
                 { "keys", HashOf(whole.Keys) },
                 { "chests", HashOf(whole.Chests) },
                 { "held", new RubyArray(whole.Held.Order(StringComparer.Ordinal).Select(key => (RubyValue)key)) },
+                { "log", whole.Log is { } log ? HashOf(log) : RubyNil.Value },
             };
         }
 
@@ -523,18 +557,24 @@ internal sealed class StoryTopics : IStoryTrackHost
     /// events database holds.
     /// </remarks>
     /// <returns>The table, see <see cref="TableOf"/>; nil without an events database to read.</returns>
-    private RubyValue ClassicOf()
+    private RubyValue ClassicOf() => ClassicTable() is { } table ? TableOf(table) : RubyNil.Value;
+
+    /// <summary>
+    /// Builds a Classic party's table, see <see cref="ClassicOf"/>.
+    /// </summary>
+    /// <returns>The table, <see langword="null"/> without an events database to read.</returns>
+    private StoryTable? ClassicTable()
     {
         EventStore store = Events().Store;
         if (store.Meta is not { } meta)
         {
             Log.Write($"story track: a Classic party's table is not built: {store.Problem}");
-            return RubyNil.Value;
+            return null;
         }
 
         int Count(string name) => (int)meta.Counts.GetValueOrDefault(name);
         IReadOnlyList<int> chestFlags = _table is { } table ? table.Catchup.ChestFlags : store.ChestFlags();
-        return TableOf(ClassicStoryTable.Build(Count("switches"), Count("variables"), Count("actors"), chestFlags));
+        return ClassicStoryTable.Build(Count("switches"), Count("variables"), Count("actors"), chestFlags);
     }
 
     /// <summary>
@@ -594,10 +634,21 @@ internal sealed class StoryTopics : IStoryTrackHost
             return null;
         }
 
-        _track.Enter(request["fresh"] is RubyBool { Flag: true }, request["level"].IsNil ? null : LevelOf(request["level"]));
+        _track.Enter(request["fresh"] is RubyBool { Flag: true }, request["level"].IsNil ? null : LevelOf(request["level"]), request["world"].AsText());
         _connections = _session.Connections;
         _track.Connection(_session.IsOpen());
         return null;
+    }
+
+    /// <summary>
+    /// Answers <see cref="StreamTopic"/>.
+    /// </summary>
+    /// <param name="request">{"free", "waiting"}.</param>
+    /// <returns>The next entry, nil while none is due.</returns>
+    private RubyValue NextRun(RubyHash request)
+    {
+        HashSet<string> waiting = request["waiting"].IsNil ? [] : [.. request["waiting"].AsArray().Select(id => id.AsText())];
+        return _track.NextRun(request["free"] is RubyBool { Flag: true }, waiting) is { } entry ? entry.Write() : RubyNil.Value;
     }
 
     /// <summary>
@@ -842,7 +893,7 @@ internal sealed class StoryTopics : IStoryTrackHost
     /// <summary>
     /// Describes how the story on tracks stands, as the scripts read it each frame.
     /// </summary>
-    /// <returns>{"synced", "track", "part", "gate", "rev", "taken", "world" ({"rev", "part", "route", "done", "checkpoints"} or nil), "pending", "need_seed", "classes" (the mapping's revision held, nil before), "tellings" (seat => [telling, map, site]), "told" (seat => revision), "await" (the seat whose ended telling the game has yet to take the track of, or nil), "telling" (true, false or nil), "holder", "unanswered"}.</returns>
+    /// <returns>{"synced", "track", "part", "gate", "rev", "taken", "world" ({"rev", "part", "route", "done", "open", "checkpoints", "start" (the story markers where the world's log starts, or nil)} or nil), "pending", "need_seed", "classes" (the mapping's revision held, nil before), "tellings" (seat => [telling, map, site]), "told" (seat => revision), "await" (the seat whose ended telling the game has yet to take the track of, or nil), "telling" (true, false or nil), "holder", "unanswered"}.</returns>
     private RubyHash StatusOf()
     {
         var tellings = new RubyHash();
@@ -864,7 +915,9 @@ internal sealed class StoryTopics : IStoryTrackHost
                 { "part", summary.Part },
                 { "route", summary.Route },
                 { "done", new RubyArray(summary.Done.Select(route => (RubyValue)route)) },
+                { "open", new RubyArray(summary.Open.Select(route => (RubyValue)route)) },
                 { "checkpoints", new RubyArray(summary.Checkpoints.Select(part => (RubyValue)part)) },
+                { "start", summary.Start is { } start ? new RubyArray(start.Select(marker => (RubyValue)marker)) : RubyNil.Value },
             }
             : RubyNil.Value;
         return new RubyHash

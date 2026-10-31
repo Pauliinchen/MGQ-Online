@@ -226,7 +226,8 @@ export const CATCHUP_TABLES = Object.freeze({
   }),
   // CHESTS: the chests that hold key items, which open once for the whole world, with the chest
   // flags they turn on for each player; each by the self switch that shuts it, or the switch of a
-  // chest the game shuts by a switch.
+  // chest the game shuts by a switch. Only released builds read the flags: the newer play the chest
+  // in the player's game, which turns them on.
   chests: Object.freeze({
     store: "story_catchup_chests",
     ordered: true,

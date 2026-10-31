@@ -2,6 +2,8 @@
 //  EventDatabaseWriter.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Added the pairs the one-time repair of stuck saves completes
+//                            - Added the lists that give and the branches of each choice
 //      Paulinchen  2026-10-28: Created
 //
 //----------------------------------------------------------------
@@ -59,6 +61,9 @@ public static class EventDatabaseWriter
             Insert(connection, EventTables.SiteAlternatives, rows.SiteAlternatives);
             Insert(connection, EventTables.SceneEntries, rows.SceneEntries);
             Insert(connection, EventTables.Chests, rows.Chests);
+            Insert(connection, EventTables.RepairPairs, rows.RepairPairs);
+            Insert(connection, EventTables.Gives, rows.Gives);
+            Insert(connection, EventTables.ChoiceBranches, rows.ChoiceBranches);
             Insert(connection, EventTables.Switches, rows.Switches);
             Insert(connection, EventTables.Variables, rows.Variables);
             Insert(connection, EventTables.Items, rows.Items);

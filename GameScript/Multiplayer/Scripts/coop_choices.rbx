@@ -2,6 +2,9 @@
 #  coop_choices.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Asked the player the question a replay waits on
+#                            - Asked a number, a key item or a present a replay waits on, on a screen of its own
+#                            - Left every choice a stream hands the run of to the replay
 #      Paulinchen  2026-10-28: Asked the DLL for the choices, their outcomes and which keys are the player's own
 #                            - Read the Final Chapter's rewards from the catch-up tables the DLL holds
 #      Paulinchen  2026-10-14: Added the Navy or the Pirates as each player's own choice, with its ship and its line's self switches
@@ -25,7 +28,10 @@
 # catch-up carries them past. The same screen asks a member their own outcome of each choice the
 # leader's story passes, and in a Raid World each choice the world's story passes. The choices,
 # their outcomes and the rules are the DLL's (MGQOnline.Game's Story/Choices, behind the topics of
-# ChoiceTopics); this script reads the game, writes the outcomes and shows the screen.
+# ChoiceTopics); this script reads the game, writes the outcomes and shows the screen. A choice the
+# save's log covers is asked while the run is replayed in the player's game instead (ask_input,
+# with a number, a key item and a present), so only history from before the log gets the frozen
+# outcomes here.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpCoopChoices
@@ -42,6 +48,8 @@ module MGQ_MpCoopChoices
   OFFER_REFUSAL_TOPIC = "choices.offer_refusal"
   LAPSED_TOPIC = "choices.lapsed"
   TABLE_TOPIC = "choices.table"
+  INPUT_OPEN_TOPIC = "choices.input_open"
+  INPUT_STEP_TOPIC = "choices.input_step"
 
   # The choice of Alice or Ilias, which the party's story chooses, and the Great Decision.
   SIDE = :side
@@ -59,6 +67,12 @@ module MGQ_MpCoopChoices
 
   # The keys that are the player's own while the DLL does not answer: none.
   NO_PERSONAL = { "s" => [], "v" => [], "maps" => [], "self_switches" => [] }
+
+  # The speaker's code at the start of a message: \n<Name>, or 【Name】 in the untranslated game.
+  SPEAKER = /\A(?:\\n<(.+?)>|【(.+?)】)/
+
+  # The sounds of the DLL's cues on a question.
+  CUE_SOUNDS = { "cursor" => :play_cursor, "ok" => :play_ok, "cancel" => :play_cancel }
 
   # Color of the offer in the notification box and the World overview.
   OFFER_COLOR = MGQ_MpActions::LINE_COLOR
@@ -81,6 +95,8 @@ module MGQ_MpCoopChoices
   @table = nil
   # The keys the DLL named the player's own, with the request they answer, see personal_keys.
   @personal = nil
+  # The question a replay waits on, see ask_input; nil for none.
+  @question = nil
 
   extend MGQ_MpLog
 
@@ -159,8 +175,23 @@ module MGQ_MpCoopChoices
     Hash[answers.map { |key, index| [key.to_s, index] }]
   end
 
+  # Reads where the stream that hands the player runs began: in a Raid World where the world's log
+  # starts, in a Classic party where the player started keeping the leader's story. A choice up to
+  # it is history no run hands over, which alone this screen asks and gives its frozen outcome; the
+  # replay of a run asks every later one.
+  #
+  # @return [Array<Integer>, nil] The place's markers, nil for none.
+  def self.start_place
+    if raid?
+      world = defined?(MGQ_MpWorldStory) ? MGQ_MpWorldStory.world : nil
+      world ? world["start"] : nil
+    else
+      defined?(MGQ_MpCoopStory) && MGQ_MpCoopStory.respond_to?(:follow_place) ? MGQ_MpCoopStory.follow_place : nil
+    end
+  end
+
   # Lists the choices a catch-up from one point of the main story to another carries the player
-  # past, which they have not made in their own story.
+  # past, which they have not made in their own story and no stream hands the run of.
   #
   # @param from [Integer] The player's main story progress.
   # @param to [Integer] The progress they are brought to.
@@ -169,7 +200,8 @@ module MGQ_MpCoopChoices
   # @param roster [Array<Integer>] The player's companions.
   # @return [Array<Symbol>] The choices, in story order.
   def self.passed(from, to, switches, variables, roster)
-    Array(MGQ_Multiplayer::Bridge.call(PASSED_TOPIC, "from" => from, "to" => to, "values" => values_of(switches, variables, roster))).map { |key| key.to_sym }
+    request = { "from" => from, "to" => to, "values" => values_of(switches, variables, roster), "start" => start_place }
+    Array(MGQ_Multiplayer::Bridge.call(PASSED_TOPIC, request)).map { |key| key.to_sym }
   end
 
   # Reports whether the player's own save cleared both endings, which the third way of the Great
@@ -289,7 +321,7 @@ module MGQ_MpCoopChoices
   # @param index [Integer] The answer, its place among the labels offered.
   # @param answers [Hash{Symbol => Integer}] Every answer given, Magistea Village's among them.
   def self.apply(key, index, answers = {})
-    outcome = MGQ_Multiplayer::Bridge.call(OUTCOME_TOPIC, context("key" => key.to_s, "index" => index, "answers" => answers_text(answers)))
+    outcome = MGQ_Multiplayer::Bridge.call(OUTCOME_TOPIC, context("key" => key.to_s, "index" => index, "answers" => answers_text(answers), "start" => start_place))
     return log("the DLL did not answer the outcome of #{key}") unless outcome
     return MGQ_MpCoopStory.choose_side(outcome["side"].to_sym) if key == SIDE
 
@@ -588,7 +620,7 @@ module MGQ_MpCoopChoices
     return unless story
 
     request = { "from" => from, "to" => to, "changed" => changed, "raid" => raid?, "values" => values_of(story[0], story[1], MGQ_MpStoryState.roster_ids),
-                "waiting" => @prompts.map { |key| key.to_s } }
+                "waiting" => @prompts.map { |key| key.to_s }, "start" => start_place }
     keys = Array(MGQ_Multiplayer::Bridge.call(PROMPTS_TOPIC, request)).map { |key| key.to_sym }
     return if keys.empty?
 
@@ -604,7 +636,7 @@ module MGQ_MpCoopChoices
   def self.missed(progress)
     return unless raid?
 
-    request = { "progress" => progress, "raid" => true, "values" => story_values, "waiting" => @prompts.map { |key| key.to_s } }
+    request = { "progress" => progress, "raid" => true, "values" => story_values, "waiting" => @prompts.map { |key| key.to_s }, "start" => start_place }
     keys = Array(MGQ_Multiplayer::Bridge.call(MISSED_TOPIC, request)).map { |key| key.to_sym }
     return if keys.empty?
 
@@ -629,7 +661,11 @@ module MGQ_MpCoopChoices
   def self.update
     tick_offers
     play_queued
-    return if @prompts.empty? || !MGQ_MpOverworldSync.map_free? || SceneManager.scene.class != Scene_Map
+    free = MGQ_MpOverworldSync.map_free? && SceneManager.scene.class == Scene_Map
+    left_free unless free
+    return unless free
+    return show_question if @question
+    return if @prompts.empty?
 
     unless raid? || MGQ_MpCoopStory.follows_leader?
       log("forgot the choices #{@prompts.join(', ')} the player was to pick: they no longer follow the leader's story")
@@ -642,6 +678,27 @@ module MGQ_MpCoopChoices
     show_screen(title, [key], ["Confirm"], lead, nil, lambda { |answers| answered_prompt(key, answers) }, nil)
   rescue => e
     log("updating the choices failed: #{e.class}: #{e.message}")
+  end
+
+  # Opens the screen of the question a replay waits on, once.
+  def self.show_question
+    return if @question[:shown]
+
+    @question[:shown] = true
+    SceneManager.call(Scene_MpStoryQuestion)
+  end
+
+  # Keeps the question shown closed until the player leaves standing free on the map and comes
+  # back, as Numpad 0 closes the screen of a number, whose game window has no cancel.
+  def self.put_off_question
+    @question[:later] = true
+    log("the player closed the #{@question[:kind]} a replay asks: it opens again once they stand free after a message, menu, battle or transfer")
+  end
+
+  # Lets a question put off open again, as the player left standing free on the map. Called by
+  # update and as the map's scene ends.
+  def self.left_free
+    @question.merge!(:later => false, :shown => false) if @question && @question[:later]
   end
 
   # Takes the player's own outcome of a choice the leader's story passed.
@@ -677,6 +734,94 @@ module MGQ_MpCoopChoices
     @queued = nil
     log("playing the Great Decision's outcome now: #{commands.map { |command| command.code }.join(' ')}")
     $game_map.interpreter.setup(commands, 0)
+  end
+
+  # Asks the player the choice a replay waits on, with its own labels and the message's last lines.
+  #
+  # @param opener [String, nil] Who ran the event, nil for the player's own history.
+  # @param lines [Array<String>] The message's lines.
+  # @param labels [Array<String>] The answers' labels.
+  # @param done [Proc] Takes the place of the answer picked.
+  def self.ask(opener, lines, labels, done)
+    ask_input(opener, lines, "choice", { "labels" => labels }, done)
+  end
+
+  # Asks the player the input a replay waits on, as the game's own window for it would, on the
+  # screen of the question once they stand free on the map. The game's keys never put the answer
+  # off; only Numpad 0 closes the screen of a number without one, see put_off_question.
+  #
+  # @param opener [String, nil] Who ran the event, nil for the player's own history.
+  # @param lines [Array<String>] The message's lines, the speaker's code first.
+  # @param kind [String] "choice", "number", "item" or "present".
+  # @param spec [Hash] By kind: "labels" and "cancel" (the place cancel answers, the labels' size
+  #   for the choice's own branch; nil where it cannot be cancelled); "digits" and "value"; "items"
+  #   ([id, name, count] each); for a present also "actor" and "result" (the game's line of the
+  #   last present). A list's "index" is the row it starts on, 0 when left out.
+  # @param done [Proc] Takes the answer: the place of the label, the number, or the item (0 for none).
+  def self.ask_input(opener, lines, kind, spec, done)
+    @question = { :opener => opener, :lines => lines, :kind => kind, :spec => spec, :done => done, :place => $game_map ? $game_map.display_name.to_s : "" }
+    log("a replay asks the player #{kind == 'choice' ? "\"#{spec['labels'].join(' / ')}\"" : "for a #{kind}"}, once they are free")
+  end
+
+  # The question a replay waits on.
+  #
+  # @return [Hash, nil] The question, see ask_input, with :input once the DLL opened it; nil for none.
+  def self.question
+    @question
+  end
+
+  # Splits the speaker off a message's lines.
+  #
+  # @param lines [Array<String>] The lines.
+  # @return [Array] The speaker's name, nil for none, and the lines without the speaker's code.
+  def self.speaker_of(lines)
+    first = lines.first.to_s
+    found = first.match(SPEAKER)
+    return [nil, lines] unless found
+
+    rest = first[found[0].size..-1]
+    [found[1] || found[2], rest.empty? ? lines[1..-1] : [rest] + lines[1..-1]]
+  end
+
+  # Has the DLL open the question a replay waits on.
+  #
+  # @param visible [Integer] The rows the screen has room for.
+  # @return [Hash, nil] The question as the DLL holds it, nil while it does not answer.
+  def self.open_question(visible)
+    question = @question
+    spec = question[:spec].merge("index" => question[:spec]["index"].to_i)
+    spec["items"] = spec["items"].map { |id, name, count| [id, name, count, $data_items[id].description.to_s] } if spec["items"]
+    spec["result"] = spec["result"].to_s if question[:kind] == "present"
+    companion = question[:kind] == "present" ? $game_actors[spec["actor"]].name : nil
+    question[:input] = MGQ_Multiplayer::Bridge.call(INPUT_OPEN_TOPIC, "kind" => question[:kind], "opener" => question[:opener], "companion" => companion,
+                                                                       "visible" => visible, "spec" => spec)
+  end
+
+  # Takes a step of the player on the question shown, with its sound.
+  #
+  # @param action [String] What they did: "up", "down", "left", "right", "digit", "click", "wheel",
+  #   "ok" or "cancel".
+  # @param at [Integer] The row or digit clicked or pointed at, or the digit typed.
+  # @param notches [Integer] The wheel's notches, positive up.
+  # @param wrap [Boolean] Whether a move past an end comes round, as a fresh press does.
+  # @return [Integer, nil] The answer once given, else nil.
+  def self.step_question(action, at = 0, notches = 0, wrap = false)
+    input = MGQ_Multiplayer::Bridge.call(INPUT_STEP_TOPIC, "input" => @question[:input], "action" => action, "at" => at, "notches" => notches, "wrap" => wrap)
+    return nil unless input
+
+    @question[:input] = input
+    Sound.send(CUE_SOUNDS[input["cue"]]) if CUE_SOUNDS[input["cue"]]
+    input["answer"]
+  end
+
+  # Hands the answer to the replay that waits on it, once the screen closed.
+  #
+  # @param answer [Integer] The answer.
+  def self.answered_question(answer)
+    done = @question[:done]
+    log("the player answered the #{@question[:kind]} a replay asks: #{answer}")
+    @question = nil
+    done.call(answer)
   end
 
   # Opens the screen of choices.
@@ -745,13 +890,14 @@ module MGQ_MpCoopChoices
   # @param reason [String] Why, for the log.
   def self.forget(reason)
     waiting = [@accepted && 'the accepted offer', @prompts.any? && "the choices #{@prompts.join(', ')}", @queued && "the Great Decision's outcome",
-               @raid_route && "the world's route to confirm"].select { |what| what }
+               @raid_route && "the world's route to confirm", @question && "the #{@question[:kind]} a replay asks"].select { |what| what }
     log("forgot #{waiting.join(', ')}: #{reason}") unless waiting.empty?
     @accepted = nil
     @prompts.clear
     @queued = nil
     @raid_route = nil
     @personal = nil
+    @question = nil
   end
 
   # Takes a message about the choices. Called by coop.rbx.
@@ -944,6 +1090,335 @@ class Scene_MpStoryChoices < Scene_MenuBase
   end
 end
 
+# The window of a question a replay asks: its title and place, why it is asked, the message's last
+# lines under their speaker, then the answers as rows, or the digits with a button that answers.
+class Window_MpStoryQuestion < Window_Base
+  # What the line under the title says.
+  WHY_TEXT = "Your answer changes your own game."
+
+  # The message's lines shown at most, the last ones.
+  MESSAGE_LINES = 4
+
+  # Room above and below the message, with a line across its middle.
+  GAP = 8
+
+  # Width of a digit.
+  DIGIT_WIDTH = 24
+
+  # Width of the button that answers a number, and its label.
+  ANSWER_WIDTH = 96
+  ANSWER_TEXT = "Answer"
+
+  # Room an item's icon takes before its name.
+  ICON_ROOM = 28
+
+  # Tells the color of the button and of the lines across.
+  #
+  # @return [Color] The color.
+  def box_color
+    Color.new(0, 0, 0, 96)
+  end
+
+  # Creates the window for a question.
+  #
+  # @param x [Integer] The left edge.
+  # @param y [Integer] The top edge.
+  # @param width [Integer] The width.
+  # @param height [Integer] The most height it may take.
+  # @param question [Hash] The question, see MGQ_MpCoopChoices.ask_input.
+  def initialize(x, y, width, height, question)
+    @question = question
+    @speaker, lines = MGQ_MpCoopChoices.speaker_of(question[:lines])
+    @lines = lines.last(MESSAGE_LINES)
+    # Marked as the mod's window here rather than by include, so this script also loads without
+    # ui.rbx, as its tests load it.
+    extend(MGQ_MpUi::Theme::Skinned)
+    super(x, y, width, height)
+  end
+
+  # Tells where the answers start, below the title, the message and their lines across.
+  #
+  # @return [Integer] The top edge in the window's contents.
+  def area_y
+    line_height * (2 + (@speaker ? 1 : 0) + @lines.size) + GAP * 2
+  end
+
+  # Counts the rows of answers the window has room for.
+  #
+  # @return [Integer] The rows, one at least.
+  def rows_room
+    [(contents_height - area_y) / line_height, 1].max
+  end
+
+  # Shrinks the window to the question the DLL opened, and draws it.
+  def fit
+    input = @question[:input]
+    rows = input["kind"] == "number" ? 1 : [input["rows"].size, input["visible"]].min
+    self.height = [area_y + rows * line_height + standard_padding * 2, height].min
+    create_contents
+    refresh
+  end
+
+  # Draws the question as the DLL holds it, and puts the cursor on its row or digit.
+  def refresh
+    contents.clear
+    input = @question[:input]
+    draw_head(input)
+    input["kind"] == "number" ? draw_digits(input) : draw_rows(input)
+    rect = input["kind"] == "number" ? digit_rect(input["cursor"]) : row_rect(input["cursor"])
+    cursor_rect.set(rect.x, rect.y, rect.width, rect.height)
+  end
+
+  # Draws the title and the place, why the question is asked, and the message under its speaker
+  # with the game's own text drawing.
+  #
+  # @param input [Hash] The question as the DLL holds it.
+  def draw_head(input)
+    reset_font_settings
+    change_color(system_color)
+    draw_text(0, 0, contents_width, line_height, input["title"])
+    change_color(normal_color, false)
+    draw_text(0, 0, contents_width, line_height, @question[:place], 2)
+    change_color(normal_color)
+    draw_text(0, line_height, contents_width, line_height, WHY_TEXT)
+    y = line_height * 2
+    contents.fill_rect(0, y + GAP / 2, contents_width, 1, box_color)
+    y += GAP
+    if @speaker
+      change_color(system_color)
+      draw_text(0, y, contents_width, line_height, @speaker)
+      y += line_height
+    end
+    @lines.each do |line|
+      draw_text_ex(0, y, line)
+      y += line_height
+    end
+    contents.fill_rect(0, y + GAP / 2, contents_width, 1, box_color)
+  end
+
+  # Tells where a row of answers is drawn.
+  #
+  # @param row [Integer] The row, among all of the question's.
+  # @return [Rect] Where.
+  def row_rect(row)
+    Rect.new(0, area_y + (row - @question[:input]["top"]) * line_height, contents_width, line_height)
+  end
+
+  # Lists the rows shown.
+  #
+  # @return [Range] The rows, among all of the question's.
+  def rows_shown
+    input = @question[:input]
+    input["top"]...[input["top"] + input["visible"], input["rows"].size].min
+  end
+
+  # Draws the rows shown: an item's icon, name and count; the cancel answer's own row dim.
+  #
+  # @param input [Hash] The question as the DLL holds it.
+  def draw_rows(input)
+    rows_shown.each do |row|
+      answer, name, count, _description, cancel = input["rows"][row]
+      rect = row_rect(row)
+      x = rect.x + 4
+      if input["kind"] != "choice" && !cancel
+        draw_icon($data_items[answer].icon_index, x, rect.y)
+        x += ICON_ROOM
+      end
+      change_color(normal_color, !cancel)
+      cancel ? draw_text(x, rect.y, rect.width - x, rect.height, name) : draw_text_ex(x, rect.y, name)
+      change_color(normal_color)
+      draw_text(rect.x, rect.y, rect.width - 4, rect.height, "x#{count}", 2) if count
+    end
+  end
+
+  # Tells where a digit is drawn, the digits centred left of the button.
+  #
+  # @param at [Integer] The digit, the highest first.
+  # @return [Rect] Where.
+  def digit_rect(at)
+    count = @question[:input]["digits"].size
+    left = (contents_width - ANSWER_WIDTH - GAP - count * DIGIT_WIDTH) / 2
+    Rect.new(left + at * DIGIT_WIDTH, area_y, DIGIT_WIDTH, line_height)
+  end
+
+  # Tells where the button that answers a number is drawn.
+  #
+  # @return [Rect] Where.
+  def answer_rect
+    Rect.new(contents_width - ANSWER_WIDTH, area_y, ANSWER_WIDTH, line_height)
+  end
+
+  # Draws the digits and the button that answers.
+  #
+  # @param input [Hash] The question as the DLL holds it.
+  def draw_digits(input)
+    change_color(normal_color)
+    input["digits"].each_with_index { |digit, at| draw_text(digit_rect(at), digit.to_s, 1) }
+    rect = answer_rect
+    contents.fill_rect(rect.x, rect.y + 1, rect.width, rect.height - 2, box_color)
+    draw_text(rect, ANSWER_TEXT, 1)
+  end
+
+  # Reports whether a point of the screen lies on the window.
+  #
+  # @param point [Array<Integer>] x and y on the screen.
+  # @return [Boolean] Whether it does.
+  def over?(point)
+    point[0] >= x && point[0] < x + width && point[1] >= y && point[1] < y + height
+  end
+
+  # Finds what a point of the screen points at.
+  #
+  # @param point [Array<Integer>] x and y on the screen.
+  # @return [Array, nil] [:row, row], [:digit, digit] or [:answer]; nil for nothing.
+  def hit(point)
+    left = point[0] - x - padding
+    top = point[1] - y - padding
+    inside = lambda { |rect| left >= rect.x && left < rect.x + rect.width && top >= rect.y && top < rect.y + rect.height }
+    if @question[:input]["kind"] == "number"
+      digit = (0...@question[:input]["digits"].size).find { |at| inside.call(digit_rect(at)) }
+      return [:digit, digit] if digit
+
+      return inside.call(answer_rect) ? [:answer] : nil
+    end
+
+    row = rows_shown.find { |at| inside.call(row_rect(at)) }
+    row ? [:row, row] : nil
+  end
+end
+
+# The screen of a question a replay asks, opened over the map. Every key, the pad and the mouse
+# answer as the game's own window for the input does, and only a press after the screen opened
+# counts, so a held skip or confirm answers nothing.
+class Scene_MpStoryQuestion < Scene_MenuBase
+  # Windows' codes of the number row's digit keys, with the digit each types. The numpad types no
+  # digit, as its 0 closes the screen of a number.
+  DIGIT_KEYS = Hash[(0..9).map { |digit| [0x30 + digit, digit] }]
+  MGQ_Multiplayer::Key.watch(*DIGIT_KEYS.keys)
+
+  # Windows' codes of the numpad's 0, with Num Lock on and off.
+  NUMPAD_ZERO_KEYS = [0x60, 0x2D]
+
+  # Builds the windows and has the DLL open the question.
+  def start
+    super
+    @question = MGQ_MpCoopChoices.question
+    return return_scene unless @question
+
+    @info_window = Window_MpInfo.new(2)
+    width = [Graphics.width - 64, 480].min
+    top = @info_window.height + 8
+    @window = Window_MpStoryQuestion.new((Graphics.width - width) / 2, top, width, Graphics.height - top - 8, @question)
+    return leave("the DLL did not open the question") unless MGQ_MpCoopChoices.open_question(@window.rows_room)
+
+    @window.fit
+    @fresh = true
+    show_hint
+  rescue => e
+    leave("opening the screen of the question failed: #{e.class}: #{e.message}")
+  end
+
+  # Takes the player's step, and closes the screen with the answer once given.
+  def update
+    super
+    return if held_since_open?
+
+    step = keys_step || mouse_step
+    return unless step
+    return put_off if step[0] == "later"
+
+    answer = MGQ_MpCoopChoices.step_question(*step)
+    @window.refresh
+    show_hint
+    return if answer.nil?
+
+    return_scene
+    MGQ_MpCoopChoices.answered_question(answer)
+  rescue => e
+    leave("the screen of the question failed: #{e.class}: #{e.message}")
+  end
+
+  # Reports whether a confirm, a cancel or the mouse's button held since the screen opened is still
+  # held, which waits for its release.
+  #
+  # @return [Boolean] Whether one is.
+  def held_since_open?
+    return false unless @fresh
+
+    @fresh = Input.press?(:C) || Input.press?(:B) || MGQ_Multiplayer::Mouse.held? || NUMPAD_ZERO_KEYS.any? { |code| MGQ_Multiplayer::Key.down?(code) }
+  end
+
+  # Reads the step the keys and the pad take: arrows, a typed digit on a number, confirm, and
+  # cancel on a list. A number ignores the game's cancel, as the game's window does, and closes on
+  # Numpad 0 alone ("later").
+  #
+  # @return [Array, nil] The step's action, place, notches and wrap; nil for none.
+  def keys_step
+    number = @question[:input]["kind"] == "number"
+    arrows = number ? [[:UP, "up"], [:DOWN, "down"], [:LEFT, "left"], [:RIGHT, "right"]] : [[:UP, "up"], [:DOWN, "down"]]
+    arrows.each { |key, action| return [action, 0, 0, Input.trigger?(key)] if Input.repeat?(key) }
+    DIGIT_KEYS.each { |code, digit| return ["digit", digit, 0, false] if MGQ_Multiplayer::Key.triggered?(code) } if number
+    return ["ok", 0, 0, false] if Input.trigger?(:C)
+    return ["later", 0, 0, false] if number && MGQ_MpUi.numpad_cancel?
+    return ["cancel", 0, 0, false] if !number && MGQ_MpUi.cancel?
+
+    nil
+  end
+
+  # Reads the step the mouse takes over the window: a click on a row answers it, on a digit puts
+  # the cursor there, on the button answers the number; the wheel moves over a list or turns the
+  # digit under the pointer.
+  #
+  # @return [Array, nil] The step's action, place, notches and wrap; nil for none.
+  def mouse_step
+    clicked = MGQ_Multiplayer::Mouse.clicked?
+    notches = MGQ_Multiplayer::Mouse.wheel
+    position = MGQ_Multiplayer::Mouse.position
+    return nil unless position && @window.over?(position)
+
+    spot = @window.hit(position)
+    return wheel_step(spot, notches) if notches != 0
+    return nil unless clicked && spot
+
+    spot[0] == :answer ? ["ok", 0, 0, false] : ["click", spot[1], 0, false]
+  end
+
+  # Reads the step a turn of the wheel takes: over a list it moves the cursor, over a digit it
+  # turns that digit.
+  #
+  # @param spot [Array, nil] What the pointer points at, see Window_MpStoryQuestion#hit.
+  # @param notches [Integer] The notches, positive up.
+  # @return [Array, nil] The step, nil for none.
+  def wheel_step(spot, notches)
+    return ["wheel", 0, notches, false] unless @question[:input]["kind"] == "number"
+
+    spot && spot[0] == :digit ? ["wheel", spot[1], notches, false] : nil
+  end
+
+  # Shows the hint and the keys of the question.
+  def show_hint
+    input = @question[:input]
+    @info_window.show([input["hint"], input["keys"]])
+  end
+
+  # Closes the screen of a number without an answer, which waits until the player next stands
+  # free after a message, menu, battle or transfer of their own.
+  def put_off
+    Sound.play_cancel
+    MGQ_MpCoopChoices.put_off_question
+    return_scene
+  end
+
+  # Closes the screen without an answer, which the question then waits for once more.
+  #
+  # @param reason [String] Why, for the log.
+  def leave(reason)
+    MGQ_MpCoopChoices.log("closed the screen of the question: #{reason}")
+    @question[:shown] = false if @question
+    return_scene
+  end
+end
+
 # What this script takes part in of the party's messages and states, through coop.rbx and
 # overworld_sync.rbx.
 
@@ -961,6 +1436,10 @@ end
 begin
   # After the map's update, the leader's offers, the choices to pick and the Great Decision's outcome.
   MGQ_MpHooks.after(Game_Map, :update, "coop_choices") { MGQ_MpCoopChoices.update }
+
+  # The player leaves the map for a menu or a battle, after which a number closed with Numpad 0
+  # opens again.
+  MGQ_MpHooks.after(Scene_Map, :terminate, "coop_choices") { MGQ_MpCoopChoices.left_free }
 
   # A loaded save brings its own story, so what waited goes.
   MGQ_MpHooks.after(DataManager.singleton_class, :extract_save_contents, "coop_choices") { |_contents| MGQ_MpCoopChoices.forget("a save was loaded") }

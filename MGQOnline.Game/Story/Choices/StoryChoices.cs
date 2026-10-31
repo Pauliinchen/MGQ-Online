@@ -2,6 +2,7 @@
 //  StoryChoices.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Left every choice a stream hands the run of to the replay
 //      Paulinchen  2026-10-28: Created
 //
 //----------------------------------------------------------------
@@ -47,7 +48,8 @@ public sealed record ChoiceValues(IReadOnlySet<int> SwitchesOn, IReadOnlyDiction
 /// <param name="Ending2">Whether the install cleared the second ending.</param>
 /// <param name="RaidRoute">The route a Raid World took as it carried the player past the decision, <see langword="null"/> for none waiting.</param>
 /// <param name="WorldRoutes">The routes a Raid World may still take, <see langword="null"/> while unknown.</param>
-public sealed record ChoiceContext(bool Raid, ChoiceValues Values, bool Ending1, bool Ending2, int? RaidRoute, IReadOnlyList<int>? WorldRoutes);
+/// <param name="Start">Where the stream that hands the player runs began: a Raid World's log start, or where a Classic member started keeping the leader's story; <see langword="null"/> for none.</param>
+public sealed record ChoiceContext(bool Raid, ChoiceValues Values, bool Ending1, bool Ending2, int? RaidRoute, IReadOnlyList<int>? WorldRoutes, RunPlace? Start);
 
 /// <summary>
 /// What an outcome sets and brings, as the scripts write it into the story they play.
@@ -77,6 +79,8 @@ public sealed record PersonalChoiceKeys(IReadOnlyList<int> Switches, IReadOnlyLi
 /// The rules of the story's choices a player makes for themselves (see
 /// <see cref="ChoiceTable"/>): which a story carries them past, which the screen offers and what
 /// each outcome brings and sets, which keys are their own, and the leader's offers to sync a story.
+/// A choice a stream hands the run of is asked by the replay of that run ("Issue 73 chest effects.md",
+/// rule 4), so only history from before the log is asked here and gets the frozen outcome rows.
 /// </summary>
 public static class StoryChoices
 {
@@ -105,20 +109,32 @@ public static class StoryChoices
     };
 
     /// <summary>
+    /// Reports whether a stream hands the player the run of a choice: one does, and the choice's
+    /// point lies past the main story's progress where it began, which a story there had passed.
+    /// </summary>
+    /// <param name="key">The choice.</param>
+    /// <param name="start">Where the stream began, <see langword="null"/> for none.</param>
+    /// <returns>Whether it does.</returns>
+    public static bool Logged(string key, RunPlace? start) =>
+        start is not null && ChoiceTable.Branch(key)!.Point > start.Markers[0];
+
+    /// <summary>
     /// Lists the choices a catch-up from one point of the main story to another carries the player
-    /// past, which they have not made in their own story.
+    /// past, which they have not made in their own story and no stream hands the run of.
     /// </summary>
     /// <param name="from">The player's main story progress.</param>
     /// <param name="to">The progress they are brought to.</param>
     /// <param name="values">The player's own story.</param>
+    /// <param name="start">Where the stream that hands the player runs began, <see langword="null"/> for none.</param>
     /// <returns>The choices, in story order.</returns>
-    public static IReadOnlyList<string> Passed(int from, int to, ChoiceValues values) =>
-        [.. ChoiceTable.Branches.Where(branch => from < branch.Point && to >= branch.Point && !Made(branch.Key, values)).Select(branch => branch.Key)];
+    public static IReadOnlyList<string> Passed(int from, int to, ChoiceValues values, RunPlace? start) =>
+        [.. ChoiceTable.Branches.Where(branch => from < branch.Point && to >= branch.Point && !Made(branch.Key, values) && !Logged(branch.Key, start)).Select(branch => branch.Key)];
 
     /// <summary>
     /// Lists the choices a part of a story the player plays carries them past, to ask their own
     /// outcome of: those passed but the side (which a Raid World's story nobody chose it in asks
-    /// too) and the Great Decision, and those a change resolved, less those asked already.
+    /// too) and the Great Decision, and those a change resolved, less those asked already and those
+    /// a stream hands the run of.
     /// </summary>
     /// <param name="from">The main story's progress before.</param>
     /// <param name="to">The progress after.</param>
@@ -126,10 +142,11 @@ public static class StoryChoices
     /// <param name="raid">Whether a Raid World is open.</param>
     /// <param name="values">The player's own story.</param>
     /// <param name="waiting">The choices asked already.</param>
+    /// <param name="start">Where the stream that hands the player runs began, <see langword="null"/> for none.</param>
     /// <returns>The choices to ask, in story order.</returns>
-    public static IReadOnlyList<string> Prompts(int from, int to, IReadOnlyCollection<int> changed, bool raid, ChoiceValues values, IReadOnlyCollection<string> waiting)
+    public static IReadOnlyList<string> Prompts(int from, int to, IReadOnlyCollection<int> changed, bool raid, ChoiceValues values, IReadOnlyCollection<string> waiting, RunPlace? start)
     {
-        var keys = new List<string>(Passed(from, to, values));
+        var keys = new List<string>(Passed(from, to, values, start));
         keys.Remove(ChoiceTable.Decision);
         if (!raid)
         {
@@ -150,21 +167,22 @@ public static class StoryChoices
             }
         }
 
-        return [.. keys.Where(key => !waiting.Contains(key))];
+        return [.. keys.Where(key => !waiting.Contains(key) && !Logged(key, start))];
     }
 
     /// <summary>
     /// Lists the choices a later build added that a Raid World's story is past while the player's
-    /// own save never made them, less those asked already.
+    /// own save never made them, less those asked already and those a stream hands the run of.
     /// </summary>
     /// <param name="progress">The main story's progress of the story laid over the player's.</param>
     /// <param name="raid">Whether a Raid World is open.</param>
     /// <param name="values">The player's story.</param>
     /// <param name="waiting">The choices asked already.</param>
+    /// <param name="start">Where the stream that hands the player runs began, <see langword="null"/> for none.</param>
     /// <returns>The choices to ask.</returns>
-    public static IReadOnlyList<string> Missed(int progress, bool raid, ChoiceValues values, IReadOnlyCollection<string> waiting) =>
+    public static IReadOnlyList<string> Missed(int progress, bool raid, ChoiceValues values, IReadOnlyCollection<string> waiting, RunPlace? start) =>
         raid
-            ? [.. ChoiceTable.LaterBranches.Where(key => progress >= ChoiceTable.Branch(key)!.Point && !Made(key, values) && !waiting.Contains(key))]
+            ? [.. ChoiceTable.LaterBranches.Where(key => progress >= ChoiceTable.Branch(key)!.Point && !Made(key, values) && !waiting.Contains(key) && !Logged(key, start))]
             : [];
 
     /// <summary>
@@ -272,8 +290,10 @@ public static class StoryChoices
     }
 
     /// <summary>
-    /// Finds what an outcome sets and brings, as the scripts write it into the story they play; the
-    /// side's outcome sets nothing here, as the scripts choose it through the party's story.
+    /// Finds what an outcome sets and brings, as the scripts write it into the story they play: the
+    /// frozen rows of a choice no stream hands the run of, nothing for one a stream does, whose
+    /// replay plays the game's own event. The side's outcome sets nothing here, as the scripts choose
+    /// it through the party's story.
     /// </summary>
     /// <param name="key">The choice.</param>
     /// <param name="index">The outcome, its place among the labels offered.</param>
@@ -283,6 +303,11 @@ public static class StoryChoices
     public static ChoiceWrites Outcome(string key, int index, IReadOnlyDictionary<string, int> answers, ChoiceContext context)
     {
         ChoiceBranch branch = ChoiceTable.Branch(key)!;
+        if (Logged(key, context.Start))
+        {
+            return new ChoiceWrites(branch.Title, Offered(key, context).Labels[index], [], [], [], [], [], null);
+        }
+
         if (key == ChoiceTable.Succubus)
         {
             (bool lily, bool lucia) = MagisteaCompanions(answers, context.Values);

@@ -2,6 +2,8 @@
 //  EventTables.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Added the pairs the one-time repair of stuck saves completes
+//                            - Added the lists that give and the branches of each choice
 //      Paulinchen  2026-10-28: Read the views
 //                            - Keyed pages by site
 //                            - Created
@@ -204,6 +206,30 @@ internal static class EventTables
         r => (r.MapId, r.EventId, r.PageNo),
         (w, r) => w.Int(r.MapId).Int(r.EventId).Int(r.PageNo).Text(r.Letter).Int(r.ListId),
         r => new ChestRow(r.Int(), r.Int(), r.Int(), r.TextNotNull(), r.Int()));
+
+    /// <summary>The pairs the one-time repair of stuck saves completes.</summary>
+    public static readonly TableShape<RepairPairRow> RepairPairs = new(
+        "repair_pairs",
+        ["map_id", "event_id", "page_no", "letter", "switch_id"],
+        r => (r.MapId, r.EventId, r.PageNo, r.Letter, r.SwitchId),
+        (w, r) => w.Int(r.MapId).Int(r.EventId).Int(r.PageNo).Text(r.Letter).Int(r.SwitchId),
+        r => new RepairPairRow(r.Int(), r.Int(), r.Int(), r.TextNotNull(), r.Int()));
+
+    /// <summary>The lists that give.</summary>
+    public static readonly TableShape<GivesRow> Gives = new(
+        "gives",
+        ["list_id"],
+        r => r.ListId,
+        (w, r) => w.Int(r.ListId),
+        r => new GivesRow(r.Int()));
+
+    /// <summary>The branches of each choice.</summary>
+    public static readonly TableShape<ChoiceBranchRow> ChoiceBranches = new(
+        "choice_branches",
+        ["list_id", "idx", "branch", "first_idx", "last_idx", "holdings"],
+        r => (r.ListId, r.Idx, r.Branch),
+        (w, r) => w.Int(r.ListId).Int(r.Idx).Int(r.Branch).Int(r.FirstIdx).Int(r.LastIdx).Text(r.Holdings),
+        r => new ChoiceBranchRow(r.Int(), r.Int(), r.Int(), r.Int(), r.Int(), r.TextNotNull()));
 
     /// <summary>The switches.</summary>
     public static readonly TableShape<SwitchRow> Switches = new(

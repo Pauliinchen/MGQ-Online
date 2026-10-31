@@ -2,6 +2,9 @@
 #  world_catchup.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Waited for a lost raid boss battle's defeat by the world's story's hold
+#                            - Handed the DLL the world's story where its log starts, and left a vehicle only the log holds in place
+#                            - Played a world chest and a Makina by level in the player's game, through story_replay.rbx
 #      Paulinchen  2026-10-28: Handed the DLL a snapshot of the story, party and items and carried out the catch-up it decides
 #                            - Read the rules, counts and companion values of the catch-up from the story mapping the DLL holds
 #                            - Kept the tables built from the rows until the rules come anew
@@ -81,8 +84,12 @@
 # What the story gives goes by its place in the story, never by what another player holds, once per
 # save, which keeps the notes the DLL writes (ledger): the story's skills and items, its companions
 # at their gates, the world's key items and chests, the skills, classes and races the story teaches
-# the roster, what its power-ups change of the characters, the player's own values it sets, the
-# vehicles it gave, Makina by level and the items unlocking a job or a race that any player found.
+# the roster, what its power-ups change of the characters, the player's own values it sets and the
+# vehicles it gave. The rows give only the history the world's story was past where its log starts;
+# the world's track replays the runs after it. Makina by level and the companions a player missed
+# once a route finished come by playing their page in the player's game (story_replay.rbx). An item
+# unlocking a job or a race that any player found, in an event or as a battle's drop, comes to every
+# player at once and counts once.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpWorldCatchup
@@ -278,22 +285,6 @@ module MGQ_MpWorldCatchup
     !noted.nil? && noted == own_part
   end
 
-  # Reports whether a lost raid boss battle's defeat runs, which takes items its undo gives back (see
-  # battles_raid_freeze.rbx): a restock meanwhile would give them twice. Logs once as a hold starts
-  # and as it ends.
-  #
-  # @return [Boolean] Whether one runs.
-  def self.holding?
-    holding = defined?(MGQ_MpRaidFreeze) && MGQ_MpRaidFreeze.holding_writes? ? true : false
-    if holding != (@holding ? true : false)
-      log(holding ? "a lost raid boss battle's defeat runs: the catch-up waits until its undo ran" : "the lost raid boss battle's defeat ended: the catch-up goes on")
-    end
-    @holding = holding
-  rescue => e
-    log_once(:holding, "looking whether a lost raid boss battle holds the catch-up failed: #{e.class}: #{e.message}")
-    false
-  end
-
   # Tells the player why their story event did not start.
   #
   # @return [String] The notice.
@@ -312,11 +303,12 @@ module MGQ_MpWorldCatchup
   # Follows the catch-up for one frame: the relay's answer to shared companions and the orbs' event
   # that waits, then every CHECK_FRAMES while the player is free one look of the DLL at their story
   # (see look). Called after the map's update. Nothing goes on while a lost raid boss battle's
-  # defeat runs (see holding?).
+  # defeat runs, which takes items its undo gives back: a restock meanwhile would give them twice
+  # (see MGQ_MpWorldStory.holding?).
   def self.tick
     @clock += 1
     return close unless active?
-    return if holding?
+    return if MGQ_MpWorldStory.holding?
 
     note_world
     read_shared if @adding && @clock - @state_read >= STATE_FRAMES
@@ -338,8 +330,8 @@ module MGQ_MpWorldCatchup
   # Has the DLL look at the player's story once and carries out its answer: everything the story
   # owes once when an audit is due (on entering, after a load, on a level up), the vehicles after a
   # story written into the player's, else the rows new since, the rewards waiting for their gate,
-  # the roster's skills, classes and races, the shared companions, the Makina, the found items, the
-  # counts and the warp ban.
+  # the roster's skills, classes and races, the shared companions, the Makina, the missed companions,
+  # the found items, the counts and the warp ban.
   def self.look
     note_held_items if @audit_due
     audit = @audit_due
@@ -546,6 +538,7 @@ module MGQ_MpWorldCatchup
       "mode" => MGQ_MpWorldStory.mode ? MGQ_MpWorldStory.mode.to_s : nil, "own" => keys ? values(story_now) : nil, "told" => @world_told, "roster" => roster_entries,
       "items" => item_counts, "worn" => worn_items, "unlocks" => unlock_ids, "map" => $game_map ? $game_map.map_id : 0,
       "encounters" => !$game_system.encounter_disabled, "summary" => world, "sharing" => sharing.to_s, "starts" => comps.map { |id| [id, start_level(id)] },
+      "log" => (log = MGQ_MpWorldStory.log_story) && keys ? values(log) : nil,
     }
   end
 
@@ -712,11 +705,10 @@ module MGQ_MpWorldCatchup
     when "change" then change_actors(action[1], action[2], action[3])
     when "set" then $game_variables[action[1]] = action[2]
     when "switch" then $game_switches[action[1]] = action[2]
-    when "open" then open_chest(action[1])
     when "setting" then settle(action[1], action[2], action[3], action[4])
     when "vehicles" then place_vehicles(action[1])
     when "trim" then trim_copies(action[1], action[2])
-    when "makina" then hand_makina(action[1], action[2])
+    when "replay" then MGQ_MpStoryReplay.derive(action[1], action[2])
     end
     nil
   end
@@ -819,10 +811,12 @@ module MGQ_MpWorldCatchup
   end
 
   # Keeps the vehicles to the story as the DLL found it: one no event that gives it is behind the
-  # player's story or the world's leaves its map (park_vehicle), one the story gave that stands on
-  # no map comes back to its start (return_vehicle).
+  # player's story or the world's leaves its map (park_vehicle), one the story gave before the
+  # world's log that stands on no map comes back to its start (return_vehicle), and one only the
+  # log gave stays where its replay put it.
   #
-  # @param given [Array<Boolean>] Whether the story gave each vehicle, by VEHICLE_TYPES.
+  # @param given [Array<Boolean, nil>] Whether the story gave each vehicle, by VEHICLE_TYPES: nil
+  #   where only the world's log did.
   def self.place_vehicles(given)
     VEHICLE_TYPES.each_with_index do |type, id|
       vehicle = $game_map.vehicle(type)
@@ -831,7 +825,7 @@ module MGQ_MpWorldCatchup
       map_id = MGQ_MpGame.get(vehicle, :map_id).to_i
       if given[id]
         return_vehicle(type, vehicle) if map_id == 0
-      elsif map_id != 0
+      elsif given[id] == false && map_id != 0
         park_vehicle(type, vehicle, map_id)
       end
     end
@@ -1083,21 +1077,7 @@ module MGQ_MpWorldCatchup
     true
   end
 
-  # Gives a Makina the DLL found due, which is not noted as found again (see gained).
-  #
-  # @param id [Integer] The item.
-  # @param key [String] Why, for the log.
-  # @return [nil] Nothing to tell among the gifts.
-  def self.hand_makina(id, key)
-    @handing_makina = true
-    give("i", id, 1, key)
-    nil
-  ensure
-    @handing_makina = false
-  end
-
-  # Takes back copies of an item beyond the first, as a Makina or an item unlocking a job or a race
-  # counts once.
+  # Takes back copies of an item beyond the first, as an item unlocking a job or a race counts once.
   #
   # @param id [Integer] The item.
   # @param count [Integer] How many to take back.
@@ -1129,13 +1109,12 @@ module MGQ_MpWorldCatchup
   end
 
   # Notes an item unlocking a job or a race, or a Makina, the player gained as found for the world, so
-  # every other player gets it too; a Makina only by level, and not one the catch-up hands out
-  # itself.
+  # every other player gets it too; a Makina only by level.
   #
   # @param item [RPG::BaseItem, nil] The item.
   # @param amount [Integer] How many.
   def self.gained(item, amount)
-    return unless amount.to_i > 0 && active? && (unlock_item?(item) || (makina?(item) && !@handing_makina))
+    return unless amount.to_i > 0 && active? && (unlock_item?(item) || makina?(item))
 
     key = [FOUND_MAP, item.id, FOUND_LETTER]
     return if $game_self_switches[key]
@@ -1159,17 +1138,6 @@ module MGQ_MpWorldCatchup
   # @return [Boolean] Whether it does.
   def self.unlock_item?(item)
     item.is_a?(RPG::Item) && item.description.to_s =~ UNLOCK_ITEM_TAG ? true : false
-  end
-
-  # Shows a world-wide chest the world opened as open in the player's story too, so it gives
-  # nothing twice.
-  #
-  # @param key [Array] Its self switch: map, event and letter.
-  # @return [nil] Nothing to tell among the gifts.
-  def self.open_chest(key)
-    MGQ_MpStoryState.data_of($game_self_switches)[key] = true
-    $game_map.need_refresh = true if $game_map
-    nil
   end
 
   # Logs what the story gave the player at once.

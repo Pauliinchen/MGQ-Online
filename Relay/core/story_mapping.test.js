@@ -2,6 +2,7 @@
 //  story_mapping.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Covered the game's working values among the personal keys
 //      Paulinchen  2026-10-28: Covered the seeding of the tables that hold no rows yet
 //      Paulinchen  2026-10-23: Covered the keys the whole world keeps
 //                            - Covered the derived index's common events and the game's names kept with it
@@ -94,6 +95,7 @@ test("a key's kind must fit a switch or a variable and take the options it names
   assert.equal(await refused({ key: "v1001", kind: "shared", sharde: true }), MAPPING_REFUSAL.field);
   assert.equal(await refused({ key: "s2045", kind: "chest", defeatWrite: false }), MAPPING_REFUSAL.field);
   assert.equal(await refused({ key: "v1354", kind: "count", counts: { from: 3101, to: 3180 }, wholeWorld: true }), MAPPING_REFUSAL.option, "only shared and one-way keys are the whole world's");
+  assert.equal(await refused({ key: "v1001", kind: "shared", work: true }), MAPPING_REFUSAL.option, "only a personal key is one of the game's working values");
 
   const taken = await ask("POST", "/edit", {
     edits: [
@@ -102,10 +104,11 @@ test("a key's kind must fit a switch or a variable and take the options it names
       add("keys", { key: "v1354", kind: "count", counts: { from: 3101, to: 3180 } }),
       add("keys", { key: "s22", kind: "personal", defeatWrite: true }),
       add("keys", { key: "v3005", kind: "one_way", wholeWorld: true }),
+      add("keys", { key: "v57", kind: "personal", work: true }),
     ],
   });
   assert.equal(taken.status, 200);
-  assert.deepEqual(taken.body.changed.map((change) => change.id), ["v1052", "v1075", "v1354", "s22", "v3005"]);
+  assert.deepEqual(taken.body.changed.map((change) => change.id), ["v1052", "v1075", "v1354", "s22", "v3005", "v57"]);
 });
 
 test("an event's self switches name a map's events and letters, a chest's only as personal", async () => {

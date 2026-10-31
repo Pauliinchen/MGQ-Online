@@ -2,6 +2,7 @@
 //  CatchupEngine.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Left the chest flags out of what a snapshot reads
 //      Paulinchen  2026-10-28: Read the switch of a world chest the game shuts by a switch
 //                            - Created
 //
@@ -90,8 +91,6 @@ public sealed class CatchupEngine
             {
                 selves.Add(chest.Key);
             }
-
-            switches.UnionWith(chest.Flags);
         }
 
         foreach (CatchupCount count in tables.Counts)

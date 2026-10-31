@@ -2,6 +2,8 @@
 //  EventRows.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Added the pairs the one-time repair of stuck saves completes
+//                            - Added the lists that give and the branches of each choice
 //      Paulinchen  2026-10-28: Let the build info be set after the rows
 //                            - Created
 //
@@ -96,6 +98,15 @@ public sealed class EventRows(EventBuildInfo build)
 
     /// <summary>Gets the chest pages.</summary>
     public List<ChestRow> Chests { get; } = [];
+
+    /// <summary>Gets the pairs the one-time repair of stuck saves completes.</summary>
+    public List<RepairPairRow> RepairPairs { get; } = [];
+
+    /// <summary>Gets the lists that give.</summary>
+    public List<GivesRow> Gives { get; } = [];
+
+    /// <summary>Gets the branches of each choice.</summary>
+    public List<ChoiceBranchRow> ChoiceBranches { get; } = [];
 
     /// <summary>Gets the switches.</summary>
     public List<SwitchRow> Switches { get; } = [];

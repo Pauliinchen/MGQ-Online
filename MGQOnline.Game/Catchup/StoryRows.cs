@@ -2,6 +2,7 @@
 //  StoryRows.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Found the joins a finished route carried a story past
 //      Paulinchen  2026-10-28: Created
 //
 //----------------------------------------------------------------
@@ -130,6 +131,30 @@ public static class StoryRows
     {
         ArgumentNullException.ThrowIfNull(place);
         return (Rank(place.Part), place.Step ?? 0);
+    }
+
+    /// <summary>
+    /// Reports whether a finished route carried a story past a row's part, whatever its marks: every
+    /// part before the routes, and a route once finished, on the player's own side.
+    /// </summary>
+    /// <remarks>
+    /// The marks do not count, a choice's outcome among them neither: a recruit the player missed
+    /// is one whose marks their story never got.
+    /// </remarks>
+    /// <param name="place">The row's place.</param>
+    /// <param name="own">The player's story, which finished a route.</param>
+    /// <param name="notedSide">The side the save notes, <see langword="null"/> for none.</param>
+    /// <returns>Whether it did; side content has no part to be past.</returns>
+    public static bool PastByRoute(StoryPlace place, StoryValues own, string? notedSide)
+    {
+        ArgumentNullException.ThrowIfNull(place);
+        ArgumentNullException.ThrowIfNull(own);
+        if (place.Part is not { } part || (Rank(part) == Rank("ad") && !own.Cleared(part)))
+        {
+            return false;
+        }
+
+        return place.Side is null || place.Side == SideFor(place, own, notedSide);
     }
 
     /// <summary>

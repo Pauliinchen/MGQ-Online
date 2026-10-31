@@ -2,6 +2,7 @@
 //  sqlite_store.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Kept the run entries of each story track one row each
 //      Paulinchen  2026-10-23: Kept the story mapping, its revision, each row's last changes and the derived index
 //                            - Kept each Raid World's story tracks: its summary, each track's keys, each player's record and each part's checkpoint
 //      Paulinchen  2026-10-22: Kept the release control the relay's admins set
@@ -198,7 +199,8 @@ function mappingStore(db) {
 
 /**
  * The stores of the Raid Worlds' story tracks: each world's summary, each player's record and each
- * part's checkpoint as JSON, each track's keys one row each, so a write changes only its own keys.
+ * part's checkpoint as JSON, each track's keys and run entries one row each, so a write changes
+ * only its own keys and adds only its own entry.
  *
  * @param {DatabaseSync} db The database.
  * @returns {(id: string) => import("../core/story_tracks.js").TrackStore} Makes the store of a world's tracks.
@@ -212,6 +214,11 @@ function trackStores(db) {
   const putKey = db.prepare("INSERT OR REPLACE INTO track_keys (world, track, key, value) VALUES (?, ?, ?, ?)");
   const dropTrack = db.prepare("DELETE FROM track_keys WHERE world = ? AND track = ?");
   const dropWorld = db.prepare("DELETE FROM track_keys WHERE world = ?");
+  db.exec("CREATE TABLE IF NOT EXISTS track_runs (world TEXT NOT NULL, track TEXT NOT NULL, n INTEGER NOT NULL, entry TEXT NOT NULL, PRIMARY KEY (world, track, n))");
+  const runsOf = db.prepare("SELECT entry FROM track_runs WHERE world = ? AND track = ? ORDER BY n");
+  const putRun = db.prepare("INSERT OR REPLACE INTO track_runs (world, track, n, entry) VALUES (?, ?, ?, ?)");
+  const dropRuns = db.prepare("DELETE FROM track_runs WHERE world = ? AND track = ?");
+  const dropWorldRuns = db.prepare("DELETE FROM track_runs WHERE world = ?");
   // A world id is hexadecimal, so its prefix holds none of the characters LIKE reads.
   const dropPlayers = db.prepare("DELETE FROM track_players WHERE id LIKE ?");
   const dropCheckpoints = db.prepare("DELETE FROM track_checkpoints WHERE id LIKE ?");
@@ -219,9 +226,10 @@ function trackStores(db) {
   return (id) => ({
     getMeta: async () => meta.get(id),
     getKeys: async (track) => keysOf.all(id, track).map((row) => [row.key, row.value]),
+    getRuns: async (track) => runsOf.all(id, track).map((row) => JSON.parse(row.entry)),
     getPlayer: async (player) => players.get(`${id}:${player}`),
     getCheckpoint: async (part) => checkpoints.get(`${id}:${part}`),
-    commit: async ({ meta: summary, keys = [], players: records = [], checkpoint }) => transaction(db, () => {
+    commit: async ({ meta: summary, keys = [], runs = [], players: records = [], checkpoint }) => transaction(db, () => {
       if (summary) {
         meta.put(id, summary);
       }
@@ -234,6 +242,14 @@ function trackStores(db) {
         set.forEach(([key, value]) => putKey.run(id, track, key, value));
       }
 
+      for (const { track, drop, add } of runs) {
+        if (drop) {
+          dropRuns.run(id, track);
+        }
+
+        add.forEach((entry) => putRun.run(id, track, entry.n, JSON.stringify(entry)));
+      }
+
       records.forEach((record) => players.put(`${id}:${record.player}`, record));
 
       if (checkpoint) {
@@ -243,6 +259,7 @@ function trackStores(db) {
     remove: async () => transaction(db, () => {
       meta.remove(id);
       dropWorld.run(id);
+      dropWorldRuns.run(id);
       dropPlayers.run(`${id}:%`);
       dropCheckpoints.run(`${id}:%`);
     }),

@@ -2,6 +2,7 @@
 //  TinyGame.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Wrote the game's scripts
 //      Paulinchen  2026-10-30: Wrote entries of named parts with a note, features or effects
 //      Paulinchen  2026-10-28: Wrote troops, named database entries, further map folders and common event ids unlike their places
 //                            - Wrote events with pages of their own on any map, names of switches, variables and common events, and entries with fields
@@ -83,6 +84,11 @@ internal sealed class TinyGame : IGameDataFiles
     /// What the entries of named parts of the database hold, by file: class and what each holds by id from 1.
     /// </summary>
     private readonly SortedDictionary<string, (string ClassName, string[] Holds)> _holding = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The game's scripts, each as one text; none while the game has no scripts' file.
+    /// </summary>
+    private string[]? _scripts;
 
     /// <summary>
     /// The maps the map lists name by id: their names and the maps above them.
@@ -268,6 +274,17 @@ internal sealed class TinyGame : IGameDataFiles
     }
 
     /// <summary>
+    /// Sets the game's scripts, which the game keeps deflated in Data/Scripts.rvdata2.
+    /// </summary>
+    /// <param name="texts">Each script's text.</param>
+    /// <returns>The game, for more.</returns>
+    public TinyGame Scripts(params string[] texts)
+    {
+        _scripts = texts;
+        return this;
+    }
+
+    /// <summary>
     /// Names a map in its folder's map list; it has a file only once it has events.
     /// </summary>
     /// <param name="id">The map.</param>
@@ -333,7 +350,45 @@ internal sealed class TinyGame : IGameDataFiles
             _files[path] = Dump(w => w.Array(holds.Length + 1, id => id == 0 ? w.Nil() : WriteHolding(w, className, holds[id - 1])));
         }
 
+        if (_scripts is { } scripts)
+        {
+            _files["Data/Scripts.rvdata2"] = Dump(w => w.Array(scripts.Length, place =>
+            {
+                w.Array(3, field =>
+                {
+                    switch (field)
+                    {
+                        case 0:
+                            w.Int(place);
+                            break;
+                        case 1:
+                            w.Text($"Script {place}");
+                            break;
+                        default:
+                            w.Binary(Deflated(scripts[place]));
+                            break;
+                    }
+                });
+            }));
+        }
+
         return this;
+    }
+
+    /// <summary>
+    /// Deflates a script as the game keeps it, with zlib's header.
+    /// </summary>
+    /// <param name="text">The script.</param>
+    /// <returns>The bytes.</returns>
+    private static byte[] Deflated(string text)
+    {
+        using var packed = new MemoryStream();
+        using (var zlib = new System.IO.Compression.ZLibStream(packed, System.IO.Compression.CompressionLevel.Optimal, leaveOpen: true))
+        {
+            zlib.Write(Encoding.UTF8.GetBytes(text));
+        }
+
+        return packed.ToArray();
     }
 
     /// <summary>
@@ -473,6 +528,17 @@ internal sealed class TinyGame : IGameDataFiles
         public void Text(string text)
         {
             byte[] bytes = Encoding.UTF8.GetBytes(text);
+            Bytes((byte)'"');
+            Long(bytes.Length);
+            Bytes(bytes);
+        }
+
+        /// <summary>
+        /// Writes a String of bytes as they are.
+        /// </summary>
+        /// <param name="bytes">The bytes.</param>
+        public void Binary(byte[] bytes)
+        {
             Bytes((byte)'"');
             Long(bytes.Length);
             Bytes(bytes);

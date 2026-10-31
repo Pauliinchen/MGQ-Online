@@ -2,6 +2,8 @@
 //  EventSchema.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Added the table of the pairs the one-time repair of stuck saves completes, as version 2
+//                            - Added the tables of the lists that give and of the branches of each choice, as version 3
 //      Paulinchen  2026-10-28: Named where a game folder holds the file
 //                            - Added the views of the raid sites, their callers and the post-defeat writes
 //                            - Dropped the indexes no question uses and keyed pages by site
@@ -23,7 +25,7 @@ public static class EventSchema
     /// <summary>
     /// The version of the tables, which a store reads only when the file holds the same.
     /// </summary>
-    public const int Version = 1;
+    public const int Version = 3;
 
     /// <summary>
     /// Where a game folder holds the file the mod ships.
@@ -168,6 +170,11 @@ public static class EventSchema
         CREATE INDEX scene_entries_by_list ON scene_entries(list_id);
         CREATE TABLE chests(map_id INTEGER NOT NULL, event_id INTEGER NOT NULL, page_no INTEGER NOT NULL, letter TEXT NOT NULL,
             list_id INTEGER NOT NULL, PRIMARY KEY(map_id, event_id, page_no)) WITHOUT ROWID;
+        CREATE TABLE repair_pairs(map_id INTEGER NOT NULL, event_id INTEGER NOT NULL, page_no INTEGER NOT NULL, letter TEXT NOT NULL,
+            switch_id INTEGER NOT NULL, PRIMARY KEY(map_id, event_id, page_no, letter, switch_id)) WITHOUT ROWID;
+        CREATE TABLE gives(list_id INTEGER PRIMARY KEY);
+        CREATE TABLE choice_branches(list_id INTEGER NOT NULL, idx INTEGER NOT NULL, branch INTEGER NOT NULL, first_idx INTEGER NOT NULL,
+            last_idx INTEGER NOT NULL, holdings TEXT NOT NULL, PRIMARY KEY(list_id, idx, branch)) WITHOUT ROWID;
 
         CREATE TABLE switches(id INTEGER PRIMARY KEY, named INTEGER NOT NULL, scratch INTEGER NOT NULL, story_band INTEGER NOT NULL,
             chest_flag INTEGER NOT NULL);

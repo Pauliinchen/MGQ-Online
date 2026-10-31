@@ -2,6 +2,7 @@
 //  CatchupRows.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Dropped the chest flags of a world chest, which its replay turns on
 //      Paulinchen  2026-10-28: Added the steps of the story in free order to the rules
 //                            - Keyed a world chest the game shuts by a switch by that switch
 //                            - Added the rewards a party member catches up with, every chest and the chest flags
@@ -80,8 +81,7 @@ public sealed record CatchupKeyItem(int Item, int Amount, StoryPlace Place, bool
 /// <param name="Items">The items it holds.</param>
 /// <param name="Part">The part, <see langword="null"/> for none.</param>
 /// <param name="Step">The step, <see langword="null"/> for none.</param>
-/// <param name="Flags">The chest flags it turns on for each player.</param>
-public sealed record CatchupChest(StoryKey Key, IReadOnlyList<int> Items, string? Part, long? Step, IReadOnlyList<int> Flags);
+public sealed record CatchupChest(StoryKey Key, IReadOnlyList<int> Items, string? Part, long? Step);
 
 /// <summary>
 /// A skill Luka learns or an item the story and its side quests give.

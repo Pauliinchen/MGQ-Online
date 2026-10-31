@@ -2,6 +2,7 @@
 //  EventBuilderTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Ran scripts the story replay classes
 //      Paulinchen  2026-10-30: Expected the fingerprint of format 2, which counts entries by what they hold and the two skills the game appends
 //                            - Handed the second build's rows to the writer in another order
 //      Paulinchen  2026-10-28: Created
@@ -102,7 +103,7 @@ public sealed class EventBuilderTests
             C(355, "forced_transfer(1, 2, 3)"),
             C(355, "unlimited_choices(42, [\"Yes\", \"No\"])"),
             C(355, "call_novel_scene(3)"),
-            C(355, "p 1"));
+            C(355, "delete_actor_ex(1)"));
 
         using EventStore store = StoreOf(game);
         IReadOnlyList<CommandRow> commands = store.Commands(store.ListOf(1, 1, 0)!.Value.ListId);

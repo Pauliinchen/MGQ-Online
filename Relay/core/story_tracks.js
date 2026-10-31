@@ -2,6 +2,10 @@
 //  story_tracks.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Named the routes the world may take at the Great Decision in its summary
+//                            - Kept the run entries of each track in order and a cursor per player on it
+//                            - Kept the place the world's log starts at in its summary, and its keys there
+//                            - Started a world's tracks from its keyed story
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -12,7 +16,9 @@
 // arrival order by each key's kind in the story mapping, pushes what changed to every game on the
 // track with the track's revision, and answers each request it did not take as written with its
 // own value. A telling lock per map and track lets one game tell a story event while the others on
-// that track watch. Games speak it in `track <JSON>` text frames over their world room.
+// that track watch. Each track also keeps, in order, the run entries of the events whose writes
+// changed it, for good, which every game on it takes from its player's cursor. Games speak it in
+// `track <JSON>` text frames over their world room.
 
 import {
   CLEAR_SWITCHES, FIRST_COUNTERS, FREEZE, FREEZE_ENDED, GREAT_DECISION, ROUTE, ROUTE_COUNTERS, VALUE as STORY_VALUE, activeRoute, compareKeys, countersOf, everyRouteDone, partOf,
@@ -35,6 +41,11 @@ export const TRACK_FRAME = "track";
 export const WORLD_TRACK = "world";
 
 /**
+ * The checkpoint that keeps the world's keys as they stood where its log starts.
+ */
+const LOG_CHECKPOINT = "log";
+
+/**
  * The limits the tracks keep.
  */
 export const TRACK_LIMITS = Object.freeze({
@@ -47,6 +58,10 @@ export const TRACK_LIMITS = Object.freeze({
   // The telling locks one player holds at once.
   maxLocks: 4,
   maxLevel: 99_999,
+  // The characters of one run entry's JSON, far past the packed start values of any event's pages.
+  maxRunLength: 32_768,
+  // The run entries one frame hands a game.
+  maxRunsPage: 16,
 });
 
 /**
@@ -90,6 +105,16 @@ export const TRACK_CODE = Object.freeze({
  * raid boss fight.
  */
 const KIND = Object.freeze({ personal: "personal", shared: "shared", oneWay: "one_way", scene: "scene", chest: "chest", count: "count", freeze: "freeze" });
+
+/**
+ * A run entry's id.
+ */
+const RUN_ID = /^[A-Za-z0-9_:.-]{1,80}$/;
+
+/**
+ * A run entry's packed replay, in base64.
+ */
+const RUN_WIRE = /^[A-Za-z0-9+/=]+$/;
 
 /**
  * A key as the tracks name it: a switch, a variable or a frozen raid boss fight's troop by id, or a
@@ -271,6 +296,22 @@ function kept(kind) {
 }
 
 /**
+ * The story markers a place names, in its order: v1001, v1141, v1142 and v1143.
+ */
+const PLACE_MARKERS = 4;
+
+/**
+ * Reads the place of a story: its story markers.
+ *
+ * @param {Map<string, string>} keys The story's keys.
+ * @returns {number[]} v1001, v1141, v1142 and v1143.
+ */
+function markersOf(keys) {
+  const counters = countersOf(keys, FIRST_COUNTERS);
+  return [counters.p, counters.r1141, counters.r1142, counters.r1143];
+}
+
+/**
  * The changes one batch makes to a track, read over the track's keys.
  */
 class Draft {
@@ -320,15 +361,16 @@ class Draft {
 }
 
 /**
- * Where one world's tracks live: the world's summary, each track's keys, each player's record and
- * each part's checkpoint.
+ * Where one world's tracks live: the world's summary, each track's keys and run entries, each
+ * player's record and each part's checkpoint.
  *
  * @typedef {object} TrackStore
  * @property {() => Promise<object | undefined>} getMeta Reads the world's summary, undefined before its story started.
  * @property {(track: string) => Promise<[string, string][]>} getKeys Reads a track's keys.
+ * @property {(track: string) => Promise<object[]>} getRuns Reads a track's run entries, oldest first.
  * @property {(player: string) => Promise<object | undefined>} getPlayer Reads a player's record.
  * @property {(part: string) => Promise<[string, string][] | undefined>} getCheckpoint Reads a part's checkpoint.
- * @property {(commit: {meta?: object, keys?: {track: string, drop?: boolean, set: [string, string][]}[], players?: object[], checkpoint?: {part: string, keys: [string, string][]}}) => Promise<void>} commit Keeps a batch whole or not at all: the summary, keys per track (a dropped track loses every key first), player records and a checkpoint.
+ * @property {(commit: {meta?: object, keys?: {track: string, drop?: boolean, set: [string, string][]}[], runs?: {track: string, drop?: boolean, add: object[]}[], players?: object[], checkpoint?: {part: string, keys: [string, string][]}}) => Promise<void>} commit Keeps a batch whole or not at all: the summary, keys per track (a dropped track loses every key first), run entries per track (a dropped track loses every entry first), player records and a checkpoint.
  * @property {() => Promise<void>} remove Deletes everything of the world.
  */
 
@@ -340,15 +382,17 @@ export class StoryTracks {
    * Makes the tracks.
    *
    * @param {TrackStore} store Where they live.
-   * @param {{mapping: () => Promise<object>, pins?: () => Promise<{pinOf: (key: string) => string | undefined, keys: string[]}>, send: (player: string, text: string) => void, limits?: typeof TRACK_LIMITS}} options The story mapping as games read it; the pins an admin set (the keyed story's, story.js pinOf, which also reads the ranges an older relay pinned at off) with the keys pinned one by one; how a frame reaches a player's game; the limits.
+   * @param {{mapping: () => Promise<object>, pins?: () => Promise<{pinOf: (key: string) => string | undefined, keys: string[]}>, story?: () => Promise<Map<string, string> | undefined>, send: (player: string, text: string) => void, limits?: typeof TRACK_LIMITS}} options The story mapping as games read it; the pins an admin set (the keyed story's, story.js pinOf, which also reads the ranges an older relay pinned at off) with the keys pinned one by one; the keys of the world's keyed story, which a world without tracks starts them from; how a frame reaches a player's game; the limits.
    */
-  constructor(store, { mapping, pins = async () => ({ pinOf: () => undefined, keys: [] }), send, limits = TRACK_LIMITS }) {
+  constructor(store, { mapping, pins = async () => ({ pinOf: () => undefined, keys: [] }), story = async () => undefined, send, limits = TRACK_LIMITS }) {
     /** The store. */
     this.store = store;
     /** Reads the story mapping. */
     this.mapping = mapping;
     /** Reads the pins. */
     this.pins = pins;
+    /** Reads the keys of the world's keyed story. */
+    this.story = story;
     /** Sends a frame to a player's game. */
     this.send = send;
     /** The limits. */
@@ -359,10 +403,16 @@ export class StoryTracks {
     this.meta = null;
     /** The world's keys. */
     this.world = null;
+    /** The world's keys where its log starts, read with the world's keys. */
+    this.logKeys = new Map();
     /** The players' records read so far, by player id. */
     this.players = new Map();
     /** The players' tracks' keys read so far, by track. */
     this.tracks = new Map();
+    /** The tracks' run entries read so far, by track, oldest first. */
+    this.runs = new Map();
+    /** The player whose write last changed each key, by track, until a run entry of theirs names the key. */
+    this.marks = new Map();
     /** The games in the world room that play on tracks, by player id: seat, whether synced, level. */
     this.online = new Map();
     /** The telling locks by track and map. */
@@ -434,11 +484,11 @@ export class StoryTracks {
         frame = null;
       }
 
-      const handlers = { sync: this.sync, write: this.write, level: this.level, tell: this.tell, told: this.told, watch: this.watch, route: this.route };
+      const handlers = { sync: this.sync, write: this.write, level: this.level, tell: this.tell, told: this.told, watch: this.watch, route: this.route, runs: this.page, took: this.took };
       const handler = frame && typeof frame === "object" && typeof frame.t === "string" && Object.hasOwn(handlers, frame.t) ? handlers[frame.t] : null;
 
       if (!handler) {
-        this.reply(player, { t: "error", code: TRACK_CODE.bad, error: "a track frame is JSON with t one of sync, write, level, tell, told, watch, route" });
+        this.reply(player, { t: "error", code: TRACK_CODE.bad, error: "a track frame is JSON with t one of sync, write, level, tell, told, watch, route, runs, took" });
         return;
       }
 
@@ -453,7 +503,7 @@ export class StoryTracks {
    * world's track behind once the world left the part they last saw; then the level gate.
    *
    * @param {string} player The player's id.
-   * @param {any} frame `level` and, when the relay asks or the game starts afresh, `seed` (the story's keys and values) and `fresh`.
+   * @param {any} frame `level`, `cursors` (the cursors of the game's saved log by track) and, when the relay asks or the game starts afresh, `seed` (the story's keys and values) and `fresh`.
    * @returns {Promise<void>} Completes once answered.
    */
   async sync(player, frame) {
@@ -497,6 +547,8 @@ export class StoryTracks {
       why = await this.placeBySeen(record, commit);
     }
 
+    this.placeCursors(record, frame.cursors);
+
     record.seen = null;
     await this.store.commit(commit);
     online.synced = true;
@@ -506,7 +558,8 @@ export class StoryTracks {
   }
 
   /**
-   * Starts the world's story from the first player's: the keys the world keeps.
+   * Starts the world's story from the first player's: the keys the world keeps, its log starting at
+   * their place with those keys.
    *
    * @param {Map<string, string>} seed The seed's keys the tracks keep.
    * @param {object} commit The commit, which takes the world's summary and keys.
@@ -521,10 +574,12 @@ export class StoryTracks {
 
     this.recount(draft, () => undefined);
     const counters = countersOf(draft, FIRST_COUNTERS);
-    this.meta = { rev: 1, part: partOf(counters), route: ROUTE.none, done: [...counters.clear], checkpoints: [], next: 1 };
     this.world = draft.changed();
+    this.meta = { rev: 1, part: partOf(counters), route: ROUTE.none, done: [...counters.clear], checkpoints: [], next: 1, start: markersOf(this.world) };
+    this.logKeys = new Map(this.world);
     commit.meta = this.meta;
     commit.keys = [...(commit.keys ?? []), { track: WORLD_TRACK, set: [...this.world] }];
+    commit.checkpoint = { part: LOG_CHECKPOINT, keys: [...this.logKeys] };
     return "started";
   }
 
@@ -595,14 +650,16 @@ export class StoryTracks {
     this.recount(draft, () => undefined);
     const own = draft.changed();
     this.tracks.set(id, own);
+    this.runs.set(id, []);
     record.track = { id, part, rev: 1 };
+    record.cursors = { ...record.cursors, [id]: 0 };
     commit.meta = this.meta;
     commit.keys = [...(commit.keys ?? []), { track: id, set: [...own] }];
   }
 
   /**
    * Takes a player off their track: their telling locks and watching end, and the store drops the
-   * keys of a track of their own.
+   * keys and run entries of a track of their own, with their cursor on it.
    *
    * @param {object} record The player's record.
    * @param {object} commit The commit.
@@ -614,14 +671,20 @@ export class StoryTracks {
       return;
     }
 
-    commit.keys = [...(commit.keys ?? []), { track: record.track.id, drop: true, set: [] }];
-    this.tracks.delete(record.track.id);
+    const id = record.track.id;
+    commit.keys = [...(commit.keys ?? []), { track: id, drop: true, set: [] }];
+    commit.runs = [...(commit.runs ?? []), { track: id, drop: true, add: [] }];
+    this.tracks.delete(id);
+    this.runs.delete(id);
+    this.marks.delete(id);
+    record.cursors = Object.fromEntries(Object.entries(record.cursors ?? {}).filter(([track]) => track !== id));
     record.track = null;
   }
 
   /**
    * Moves a player behind on while their level opens their part's gate: into the next part's
-   * checkpoint while the world played past it, else onto the world's track, which ends their own.
+   * checkpoint while the world played past it, else onto the world's track, which ends their own;
+   * on the world's track they walk on from their cursor there.
    *
    * @param {object} record The player's record.
    * @returns {Promise<{from: string, to: string, gate: number | null, by: string} | null>} The move, `to` the part or `world`; null when the player stays.
@@ -682,10 +745,11 @@ export class StoryTracks {
 
   /**
    * Takes a game's batch of writes, in order, and answers it; pushes what changed to every game on
-   * each track it changed, the world's and the player's own.
+   * each track it changed, the world's and the player's own, then the run entry the batch ends
+   * with, which the player's track keeps.
    *
    * @param {string} player The player's id.
-   * @param {any} frame `seq` (above the last batch's), `track` (the one the game plays on) and `writes`, each `[key, value, site]`.
+   * @param {any} frame `seq` (above the last batch's), `track` (the one the game plays on), `writes`, each `[key, value, site]`, and `run`, the entry of a run that ended after them, see readRun; no writes with a run.
    * @returns {Promise<void>} Completes once answered.
    */
   async write(player, frame) {
@@ -716,25 +780,34 @@ export class StoryTracks {
       return;
     }
 
-    const writes = this.readWrites(frame.writes);
+    const run = frame.run === undefined ? null : this.readRun(frame.run);
+
+    if (run?.error) {
+      answer({ code: TRACK_CODE.bad, error: run.error });
+      return;
+    }
+
+    const writes = this.readWrites(frame.writes, run !== null);
 
     if (writes.error) {
       answer({ code: TRACK_CODE.bad, error: writes.error, index: writes.index });
       return;
     }
 
-    await this.apply(record, seq, writes.list);
+    await this.apply(record, seq, writes.list, run?.run ?? null);
   }
 
   /**
-   * Applies a player's writes and tells every game what changed. Called inside exclusive.
+   * Applies a player's writes and the run entry after them, and tells every game what changed.
+   * Called inside exclusive.
    *
    * @param {object} record The player's record.
    * @param {number} seq The batch's number.
    * @param {[string, string, string][]} writes The writes.
+   * @param {object | null} [run] The run entry, see readRun; null for none.
    * @returns {Promise<void>} Completes once told.
    */
-  async apply(record, seq, writes) {
+  async apply(record, seq, writes, run = null) {
     const { pinOf } = await this.pins();
     const world = new Draft(WORLD_TRACK, this.world);
     const own = record.track ? new Draft(record.track.id, await this.trackKeys(record.track.id)) : world;
@@ -792,11 +865,19 @@ export class StoryTracks {
       record.chests[key] = value;
     }
 
+    this.mark(WORLD_TRACK, worldChanged, record.player);
+
+    if (ownChanged) {
+      this.mark(record.track.id, ownChanged, record.player);
+    }
+
+    const track = record.track?.id ?? WORLD_TRACK;
+    const kept = run ? await this.keepRun(record.player, track, run, commit) : null;
     await this.store.commit(commit);
     worldChanged.forEach((value, key) => this.world.set(key, value));
     ownChanged?.forEach((value, key) => own.keys.set(key, value));
 
-    this.reply(record.player, { t: "answer", seq, revs: this.revsOf(record), mapping: this.rules.rev, keys: outcomes });
+    this.reply(record.player, { t: "answer", seq, revs: this.revsOf(record), mapping: this.rules.rev, keys: outcomes, ...(run ? { run: { id: run.id, n: kept?.n ?? null } } : {}) });
 
     if (this.meta.rev !== before.rev) {
       this.pushWorld(before.rev, worldChanged, summaryChanged(before, this.meta));
@@ -806,9 +887,123 @@ export class StoryTracks {
       this.pushTrack(record, record.track.rev - 1, ownChanged);
     }
 
+    if (kept) {
+      this.pushOnTrack(track, { t: "run", track, run: kept });
+    }
+
     if (this.meta.part !== partBefore) {
       await this.leaveBehind(partBefore, record.player);
     }
+  }
+
+  /**
+   * Notes the player whose write changed keys of a track.
+   *
+   * @param {string} track The track.
+   * @param {Map<string, string>} changed The keys the write changed.
+   * @param {string} player The writing player's id.
+   */
+  mark(track, changed, player) {
+    if (changed.size === 0) {
+      return;
+    }
+
+    const marks = this.marks.get(track) ?? this.marks.set(track, new Map()).get(track);
+    changed.forEach((_value, key) => marks.set(key, player));
+  }
+
+  /**
+   * Keeps a player's run entry on their track when the run changed the track: a key of its step
+   * was last changed there by the player's own write. Every key of its step the player's writes
+   * changed counts once. Called inside exclusive.
+   *
+   * @param {string} player The player's id.
+   * @param {string} track The player's track.
+   * @param {object} run The run entry, see readRun.
+   * @param {object} commit The commit, which takes the entry.
+   * @returns {Promise<object | null>} The entry as kept, with its number `n`; null when the run changed nothing of the track.
+   */
+  async keepRun(player, track, run, commit) {
+    const marks = this.marks.get(track) ?? new Map();
+    const changed = run.keys.filter((key) => marks.get(key) === player);
+    changed.forEach((key) => marks.delete(key));
+
+    if (changed.length === 0) {
+      return null;
+    }
+
+    const runs = await this.trackRuns(track);
+    const entry = { ...run, n: (runs.at(-1)?.n ?? 0) + 1 };
+    runs.push(entry);
+    commit.runs = [...(commit.runs ?? []), { track, add: [entry] }];
+    return entry;
+  }
+
+  /**
+   * Places a player's cursors on the world's track and on their own where their game's saved log
+   * took the entries up to, before the first entry of a track it names none of: the log claims what
+   * the player played, the place they stand at does not.
+   *
+   * @param {object} record The player's record, which takes the cursors.
+   * @param {any} named The cursors the game names by track.
+   */
+  placeCursors(record, named) {
+    const cursorOf = (track) => (named && typeof named === "object" && Number.isSafeInteger(named[track]) && named[track] >= 0 ? named[track] : 0);
+    const tracks = record.track ? [WORLD_TRACK, record.track.id] : [WORLD_TRACK];
+    record.cursors = Object.fromEntries(tracks.map((track) => [track, cursorOf(track)]));
+  }
+
+  /**
+   * Takes a game's word that it took a run entry of its player's track, which moves their cursor
+   * past it.
+   *
+   * @param {string} player The player's id.
+   * @param {any} frame `track` and `n`, the entry's number.
+   * @returns {Promise<void>} Completes once kept.
+   */
+  async took(player, frame) {
+    const record = this.online.get(player).synced ? await this.record(player) : null;
+    const track = record?.track?.id ?? WORLD_TRACK;
+
+    if (!record || frame.track !== track || !Number.isSafeInteger(frame.n)) {
+      return;
+    }
+
+    const last = (await this.trackRuns(track)).at(-1)?.n ?? 0;
+
+    if (frame.n > (record.cursors?.[track] ?? 0) && frame.n <= last) {
+      record.cursors = { ...record.cursors, [track]: frame.n };
+      await this.store.commit({ players: [record] });
+    }
+  }
+
+  /**
+   * Hands a game the next run entries of its player's track after a number.
+   *
+   * @param {string} player The player's id.
+   * @param {any} frame `track` and `after`.
+   * @returns {Promise<void>} Completes once sent.
+   */
+  async page(player, frame) {
+    const record = this.online.get(player).synced ? await this.record(player) : null;
+
+    if (record && frame.track === (record.track?.id ?? WORLD_TRACK) && Number.isSafeInteger(frame.after)) {
+      await this.sendRuns(player, frame.track, frame.after);
+    }
+  }
+
+  /**
+   * Sends a game a page of a track's run entries after a number, saying whether more follow.
+   *
+   * @param {string} player The player's id.
+   * @param {string} track The track.
+   * @param {number} after The number.
+   * @returns {Promise<void>} Completes once sent.
+   */
+  async sendRuns(player, track, after) {
+    const later = (await this.trackRuns(track)).filter((entry) => entry.n > after);
+    const runs = later.slice(0, this.limits.maxRunsPage);
+    this.reply(player, { t: "runs", track, runs, more: later.length > runs.length });
   }
 
   /**
@@ -1008,16 +1203,15 @@ export class StoryTracks {
       return;
     }
 
-    if (this.meta.route === route) {
-      answer({ granted: true });
-      return;
-    }
-
-    const running = activeRoute(countersOf(this.world, FIRST_COUNTERS));
-    const refused = this.meta.route !== ROUTE.none || (running !== ROUTE.none && running !== route) ? TRACK_CODE.route : lockRefusal(this.meta.done, route);
+    const refused = routeRefusal(this.meta, this.runningRoute(), route);
 
     if (refused) {
       answer({ granted: false, code: refused });
+      return;
+    }
+
+    if (this.meta.route === route) {
+      answer({ granted: true });
       return;
     }
 
@@ -1026,6 +1220,15 @@ export class StoryTracks {
     await this.store.commit({ meta: this.meta });
     answer({ granted: true });
     this.pushWorld(before.rev, new Map(), true);
+  }
+
+  /**
+   * Finds the route the world's story is under way on.
+   *
+   * @returns {string} The route, ROUTE.none for none.
+   */
+  runningRoute() {
+    return activeRoute(countersOf(this.world, FIRST_COUNTERS));
   }
 
   /**
@@ -1246,13 +1449,43 @@ export class StoryTracks {
       this.world = null;
       this.players.clear();
       this.tracks.clear();
+      this.runs.clear();
+      this.marks.clear();
       this.locks.clear();
     });
   }
 
   /**
+   * Lists the world's keys where its log starts that differ from the keys a state hands, a key the
+   * log's start lacks at the value nobody wrote.
+   *
+   * @param {Object<string, string>} keys The keys the state hands.
+   * @returns {Object<string, string>} Each key that differs, with its value where the log starts.
+   */
+  logDelta(keys) {
+    const delta = {};
+
+    for (const [key, value] of this.logKeys) {
+      if (keys[key] !== value) {
+        delta[key] = value;
+      }
+    }
+
+    for (const [key, value] of Object.entries(keys)) {
+      const off = offOf(key);
+
+      if (!this.logKeys.has(key) && off !== undefined && value !== off) {
+        delta[key] = off;
+      }
+    }
+
+    return delta;
+  }
+
+  /**
    * Hands a game the whole of its player's track: the world's, or their own with the keys the whole
-   * world keeps.
+   * world keeps; with their cursor, the track's last run entry and the world's keys where its log
+   * starts that differ from the keys handed; then the first entries after the cursor.
    *
    * @param {string} player The player's id.
    * @param {string} why Why: `sync`, `started`, `behind` or `moved`.
@@ -1266,10 +1499,16 @@ export class StoryTracks {
     const track = record.track?.id ?? WORLD_TRACK;
     const tellings = [...this.locks.values()].filter((lock) => lock.track === track).map((lock) => ({ telling: lock.telling, teller: lock.seat, map: lock.map, event: lock.event }));
     const gate = record.track ? (this.rules.gates.get(record.track.part) ?? null) : null;
+    const cursor = record.cursors?.[track] ?? 0;
+    const last = (await this.trackRuns(track)).at(-1)?.n ?? 0;
     this.reply(player, {
       t: "state", why, track, rev: record.track?.rev ?? this.meta.rev, part: record.track?.part ?? this.meta.part, gate, ...(move ? { move } : {}),
-      world: summaryOf(this.meta), mapping: this.rules.rev, seq: record.seq, keys, chests: { ...record.chests }, tellings,
+      world: summaryOf(this.meta, this.runningRoute()), mapping: this.rules.rev, seq: record.seq, keys, chests: { ...record.chests }, tellings, cursor, last, log: this.logDelta(keys),
     });
+
+    if (last > cursor) {
+      await this.sendRuns(player, track, cursor);
+    }
   }
 
   /**
@@ -1294,7 +1533,7 @@ export class StoryTracks {
       const behind = record.track !== null;
 
       if (!behind || Object.keys(whole).length > 0 || summary) {
-        this.reply(player, { t: "push", track: WORLD_TRACK, rev: this.meta.rev, prev, keys: behind ? whole : Object.fromEntries(changed), ...(summary ? { world: summaryOf(this.meta) } : {}) });
+        this.reply(player, { t: "push", track: WORLD_TRACK, rev: this.meta.rev, prev, keys: behind ? whole : Object.fromEntries(changed), ...(summary ? { world: summaryOf(this.meta, this.runningRoute()) } : {}) });
       }
     }
   }
@@ -1375,11 +1614,16 @@ export class StoryTracks {
    * Reads a batch's writes: each `[key, value, site]` with a value that fits its key.
    *
    * @param {unknown} writes The writes.
+   * @param {boolean} [ran] Whether the batch ends with a run entry, which may come without writes.
    * @returns {{list: [string, string, string][]} | {error: string, index?: number}} The writes, or why they are wrong and which one.
    */
-  readWrites(writes) {
-    if (!Array.isArray(writes) || writes.length === 0 || writes.length > this.limits.maxWrites) {
-      return { error: `writes must list 1 to ${this.limits.maxWrites} writes` };
+  readWrites(writes, ran = false) {
+    if (ran && writes === undefined) {
+      return { list: [] };
+    }
+
+    if (!Array.isArray(writes) || writes.length < (ran ? 0 : 1) || writes.length > this.limits.maxWrites) {
+      return { error: `writes must list 1 to ${this.limits.maxWrites} writes, or none before a run entry` };
     }
 
     for (const [index, write] of writes.entries()) {
@@ -1392,6 +1636,28 @@ export class StoryTracks {
     }
 
     return { list: writes };
+  }
+
+  /**
+   * Reads a run entry: what the relay keeps it by, its id, site, the keys of its step and the place
+   * its run started at, with who opened it and the packed replay the receivers' games play.
+   *
+   * @param {unknown} run `id`, `site`, `keys` (the step's keys), `place` (the story markers v1001, v1141, v1142 and v1143, null for none), `opener` (a name, null for none) and `wire`.
+   * @returns {{run: {id: string, site: string, keys: string[], place: number[] | null, opener: string | null, wire: string}} | {error: string}} The entry, or why it is wrong.
+   */
+  readRun(run) {
+    const error = { error: `a run entry is id, site, keys (1 to ${this.limits.maxWrites} keys), place (up to 4 whole numbers or null), opener (a name or null) and wire, at most ${this.limits.maxRunLength} characters` };
+
+    if (!run || typeof run !== "object" || Array.isArray(run) || JSON.stringify(run).length > this.limits.maxRunLength) {
+      return error;
+    }
+
+    const { id, site, keys, place = null, opener = null, wire } = run;
+    const fits = typeof id === "string" && RUN_ID.test(id) && typeof site === "string" && SITE.test(site)
+      && Array.isArray(keys) && keys.length >= 1 && keys.length <= this.limits.maxWrites && keys.every((key) => typeof key === "string" && KEY.test(key))
+      && (place === null || (Array.isArray(place) && place.length <= PLACE_MARKERS && place.every((marker) => Number.isSafeInteger(marker))))
+      && (opener === null || (typeof opener === "string" && opener.length <= 64)) && typeof wire === "string" && RUN_WIRE.test(wire);
+    return fits ? { run: { id, site, keys, place, opener, wire } } : error;
   }
 
   /**
@@ -1484,7 +1750,24 @@ export class StoryTracks {
   }
 
   /**
-   * Reads the world's summary and keys and the story mapping, once each. Called inside exclusive.
+   * Reads a track's run entries, once.
+   *
+   * @param {string} track The track.
+   * @returns {Promise<object[]>} The entries, oldest first.
+   */
+  async trackRuns(track) {
+    if (!this.runs.has(track)) {
+      this.runs.set(track, await this.store.getRuns(track));
+    }
+
+    return this.runs.get(track);
+  }
+
+  /**
+   * Reads the world's summary and keys and the story mapping, once each; a world without tracks
+   * starts them from its keyed story, with no run entries before, and a world
+   * whose tracks kept no run entries yet starts its log where it stands, keeping its keys there.
+   * Called inside exclusive.
    *
    * @returns {Promise<void>} Completes once read.
    */
@@ -1494,6 +1777,21 @@ export class StoryTracks {
     if (!this.meta) {
       this.meta = (await this.store.getMeta()) ?? { rev: 0, part: partOf(FIRST_COUNTERS), route: ROUTE.none, done: [], checkpoints: [], next: 1 };
       this.world = new Map(await this.store.getKeys(WORLD_TRACK));
+      const story = this.meta.rev ? undefined : await this.story();
+      const seed = story ? this.readSeed(Object.fromEntries([...story].filter(([key, value]) => KEY.test(key) && valueFits(key, value, this.limits)))) : null;
+
+      if (seed?.keys?.size > 0) {
+        const commit = {};
+        this.startWorld(seed.keys, commit);
+        await this.store.commit(commit);
+      }
+
+      if (this.meta.rev && !this.meta.start) {
+        this.meta = { ...this.meta, start: markersOf(this.world) };
+        await this.store.commit({ meta: this.meta, checkpoint: { part: LOG_CHECKPOINT, keys: [...this.world] } });
+      }
+
+      this.logKeys = new Map((await this.store.getCheckpoint(LOG_CHECKPOINT)) ?? []);
     }
   }
 
@@ -1607,6 +1905,23 @@ function lockRefusal(done, route) {
 }
 
 /**
+ * Tells why the world may not take a route at the Great Decision: another route locked or under
+ * way, or a refusal of lockRefusal. The route locked is always granted again.
+ *
+ * @param {{route: string, done: string[]}} meta The world's summary as kept.
+ * @param {string} running The route the world's story is under way on, ROUTE.none for none.
+ * @param {string} route The route.
+ * @returns {string | null} The code, null when it may.
+ */
+function routeRefusal(meta, running, route) {
+  if (meta.route === route) {
+    return null;
+  }
+
+  return meta.route !== ROUTE.none || (running !== ROUTE.none && running !== route) ? TRACK_CODE.route : lockRefusal(meta.done, route);
+}
+
+/**
  * Finds where a player behind moves on to from a part: the next of the parts the world played that
  * has a checkpoint, the routes aside, or the world's own story once that is the world's part or none
  * is left (world_catchup.rbx `next_part`).
@@ -1646,10 +1961,13 @@ export function nextPart(from, meta) {
  * Makes the world's summary a game reads.
  *
  * @param {object} meta The world's summary as kept.
- * @returns {{rev: number, part: string, route: string, done: string[], checkpoints: string[]}} The summary.
+ * @param {string} running The route the world's story is under way on, ROUTE.none for none.
+ * @returns {{rev: number, part: string, route: string, done: string[], open: string[], checkpoints: string[], start: number[] | null}} The summary,
+ * open the routes a `route` request is granted, start the story markers where the world's log starts.
  */
-function summaryOf(meta) {
-  return { rev: meta.rev, part: meta.part, route: meta.route, done: [...meta.done], checkpoints: [...meta.checkpoints] };
+function summaryOf(meta, running) {
+  const open = Object.keys(ROUTE_COUNTERS).filter((route) => routeRefusal(meta, running, route) === null);
+  return { rev: meta.rev, part: meta.part, route: meta.route, done: [...meta.done], open, checkpoints: [...meta.checkpoints], start: meta.start ?? null };
 }
 
 /**

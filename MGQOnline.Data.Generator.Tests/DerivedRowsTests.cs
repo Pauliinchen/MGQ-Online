@@ -2,11 +2,15 @@
 //  DerivedRowsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Covered the story replay's gate and the roots of a script
+//                            - Covered the pairs the one-time repair of stuck saves completes
+//                            - Covered the lists that give and the branches of each choice
 //      Paulinchen  2026-10-28: Created
 //
 //----------------------------------------------------------------
 
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using MGQOnline.Data.Events;
 using MGQOnline.Data.Generator.Build;
@@ -223,6 +227,59 @@ public sealed class DerivedRowsTests
     }
 
     /// <summary>
+    /// Asserts that the story replay's gate fails the build on a command code and a script root
+    /// it does not class, naming where they stand, and leaves a troop's page alone.
+    /// </summary>
+    [Fact]
+    public void ReplayGate_FailsTheBuildOnAnUnclassedCommandOrScriptRoot()
+    {
+        TinyGame game = new TinyGame()
+            .Event(1, C(126, 5, 0, 0, 1), C(355, "mystery_call(3)"))
+            .Event(2, C(901));
+        TinyGame troopOnly = new TinyGame().Troop(1, [1], C(901));
+
+        InvalidDataException failure = Assert.Throws<InvalidDataException>(() => EventBuilder.Build(game.Files(), new BuildOptions()));
+
+        Assert.Contains("command 901 in map:1:2:0", failure.Message, System.StringComparison.Ordinal);
+        Assert.Contains("script root mystery_call in map:1:1:0", failure.Message, System.StringComparison.Ordinal);
+        Assert.NotEmpty(EventBuilder.Build(troopOnly.Files(), new BuildOptions()).Lists);
+    }
+
+    /// <summary>
+    /// Asserts that the gate fails on a closed command that writes a key the reviewed list does not
+    /// mark as work: the transfer, which takes and clears v57.
+    /// </summary>
+    [Fact]
+    public void ReplayGate_FailsOnAClosedCommandThatWritesAKeyThatIsNotWork()
+    {
+        BuiltGame game = EventBuilder.Read(new TinyGame().Event(1, C(201, 0, 2, 5, 6, 8)).Files(), new BuildOptions()).Game;
+
+        Assert.Equal(["a closed command writes v57, which is no work key"], ReplayChannels.Problems(game, _ => false));
+        Assert.Empty(ReplayChannels.Problems(game, key => key == "v57"));
+    }
+
+    /// <summary>
+    /// Asserts the roots of a script: a global with how it is used, a constant with its member, a
+    /// function and an instance variable, without local or loop variables, members of values,
+    /// symbols, strings, regular expressions or comments.
+    /// </summary>
+    [Fact]
+    public void ScriptRoots_AreWhatTheScriptReachesFirst()
+    {
+        string script = """
+            actor = $game_actors[1]
+            actor.change_class(5, :class)
+            $game_variables[$game_variables[11]] = 3 # $game_party.lose_gold(9)
+            SceneManager.call(Scene_Shop) if /a#b/i =~ v(2) / 2 && "$fake"
+            [1, 2].each { |id| id.to_s }
+            for i in [3] do i end
+            @goods = []
+            """;
+
+        Assert.Equal(["$game_actors[]", "$game_variables[]=", "$game_variables[]", "SceneManager.call", "Scene_Shop", "v", "@goods="], ScriptRoots.Of(script));
+    }
+
+    /// <summary>
     /// Lists the common events of <see cref="CommonEvents_TakeTheirFlags"/> with a flag.
     /// </summary>
     /// <param name="store">The store.</param>
@@ -230,6 +287,100 @@ public sealed class DerivedRowsTests
     /// <returns>Their ids.</returns>
     private static IEnumerable<int> Ids(EventStore store, System.Func<CommonEventRow, bool> flag) =>
         new[] { 2, 10, 11, 12, 20, 21, 22, 6999, 9000 }.Where(id => flag(store.Common(id)!.Value));
+
+    /// <summary>
+    /// Asserts that the repair's pairs are the switches a gift page surely turns on with its self
+    /// switch: in the same block after it, and inside "if the switch is OFF" after it; a switch the
+    /// game turns off elsewhere pairs only where that list resets the chest's map too.
+    /// </summary>
+    [Fact]
+    public void RepairPairs_AreTheSwitchesAGiftPageSurelyTurnsOnWithItsSelfSwitch()
+    {
+        using EventStore store = StoreOf(new TinyGame()
+            .MapEvent(1, 1, 0, 0, new TinyPage([C(126, 5, 0, 0, 1), C(123, "A", 0), C(121, 40, 40, 0)]))
+            .MapEvent(1, 2, 0, 0, new TinyPage([C(123, "A", 0), C(126, 700, 0, 0, 1), C(111, 0, 41, 1), At(121, 1, 41, 41, 0), At(0, 1), C(412)]))
+            .MapEvent(1, 3, 0, 0, new TinyPage([C(126, 5, 0, 0, 1), C(123, "A", 0), C(121, 45, 45, 0)]))
+            .MapEvent(1, 4, 0, 0, new TinyPage([C(121, 45, 45, 1), C(355, "reset_selfswitch_map(1)")])));
+
+        Assert.Equal([(1, "A", 40), (2, "A", 41), (3, "A", 45)], store.RepairPairs().Select(pair => (pair.EventId, pair.Letter, pair.SwitchId)));
+    }
+
+    /// <summary>
+    /// Asserts that no pair is made where the save could hold the self switch on and the switch off
+    /// in the plain game: the switch behind a variable's branch, the self switch set by another page
+    /// too, the switch turned off without a reset of the chest's map, or a page that gives nothing.
+    /// </summary>
+    [Fact]
+    public void RepairPairs_LeaveOutWhatThePlainGameMayLeaveApart()
+    {
+        using EventStore store = StoreOf(new TinyGame()
+            .MapEvent(1, 3, 0, 0, new TinyPage([C(126, 5, 0, 0, 1), C(111, 1, 1001, 0, 5, 1), At(121, 1, 42, 42, 0), At(0, 1), C(412), C(123, "A", 0)]))
+            .MapEvent(1, 4, 0, 0, new TinyPage([C(126, 5, 0, 0, 1), C(123, "A", 0), C(121, 43, 43, 0)]), new TinyPage([C(123, "A", 0)], SelfSwitch: "B"))
+            .MapEvent(1, 5, 0, 0, new TinyPage([C(126, 5, 0, 0, 1), C(123, "A", 0), C(121, 44, 44, 0)]))
+            .MapEvent(1, 6, 0, 0, new TinyPage([C(121, 44, 44, 1)]))
+            .MapEvent(1, 9, 0, 0, new TinyPage([C(123, "A", 0), C(121, 46, 46, 0)])));
+
+        Assert.Empty(store.RepairPairs());
+    }
+
+    /// <summary>
+    /// Asserts that a switch the game's scripts use as a switch makes no pair: by a constant, or in
+    /// the awaken band of an actor that holds anything; while a number a script uses as another kind
+    /// of id, or the awaken switch of a blank actor, still pairs.
+    /// </summary>
+    [Fact]
+    public void RepairPairs_LeaveOutTheSwitchesTheScriptsUse()
+    {
+        const string Constants = "module NWConst\n  module Sw\n    AWAKEN_ID = 6000\n    WARP_BAN = 47\n  end\nend\n";
+        const string Uses = "class Game_Actor\n  def awakened?\n    $game_switches[NWConst::Sw::AWAKEN_ID + id]\n  end\nend\n$game_switches[NWConst::Sw::WARP_BAN] = true\n$game_variables[48] = 1\n";
+        using EventStore store = StoreOf(new TinyGame()
+            .Scripts(Constants, Uses)
+            .Holding("Data/Actors.rvdata2", "RPG::Actor", "note", string.Empty)
+            .MapEvent(1, 1, 0, 0, new TinyPage([C(126, 5, 0, 0, 1), C(123, "A", 0), C(121, 6001, 6001, 0)]))
+            .MapEvent(1, 2, 0, 0, new TinyPage([C(126, 5, 0, 0, 1), C(123, "A", 0), C(121, 6002, 6002, 0)]))
+            .MapEvent(1, 3, 0, 0, new TinyPage([C(126, 5, 0, 0, 1), C(123, "A", 0), C(121, 47, 47, 0)]))
+            .MapEvent(1, 4, 0, 0, new TinyPage([C(126, 5, 0, 0, 1), C(123, "A", 0), C(121, 48, 48, 0)])));
+
+        Assert.Equal([6002, 48], store.RepairPairs().Select(pair => pair.SwitchId));
+    }
+
+    /// <summary>
+    /// Asserts that a page gives when it or a common event it calls adds to what a player holds, by
+    /// a command or by a script's medal, and that a page that only takes gives nothing.
+    /// </summary>
+    [Fact]
+    public void Gives_AreTheListsThatAddToWhatAPlayerHolds()
+    {
+        using EventStore store = StoreOf(new TinyGame()
+            .Common(5, C(126, 7, 0, 0, 1))
+            .MapEvent(1, 1, 0, 0, new TinyPage([C(126, 7, 1, 0, 1), C(125, 1, 0, 50), C(121, 40, 40, 0)]))
+            .MapEvent(1, 2, 0, 0, new TinyPage([C(117, 5)]))
+            .MapEvent(1, 3, 0, 0, new TinyPage([C(355, "gain_medal(3)")])));
+
+        Assert.Equal([false, true, true], new[] { 1, 2, 3 }.Select(id => store.Gives(store.ListOf(1, id, 0)!.Value.ListId)));
+        Assert.True(store.Gives(store.CommonList(5)!.Value.ListId));
+    }
+
+    /// <summary>
+    /// Asserts that each answer of a choice names the commands it runs and what they do to what a
+    /// player holds, through the common events it calls too, the cancel branch as answer 4.
+    /// </summary>
+    [Fact]
+    public void ChoiceBranches_NameTheCommandsOfEachAnswerAndWhatTheyDoToHoldings()
+    {
+        using EventStore store = StoreOf(new TinyGame()
+            .Common(5, C(125, 1, 0, 50))
+            .MapEvent(1, 1, 0, 0, new TinyPage([
+                C(102, "Yes", 2), C(402, 0, "Yes"), At(121, 1, 10, 10, 0), At(117, 1, 5), At(0, 1),
+                C(402, 1, "No"), At(121, 1, 11, 11, 0), At(126, 1, 7, 0, 0, 1), At(0, 1),
+                C(403, 6), At(0, 1), C(404)])));
+
+        int list = store.ListOf(1, 1, 0)!.Value.ListId;
+
+        Assert.Equal(
+            [(0, 2, 4, "ce5"), (1, 6, 8, "126:7:0:0:1"), (4, 10, 10, string.Empty)],
+            store.ChoiceBranches(list, 0).Select(branch => (branch.Branch, branch.FirstIdx, branch.LastIdx, branch.Holdings)));
+    }
 
     /// <summary>
     /// Builds a tiny game's database in memory.

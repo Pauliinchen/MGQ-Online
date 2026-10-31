@@ -2,6 +2,7 @@
 //  SourcePruner.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Kept the switches an enemy's actions ask for and a skill's or item's damage formula
 //      Paulinchen  2026-10-30: Kept the notes, features and effects the fingerprint asks about instead of the names
 //      Paulinchen  2026-10-28: Kept the names and texts the flags are read from
 //                            - Created
@@ -10,6 +11,7 @@
 
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using MGQOnline.Bridge.Ruby;
 using MGQOnline.Data.Events;
 using MGQOnline.Game.Events.Data;
@@ -33,6 +35,11 @@ internal sealed class SourcePruner : MarshalPruner
     public static readonly SourcePruner Instance = new();
 
     /// <summary>
+    /// The condition type of an enemy's action that asks for a switch to be on.
+    /// </summary>
+    private const int SwitchCondition = 6;
+
+    /// <summary>
     /// The characters Ruby's <c>strip</c> takes off a text's ends.
     /// </summary>
     private static readonly char[] RubyWhiteSpace = [' ', '\t', '\n', '\v', '\f', '\r', '\0'];
@@ -54,11 +61,13 @@ internal sealed class SourcePruner : MarshalPruner
         ["RPG::MapInfo"] = ["name", "parent_id"],
         ["RPG::Actor"] = ["note", "features"],
         ["RPG::Class"] = ["note", "features"],
-        ["RPG::Skill"] = ["note", "features", "effects"],
-        ["RPG::Item"] = ["note", "features", "effects", "itype_id", "description"],
+        ["RPG::Skill"] = ["note", "features", "effects", "damage"],
+        ["RPG::Item"] = ["note", "features", "effects", "itype_id", "description", "damage"],
         ["RPG::Weapon"] = ["note", "features", "description"],
         ["RPG::Armor"] = ["note", "features", "description"],
-        ["RPG::Enemy"] = ["note", "features"],
+        ["RPG::Enemy"] = ["note", "features", "actions"],
+        ["RPG::Enemy::Action"] = ["condition_type", "condition_param1"],
+        ["RPG::UsableItem::Damage"] = ["formula"],
         ["RPG::State"] = ["note", "features"],
         ["RPG::BaseItem::Feature"] = [],
         ["RPG::UsableItem::Effect"] = [],
@@ -100,7 +109,7 @@ internal sealed class SourcePruner : MarshalPruner
         "RPG::Troop" => Box(new SourceTroop(Int(value["id"]), ItemsOf<SourceMember>(value["members"]), ItemsOf<SourceTroopPage>(value["pages"]))),
         "RPG::MapInfo" => Box(new SourceMapEntry(TextOf(value["name"]), Int(value["parent_id"]))),
         "RPG::Actor" or "RPG::Class" or "RPG::Skill" or "RPG::Item" or "RPG::Weapon" or "RPG::Armor" or "RPG::Enemy" or "RPG::State" =>
-            Box(new SourceEntry(InUse(value), Int(value["itype_id"]), TextOf(value["description"]), TextOf(value["note"]))),
+            Box(new SourceEntry(InUse(value), Int(value["itype_id"]), TextOf(value["description"]), TextOf(value["note"]), FormulaOf(value["damage"]), ActionSwitches(value["actions"]))),
         _ => value,
     };
 
@@ -164,6 +173,22 @@ internal sealed class SourcePruner : MarshalPruner
     /// </summary>
     /// <param name="code">The command's code.</param>
     /// <returns>Whether it keeps them.</returns>
+    /// <summary>
+    /// Reads a skill's or item's damage formula.
+    /// </summary>
+    /// <param name="damage">Its damage, nil for an entry without one.</param>
+    /// <returns>The formula, empty for none.</returns>
+    private static string FormulaOf(RubyValue damage) => damage is RubyObject found ? TextOf(found["formula"]) : string.Empty;
+
+    /// <summary>
+    /// Lists the switches an enemy's actions ask to be on (condition type 6).
+    /// </summary>
+    /// <param name="actions">Its actions, nil for an entry without them.</param>
+    /// <returns>The switches.</returns>
+    private static int[] ActionSwitches(RubyValue actions) => actions is RubyArray list
+        ? [.. list.OfType<RubyObject>().Where(action => Int(action["condition_type"]) == SwitchCondition).Select(action => Int(action["condition_param1"]))]
+        : [];
+
     private static bool KeepsParameters(int code) => EventSchema.Keeps(code) || code == EventCodes.ScriptLine;
 
     /// <summary>
