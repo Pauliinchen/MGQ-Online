@@ -2,6 +2,7 @@
 //  TeleportRequestsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Took places and teleports without a warp ban
 //      Paulinchen  2026-10-30: Created
 //
 //----------------------------------------------------------------
@@ -82,7 +83,7 @@ public sealed class TeleportRequestsTests
         private readonly string party;
 
         /// <summary>
-        /// The teleports started, each [name, [map, x, y, d], warp_ban].
+        /// The teleports started, each [name, [map, x, y, d]].
         /// </summary>
         private readonly JsonArray comeTo = [];
 
@@ -103,7 +104,7 @@ public sealed class TeleportRequestsTests
         /// <param name="leader">"leader01" or "me".</param>
         public Game(string leader)
         {
-            Requests = new TeleportRequests(World.Room, this, _ => $"n{++nonces}") { Place = new TeleportPlace(3, 0, 0, 2, false) };
+            Requests = new TeleportRequests(World.Room, this, _ => $"n{++nonces}") { Place = new TeleportPlace(3, 0, 0, 2) };
             if (leader == "me")
             {
                 party = "me000001p1";
@@ -138,7 +139,7 @@ public sealed class TeleportRequestsTests
         public List<string> Notices { get; } = [];
 
         /// <inheritdoc />
-        public void Allowed(string name, TeleportPlace place) => comeTo.Add(new JsonArray(name, new JsonArray(place.Map, place.X, place.Y, place.Direction), place.WarpBan));
+        public void Allowed(string name, TeleportPlace place) => comeTo.Add(new JsonArray(name, new JsonArray(place.Map, place.X, place.Y, place.Direction)));
 
         /// <inheritdoc />
         public void Notice(string text) => Notices.Add(text);
@@ -169,7 +170,7 @@ public sealed class TeleportRequestsTests
                 case "tick": Requests.Tick(step.GetProperty("in_world").GetBoolean(), frame); break;
                 case "load": Requests.Forget("a save was loaded"); break;
                 case "place":
-                    Requests.Place = new TeleportPlace(step.GetProperty("map").GetInt64(), step.GetProperty("x").GetInt64(), step.GetProperty("y").GetInt64(), step.GetProperty("d").GetInt64(), step.GetProperty("warp_ban").GetBoolean());
+                    Requests.Place = new TeleportPlace(step.GetProperty("map").GetInt64(), step.GetProperty("x").GetInt64(), step.GetProperty("y").GetInt64(), step.GetProperty("d").GetInt64());
                     break;
                 case "party": World.Tell(Seats[step.GetProperty("of").GetString()!], ("party", step.GetProperty("party").GetString()!)); break;
                 case "fails": World.Fails = step.GetProperty("fails").GetBoolean(); break;

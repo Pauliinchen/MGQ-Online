@@ -42,7 +42,6 @@ left for the user to decide.
 | World | [parts](#parts) | 6 |
 | World | [settings](#settings) | 95 |
 | World | [vehicles](#vehicles) | 23 |
-| World | [warp_free_maps](#warp_free_maps) | 158 |
 | World | [makina](#makina) | 29 |
 | World | [prize_variables](#prize_variables) | 88 |
 | World | [prize_switches](#prize_switches) | 5 |
@@ -54,9 +53,12 @@ The user decided the review's open questions on 2026-10-28 ("MGQ Online row deci
 workspace); each section lists them under "Decided by the user" with what they changed. The 164
 loot pages that also move the story and the places of the 8 world chests without a part were
 decided after the research the user asked for (the [party_chests](#party_chests) and
-[chests](#chests) sections). Still open: the three warp-free maps left out for their own bans (the
-[warp_free_maps](#warp_free_maps) section), and the defeated-boss rows (BEATEN), which wait for the
-raid rules question C4.
+[chests](#chests) sections). Still open: the defeated-boss rows (BEATEN), which wait for the raid
+rules question C4.
+
+On 2026-10-31 the user dropped the warp_free_maps table, with decisions 19 and 20: a world never
+bans warping, since the game keeps the warp ban (switch 100) off while a world is open, so the
+catch-up has no ban to lift on any map.
 
 ## Chests
 
@@ -1543,127 +1545,6 @@ and are left out on purpose; the airship comes with the Chaos rows anyway.
 
 - Rows 0 to 2 and rows 21 and 22 are not in the order their marks give. This does not matter here,
   since the catch-up only asks whether any row of a vehicle passed.
-
-### warp_free_maps
-
-These are the maps where a warp ban (switch 100, "Warp OFF Switch") left on while no event runs
-is left over. The catch-up lifts it there (`world_catchup_data.rbx` `WARP_FREE_MAPS`). The table's
-rule: the game sends the player to the map with the ban lifted more often than with it set.
-Reviewed on 2026-10-28 against the game data of the TEST install.
-
-| | Rows |
-|---|---|
-| Candidates (`fixtures/catchup/generated/warp_free_maps.json`) | 157 |
-| Confirmed in bulk | 117 |
-| Checked by hand | 18 (1 kept, 13 of the dropped, the 4 added) |
-| Fixed | 0 |
-| Dropped | 39 |
-| Added | 4, and 36 by the user's decision |
-| Written (`Relay/seed/story/warp_free_maps.json`) | 158 |
-
-### How the rows were checked
-
-Running the Event Checker's `raid_data.rb` over the TEST install gives exactly the 157 candidates.
-Recounting showed that its count goes wrong in two ways:
-
-- **The map a transfer really goes to.** The game's transfer command first reads variable 57
-  (`NWConst::Var::MAP_TRANSFER`). When an event sets it, the transfer goes there, whatever map the
-  command names. The Escape spell (CE 31), the game over (Hades) and many Final Chapter scenes
-  work this way. They name a placeholder map such as 544, or the map's number without its
-  thousand. The generator counted the named map.
-- **A ban state from a branch that already left.** The generator kept the ban state the list
-  last set, across branches. So in a menu that lifts the ban in its first branch and transfers,
-  the other branches counted as lifted too, though they never touch the ban.
-
-So every direct transfer of the game was counted again:
-
-- at the map the game really sends the player to (variable 57 first, then the thousand rule);
-- with the ban the player arrives with. That is the ban set or lifted at the transfer's own level
-  right after it. Otherwise it is the nearest ban command before it, on the transfer's path or in
-  an earlier branch that did not leave.
-
-A map counts where more transfers arrive with the ban lifted than with it set. 117 rows passed
-this recount and needed nothing more. The rest were read by hand.
-
-### Checked by hand and confirmed (1)
-
-- **1481** (Chaos Kitsune Village): map:1483:5:1 lifts the ban in a branch at its story step
-  (1137 = 8), then sends the player here. Kept.
-
-### Dropped (39)
-
-- **The transfers counted for it go to another map, through variable 57 (28):** 75 (to 1075),
-  76 (1076), 154 (1154), 162 (1162), 193 (1193), 276 (1276), 405 (1405), 430 (1430), 439 (1439),
-  441 (1441), 461 (1461), 469 (1469), 544 (the placeholder map; its transfers go to 2, 576, 407,
-  1861, 1911, 1650, 1890, 1558, 1375, 1791, 1598 and 1658), 642 (1642), 731 (1731), 745 (1745),
-  750 (1750), 758 (1758), 762 (1762), 778 (1778), 791 (1791), 805 (1805), 831 (1831), 832 (1832),
-  855 (1855), 1002 (1287), 1228 (228), 1544 (2, 389 and 576). Most of the real maps are already in
-  the table.
-- **No such map in the game (4):** 555, 561, 605 and 973. Their transfers go to 1555, 1561, 1605
-  and 1973, which are in the table.
-- **Only a ban state from a branch that left (2):** 312 and 315 (Hellgondo Shrine). The Pyramid's
-  warp crystal (CE 9132) lifts the ban only in its branch to map 638; its branches to 312 and 315
-  never touch it.
-- **The game over keeps the ban on the way back (3):** 1527, 1531 and 1777. Each is reached once
-  with the ban lifted and once from Hades with it set (a tie).
-- **The map's own events set the ban while the player stays (2), read by hand:**
-  - 358 (Don Father House): talking to Merlin (map:358:240:1) bans warping until his errand is
-    done.
-  - 1655 (Grand Noah destroyed, Monster Realm): the arrival's autorun bans warping. The ban stays
-    until the story event at the exit (map:1655:1:1), which sets 1142 = 59, brings companion 385
-    along and lifts it. Lifting the ban earlier would let a player warp past that event.
-
-### Added (4)
-
-The game sends the player to these maps with the ban lifted. The generator credited the transfers
-to a placeholder map:
-
-- **1375** Esta (AD): map:405:2:1 lifts the ban and sends the player here through variable 57
-  (2 lifted, 1 set).
-- **1435** Chaos Lost Forest 1F: the Escape spell (CE 31) lifts the ban and sends the player here
-  (5 lifted, 1 set from Hades).
-- **1441** Chaos Saloon: the Saloon's victory and defeat events (CE 7163, 7164) lift the ban on the
-  way back (2 lifted, 1 set).
-- **1558** Hellgondo Continent West Tartarus: the corridor map:389:3:1 lifts the ban on the way
-  here (2 lifted).
-
-### Decided by the user (2026-10-28)
-
-- **The 39 more maps** of the recount: add them, as recommended. 36 were added, each with a
-  `note`. Three were left out by the rule the review used for maps 358 and 1655, since their own
-  story events set the ban while the player stays, and the catch-up lifts a ban on a warp-free
-  map at every look: **7** Iliasville (event 63, Sonya's join, sets it until a later Iliasville
-  event lifts it: events 2, 3, 76, 87 to 90), **280** Navy Headquarters Indoors (event 13 sets
-  it with 1050 = 4, the choice to join the Navy) and **1535** Finoa Indoors, Monster Realm (event
-  27 sets it with 1159 = 4). Lifting it there would let a player warp away in the middle of these
-  events; that call is the user's to confirm.
-- **The majority rule** stays, as recommended.
-
-The recount's report as it stood before the decision:
-
-- The recount finds 39 more maps the game sends the player to with the ban lifted, nearly all
-  from a single transfer: 5 Ilias Temple 1F, 7 Iliasville, 13 Monte Carlo, 14 Yamatai Amabie 2,
-  21 Grand Noah, 25 Finoa, 28 San Ilia Indoors, 29 Iliasburg, 30 Iliasburg Indoors, 31 Midas
-  Village, 39 Port Marle, 43 Saloon, 61 North Ilias Monastery, 139 Iliasport, 141 Port Natalia,
-  172 Administrator's Tower 3F, 206 Kitsune Village, 235 Nameless Slums, 256 Ilias Continent
-  South Large Crater, 280 Navy Headquarters Indoors, 297 Hall of Creation 2F, 338 Grandeur
-  Indoors, 341 Happiness Village, 422 Sabasa Continent North Large Crater, 426 Gold Continent West
-  Large Crater, 683 Pornof, 690 Port Natalia, 766 Yamatai Village, 887 Demonic Castle 1FC Upper,
-  925 Château des Romances Layer 4, 950 Alliance Gathering, 1006, 1046 Grangold Castle 5F (MR),
-  1105, 1268, 1288, 1535 Finoa Indoors (MR), 1753 and 1812. They are not added, since a missing
-  map only keeps a left-over ban the player can walk out of. Add them?
-- The majority rule still lifts a few bans the game sets on purpose, such as on the field (map 2)
-  right after the Gold Fort scene (5 of 299 arrivals there come with the ban set). Keep the rule
-  as it is?
-
-### For the generator (`raid_data.rb` `scan_warp_places`, Event Checker)
-
-- Read variable 57 before a transfer's own map, and the thousand rule for every map event,
-  whatever map the command names.
-- Do not carry a ban state from a branch that left, and count a ban set right after the transfer
-  for the map it arrives at.
-- `read_area` builds the Makina's transfer links from the raw map number. For maps from 1000 on
-  this drops the links; it changed no Makina's level (see the [makina](#makina) section).
 
 ### makina
 

@@ -2,6 +2,7 @@
 //  MirrorSchema.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Dropped the maps where warping is free, which the relay no longer keeps
 //      Paulinchen  2026-10-28: Kept every catch-up table of the relay, and the rows of a table it has none for
 //                            - Created
 //
@@ -52,7 +53,6 @@ public static class MirrorSchema
         new("class_levels", [], "site", [Whole("actor"), new MirrorColumn("class_id", "class", MirrorValue.Whole), Whole("level"), .. Place(), Whole("ran")]),
         new("settings", [], "site", [Text("kind"), Whole("id"), Whole("value"), .. Place(), Whole("ran")]),
         new("vehicles", [], "site", [Text("vehicle"), .. Place(), Whole("ran")]),
-        new("warp_free_maps", ["map"], null, [Whole("map")]),
         new("makina", ["item"], "site", [Whole("item"), Whole("level")]),
         new("companion_values", ["actor", "variable"], null, [Whole("actor"), Whole("variable"), new MirrorColumn("at_least", "atLeast", MirrorValue.Whole)]),
         new("rules", ["rule"], null, [new MirrorColumn("value", "value", MirrorValue.Json)]),

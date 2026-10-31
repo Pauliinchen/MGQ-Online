@@ -2,6 +2,7 @@
 #  coop_teleport_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Expected places and teleports without a warp ban
 #      Paulinchen  2026-10-30: Checked the script's wiring to the DLL's requests on the stand-in bridge
 #      Paulinchen  2026-10-28: Read the frames of a teleport from the gather stand-in
 #      Paulinchen  2026-10-11: Checked that the line above the head names a request to another member
@@ -90,8 +91,6 @@ module MGQ_MpCoop
   def self.tell(seat, field, value, fields = {}); $sent << [seat, { field => value }.merge(fields)]; true; end
   def self.route(field, &handler); end
 end
-# Stands in for the story state, whose WARP_BAN names the switch that bans warping.
-module MGQ_MpStoryState; WARP_BAN = 100; end
 
 load_script "coop_scope"
 load_script "coop_gather"
@@ -115,7 +114,7 @@ tick.call(false)
 check("outside a world the script asks the DLL nothing and offers nothing", [$teleport_calls, $offers.peer_option(friend), $state_fields.call], [[], nil, { "tpask" => "" }])
 
 tick.call(true)
-check("each frame in a world hands the DLL where the player stands", $teleport_calls.last, ["tp.view", { "map" => 3, "x" => 0, "y" => 0, "d" => 2, "warp_ban" => 0 }])
+check("each frame in a world hands the DLL where the player stands", $teleport_calls.last, ["tp.view", { "map" => 3, "x" => 0, "y" => 0, "d" => 2 }])
 check("and offers each member the teleport the view names", [$offers.peer_option(leader).text, $offers.peer_option(friend).text], ["Teleport to Leader", "Ask to teleport to Friend"])
 check("each closing the World overview", $offers.peer_option(friend).leaves, true)
 check("the wheel's teleport to the leader is the same", teleport.option(leader).text, "Teleport to Leader")
@@ -138,7 +137,7 @@ notice = $offers.notice_of(friend)
 check("as does the notification box", [notice.key, notice.text, notice.color, notice.action, notice.mark], [[:teleport, 3], "Friend asks to teleport to you", :invite, "Allow", "x1"])
 check("but not for a member without one", $offers.notice_of(leader), nil)
 notice.take.call
-check("allowing hands the DLL the seat and where the player stands", $teleport_calls.last, ["tp.allow", { "seat" => 3, "place" => { "map" => 3, "x" => 0, "y" => 0, "d" => 2, "warp_ban" => 0 } }])
+check("allowing hands the DLL the seat and where the player stands", $teleport_calls.last, ["tp.allow", { "seat" => 3, "place" => { "map" => 3, "x" => 0, "y" => 0, "d" => 2 } }])
 notice.decline.call
 check("declining hands the DLL the seat", $teleport_calls.last, ["tp.decline", 3])
 fake.answer("tp.allow") { |_request| raise FakeBridge::BadRequest, "No player sits at seat 3." }
@@ -152,12 +151,11 @@ check("a loaded save makes the DLL forget it", $teleport_calls.last, ["tp.forget
 $teleport_view = nil
 
 # A member lets the player come.
-fake.post("tp.allowed", { "name" => "Friend", "map" => 7, "x" => 4, "y" => 4, "d" => 2, "warp_ban" => true })
+fake.post("tp.allowed", { "name" => "Friend", "map" => 7, "x" => 4, "y" => 4, "d" => 2 })
 fake.post("tp.notice", "Teleporting to Friend . . .")
 $map_free = false
 MGQ_Multiplayer::Bridge.frame
-check("the DLL's allow brings the player over once free", [MGQ_MpCoopGather.coming?, MGQ_MpCoopGather.pending_call[:place], MGQ_MpCoopGather.pending_call[:warp_ban]],
-      [true, [7, 4, 4, 2], true])
+check("the DLL's allow brings the player over once free", [MGQ_MpCoopGather.coming?, MGQ_MpCoopGather.pending_call[:place]], [true, [7, 4, 4, 2]])
 check("with the DLL's notice", $notices.last, "Teleporting to Friend . . .")
 $map_free = true
 MGQ_MpCoopGather.update

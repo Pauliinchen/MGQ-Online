@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-31: Read the old scripts from a commit that feat/refactor holds
+#                            - Left the warp ban out of the places and the teleports
 #      Paulinchen  2026-10-30: Created
 #
 #----------------------------------------------------------------
@@ -98,11 +99,11 @@ module MGQ_MpCoopGather
   end
   def self.own_place; { "map" => $game_map.map_id, "x" => $game_player.x, "y" => $game_player.y }; end
   def self.place_fields
-    { "map" => $game_map.map_id, "x" => $game_player.x, "y" => $game_player.y, "d" => $game_player.direction, "warp_ban" => $warp_ban ? 1 : 0 }
+    { "map" => $game_map.map_id, "x" => $game_player.x, "y" => $game_player.y, "d" => $game_player.direction }
   end
   def self.frames_left(since, frames); since + frames - Graphics.frame_count; end
   def self.within?(since, frames); left = frames_left(since, frames); left > 0 && left <= frames; end
-  def self.come_to(name, place, warp_ban); $come_to << [name, place, warp_ban]; end
+  def self.come_to(name, place, _warp_ban); $come_to << [name, place]; end
 end
 
 script = ARGV[0] || abort("Name the coop_teleport.rbx of commit 40f11e4d, see the header.")
@@ -137,7 +138,6 @@ SCENARIOS = []
 def scenario(name, leader, steps)
   $frame = 1000
   $nonce = 0
-  $warp_ban = false
   $tell_fails = false
   $game_map.map_id = 3
   $game_player.x = 0
@@ -159,7 +159,7 @@ end
 # @param step [Hash] "op" and its fields: "frame" (the frame it runs at), "ask" ("to"), "take"
 #   ("from", "kind", "fields"), "request" ("from", "tpask", the request their state tells),
 #   "observe" ("from"), "allow" ("from"), "decline" ("from"), "stop", "tick" ("in_world"), "load",
-#   "place" ("map", "x", "y", "d", "warp_ban"), "party" ("of", "party", the party their state names),
+#   "place" ("map", "x", "y", "d"), "party" ("of", "party", the party their state names),
 #   "fails" (whether the messages sent fail).
 # @return [Hash] What the script answers after the step.
 def run_step(step)
@@ -183,7 +183,6 @@ def run_step(step)
     $game_player.x = step["x"]
     $game_player.y = step["y"]
     $game_player.direction = step["d"]
-    $warp_ban = step["warp_ban"]
   when "party" then $by_id[step["of"]].state["party"] = step["party"]
   when "fails" then $tell_fails = step["fails"]
   end
@@ -215,21 +214,21 @@ def read_answer
   }
 end
 
-FAR = { "op" => "place", "map" => 3, "x" => 0, "y" => 0, "d" => 2, "warp_ban" => false }
+FAR = { "op" => "place", "map" => 3, "x" => 0, "y" => 0, "d" => 2 }
 
 scenario("a member teleports to the leader at once, ignoring answers from another member or to an older request", "leader01", [
   { "op" => "ask", "to" => "leader01", "frame" => 1000 },
   { "op" => "take", "from" => "friend01", "kind" => "allow", "fields" => { "nonce" => "n1", "map" => "5", "x" => "1", "y" => "1", "d" => "2" }, "frame" => 1010 },
   { "op" => "take", "from" => "leader01", "kind" => "allow", "fields" => { "nonce" => "n0", "map" => "5", "x" => "1", "y" => "1", "d" => "2" }, "frame" => 1020 },
-  { "op" => "take", "from" => "leader01", "kind" => "allow", "fields" => { "map" => "9", "x" => "10", "y" => "10", "d" => "4", "warp_ban" => "1", "nonce" => "n1" }, "frame" => 1030 },
+  { "op" => "take", "from" => "leader01", "kind" => "allow", "fields" => { "map" => "9", "x" => "10", "y" => "10", "d" => "4", "nonce" => "n1" }, "frame" => 1030 },
   { "op" => "ask", "to" => "leader01", "frame" => 1040 },
-  { "op" => "place", "map" => 9, "x" => 11, "y" => 12, "d" => 8, "warp_ban" => false, "frame" => 1050 },
-  { "op" => "take", "from" => "leader01", "kind" => "allow", "fields" => { "map" => "9", "x" => "10", "y" => "10", "d" => "4", "warp_ban" => "0", "nonce" => "n2" }, "frame" => 1060 },
+  { "op" => "place", "map" => 9, "x" => 11, "y" => 12, "d" => 8, "frame" => 1050 },
+  { "op" => "take", "from" => "leader01", "kind" => "allow", "fields" => { "map" => "9", "x" => "10", "y" => "10", "d" => "4", "nonce" => "n2" }, "frame" => 1060 },
   { "op" => "ask", "to" => "leader01", "frame" => 1070 },
 ])
 
 scenario("the leader lets a member come at once, once, and never answers a player outside the party", "me", [
-  { "op" => "place", "map" => 3, "x" => 5, "y" => 6, "d" => 4, "warp_ban" => true, "frame" => 1000 },
+  { "op" => "place", "map" => 3, "x" => 5, "y" => 6, "d" => 4, "frame" => 1000 },
   { "op" => "request", "from" => "friend01", "tpask" => "me000001:x1", "frame" => 1001 },
   { "op" => "observe", "from" => "friend01", "frame" => 1002 },
   { "op" => "observe", "from" => "friend01", "frame" => 1003 },
@@ -256,7 +255,7 @@ scenario("asking another member waits for their answer: declined, allowed, repla
   { "op" => "ask", "to" => "friend01", "frame" => 1000 },
   { "op" => "take", "from" => "friend01", "kind" => "deny", "fields" => { "nonce" => "n1" }, "frame" => 1100 },
   { "op" => "ask", "to" => "friend01", "frame" => 1200 },
-  { "op" => "take", "from" => "friend01", "kind" => "allow", "fields" => { "map" => "7", "x" => "4", "y" => "4", "d" => "2", "warp_ban" => "0", "nonce" => "n2" }, "frame" => 1300 },
+  { "op" => "take", "from" => "friend01", "kind" => "allow", "fields" => { "map" => "7", "x" => "4", "y" => "4", "d" => "2", "nonce" => "n2" }, "frame" => 1300 },
   { "op" => "ask", "to" => "friend01", "frame" => 1400 },
   { "op" => "ask", "to" => "leader01", "frame" => 1500 },
   { "op" => "stop", "frame" => 1600 },
@@ -280,12 +279,12 @@ scenario("a request runs out after a minute, ends once its member left the party
 ])
 
 scenario("a player standing near a member already neither asks nor teleports to them", "leader01", [
-  { "op" => "place", "map" => 7, "x" => 5, "y" => 4, "d" => 2, "warp_ban" => false, "frame" => 1000 },
+  { "op" => "place", "map" => 7, "x" => 5, "y" => 4, "d" => 2, "frame" => 1000 },
   { "op" => "ask", "to" => "friend01", "frame" => 1001 },
   FAR.merge("frame" => 1002),
   { "op" => "ask", "to" => "friend01", "frame" => 1003 },
-  { "op" => "place", "map" => 7, "x" => 7, "y" => 1, "d" => 2, "warp_ban" => false, "frame" => 1004 },
-  { "op" => "take", "from" => "friend01", "kind" => "allow", "fields" => { "map" => "7", "x" => "4", "y" => "4", "d" => "2", "warp_ban" => "0", "nonce" => "n1" }, "frame" => 1005 },
+  { "op" => "place", "map" => 7, "x" => 7, "y" => 1, "d" => 2, "frame" => 1004 },
+  { "op" => "take", "from" => "friend01", "kind" => "allow", "fields" => { "map" => "7", "x" => "4", "y" => "4", "d" => "2", "nonce" => "n1" }, "frame" => 1005 },
 ])
 
 scenario("an answer of an unknown kind ends the request, and an answer nobody asked for is ignored", "leader01", [

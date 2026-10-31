@@ -2,6 +2,7 @@
 #  relay_rows.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Dropped the maps where warping is free
 #      Paulinchen  2026-10-28: Wrote the rewards a party member catches up with as the DLL hands them to the scripts
 #                            - Created
 #
@@ -28,7 +29,7 @@ module CatchupRelayRows
   TABLES = {
     :PARTS => "parts", :JOINS => "joins", :REMOVALS => "removals", :KEY_ITEMS => "key_items", :CHESTS => "chests", :REWARDS => "rewards",
     :LESSONS => "lessons", :CLASS_LEVELS => "class_levels", :ACTOR_CHANGES => "actor_changes", :SETTINGS => "settings", :VEHICLES => "vehicles",
-    :WARP_FREE_MAPS => "warp_free_maps", :MAKINA => "makina", :PRIZE_VARIABLES => "prize_variables",
+    :MAKINA => "makina", :PRIZE_VARIABLES => "prize_variables",
   }
 
   # Writes a mark as the relay takes it: its kind as text.
@@ -147,11 +148,6 @@ module CatchupRelayRows
     ordered(rows.map { |row| { "vehicle" => VEHICLES.fetch(row.vehicle) }.merge(place_of(row)).merge("ran" => ran(row)) })
   end
 
-  # @param maps [Array<Integer>] WARP_FREE_MAPS.
-  # @return [Array<Hash>] The relay's rows.
-  def self.warp_free_maps_rows(maps)
-    maps.map { |map| { "map" => map } }
-  end
 
   # @param rows [Array<Struct>] The Ruby rows of MAKINA.
   # @return [Array<Hash>] The relay's rows.

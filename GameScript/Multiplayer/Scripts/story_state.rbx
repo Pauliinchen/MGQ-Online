@@ -2,7 +2,8 @@
 #  story_state.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-31: Read what is each player's own in a Classic party from the reviewed list's scopes instead of the Classic story's ranges
+#      Paulinchen  2026-10-31: Kept the warp ban from stopping a player in a world
+#                            - Read what is each player's own in a Classic party from the reviewed list's scopes instead of the Classic story's ranges
 #                            - Kept the player's own self switches when a story is joined with theirs
 #                            - Kept every party chest's self switch the player's own in a Classic party, not only those of the map
 #                            - Repaired a save the 0.6.9.2 chest path left stuck, once, at its first load
@@ -38,18 +39,17 @@
 # player's own, which every join of stories keeps; how a story is written for a message and read
 # back; and how the story's skills, companions and items are granted.
 module MGQ_MpStoryState
-  # The switch that bans warping, such as with a Harpy Feather. The game's events turn it on where
-  # the player enters a cave or a building and off where they leave it, so it tells of the place a
-  # player stands in, not of the story.
+  # The switch that bans warping and the Pocket Castle ("Warp OFF Switch"), which a world keeps
+  # off, see lift_warp_ban.
   WARP_BAN = defined?(NWConst::Sw::WARP_BAN) ? NWConst::Sw::WARP_BAN : 100
 
   # The switch that bans the escape spell ("Riremito OFF Switch"), which a few scenes turn on and
-  # the Head Priest of Ilias Temple turns off as he changes jobs: like the warp ban, it tells of
-  # the player's place, not of the story.
+  # the Head Priest of Ilias Temple turns off as he changes jobs: it tells of the player's place,
+  # not of the story.
   ESCAPE_BAN = 94
 
   # The bans of the place a player stands in.
-  PLACE_BANS = [WARP_BAN, ESCAPE_BAN]
+  PLACE_BANS = [ESCAPE_BAN]
 
   # The switch that tells the player took Alice along.
   ALICE_CHOSEN = 4
@@ -855,6 +855,25 @@ module MGQ_MpStoryState
     log_once([:repair, e.class], "repairing the save failed: #{e.class}: #{e.message}")
   end
 
+  # Turns the warp ban off again while a world is open, past the game's own handling, so the write
+  # reaches no hook. Called after a write of a switch and after a save loaded.
+  #
+  # A world moves players past the events that set and lift the ban, and the teleport to the story
+  # brings back a player whom a warp took away from it.
+  #
+  # @param switches [Game_Switches] The switches written to or loaded.
+  # @param reason [String] How the ban came on, for the log, which names it once per map.
+  def self.lift_warp_ban(switches, reason)
+    return unless defined?(MGQ_MpOverworldSync) && MGQ_MpOverworldSync.in_world?
+
+    data = data_of(switches)
+    return unless data[WARP_BAN]
+
+    data[WARP_BAN] = false
+    map = $game_map ? $game_map.map_id : 0
+    log_once([:warp_ban, reason, map], "turned the warp ban off on map #{map}: #{reason}")
+  end
+
   # Notes whether a save loaded or a new game still needs the repair: a new game never does.
   #
   # @param new_game [Boolean] Whether a new game started.
@@ -878,12 +897,23 @@ end
 # Game hooks of this script alone, through core_hooks.rbx.
 
 begin
-  # A save's first load in this build repairs it once the player is on the map; a new game needs none.
+  # A save's first load in this build repairs it once the player is on the map; a new game needs
+  # none. A save loaded in a world holds no warp ban there, while a new game starts without one.
   if defined?(DataManager)
-    MGQ_MpHooks.after(DataManager.singleton_class, :extract_save_contents, "story_state") { |_contents| MGQ_MpStoryState.repair_check(false) }
+    MGQ_MpHooks.after(DataManager.singleton_class, :extract_save_contents, "story_state") do |_contents|
+      MGQ_MpStoryState.repair_check(false)
+      MGQ_MpStoryState.lift_warp_ban($game_switches, "the loaded save held it")
+    end
     MGQ_MpHooks.after(DataManager.singleton_class, :setup_new_game, "story_state") { MGQ_MpStoryState.repair_check(true) }
   end
   MGQ_MpHooks.after(Game_Map, :update, "story_state") { |*_args| MGQ_MpStoryState.repair }
 rescue => e
   MGQ_MpStoryState.log("repair hooks FAILED: #{e.class}: #{e.message}")
+end
+
+begin
+  # A world never bans warping, whatever writes the ban, a replay's commit too.
+  MGQ_MpHooks.after(Game_Switches, :[]=, "story_state") { |id, _value| MGQ_MpStoryState.lift_warp_ban(self, "a write turned it on") if id == MGQ_MpStoryState::WARP_BAN }
+rescue => e
+  MGQ_MpStoryState.log("warp ban hook FAILED: #{e.class}: #{e.message}")
 end

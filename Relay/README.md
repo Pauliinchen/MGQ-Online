@@ -218,7 +218,7 @@ Options, each left out when off: `defeatWrite: true` (the post-defeat processing
 | `class_levels` *ordered* | `CLASS_LEVELS` | numbered | `actor`, `class`, `level`, place, `ran` |
 | `settings` *ordered* | `SETTINGS` | numbered | `kind` (`variable` with a whole number, `switch` or `encounters` with id 0, both with true or false), `id`, `value`, place, `ran` |
 | `vehicles` *ordered* | `VEHICLES` | numbered | `vehicle` (`boat`, `ship`, `airship`), place, `ran` |
-| `warp_free_maps` | `WARP_FREE_MAPS` | `map` | `map` |
+
 | `makina` | `MAKINA` | `item` | `item`, `level`, `site` |
 | `companion_values` | `COMPANION_VALUES` | `<actor>:<variable>` | `actor`, `variable`, `atLeast` |
 | `rules` | `world_catchup.rbx` `LASTING_COMPANIONS`, `ORBS`, `ORB_EVENT`, `ORBS_GATHERED`, `SIDE_STEP`, `SIDE_COMPANIONS` | `rule` | `rule` (`lasting_companions`, `orbs`, `orb_event`, `orbs_gathered`, `side_step`, `side_companions` or `free_order`), `value` (a list of ids for the first two, a common event or step for the next three, `{alice, ilias}` companions for `side_companions`, a list of `{part, step}` for `free_order`: the steps whose regions the world plays in an order of its own, where the catch-up leaves the player's own values, such as the return point, alone) |

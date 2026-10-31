@@ -2,7 +2,8 @@
 //  CatchupTables.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-31: Read a world chest without its chest flags, which only released builds read
+//      Paulinchen  2026-10-31: Dropped the maps where warping is free, since a world never bans warping
+//                            - Read a world chest without its chest flags, which only released builds read
 //      Paulinchen  2026-10-28: Read the steps of the story in free order
 //                            - Read the switches of prizes handed out once
 //                            - Read a world chest the game shuts by a switch
@@ -93,10 +94,6 @@ public sealed class CatchupTables
     /// </summary>
     public IReadOnlyList<CatchupVehicle> Vehicles { get; private set; } = [];
 
-    /// <summary>
-    /// Gets the maps where a warp ban left on is left over.
-    /// </summary>
-    public IReadOnlyList<int> WarpFreeMaps { get; private set; } = [];
 
     /// <summary>
     /// Gets every Makina with its level.
@@ -178,7 +175,7 @@ public sealed class CatchupTables
             ActorChanges = Rows(tables, "actor_changes", ActorChangeOf),
             Settings = Rows(tables, "settings", SettingOf),
             Vehicles = Rows(tables, "vehicles", VehicleOf),
-            WarpFreeMaps = IdsOf(tables, "warp_free_maps", "map"),
+
             Makina = Rows(tables, "makina", MakinaOf),
             PrizeVariables = IdsOf(tables, "prize_variables", "variable"),
             PrizeSwitches = IdsOf(tables, "prize_switches", "switch"),

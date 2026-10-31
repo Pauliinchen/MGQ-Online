@@ -2,7 +2,8 @@
 #  coop_events.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-31: Stopped telling the party the items and gold the leader's story gives, which the leader's runs bring by replay
+#      Paulinchen  2026-10-31: Stopped telling whether warping is banned where the story plays
+#                            - Stopped telling the party the items and gold the leader's story gives, which the leader's runs bring by replay
 #                            - Worded what the player reads plainly, leaving causes and internals to the log
 #                            - Handed the leader's runs of the story to every member who follows it, as entries of the leader's story, which each member's game replays
 #                            - Sent a member's runs of the leader's story to the leader with their requests, and handed the party those the leader's story kept, named by the member
@@ -1114,14 +1115,9 @@ module MGQ_MpCoopEvents
 
   # The fields the party's events add to the state the player's game tells the others.
   #
-  # @return [Hash] "telling": 1 while the player's story scene plays for the party; in a Raid World
-  #   "twb" too while it plays, whether warping is banned where the player stands, see
-  #   MGQ_MpCoopGather.warp_ban?.
+  # @return [Hash] "telling": 1 while the player's story scene plays for the party.
   def self.state_fields
-    playing = story_playing?
-    fields = { "telling" => playing ? 1 : 0 }
-    fields["twb"] = MGQ_MpCoopGather.warp_ban? ? 1 : 0 if playing && MGQ_MpCoop::Scope.raid? && defined?(MGQ_MpCoopGather)
-    fields
+    { "telling" => story_playing? ? 1 : 0 }
   end
 
   # Reports whether the player shares the chests they open: with their party in a Classic world.

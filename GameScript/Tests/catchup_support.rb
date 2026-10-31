@@ -2,7 +2,8 @@
 #  catchup_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-31: Told the place where the world's log starts with the world's summary
+#      Paulinchen  2026-10-31: Dropped the maps where warping is free
+#                            - Told the place where the world's log starts with the world's summary
 #      Paulinchen  2026-10-28: Read the generated tables from fixtures/catchup/generated in place of the deleted world_catchup_data.rbx
 #                            - Answered the DLL's catch-up topics from the catch-up engine over the tests' tables, and recorded its answers
 #                            - Created
@@ -415,7 +416,7 @@ REAL_ACTOR_CHANGES = DATA::ACTOR_CHANGES
 #
 # @param tables [Hash{Symbol => Array}] The rows by table, the others empty.
 def tables(tables = {})
-  [:JOINS, :REMOVALS, :KEY_ITEMS, :CHESTS, :REWARDS, :LESSONS, :CLASS_LEVELS, :ACTOR_CHANGES, :SETTINGS, :VEHICLES, :WARP_FREE_MAPS, :MAKINA].each do |name|
+  [:JOINS, :REMOVALS, :KEY_ITEMS, :CHESTS, :REWARDS, :LESSONS, :CLASS_LEVELS, :ACTOR_CHANGES, :SETTINGS, :VEHICLES, :MAKINA].each do |name|
     DATA.send(:remove_const, name)
     DATA.const_set(name, tables[name] || [])
   end

@@ -2,7 +2,8 @@
 #  coop_gather_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-31: Expected the plainer texts the player reads
+#      Paulinchen  2026-10-31: Dropped the warp ban a teleport to the story took
+#                            - Expected the plainer texts the player reads
 #      Paulinchen  2026-10-28: Answered the calls, the hold and the offers through the bridge from their golden cases
 #                            - Took a Raid World's tellers from the relay's tellings
 #      Paulinchen  2026-10-24: Checked that a viewer follows at once a scene that runs by itself and would start again in their game
@@ -147,12 +148,12 @@ check("an open world keeps it", gather.coming?, true)
 $tick.call(false)
 check("the world closing forgets it", gather.coming?, false)
 
-gather.come_to("Leader", place, false)
+gather.come_to("Leader", place)
 check("a member teleporting to another is coming", gather.coming?, true)
 DataManager.extract_save_contents({})
 check("until a save is loaded", gather.coming?, false)
 
-gather.come_to("Friend", [4, 1, 1, 2], false)
+gather.come_to("Friend", [4, 1, 1, 2])
 gather.called($leader, place)
 $frame_count += GatherStandIn::CALL_LAPSE_FRAMES
 check("a leader's call that takes over a teleport the player asked for lapses as a call does",
@@ -213,8 +214,7 @@ module MGQ_MpCoopEvents
   def self.tell(seat, kind, fields = {}); MGQ_MpCoop::Scope.tell(seat, "pevent", kind, fields); end
   def self.tell_each(peers, kind, fields = {}); MGQ_MpCoop::Scope.tell_each(peers, "pevent", kind, fields); end
 end
-# Stands in for story_state.rbx, whose WARP_BAN names the switch that bans warping.
-module MGQ_MpStoryState; WARP_BAN = 100; end
+
 # The world's story: the player's track from $track, and the tellings the relay told of on it from
 # $tellings, by seat.
 module MGQ_MpWorldStory
@@ -403,21 +403,14 @@ teller.state["telling"] = "0"
 gather.note_story_place
 gather.join_story
 check("even once the telling ended", [gather.coming?, gather.own_doing], [true, "Joining the story once free"])
-check("keeping the player's warp ban while the teller's is unknown", gather.pending_call[:warp_ban], nil)
-gather.forget
-teller.state.merge!("telling" => "1", "twb" => "1")
-gather.note_story_place
-gather.join_story
-check("and taking over the one where the story is told", gather.pending_call[:warp_ban], true)
 gather.forget
 $telling = true
-$game_switches[100] = false
 gather.note_story_place
 $telling = false
 $peers = []
 $game_map.map_id = 4
 gather.join_story
-check("the player's own telling notes the warp ban where they stand", [gather.story_endpoint[0], gather.pending_call[:warp_ban]], [3, false])
+check("the player's own telling notes where they stand", [gather.story_endpoint[0], gather.coming?], [3, true])
 gather.forget
 $game_map.map_id = 3
 
@@ -427,8 +420,6 @@ $game_map.map_id = 3
 module MGQ_MpWorldStory; def self.endpoint; $relay_end; end; end
 $relay_end = [9, 7, 8, 2]
 check("a teleport to the story goes to the endpoint the relay keeps", gather.story_endpoint, [9, 7, 8, 2])
-gather.join_story
-check("whose warp ban this game does not know, so the player keeps their own", gather.pending_call[:warp_ban], nil)
 gather.forget
 $relay_end = nil
 check("and where this game saw the story told while the relay keeps none", gather.story_endpoint[0], 3)
@@ -440,7 +431,7 @@ check("and where this game saw the story told while the relay keeps none", gathe
 # @param path [String] The file.
 def load_data(path); raise Errno::ENOENT, path; end
 $map_free = true
-gather.come_to("Friend", [77, 1, 1, 2], false)
+gather.come_to("Friend", [77, 1, 1, 2])
 gather.update
 check("a teleport to a map this game lacks tells the player so", [gather.coming?, $notices.last, $game_player.reserved],
       [false, "Cannot teleport to Friend.", nil])

@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-31: Waited for a lost raid boss battle's defeat by the world's story's hold
+#                            - Stopped handing the DLL the player's map, which only the lift of a warp ban read
 #                            - Handed the DLL the world's story where its log starts, and left a vehicle only the log holds in place
 #                            - Played a world chest and a Makina by level in the player's game, through story_replay.rbx
 #      Paulinchen  2026-10-28: Handed the DLL a snapshot of the story, party and items and carried out the catch-up it decides
@@ -331,7 +332,7 @@ module MGQ_MpWorldCatchup
   # owes once when an audit is due (on entering, after a load, on a level up), the vehicles after a
   # story written into the player's, else the rows new since, the rewards waiting for their gate,
   # the roster's skills, classes and races, the shared companions, the Makina, the missed companions,
-  # the found items, the counts and the warp ban.
+  # the found items and the counts.
   def self.look
     note_held_items if @audit_due
     audit = @audit_due
@@ -536,7 +537,7 @@ module MGQ_MpWorldCatchup
     comps = world ? world["comps"].to_a : []
     {
       "mode" => MGQ_MpWorldStory.mode ? MGQ_MpWorldStory.mode.to_s : nil, "own" => keys ? values(story_now) : nil, "told" => @world_told, "roster" => roster_entries,
-      "items" => item_counts, "worn" => worn_items, "unlocks" => unlock_ids, "map" => $game_map ? $game_map.map_id : 0,
+      "items" => item_counts, "worn" => worn_items, "unlocks" => unlock_ids,
       "encounters" => !$game_system.encounter_disabled, "summary" => world, "sharing" => sharing.to_s, "starts" => comps.map { |id| [id, start_level(id)] },
       "log" => (log = MGQ_MpWorldStory.log_story) && keys ? values(log) : nil,
     }

@@ -2,6 +2,7 @@
 //  TeleportTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Stopped carrying the warp ban of the member's place along
 //      Paulinchen  2026-10-30: Created
 //
 //----------------------------------------------------------------
@@ -49,8 +50,8 @@ internal sealed class TeleportTopics : ITeleportHost
     public const string ForgetTopic = "tp.forget";
 
     /// <summary>
-    /// Takes where the player stands and answers the view, once a frame: {"map", "x", "y", "d",
-    /// "warp_ban" (1 or 0)} in; {"tpask" (the state's field), "doing" ({"text", "ends"}, the frame
+    /// Takes where the player stands and answers the view, once a frame: {"map", "x", "y", "d"}
+    /// in; {"tpask" (the state's field), "doing" ({"text", "ends"}, the frame
     /// it lapses at; nil), "own" (the own row's choices) and "members" ({seat => {"text", "refusal",
     /// "request", "allow", "call", "notice", "action"}}, the texts of a request nil while none
     /// reaches the player)} out, nil while it is the view answered last.
@@ -58,7 +59,7 @@ internal sealed class TeleportTopics : ITeleportHost
     public const string ViewTopic = "tp.view";
 
     /// <summary>
-    /// The event of a member letting the player come: {"name", "map", "x", "y", "d", "warp_ban"}.
+    /// The event of a member letting the player come: {"name", "map", "x", "y", "d"}.
     /// </summary>
     public const string AllowedEvent = "tp.allowed";
 
@@ -132,7 +133,6 @@ internal sealed class TeleportTopics : ITeleportHost
         { "x", place.X },
         { "y", place.Y },
         { "d", place.Direction },
-        { "warp_ban", place.WarpBan },
     });
 
     /// <inheritdoc />
@@ -141,10 +141,10 @@ internal sealed class TeleportTopics : ITeleportHost
     /// <summary>
     /// Reads a place as the scripts write it.
     /// </summary>
-    /// <param name="fields">{"map", "x", "y", "d", "warp_ban" (1 or 0)}.</param>
+    /// <param name="fields">{"map", "x", "y", "d"}.</param>
     /// <returns>The place.</returns>
     private static TeleportPlace PlaceOf(RubyHash fields) =>
-        new(fields["map"].AsLong(), fields["x"].AsLong(), fields["y"].AsLong(), fields["d"].AsLong(), fields["warp_ban"].AsLong() != 0);
+        new(fields["map"].AsLong(), fields["x"].AsLong(), fields["y"].AsLong(), fields["d"].AsLong());
 
     /// <summary>
     /// Runs the frame: the leader lets waiting members come, and the request runs out or goes with

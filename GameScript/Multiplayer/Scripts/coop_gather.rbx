@@ -2,6 +2,7 @@
 #  coop_gather.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Stopped carrying the warp ban along with a call, a follow or a teleport
 #      Paulinchen  2026-10-28: Kept the calls, the hold and the follow offers with their frames in the DLL
 #                            - Read a Raid World's tellers from the tellings the relay told of
 #      Paulinchen  2026-10-24: Took the warp and escape bans the teller's scene set on the map the player is on the way to
@@ -192,7 +193,6 @@ module MGQ_MpCoopGather
   # as when the world closes.
   def self.forget_story_place
     @story_place = nil
-    @story_warp_ban = nil
     MGQ_Multiplayer::Bridge.call(FORGET_OFFERS_TOPIC) unless @offers.empty?
     @offers = {}
     forget_taken_along
@@ -206,7 +206,7 @@ module MGQ_MpCoopGather
   # @return [Boolean] Whether it went out.
   def self.tell(seat, kind, fields = {})
     sent = MGQ_MpCoopEvents.tell(seat, kind, fields)
-    place = fields["map"] ? " (map #{fields['map']} #{fields['x']},#{fields['y']}#{fields['warp_ban'] == 1 ? ', warping banned' : ''})" : ""
+    place = fields["map"] ? " (map #{fields['map']} #{fields['x']},#{fields['y']})" : ""
     log("sent #{kind} to #{seat < 0 ? 'the party' : "seat #{seat}"}#{place}#{sent ? '' : ', which failed'}")
     sent
   end
@@ -216,7 +216,7 @@ module MGQ_MpCoopGather
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] Who sent it.
   # @param message [Hash] The message's fields.
   def self.take(peer, message)
-    log("got #{message['pevent']} from #{MGQ_MpOverworldSync.who(peer)}#{message['map'] ? " (map #{message['map']} #{message['x']},#{message['y']}#{message['warp_ban'] == '1' ? ', warping banned' : ''})" : ''}")
+    log("got #{message['pevent']} from #{MGQ_MpOverworldSync.who(peer)}#{message['map'] ? " (map #{message['map']} #{message['x']},#{message['y']})" : ''}")
     return take_raid(peer, message) if MGQ_MpCoop::Scope.raid?
     return log("ignored #{message['pevent']}: #{MGQ_MpOverworldSync.who(peer)} does not lead the party") unless MGQ_MpCoop.party_leader.equal?(peer)
 
@@ -226,8 +226,8 @@ module MGQ_MpCoopGather
 
     place = [message["map"].to_i, message["x"].to_i, message["y"].to_i, message["d"].to_i]
     case message["pevent"]
-    when "gather" then called(peer, place, message["warp_ban"] == "1")
-    when "follow" then followed(peer, place, message["warp_ban"] == "1")
+    when "gather" then called(peer, place)
+    when "follow" then followed(peer, place)
     end
   rescue => e
     log("taking #{message['pevent']} failed: #{e.class}: #{e.message}")
@@ -244,9 +244,8 @@ module MGQ_MpCoopGather
     return log("ignored #{message['pevent']}: a Raid World gathers nobody") unless message["pevent"] == "follow"
 
     place = [message["map"].to_i, message["x"].to_i, message["y"].to_i, message["d"].to_i]
-    warp_ban = message["warp_ban"] == "1"
     reason = follow_refusal(peer, message)
-    reason ? offer_follow(peer, place, warp_ban, reason) : followed(peer, place, warp_ban)
+    reason ? offer_follow(peer, place, reason) : followed(peer, place)
   end
 
   # Tells why the player does not follow a Raid World's teller at once where their story moved
@@ -278,12 +277,11 @@ module MGQ_MpCoopGather
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The teller.
   # @param place [Array<Integer>] Where the teller stands now: map, x, y and direction.
-  # @param warp_ban [Boolean] Whether warping is banned there.
   # @param reason [String] Why the player does not follow at once, for the log.
-  def self.offer_follow(peer, place, warp_ban, reason)
+  def self.offer_follow(peer, place, reason)
     id = peer.state["id"].to_s
     @offers[id] = peer.state["name"].to_s
-    MGQ_Multiplayer::Bridge.call(OFFER_TOPIC, "id" => id, "name" => @offers[id], "place" => place, "warp_ban" => warp_ban)
+    MGQ_Multiplayer::Bridge.call(OFFER_TOPIC, "id" => id, "name" => @offers[id], "place" => place)
     log("offered to follow #{MGQ_MpOverworldSync.who(peer)} to map #{place[0]} #{place[1]},#{place[2]} in the notification box: #{reason}")
   end
 
@@ -291,13 +289,13 @@ module MGQ_MpCoopGather
   # the player came to its map or it stood a minute.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The teller.
-  # @return [Hash, nil] The offer: :name, :place, :warp_ban and :since; nil for none.
+  # @return [Hash, nil] The offer: :name, :place and :since; nil for none.
   def self.follow_offer(peer)
     id = peer.state["id"].to_s
     return nil unless @offers.key?(id)
 
     answer = MGQ_Multiplayer::Bridge.call(FOLLOW_OFFER_TOPIC, "id" => id, "telling" => MGQ_MpCoop::Scope.telling?(peer), "map" => $game_map.map_id)
-    return { :name => answer["name"], :place => answer["place"], :warp_ban => answer["warp_ban"], :since => answer["since"] } if answer && answer["name"]
+    return { :name => answer["name"], :place => answer["place"], :since => answer["since"] } if answer && answer["name"]
 
     name = @offers.delete(id)
     log("dropped the offer to follow #{name}: #{answer ? answer['dropped'] : 'the DLL does not keep it'}")
@@ -326,7 +324,7 @@ module MGQ_MpCoopGather
     @offers.delete(id)
     return log("did not follow #{MGQ_MpOverworldSync.who(peer)}: the offer no longer stands") unless offer && offer["name"]
 
-    followed(peer, offer["place"], offer["warp_ban"])
+    followed(peer, offer["place"])
   rescue => e
     log("following a teller failed: #{e.class}: #{e.message}")
   end
@@ -482,12 +480,10 @@ module MGQ_MpCoopGather
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The leader.
   # @param place [Array<Integer>] Where the leader stands: map, x, y and direction.
-  # @param warp_ban [Boolean] Whether warping is banned where the leader stands.
-  def self.called(peer, place, warp_ban = false)
+  def self.called(peer, place)
     near = near_place?(own_place, place)
     pvp = MGQ_MpCoopEvents.pvp_running?
-    answer = MGQ_Multiplayer::Bridge.call(CALLED_TOPIC, "name" => peer.state["name"].to_s, "id" => peer.state["id"].to_s, "place" => place, "warp_ban" => warp_ban ? true : false,
-                                          "near" => near, "pvp" => pvp)
+    answer = MGQ_Multiplayer::Bridge.call(CALLED_TOPIC, "name" => peer.state["name"].to_s, "id" => peer.state["id"].to_s, "place" => place, "near" => near, "pvp" => pvp)
     wake
     return log("stays: the player stands near #{peer.state['name']} already") if near
     return log_once([:duel_call, Graphics.frame_count / 1800], "a call came during a PvP battle, which keeps it out") if pvp
@@ -597,11 +593,9 @@ module MGQ_MpCoopGather
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The leader.
   # @param place [Array<Integer>] Where the leader stands now: map, x, y and direction.
-  # @param warp_ban [Boolean] Whether warping is banned there.
-  def self.followed(peer, place, warp_ban)
+  def self.followed(peer, place)
     log("following #{peer.state['name']} to map #{place[0]} #{place[1]},#{place[2]} as soon as the player is free")
-    MGQ_Multiplayer::Bridge.call(FOLLOWED_TOPIC, "name" => peer.state["name"].to_s, "id" => peer.state["id"].to_s, "place" => place, "warp_ban" => warp_ban ? true : false,
-                                 "raid" => MGQ_MpCoop::Scope.raid?)
+    MGQ_Multiplayer::Bridge.call(FOLLOWED_TOPIC, "name" => peer.state["name"].to_s, "id" => peer.state["id"].to_s, "place" => place, "raid" => MGQ_MpCoop::Scope.raid?)
     wake
   end
 
@@ -648,31 +642,19 @@ module MGQ_MpCoopGather
     relay || @story_place
   end
 
-  # Tells whether warping is banned where a teleport to the story goes, known only where this game
-  # saw the story told.
-  #
-  # @param place [Array<Integer>] Where it goes, see story_endpoint.
-  # @return [Boolean, nil] Whether it is, nil while unknown.
-  def self.story_warp_ban(place)
-    @story_place && @story_place[0, 3] == place[0, 3] ? @story_warp_ban : nil
-  end
-
   # Notes where the story is told, by the player or by anyone else in the world, which a teleport
-  # to the story goes to, and whether warping is banned there. Called after the map's update, in a
-  # Raid World alone.
+  # to the story goes to. Called after the map's update, in a Raid World alone.
   def self.note_story_place
     return unless MGQ_MpCoop::Scope.raid?
 
     if MGQ_MpCoopEvents.story_playing?
       @story_place = [$game_map.map_id, $game_player.x, $game_player.y, $game_player.direction]
-      @story_warp_ban = warp_ban?
       return
     end
     teller = MGQ_MpOverworldSync::Peers.present.find { |peer| MGQ_MpCoop::Scope.telling?(peer) }
     return unless teller
 
     @story_place = [teller.state["map"].to_i, teller.state["x"].to_i, teller.state["y"].to_i, teller.state["d"].to_i]
-    @story_warp_ban = teller.state.key?("twb") ? teller.state["twb"] == "1" : nil
   rescue => e
     log_once(:story_place, "noting where the story is told failed: #{e.class}: #{e.message}")
   end
@@ -689,7 +671,7 @@ module MGQ_MpCoopGather
       return MGQ_MpOverworldSync.notice("You are at the story already.")
     end
 
-    come_to(STORY_NAME, place, story_warp_ban(place))
+    come_to(STORY_NAME, place)
     MGQ_MpOverworldSync.notice("Teleporting to #{STORY_NAME} . . .")
   rescue => e
     log("teleporting to the story failed: #{e.class}: #{e.message}")
@@ -700,10 +682,9 @@ module MGQ_MpCoopGather
   #
   # @param name [String] Whom or what the place is, for the line above the player's head.
   # @param place [Array<Integer>] The map, x, y and direction.
-  # @param warp_ban [Boolean, nil] Whether warping is banned there, nil when unknown, which keeps the player's.
-  def self.come_to(name, place, warp_ban)
+  def self.come_to(name, place)
     log("teleporting to #{name} on map #{place[0]} #{place[1]},#{place[2]} as soon as the player is free")
-    MGQ_Multiplayer::Bridge.call(COME_TO_TOPIC, "name" => name, "place" => place, "warp_ban" => warp_ban)
+    MGQ_Multiplayer::Bridge.call(COME_TO_TOPIC, "name" => name, "place" => place)
     wake
   end
 
@@ -775,13 +756,12 @@ module MGQ_MpCoopGather
 
   # The leader's call the player has yet to answer, forgotten once the calls stopped.
   #
-  # @return [Hash, nil] The call: :since, :name, :id, :place, :warp_ban, :follow and :asked; nil
-  #   for none.
+  # @return [Hash, nil] The call: :since, :name, :id, :place, :follow and :asked; nil for none.
   def self.pending_call
     call = state["pending"]
     return nil unless call
 
-    { :since => call["since"], :name => call["name"], :id => call["id"], :place => call["place"], :warp_ban => call["warp_ban"], :follow => call["follow"], :asked => call["asked"] }
+    { :since => call["since"], :name => call["name"], :id => call["id"], :place => call["place"], :follow => call["follow"], :asked => call["asked"] }
   end
 
   # Names what the player is doing for the line above their own head, if anything: as leader the
@@ -826,34 +806,15 @@ module MGQ_MpCoopGather
     false
   end
 
-  # Writes where the player stands, and whether warping is banned there.
+  # Writes where the player stands.
   #
-  # @return [Hash] "map", "x", "y", "d" and "warp_ban".
+  # @return [Hash] "map", "x", "y" and "d".
   def self.place_fields
-    { "map" => $game_map.map_id, "x" => $game_player.x, "y" => $game_player.y, "d" => $game_player.direction,
-      "warp_ban" => warp_ban? ? 1 : 0 }
-  end
-
-  # Reports whether warping, such as with a Harpy Feather, is banned where the player stands.
-  #
-  # @return [Boolean] Whether it is.
-  def self.warp_ban?
-    defined?(MGQ_MpStoryState) && $game_switches[MGQ_MpStoryState::WARP_BAN] ? true : false
-  end
-
-  # Takes over the warp ban of the place the leader's story scene brought the player to.
-  #
-  # The game sets the ban in the events a player walks through to enter or leave a cave, which a
-  # player brought over never touches, so the ban of the place they left would stay.
-  #
-  # @param banned [Boolean, nil] Whether warping is banned where the leader stands, nil when unknown,
-  #   which keeps the player's.
-  def self.take_warp_ban(banned)
-    $game_switches[MGQ_MpStoryState::WARP_BAN] = banned if defined?(MGQ_MpStoryState) && !banned.nil?
+    { "map" => $game_map.map_id, "x" => $game_player.x, "y" => $game_player.y, "d" => $game_player.direction }
   end
 
   # Keeps a ban of the place the teller's scene set on the map the player is on the way to, which
-  # the player takes on arriving, over the warp ban the call brought.
+  # the player takes on arriving.
   #
   # @param id [Integer] The ban's switch, see MGQ_MpStoryState::PLACE_BANS.
   # @param banned [Boolean] Whether it is on.
@@ -895,7 +856,6 @@ module MGQ_MpCoopGather
       $game_player.moveto(x, y)
       $game_player.set_direction(direction) if direction > 0
     end
-    take_warp_ban(taken["warp_ban"])
     taken["bans"].each { |id, banned| $game_switches[id] = banned }
     show_followers if elsewhere
   rescue => e

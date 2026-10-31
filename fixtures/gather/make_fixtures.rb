@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-31: Read the old scripts from a commit that feat/refactor holds
+#                            - Called the script without a warp ban
 #      Paulinchen  2026-10-28: Created
 #
 #----------------------------------------------------------------
@@ -108,7 +109,7 @@ module MGQ_MpCoopEvents
   def self.tell(seat, kind, fields = {}); $sent << [seat, kind, fields]; true; end
   def self.tell_each(peers, kind, fields = {}); $sent << [peers.map { |peer| peer.seat }, kind, fields]; true; end
 end
-# The story's state: the warp ban's switch.
+# The story's state: the warp ban's switch, which the script of that commit reads.
 module MGQ_MpStoryState; WARP_BAN = 100; end
 
 script = ARGV[0] || abort("Name the coop_gather.rbx of commit d7bc93af, see the header.")
@@ -179,9 +180,9 @@ def run_step(step)
   $sent.clear
   answer = {}
   case step["op"]
-  when "called" then GATHER.called(PEERS[step["by"]], step["place"], step["warp_ban"] == true)
-  when "come_to" then GATHER.come_to(step["name"], step["place"], step["warp_ban"])
-  when "followed" then GATHER.followed(PEERS[step["by"]], step["place"], step["warp_ban"] == true)
+  when "called" then GATHER.called(PEERS[step["by"]], step["place"])
+  when "come_to" then GATHER.come_to(step["name"], step["place"], nil)
+  when "followed" then GATHER.followed(PEERS[step["by"]], step["place"], false)
   when "raid" then $raid = step["raid"]
   when "map" then $game_map.map_id = step["map"]
   when "pvp" then $pvp = step["pvp"]

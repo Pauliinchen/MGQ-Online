@@ -2,7 +2,8 @@
 //  CatchupEngine.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-31: Left the chest flags out of what a snapshot reads
+//      Paulinchen  2026-10-31: Left the warp ban out of what a snapshot reads
+//                            - Left the chest flags out of what a snapshot reads
 //      Paulinchen  2026-10-28: Read the switch of a world chest the game shuts by a switch
 //                            - Created
 //
@@ -27,10 +28,10 @@ namespace MGQOnline.Game.Catchup;
 public sealed class CatchupEngine
 {
     /// <summary>
-    /// The switches the engine reads besides the rows' marks: the sides, the warp ban and the routes'
-    /// clear switches.
+    /// The switches the engine reads besides the rows' marks: the sides and the routes' clear
+    /// switches.
     /// </summary>
-    private static readonly int[] EngineSwitches = [StoryValues.AliceChosen, StoryValues.IliasChosen, CatchupLook.WarpBan, .. StoryValues.ClearSwitches];
+    private static readonly int[] EngineSwitches = [StoryValues.AliceChosen, StoryValues.IliasChosen, .. StoryValues.ClearSwitches];
 
     /// <summary>
     /// The variables the engine reads besides the rows' marks: the main story, the playthrough and the

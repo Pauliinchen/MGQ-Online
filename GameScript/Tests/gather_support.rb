@@ -2,6 +2,7 @@
 #  gather_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Took calls, follows and offers without a warp ban
 #      Paulinchen  2026-10-28: Created
 #
 #----------------------------------------------------------------
@@ -46,8 +47,8 @@ class GatherStandIn
   def answer(topic, request, frame)
     case topic
     when "gather.called" then { "notice" => called(request, frame) }
-    when "gather.come_to" then @call = { :name => request["name"], :since => frame - GATHER_FRAMES, :place => request["place"], :warp_ban => request["warp_ban"], :called => frame, :asked => true, :lapse => ASKED_LAPSE_FRAMES, :bans => {} }; nil
-    when "gather.followed" then @call = { :name => request["name"], :id => request["id"], :since => frame - GATHER_FRAMES, :place => request["place"], :warp_ban => request["warp_ban"], :called => frame, :follow => true, :lapse => request["raid"] ? ASKED_LAPSE_FRAMES : nil, :bans => {} }; nil
+    when "gather.come_to" then @call = { :name => request["name"], :since => frame - GATHER_FRAMES, :place => request["place"], :called => frame, :asked => true, :lapse => ASKED_LAPSE_FRAMES, :bans => {} }; nil
+    when "gather.followed" then @call = { :name => request["name"], :id => request["id"], :since => frame - GATHER_FRAMES, :place => request["place"], :called => frame, :follow => true, :lapse => request["raid"] ? ASKED_LAPSE_FRAMES : nil, :bans => {} }; nil
     when "gather.ban" then keep_ban(request)
     when "gather.frame" then state(request, frame)
     when "gather.take" then take(request["raid"], frame)
@@ -56,7 +57,7 @@ class GatherStandIn
     when "gather.hold" then @hold = { :since => frame, :called => frame }; nil
     when "gather.drop_hold" then held = !@hold.nil?; @hold = nil; held
     when "gather.holding" then holding(request, frame)
-    when "gather.offer" then @offers[request["id"]] = { :name => request["name"], :place => request["place"], :warp_ban => request["warp_ban"], :since => frame, :seen => false }; nil
+    when "gather.offer" then @offers[request["id"]] = { :name => request["name"], :place => request["place"], :since => frame, :seen => false }; nil
     when "gather.follow_offer" then follow_offer(request, frame, false)
     when "gather.accept" then follow_offer(request, frame, true)
     when "gather.decline" then offer = @offers.delete(request["id"]); offer && offer[:name]
@@ -95,7 +96,7 @@ class GatherStandIn
       @call.delete(:lapse)
       @call[:name] = request["name"]
     end
-    @call.merge!(:id => request["id"], :place => request["place"], :warp_ban => request["warp_ban"], :called => frame)
+    @call.merge!(:id => request["id"], :place => request["place"], :called => frame)
     notice
   end
 
@@ -168,7 +169,7 @@ class GatherStandIn
     call, notice = pending(frame)
     place = come(frame, request["settled"])
     { "coming" => coming?(frame),
-      "pending" => call && { "name" => call[:name], "id" => call[:id], "place" => call[:place], "since" => call[:since], "follow" => call[:follow] ? true : false, "asked" => call[:asked] ? true : false, "warp_ban" => call[:warp_ban] },
+      "pending" => call && { "name" => call[:name], "id" => call[:id], "place" => call[:place], "since" => call[:since], "follow" => call[:follow] ? true : false, "asked" => call[:asked] ? true : false },
       "notice" => notice, "come" => place, "waited" => !call.nil? && !within?(call[:since], GATHER_FRAMES, frame), "follow" => follow_taken(frame), "holding" => !@hold.nil?,
       "doing" => doing(request["leading"], request["missing"], frame), "idle" => @call.nil? && @hold.nil? && follow_taken(frame).nil? }
   end
@@ -205,7 +206,7 @@ class GatherStandIn
     @call = nil
     @taken = { :id => call[:id], :name => call[:name], :place => call[:place], :since => frame } if call[:follow] && raid && call[:id]
     { "name" => call[:name], "id" => call[:id], "place" => call[:place], "follow" => call[:follow] ? true : false, "asked" => call[:asked] ? true : false,
-      "warp_ban" => call[:warp_ban], "bans" => call[:bans].sort.map { |id, on| [id, on] } }
+      "bans" => call[:bans].sort.map { |id, on| [id, on] } }
   end
 
   # Tells whether the scene held still waits before a command.
@@ -252,7 +253,7 @@ class GatherStandIn
     @offers.delete(id) if dropped || accept
     return accept ? nil : { "dropped" => dropped } if dropped
 
-    { "name" => offer[:name], "place" => offer[:place], "warp_ban" => offer[:warp_ban], "since" => offer[:since] }
+    { "name" => offer[:name], "place" => offer[:place], "since" => offer[:since] }
   end
 end
 
@@ -276,13 +277,13 @@ def check_gather_scenario(scenario)
     notices = []
     sent = []
     holding = nil
-    follow = lambda { |id, place| stand_in.answer("gather.followed", { "name" => peers[id], "id" => id, "place" => place, "warp_ban" => false, "raid" => raid }, frame) }
+    follow = lambda { |id, place| stand_in.answer("gather.followed", { "name" => peers[id], "id" => id, "place" => place, "raid" => raid }, frame) }
     missing = lambda { members.map { |id| peers[id] } }
     case step["op"]
     when "called"
-      notice = stand_in.answer("gather.called", { "name" => peers[step["by"]], "id" => step["by"], "place" => step["place"], "warp_ban" => step["warp_ban"] == true, "near" => false, "pvp" => pvp }, frame)["notice"]
+      notice = stand_in.answer("gather.called", { "name" => peers[step["by"]], "id" => step["by"], "place" => step["place"], "near" => false, "pvp" => pvp }, frame)["notice"]
       notices << notice if notice
-    when "come_to" then stand_in.answer("gather.come_to", { "name" => step["name"], "place" => step["place"], "warp_ban" => step["warp_ban"] }, frame)
+    when "come_to" then stand_in.answer("gather.come_to", { "name" => step["name"], "place" => step["place"] }, frame)
     when "followed" then follow.call(step["by"], step["place"])
     when "raid" then raid = step["raid"]
     when "map" then map = step["map"]
@@ -307,7 +308,7 @@ def check_gather_scenario(scenario)
     when "offer"
       moves = step["moves"] != "0"
       if behind || !watching.include?(step["by"]) || !moves
-        stand_in.answer("gather.offer", { "id" => step["by"], "name" => peers[step["by"]], "place" => step["place"], "warp_ban" => false }, frame)
+        stand_in.answer("gather.offer", { "id" => step["by"], "name" => peers[step["by"]], "place" => step["place"] }, frame)
       else
         follow.call(step["by"], step["place"])
       end
@@ -315,7 +316,7 @@ def check_gather_scenario(scenario)
     when "telling" then telling = step["peers"]
     when "accept"
       offer = stand_in.answer("gather.accept", { "id" => step["by"], "telling" => telling.include?(step["by"]), "map" => map }, frame)
-      stand_in.answer("gather.followed", { "name" => offer["name"], "id" => step["by"], "place" => offer["place"], "warp_ban" => offer["warp_ban"], "raid" => raid }, frame) if offer
+      stand_in.answer("gather.followed", { "name" => offer["name"], "id" => step["by"], "place" => offer["place"], "raid" => raid }, frame) if offer
     when "decline" then stand_in.answer("gather.decline", { "id" => step["by"] }, frame)
     end
     state = stand_in.answer("gather.frame", { "settled" => true, "leading" => leading, "missing" => missing.call }, frame)

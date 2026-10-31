@@ -2,6 +2,7 @@
 //  GatherCalls.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Stopped carrying the warp ban along with a call, a follow or an offer
 //      Paulinchen  2026-10-28: Created
 //
 //----------------------------------------------------------------
@@ -36,9 +37,8 @@ public sealed record GatherCall(string Name, string? Id, GatherPlace Place, long
 /// A call the scripts take: the call and what the arrival applies.
 /// </summary>
 /// <param name="Call">The call.</param>
-/// <param name="WarpBan">Whether warping is banned where it brings the player, <see langword="null"/> when unknown, which keeps the player's.</param>
 /// <param name="Bans">The place's bans the teller's scene set on the map it brings the player to, by switch.</param>
-public sealed record GatherTaken(GatherCall Call, bool? WarpBan, IReadOnlyDictionary<int, bool> Bans);
+public sealed record GatherTaken(GatherCall Call, IReadOnlyDictionary<int, bool> Bans);
 
 /// <summary>
 /// A follow the player takes: the teller's story moves them, and names its teller while they are
@@ -70,9 +70,8 @@ public sealed record GatherDoing(string Text, long? FramesLeft);
 /// </summary>
 /// <param name="Name">The teller's name.</param>
 /// <param name="Place">Where the teller stands now.</param>
-/// <param name="WarpBan">Whether warping is banned there.</param>
 /// <param name="Since">The frame it was made at.</param>
-public sealed record GatherOffer(string Name, GatherPlace Place, bool WarpBan, long Since);
+public sealed record GatherOffer(string Name, GatherPlace Place, long Since);
 
 /// <summary>
 /// The calls of a story as coop_gather.rbx kept them, by frame: a leader's call to a story scene,
@@ -150,11 +149,6 @@ public sealed class GatherCalls
     /// </summary>
     public bool HoldingStory => hold is not null;
 
-    /// <summary>
-    /// Gets whether warping is banned where the call the player has yet to answer brings them,
-    /// <see langword="null"/> when unknown or without a call.
-    /// </summary>
-    public bool? PendingWarpBan => call?.WarpBan;
 
     /// <summary>
     /// Takes the leader's call to their story scene: the player comes over in <see cref="GatherFrames"/>,
@@ -164,12 +158,11 @@ public sealed class GatherCalls
     /// <param name="name">The leader's name.</param>
     /// <param name="id">The leader's player id.</param>
     /// <param name="place">Where the leader stands.</param>
-    /// <param name="warpBan">Whether warping is banned there.</param>
     /// <param name="near">Whether the player stands near the leader already.</param>
     /// <param name="pvp">Whether a PvP battle runs.</param>
     /// <param name="frame">The frame.</param>
     /// <returns>What the player reads, <see langword="null"/> for nothing.</returns>
-    public string? Called(string name, string id, GatherPlace place, bool warpBan, bool near, bool pvp, long frame)
+    public string? Called(string name, string id, GatherPlace place, bool near, bool pvp, long frame)
     {
         if (near)
         {
@@ -197,7 +190,6 @@ public sealed class GatherCalls
 
         call.Id = id;
         call.Place = place;
-        call.WarpBan = warpBan;
         call.CalledAt = frame;
         return notice;
     }
@@ -208,10 +200,9 @@ public sealed class GatherCalls
     /// </summary>
     /// <param name="name">Whom or what the place is.</param>
     /// <param name="place">The place.</param>
-    /// <param name="warpBan">Whether warping is banned there, <see langword="null"/> when unknown.</param>
     /// <param name="frame">The frame.</param>
-    public void ComeTo(string name, GatherPlace place, bool? warpBan, long frame) =>
-        call = new Call(name, frame - GatherFrames) { Place = place, WarpBan = warpBan, CalledAt = frame, Asked = true, Lapse = AskedLapseFrames };
+    public void ComeTo(string name, GatherPlace place, long frame) =>
+        call = new Call(name, frame - GatherFrames) { Place = place, CalledAt = frame, Asked = true, Lapse = AskedLapseFrames };
 
     /// <summary>
     /// Takes a teller's call to follow them, whom their story moved elsewhere: the player comes at
@@ -220,11 +211,10 @@ public sealed class GatherCalls
     /// <param name="name">The teller's name.</param>
     /// <param name="id">The teller's player id.</param>
     /// <param name="place">Where the teller stands now.</param>
-    /// <param name="warpBan">Whether warping is banned there.</param>
     /// <param name="raid">Whether a Raid World is open.</param>
     /// <param name="frame">The frame.</param>
-    public void Followed(string name, string id, GatherPlace place, bool warpBan, bool raid, long frame) =>
-        call = new Call(name, frame - GatherFrames) { Id = id, Place = place, WarpBan = warpBan, CalledAt = frame, Follow = true, Lapse = raid ? AskedLapseFrames : null };
+    public void Followed(string name, string id, GatherPlace place, bool raid, long frame) =>
+        call = new Call(name, frame - GatherFrames) { Id = id, Place = place, CalledAt = frame, Follow = true, Lapse = raid ? AskedLapseFrames : null };
 
     /// <summary>
     /// Keeps a ban of the place the teller's scene set on the map the player is on the way to, which
@@ -319,7 +309,7 @@ public sealed class GatherCalls
             taken = (new GatherFollow(id, found.Name, found.Place), frame);
         }
 
-        return new GatherTaken(found.Read(), found.WarpBan, new Dictionary<int, bool>(found.Bans));
+        return new GatherTaken(found.Read(), new Dictionary<int, bool>(found.Bans));
     }
 
     /// <summary>
@@ -457,9 +447,8 @@ public sealed class GatherCalls
     /// <param name="id">The teller's player id.</param>
     /// <param name="name">The teller's name.</param>
     /// <param name="place">Where the teller stands now.</param>
-    /// <param name="warpBan">Whether warping is banned there.</param>
     /// <param name="frame">The frame.</param>
-    public void OfferFollow(string id, string name, GatherPlace place, bool warpBan, long frame) => offers[id] = new Offer(name, place, warpBan, frame);
+    public void OfferFollow(string id, string name, GatherPlace place, long frame) => offers[id] = new Offer(name, place, frame);
 
     /// <summary>
     /// Finds the standing offer to follow a teller, dropping it once a telling seen ended, the player
@@ -579,10 +568,6 @@ public sealed class GatherCalls
         /// </summary>
         public GatherPlace Place { get; set; }
 
-        /// <summary>
-        /// Gets or sets whether warping is banned there.
-        /// </summary>
-        public bool? WarpBan { get; set; }
 
         /// <summary>
         /// Gets or sets the frame the player was last called at.
@@ -626,9 +611,8 @@ public sealed class GatherCalls
     /// </summary>
     /// <param name="name">The teller's name.</param>
     /// <param name="place">Where the teller stands now.</param>
-    /// <param name="warpBan">Whether warping is banned there.</param>
     /// <param name="since">The frame it was made at.</param>
-    private sealed class Offer(string name, GatherPlace place, bool warpBan, long since)
+    private sealed class Offer(string name, GatherPlace place, long since)
     {
         /// <summary>
         /// Gets the teller's name.
@@ -640,10 +624,6 @@ public sealed class GatherCalls
         /// </summary>
         public GatherPlace Place { get; } = place;
 
-        /// <summary>
-        /// Gets whether warping is banned there.
-        /// </summary>
-        public bool WarpBan { get; } = warpBan;
 
         /// <summary>
         /// Gets the frame it was made at.
@@ -659,6 +639,6 @@ public sealed class GatherCalls
         /// Reads the offer as the scripts read it.
         /// </summary>
         /// <returns>The offer.</returns>
-        public GatherOffer Read() => new(Name, Place, WarpBan, Since);
+        public GatherOffer Read() => new(Name, Place, Since);
     }
 }

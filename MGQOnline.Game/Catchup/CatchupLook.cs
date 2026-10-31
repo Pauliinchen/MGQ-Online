@@ -2,7 +2,8 @@
 //  CatchupLook.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-31: Played the recruit page of a companion the player missed once a route finished
+//      Paulinchen  2026-10-31: Stopped lifting the warp ban on the maps where warping is free, since a world never bans warping
+//                            - Played the recruit page of a companion the player missed once a route finished
 //                            - Gave from the rows only the history the world's story was past where its log starts, which the world's track replays after
 //                            - Played a world chest and a Makina by level in the player's game instead of handing out their items
 //      Paulinchen  2026-10-28: Left the player's own values alone where the latest row lies in free order
@@ -33,7 +34,7 @@ namespace MGQOnline.Game.Catchup;
 /// load), "mode" ("world", "behind" or nil), "own", "told" and "before" (stories: "s" the switches
 /// on, "v" [id, value] each, "ss" the self switches on), "roster" ([id, persona, base level, cap]
 /// each), "items" (counts by "i", "w" or "a" and the id), "worn", "unlocks" (the items unlocking a
-/// job or race), "map", "encounters", "summary" (the world's summary),
+/// job or race), "encounters", "summary" (the world's summary),
 /// "sharing", "starts" ([companion, start level] each) and "start" (the story markers where the
 /// world's log starts, nil while nothing is logged).
 /// </remarks>
@@ -50,10 +51,6 @@ internal sealed class CatchupLook
     /// </summary>
     public const int Playthrough = 912;
 
-    /// <summary>
-    /// The switch that bans warping.
-    /// </summary>
-    public const int WarpBan = 100;
 
     /// <summary>
     /// The main story's step right before the Great Decision.
@@ -162,10 +159,6 @@ internal sealed class CatchupLook
     /// </summary>
     private readonly HashSet<int> _choiceVariables = [];
 
-    /// <summary>
-    /// The map the player stands on.
-    /// </summary>
-    private readonly long _map;
 
     /// <summary>
     /// Whether random encounters are on.
@@ -238,7 +231,7 @@ internal sealed class CatchupLook
         _choiceSwitches.UnionWith(choices.Switches);
         _choiceVariables.UnionWith(choices.Variables);
 
-        _map = request["map"].IsNil ? 0 : request["map"].AsLong();
+
         _encounters = request["encounters"] is RubyBool { Flag: true };
         _summary = request["summary"] as RubyHash;
         _sharing = request["sharing"].IsNil ? "off" : request["sharing"].AsText();
@@ -305,7 +298,6 @@ internal sealed class CatchupLook
             MissedCompanions();
             CheckFoundItems();
             CheckCounts();
-            LiftWarpBan();
         }
 
         answer["visiting"] = new RubyArray(_roster.Where(entry => Visiting(entry.Id, _own)).Select(entry => (RubyValue)entry.Id));
@@ -1366,20 +1358,6 @@ internal sealed class CatchupLook
         }
     }
 
-    /// <summary>
-    /// Lifts the warp ban left on where warping is free.
-    /// </summary>
-    private void LiftWarpBan()
-    {
-        if (!_own.Switch(WarpBan) || !_tables.WarpFreeMaps.Contains((int)_map))
-        {
-            return;
-        }
-
-        Act("switch", WarpBan, false);
-        _own.SetSwitch(WarpBan, false);
-        Log($"lifted the warp ban: map {_map} lets the player warp");
-    }
 
     /// <summary>
     /// Reports whether the player holds every orb before the story moved on to the step the orbs'

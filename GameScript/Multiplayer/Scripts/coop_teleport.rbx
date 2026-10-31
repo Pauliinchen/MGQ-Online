@@ -2,6 +2,7 @@
 #  coop_teleport.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Stopped carrying the warp ban of the member's place along
 #      Paulinchen  2026-10-30: Left the requests, their answers, their minute and their texts to the DLL, and read its view
 #      Paulinchen  2026-10-11: Named a waiting request in the line above the player's head
 #      Paulinchen  2026-10-10: Created
@@ -125,9 +126,9 @@ module MGQ_MpCoopTeleport
 
   # Brings the player to the member who let them come, as the DLL tells.
   #
-  # @param event [Hash] "name", "map", "x", "y", "d" and "warp_ban".
+  # @param event [Hash] "name", "map", "x", "y" and "d".
   def self.allowed(event)
-    MGQ_MpCoopGather.come_to(event["name"].to_s, [event["map"], event["x"], event["y"], event["d"]], event["warp_ban"] ? true : false)
+    MGQ_MpCoopGather.come_to(event["name"].to_s, [event["map"], event["x"], event["y"], event["d"]])
   rescue => e
     log("teleporting failed: #{e.class}: #{e.message}")
   end

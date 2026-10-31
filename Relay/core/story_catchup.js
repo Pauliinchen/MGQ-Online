@@ -2,6 +2,7 @@
 //  story_catchup.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Dropped the maps where warping is free, since a world never bans warping
 //      Paulinchen  2026-10-28: Took the stretches of the story in free order as a rule
 //                            - Kept the switches of prizes handed out once as a table
 //                            - Took a switch as the key of a world chest the game shuts by a switch
@@ -23,7 +24,7 @@
 // marks show that its event ran, false where they only show that the event is there to play.
 
 import { PART } from "./story.js";
-import { EVENT_FIELD, FLAG, ID, MAP, MAPPING_REFUSAL, MAPPING_TABLES, MARKS, SELF_SWITCH_FIELD, SITE_FIELD, STEP, VALUE, listOf, matching, nullable, oneOf, record, whole } from "./story_mapping.js";
+import { EVENT_FIELD, FLAG, ID, MAPPING_REFUSAL, MAPPING_TABLES, MARKS, SELF_SWITCH_FIELD, SITE_FIELD, STEP, VALUE, listOf, matching, nullable, oneOf, record, whole } from "./story_mapping.js";
 
 /**
  * Reads a part of the story as the relay names it.
@@ -270,13 +271,7 @@ export const CATCHUP_TABLES = Object.freeze({
     ordered: true,
     fields: Object.freeze({ vehicle: oneOf(["boat", "ship", "airship"]), ...PLACE, ran: FLAG }),
   }),
-  // WARP_FREE_MAPS: the maps where a warp ban (switch 100) left on while no event runs is left
-  // over.
-  warp_free_maps: Object.freeze({
-    store: "story_catchup_warp_free_maps",
-    key: (row) => String(row.map),
-    fields: Object.freeze({ map: MAP }),
-  }),
+
   // MAKINA: every Makina, the level a player reaches it at and the easiest place that gives it.
   makina: Object.freeze({
     store: "story_catchup_makina",

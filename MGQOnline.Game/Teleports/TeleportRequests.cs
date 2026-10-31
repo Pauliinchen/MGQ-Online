@@ -2,6 +2,7 @@
 //  TeleportRequests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Stopped carrying the warp ban of the member's place along
 //      Paulinchen  2026-10-30: Created
 //
 //----------------------------------------------------------------
@@ -15,15 +16,13 @@ using MGQOnline.Game.World;
 namespace MGQOnline.Game.Teleports;
 
 /// <summary>
-/// Where a player stands: the map, x, y, the direction they face and whether warping is banned
-/// there.
+/// Where a player stands: the map, x, y and the direction they face.
 /// </summary>
 /// <param name="Map">The map.</param>
 /// <param name="X">The x.</param>
 /// <param name="Y">The y.</param>
 /// <param name="Direction">The direction.</param>
-/// <param name="WarpBan">Whether warping, such as with a Harpy Feather, is banned there.</param>
-public readonly record struct TeleportPlace(long Map, long X, long Y, long Direction, bool WarpBan);
+public readonly record struct TeleportPlace(long Map, long X, long Y, long Direction);
 
 /// <summary>
 /// The player's standing request to teleport to a member.
@@ -391,7 +390,7 @@ public sealed class TeleportRequests
         switch (kind)
         {
             case "allow":
-                var place = new TeleportPlace(WorldFields.ToI(message["map"]), WorldFields.ToI(message["x"]), WorldFields.ToI(message["y"]), WorldFields.ToI(message["d"]), message["warp_ban"] == "1");
+                var place = new TeleportPlace(WorldFields.ToI(message["map"]), WorldFields.ToI(message["x"]), WorldFields.ToI(message["y"]), WorldFields.ToI(message["d"]));
                 Allowed(peer, ask, place);
                 break;
             case "deny":
@@ -414,7 +413,6 @@ public sealed class TeleportRequests
         fields.Set("x", place.X.ToString(CultureInfo.InvariantCulture));
         fields.Set("y", place.Y.ToString(CultureInfo.InvariantCulture));
         fields.Set("d", place.Direction.ToString(CultureInfo.InvariantCulture));
-        fields.Set("warp_ban", place.WarpBan ? "1" : "0");
     }
 
     /// <summary>

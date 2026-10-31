@@ -2,6 +2,7 @@
 //  GatherTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Stopped carrying the warp ban along with a call, a follow or an offer
 //      Paulinchen  2026-10-28: Created
 //
 //----------------------------------------------------------------
@@ -23,19 +24,18 @@ namespace MGQOnline.Game.Topics;
 public static class GatherTopics
 {
     /// <summary>
-    /// Takes a leader's call: <c>name</c>, <c>id</c>, <c>place</c>, <c>warp_ban</c>, <c>near</c>
-    /// and <c>pvp</c> in; <c>notice</c> (what the player reads, or nil) out.
+    /// Takes a leader's call: <c>name</c>, <c>id</c>, <c>place</c>, <c>near</c> and <c>pvp</c> in;
+    /// <c>notice</c> (what the player reads, or nil) out.
     /// </summary>
     public const string Called = "gather.called";
 
     /// <summary>
-    /// Takes a teleport the player asked for: <c>name</c>, <c>place</c> and <c>warp_ban</c> (nil
-    /// when unknown) in.
+    /// Takes a teleport the player asked for: <c>name</c> and <c>place</c> in.
     /// </summary>
     public const string ComeTo = "gather.come_to";
 
     /// <summary>
-    /// Takes a teller's follow: <c>name</c>, <c>id</c>, <c>place</c>, <c>warp_ban</c> and <c>raid</c> in.
+    /// Takes a teller's follow: <c>name</c>, <c>id</c>, <c>place</c> and <c>raid</c> in.
     /// </summary>
     public const string Followed = "gather.followed";
 
@@ -49,7 +49,7 @@ public static class GatherTopics
     /// Reads the call as the frame stands: <c>settled</c>, <c>leading</c> (whether the player leads
     /// the party) and <c>missing</c> (the names of those not near while the player holds a scene)
     /// in; <c>coming</c>, <c>pending</c> ({<c>name</c>, <c>id</c>, <c>place</c>, <c>since</c>,
-    /// <c>follow</c>, <c>asked</c>, <c>warp_ban</c>} or nil), <c>notice</c> (what the player reads
+    /// <c>follow</c>, <c>asked</c>} or nil), <c>notice</c> (what the player reads
     /// once the call lapsed, or nil), <c>come</c> (the place to come to, or nil), <c>waited</c>
     /// (whether the player waited the frames a call gives them), <c>follow</c> ({<c>id</c>,
     /// <c>name</c>, <c>place</c>} or nil), <c>holding</c>, <c>doing</c> ({<c>text</c>,
@@ -60,7 +60,7 @@ public static class GatherTopics
 
     /// <summary>
     /// Takes the call the player answers now: <c>raid</c> in; {<c>name</c>, <c>id</c>, <c>place</c>,
-    /// <c>follow</c>, <c>asked</c>, <c>warp_ban</c>, <c>bans</c> ([switch, on] each)} or nil out.
+    /// <c>follow</c>, <c>asked</c>, <c>bans</c> ([switch, on] each)} or nil out.
     /// </summary>
     public const string Take = "gather.take";
 
@@ -91,13 +91,13 @@ public static class GatherTopics
     public const string Holding = "gather.holding";
 
     /// <summary>
-    /// Offers a follow: <c>id</c>, <c>name</c>, <c>place</c> and <c>warp_ban</c> in.
+    /// Offers a follow: <c>id</c>, <c>name</c> and <c>place</c> in.
     /// </summary>
     public const string Offer = "gather.offer";
 
     /// <summary>
     /// Finds a standing offer: <c>id</c>, <c>telling</c> and <c>map</c> in; {<c>name</c>,
-    /// <c>place</c>, <c>warp_ban</c>, <c>since</c>} while it stands, {<c>dropped</c>} once it
+    /// <c>place</c>, <c>since</c>} while it stands, {<c>dropped</c>} once it
     /// ended, nil for none out.
     /// </summary>
     public const string FollowOffer = "gather.follow_offer";
@@ -134,13 +134,13 @@ public static class GatherTopics
         context.Register(ComeTo, (host, request) =>
         {
             RubyHash fields = request.AsHash();
-            calls.ComeTo(fields["name"].AsText(), PlaceOf(fields["place"]), fields["warp_ban"].IsNil ? null : fields["warp_ban"].AsBool(), host.Frame);
+            calls.ComeTo(fields["name"].AsText(), PlaceOf(fields["place"]), host.Frame);
             return null;
         });
         context.Register(Followed, (host, request) =>
         {
             RubyHash fields = request.AsHash();
-            calls.Followed(fields["name"].AsText(), fields["id"].AsText(), PlaceOf(fields["place"]), fields["warp_ban"].AsBool(), fields["raid"].AsBool(), host.Frame);
+            calls.Followed(fields["name"].AsText(), fields["id"].AsText(), PlaceOf(fields["place"]), fields["raid"].AsBool(), host.Frame);
             return null;
         });
         context.Register(Ban, (_, request) =>
@@ -166,7 +166,7 @@ public static class GatherTopics
         context.Register(Offer, (host, request) =>
         {
             RubyHash fields = request.AsHash();
-            calls.OfferFollow(fields["id"].AsText(), fields["name"].AsText(), PlaceOf(fields["place"]), fields["warp_ban"].AsBool(), host.Frame);
+            calls.OfferFollow(fields["id"].AsText(), fields["name"].AsText(), PlaceOf(fields["place"]), host.Frame);
             return null;
         });
         context.Register(FollowOffer, (host, request) => FollowOfferOf(calls, request.AsHash(), host.Frame, false));
@@ -193,7 +193,7 @@ public static class GatherTopics
     /// <returns>The notice, or nil.</returns>
     private static RubyHash CalledOf(GatherCalls calls, RubyHash fields, long frame)
     {
-        string? notice = calls.Called(fields["name"].AsText(), fields["id"].AsText(), PlaceOf(fields["place"]), fields["warp_ban"].AsBool(), fields["near"].AsBool(), fields["pvp"].AsBool(), frame);
+        string? notice = calls.Called(fields["name"].AsText(), fields["id"].AsText(), PlaceOf(fields["place"]), fields["near"].AsBool(), fields["pvp"].AsBool(), frame);
         return new RubyHash { { "notice", notice is null ? RubyNil.Value : notice } };
     }
 
@@ -215,7 +215,7 @@ public static class GatherTopics
             { "pending", pending is null ? RubyNil.Value : new RubyHash
                 {
                     { "name", pending.Name }, { "id", pending.Id is null ? RubyNil.Value : pending.Id }, { "place", PlaceNode(pending.Place) }, { "since", pending.Since },
-                    { "follow", pending.Follow }, { "asked", pending.Asked }, { "warp_ban", calls.PendingWarpBan is { } ban ? ban : RubyNil.Value },
+                    { "follow", pending.Follow }, { "asked", pending.Asked },
                 } },
             { "notice", notice is null ? RubyNil.Value : notice },
             { "come", calls.Come(frame, fields["settled"].AsBool()) is { } place ? PlaceNode(place) : RubyNil.Value },
@@ -244,7 +244,7 @@ public static class GatherTopics
         return new RubyHash
         {
             { "name", taken.Call.Name }, { "id", taken.Call.Id is null ? RubyNil.Value : taken.Call.Id }, { "place", PlaceNode(taken.Call.Place) },
-            { "follow", taken.Call.Follow }, { "asked", taken.Call.Asked }, { "warp_ban", taken.WarpBan is { } ban ? ban : RubyNil.Value },
+            { "follow", taken.Call.Follow }, { "asked", taken.Call.Asked },
             { "bans", new RubyArray(taken.Bans.OrderBy(pair => pair.Key).Select(pair => (RubyValue)new RubyArray { pair.Key, pair.Value })) },
         };
     }
@@ -282,7 +282,7 @@ public static class GatherTopics
         GatherOffer? offer = accept ? calls.AcceptFollow(id, telling, map, frame) : calls.FollowOffer(id, telling, map, frame, out dropped);
         if (offer is not null)
         {
-            return new RubyHash { { "name", offer.Name }, { "place", PlaceNode(offer.Place) }, { "warp_ban", offer.WarpBan }, { "since", offer.Since } };
+            return new RubyHash { { "name", offer.Name }, { "place", PlaceNode(offer.Place) }, { "since", offer.Since } };
         }
 
         return dropped is null ? RubyNil.Value : new RubyHash { { "dropped", dropped } };

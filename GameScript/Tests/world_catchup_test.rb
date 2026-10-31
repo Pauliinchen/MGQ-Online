@@ -2,7 +2,8 @@
 #  world_catchup_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-31: Checked that a missed companion's recruit page is played once a route finished
+#      Paulinchen  2026-10-31: Dropped the warp ban's lift on the maps where warping is free
+#                            - Checked that a missed companion's recruit page is played once a route finished
 #                            - Expected the plainer texts the player reads
 #                            - Checked that the rows give only the history before the world's log
 #                            - Checked that a world chest and a Makina by level are played in the player's game
@@ -590,22 +591,22 @@ check("a key item one event gives and takes back stays away, and the others come
       [$game_party.items[556], $game_party.items[505], $logs.grep(/failed/)], [0, 1, []])
 
 # The catch-up looks at everything on entering and on a level up: the player's own values the
-# story sets, the warp ban, the story's skills and its companions.
+# story sets, the story's skills and its companions.
 setting = DATA::Setting
 tables(:SETTINGS => [setting.new(:encounters, 0, false, "map:545:1:1", "1", 0, nil, [[:v, 1001, 0]], true),
                      setting.new(:v, 1002, 1, "map:545:1:1", "1", 0, nil, [[:v, 1001, 0]], true),
                      setting.new(:encounters, 0, true, "map:6:30:2", "1", 7, nil, [[:v, 1001, 7]], true),
                      setting.new(:v, 1002, 2, "map:6:30:2", "1", 7, nil, [[:v, 1001, 7]], true)],
-       :WARP_FREE_MAPS => [3],
+
        :REWARDS => [reward.new(:skill, 930, 1, "map:6:30:2", "1", 7, nil, [[:v, 1001, 7]], true)],
        :JOINS => [join.new(77, 77, "map:6:30:2", "1", 7, nil, [[:v, 1001, 7]], 1, :start, 1, true)])
-new_game({ 1001 => 9, 1002 => 1 }, [100], 40)
+new_game({ 1001 => 9, 1002 => 1 }, [], 40)
 $game_system.encounter_disabled = true
 frames(1)
 relay({ "rev" => 25, "wrev" => 25, "p" => 9, "part" => "1" }, packed({ 1001 => 9 }))
 frames(40)
-check("on entering, the encounters move on from an earlier step's to the latest step's, the return point stays away from its event's map, the warp ban lifts where warping is free, and Luka learns the skill he lacks",
-      [$game_system.encounter_disabled, $game_variables[1002], $game_switches[100], $game_actors[1].instance_variable_get(:@skills).include?(930)], [false, 1, false, true])
+check("on entering, the encounters move on from an earlier step's to the latest step's, the return point stays away from its event's map, and Luka learns the skill he lacks",
+      [$game_system.encounter_disabled, $game_variables[1002], $game_actors[1].instance_variable_get(:@skills).include?(930)], [false, 1, true])
 check("and a story companion missing from the roster joins at their gate", $game_party.all_members.map(&:id).include?(77), true)
 $game_party.remove_actor(77)
 $game_variables[1002] = 9
@@ -615,12 +616,11 @@ encounter_page = Struct.new(:list)
 # Stands in for a map event whose page that applies now is the one it holds.
 map_event = Struct.new(:proper) { def find_proper_page; proper; end }
 $game_map.events[1] = map_event.new(encounter_page.new([RPG::EventCommand.new(136, 0, [0])]))
-$game_switches[100] = true
 $game_map.map_id = 4
 MGQ_MpWorldCatchup.level_up
 frames(40)
-check("a level up looks again: a value of the player's own making stays, the encounters stay with a map that sets them, a warp ban off the free maps stays",
-      [$game_variables[1002], $game_system.encounter_disabled, $game_switches[100]], [9, true, true])
+check("a level up looks again: a value of the player's own making stays, and the encounters stay with a map that sets them",
+      [$game_variables[1002], $game_system.encounter_disabled], [9, true])
 check("and one gone from the roster joins again", $game_party.all_members.map(&:id).include?(77), true)
 [[nil, "no page applies now"], [encounter_page.new([RPG::EventCommand.new(136, 0, [1])]), "the page that applies now turns them on too"],
  [encounter_page.new([RPG::EventCommand.new(101, 0, [])]), "the page that applies now leaves them alone, as an opening's page of an earlier step"]].each do |page, why|

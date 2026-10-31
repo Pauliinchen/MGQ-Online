@@ -2,6 +2,7 @@
 #  generated_tables.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Dropped the maps where warping is free
 #      Paulinchen  2026-10-28: Created
 #
 #----------------------------------------------------------------
@@ -101,7 +102,7 @@ module GeneratedCatchupTables
   end
   SETTINGS = rows("settings").map { |row| Setting.new(SETTING_KINDS.fetch(row["kind"]), row["id"], row["value"], *place(row), row["ran"]) }
   VEHICLES = rows("vehicles").map { |row| Vehicle.new(VEHICLE_NAMES.index(row["vehicle"]), *place(row), row["ran"]) }
-  WARP_FREE_MAPS = rows("warp_free_maps").map { |row| row["map"] }
+
   MAKINA = rows("makina").map { |row| Makina.new(row["item"], row["level"], row["site"]) }
   PRIZE_VARIABLES = rows("prize_variables").map { |row| row["variable"] }
 end

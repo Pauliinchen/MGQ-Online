@@ -2,7 +2,8 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-31: Checked that the leader's story sends no gift, recruit, skill or departure message, and that a member behind catches up once with the history before the log, by the frozen rows and derived entries
+#      Paulinchen  2026-10-31: Dropped the warp ban a call, a teleport and a telling carried
+#                            - Checked that the leader's story sends no gift, recruit, skill or departure message, and that a member behind catches up once with the history before the log, by the frozen rows and derived entries
 #                            - Checked that the leader's runs of the story reach every member who follows it, in the stream of the leader's story
 #                            - Checked that catching up asks the member the choices up to where they followed, and leaves later ones to the replay
 #                            - Checked that a member's writes of the leader's story reach the leader as requests, which come back by value as the leader keeps them
@@ -780,8 +781,7 @@ check("a member about to come over meets no random encounter while steps are lef
 $game_player.encounter_count = 0
 check("nor once they ran out, which draws new steps", [$game_player.encounter, $game_player.encounter_count], [false, 30])
 $frame_count = 150
-$game_switches[MGQ_MpStoryState::WARP_BAN] = true
-MGQ_MpCoopEvents.take(leader, { "pevent" => "gather", "party" => "p1", "map" => "8", "x" => "9", "y" => "3", "d" => "6", "warp_ban" => "0" })
+MGQ_MpCoopEvents.take(leader, { "pevent" => "gather", "party" => "p1", "map" => "8", "x" => "9", "y" => "3", "d" => "6" })
 check("calls again do not start the time anew", MGQ_MpCoopGather.own_doing, ["Joining Leader", 2.5])
 $frame_count = 300
 SceneManager.scene = Scene_Battle.new
@@ -794,9 +794,6 @@ check("not while the screen is still dark from the battle", $game_player.reserve
 $brightness = nil
 $game_map.update
 check("then they are brought to the leader's map", $game_player.reserved, [8, 9, 3, 6])
-check("where warping is allowed again, though they never walked out of the cave they were in", $game_switches[MGQ_MpStoryState::WARP_BAN], false)
-check("a leader tells whether warping is banned where they stand", MGQ_MpCoopGather.place_fields["warp_ban"], 0)
-check("the warp ban is each player's own, not the leader's story", MGQ_MpStoryState.personal_switch?(MGQ_MpStoryState::WARP_BAN), true)
 $game_player.perform_transfer
 check("and wait no more", MGQ_MpCoopGather.own_doing, nil)
 $game_player.encounter_count = 0
@@ -816,12 +813,11 @@ check("once the calls stop, the story started without the member, who stays", [M
       [nil, "Leader's story started without you.", nil])
 
 # A member teleports to another member through coop_teleport.rbx, which brings them over here.
-MGQ_MpCoopGather.come_to("Leader", [5, 1, 1, 2], true)
+MGQ_MpCoopGather.come_to("Leader", [5, 1, 1, 2])
 check("a member who teleports waits only to be free", MGQ_MpCoopGather.own_doing, "Joining Leader once free")
 $game_map.update
-check("and comes at once, taking over the place's warp ban", [$game_player.reserved, $game_switches[MGQ_MpStoryState::WARP_BAN]], [[5, 1, 1, 2], true])
+check("and comes at once", $game_player.reserved, [5, 1, 1, 2])
 $game_player.instance_variable_set(:@reserved, nil)
-$game_switches[MGQ_MpStoryState::WARP_BAN] = false
 
 # While the leader's story scene plays, the member stands still.
 check("free while the leader tells no story", [$game_player.movable?, MGQ_MpCoopGather.blocked?], [true, false])
@@ -901,7 +897,7 @@ $leader = leader
 $members = [leader]
 $game_map.map_id = 7
 $game_player.moveto(2, 2)
-MGQ_MpCoopEvents.take(leader, { "pevent" => "follow", "party" => "p1", "map" => "624", "x" => "63", "y" => "27", "d" => "2", "warp_ban" => "0" })
+MGQ_MpCoopEvents.take(leader, { "pevent" => "follow", "party" => "p1", "map" => "624", "x" => "63", "y" => "27", "d" => "2" })
 check("a member following hears the leader's pages of the new map before arriving", [MGQ_MpCoopGather.story_map?(624), MGQ_MpCoopGather.story_map?(5)], [true, false])
 $game_map.update
 check("and comes along at once", $game_player.reserved, [624, 63, 27, 2])
@@ -913,7 +909,7 @@ check("where the castle's way out returns is each player's own", (21..23).map { 
 $game_map.map_id = 7
 $game_player.moveto(12, 30)
 $game_variables[21] = 1
-MGQ_MpCoopEvents.take(leader, { "pevent" => "follow", "party" => "p1", "map" => "126", "x" => "15", "y" => "14", "d" => "2", "warp_ban" => "0" })
+MGQ_MpCoopEvents.take(leader, { "pevent" => "follow", "party" => "p1", "map" => "126", "x" => "15", "y" => "14", "d" => "2" })
 $game_map.update
 check("a member the party brings into the castle returns where they stood", [21, 22, 23].map { |id| $game_variables[id] }, [7, 12, 30])
 $game_player.instance_variable_set(:@reserved, nil)
@@ -2231,8 +2227,8 @@ $sent.clear
 interpreter = $game_map.interpreter
 interpreter.setup(story_page.list, 52)
 interpreter.busy = true
-check("the player tells it, alone too, and says so in their state, with whether warping is banned there",
-      [MGQ_MpCoopGather.holding_story?, MGQ_MpCoopEvents.state_fields], [false, { "telling" => 1, "twb" => 0 }])
+check("the player tells it, alone too, and says so in their state",
+      [MGQ_MpCoopGather.holding_story?, MGQ_MpCoopEvents.state_fields], [false, { "telling" => 1 }])
 $game_message.add("Told line")
 MGQ_MpCoopEvents.show(interpreter)
 check("its pages go through the map's gate in one message to the players on the map who play the player's track",
@@ -2469,7 +2465,7 @@ interpreter.setup(story_page.list, 53)
 interpreter.busy = true
 check("a story event on the new map within CONTINUE_FRAMES goes on with the telling: whom it took along, and that the player tells it",
       [MGQ_MpCoopEvents.state_fields, MGQ_MpCoopGather.taken_along, MGQ_MpCoop::Scope.viewers, $log.grep(/goes on with the telling that moved the player from map 430/).size],
-      [{ "telling" => 1, "twb" => 0 }, [stranger], [stranger], 1])
+      [{ "telling" => 1 }, [stranger], [stranger], 1])
 check("which keeps the lock of the new map, with the telling's first site, without a hold",
       [$telling_machine.requests.last, MGQ_MpCoopEvents.lock_holding?(interpreter)], [["map:430:52:1", 432], false])
 $game_player.reserve_transfer(433, 0, 0, 2)
@@ -2542,7 +2538,7 @@ MGQ_MpCoopEvents.page_ended
 $game_message.clear
 $notices.clear
 $log.clear
-MGQ_MpCoopEvents.take(teller, { "pevent" => "follow", "map" => "432", "x" => "0", "y" => "0", "d" => "2", "warp_ban" => "0" })
+MGQ_MpCoopEvents.take(teller, { "pevent" => "follow", "map" => "432", "x" => "0", "y" => "0", "d" => "2" })
 own_copy = Game_Event.new(57, [story_page], 3)
 check("a follower on the way to where the teller's story moved them keeps their own copy of it, which runs by itself, from starting, silently",
       [MGQ_MpCoopEvents.hand_over(own_copy), MGQ_MpCoopEvents.hand_over(own_copy), $notices,

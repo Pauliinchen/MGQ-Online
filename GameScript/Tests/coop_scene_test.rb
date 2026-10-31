@@ -2,6 +2,7 @@
 #  coop_scene_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Checked the escape spell's ban as the one ban of the place a viewer takes
 #      Paulinchen  2026-10-28: Answered the queue and checks of the scene from the stand-in of the DLL
 #      Paulinchen  2026-10-24: Checked that a viewer takes the warp and escape bans of the teller's scene
 #      Paulinchen  2026-10-23: Handed the map's scenes to the route past the DLL's map gate
@@ -558,7 +559,7 @@ module MGQ_MpWorldStory
   def self.held_value(_kind, _key, value); value; end
 end
 # Stands in for story_state.rbx: ids below 5000 are known and switch 2029 is a scene switch.
-module MGQ_MpStoryState; PLACE_BANS = [100, 94]; def self.known_id?(_kind, id); id < 5000; end; def self.scene_switch?(id); id == 2029; end; end
+module MGQ_MpStoryState; PLACE_BANS = [94]; def self.known_id?(_kind, id); id < 5000; end; def self.scene_switch?(id); id == 2029; end; end
 # Lets the overworld.rbx stand-in know only the graphic Actor1.
 module MGQ_MpOverworld; def self.graphic?(_folder, name); name == "Actor1"; end; end
 $data_animations = Array.new(10)
@@ -677,13 +678,12 @@ check("a viewer takes the teller's story values, never what is their own or name
       [true, nil, 41, true, true, nil, nil])
 check("as the multiplayer's own, so none goes to the relay as the viewer's", MGQ_MpStoryKeys.instance_variable_get(:@batch), [])
 MGQ_MpStoryKeys.recording = nil
-$game_switches[100] = true
-scene.call("story.values", [[0, 100, false], [0, 94, true]])
-check("a viewer takes the warp and escape bans the teller's scene sets where they both stand", [$game_switches[100], $game_switches[94]], [false, true])
+scene.call("story.values", [[0, 94, true]])
+check("a viewer takes the escape spell's ban the teller's scene sets where they both stand", $game_switches[94], true)
 $following = 8
-scene.call("story.values", [[0, 100, true]], "8")
+scene.call("story.values", [[0, 94, false]], "8")
 $following = nil
-check("and keeps a ban set on the map they are on the way to for their arrival", [$game_switches[100], $bans_on_way], [false, [[100, true, 8]]])
+check("and keeps a ban lifted on the map they are on the way to for their arrival", [$game_switches[94], $bans_on_way], [true, [[94, false, 8]]])
 $game_switches[94] = nil
 scene.call("event.route", [12, true, false, [[1], [41, "Actor1", 2], [41, "Missing", 0], [41, "../evil", 0], [44, "Door", 80, 100], [45, "exit"], [2, "x"]]])
 check("the event walks the teller's route, without a graphic or sound this game lacks, a script or a broken command",

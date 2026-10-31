@@ -2,7 +2,8 @@
 #  engine.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-31: Read a world chest without its chest flags, as the C# engine does
+#      Paulinchen  2026-10-31: Stopped lifting the warp ban on the maps where warping is free, as the C# engine does
+#                            - Read a world chest without its chest flags, as the C# engine does
 #                            - Played the recruit page of a companion the player missed once a route finished, as the C# engine does
 #                            - Gave from the rows only the history the world's story was past where its log starts, as the C# engine does
 #                            - Played a world chest and a Makina by level in the player's game, as the C# engine does
@@ -47,8 +48,6 @@ module CatchupEngine
   # The switch of Ilias's side.
   ILIAS_CHOSEN = 5
 
-  # The switch that bans warping.
-  WARP_BAN = 100
 
   # Where each part stands in the story's order; the routes stand side by side.
   RANKS = { "1" => 0, "2" => 1, "3" => 2, "ad" => 3, "mr" => 3, "chaos" => 3 }
@@ -76,7 +75,7 @@ module CatchupEngine
   FOUND_LETTER = "F"
 
   # The switches and variables the engine reads besides the rows' marks.
-  ENGINE_SWITCHES = [ALICE_CHOSEN, ILIAS_CHOSEN, WARP_BAN] + CLEAR_SWITCHES
+  ENGINE_SWITCHES = [ALICE_CHOSEN, ILIAS_CHOSEN] + CLEAR_SWITCHES
   ENGINE_VARIABLES = [MAIN_PROGRESS, PLAYTHROUGH] + ROUTE_VARIABLES
 
   Part = Struct.new(:id, :name, :ending, :gate)
@@ -95,7 +94,7 @@ module CatchupEngine
   # The tables read, with what is worked out of them once.
   class Tables
     attr_accessor :parts, :joins, :removals, :key_items, :chests, :rewards, :lessons, :class_levels, :actor_changes, :settings, :vehicles,
-                  :warp_free_maps, :makina, :prize_variables, :rules, :counts, :companion_values
+                  :makina, :prize_variables, :rules, :counts, :companion_values
 
     # Keeps what a block builds from the tables once.
     #
@@ -156,7 +155,7 @@ module CatchupEngine
       at = VEHICLES.index(row["vehicle"])
       at && (place = place_of(row)) && flag?(row["ran"]) ? Vehicle.new(at, *place, row["ran"]) : nil
     end.compact
-    t.warp_free_maps = rows.call("warp_free_maps").map { |row| row["map"] }.select { |map| map.is_a?(Integer) }
+
     t.makina = rows.call("makina").map { |row| whole?(row, "item", "level") && row["site"].to_s != "" ? Makina.new(row["item"], row["level"], row["site"]) : nil }.compact
     t.prize_variables = rows.call("prize_variables").map { |row| row["variable"] }.select { |id| id.is_a?(Integer) }
     t.rules = {}
@@ -361,7 +360,7 @@ module CatchupEngine
       choices = ChoicesStandIn.personal("raid" => true, "own" => nil)
       @choice_switches = Array(choices["s"])
       @choice_variables = Array(choices["v"])
-      @map = request["map"].to_i
+
       @encounters = request["encounters"]
       @summary = request["summary"]
       @sharing = request["sharing"] || "off"
@@ -397,7 +396,6 @@ module CatchupEngine
         missed_companions
         check_found_items
         check_counts
-        lift_warp_ban
       end
       answer["visiting"] = @roster.map { |entry| entry[0] }.select { |id| visiting?(id, story_now) }
       finish(answer)
@@ -1170,14 +1168,6 @@ module CatchupEngine
       end
     end
 
-    # Lifts the warp ban left on where warping is free.
-    def lift_warp_ban
-      return unless story_now[0][WARP_BAN] && @t.warp_free_maps.include?(@map)
-
-      @actions << ["switch", WARP_BAN, false]
-      story_now[0][WARP_BAN] = false
-      log("lifted the warp ban: map #{@map} lets the player warp")
-    end
 
     # @return [Boolean] Whether the player holds every orb before the story moved on.
     def orbs_due?

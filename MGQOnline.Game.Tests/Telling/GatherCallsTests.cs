@@ -2,6 +2,7 @@
 //  GatherCallsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Took calls, follows and offers without a warp ban
 //      Paulinchen  2026-10-28: Created
 //
 //----------------------------------------------------------------
@@ -59,13 +60,13 @@ public sealed class GatherCallsTests
     public void Take_HandsTheBansKeptAndKeepsTheFollowTaken()
     {
         var calls = new GatherCalls();
-        calls.Followed("Teller", "t", new GatherPlace(8, 1, 2, 2), true, true, 100);
+        calls.Followed("Teller", "t", new GatherPlace(8, 1, 2, 2), true, 100);
         bool kept = calls.KeepBan(94, true, 8);
-        bool ignored = calls.KeepBan(100, false, 9);
+        bool ignored = calls.KeepBan(94, false, 9);
         GatherTaken? taken = calls.Take(true, 150);
 
         Assert.Equal((true, false), (kept, ignored));
-        Assert.Equal((true, "t"), (taken!.WarpBan, taken.Call.Id));
+        Assert.Equal("t", taken!.Call.Id);
         Assert.Equal(new Dictionary<int, bool> { [94] = true }, taken.Bans);
         Assert.Equal(("t", false), (calls.FollowTaken(150 + GatherCalls.CallLapseFrames - 1)!.Id, calls.Idle(150 + GatherCalls.CallLapseFrames - 1)));
         Assert.Equal((null, true), (calls.FollowTaken(150 + GatherCalls.CallLapseFrames), calls.Idle(150 + GatherCalls.CallLapseFrames)));
@@ -107,13 +108,13 @@ public sealed class GatherCallsTests
             {
                 case "called":
                     (string name, _) = Peers[step.GetProperty("by").GetString()!];
-                    if (calls.Called(name, step.GetProperty("by").GetString()!, PlaceOf(step.GetProperty("place")), step.TryGetProperty("warp_ban", out JsonElement ban) && ban.GetBoolean(), false, pvp, frame) is { } notice)
+                    if (calls.Called(name, step.GetProperty("by").GetString()!, PlaceOf(step.GetProperty("place")), false, pvp, frame) is { } notice)
                     {
                         notices.Add(notice);
                     }
 
                     break;
-                case "come_to": calls.ComeTo(step.GetProperty("name").GetString()!, PlaceOf(step.GetProperty("place")), step.TryGetProperty("warp_ban", out JsonElement asked) && asked.ValueKind != JsonValueKind.Null ? asked.GetBoolean() : null, frame); break;
+                case "come_to": calls.ComeTo(step.GetProperty("name").GetString()!, PlaceOf(step.GetProperty("place")), frame); break;
                 case "followed": Follow(step.GetProperty("by").GetString()!, PlaceOf(step.GetProperty("place"))); break;
                 case "raid": raid = step.GetProperty("raid").GetBoolean(); break;
                 case "map": map = step.GetProperty("map").GetInt32(); break;
@@ -151,7 +152,7 @@ public sealed class GatherCallsTests
                     bool moves = !step.TryGetProperty("moves", out JsonElement move) || move.GetString() != "0";
                     if (behind || !watching.Contains(teller) || !moves)
                     {
-                        calls.OfferFollow(teller, Peers[teller].Name, place, false, frame);
+                        calls.OfferFollow(teller, Peers[teller].Name, place, frame);
                     }
                     else
                     {
@@ -165,7 +166,7 @@ public sealed class GatherCallsTests
                     string accepted = step.GetProperty("by").GetString()!;
                     if (calls.AcceptFollow(accepted, telling.Contains(accepted), map, frame) is { } offer)
                     {
-                        calls.Followed(offer.Name, accepted, offer.Place, offer.WarpBan, raid, frame);
+                        calls.Followed(offer.Name, accepted, offer.Place, raid, frame);
                     }
 
                     break;
@@ -208,7 +209,7 @@ public sealed class GatherCallsTests
         /// </summary>
         /// <param name="id">The teller's id.</param>
         /// <param name="place">Where the teller stands.</param>
-        private void Follow(string id, GatherPlace place) => calls.Followed(Peers[id].Name, id, place, false, raid, frame);
+        private void Follow(string id, GatherPlace place) => calls.Followed(Peers[id].Name, id, place, raid, frame);
 
         /// <summary>
         /// Names the members not near the player: all of them, who stand on map 9.

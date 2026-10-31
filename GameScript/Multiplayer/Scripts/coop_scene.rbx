@@ -664,8 +664,8 @@ module MGQ_MpCoopScene
 
   # Reports whether a story value is a ban of the place (MGQ_MpStoryState::PLACE_BANS), which the
   # scene's viewers take from the teller though it is each player's own: a scene that brought them
-  # along with a ban on and lifted it later would otherwise leave them banned, unable to warp or to
-  # call the Pocket Castle.
+  # along with a ban on and lifted it later would otherwise leave them banned, unable to use the
+  # escape spell.
   #
   # @param kind [Integer] 0 for a switch, 1 for a variable, 2 for a self switch.
   # @param key [Integer, Array] Its id, or a self switch's map, event and letter.
@@ -675,8 +675,7 @@ module MGQ_MpCoopScene
   end
 
   # Takes a ban of the place from the teller: at once on the teller's map, else for the player's
-  # arrival there (MGQ_MpCoopGather.take_place_ban), which would set the ban the teller's follow
-  # brought otherwise.
+  # arrival there (MGQ_MpCoopGather.take_place_ban).
   #
   # @param id [Integer] The ban's switch.
   # @param banned [Boolean] Whether it is on.
