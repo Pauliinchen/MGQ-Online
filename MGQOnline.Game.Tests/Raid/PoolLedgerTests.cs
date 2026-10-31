@@ -2,6 +2,8 @@
 //  PoolLedgerTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Checked the order the pools were told in
+//                            - Checked that a defeat pushed without a name takes the later answer's
 //      Paulinchen  2026-10-30: Created
 //
 //----------------------------------------------------------------
@@ -135,6 +137,20 @@ public sealed class PoolLedgerTests
         ledger.Hear(new PoolWord("Sara", 0, 900, true, string.Empty), PoolSource.Pushed);
         ledger.Hear(new PoolWord("Sara", 0, 900, true, "Hero"), PoolSource.Answered, sent);
         Assert.Equal([new PoolChange("Sara", true, "Hero")], ledger.TakeChanges());
+    }
+
+    /// <summary>
+    /// Asserts that the pools list in the order they were last told, a pool told again moving to the end.
+    /// </summary>
+    [Fact]
+    public void KeysAsTold_PutTheOneToldLastAtTheEnd()
+    {
+        var ledger = new PoolLedger(() => _now);
+        ledger.Hear(new PoolWord("Sara", 0.5, 900, false, string.Empty), PoolSource.Fetched);
+        ledger.Hear(new PoolWord("Alma", 0.5, 900, false, string.Empty), PoolSource.Fetched);
+        ledger.Hear(new PoolWord("Sara", 0, 900, true, "Hero"), PoolSource.Pushed);
+
+        Assert.Equal(["Alma", "Sara"], ledger.KeysAsTold());
     }
 
     /// <summary>

@@ -2,7 +2,8 @@
 //  PoolLedger.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-31: Named a defeat told without a name once a later word names it
+//      Paulinchen  2026-10-31: Listed the pools in the order they were told
+//                            - Named a defeat told without a name once a later word names it
 //      Paulinchen  2026-10-30: Told one pool as it stands now, and the time
 //                            - Created
 //
@@ -298,6 +299,18 @@ public sealed class PoolLedger
         {
             long now = _clock();
             return _pools.Select(pool => new PoolView(pool.Key, LeftAt(pool.Value, now), pool.Value.Max, pool.Value.Defeated, pool.Value.By)).ToList();
+        }
+    }
+
+    /// <summary>
+    /// Lists the pools' keys in the order they were last told, the one told last at the end.
+    /// </summary>
+    /// <returns>The keys.</returns>
+    public IReadOnlyList<string> KeysAsTold()
+    {
+        lock (_gate)
+        {
+            return _pools.OrderBy(pool => pool.Value.Stamp).Select(pool => pool.Key).ToList();
         }
     }
 
