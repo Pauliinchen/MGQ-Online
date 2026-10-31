@@ -2,6 +2,7 @@
 //  ServerBridgeTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Covered the freeze journal the core keeps
 //      Paulinchen  2026-10-28: Covered the SQLite version core.runtime names
 //      Paulinchen  2026-10-23: Covered a battle's players arranged by the core
 //                            - Covered the squad rules the core answers
@@ -133,6 +134,23 @@ public sealed unsafe class ServerBridgeTests
     }
 
     /// <summary>
+    /// Asserts that the core keeps the write journal of the frozen raid boss fights, which the
+    /// scripts hand their writes to before every frame on the battle server too.
+    /// </summary>
+    [Fact]
+    public void Call_KeepsTheFreezeJournal()
+    {
+        int context = Open(BridgeHost.Version).AsHash()["value"].AsHash()["context"].AsInt();
+        RubyArray write = new() { 1L, 0L, 31L, false };
+
+        RubyValue taken = Call(context, JournalTopics.JournalTopic, new RubyHash { { "entries", new RubyArray { write } }, { "keep", 0L } });
+        RubyHash since = Call(context, JournalTopics.SinceTopic, 0L).AsHash()["value"].AsHash();
+
+        Assert.True(taken.IsNil);
+        Assert.Equal(new RubyArray { new RubyArray { 0L, 31L, false } }, since["rows"]);
+    }
+
+    /// <summary>
     /// Shakes hands through mp_bridge_open.
     /// </summary>
     /// <param name="version">The bridge version the scripts speak.</param>
@@ -155,7 +173,7 @@ public sealed unsafe class ServerBridgeTests
     /// <param name="context">The context's id.</param>
     /// <param name="topic">The topic.</param>
     /// <param name="request">The request, <see langword="null"/> for none.</param>
-    /// <returns>The reply's envelope.</returns>
+    /// <returns>The reply's envelope, nil for no reply.</returns>
     private static RubyValue Call(int context, string topic, RubyValue? request)
     {
         byte[] reply = new byte[BufferSize];
@@ -167,7 +185,7 @@ public sealed unsafe class ServerBridgeTests
             written = CallExport(context, namePointer, dumpPointer, dump.Length, replyPointer, reply.Length);
         }
 
-        return RubyMarshal.Read(reply.AsSpan(0, written));
+        return written == 0 ? RubyNil.Value : RubyMarshal.Read(reply.AsSpan(0, written));
     }
 
     /// <summary>

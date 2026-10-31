@@ -2,6 +2,7 @@
 //  SharedTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Registered the freeze journal topics, which the scripts call on the battle server too
 //      Paulinchen  2026-10-30: Registered the topics of a served battle's setup
 //                            - Handed the raid pools' topics the host's way to the pools, an outbox of the context's own by default
 //                            - Registered the raid pools' topics over the host's ledger
@@ -67,6 +68,7 @@ public static class SharedTopics
         CoopTopics.Register(context, LiveTopics.Register(context));
         PoolTopics.Register(context, pools);
         SetupTopics.Register(context);
+        JournalTopics.Register(context);
     }
 
     /// <summary>

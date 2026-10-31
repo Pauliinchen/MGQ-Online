@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-31: Registered the topics of the bug report's request
+//                            - Left the freeze journal topics to the topics both hosts answer
 //                            - Left the trades' topics to the world room's, which registers every area over the room
 //      Paulinchen  2026-10-30: Registered the world screen's steps without this game's data, which entering compares once the world's mods loaded
 //                            - Registered the topics of the served battle's front
@@ -97,7 +98,6 @@ internal static unsafe class GameBridge
         WorldRoomTopics.Register(context);
         StoryTopics story = StoryTopics.Register(context);
         CatchupTopics.Register(context, () => story.Catchup);
-        JournalTopics.Register(context);
         ServedTopics.Register(context, BattleSession.Current);
         UiTopics.Register(context, new TypedText());
         context.Register(SnapTopic, (_, request) => Snap(request.AsArray()));
