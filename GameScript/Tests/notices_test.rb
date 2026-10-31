@@ -2,6 +2,7 @@
 #  notices_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Checked that a message posted while the box hides counts its time only once it shows
 #      Paulinchen  2026-10-30: Dropped the fade checks
 #      Paulinchen  2026-10-23: Told the invites that reach the player and the party's actions through the DLL's party view
 #      Paulinchen  2026-10-22: Checked the relay's announcement in the box's rows, in place of the one before
@@ -190,7 +191,12 @@ SceneManager.scene = Scene_Battle.new
 refused = logged_lines { accept.call }
 check("hidden in a battle, where the keys take nothing", [shown.call, $duel_answer], [[], nil])
 check("which the log says under the hotkeys", refused.grep(/ignored/), ["keys: hotkey Y (Accept Notification) ignored: the box is hidden here"])
+notices.message(:unseen, "Posted while hidden")
+(MGQ_MpUi::Style::LINGER_FRAMES * 2).times { notices.tick(true) }
 SceneManager.scene = Scene_Map.new
+notices.tick(true)
+check("a message posted while the box hides counts its time only once the box shows", shown.call.include?("Posted while hidden"), true)
+notices.drop(:unseen)
 $overview_open = true
 notices.tick(true)
 check("hidden on the map while the World overview is open", shown.call, [])

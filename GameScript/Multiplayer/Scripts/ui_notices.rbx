@@ -2,6 +2,7 @@
 #  ui_notices.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Counted a message's time only while the box shows
 #      Paulinchen  2026-10-22: Showed the relay's announcements, broken into the box's rows
 #      Paulinchen  2026-10-12: Put the box at its default 4 pixels below the Leader HUD
 #                            - Logged a refused hotkey through MGQ_MpHotkeys.log_refusal
@@ -158,8 +159,9 @@ module MGQ_MpNotices
     invites + going + messages
   end
 
-  # Counts the messages and the fading invites down, accepts or declines the first invite when its
-  # hotkey went down, and draws the box. Called every frame in every scene.
+  # Counts the messages down while the box shows, so none runs out unseen, and the fading invites
+  # always, accepts or declines the first invite when its hotkey went down, and draws the box.
+  # Called every frame in every scene.
   #
   # @param in_world [Boolean] Whether a world is open.
   def self.tick(in_world)
@@ -167,7 +169,8 @@ module MGQ_MpNotices
     accept = MGQ_MpHotkeys.pressed?(:accept)
     decline = MGQ_MpHotkeys.pressed?(:decline)
     post_player_ini_notice
-    @messages.each { |entry| entry[:frames] -= 1 }
+    hidden = !shown?
+    @messages.each { |entry| entry[:frames] -= 1 } unless hidden
     gone = @messages.select { |entry| entry[:frames] <= 0 || (entry[:world] && !in_world) }
     gone.each { |entry| log("message #{entry[:frames] <= 0 ? 'ran out' : 'dropped, the world closed'}: #{MGQ_MpLog.short(entry[:text])}") }
     @messages -= gone
@@ -178,7 +181,6 @@ module MGQ_MpNotices
       @answered.clear
       @going.clear
     end
-    hidden = !shown?
     list = hidden ? [] : notices(in_world)
     answer = accept ? :take : decline ? :decline : nil
     MGQ_MpHotkeys.log_refusal(ANSWER_HOTKEYS[answer], "the box is hidden here") if answer && hidden
