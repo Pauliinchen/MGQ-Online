@@ -50,6 +50,7 @@
     <None Include="..\fixtures\overview\*.json" LinkBase="fixtures\overview" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\fixtures\worlds\*.json" LinkBase="fixtures\worlds" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\fixtures\served\*.json" LinkBase="fixtures\served" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\fixtures\hud\report.json" LinkBase="fixtures\hud" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

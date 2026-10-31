@@ -2,7 +2,8 @@
 //  GameBridge.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-31: Left the trades' topics to the world room's, which registers every area over the room
+//      Paulinchen  2026-10-31: Registered the topics of the bug report's request
+//                            - Left the trades' topics to the world room's, which registers every area over the room
 //      Paulinchen  2026-10-30: Registered the world screen's steps without this game's data, which entering compares once the world's mods loaded
 //                            - Registered the topics of the served battle's front
 //                            - Handed the topics both hosts answer the DLL's way to the raid pools
@@ -100,6 +101,7 @@ internal static unsafe class GameBridge
         ServedTopics.Register(context, BattleSession.Current);
         UiTopics.Register(context, new TypedText());
         context.Register(SnapTopic, (_, request) => Snap(request.AsArray()));
+        ReportTopics.Register(context, BugReports.Current);
     }
 
     /// <summary>

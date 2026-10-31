@@ -1,0 +1,3177 @@
+{
+  "scenarios": [
+    {
+      "name": "the hotkey on a free map, on a busy map and in a menu",
+      "steps": [
+        {
+          "op": "frame",
+          "hotkey": true,
+          "answer": {
+            "answer": null,
+            "logs": [
+              "bug report: asked for a report by hotkey in Scene_Map, map 5",
+              "bug report: opening the form with the screenshot"
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+              "ok"
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 1,
+            "opened": 1,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "take_opening",
+          "answer": {
+            "answer": true,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "closed",
+          "reason": "Escape",
+          "answer": {
+            "answer": null,
+            "logs": [
+              "bug report: dropped the screenshot",
+              "bug report: the form closed without sending: Escape"
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 1,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "scene",
+          "place": "map",
+          "map_ready": false,
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "frame",
+          "hotkey": true,
+          "answer": {
+            "answer": null,
+            "logs": [
+              "bug report: asked for a report by hotkey in Scene_Map, map 5"
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+              "ok"
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+              [
+                "The bug report opens once you are free on the map.",
+                null
+              ]
+            ],
+            "snaps": 1,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": true,
+            "sending": false
+          }
+        },
+        {
+          "op": "frame",
+          "count": 3,
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": true,
+            "sending": false
+          }
+        },
+        {
+          "op": "scene",
+          "place": "map",
+          "map_ready": true,
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": true,
+            "sending": false
+          }
+        },
+        {
+          "op": "frame",
+          "answer": {
+            "answer": null,
+            "logs": [
+              "bug report: opening the form with the screenshot"
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 1,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "scene",
+          "place": "form",
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "take_opening",
+          "answer": {
+            "answer": true,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "closed",
+          "reason": "Escape",
+          "answer": {
+            "answer": null,
+            "logs": [
+              "bug report: dropped the screenshot",
+              "bug report: the form closed without sending: Escape"
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 1,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "scene",
+          "place": "menu",
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "snap",
+          "kept": false,
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "frame",
+          "hotkey": true,
+          "answer": {
+            "answer": null,
+            "logs": [
+              "bug report: asked for a report by hotkey in Scene_Menu, map 5",
+              "bug report: opening the form without a screenshot"
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+              "ok"
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 1,
+            "opened": 1,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "scene",
+          "place": "form",
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "take_opening",
+          "answer": {
+            "answer": false,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "closed",
+          "reason": "Escape",
+          "answer": {
+            "answer": null,
+            "logs": [
+              "bug report: the form closed without sending: Escape"
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "the hotkey in a battle and in a menu that waits, the notification box hidden",
+      "steps": [
+        {
+          "op": "scene",
+          "place": "battle",
+          "shown": false,
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "frame",
+          "hotkey": true,
+          "answer": {
+            "answer": null,
+            "logs": [
+              "bug report: asked for a report by hotkey in Scene_Battle, map 5"
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+              "ok"
+            ],
+            "chat": [
+              "The bug report opens after the battle."
+            ],
+            "notices": [
+
+            ],
+            "snaps": 1,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": true,
+            "sending": false
+          }
+        },
+        {
+          "op": "scene",
+          "place": "battle",
+          "in_world": false,
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": true,
+            "sending": false
+          }
+        },
+        {
+          "op": "frame",
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": true,
+            "sending": false
+          }
+        },
+        {
+          "op": "scene",
+          "place": "battle",
+          "shown": true,
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": true,
+            "sending": false
+          }
+        },
+        {
+          "op": "frame",
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": true,
+            "sending": false
+          }
+        },
+        {
+          "op": "scene",
+          "place": "map",
+          "map_ready": false,
+          "in_world": true,
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": true,
+            "sending": false
+          }
+        },
+        {
+          "op": "frame",
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": true,
+            "sending": false
+          }
+        },
+        {
+          "op": "scene",
+          "place": "map",
+          "map_ready": true,
+          "shown": false,
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": true,
+            "sending": false
+          }
+        },
+        {
+          "op": "scene",
+          "place": "battle",
+          "in_world": true,
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": true,
+            "sending": false
+          }
+        },
+        {
+          "op": "frame",
+          "hotkey": true,
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+              "A bug report waits to open already."
+            ],
+            "sounds": [
+              "buzzer"
+            ],
+            "chat": [
+              "A bug report waits to open already."
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": true,
+            "sending": false
+          }
+        },
+        {
+          "op": "scene",
+          "place": "waiting_menu",
+          "shown": false,
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": true,
+            "sending": false
+          }
+        },
+        {
+          "op": "frame",
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": true,
+            "sending": false
+          }
+        },
+        {
+          "op": "scene",
+          "place": "title",
+          "shown": true,
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": true,
+            "sending": false
+          }
+        },
+        {
+          "op": "frame",
+          "answer": {
+            "answer": null,
+            "logs": [
+              "bug report: dropped the screenshot",
+              "bug report: forgot the waiting report: the game left for Scene_Title"
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 1,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "scene",
+          "place": "waiting_menu",
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "frame",
+          "hotkey": true,
+          "answer": {
+            "answer": null,
+            "logs": [
+              "bug report: asked for a report by hotkey in Scene_MpStoryChoices, map 5"
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+              "ok"
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+              [
+                "The bug report opens once you are free on the map.",
+                null
+              ]
+            ],
+            "snaps": 1,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": true,
+            "sending": false
+          }
+        },
+        {
+          "op": "scene",
+          "place": "map",
+          "map_ready": false,
+          "shown": false,
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": true,
+            "sending": false
+          }
+        },
+        {
+          "op": "frame",
+          "hotkey": true,
+          "answer": {
+            "answer": null,
+            "logs": [
+              "bug report: kept for the notification box until it shows: A bug report waits to open already."
+            ],
+            "refusals": [
+              "A bug report waits to open already."
+            ],
+            "sounds": [
+              "buzzer"
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": true,
+            "sending": false
+          }
+        },
+        {
+          "op": "scene",
+          "place": "map",
+          "map_ready": true,
+          "shown": true,
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": true,
+            "sending": false
+          }
+        },
+        {
+          "op": "frame",
+          "answer": {
+            "answer": null,
+            "logs": [
+              "bug report: opening the form with the screenshot"
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+              [
+                "A bug report waits to open already.",
+                null
+              ]
+            ],
+            "snaps": 0,
+            "opened": 1,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "the wheel, its screenshot after the fade and its refusals",
+      "steps": [
+        {
+          "op": "wheel",
+          "answer": {
+            "answer": null,
+            "logs": [
+              "bug report: asked for a report by wheel in Scene_Map, map 5"
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": true,
+            "sending": false
+          }
+        },
+        {
+          "op": "frame",
+          "count": 12,
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": true,
+            "sending": false
+          }
+        },
+        {
+          "op": "scene",
+          "place": "map",
+          "map_ready": false,
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": true,
+            "sending": false
+          }
+        },
+        {
+          "op": "frame",
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 1,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": true,
+            "sending": false
+          }
+        },
+        {
+          "op": "wheel",
+          "answer": {
+            "answer": "A bug report waits to open already.",
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": true,
+            "sending": false
+          }
+        },
+        {
+          "op": "frame",
+          "hotkey": true,
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+              "A bug report waits to open already."
+            ],
+            "sounds": [
+              "buzzer"
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+              [
+                "A bug report waits to open already.",
+                null
+              ]
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": true,
+            "sending": false
+          }
+        },
+        {
+          "op": "scene",
+          "place": "map",
+          "map_ready": true,
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": true,
+            "sending": false
+          }
+        },
+        {
+          "op": "frame",
+          "answer": {
+            "answer": null,
+            "logs": [
+              "bug report: opening the form with the screenshot"
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 1,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "scene",
+          "place": "menu",
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "frame",
+          "answer": {
+            "answer": null,
+            "logs": [
+              "bug report: dropped the screenshot",
+              "bug report: the form closed without sending: Scene_Menu took the place of the form before it opened"
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 1,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "scene",
+          "place": "map",
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "named",
+          "named": false,
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "wheel",
+          "answer": {
+            "answer": "Bug reports need your name: pick Multiplayer on the title screen to choose one.",
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "frame",
+          "hotkey": true,
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+              "Bug reports need your name: pick Multiplayer on the title screen to choose one."
+            ],
+            "sounds": [
+              "buzzer"
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+              [
+                "Bug reports need your name: pick Multiplayer on the title screen to choose one.",
+                null
+              ]
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "scene",
+          "place": "map",
+          "typing": true,
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "frame",
+          "hotkey": true,
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+              "the player types"
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "scene",
+          "place": "form",
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "frame",
+          "hotkey": true,
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+              "the form is open already"
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "scene",
+          "place": "title",
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "frame",
+          "hotkey": true,
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+              "the game shows the title or game over screen"
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "sending, refused while it runs, and its outcomes",
+      "steps": [
+        {
+          "op": "scene",
+          "place": "menu",
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "frame",
+          "hotkey": true,
+          "answer": {
+            "answer": null,
+            "logs": [
+              "bug report: asked for a report by hotkey in Scene_Menu, map 5",
+              "bug report: opening the form with the screenshot"
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+              "ok"
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 1,
+            "opened": 1,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "scene",
+          "place": "form",
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "take_opening",
+          "answer": {
+            "answer": true,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "started",
+          "started": false,
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "send",
+          "title": "It broke",
+          "text": "Steps\nhere",
+          "screenshot": true,
+          "logs": true,
+          "answer": {
+            "answer": "The bug report could not be sent. Try again later.",
+            "logs": [
+              "bug report: the DLL did not start sending \"It broke\" (with the screenshot, with the logs)"
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+              [
+                "It broke",
+                "Steps\nhere",
+                "Fact 1\tvalue 1\nFact 2\tvalue 2\nFact 3\tvalue 3\nFact 4\tvalue 4\nFact 5\tvalue 5\nFact 6\tvalue 6\nFact 7\tvalue 7\nFact 8\tvalue 8\nFact 9\tvalue 9\nFact 10\tvalue 10\nFact 11\tvalue 11\nFact 12\tvalue 12",
+                "Player\tMe (me000001)\nLong\txxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                3
+              ]
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "started",
+          "started": true,
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "send",
+          "title": "Long title Long title Long title Long title Long title Long title Long title Long title Long title end",
+          "text": "Steps",
+          "screenshot": true,
+          "logs": false,
+          "answer": {
+            "answer": null,
+            "logs": [
+              "bug report: sending \"Long title Long title Long title Long title Long title Long title Long title ...\" (5 characters, with the screenshot, without the logs) with 12 facts"
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+              [
+                "Sending the bug report . . .",
+                600
+              ]
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+              [
+                "Long title Long title Long title Long title Long title Long title Long title Long title Long title end",
+                "Steps",
+                "Fact 1\tvalue 1\nFact 2\tvalue 2\nFact 3\tvalue 3\nFact 4\tvalue 4\nFact 5\tvalue 5\nFact 6\tvalue 6\nFact 7\tvalue 7\nFact 8\tvalue 8\nFact 9\tvalue 9\nFact 10\tvalue 10\nFact 11\tvalue 11\nFact 12\tvalue 12",
+                "Player\tMe (me000001)\nLong\txxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                1
+              ]
+            ],
+            "waiting": false,
+            "sending": true
+          }
+        },
+        {
+          "op": "send",
+          "title": "Again",
+          "text": "Steps",
+          "screenshot": false,
+          "logs": true,
+          "answer": {
+            "answer": "The last bug report is still being sent.",
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": true
+          }
+        },
+        {
+          "op": "closed",
+          "reason": "sent",
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": true
+          }
+        },
+        {
+          "op": "scene",
+          "place": "map",
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": true
+          }
+        },
+        {
+          "op": "frame",
+          "hotkey": true,
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+              "The last bug report is still being sent."
+            ],
+            "sounds": [
+              "buzzer"
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+              [
+                "The last bug report is still being sent.",
+                null
+              ]
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": true
+          }
+        },
+        {
+          "op": "wheel",
+          "answer": {
+            "answer": "The last bug report is still being sent.",
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": true
+          }
+        },
+        {
+          "op": "state",
+          "text": "sending",
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": true
+          }
+        },
+        {
+          "op": "frame",
+          "count": 29,
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": true
+          }
+        },
+        {
+          "op": "state",
+          "text": "sent\t42\thttps://example.invalid/42",
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": true
+          }
+        },
+        {
+          "op": "scene",
+          "place": "map",
+          "shown": false,
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": true
+          }
+        },
+        {
+          "op": "frame",
+          "count": 30,
+          "answer": {
+            "answer": null,
+            "logs": [
+              "bug report: the report was sent as issue 42: https://example.invalid/42"
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "scene",
+          "place": "map",
+          "shown": true,
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "frame",
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+              [
+                "Bug report sent as issue #42. Thank you!",
+                600
+              ]
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "scene",
+          "place": "menu",
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "frame",
+          "hotkey": true,
+          "answer": {
+            "answer": null,
+            "logs": [
+              "bug report: asked for a report by hotkey in Scene_Menu, map 5",
+              "bug report: opening the form with the screenshot"
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+              "ok"
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 1,
+            "opened": 1,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "scene",
+          "place": "form",
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "take_opening",
+          "answer": {
+            "answer": true,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "send",
+          "title": "Second",
+          "text": "Steps",
+          "screenshot": false,
+          "logs": false,
+          "answer": {
+            "answer": null,
+            "logs": [
+              "bug report: sending \"Second\" (5 characters, without the screenshot, without the logs) with 12 facts"
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+              [
+                "Sending the bug report . . .",
+                600
+              ]
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+              [
+                "Second",
+                "Steps",
+                "Fact 1\tvalue 1\nFact 2\tvalue 2\nFact 3\tvalue 3\nFact 4\tvalue 4\nFact 5\tvalue 5\nFact 6\tvalue 6\nFact 7\tvalue 7\nFact 8\tvalue 8\nFact 9\tvalue 9\nFact 10\tvalue 10\nFact 11\tvalue 11\nFact 12\tvalue 12",
+                "Player\tMe (me000001)\nLong\txxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                0
+              ]
+            ],
+            "waiting": false,
+            "sending": true
+          }
+        },
+        {
+          "op": "state",
+          "text": "failed\trate\tHTTP 429",
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": true
+          }
+        },
+        {
+          "op": "frame",
+          "count": 30,
+          "answer": {
+            "answer": null,
+            "logs": [
+              "bug report: the report failed (rate): HTTP 429"
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+              [
+                "The bug report failed: you sent several reports in a short time. Try again in an hour.",
+                600
+              ]
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "take_opening",
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "scene",
+          "place": "menu",
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "frame",
+          "hotkey": true,
+          "answer": {
+            "answer": null,
+            "logs": [
+              "bug report: asked for a report by hotkey in Scene_Menu, map 5",
+              "bug report: opening the form with the screenshot"
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+              "ok"
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 1,
+            "opened": 1,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "scene",
+          "place": "form",
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "take_opening",
+          "answer": {
+            "answer": true,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "send",
+          "title": "Third",
+          "text": "Steps",
+          "screenshot": true,
+          "logs": true,
+          "answer": {
+            "answer": null,
+            "logs": [
+              "bug report: sending \"Third\" (5 characters, with the screenshot, with the logs) with 12 facts"
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+              [
+                "Sending the bug report . . .",
+                600
+              ]
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+              [
+                "Third",
+                "Steps",
+                "Fact 1\tvalue 1\nFact 2\tvalue 2\nFact 3\tvalue 3\nFact 4\tvalue 4\nFact 5\tvalue 5\nFact 6\tvalue 6\nFact 7\tvalue 7\nFact 8\tvalue 8\nFact 9\tvalue 9\nFact 10\tvalue 10\nFact 11\tvalue 11\nFact 12\tvalue 12",
+                "Player\tMe (me000001)\nLong\txxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                3
+              ]
+            ],
+            "waiting": false,
+            "sending": true
+          }
+        },
+        {
+          "op": "state",
+          "text": "failed\thttp500\t  ",
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": true
+          }
+        },
+        {
+          "op": "frame",
+          "count": 30,
+          "answer": {
+            "answer": null,
+            "logs": [
+              "bug report: the report failed (http500):   "
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+              [
+                "The bug report failed: try again later.",
+                600
+              ]
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "a form another scene took the place of, and a report forgotten on the title screen",
+      "steps": [
+        {
+          "op": "scene",
+          "place": "menu",
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "frame",
+          "hotkey": true,
+          "answer": {
+            "answer": null,
+            "logs": [
+              "bug report: asked for a report by hotkey in Scene_Menu, map 5",
+              "bug report: opening the form with the screenshot"
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+              "ok"
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 1,
+            "opened": 1,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "scene",
+          "place": "map",
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "frame",
+          "answer": {
+            "answer": null,
+            "logs": [
+              "bug report: dropped the screenshot",
+              "bug report: the form closed without sending: Scene_Map took the place of the form before it opened"
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 1,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "scene",
+          "place": "map",
+          "map_ready": false,
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "frame",
+          "hotkey": true,
+          "answer": {
+            "answer": null,
+            "logs": [
+              "bug report: asked for a report by hotkey in Scene_Map, map 5"
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+              "ok"
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+              [
+                "The bug report opens once you are free on the map.",
+                null
+              ]
+            ],
+            "snaps": 1,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": true,
+            "sending": false
+          }
+        },
+        {
+          "op": "scene",
+          "place": "title",
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": true,
+            "sending": false
+          }
+        },
+        {
+          "op": "frame",
+          "answer": {
+            "answer": null,
+            "logs": [
+              "bug report: dropped the screenshot",
+              "bug report: forgot the waiting report: the game left for Scene_Title"
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 1,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        },
+        {
+          "op": "frame",
+          "hotkey": true,
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+              "the game shows the title or game over screen"
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": false,
+            "sending": false
+          }
+        }
+      ]
+    }
+  ]
+}

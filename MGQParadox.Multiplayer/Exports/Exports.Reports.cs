@@ -2,6 +2,7 @@
 //  Exports.Reports.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Kept nothing that reaches mp_report_snap, which no script calls
 //      Paulinchen  2026-10-11: Created
 //
 //----------------------------------------------------------------
@@ -20,26 +21,16 @@ namespace MGQParadox.Multiplayer;
 internal static unsafe partial class Exports
 {
     /// <summary>
-    /// Keeps a copy of the screen as the pending screenshot, replacing an earlier one; the PNG is encoded once a report is sent.
+    /// Kept for the scripts' list of exports until it goes with the other old exports: the
+    /// screenshot reaches the report through the bridge's <c>ui.report.snap</c>, and nothing keeps
+    /// what comes here.
     /// </summary>
-    /// <param name="pixels">The screen as the game keeps a bitmap, width times height times B, G, R, A, the last row first; copied at once.</param>
-    /// <param name="width">The width in pixels, 1 to 4096.</param>
-    /// <param name="height">The height in pixels, 1 to 4096.</param>
-    /// <returns>1 when kept, 0 for a size outside the limits, no pixels, or when it failed.</returns>
+    /// <param name="pixels">The screen's pixels, unread.</param>
+    /// <param name="width">The width in pixels, unread.</param>
+    /// <param name="height">The height in pixels, unread.</param>
+    /// <returns>0, as nothing is kept.</returns>
     [UnmanagedCallersOnly(EntryPoint = "mp_report_snap", CallConvs = [typeof(CallConvStdcall)])]
-    public static int ReportSnap(byte* pixels, int width, int height)
-    {
-        try
-        {
-            var screen = pixels != null && BugReports.IsScreenSize(width, height) ? new ReadOnlySpan<byte>(pixels, width * height * Png.SourcePixelBytes) : default;
-            return BugReports.Current.Snap(screen, width, height) ? 1 : 0;
-        }
-        catch (Exception ex)
-        {
-            Log.Write($"mp_report_snap failed: {ex}");
-            return 0;
-        }
-    }
+    public static int ReportSnap(byte* pixels, int width, int height) => 0;
 
     /// <summary>
     /// Forgets the pending screenshot.
