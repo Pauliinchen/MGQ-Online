@@ -2,6 +2,7 @@
 //  WorldRoom.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Took the party's own messages through the routes of the rules in C#
 //      Paulinchen  2026-10-30: Let a rule in C# take a message without a sender, with its body
 //                            - Let rules in C# take the messages of a field before the scripts
 //      Paulinchen  2026-10-23: Kept a player away whose seat another player took, and told each change of a player's presence
@@ -87,11 +88,6 @@ public sealed class WorldRoom
     private static readonly string[] LoggedFields = ["name", "map", "scene", "hidden", "party"];
 
     /// <summary>
-    /// The routes the party handles itself, before the scripts' routes.
-    /// </summary>
-    private static readonly (string Field, RouteGate Gate)[] OwnRoutes = [("kick", RouteGate.Party), ("party_decline", RouteGate.None)];
-
-    /// <summary>
     /// What the relay pushes, by the inbox entry's kind: the field the scripts' route takes it by,
     /// and the headers it carries, the first under the field itself.
     /// </summary>
@@ -142,10 +138,10 @@ public sealed class WorldRoom
     private readonly List<(string Field, RouteGate Gate)> routes = [];
 
     /// <summary>
-    /// The routes of the rules in C# in the order they registered them, each with its handler,
-    /// checked after the party's own and before the scripts'.
+    /// The routes of the rules in C#, the party's own first, in the order they registered them, each
+    /// with its handler; checked before the scripts' routes.
     /// </summary>
-    private readonly List<(string Field, RouteGate Gate, Action<Peer?, WorldFields, string> Handler)> takers = [];
+    private readonly List<(string Field, RouteGate Gate, Action<Peer?, WorldFields, string, bool> Handler)> takers = [];
 
     /// <summary>
     /// The keys of the lines logged once.
@@ -201,6 +197,14 @@ public sealed class WorldRoom
         this.clock = clock ?? throw new ArgumentNullException(nameof(clock));
         this.random = random ?? throw new ArgumentNullException(nameof(random));
         Party = new Party(this);
+        Take("kick", RouteGate.Party, (peer, message) => Party.RemovedBy(peer, message["kick"]));
+        Take("party_decline", RouteGate.None, (peer, _, _) =>
+        {
+            if (peer is not null)
+            {
+                Party.DeclinedBy(peer);
+            }
+        });
     }
 
     /// <summary>
@@ -282,7 +286,9 @@ public sealed class WorldRoom
 
     /// <summary>
     /// Hands every message marked by a field to a rule in C#, once it passed the field's gate,
-    /// before any script's route of the same field.
+    /// before any script's route of the same field. These overloads are the one way a rule in
+    /// C# takes the room's messages: the gates drop a message for it with the same log lines as for a
+    /// script's route.
     /// </summary>
     /// <param name="field">The field, such as "ptp".</param>
     /// <param name="gate">The gate its messages pass, <see cref="RouteGate.Party"/> or <see cref="RouteGate.Map"/>.</param>
@@ -310,6 +316,20 @@ public sealed class WorldRoom
     /// <param name="handler">Takes who sent a message (<see langword="null"/> for the relay or before
     /// their first state), its fields and its body.</param>
     public void Take(string field, RouteGate gate, Action<Peer?, WorldFields, string> handler)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        Take(field, gate, (peer, message, body, _) => handler(peer, message, body));
+    }
+
+    /// <summary>
+    /// Has a rule in C# take every message marked by a field, past the field's gate, before any
+    /// script's route, knowing whether the relay pushed it, which no player can make a message seem.
+    /// </summary>
+    /// <param name="field">The field.</param>
+    /// <param name="gate">The gate its messages pass.</param>
+    /// <param name="handler">Takes who sent a message (<see langword="null"/> for the relay or before
+    /// their first state), its fields, its body and whether the relay pushed it.</param>
+    public void Take(string field, RouteGate gate, Action<Peer?, WorldFields, string, bool> handler)
     {
         ArgumentNullException.ThrowIfNull(field);
         ArgumentNullException.ThrowIfNull(handler);
@@ -880,8 +900,8 @@ public sealed class WorldRoom
     }
 
     /// <summary>
-    /// Hands a message to the route registered for its field, through the route's gate: the room's
-    /// own, then those of the rules in C#, then the scripts'. The first route registered wins when a
+    /// Hands a message to the route registered for its field, through the route's gate: those of the
+    /// rules in C#, the party's own first, then the scripts'. The first route registered wins when a
     /// message carries several fields of routes.
     /// </summary>
     /// <param name="peer">Who sent it, <see langword="null"/> for the relay or before their first state.</param>
@@ -890,23 +910,16 @@ public sealed class WorldRoom
     /// <param name="relay">Whether the relay pushed it.</param>
     private void HandOver(Peer? peer, WorldFields message, string body, bool relay)
     {
-        (string Field, RouteGate Gate)? found = null;
-        foreach ((string Field, RouteGate Gate) route in OwnRoutes.Concat(takers.Select(taker => (taker.Field, taker.Gate))).Concat(routes))
-        {
-            if (message.Has(route.Field))
-            {
-                found = route;
-                break;
-            }
-        }
-
-        if (found is not { } taken)
+        int taker = takers.FindIndex(route => message.Has(route.Field));
+        int script = taker < 0 ? routes.FindIndex(route => message.Has(route.Field)) : -1;
+        if (taker < 0 && script < 0)
         {
             string fields = string.Join(", ", message.Select(pair => pair.Key).Take(4));
             LogOnce("unrouted " + fields, $"overworld sync: dropped a message from {Who(peer)} that no script takes (fields {fields})");
             return;
         }
 
+        (string Field, RouteGate Gate) taken = taker >= 0 ? (takers[taker].Field, takers[taker].Gate) : routes[script];
         string? reason = taken.Gate switch
         {
             RouteGate.Party => PartyDropReason(peer, message),
@@ -921,28 +934,13 @@ public sealed class WorldRoom
             return;
         }
 
-        switch (taken.Field)
+        if (taker >= 0)
         {
-            case "kick":
-                Party.RemovedBy(peer!, message["kick"]);
-                return;
-            case "party_decline":
-                if (peer is not null)
-                {
-                    Party.DeclinedBy(peer);
-                }
-
-                return;
-            default:
-                if (takers.Find(taker => taker.Field == taken.Field) is { Handler: { } handler })
-                {
-                    handler(peer, message, body);
-                    return;
-                }
-
-                host.Routed(new RoutedMessage(taken.Field, peer?.Seat, message, body, relay));
-                return;
+            takers[taker].Handler(peer, message, body, relay);
+            return;
         }
+
+        host.Routed(new RoutedMessage(taken.Field, peer?.Seat, message, body, relay));
     }
 
     /// <summary>

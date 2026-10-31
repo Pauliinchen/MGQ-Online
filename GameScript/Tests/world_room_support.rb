@@ -2,6 +2,7 @@
 #  world_room_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Dropped the messages whose field a rule in C# takes, as the room does
 #      Paulinchen  2026-10-23: Kept the stand-in bridge a test already opened
 #                            - Created
 #
@@ -16,6 +17,10 @@
 require_relative "bridge_support"
 
 load_bridge unless defined?(MGQ_Multiplayer::Bridge)
+
+# The fields the rules in C# take through WorldRoom.Take, the party's own included: the room hands
+# a message carrying one of them to C#, never to the scripts.
+CSHARP_FIELDS = %w[kick party_decline ptp npcs map_npcs coop map_coop trade]
 
 # The fake DLL the scripts' world room topics go to, the test's one FakeBridge, which the rules' and
 # the interface's answers share.
@@ -85,7 +90,8 @@ def name_plainly
   peers.take_labels(labels)
 end
 
-# Plays the DLL handing a message to the script registered for its field, past the gates.
+# Plays the DLL handing a message to the script registered for its field, past the gates; one
+# carrying a field of CSHARP_FIELDS goes to C# and the scripts get nothing.
 #
 # @param seat [Integer, nil] The sender's seat, nil for the relay.
 # @param fields [Hash] The message's fields.
@@ -93,6 +99,8 @@ end
 # @param relay [Boolean] Whether the relay pushed it.
 def message_from(seat, fields, body = "", relay = false)
   message = Hash[fields.map { |key, value| [key.to_s, value.to_s] }]
+  return if message.keys.any? { |key| CSHARP_FIELDS.include?(key) }
+
   MGQ_MpOverworldSync.take_route("field" => message.keys.first, "seat" => seat, "fields" => message, "body" => body, "relay" => relay)
 end
 

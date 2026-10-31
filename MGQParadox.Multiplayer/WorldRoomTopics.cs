@@ -2,6 +2,9 @@
 //  WorldRoomTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Registered the overview topics over the room
+//                            - Registered the trades' topics with the other areas over the room
+//                            - Moved the chat's topic to ChatTopics
 //      Paulinchen  2026-10-30: Handed the room to the areas whose rules take its messages
 //                            - Registered the co-op battles' matchmaking over the room
 //                            - Registered the topic of the player's squad over the room
@@ -32,8 +35,9 @@ namespace MGQParadox.Multiplayer;
 
 /// <summary>
 /// The bridge topics of the open world (<see cref="WorldRoom"/>): what the scripts tell of the
-/// player each frame, the party's actions and the chat's lines in, the wait for the room's last
-/// sends as the game closes, and the whole world room's inbox out as drained events, once a frame.
+/// player each frame and the party's actions in, the wait for the room's last sends as the game
+/// closes, and the whole world room's inbox out as drained events, once a frame; and the one place
+/// the topics of every area over the room are registered from, each area from a file of its own.
 /// </summary>
 /// <remarks>
 /// Every event is posted after the views it depends on (the party, the players' names, the
@@ -69,12 +73,6 @@ internal sealed class WorldRoomTopics : IWorldRoomHost
     /// not see them on yet: map in, {"map", "since"} out.
     /// </summary>
     public const string SinceTopic = "world.since";
-
-    /// <summary>
-    /// The topic that sends a line of a chat: {"channel" ("global", "map", "party", "whisper"),
-    /// "text", "seat" (the whisper's), "map" (the map chat's)} in, {"sent", "said"} out.
-    /// </summary>
-    public const string ChatTopic = "chat.send";
 
     /// <summary>
     /// The party's action topics, each answering the party's view afterwards.
@@ -210,14 +208,22 @@ internal sealed class WorldRoomTopics : IWorldRoomHost
     internal WorldRoom Room => _room;
 
     /// <summary>
-    /// Registers the topics and the frame step on a context, over the game's world connection.
+    /// Registers the topics, the frame step and the topics of every area over the room on a context,
+    /// over the game's world connection and the relay's ways the areas reach.
     /// </summary>
     /// <param name="context">The context the handshake opened.</param>
     /// <returns>The room's topics.</returns>
-    public static WorldRoomTopics Register(BridgeContext context) => Register(context, WorldSession.Current, EventTopics.ReadAhead);
+    public static WorldRoomTopics Register(BridgeContext context)
+    {
+        WorldRoomTopics topics = Register(context, WorldSession.Current, EventTopics.ReadAhead);
+        TradeTopics.Register(context, topics._room);
+        OverviewTopics.RegisterRoom(context, topics._room);
+        return topics;
+    }
 
     /// <summary>
-    /// Registers the topics and the frame step on a context.
+    /// Registers the topics and the frame step on a context, and the topics of the areas that need
+    /// nothing but the room and its connection; the room steps before them each frame.
     /// </summary>
     /// <param name="context">The context the handshake opened.</param>
     /// <param name="session">The world connection.</param>
@@ -239,7 +245,6 @@ internal sealed class WorldRoomTopics : IWorldRoomHost
             topics._session.Drain();
             return null;
         });
-        context.Register(ChatTopic, (_, request) => topics.Chat(request.AsHash()));
         context.Register(InviteTopic, (_, request) => topics.Act(() => topics._room.Party.Invite(request.IsNil ? null : request.AsText())));
         context.Register(StopInvitingTopic, (_, _) => topics.Act(topics._room.Party.StopInviting));
         context.Register(JoinTopic, (_, request) => topics.Act(() => topics._room.Party.Join(topics.PeerAt(request))));
@@ -252,6 +257,7 @@ internal sealed class WorldRoomTopics : IWorldRoomHost
         NpcTopics.Register(context, topics._room);
         SquadViewTopics.Register(context, topics._room);
         CoopRoomTopics.Register(context, topics._room);
+        ChatTopics.Register(context, topics._room, session);
         return topics;
     }
 
@@ -317,7 +323,7 @@ internal sealed class WorldRoomTopics : IWorldRoomHost
     /// </summary>
     /// <param name="value">The value.</param>
     /// <returns>The text.</returns>
-    private static string TextOf(RubyValue value) => value switch
+    internal static string TextOf(RubyValue value) => value switch
     {
         RubyNil => string.Empty,
         RubyString text => text.Text,
@@ -409,58 +415,6 @@ internal sealed class WorldRoomTopics : IWorldRoomHost
     /// <param name="map">The map.</param>
     /// <returns>{"map", "since"}.</returns>
     private RubyHash SinceOf(long map) => new() { { "map", map }, { "since", _room.SinceOf(map.ToString(CultureInfo.InvariantCulture)) } };
-
-    /// <summary>
-    /// Sends a line of a chat: the global chat's mirrored to the relay first, which turns down lines
-    /// that come too fast; the party's through the party's gate; the map's for the player's map.
-    /// </summary>
-    /// <param name="request">{"channel", "text", "seat", "map"}.</param>
-    /// <returns>{"sent", "said"}: whether it went out, and for the global chat what the relay's mirror
-    /// did (0 not mirrored, 1 mirrored, 2 too fast).</returns>
-    /// <exception cref="BridgeRequestException">The channel is none of the four.</exception>
-    private RubyHash Chat(RubyHash request)
-    {
-        string channel = request["channel"].AsText();
-        string text = request["text"].AsText();
-        var fields = new WorldFields();
-        string name = Identity().Name;
-        int seat = -1;
-        WorldSession.Mirror said = WorldSession.Mirror.NotMirrored;
-        switch (channel)
-        {
-            case "global":
-                said = _session.Say(text);
-                if (said == WorldSession.Mirror.TooFast)
-                {
-                    return new RubyHash { { "sent", false }, { "said", (long)said } };
-                }
-
-                fields.Set("chat", text);
-                fields.Set("name", name);
-                break;
-            case "party":
-                fields.Set("pchat", text);
-                fields.Set("party", _room.Party.Id ?? string.Empty);
-                fields.Set("name", name);
-                break;
-            case "map":
-                // A map line goes out marked say, the map chat's name before, which released games read.
-                fields.Set("chat", text);
-                fields.Set("name", name);
-                fields.Set("ch", "say");
-                fields.Set("map", TextOf(request["map"]));
-                break;
-            case "whisper":
-                fields.Set("whisper", text);
-                fields.Set("name", name);
-                seat = request["seat"].AsInt();
-                break;
-            default:
-                throw new BridgeRequestException($"There is no chat {channel}.");
-        }
-
-        return new RubyHash { { "sent", _session.Send(seat, fields.Encode()) }, { "said", (long)said } };
-    }
 
     /// <summary>
     /// Finds the player a party action names by their seat.

@@ -2,6 +2,7 @@
 //  WorldRoomTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Sent the chat line through ChatTopics
 //      Paulinchen  2026-10-23: Checked that the event data reads ahead as the world opens
 //                            - Created
 //
@@ -14,6 +15,7 @@ using System.Text;
 using MGQOnline.Bridge;
 using MGQOnline.Bridge.Ruby;
 using MGQParadox.Multiplayer.Network.World;
+using MGQParadox.Multiplayer.Topics;
 
 namespace MGQParadox.Multiplayer.Tests;
 
@@ -96,7 +98,7 @@ public sealed class WorldRoomTopicsTests
     [Fact]
     public void Chat_SendsNothingWithoutAConnection()
     {
-        RubyHash answer = Call(WorldRoomTopics.ChatTopic, new RubyHash { { "channel", "global" }, { "text", "hello" } }).AsHash();
+        RubyHash answer = Call(ChatTopics.SendTopic, new RubyHash { { "channel", "global" }, { "text", "hello" } }).AsHash();
 
         Assert.Equal(new RubyHash { { "sent", false }, { "said", 0 } }, answer);
     }
