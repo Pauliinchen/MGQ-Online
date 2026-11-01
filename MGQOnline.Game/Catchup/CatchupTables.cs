@@ -2,6 +2,7 @@
 //  CatchupTables.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Kept which players the companions of the Alice and Ilias choice may join
 //      Paulinchen  2026-10-31: Dropped the maps where warping is free, since a world never bans warping
 //                            - Read a world chest without its chest flags, which only released builds read
 //      Paulinchen  2026-10-28: Read the steps of the story in free order
@@ -151,9 +152,19 @@ public sealed class CatchupTables
     internal CatchupIndex Index => _index ??= new CatchupIndex(this);
 
     /// <summary>
+    /// Gets which players the companions of the Alice and Ilias choice may join, built at its first ask.
+    /// </summary>
+    public CompanionScope Scope => _scope ??= new CompanionScope(this);
+
+    /// <summary>
     /// The index, <see langword="null"/> before the first look.
     /// </summary>
     private CatchupIndex? _index;
+
+    /// <summary>
+    /// The scope of the companions, <see langword="null"/> before the first ask.
+    /// </summary>
+    private CompanionScope? _scope;
 
     /// <summary>
     /// Reads the catch-up's tables of a mapping.

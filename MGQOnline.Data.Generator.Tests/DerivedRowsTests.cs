@@ -2,6 +2,7 @@
 //  DerivedRowsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Covered the branches of an extended choice
 //      Paulinchen  2026-10-31: Covered the story replay's gate and the roots of a script
 //                            - Covered the pairs the one-time repair of stuck saves completes
 //                            - Covered the lists that give and the branches of each choice
@@ -380,6 +381,30 @@ public sealed class DerivedRowsTests
         Assert.Equal(
             [(0, 2, 4, "ce5"), (1, 6, 8, "126:7:0:0:1"), (4, 10, 10, string.Empty)],
             store.ChoiceBranches(list, 0).Select(branch => (branch.Branch, branch.FirstIdx, branch.LastIdx, branch.Holdings)));
+    }
+
+    /// <summary>
+    /// Asserts that each answer of an extended choice, as the Colosseum's cups (CE 161) add them, names
+    /// the commands of each branch on the result variable it runs: the Saja Cup its prize and the
+    /// way out the Never mind takes too, the cancel nothing.
+    /// </summary>
+    [Fact]
+    public void ExChoiceBranches_NameTheBranchesOnTheResultEachAnswerRuns()
+    {
+        using EventStore store = StoreOf(new TinyGame()
+            .Scripts("module NWConst::Var\n  EX_CHOICE_RESULT = 9\nend")
+            .Common(161,
+                C(355, "ex_choice_add(\"Demon Cup\",1,\"v[703] >= 0\",1)"), C(655, "ex_choice_add(\"Saja Cup\",4,"),
+                C(655, "\"v[703] >= 3 and v[1143] >= 25\",0)"), C(655, "ex_choice_add(\"Never mind\",5)"), C(355, "ex_choice_show(0)"),
+                C(111, 1, 9, 0, 1, 0), At(128, 1, 1366, 0, 0, 1, 0), At(0, 1), C(412),
+                C(111, 1, 9, 0, 4, 0), At(128, 1, 1367, 0, 0, 1, 0), At(0, 1), C(412),
+                C(111, 1, 9, 0, 4, 1), At(115, 1), At(0, 1), C(412)));
+
+        int list = store.CommonList(161)!.Value.ListId;
+
+        Assert.Equal(
+            [(0, 6, 5, string.Empty), (1, 7, 8, "128:1366:0:0:1:0"), (4, 11, 12, "128:1367:0:0:1:0"), (4, 15, 16, string.Empty), (5, 15, 16, string.Empty)],
+            store.ChoiceBranches(list, 5).Select(branch => (branch.Branch, branch.FirstIdx, branch.LastIdx, branch.Holdings)));
     }
 
     /// <summary>

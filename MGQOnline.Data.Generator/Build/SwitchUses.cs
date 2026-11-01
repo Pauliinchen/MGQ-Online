@@ -2,6 +2,7 @@
 //  SwitchUses.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Read a constant of the scripts by its name
 //      Paulinchen  2026-10-31: Created
 //
 //----------------------------------------------------------------
@@ -126,6 +127,18 @@ internal sealed partial class SwitchUses
         }
 
         return new SwitchUses(ids, bands);
+    }
+
+    /// <summary>
+    /// Reads a constant the scripts define with a value of whole numbers and other constants.
+    /// </summary>
+    /// <param name="scripts">The game's scripts, each as one text.</param>
+    /// <param name="name">The constant's name, the last part of its path.</param>
+    /// <returns>Its value, <see langword="null"/> when the scripts define none.</returns>
+    public static long? ConstantOf(IReadOnlyList<string> scripts, string name)
+    {
+        ArgumentNullException.ThrowIfNull(scripts);
+        return ConstantsOf(scripts, out _).TryGetValue(name, out long value) ? value : null;
     }
 
     /// <summary>

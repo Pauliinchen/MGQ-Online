@@ -35,8 +35,8 @@ left for the user to decide.
 | Rewards | [rewards](#rewards) | 888 |
 | Rewards | [key_items](#key_items) | 153 |
 | Rewards | [event_rewards](#event_rewards) | 417 |
-| Companions | [joins](#joins) | 662 |
-| Companions | [removals](#removals) | 222 |
+| Companions | [joins](#joins) | 660 |
+| Companions | [removals](#removals) | 230 |
 | Companions | [lessons](#lessons) | 112 |
 | Companions | [actor_changes](#actor_changes) | 81 |
 | World | [parts](#parts) | 6 |
@@ -1177,6 +1177,41 @@ joins have none, by the table's rule.
 3. **Optional companions on the routes**: "auto unlock missed companions". The rule stays: once a
    route is finished, its optional recruits reach every player, recruited or not. The four optional
    bosses the review had moved off the routes are placed back (see above).
+
+### Changed by the user's decisions of 2026-11-01
+
+The companions of the Alice and Ilias choice reach only the players who took that side along in
+Iliasville, and from the Great Decision on follow the route ("MGQ Online row decisions.md",
+decision 12 note). The Event Checker's raid_data.rb (branch fix/choice-companions) reads a
+companion's side from the side switch its list turns on and from the pages that set the keys its
+page reads, and gives the rows on a route a side only where their list reads switches 4 and 5
+before a route sets them anew (map 432 and map 410); the regenerated candidates
+(fixtures/catchup/generated) differ from the earlier ones only in the rows below, which were
+changed here the same way, each with a `note`, and in the sides of Micaela-chan, Lucifina-chan
+and Aurora, which this review had fixed already:
+
+- **Alice (5), map:6:30:2, and Ilias (26), map:6:31:2:** side `alice` and `ilias`, read from the
+  side switch each choice turns on. The rows had none, so every player past Iliasville counted as
+  past both joins.
+- **The Great Decision's joins (common event 380) and the Strategy Conference (map:437:11:1):**
+  the side taken along in Iliasville, as before, which they read from switches 4 and 5 before a
+  route sets them anew: Ilias, Micaela-chan, Lucifina-chan, Eden and Heinrich only for the players
+  who took Alice along, Alice, Alicetroemeria and Morrigan only for those who took Ilias along.
+- **Lucifina's house (map:1010:6:1, the four Doppel Lukas):** no side. The route set switches 4
+  and 5 anew before it, so they tell the route there, never the side taken along in Iliasville.
+- **The Strategy Conference (map:437:11:1), every table:** Chaos route step 1, marks 1001?40 and
+  1143?1, as common event 380 sets 1143 to 1 and sends the player there, before the removals of
+  steps 4 and 7; Ilias, Micaela-chan, Lucifina-chan, Eden, Heinrich and Morrigan come back there
+  at the Level Cap's cap (120) after the Great Decision's removals.
+- **Alipheese the 12th (746), map:102:53:1 and map:102:53:2:** dropped. The Pocket Castle's talk
+  only parts the 11th and 12th and puts them together again; her join on the Chaos route
+  (map:1637:5:1) is her first now (`start`).
+
+In the removals: the Great Decision's own removals as each route starts (common event 380, first
+playthrough) are added, Ilias, Micaela-chan, Lucifina-chan, Eden and Heinrich on the Angelic
+Dominion for everyone, and Alice, Alicetroemeria and Morrigan on the Monster Realm for the players
+who took Alice along (8 rows); and the removals of map 430, where everyone who sides with the Dark
+Goddess goes, ask for no side.
 
 ### removals
 

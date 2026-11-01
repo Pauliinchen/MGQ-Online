@@ -2,6 +2,7 @@
 #  coop_events.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Hashed a list's shape through story_replay.rbx, which names the places of the kept commands by the same codes
 #      Paulinchen  2026-10-31: Stopped telling whether warping is banned where the story plays
 #                            - Stopped telling the party the items and gold the leader's story gives, which the leader's runs bring by replay
 #                            - Worded what the player reads plainly, leaving causes and internals to the log
@@ -161,15 +162,6 @@ module MGQ_MpCoopEvents
   # The DLL's topic that tells the troops and the writes of lists through the common events they
   # call, see EventTopics.Index.
   INDEX_TOPIC = "events.index"
-
-  # The codes of the commands a list's shape covers, as MGQOnline.Data's EventSchema.KeptCodes.
-  SHAPE_CODES = [
-    101, 102, 103, 104, 105, 111, 117, 118, 119, 121, 122, 123, 125, 126, 127, 128, 129, 132, 133, 136, 201, 202, 203,
-    206, 222, 282, 283, 285, 301, 303, 353, 354, 355, 402, 403, 404, 411, 412, 999
-  ]
-
-  # The bits a list's shape keeps: 24, so every step stays a Fixnum on the game's 32-bit Ruby.
-  SHAPE_MASK = 0xFFFFFF
 
   # How often a sort hands over the values the DLL names it needs, at most: a branch the values
   # open may read more.
@@ -424,21 +416,12 @@ module MGQ_MpCoopEvents
     @shapes[list] = { "size" => list.size, "shape" => shape(list) }
   end
 
-  # Hashes a list's commands of SHAPE_CODES as MGQOnline.Data's ListShape does: code, indent and
-  # every Integer parameter, in order (fixtures/events/hash_cases.json holds both sides' cases).
+  # Hashes a list's commands as MGQOnline.Data's ListShape does, see MGQ_MpStoryReplay.list_shape.
   #
   # @param list [Array<RPG::EventCommand>] The commands.
   # @return [Integer] The shape.
   def self.shape(list)
-    @shape_codes ||= Hash[SHAPE_CODES.map { |code| [code, true] }]
-    list.inject(0) do |hash, command|
-      next hash unless command && @shape_codes[command.code]
-
-      hash = (hash * 31 + command.code) & SHAPE_MASK
-      hash = (hash * 31 + command.indent) & SHAPE_MASK
-      command.parameters.each { |value| hash = (hash * 31 + value) & SHAPE_MASK if value.is_a?(Integer) }
-      hash
-    end
+    MGQ_MpStoryReplay.list_shape(list)
   end
 
   # Turns a parameter into a value that crosses the bridge.

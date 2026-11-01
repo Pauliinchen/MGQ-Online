@@ -2,6 +2,7 @@
 //  EventStore.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Read the branches of an extended choice too
 //      Paulinchen  2026-10-31: Added the pairs the one-time repair of stuck saves completes
 //                            - Told whether a list gives and read the branches of a choice
 //      Paulinchen  2026-10-28: Handed out the relay mirror, made anew when torn or of another schema, and listed the chest flags
@@ -458,12 +459,12 @@ public sealed class EventStore : IDisposable
     public bool Gives(int listId) => First(EventTables.Gives, "WHERE list_id = ?", listId) is not null;
 
     /// <summary>
-    /// Reads the branches of a Show Choices command.
+    /// Reads the branches of a Show Choices command or an extended choice's script command.
     /// </summary>
     /// <param name="listId">The list.</param>
     /// <param name="idx">The command's place in the list.</param>
-    /// <returns>The branches by answer; none for a place that holds no choice.</returns>
-    public IReadOnlyList<ChoiceBranchRow> ChoiceBranches(int listId, int idx) => Select(EventTables.ChoiceBranches, "WHERE list_id = ? AND idx = ? ORDER BY branch", listId, idx);
+    /// <returns>The branches by answer, then by their first command; none for a place that holds no choice.</returns>
+    public IReadOnlyList<ChoiceBranchRow> ChoiceBranches(int listId, int idx) => Select(EventTables.ChoiceBranches, "WHERE list_id = ? AND idx = ? ORDER BY branch, first_idx", listId, idx);
 
     /// <summary>
     /// Reads a common event.

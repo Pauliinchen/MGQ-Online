@@ -2,6 +2,7 @@
 //  ListBuild.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Handed on each list's extended choices
 //      Paulinchen  2026-10-31: Handed each list's script roots on
 //                            - Handed on what each list's scripts do to self switches
 //                            - Handed on each list's scripts that touch what a player holds
@@ -102,7 +103,7 @@ internal static class ListBuild
         }
 
         (List<ForcedTransfer> forced, List<int> scriptSwitches) = ScriptTexts.Of(list);
-        return new BuiltList(rows.Lists[^1], commands, forced, scriptSwitches, ScriptRoots.In(list), ScriptTexts.SelfSwitchesOf(list), Gives.ScriptsOf(list));
+        return new BuiltList(rows.Lists[^1], commands, forced, scriptSwitches, ScriptRoots.In(list), ScriptTexts.SelfSwitchesOf(list), Gives.ScriptsOf(list), ChoiceAsks.ExChoicesOf(list));
     }
 
     /// <summary>

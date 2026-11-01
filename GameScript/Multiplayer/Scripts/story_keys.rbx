@@ -5,6 +5,8 @@
 #      Paulinchen  2026-11-01: Noted a run's checks of what the party holds and of the event's own self switches as inputs, which a replay follows
 #                            - Named every command running now, which tells one use of an item from another
 #                            - Told whether a command runs inside a story reset, whose losses use nothing up
+#                            - Noted a choice at its Show Choices command, and every input by its command's place among the kept commands
+#                            - Noted an extended choice at the script command that shows it
 #      Paulinchen  2026-10-31: Bracketed each run of the player's own game with its shared writes, start values, inputs and resets
 #                            - Logged each run that changed a party or world key with the DLL
 #                            - Told whether a run belongs to a party chest's page
@@ -839,7 +841,18 @@ module MGQ_MpStoryKeys
   #
   # @return [String, nil] Such as "map:1994:42:1@12", nil outside every command.
   def self.input_place
-    @running.empty? ? nil : MGQ_MpStoryReplay.input_at(site_of(@running.last), @indexes.last)
+    @running.empty? ? nil : place_of(@running.last, @indexes.last)
+  end
+
+  # Names the choice the command running now sets up, as the replay names it: the Show Choices its
+  # interpreter stands at, after a text's lines too, or the script command of an extended choice.
+  #
+  # @return [String, nil] Such as "map:6:30:2@1", nil outside every command.
+  def self.choice_place
+    return nil if @running.empty?
+
+    interpreter = @running.last
+    MGQ_MpStoryReplay.choice_at(site_of(interpreter), MGQ_MpGame.get(interpreter, :list), MGQ_MpGame.get(interpreter, :index).to_i)
   end
 
   # Names every command running now, the outermost first, as input_place names one: a common
@@ -849,7 +862,7 @@ module MGQ_MpStoryKeys
   def self.command_places
     return nil if @running.empty?
 
-    @running.each_with_index.map { |interpreter, at| MGQ_MpStoryReplay.input_at(site_of(interpreter), @indexes[at]) }.join(">")
+    @running.each_with_index.map { |interpreter, at| place_of(interpreter, @indexes[at]) }.join(">")
   end
 
   # Reports whether a command runs inside a story reset: one of the lists running now writes a range
@@ -883,7 +896,16 @@ module MGQ_MpStoryKeys
     end
   end
 
-  # Wraps a choice's handler so the answer is noted as an input of the command that showed it.
+  # Names a command of an interpreter's list, see MGQ_MpStoryReplay.input_at.
+  #
+  # @param interpreter [Game_Interpreter] The interpreter.
+  # @param index [Integer] The command's place in its list.
+  # @return [String] Such as "map:1994:42:1@12".
+  def self.place_of(interpreter, index)
+    MGQ_MpStoryReplay.input_at(site_of(interpreter), MGQ_MpGame.get(interpreter, :list), index)
+  end
+
+  # Wraps a choice's handler so the answer is noted as an input of the choice that showed it.
   #
   # @param handler [Proc, nil] The game's handler of the answer.
   # @return [Proc, nil] The handler to keep.
@@ -891,7 +913,7 @@ module MGQ_MpStoryKeys
     run = replaying? ? nil : current_run
     return handler unless run && handler
 
-    at = input_place
+    at = choice_place
     lambda do |answer|
       MGQ_MpStoryKeys.input("choice", answer, at, run)
       handler.call(answer)
@@ -1270,7 +1292,7 @@ begin
     MGQ_MpHooks.around(Game_Message, :choice_proc=, "story_keys") { |_message, args, original| original.call(MGQ_MpStoryKeys.noted_choice(args[0])) }
   end
   if has.call(Game_Interpreter, :ex_choice_show) && defined?(NWConst::Var::EX_CHOICE_RESULT)
-    MGQ_MpHooks.after(Game_Interpreter, :ex_choice_show, "story_keys") { MGQ_MpStoryKeys.input("choice", $game_variables[NWConst::Var::EX_CHOICE_RESULT]) }
+    MGQ_MpHooks.after(Game_Interpreter, :ex_choice_show, "story_keys") { MGQ_MpStoryKeys.input("choice", $game_variables[NWConst::Var::EX_CHOICE_RESULT], MGQ_MpStoryKeys.choice_place) }
   end
   if has.call(Game_Interpreter, :input_keys)
     MGQ_MpHooks.after(Game_Interpreter, :input_keys, "story_keys") { MGQ_MpStoryKeys.keys_pressed(Array($game_temp.keys_stack)) }

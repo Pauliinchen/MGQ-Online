@@ -2,6 +2,7 @@
 //  DerivedBuild.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Derived the branches of each extended choice too
 //      Paulinchen  2026-10-31: Derived the pairs the one-time repair of stuck saves completes
 //                            - Derived the lists that give and the branches of each choice
 //      Paulinchen  2026-10-28: Created
@@ -86,10 +87,11 @@ internal static class DerivedBuild
         rows.SiteAlternatives.AddRange(raid.Alternatives());
         rows.SceneEntries.AddRange(raid.SceneEntries());
 
-        SwitchUses uses = SwitchUses.Of(source.ReadScripts(), source.ReadInUse(GameSource.NamedParts[0].Path), GameSource.NamedParts.SelectMany(part => source.ReadEntries(part.Path)));
+        IReadOnlyList<string> scripts = source.ReadScripts();
+        SwitchUses uses = SwitchUses.Of(scripts, source.ReadInUse(GameSource.NamedParts[0].Path), GameSource.NamedParts.SelectMany(part => source.ReadEntries(part.Path)));
         rows.RepairPairs.AddRange(RepairPairs.Of(game, uses));
         rows.Gives.AddRange(Gives.Of(game));
-        rows.ChoiceBranches.AddRange(ChoiceAsks.Of(game));
+        rows.ChoiceBranches.AddRange(ChoiceAsks.Of(game, scripts));
         return game;
     }
 }

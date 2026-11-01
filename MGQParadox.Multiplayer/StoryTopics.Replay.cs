@@ -2,6 +2,8 @@
 //  StoryTopics.Replay.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Found the choices of a replay in the events database by their places among the kept commands of the player's lists
+//                            - Never handed over nor replayed a run where the player takes a side along
 //      Paulinchen  2026-10-31: Read a Classic party's scopes from the reviewed list alone
 //                            - Answered a derived entry's choices by the branch that ends with the source's letters
 //                            - Handed every run that changed a shared key and gives to its stream, deciding what gives from the events database
@@ -102,7 +104,9 @@ internal sealed partial class StoryTopics
     /// <summary>
     /// The topic that takes a run handed to the player: {"entry", "values" (name => value of the
     /// player's own: "s&lt;id&gt;", "v&lt;id&gt;", "ss&lt;map&gt;.&lt;event&gt;.&lt;letter&gt;" as the tracks
-    /// write them, "item&lt;id&gt;" and "actor&lt;id&gt;" as "1" or "0")}. Answers {"do"=>"done"},
+    /// write them, "item&lt;id&gt;" and "actor&lt;id&gt;" as "1" or "0"), "shapes" (site => the
+    /// <see cref="MGQOnline.Data.Events.ListShape"/> of the player's list of each choice the entry's
+    /// inputs name)}. Answers {"do"=>"done"},
     /// {"needs"=>[name, ...]}, {"do"=>"pending", "why"}, {"do"=>"replay", "page" (from 1, nil for
     /// a common event), "sibling", "inputs" (the entry's, less the answers of the choices that are
     /// the receiver's, whom the replay asks them)} or {"unknown"=>true} without an events database
@@ -439,13 +443,14 @@ internal sealed partial class StoryTopics
         bool world = keys.Count > party.Count;
         RubyValue streamOf = world ? request["stream"] : request["party_stream"];
         string? stream = streamOf.IsNil ? null : streamOf.AsText();
-        bool sent = stream is not null && (party.Count > 0 || PageGives(site, scopes));
+        bool pick = IsPickSite(site);
+        bool sent = stream is not null && !pick && (party.Count > 0 || PageGives(site, scopes));
         bool kept = sent && (!world || request["owner"] is RubyBool { Flag: true });
         string id = NewEntryId();
         _log.Ran(site, keys, kept ? stream : null, kept ? id : null);
         if (!sent)
         {
-            Log.Write($"replay: logged the run of {site}, which changed {keys.Count} shared keys and hands nothing over");
+            Log.Write($"replay: logged the run of {site}, which changed {keys.Count} shared keys and hands nothing over{(pick ? ": every player takes their own side along" : string.Empty)}");
             return RubyNil.Value;
         }
 
@@ -462,6 +467,14 @@ internal sealed partial class StoryTopics
     /// <param name="scope">The scope.</param>
     /// <returns>Whether it is.</returns>
     private static bool IsOwn(StoryScope scope) => scope is StoryScope.Player or StoryScope.Party;
+
+    /// <summary>
+    /// Tells whether a page is where the player takes the Alice or Ilias side along, whose side
+    /// comes only from the player's own pick or the question of the side they lost.
+    /// </summary>
+    /// <param name="site">The page.</param>
+    /// <returns>Whether it is; false before the story mapping came.</returns>
+    private bool IsPickSite(ReplaySite site) => Catchup?.Scope.IsPickSite(site.ToString()) == true;
 
     /// <summary>
     /// Tells whether a run's page gives, by the events database and who keeps each key.
@@ -485,12 +498,12 @@ internal sealed partial class StoryTopics
     /// <summary>
     /// Answers <see cref="ReplayTakeTopic"/>, and drops a run it decides from the queue.
     /// </summary>
-    /// <param name="request">{"entry", "values"}.</param>
+    /// <param name="request">{"entry", "values", "shapes"}.</param>
     /// <returns>The answer.</returns>
     private RubyHash ReplayTake(RubyHash request)
     {
         ReplayEntry entry = ReplayEntry.Read(request["entry"]);
-        RubyHash answer = Decide(entry, request["values"] as RubyHash);
+        RubyHash answer = Decide(entry, request["values"] as RubyHash, ShapesOf(request["shapes"]));
         if (answer.ContainsKey("do"))
         {
             _log.Taken(entry);
@@ -505,12 +518,19 @@ internal sealed partial class StoryTopics
     /// </summary>
     /// <param name="entry">The run's entry.</param>
     /// <param name="values">The player's own values the request holds, nil for none.</param>
+    /// <param name="shapes">The shapes of the player's lists of the choices the entry's inputs name, by site.</param>
     /// <returns>The answer.</returns>
-    private RubyHash Decide(ReplayEntry entry, RubyHash? values)
+    private RubyHash Decide(ReplayEntry entry, RubyHash? values, IReadOnlyDictionary<string, int> shapes)
     {
         if (_log.Claims(entry))
         {
             Log.Write($"replay: entry {entry.Id} of {entry.Site} in {entry.Stream} is done already");
+            return new RubyHash { { "do", "done" } };
+        }
+
+        if (IsPickSite(entry.Site))
+        {
+            Log.Write($"replay: entry {entry.Id} of {entry.Site} is never replayed, every player takes their own side along");
             return new RubyHash { { "do", "done" } };
         }
 
@@ -536,7 +556,7 @@ internal sealed partial class StoryTopics
 
         if (pick.Replays)
         {
-            if (OpenersInputs(entry, match) is not { } inputs)
+            if (OpenersInputs(entry, match, shapes) is not { } inputs)
             {
                 Log.Write($"replay: entry {entry.Id} of {entry.Site} waits, who keeps each key has not been read yet");
                 return new RubyHash { { "unknown", true } };
@@ -563,8 +583,9 @@ internal sealed partial class StoryTopics
     /// </summary>
     /// <param name="entry">The run's entry.</param>
     /// <param name="match">The events database's pages.</param>
+    /// <param name="shapes">The shapes of the player's lists of the choices, by site.</param>
     /// <returns>The inputs, <see langword="null"/> while the run holds a choice and no scopes were read.</returns>
-    private IReadOnlyList<ReplayInput>? OpenersInputs(ReplayEntry entry, PageMatch match)
+    private IReadOnlyList<ReplayInput>? OpenersInputs(ReplayEntry entry, PageMatch match, IReadOnlyDictionary<string, int> shapes)
     {
         string[] choices = [.. entry.Inputs.Where(input => input.Kind == ChoiceInput).Select(input => input.At).Distinct(StringComparer.Ordinal)];
         if (choices.Length == 0)
@@ -578,7 +599,13 @@ internal sealed partial class StoryTopics
         }
 
         string site = entry.Site.ToString();
-        HashSet<string> asked = new(choices.Where(at => match.IsReceivers(entry.Site, at, key => IsOwn(held.Scopes.ScopeOf(key, site)))), StringComparer.Ordinal);
+        string[] unknown = [.. choices.Where(at => match.ChoiceOf(at, shapes) is null)];
+        if (unknown.Length > 0)
+        {
+            Log.Write($"replay: entry {entry.Id} of {entry.Site} takes the opener's answers at {string.Join(", ", unknown)}, which the events database holds no choice of as this game shows it");
+        }
+
+        HashSet<string> asked = new(choices.Where(at => match.IsReceivers(entry.Site, at, shapes, key => IsOwn(held.Scopes.ScopeOf(key, site)))), StringComparer.Ordinal);
         if (asked.Count > 0)
         {
             Log.Write($"replay: entry {entry.Id} of {entry.Site} asks the player the choices at {string.Join(", ", asked)}, whose answers differ in their own things");
@@ -690,6 +717,14 @@ internal sealed partial class StoryTopics
     /// <returns>The texts.</returns>
     private static Dictionary<string, string> TextsOf(RubyValue value) =>
         value.IsNil ? new(StringComparer.Ordinal) : value.AsHash().ToDictionary(pair => pair.Key.AsText(), pair => pair.Value.AsText(), StringComparer.Ordinal);
+
+    /// <summary>
+    /// Reads the shapes of the player's lists by site.
+    /// </summary>
+    /// <param name="value">{site => shape}, nil for none.</param>
+    /// <returns>The shapes.</returns>
+    private static Dictionary<string, int> ShapesOf(RubyValue value) =>
+        value.IsNil ? new(StringComparer.Ordinal) : value.AsHash().ToDictionary(pair => pair.Key.AsText(), pair => pair.Value.AsInt(), StringComparer.Ordinal);
 
     /// <summary>
     /// The player's own values a request holds, noting those read and those it lacks.

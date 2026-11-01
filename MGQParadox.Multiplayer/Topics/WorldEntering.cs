@@ -2,6 +2,7 @@
 //  WorldEntering.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Had the scripts note a world started from another player's starting save, whose side is not the player's
 //      Paulinchen  2026-10-30: Compared this game's data with a world's once the world's mods loaded, warning of a difference instead of asking or keeping the game out
 //                            - Entered a world that turns other mods off without parking them, which the Mod Framework's session leaves out
 //                            - Had the scripts install a world's mods through the Mod Framework and entered without a restart
@@ -1029,7 +1030,8 @@ internal sealed partial class WorldEntering
     /// </summary>
     /// <param name="folder">The world's folder.</param>
     /// <param name="placed">Whether its save was just placed there, which the scripts check first.</param>
-    private void StartWorld(string folder, bool placed)
+    /// <param name="othersSave">Whether the save placed is another player's starting save, which the scripts note first.</param>
+    private void StartWorld(string folder, bool placed, bool othersSave = false)
     {
         if (_worlds.Find(folder) is not { } world)
         {
@@ -1040,6 +1042,11 @@ internal sealed partial class WorldEntering
         }
 
         bool listed = _directory.Listed(_entry!.Id).World != null;
+        if (othersSave)
+        {
+            _steps.Add(new RubyArray { "other_start", LocalWorldTopics.WorldOf(world) });
+        }
+
         _steps.Add(new RubyArray { "start", LocalWorldTopics.WorldOf(world), placed, listed, _fresh });
     }
 
@@ -1137,8 +1144,8 @@ internal sealed partial class WorldEntering
 
                 break;
             case "start":
-                Log($"fetched the starting save of {EntryText}");
-                StartWorld(_starting!, true);
+                Log($"fetched the starting save of {EntryText}{(Own ? "" : ", another player's")}");
+                StartWorld(_starting!, true, !Own);
                 return;
             case "read":
                 ModsRead(afterRead);

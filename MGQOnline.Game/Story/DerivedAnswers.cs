@@ -2,6 +2,7 @@
 //  DerivedAnswers.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Named each answer by its choice's place among the kept commands
 //      Paulinchen  2026-10-31: Created
 //
 //----------------------------------------------------------------
@@ -20,11 +21,6 @@ namespace MGQOnline.Game.Story;
 /// </summary>
 public static class DerivedAnswers
 {
-    /// <summary>
-    /// The command that shows a text, which shows the choice that follows it.
-    /// </summary>
-    private const int ShowText = 101;
-
     /// <summary>
     /// The command that shows choices.
     /// </summary>
@@ -78,7 +74,7 @@ public static class DerivedAnswers
         {
             if (commands[index].Code == ShowChoices && BranchOf(commands, index, letters) is { } branch)
             {
-                answers.Add(new ReplayInput($"{site}@{AskedAt(commands, index)}", 0, "choice", branch));
+                answers.Add(new ReplayInput($"{site}@{commands[index].Ord}", 0, "choice", branch));
             }
         }
 
@@ -119,18 +115,5 @@ public static class DerivedAnswers
 
         long[] fitting = [.. turnedOn.Where(pair => pair.Value.All(letters.Contains)).Select(pair => pair.Key)];
         return fitting.Length == 1 ? fitting[0] : null;
-    }
-
-    /// <summary>
-    /// Finds the command a choice's answer is recorded at: the text right before it, which shows it,
-    /// else the choice itself.
-    /// </summary>
-    /// <param name="commands">The page's kept commands.</param>
-    /// <param name="choice">The choice's place among them.</param>
-    /// <returns>The command's place in the list the game runs.</returns>
-    private static int AskedAt(IReadOnlyList<CommandRow> commands, int choice)
-    {
-        CommandRow before = choice > 0 ? commands[choice - 1] : default;
-        return choice > 0 && before.Code == ShowText && before.Indent == commands[choice].Indent ? before.Idx : commands[choice].Idx;
     }
 }

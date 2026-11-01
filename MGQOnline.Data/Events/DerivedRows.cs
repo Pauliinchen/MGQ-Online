@@ -2,6 +2,7 @@
 //  DerivedRows.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Held the branches of the extended choices too
 //      Paulinchen  2026-10-31: Added the pairs the one-time repair of stuck saves completes
 //                            - Added the lists that give and the branches of each choice
 //      Paulinchen  2026-10-28: Added the rows of the views
@@ -150,15 +151,16 @@ public readonly record struct RepairPairRow(int MapId, int EventId, int PageNo, 
 public readonly record struct GivesRow(int ListId);
 
 /// <summary>
-/// One branch of a Show Choices command of a map page or common event (table choice_branches): the
-/// commands it runs, whose writes and calls the list's tables hold, and what it does to what a
-/// player holds.
+/// One branch of a Show Choices command or an extended choice of a map page or common event (table
+/// choice_branches): the commands it runs, whose writes and calls the list's tables hold, and what
+/// it does to what a player holds. An extended choice's answer runs each of its branches; one that
+/// runs none has a branch without commands.
 /// </summary>
 /// <param name="ListId">The list.</param>
-/// <param name="Idx">The Show Choices command's place in the list.</param>
-/// <param name="Branch">The answer that runs it, as the game hands it on: the choice's place, 4 for cancel.</param>
+/// <param name="Idx">The place in the list of the Show Choices command or of the script command that shows the extended choice.</param>
+/// <param name="Branch">The answer that runs it, as the game hands it on: the choice's place, 4 for cancel; an extended choice's id.</param>
 /// <param name="FirstIdx">The place of its first command.</param>
-/// <param name="LastIdx">The place of its last command.</param>
+/// <param name="LastIdx">The place of its last command, one before the first for none.</param>
 /// <param name="Holdings">Its commands that add to or take from what a player holds, each as code and numbers, and the
 /// common events it calls that do; empty for none.</param>
 public readonly record struct ChoiceBranchRow(int ListId, int Idx, int Branch, int FirstIdx, int LastIdx, string Holdings);

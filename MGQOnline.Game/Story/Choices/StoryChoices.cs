@@ -2,6 +2,7 @@
 //  StoryChoices.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Took Succubus Village's outcomes and notes from the walk of the game's data
 //      Paulinchen  2026-10-31: Left every choice a stream hands the run of to the replay
 //      Paulinchen  2026-10-28: Created
 //
@@ -61,9 +62,10 @@ public sealed record ChoiceContext(bool Raid, ChoiceValues Values, bool Ending1,
 /// <param name="Least">The variables raised to a value at least.</param>
 /// <param name="SelfSwitches">The self switches turned on.</param>
 /// <param name="Joins">The companions it brings.</param>
+/// <param name="Leaves">The companions it sends away.</param>
 /// <param name="Ship">Where it puts the ship.</param>
 public sealed record ChoiceWrites(string Title, string Label, IReadOnlyList<KeyValuePair<int, bool>> Switches, IReadOnlyList<KeyValuePair<int, int>> Variables,
-    IReadOnlyList<KeyValuePair<int, int>> Least, IReadOnlyList<SelfSwitchKey> SelfSwitches, IReadOnlyList<int> Joins, ShipPlace? Ship);
+    IReadOnlyList<KeyValuePair<int, int>> Least, IReadOnlyList<SelfSwitchKey> SelfSwitches, IReadOnlyList<int> Joins, IReadOnlyList<int> Leaves, ShipPlace? Ship);
 
 /// <summary>
 /// The switches and variables that are the player's own as choices' outcomes, and in a Raid World
@@ -100,8 +102,8 @@ public static class StoryChoices
         ChoiceTable.Side => values.Switch(4) || values.Switch(5),
         ChoiceTable.Magistea => values.Switch(2096) || values.Switch(2097),
         ChoiceTable.Navy => values.Variable(1050) >= 9 || values.Variable(1051) >= 5,
-        "plansect" => values.Variable(1061) >= 1,
-        ChoiceTable.Succubus => ChoiceTable.SuccubusSwitches.Take(4).Any(values.Switch),
+        ChoiceTable.Plansect => values.Variable(1061) >= 1,
+        ChoiceTable.Succubus => ChoiceTable.SuccubusOutcomes.Values.Any(outcome => Holds(outcome.Sign, values)),
         "spider" => values.Switch(2280) || values.Switch(2281),
         "sphinx" => values.Switch(2090) || values.Roster.Contains(ChoiceTable.Sphinx),
         ChoiceTable.Decision => values.Variable(ChoiceTable.Progress) >= ChoiceTable.GreatDecision,
@@ -267,13 +269,7 @@ public static class StoryChoices
         switch (key)
         {
             case ChoiceTable.Succubus:
-                (bool lily, bool lucia) = MagisteaCompanions(answers, context.Values);
-                if (index == 0)
-                {
-                    return lily ? "Natasha joins, as Lily is with you." : "Nobody joins: Natasha joins only while Lily is with you.";
-                }
-
-                return lucia ? "The mayor joins, as Lucia is with you." : "Nobody joins: the mayor joins only while Lucia is with you.";
+                return SuccubusOutcome(index, answers, context.Values).Note;
             case ChoiceTable.Decision:
                 if (context.Raid)
                 {
@@ -290,10 +286,10 @@ public static class StoryChoices
     }
 
     /// <summary>
-    /// Finds what an outcome sets and brings, as the scripts write it into the story they play: the
-    /// frozen rows of a choice no stream hands the run of, nothing for one a stream does, whose
-    /// replay plays the game's own event. The side's outcome sets nothing here, as the scripts choose
-    /// it through the party's story.
+    /// Finds what an outcome sets, brings and sends away, as the scripts write it into the story they
+    /// play: the frozen rows of a choice no stream hands the run of, with the departures of the
+    /// player's playthrough; nothing for one a stream does, whose replay plays the game's own event.
+    /// The side's outcome sets nothing here, as the scripts choose it through the party's story.
     /// </summary>
     /// <param name="key">The choice.</param>
     /// <param name="index">The outcome, its place among the labels offered.</param>
@@ -305,19 +301,20 @@ public static class StoryChoices
         ChoiceBranch branch = ChoiceTable.Branch(key)!;
         if (Logged(key, context.Start))
         {
-            return new ChoiceWrites(branch.Title, Offered(key, context).Labels[index], [], [], [], [], [], null);
+            return new ChoiceWrites(branch.Title, Offered(key, context).Labels[index], [], [], [], [], [], [], null);
         }
 
+        int playthrough = context.Values.Variable(ChoiceTable.Playthrough);
         if (key == ChoiceTable.Succubus)
         {
-            (bool lily, bool lucia) = MagisteaCompanions(answers, context.Values);
-            (IReadOnlyList<int> on, IReadOnlyList<int> joins) = ChoiceTable.SuccubusOutcomes[(index, index == 0 ? lily : lucia)];
-            IReadOnlyList<KeyValuePair<int, bool>> switches = [.. ChoiceTable.SuccubusSwitches.Select(id => new KeyValuePair<int, bool>(id, on.Contains(id)))];
-            return new ChoiceWrites(branch.Title, branch.Outcomes[index].Label, switches, [new(ChoiceTable.SuccubusStep, 3)], [], [], joins, null);
+            ChoiceOutcome taken = SuccubusOutcome(index, answers, context.Values);
+            return new ChoiceWrites(branch.Title, branch.Outcomes[index].Label, taken.Switches, taken.Variables, taken.Least, taken.SelfSwitches, taken.Joins, taken.LeavesOn(playthrough),
+                taken.Ship);
         }
 
         ChoiceOutcome outcome = branch.Outcomes[OutcomeIndex(key, index, context.Values)];
-        return new ChoiceWrites(branch.Title, Offered(key, context).Labels[index], outcome.Switches, outcome.Variables, outcome.Least, outcome.SelfSwitches, outcome.Joins, outcome.Ship);
+        return new ChoiceWrites(branch.Title, Offered(key, context).Labels[index], outcome.Switches, outcome.Variables, outcome.Least, outcome.SelfSwitches, outcome.Joins,
+            outcome.LeavesOn(playthrough), outcome.Ship);
     }
 
     /// <summary>
@@ -418,6 +415,35 @@ public static class StoryChoices
         IReadOnlyList<int> sides = NavySides(values);
         return index < sides.Count ? sides[index] : index;
     }
+
+    /// <summary>
+    /// Picks the outcome of Succubus Village a side brings: whether its companion joins follows Lily
+    /// or Lucia being with the player.
+    /// </summary>
+    /// <param name="side">The side, 0 Natasha's, 1 the mayor's.</param>
+    /// <param name="answers">The answers given so far.</param>
+    /// <param name="values">The player's story.</param>
+    /// <returns>The outcome.</returns>
+    private static ChoiceOutcome SuccubusOutcome(int side, IReadOnlyDictionary<string, int> answers, ChoiceValues values)
+    {
+        (bool lily, bool lucia) = MagisteaCompanions(answers, values);
+        return ChoiceTable.SuccubusOutcomes[(side, side == 0 ? lily : lucia)];
+    }
+
+    /// <summary>
+    /// Tells whether a story holds the values that tell a walked outcome apart, such as
+    /// <c>s2280 s2281</c> or <c>v1061=3</c>.
+    /// </summary>
+    /// <param name="sign">The values.</param>
+    /// <param name="values">The story.</param>
+    /// <returns>Whether it does.</returns>
+    private static bool Holds(string sign, ChoiceValues values) =>
+        sign.Split(' ', System.StringSplitOptions.RemoveEmptyEntries).All(part => part.Split('=') switch
+        {
+            [string variable, string value] => values.Variable(int.Parse(variable[1..], System.Globalization.CultureInfo.InvariantCulture)) == int.Parse(value, System.Globalization.CultureInfo.InvariantCulture),
+            [string key] => values.Switch(int.Parse(key[1..], System.Globalization.CultureInfo.InvariantCulture)),
+            _ => false,
+        });
 
     /// <summary>
     /// Reports whether Lily is with the player once Magistea Village is decided, by the screen's

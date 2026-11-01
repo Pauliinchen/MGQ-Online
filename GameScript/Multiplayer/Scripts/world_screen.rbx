@@ -14,6 +14,7 @@
 #                            - Opened the formation limits in a dialog over the form
 #                            - Asked a world's choices and the DLL's questions in the framework's menu and question box
 #                            - Dropped the text screen
+#                            - Noted a world started from another player's starting save as the DLL's steps name it
 #      Paulinchen  2026-10-31: Typed and cancelled through the Mod Framework, and named the keys that cancel as the player bound them
 #      Paulinchen  2026-10-30: Dropped the creator's update of the game data and handing this game's data over, since entering compares it once the world's mods loaded
 #                            - Noted the mods of the world's session for the Mod Framework to load as the world's game loads or starts
@@ -830,6 +831,7 @@ class Scene_MpWorlds < Scene_MenuBase
     when "copy_own" then own_start(MGQ_MpWorld::World.new(first), second)
     when "start" then start_world(MGQ_MpWorld::World.new(first), second, third, fourth)
     when "discard" then MGQ_MpSaveDistribution.discard(MGQ_MpWorld::World.new(first))
+    when "other_start" then MGQ_MpSaveDistribution.note_other_start(MGQ_MpWorld::World.new(first))
     when "place_start" then answer("placed", "ok" => MGQ_MpSaveDistribution.place(MGQ_MpWorld::World.new(first), second))
     when "fresh_form" then @forms[first.to_sym] = fresh_form(first)
     when "close_form" then leave_form

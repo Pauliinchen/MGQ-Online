@@ -1,5 +1,5 @@
 {
-  "source": "GameScript/Multiplayer/Scripts/world_catchup_data.rbx at 54a0c4ae",
+  "source": "MGQ-Paradox-Event-Checker Tools/raid_data.rb at fbf11ad",
   "rows": [
     {"actor":56,"skill":544,"site":"map:12:64:1","part":"1","step":12,"side":null,"marks":[["v",1001,12],["v",1041,2]],"ran":true,"order":10},
     {"actor":56,"skill":545,"site":"map:645:26:1","part":"1","step":12,"side":null,"marks":[["v",1001,12],["v",1041,3],["s",2116]],"ran":true,"order":20},
@@ -63,11 +63,11 @@
     {"actor":134,"skill":9265,"site":"map:1820:2:1","part":"mr","step":62,"side":null,"marks":[["v",1142,63]],"ran":true,"order":600},
     {"actor":397,"skill":7977,"site":"map:1890:20:1","part":"mr","step":76,"side":null,"marks":[["v",1142,76],["v",1170,1]],"ran":true,"order":610},
     {"actor":401,"skill":7298,"site":"map:1890:20:1","part":"mr","step":76,"side":null,"marks":[["v",1142,76],["v",1170,1]],"ran":true,"order":620},
-    {"actor":395,"skill":10057,"site":"map:437:11:1","part":"chaos","step":10,"side":null,"marks":[["v",1143,10],["s",5091],["s",7089]],"ran":true,"order":630},
-    {"actor":395,"skill":283,"site":"map:437:11:1","part":"chaos","step":10,"side":null,"marks":[["v",1143,10],["s",5091],["s",7089]],"ran":true,"order":640},
-    {"actor":395,"skill":284,"site":"map:437:11:1","part":"chaos","step":10,"side":null,"marks":[["v",1143,10],["s",5091],["s",7089]],"ran":true,"order":650},
-    {"actor":395,"skill":456,"site":"map:437:11:1","part":"chaos","step":10,"side":null,"marks":[["v",1143,10],["s",5091],["s",7089]],"ran":true,"order":660},
-    {"actor":395,"skill":457,"site":"map:437:11:1","part":"chaos","step":10,"side":null,"marks":[["v",1143,10],["s",5091],["s",7089]],"ran":true,"order":670},
+    {"actor":395,"skill":10057,"site":"map:437:11:1","part":"chaos","step":1,"side":null,"marks":[["v",1001,40],["v",1143,1],["s",5091],["s",7089]],"ran":true,"order":630},
+    {"actor":395,"skill":283,"site":"map:437:11:1","part":"chaos","step":1,"side":null,"marks":[["v",1001,40],["v",1143,1],["s",5091],["s",7089]],"ran":true,"order":640},
+    {"actor":395,"skill":284,"site":"map:437:11:1","part":"chaos","step":1,"side":null,"marks":[["v",1001,40],["v",1143,1],["s",5091],["s",7089]],"ran":true,"order":650},
+    {"actor":395,"skill":456,"site":"map:437:11:1","part":"chaos","step":1,"side":null,"marks":[["v",1001,40],["v",1143,1],["s",5091],["s",7089]],"ran":true,"order":660},
+    {"actor":395,"skill":457,"site":"map:437:11:1","part":"chaos","step":1,"side":null,"marks":[["v",1001,40],["v",1143,1],["s",5091],["s",7089]],"ran":true,"order":670},
     {"actor":16,"skill":884,"site":"ce:9106","part":"chaos","step":21,"side":null,"marks":[["v",1143,21],["v",1373,13]],"ran":true,"order":680},
     {"actor":167,"skill":3038,"site":"map:330:72:1","part":"chaos","step":21,"side":null,"marks":[["v",1047,3],["v",1143,21],["v",1312,3],["s",3193]],"ran":true,"order":690},
     {"actor":167,"skill":3043,"site":"map:330:72:1","part":"chaos","step":21,"side":null,"marks":[["v",1047,3],["v",1143,21],["v",1312,3],["s",3193]],"ran":true,"order":700},

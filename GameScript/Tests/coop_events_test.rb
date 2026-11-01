@@ -5,6 +5,13 @@
 #      Paulinchen  2026-11-01: Dropped the stand-in of a lapse after a frame count, which no script asks for any more
 #                            - Kept the screen of choices open as asked, since the framework without its DLL refuses its window
 #                            - Read the screen of choices from MGQ_MpCoopChoices.screen, now a Mod Framework window
+#                            - Checked that a member gets no companion of the Alice and Ilias choice the DLL finds they have no right to
+#                            - Checked that a member on a route whose save notes no side taken along is asked about with none, not with the route's side switch
+#                            - Checked that a member from another player's starting save is asked whom they take along and loses the other side's companion
+#                            - Checked that a member from another player's starting save on the Chaos route gets the conference's companions by the side switches and is asked whom they take along
+#                            - Checked that a player alone from another player's starting save is asked whom they take along
+#                            - Checked that the Sphinx joins once challenged and that the peace of Plansect brings both queens
+#                            - Checked that the Spider Princess's side sends Miria away on a first playthrough
 #      Paulinchen  2026-10-31: Dropped the warp ban a call, a teleport and a telling carried
 #                            - Checked that the leader's story sends no gift, recruit, skill or departure message, and that a member behind catches up once with the history before the log, by the frozen rows and derived entries
 #                            - Checked that the leader's runs of the story reach every member who follows it, in the stream of the leader's story
@@ -1622,6 +1629,85 @@ MGQ_MpCoopStory.take(leader, behind_story)
 check("a member on the leader's side gets what the leader got", [$game_actors[1].skills.sort, $game_party.include_actors], [[11, 13], [4, 5]])
 check("and is not asked", ($game_message.choices || []).empty?, true)
 
+# A member whose save came from another player's starting save past Iliasville holds that player's
+# side, so they are asked whom they take along; the save notes the answer, and the companion of the
+# other side the starting save brought leaves them, as the DLL finds it.
+$game_system = Object.new
+member_game(30, 4)
+MGQ_MpStoryState.note_other_start
+$game_party.add_stand_actor(8)
+$world_bridge.answer("catchup.scope") { |request| { "allowed" => request["pick"] == "ilias" ? request["actors"] - [8] : request["actors"] } }
+MGQ_MpCoopStory.take(leader, behind_story)
+MGQ_MpCoopStory.update
+check("a member from another player's starting save is asked whom they take along", [$game_message.texts.last, $game_message.choices],
+      ["Leader took Alice along. Whom do you take along on your own journey?", ["Alice", "Ilias"]])
+$game_message.choice_proc.call(1)
+check("and taking Ilias is noted in the save, turns their side switch to Ilias and lets the Alice side's companion go",
+      [MGQ_MpStoryState.pick_note, $game_switches[4], $game_switches[5], $game_party.include_actors.include?(8), $game_party.include_actors.include?(9), $notices.include?("Little Alice left you.")],
+      ["ilias", false, true, false, true, true])
+$world_bridge.answer("catchup.scope") { |_request| nil }
+
+# A member from another player's starting save who joins a leader on the Chaos route has no side of
+# their own: the strategy conference's companions go by the side switches of the story played,
+# as the game's own event reads them, until the member answers whom they take along, which notes
+# the side and leaves the route's side switches alone.
+$game_system = Object.new
+member_game(30, 4)
+MGQ_MpStoryState.note_other_start
+scope_held = []
+$world_bridge.answer("catchup.scope") { |request| scope_held << request; { "allowed" => request["pick"] == "" && request["held"] == "alice" ? request["actors"] : [] } }
+MGQ_MpCoopStory.take(leader, behind_story.merge("s" => "4,120", "v" => "1001:n40,1143:n1"))
+refused = MGQ_MpCoopStory.refuses_join?(26, "map:437:11:1")
+check("a member without a side of their own on the Chaos route gets the conference's companions by the side switches of the story played",
+      [refused, scope_held.last["pick"], scope_held.last["held"]], [false, "", "alice"])
+MGQ_MpCoopStory.update
+check("and is asked whom they take along though the leader is past the Great Decision", [$game_message.texts.last, $game_message.choices],
+      ["Your story went past the choice of whom you take along. Whom do you take along on your journey?", ["Alice", "Ilias"]])
+$game_message.choice_proc.call(1)
+check("the answer is noted in the save, and the route's side switches stay", [MGQ_MpStoryState.pick_note, $game_switches[4], $game_switches[5]], ["ilias", true, false])
+$world_bridge.answer("catchup.scope") { |_request| nil }
+$game_system = nil
+
+# A player alone in a Classic world whose save came from another player's starting save past
+# Iliasville is asked too, with no leader to follow.
+$game_system = Object.new
+member_game(30, 4)
+MGQ_MpStoryState.note_other_start
+$party = nil
+$leader = nil
+$members = []
+MGQ_MpCoopStory.update
+check("a player alone from another player's starting save is asked whom they take along", [$game_message.texts.last, $game_message.choices],
+      ["Your story went past the choice of whom you take along. Whom do you take along on your journey?", ["Alice", "Ilias"]])
+$game_message.choice_proc.call(1)
+check("and taking Ilias turns their side switch to Ilias", [MGQ_MpStoryState.pick_note, $game_switches[4], $game_switches[5]], ["ilias", false, true])
+$game_system = nil
+
+# A companion of the Alice and Ilias choice the DLL finds the member has no right to stays away; it
+# is asked with the side the member took along and the routes they played.
+scope_asks = []
+$world_bridge.answer("catchup.scope") { |request| scope_asks << request; { "allowed" => request["actors"] - [5] } }
+member_game(30, 4)
+MGQ_MpCoopStory.take(leader, behind_story)
+check("a companion of the side the member did not take along stays away",
+      [$game_party.include_actors, scope_asks.last["pick"], scope_asks.last["routes"]], [[4], "alice", []])
+
+# A member on the Angelic Dominion, whose switch 4 the route's reset turned on (map 432), and whose
+# save notes no side taken along in Iliasville, is asked about with no side: Groys and Lilith &
+# Lilim, whom only Alice pickers get, stay away.
+$data_actors[406] = Actor.new("Groys")
+$data_actors[341] = Actor.new("Lilith & Lilim")
+$world_bridge.answer("catchup.scope") do |request|
+  scope_asks << request
+  { "allowed" => request["pick"] == "alice" ? request["actors"] : request["actors"] - [406, 341] }
+end
+member_game(40, 4)
+$game_variables[1141] = 2
+MGQ_MpCoopStory.take(leader, behind_story.merge("s" => "4,120", "v" => "1001:n40,1076:n5,1141:n5", "ac" => "4,406,341"))
+check("a member on a route whose save notes no side taken along gets no Alice picker's companion",
+      [$game_party.include_actors & [406, 341], scope_asks.last["pick"], scope_asks.last["routes"]], [[], "", ["ad"]])
+$world_bridge.answer("catchup.scope") { |_request| nil }
+
 member_game(30, 5)
 part3 = behind_story.merge("s" => "4,120", "v" => "1001:n40,1076:n5,1141:n2")
 MGQ_MpCoopStory.take(leader, part3)
@@ -2051,10 +2137,13 @@ check("allying with the mayor while Lucia is with the player brings the mayor", 
 member_game(20, 5)
 choices.apply(:plansect, 1)
 choices.apply(:spider, 0)
-choices.apply(:sphinx, 1)
-check("the Queen Bee's side, the Spider Princess and the Sphinx invited",
-      [$game_variables[1061], $game_switches[2154], $game_switches[2280], [245, 334, 153].map { |id| $game_party.include_actors.include?(id) }],
-      [2, true, true, [true, true, true]])
+choices.apply(:sphinx, 0)
+check("the Queen Bee's side, then the Spider Princess's side, which sends Miria away on a first playthrough, and the Sphinx challenged, who joins once defeated",
+      [$game_variables[1061], $game_switches[2154], $game_switches[2280], [245, 334, 153].map { |id| $game_party.include_actors.include?(id) }, $notices.include?("Miria left you.")],
+      [2, true, true, [false, true, true], true])
+member_game(20, 5)
+choices.apply(:plansect, 2)
+check("the peace of Plansect brings both the Priestess and Miria", [$game_variables[1061], [241, 245].map { |id| $game_party.include_actors.include?(id) }], [3, [true, true]])
 
 # The outcomes the member made stay theirs in the leader's story, and the leader's choices'
 # companions never come with it.

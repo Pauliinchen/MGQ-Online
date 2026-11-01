@@ -2,6 +2,7 @@
 //  EventSchema.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Keyed the branches of a choice by their first command too, since an extended choice's answer may run several
 //      Paulinchen  2026-10-31: Added the table of the pairs the one-time repair of stuck saves completes, as version 2
 //                            - Added the tables of the lists that give and of the branches of each choice, as version 3
 //      Paulinchen  2026-10-28: Named where a game folder holds the file
@@ -174,7 +175,7 @@ public static class EventSchema
             switch_id INTEGER NOT NULL, PRIMARY KEY(map_id, event_id, page_no, letter, switch_id)) WITHOUT ROWID;
         CREATE TABLE gives(list_id INTEGER PRIMARY KEY);
         CREATE TABLE choice_branches(list_id INTEGER NOT NULL, idx INTEGER NOT NULL, branch INTEGER NOT NULL, first_idx INTEGER NOT NULL,
-            last_idx INTEGER NOT NULL, holdings TEXT NOT NULL, PRIMARY KEY(list_id, idx, branch)) WITHOUT ROWID;
+            last_idx INTEGER NOT NULL, holdings TEXT NOT NULL, PRIMARY KEY(list_id, idx, branch, first_idx)) WITHOUT ROWID;
 
         CREATE TABLE switches(id INTEGER PRIMARY KEY, named INTEGER NOT NULL, scratch INTEGER NOT NULL, story_band INTEGER NOT NULL,
             chest_flag INTEGER NOT NULL);

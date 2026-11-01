@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-11-01: Covered a choice whose answers differ only in what they take
+//                            - Covered finding a choice by its place among the kept commands, after a text and in a list of another shape, and answers that jump
 //      Paulinchen  2026-10-31: Covered whether a page gives and which choices the receiver is asked
 //                            - Created
 //
@@ -11,6 +12,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using MGQOnline.Data.Events;
 using MGQOnline.Game.Story;
 using MGQOnline.Game.Tests.Events;
 using static MGQOnline.Game.Tests.Events.TinyGame;
@@ -29,10 +31,12 @@ public sealed class PageMatchTests
     /// calls common event 20, which turns switch 40 on too, page 3 shows once its self switch A is on;
     /// an event beside it that shows only once switch 5 is on; two choices, the first one's
     /// answers turning on switch 10 or 11, the second one's switch 1001 or 1002, each with switch 10;
-    /// and two trades, the first one's "Pay" taking 100 G and item 3 for nothing the receiver keeps,
-    /// the second one's taking 100 G for item 4.
+    /// two trades, the first one's "Pay" taking 100 G and item 3 for nothing the receiver keeps,
+    /// the second one's taking 100 G for item 4; a choice a text of two lines sets up, whose second
+    /// answer turns on switch 4; and a challenge whose first answer jumps to the battle, which turns
+    /// on switch 2090 after the choice, and whose second answer leaves.
     /// </summary>
-    private readonly PageMatch _match = new(EventDatabases.Of(new TinyGame()
+    private static readonly EventStore Store = EventDatabases.Of(new TinyGame()
         .MapEvent(1, 7, 0, 0,
             new TinyPage([C(126, 5, 0, 0, 1), C(121, 40, 40, 0), C(123, "A", 0)]),
             new TinyPage([C(117, 20)], Switch1: 5),
@@ -45,8 +49,19 @@ public sealed class PageMatchTests
         .MapEvent(1, 10, 3, 0, new TinyPage([
             C(102, "Pay", 2), C(402, 0, "Pay"), At(125, 1, 1, 0, 100), At(126, 1, 3, 1, 0, 1), At(0, 1), C(402, 1, "No"), At(0, 1), C(404),
             C(102, "Pay", 2), C(402, 0, "Pay"), At(125, 1, 1, 0, 100), At(126, 1, 4, 0, 0, 1), At(0, 1), C(402, 1, "No"), At(0, 1), C(404)]))
+        .MapEvent(1, 11, 4, 0, new TinyPage([
+            C(101, "", 0, 0, 2), C(401, "Take her along?"), C(401, "She waits."), C(102, "Reconsider", 1),
+            C(402, 0, "Reconsider"), At(0, 1), C(402, 1, "Take her along"), At(121, 1, 4, 4, 0), At(0, 1), C(404)]))
+        .MapEvent(1, 12, 5, 0, new TinyPage([
+            C(102, "Challenge her", 1), C(402, 0, "Challenge her"), At(119, 1, "Battle"), At(0, 1), C(402, 1, "Leave"), At(115, 1), At(0, 1), C(404),
+            C(115), C(118, "Battle"), C(121, 2090, 2090, 0)]))
         .Common(20, C(111, 1, 1020, 0, 2, 0), C(121, 40, 40, 0))
-        .Files()));
+        .Files());
+
+    /// <summary>
+    /// The receiver's pages read from <see cref="Store"/>.
+    /// </summary>
+    private readonly PageMatch _match = new(Store);
 
     /// <summary>
     /// The keys of the step of a run of page 1: its self switch A and switch 40.
@@ -112,8 +127,8 @@ public sealed class PageMatchTests
         Func<StoryKey, bool> own = key => key.Kind == StoryKeyKind.Switch && key.Id < 1000;
         ReplaySite site = ReplaySite.Page(1, 9, 0);
 
-        Assert.True(_match.IsReceivers(site, "map:1:9:1@0", own));
-        Assert.False(_match.IsReceivers(site, "map:1:9:1@8", own));
+        Assert.True(_match.IsReceivers(site, "map:1:9:1@0", Shapes(site), own));
+        Assert.False(_match.IsReceivers(site, "map:1:9:1@6", Shapes(site), own));
     }
 
     /// <summary>
@@ -125,8 +140,54 @@ public sealed class PageMatchTests
     {
         ReplaySite site = ReplaySite.Page(1, 10, 0);
 
-        Assert.False(_match.IsReceivers(site, "map:1:10:1@0", _ => false));
-        Assert.True(_match.IsReceivers(site, "map:1:10:1@8", _ => false));
+        Assert.False(_match.IsReceivers(site, "map:1:10:1@0", Shapes(site), _ => false));
+        Assert.True(_match.IsReceivers(site, "map:1:10:1@6", Shapes(site), _ => false));
+    }
+
+    /// <summary>
+    /// Asserts that a choice a text sets up is found by the Show Choices' place among the commands
+    /// the database keeps, which the text's lines leave out, and asked; while the receiver's list has
+    /// another shape, or the place holds no choice, nothing is found and the opener's answer stands.
+    /// </summary>
+    [Fact]
+    public void ChoiceOf_FindsTheChoiceByItsPlaceAmongTheKeptCommands()
+    {
+        ReplaySite site = ReplaySite.Page(1, 11, 0);
+        Func<StoryKey, bool> own = key => key == StoryKey.Switch(4);
+
+        Assert.Equal((Store.Page(1, 11, 0)!.Value.ListId, 3), _match.ChoiceOf("map:1:11:1@1", Shapes(site)));
+        Assert.True(_match.IsReceivers(site, "map:1:11:1@1", Shapes(site), own));
+        Assert.Null(_match.ChoiceOf("map:1:11:1@0", Shapes(site)));
+        Assert.False(_match.IsReceivers(site, "map:1:11:1@1", new Dictionary<string, int> { ["map:1:11:1"] = 1 }, own));
+    }
+
+    /// <summary>
+    /// Asserts that a choice whose answer jumps to a label does what follows the label, so a
+    /// challenge whose battle stands after the choice is the receiver's.
+    /// </summary>
+    [Fact]
+    public void IsReceivers_FollowsAnAnswerThatJumpsToALabel()
+    {
+        ReplaySite site = ReplaySite.Page(1, 12, 0);
+
+        Assert.True(_match.IsReceivers(site, "map:1:12:1@0", Shapes(site), key => key == StoryKey.Switch(2090)));
+        Assert.False(_match.IsReceivers(site, "map:1:12:1@0", Shapes(site), _ => false));
+    }
+
+    /// <summary>
+    /// Names the shapes of pages, as the receiver's game of the same data hands them over.
+    /// </summary>
+    /// <param name="sites">The pages.</param>
+    /// <returns>Each page's shape by its name.</returns>
+    private static Dictionary<string, int> Shapes(params ReplaySite[] sites)
+    {
+        var shapes = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (ReplaySite site in sites)
+        {
+            shapes[site.ToString()] = Store.List(Store.Page(site.MapId, site.EventId, site.PageNo)!.Value.ListId)!.Value.Shape;
+        }
+
+        return shapes;
     }
 
     /// <summary>

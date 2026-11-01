@@ -6,6 +6,7 @@
 #                            - Built the screens of the choices and of a replay's question on the Mod Framework's windows
 #                            - Put off a number, a choice without cancel and a choice of the player's own on cancel
 #                            - Filled in the names and variables of a replayed choice's labels
+#                            - Sent away the companions an outcome sends away on the player's playthrough
 #      Paulinchen  2026-10-31: Read the keys and the mouse through the Mod Framework
 #                            - Asked the player the question a replay waits on
 #                            - Asked a number, a key item or a present a replay waits on, on a screen of its own
@@ -327,8 +328,9 @@ module MGQ_MpCoopChoices
 
   # Gives the player a choice's outcome in the story they play: its switches and variables, the
   # values it raises and the self switches it turns on, also in their own story kept aside, the
-  # companions it brings and the ship it puts on the field. In a Raid World the catch-up then
-  # follows the outcome as a story carrying the player past it, so its items and return point come.
+  # companions it sends away and brings, and the ship it puts on the field. In a Raid World the
+  # catch-up then follows the outcome as a story carrying the player past it, so its items and return
+  # point come.
   #
   # @param key [Symbol] The choice.
   # @param index [Integer] The answer, its place among the labels offered.
@@ -368,12 +370,24 @@ module MGQ_MpCoopChoices
     end
     $game_map.need_refresh = true if $game_map
     log("#{outcome['title']}: the player's own outcome \"#{outcome['label']}\": #{written.join(', ')}")
+    Array(outcome["leaves"]).each { |id| send_away(id) }
     outcome["joins"].each do |id|
       name = MGQ_MpStoryState.bring(id)
       MGQ_MpOverworldSync.notice("#{name} joined you.") if name
     end
     place_ship(outcome["ship"]) if outcome["ship"]
     MGQ_MpWorldCatchup.carried(before) if raid? && defined?(MGQ_MpWorldCatchup)
+  end
+
+  # Sends away a companion an outcome sends away, as the game's own branch does.
+  #
+  # @param id [Integer] The companion.
+  def self.send_away(id)
+    return unless MGQ_MpStoryState.in_roster?(id)
+
+    $game_party.remove_actor(id)
+    log("#{MGQ_MpStoryState.actor_label(id)} left the player's roster: the outcome sends them away")
+    MGQ_MpOverworldSync.notice("#{$data_actors[id].name} left you.")
   end
 
   # Puts the ship an outcome gives where the game's own event of that side leaves it, unless the

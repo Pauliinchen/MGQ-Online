@@ -2,6 +2,7 @@
 #  story_state_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Covered the side the save notes the player took along in Iliasville
 #      Paulinchen  2026-10-31: Covered a Classic party's join of stories by the reviewed list's scopes
 #                            - Covered the one-time repair of a save the 0.6.9.2 chest path left stuck
 #      Paulinchen  2026-10-24: Covered the second accessory slot a story written past the game turns on
@@ -11,7 +12,8 @@
 #----------------------------------------------------------------
 
 # Covers story_state.rbx: mixing a story with the player's own chests, the skills and companions a
-# story grants, unpacking a story another game packed, and the one-time repair of a stuck save.
+# story grants, unpacking a story another game packed, the one-time repair of a stuck save, and the
+# side the save notes the player took along in Iliasville.
 
 require_relative "support"
 
@@ -188,3 +190,25 @@ $game_system = Object.new
 state.repair_check(true)
 state.repair
 check("a new game needs no repair", [$repair_asks.size, $game_system.instance_variable_get(state::REPAIRED_FIELD)], [3, true])
+
+# The side the player took along in Iliasville: their switches tell it before the Great Decision,
+# and the save notes it; past it, where the route's reset turned switch 4 on for the Angelic
+# Dominion (map 432), the note tells it, and nothing while the save noted none. A save of another
+# player's starting save holds that player's side, so the player has not picked.
+ilias = []
+ilias[5] = true
+dominion = []
+dominion[4] = true
+on_route = []
+on_route[1141] = 3
+$game_system = Object.new
+picks = [state.own_pick(ilias, []), state.own_pick(dominion, on_route)]
+$game_system = Object.new
+picks << state.own_pick(dominion, on_route)
+$game_system = Object.new
+$game_switches = Game_Switches.new
+$game_switches[4] = true
+state.note_other_start
+picks << state.pick_note << state.own_pick(dominion, []) << state.own_pick(dominion, on_route)
+check("the save notes the side the player took along before the Great Decision, never the route's, and none of another player's start",
+      picks, [:ilias, :ilias, nil, "", nil, nil])

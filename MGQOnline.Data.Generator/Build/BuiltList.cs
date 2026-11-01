@@ -2,6 +2,7 @@
 //  BuiltList.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Carried its extended choices
 //      Paulinchen  2026-10-31: Carried the roots of its scripts for the story replay's gate
 //                            - Carried its scripts that touch what a player holds
 //                            - Carried what its scripts do to self switches for the repair of stuck saves
@@ -65,6 +66,7 @@ internal sealed record ScriptSelfSwitches(IReadOnlyList<ScriptSelfSwitch> Turned
 /// <param name="ScriptRoots">The roots of its scripts, see <see cref="Build.ScriptRoots"/>.</param>
 /// <param name="SelfSwitchScripts">What its scripts do to self switches.</param>
 /// <param name="HoldingScripts">Its scripts that add to or take from what a player holds.</param>
+/// <param name="ExChoices">Its extended choices.</param>
 internal sealed record BuiltList(
     ListRow Site,
     EventCommand[] Commands,
@@ -72,7 +74,8 @@ internal sealed record BuiltList(
     IReadOnlyList<int> ScriptSwitches,
     IReadOnlyList<string> ScriptRoots,
     ScriptSelfSwitches SelfSwitchScripts,
-    IReadOnlyList<HoldingScript> HoldingScripts);
+    IReadOnlyList<HoldingScript> HoldingScripts,
+    IReadOnlyList<ExChoice> ExChoices);
 
 /// <summary>
 /// Reads what a list's script lines tell by their texts.

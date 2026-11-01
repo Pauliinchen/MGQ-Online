@@ -2,6 +2,7 @@
 #  world_save_distribution.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Noted a world started from another player's starting save, whose side the player never took along
 #      Paulinchen  2026-10-31: Worded what the player reads plainly, leaving causes and internals to the log
 #      Paulinchen  2026-10-30: Refused a fetched starting save that names classes other than the game's before loading it
 #      Paulinchen  2026-10-23: Dropped the starting save's files as text, which the DLL takes as pairs
@@ -36,6 +37,10 @@ module MGQ_MpSaveDistribution
 
   # The name of the starting save's system save in a world's folder.
   SYSTEM_NAME = "SystemSave.rvdata2"
+
+  # The name of the file in a world's folder that tells the player started the world from another
+  # player's starting save, whose side switches hold that player's pick.
+  OTHER_START_NAME = "OtherStart.txt"
 
   # The system save the game keeps when it cannot say which of its two is newer.
   SYSTEM_FALLBACK = "Save/SystemSave.rvdata2"
@@ -121,7 +126,7 @@ module MGQ_MpSaveDistribution
   end
 
   # Copies the starting save into the creator's own folder of the new world, so the creator
-  # starts from it too without fetching it back.
+  # starts from it too without fetching it back; or the player's own save into a world they enter.
   #
   # @param world [MGQ_MpWorld::World] The world on this PC.
   # @param files [Array<Array<String>>] Each file's name in the world's folder and its path in the game's folder.
@@ -132,6 +137,8 @@ module MGQ_MpSaveDistribution
       bytes = File.open(path, "rb") { |file| file.read }
       File.open("#{world.save_folder}/#{name}", "wb") { |file| file.write(bytes) }
     end
+    other = "#{world.save_folder}/#{OTHER_START_NAME}"
+    File.delete(other) if File.exist?(other)
     log("placed the starting save in world #{world.id} (#{world.name}): #{files.map { |name, path| "#{path} as #{name}" }.join(', ')}")
     true
   rescue => e
@@ -168,13 +175,32 @@ module MGQ_MpSaveDistribution
   #
   # @param world [MGQ_MpWorld::World] The world on this PC.
   def self.discard(world)
-    deleted = [SAVE_NAME, THUMBNAIL_NAME, SYSTEM_NAME].select do |name|
+    deleted = [SAVE_NAME, THUMBNAIL_NAME, SYSTEM_NAME, OTHER_START_NAME].select do |name|
       path = "#{world.save_folder}/#{name}"
       File.exist?(path) && File.delete(path)
     end
     log("threw away the starting save of world #{world.id}: #{deleted.empty? ? 'no files there' : deleted.join(', ')}")
   rescue => e
     log("could not delete the starting save: #{e.class}: #{e.message}")
+  end
+
+  # Notes in a world's folder that the starting save just fetched there is another player's.
+  #
+  # @param world [MGQ_MpWorld::World] The world on this PC.
+  def self.note_other_start(world)
+    File.open("#{world.save_folder}/#{OTHER_START_NAME}", "wb") { |file| file.write("1") }
+    log("world #{world.id} starts from another player's save: the side it holds is not the player's")
+  rescue => e
+    log("could not note that the starting save is another player's: #{e.class}: #{e.message}")
+  end
+
+  # Notes a save loaded in a world started from another player's starting save as such, see
+  # MGQ_MpStoryState.note_other_start. Called after a save's contents load.
+  def self.loaded
+    world = MGQ_MpWorld.open? ? MGQ_MpWorld.world : nil
+    MGQ_MpStoryState.note_other_start if world && File.exist?("#{world.save_folder}/#{OTHER_START_NAME}")
+  rescue => e
+    log("could not tell whether the save is another player's: #{e.class}: #{e.message}")
   end
 
   # Walks Marshal streams without building anything and refuses one that names a class of Ruby's
@@ -395,4 +421,12 @@ class Scene_MpStartSave < Scene_Load
     MGQ_MpSaveDistribution.chosen = @index
     return_scene
   end
+end
+
+# Game hooks of this script alone, through core_hooks.rbx.
+
+begin
+  MGQ_MpHooks.after(DataManager.singleton_class, :extract_save_contents, "save_distribution") { |_contents| MGQ_MpSaveDistribution.loaded }
+rescue => e
+  MGQ_MpSaveDistribution.log("hooks FAILED: #{e.class}: #{e.message}")
 end

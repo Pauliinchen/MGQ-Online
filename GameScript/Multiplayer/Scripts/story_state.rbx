@@ -2,6 +2,8 @@
 #  story_state.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Noted in the save the side the player took along in Iliasville, which the route's side switches no longer tell
+#                            - Noted that a save came from another player's starting save, whose side is not the player's
 #      Paulinchen  2026-10-31: Kept the warp ban from stopping a player in a world
 #                            - Read what is each player's own in a Classic party from the reviewed list's scopes instead of the Classic story's ranges
 #                            - Kept the player's own self switches when a story is joined with theirs
@@ -101,6 +103,16 @@ module MGQ_MpStoryState
 
   # The topic of the one-time repair of a save the 0.6.9.2 chest path left stuck, see StoryTopics.Repair in the DLL.
   REPAIR_TOPIC = "story.repair"
+
+  # The field of $game_system that keeps the side the player took along in Iliasville, which the
+  # route sets anew in the side switches past the Great Decision: "alice" or "ilias"; "" while the
+  # save holds the side of another player's starting save, so the player has not picked; nil while
+  # unknown.
+  PICK_FIELD = :@mgq_mp_pick
+
+  # The field of $game_system that tells the save was found to come from another player's starting
+  # save (note_other_start).
+  OTHER_START_FIELD = :@mgq_mp_other_start
 
   # The field of $game_system that tells the save was repaired, or needs no repair.
   REPAIRED_FIELD = :@mgq_mp_repaired
@@ -444,6 +456,65 @@ module MGQ_MpStoryState
     return :ilias if switches[ILIAS_CHOSEN]
 
     nil
+  end
+
+  # Reads the side the save notes the player took along in Iliasville, see PICK_FIELD.
+  #
+  # @return [String, nil] "alice", "ilias", "" or nil.
+  def self.pick_note
+    $game_system ? $game_system.instance_variable_get(PICK_FIELD) : nil
+  end
+
+  # Notes the side the player took along in Iliasville.
+  #
+  # @param side [Symbol] :alice or :ilias.
+  def self.note_pick(side)
+    return unless $game_system && side
+
+    $game_system.instance_variable_set(PICK_FIELD, side.to_s)
+    log("noted in the save that the player took #{side} along in Iliasville")
+  end
+
+  # Finds the side the player took along in Iliasville by their own story: the one its switches
+  # tell before the Great Decision, which the save notes unless it noted one already, but none while
+  # they hold the side of another player's starting save; past it, the one the save noted, since the
+  # route's reset of the switches tells the route.
+  #
+  # @param switches [Array] The player's own switches.
+  # @param variables [Array] The player's own variables.
+  # @return [Symbol, nil] :alice, :ilias, or nil while it is unknown.
+  def self.own_pick(switches, variables)
+    noted = pick_note
+    if sides_differ?(variables)
+      return nil if noted == ""
+
+      side = side_of(switches)
+      note_pick(side) if side && noted.nil?
+      return side
+    end
+    noted.to_s.empty? ? nil : noted.to_sym
+  end
+
+  # Notes the side the player took along from the story they play, while it is their own: never
+  # while a Classic member plays the leader's. Called after each transfer, so a save played alone
+  # notes it before the Great Decision too.
+  def self.note_live_pick
+    return if !$game_switches || !$game_variables || (defined?(MGQ_MpCoopStory) && MGQ_MpCoopStory.guest?)
+
+    own_pick(data_of($game_switches), data_of($game_variables))
+  rescue => e
+    log_once(:note_live_pick, "noting the side the player took along failed: #{e.class}: #{e.message}")
+  end
+
+  # Notes, once per save, that it came from another player's starting save: the side its switches
+  # hold is that player's, so the player is asked whom they take along instead.
+  def self.note_other_start
+    return if !$game_system || $game_system.instance_variable_get(OTHER_START_FIELD)
+
+    $game_system.instance_variable_set(OTHER_START_FIELD, true)
+    side = $game_switches ? side_of(data_of($game_switches)) : nil
+    $game_system.instance_variable_set(PICK_FIELD, side ? "" : nil)
+    log(side ? "the save came from another player's starting save with their side: the player has not picked" : "the save came from another player's starting save before the choice of a side")
   end
 
   # Lists the switches, variables or self switches that differ between two stories.
@@ -907,6 +978,7 @@ begin
     MGQ_MpHooks.after(DataManager.singleton_class, :setup_new_game, "story_state") { MGQ_MpStoryState.repair_check(true) }
   end
   MGQ_MpHooks.after(Game_Map, :update, "story_state") { |*_args| MGQ_MpStoryState.repair }
+  MGQ_MpHooks.after(Game_Player, :perform_transfer, "story_state") { |*_args| MGQ_MpStoryState.note_live_pick } if defined?(Game_Player)
 rescue => e
   MGQ_MpStoryState.log("repair hooks FAILED: #{e.class}: #{e.message}")
 end

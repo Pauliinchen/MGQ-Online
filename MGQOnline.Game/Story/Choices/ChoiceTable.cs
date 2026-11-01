@@ -2,11 +2,13 @@
 //  ChoiceTable.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Took the outcomes of the branch events from the walk of the game's data
 //      Paulinchen  2026-10-28: Created
 //
 //----------------------------------------------------------------
 
 using System.Collections.Generic;
+using System.Linq;
 
 namespace MGQOnline.Game.Story.Choices;
 
@@ -37,10 +39,38 @@ public readonly record struct ShipPlace(int Map, int X, int Y);
 public sealed record DecisionRoute(int Route, int? Side, int? Return, int? Map);
 
 /// <summary>
+/// What the walk of the game's data found an outcome of a branch event writes (see
+/// ChoiceTable.Outcomes.cs and Tools/choice_outcomes.rb of the event checker).
+/// </summary>
+/// <param name="Branch">The choice's key.</param>
+/// <param name="Sign">The values that tell the outcome apart, such as <c>v1061=3</c> or <c>s2280 s2281</c>.</param>
+/// <param name="Switches">The switches it sets, on or off, in order.</param>
+/// <param name="Variables">The variables it sets, in order.</param>
+/// <param name="Least">The variables it raises to a value at least, in order.</param>
+/// <param name="SelfSwitches">The self switches it turns on.</param>
+/// <param name="Joins">The companions it brings.</param>
+/// <param name="Leaves">The companions it sends away on the first playthrough.</param>
+/// <param name="LaterLeaves">The companions it sends away on a later playthrough.</param>
+/// <param name="Ship">Where it puts the ship, <see langword="null"/> for nowhere.</param>
+public sealed record WalkedOutcome(string Branch, string Sign, IReadOnlyList<KeyValuePair<int, bool>> Switches, IReadOnlyList<KeyValuePair<int, int>> Variables,
+    IReadOnlyList<KeyValuePair<int, int>> Least, IReadOnlyList<SelfSwitchKey> SelfSwitches, IReadOnlyList<int> Joins, IReadOnlyList<int> Leaves, IReadOnlyList<int> LaterLeaves,
+    ShipPlace? Ship);
+
+/// <summary>
+/// The switches and variables a branch event's outcomes write that only its events write, which
+/// are each player's own as the choice's (see <see cref="StoryChoices.Personal"/>).
+/// </summary>
+/// <param name="Branch">The choice's key.</param>
+/// <param name="Switches">The switches.</param>
+/// <param name="Variables">The variables.</param>
+public sealed record WalkedKeys(string Branch, IReadOnlyList<int> Switches, IReadOnlyList<int> Variables);
+
+/// <summary>
 /// An outcome of a choice: the label and the note the decision screen shows, and the frozen rows of
 /// what it sets and brings, which only a choice from before the save's log applies (see
 /// <see cref="StoryChoices.Logged"/>).
 /// </summary>
+/// <param name="Sign">The values that tell a walked outcome apart, empty for one of the side or the Great Decision.</param>
 /// <param name="Label">What the screen calls it.</param>
 /// <param name="Note">What it brings, for the screen's line below it.</param>
 /// <param name="Switches">The switches it sets, on or off, in order.</param>
@@ -48,10 +78,21 @@ public sealed record DecisionRoute(int Route, int? Side, int? Return, int? Map);
 /// <param name="Least">The variables it raises to a value at least, in order.</param>
 /// <param name="SelfSwitches">The self switches it turns on.</param>
 /// <param name="Joins">The companions it brings.</param>
+/// <param name="Leaves">The companions it sends away on the first playthrough.</param>
+/// <param name="LaterLeaves">The companions it sends away on a later playthrough.</param>
 /// <param name="Ship">Where it puts the ship, <see langword="null"/> for nowhere.</param>
 /// <param name="Decision">What it names as an outcome of the Great Decision, <see langword="null"/> for another choice's.</param>
-public sealed record ChoiceOutcome(string Label, string Note, IReadOnlyList<KeyValuePair<int, bool>> Switches, IReadOnlyList<KeyValuePair<int, int>> Variables,
-    IReadOnlyList<KeyValuePair<int, int>> Least, IReadOnlyList<SelfSwitchKey> SelfSwitches, IReadOnlyList<int> Joins, ShipPlace? Ship, DecisionRoute? Decision);
+public sealed record ChoiceOutcome(string Sign, string Label, string Note, IReadOnlyList<KeyValuePair<int, bool>> Switches, IReadOnlyList<KeyValuePair<int, int>> Variables,
+    IReadOnlyList<KeyValuePair<int, int>> Least, IReadOnlyList<SelfSwitchKey> SelfSwitches, IReadOnlyList<int> Joins, IReadOnlyList<int> Leaves, IReadOnlyList<int> LaterLeaves,
+    ShipPlace? Ship, DecisionRoute? Decision)
+{
+    /// <summary>
+    /// Lists the companions it sends away on a playthrough.
+    /// </summary>
+    /// <param name="playthrough">The playthrough's count (variable 912), 0 on the first.</param>
+    /// <returns>The companions.</returns>
+    public IReadOnlyList<int> LeavesOn(int playthrough) => playthrough == 0 ? Leaves : LaterLeaves;
+}
 
 /// <summary>
 /// A choice of the story and its outcomes.
@@ -64,13 +105,13 @@ public sealed record ChoiceOutcome(string Label, string Note, IReadOnlyList<KeyV
 public sealed record ChoiceBranch(string Key, string Title, int Point, string Hint, IReadOnlyList<ChoiceOutcome> Outcomes);
 
 /// <summary>
-/// The story's choices a player makes for themselves, whatever the leader or the world chose, as
-/// coop_choices.rbx kept them: each choice's labels, notes and hints for the decision screen, the
-/// frozen rows of its outcomes for history from before the save's log, what Succubus Village brings
-/// by who is with the player, the companions only a player's own outcome brings, and the routes of
-/// the Great Decision.
+/// The story's choices a player makes for themselves, whatever the leader or the world chose: each
+/// choice's labels, notes and hints for the decision screen, the frozen rows of its outcomes for
+/// history from before the save's log, what Succubus Village brings by who is with the player, the
+/// companions only a player's own outcome brings, and the routes of the Great Decision. The rows of
+/// the branch events come from the walk of the game's data in ChoiceTable.Outcomes.cs.
 /// </summary>
-public static class ChoiceTable
+public static partial class ChoiceTable
 {
     /// <summary>
     /// The key of the choice of Alice or Ilias.
@@ -86,6 +127,11 @@ public static class ChoiceTable
     /// The key of the choice of the Navy or the Pirates.
     /// </summary>
     public const string Navy = "navy";
+
+    /// <summary>
+    /// The key of the choice of Plansect.
+    /// </summary>
+    public const string Plansect = "plansect";
 
     /// <summary>
     /// The key of the choice of Succubus Village.
@@ -116,11 +162,6 @@ public static class ChoiceTable
     /// The variable of the main story's progress.
     /// </summary>
     public const int Progress = 1001;
-
-    /// <summary>
-    /// The variable Succubus Village's outcomes set.
-    /// </summary>
-    public const int SuccubusStep = 1065;
 
     /// <summary>
     /// The companions Magistea Village's outcomes bring: Lily and Lucia.
@@ -167,15 +208,23 @@ public static class ChoiceTable
     public static readonly IReadOnlyList<SelfSwitchKey> NavySelfSwitches = [new(376, 53, "A"), new(376, 53, "B")];
 
     /// <summary>
-    /// Every switch the outcomes of Succubus Village set, which each of them sets on or off.
+    /// The outcomes the walk of the game's data found, by the choice's key and the values that tell
+    /// each apart.
     /// </summary>
-    public static readonly IReadOnlyList<int> SuccubusSwitches = [2210, 2211, 2212, 2213, 7007, 7008];
+    internal static readonly IReadOnlyDictionary<(string Branch, string Sign), WalkedOutcome> WalkedRows =
+        WalkedOutcomes().ToDictionary(outcome => (outcome.Branch, outcome.Sign));
+
+    /// <summary>
+    /// The switches and variables each branch event's outcomes write that only its events write,
+    /// by the choice's key.
+    /// </summary>
+    private static readonly IReadOnlyDictionary<string, WalkedKeys> WalkedKeysRows = WalkedBranchKeys().ToDictionary(keys => keys.Branch);
 
     /// <summary>
     /// The companions the choices bring, which come only with the player's own outcome, never as
     /// the leader holds them.
     /// </summary>
-    public static readonly IReadOnlyList<int> ChoiceCompanions = [163, 167, 288, 287, 153, 241, 245, 334, 201, 202, 203, 204];
+    public static readonly IReadOnlyList<int> ChoiceCompanions = [.. WalkedRows.Values.SelectMany(outcome => outcome.Joins).Distinct()];
 
     /// <summary>
     /// The choices a later build added, which saves from earlier builds are past without having made
@@ -218,21 +267,19 @@ public static class ChoiceTable
         ]),
         new(Magistea, "Magistea Village", 17, "Magistea Village: whom Luka defeats, Lily or Lucia. The other joins.",
         [
-            Outcome("Defeat Lily", "Lucia joins.", [On(2096), On(7017), On(2095), Off(2097), Off(7016), Off(2094), On(2138), Off(2137)], [Set(1029, 6)], joins: [Lucia]),
-            Outcome("Defeat Lucia", "Lily joins.", [On(2097), On(7016), On(2094), Off(2096), Off(7017), Off(2095), On(2137), Off(2138)], [Set(1029, 6)], joins: [Lily]),
+            Walked(Magistea, "s2096", "Defeat Lily", "Lucia joins."),
+            Walked(Magistea, "s2097", "Defeat Lucia", "Lily joins."),
         ]),
         new(Navy, "Navy or Pirates", 22, "Navy Headquarters: whether Luka helps the Navy catch the Fishy Pirates or sails with them. Either side gives him a ship.",
         [
-            Outcome("Cooperate with the Navy", "Bonnie and Ashel are caught. Tatsuko and Stacy join, and the Navy's ship is yours.",
-                [On(2148), Off(2149), On(2168), Off(2169), On(7001), On(7068)], [Set(1050, 9), Set(1051, 0), Set(1053, 0)], [Set(56, 2)], joins: [203, 204], ship: new ShipPlace(2, 334, 240)),
-            Outcome("Aid the Fishy Pirates", "Ashel and Bonnie join, and the MS Fish and the Dark Saber are yours.",
-                [On(2149), Off(2148), On(2168), On(2169), Off(7001), On(7068), On(2150)], [Set(1050, 6), Set(1051, 5), Set(1053, 0)], [Set(56, 2)],
-                [new(709, 6, "A"), new(709, 15, "A"), new(376, 53, "A"), new(376, 53, "B")], [201, 202], new ShipPlace(2, 21, 211)),
+            Walked(Navy, "s2148", "Cooperate with the Navy", "Bonnie and Ashel are caught. Tatsuko and Stacy join, and the Navy's ship is yours."),
+            Walked(Navy, "s2149", "Aid the Fishy Pirates", "Ashel and Bonnie join, and the MS Fish and the Dark Saber are yours."),
         ]),
-        new("plansect", "Plansect", 24, "Plansect: whose side Luka takes, the plants' Priestess or the insects' Queen Bee.",
+        new(Plansect, "Plansect", 24, "Plansect: whose side Luka takes, the plants' Priestess or the insects' Queen Bee, or whether he makes peace between them.",
         [
-            Outcome("Side with the Priestess", "The Queen Bee is defeated. The Priestess joins.", [On(7003), Off(2154), Off(7002)], [Set(1061, 1), Set(1056, 6)], joins: [241]),
-            Outcome("Side with the Queen Bee", "The Priestess is defeated. Miria, the Queen Bee, joins.", [On(2154), On(7002), Off(7003)], [Set(1061, 2), Set(1056, 6)], joins: [245]),
+            Walked(Plansect, "v1061=1", "Side with the Priestess", "The Queen Bee is defeated. The Priestess joins."),
+            Walked(Plansect, "v1061=2", "Side with the Queen Bee", "The Priestess is defeated. Miria, the Queen Bee, joins."),
+            Walked(Plansect, "v1061=3", "Make peace between them", "The Priestess and Miria, the Queen Bee, both join."),
         ]),
         new(Succubus, "Succubus Village", 27, "Succubus Village: whom Luka allies with. Who joins depends on Lily or Lucia.",
         [
@@ -241,13 +288,12 @@ public static class ChoiceTable
         ]),
         new("spider", "The Spider Princess", 30, "The Secluded Lands: whose side Luka takes, the Spider Princess or the Queen Ants.",
         [
-            Outcome("Side with the Spider Princess", "The Spider Princess joins.", [On(2280), Off(2281)], joins: [334]),
-            Outcome("Side with the Queen Ants", "Nobody joins.", [On(2281), Off(2280)]),
+            Walked("spider", "s2280", "Side with the Spider Princess", "The Spider Princess joins. On a first playthrough, Miria and Antine Ann leave."),
+            Walked("spider", "s2280 s2281", "Side with the Queen Ants", "The Spider Princess still joins. On a first playthrough, Miria and Antine Ann leave."),
         ]),
-        new("sphinx", "The Sphinx", 31, "The Pyramid: whether Luka challenges the Sphinx or invites her along.",
+        new("sphinx", "The Sphinx", 31, "The Pyramid: Luka challenges the Sphinx, who joins once defeated.",
         [
-            Outcome("Challenge her", "The Sphinx is defeated. Nobody joins.", [On(2090)]),
-            Outcome("Invite her", "The Sphinx joins.", [], joins: [Sphinx]),
+            Walked("sphinx", "s2090", "Challenge her", "The Sphinx is defeated and joins."),
         ]),
         new(Decision, "The Great Decision", GreatDecision, "The Monster Lord's Castle: whose side Luka takes, which decides the route of the Final Chapter.",
         [
@@ -259,15 +305,15 @@ public static class ChoiceTable
 
     /// <summary>
     /// The outcomes of Succubus Village, by the side taken (0 Natasha's, 1 the mayor's) and whether
-    /// Lily (with Natasha) or Lucia (with the mayor) is with the player: the switches turned on and
-    /// the companion who joins.
+    /// Lily (with Natasha) or Lucia (with the mayor) is with the player, which the game's own
+    /// branch reads.
     /// </summary>
-    public static readonly IReadOnlyDictionary<(int Side, bool With), (IReadOnlyList<int> On, IReadOnlyList<int> Joins)> SuccubusOutcomes = new Dictionary<(int, bool), (IReadOnlyList<int>, IReadOnlyList<int>)>
+    public static readonly IReadOnlyDictionary<(int Side, bool With), ChoiceOutcome> SuccubusOutcomes = new Dictionary<(int, bool), ChoiceOutcome>
     {
-        [(0, true)] = ([2210, 7007], [288]),
-        [(0, false)] = ([2211, 7007], []),
-        [(1, true)] = ([2212, 7008], [287]),
-        [(1, false)] = ([2213, 7008], []),
+        [(0, true)] = Walked(Succubus, "s2210", "Ally with Natasha", "Natasha joins, as Lily is with you."),
+        [(0, false)] = Walked(Succubus, "s2211", "Ally with Natasha", "Nobody joins: Natasha joins only while Lily is with you."),
+        [(1, true)] = Walked(Succubus, "s2212", "Ally with the mayor", "The mayor joins, as Lucia is with you."),
+        [(1, false)] = Walked(Succubus, "s2213", "Ally with the mayor", "Nobody joins: the mayor joins only while Lucia is with you."),
     };
 
     /// <summary>
@@ -289,20 +335,22 @@ public static class ChoiceTable
     }
 
     /// <summary>
-    /// Lists every switch and variable an outcome of a choice sets, each once, in order.
+    /// Lists the switches and variables that are a choice's own, each once, in order: for a branch
+    /// event those its outcomes write that only its events write, for the side every switch and
+    /// variable an outcome sets.
     /// </summary>
     /// <param name="branch">The choice.</param>
     /// <returns>The switches, then the variables.</returns>
     public static (IReadOnlyList<int> Switches, IReadOnlyList<int> Variables) KeysOf(ChoiceBranch branch)
     {
-        if (branch.Key == Succubus)
-        {
-            return (SuccubusSwitches, [SuccubusStep]);
-        }
-
         if (branch.Key == Decision)
         {
             return ([], []);
+        }
+
+        if (WalkedKeysRows.TryGetValue(branch.Key, out WalkedKeys? walked))
+        {
+            return (walked.Switches, walked.Variables);
         }
 
         var switches = new List<int>();
@@ -330,6 +378,20 @@ public static class ChoiceTable
     }
 
     /// <summary>
+    /// Makes an outcome of a branch event from what the walk of the game's data found it writes; an
+    /// outcome the walk no longer finds writes nothing, which ChoiceTableTests catch.
+    /// </summary>
+    /// <param name="branch">The choice's key.</param>
+    /// <param name="sign">The values that tell the outcome apart.</param>
+    /// <param name="label">What the screen calls it.</param>
+    /// <param name="note">What it brings.</param>
+    /// <returns>The outcome.</returns>
+    private static ChoiceOutcome Walked(string branch, string sign, string label, string note) =>
+        WalkedRows.TryGetValue((branch, sign), out WalkedOutcome? walked)
+            ? new(sign, label, note, walked.Switches, walked.Variables, walked.Least, walked.SelfSwitches, walked.Joins, walked.Leaves, walked.LaterLeaves, walked.Ship, null)
+            : new(sign, label, note, [], [], [], [], [], [], [], null, null);
+
+    /// <summary>
     /// Makes an outcome.
     /// </summary>
     /// <param name="label">What the screen calls it.</param>
@@ -344,7 +406,7 @@ public static class ChoiceTable
     /// <returns>The outcome.</returns>
     private static ChoiceOutcome Outcome(string label, string note, KeyValuePair<int, bool>[] switches, KeyValuePair<int, int>[]? variables = null, KeyValuePair<int, int>[]? least = null,
         SelfSwitchKey[]? selfSwitches = null, int[]? joins = null, ShipPlace? ship = null, DecisionRoute? decision = null) =>
-        new(label, note, switches, variables ?? [], least ?? [], selfSwitches ?? [], joins ?? [], ship, decision);
+        new(string.Empty, label, note, switches, variables ?? [], least ?? [], selfSwitches ?? [], joins ?? [], [], [], ship, decision);
 
     /// <summary>
     /// A switch turned on.

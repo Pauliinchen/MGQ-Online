@@ -3,6 +3,10 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-01: Told how many copies of a key item the leader lent the player, which the player never counts as found
+#                            - Gave a member a companion of the Alice and Ilias choice only by the side they took along or a route they played, as the DLL finds it
+#                            - Read the side a member took along from their switches only before the Great Decision, past it from the save's note
+#                            - Asked a member whose save came from another player's starting save whom they take along, and let go the companions of the other side
+#                            - Asked a player of a Classic world whom they take along whenever their story is past Iliasville without a side of their own, past the Great Decision too
 #      Paulinchen  2026-10-31: Gave the leader's story's gifts, companions, skills and departures by replaying the leader's runs instead of messages, and caught a member up by the frozen rows and derived entries only with the history before the log
 #                            - Sent a member's runs of the leader's story with their requests, which the leader keeps for the party and their own game when they changed the leader's story
 #                            - Sent a member's writes of the leader's story to the leader as requests, which the leader's story takes by the reviewed list's merge kinds and sends back by value
@@ -84,6 +88,12 @@
 module MGQ_MpCoopStory
   # The DLL's topic that names the party chests that gave a key item, as runs of the member's history.
   KEY_CHESTS_TOPIC = "story.replay_key_chests"
+
+  # The DLL's topic of which companions of the Alice and Ilias choice may join a player.
+  SCOPE_TOPIC = "catchup.scope"
+
+  # The routes as the DLL names them, each with its variable and the switch that tells it cleared.
+  SCOPE_ROUTES = { "ad" => [1141, 7096], "mr" => [1142, 7097], "chaos" => [1143, 7039] }
 
   # Frames between two messages of the leader, a quarter of a second at 60 frames per second.
   SEND_FRAMES = 15
@@ -183,8 +193,8 @@ module MGQ_MpCoopStory
       @followers = nil
       follow(leader) if leader && @synced
       request(leader)
-      ask_side(leader) if guest?
     end
+    ask_side(leader)
   rescue => e
     log_once(:update, "update failed: #{e.class}: #{e.message}")
   end
@@ -786,8 +796,8 @@ module MGQ_MpCoopStory
       @same = same_story?(@own, story)
       @keeps = @same || behind?(@own, story)
       @follow_place = markers_of(story[1])
-      # The side the member chose before the Great Decision, whose rewards they get.
-      @own_side = MGQ_MpStoryState.side_of(@own[0])
+      # The side the member took along in Iliasville, whose rewards they get.
+      @own_side = MGQ_MpStoryState.own_pick(@own[0], @own[1])
       @granted_groups = []
       @recorded = [{}, {}, {}]
       @lent = {}
@@ -1129,7 +1139,7 @@ module MGQ_MpCoopStory
     log("catching up with #{MGQ_MpOverworldSync.who(leader)}'s story, the player was behind: the leader holds #{holdings_text(held)}")
     @history_groups = (0...groups.size).select { |index| played?(groups[index], held) }
     skills = held[:skills].reject { |id| (sided?(:skills, id) && log_sided(MGQ_MpStoryState.skill_label(id))) || skipped?(:skills, id, MGQ_MpStoryState.skill_label(id)) }
-    actors = held[:actors].reject { |id| (sided?(:actors, id) && log_sided(MGQ_MpStoryState.actor_label(id))) || skipped?(:actors, id, MGQ_MpStoryState.actor_label(id)) }
+    actors = allowed_companions(held[:actors].reject { |id| (sided?(:actors, id) && log_sided(MGQ_MpStoryState.actor_label(id))) || skipped?(:actors, id, MGQ_MpStoryState.actor_label(id)) })
     learned = skills.map { |id| MGQ_MpStoryState.learn(id) }.compact
     joined = actors.map { |id| MGQ_MpStoryState.join(id) }.compact
     items = fill_items(held[:items])
@@ -1154,6 +1164,7 @@ module MGQ_MpCoopStory
       skills |= rewards[:skills]
       actors |= rewards[:actors]
     end
+    actors = allowed_companions(actors)
     learned = skills.map { |id| MGQ_MpStoryState.learn(id) }.compact
     joined = actors.map { |id| MGQ_MpStoryState.join(id) }.compact
     name = leader.state["name"]
@@ -1283,6 +1294,59 @@ module MGQ_MpCoopStory
     MGQ_MpStoryState.side_of(MGQ_MpStoryState.data_of($game_switches))
   end
 
+  # Keeps of some companions those who may join the member, as the DLL finds it: a companion of the
+  # Alice and Ilias choice only by the side the member took along or a route they played; while
+  # that side is unknown, a route's join by the side switches of the story played, which the game's
+  # own event reads. Every companion may join a player who plays their own story.
+  #
+  # @param ids [Array<Integer>] The companions' main personas.
+  # @param site [String, nil] The page or common event whose own join it is, nil for a catch-up.
+  # @return [Array<Integer>] Those who may.
+  def self.allowed_companions(ids, site = nil)
+    return ids if ids.empty? || !guest?
+
+    answer = MGQ_Multiplayer::Bridge.call(SCOPE_TOPIC, "actors" => ids, "site" => site, "pick" => scope_pick.to_s, "routes" => scope_routes, "held" => own_side.to_s)
+    return ids unless answer.is_a?(Hash)
+
+    allowed = ids & Array(answer["allowed"])
+    (ids - allowed).each { |id| log("left out #{MGQ_MpStoryState.actor_label(id)}: of the side the player did not take along, or of a route they never played") }
+    allowed
+  rescue => e
+    log("asking which companions may join failed: #{e.class}: #{e.message}")
+    ids
+  end
+
+  # Reports whether the game's own join of a companion is left out for a member, see
+  # allowed_companions.
+  #
+  # @param actor [Integer] The companion's main persona.
+  # @param site [String, nil] The page or common event that runs.
+  # @return [Boolean] Whether it is.
+  def self.refuses_join?(actor, site)
+    !allowed_companions([actor], site).include?(actor)
+  end
+
+  # The side the member took along in Iliasville: the one they chose when asked, else the one their
+  # own story tells, see MGQ_MpStoryState.own_pick.
+  #
+  # @return [Symbol, nil] :alice, :ilias, or nil while it is unknown.
+  def self.scope_pick
+    return @own_side if @own_side
+
+    @own ? MGQ_MpStoryState.own_pick(@own[0], @own[1]) : nil
+  end
+
+  # Lists the routes the member played: those their own story is on or cleared, and the one the
+  # story they play is on.
+  #
+  # @return [Array<String>] The routes.
+  def self.scope_routes
+    played = MGQ_MpStoryState.data_of($game_variables)
+    SCOPE_ROUTES.select do |_, (variable, cleared)|
+      played[variable].to_i > 0 || (@own && (@own[1][variable].to_i > 0 || @own[0][cleared]))
+    end.keys
+  end
+
   # The side whose rewards a member gets in the events where the sides differ: the one they chose
   # before the Great Decision, or past it, for one who never chose, the leader's.
   #
@@ -1392,21 +1456,57 @@ module MGQ_MpCoopStory
     end
   end
 
-  # Asks a member who has not chosen a side yet whom they take along, once the leader has chosen
-  # and the player is free on the map, outside the leader's story scene, before the Great Decision.
+  # Asks a player of a Classic world whom they take along once they are free on the map, while
+  # their own story is past the choice in Iliasville without a side of their own (see
+  # side_unknown?), before the Great Decision or past it: a member once the leader's holdings came,
+  # outside the leader's story scene; a player alone or a leader at once.
   #
   # @param leader [MGQ_MpOverworldSync::Peers::Peer, Symbol, nil] The leader.
   def self.ask_side(leader)
-    return if @asking || own_side || @leader_held.nil? || @leader_held[:side].nil? || !MGQ_MpStoryState.sides_differ?
-    return unless leader.is_a?(MGQ_MpOverworldSync::Peers::Peer) && leader.state["telling"] != "1"
+    return if @asking || !MGQ_MpOverworldSync.in_world? || MGQ_MpCoop::Scope.raid? || !side_unknown?
+    return if guest? && (@leader_held.nil? || !leader.is_a?(MGQ_MpOverworldSync::Peers::Peer) || leader.state["telling"] == "1")
     return unless MGQ_MpOverworldSync.map_free? && !MGQ_MpCoopEvents.mirroring?
 
     @asking = true
-    log("asking the player whom they take along, as #{MGQ_MpOverworldSync.who(leader)} took #{side_name(@leader_held[:side])} and the player has no side")
-    $game_message.add("#{leader.state['name']} took #{side_name(@leader_held[:side])} along. Whom do you take along on your own journey?")
+    taken = guest? && MGQ_MpStoryState.sides_differ? ? @leader_held[:side] : nil
+    if taken
+      log("asking the player whom they take along, as #{MGQ_MpOverworldSync.who(leader)} took #{side_name(taken)} and the player has no side")
+      $game_message.add("#{leader.state['name']} took #{side_name(taken)} along. Whom do you take along on your own journey?")
+    else
+      log("asking the player whom they take along: their story went past the choice of a side without one of their own")
+      $game_message.add("Your story went past the choice of whom you take along. Whom do you take along on your journey?")
+    end
     $game_message.choices.push(side_name(:alice), side_name(:ilias))
     $game_message.choice_cancel_type = 0
     $game_message.choice_proc = Proc.new { |index| choose_side(index == 0 ? :alice : :ilias) }
+  end
+
+  # Reports whether the player's own story is past the choice of a side in Iliasville without a
+  # side they took along themselves: one of another player's starting save, or one whose notes never
+  # saw a side and whose switches hold none, as a Raid World's catch-up finds it too.
+  #
+  # @return [Boolean] Whether it is.
+  def self.side_unknown?
+    return false if @own_side
+
+    story = guest? ? @own : [MGQ_MpStoryState.data_of($game_switches), MGQ_MpStoryState.data_of($game_variables)]
+    return false if MGQ_MpStoryState.own_pick(story[0], story[1])
+
+    note = MGQ_MpStoryState.pick_note
+    return true if note == ""
+
+    note.nil? && MGQ_MpStoryState.side_of(story[0]).nil? && past_side_choice?
+  end
+
+  # Reports whether the story played is past the choice of a side in Iliasville: for a member, the
+  # leader holds a side; else its main story is at the choice's point or further.
+  #
+  # @return [Boolean] Whether it is.
+  def self.past_side_choice?
+    return true if guest? && @leader_held && @leader_held[:side]
+
+    point = defined?(MGQ_MpCoopChoices) ? MGQ_MpCoopChoices.point_of(:side) : 0
+    point > 0 && MGQ_MpStoryState.data_of($game_variables)[1001].to_i >= point
   end
 
   # Names a side by the one the player takes along.
@@ -1417,30 +1517,51 @@ module MGQ_MpCoopStory
     side == :alice ? "Alice" : "Ilias"
   end
 
-  # Keeps the side the member chose as their own, brings in the companion the choice brings, as
-  # the Iliasville scene does, then catches them up with the side's rewards.
+  # Keeps the side the player chose as their own and notes it in the save. Before the Great
+  # Decision it also sets the side's switch, brings in the companion the choice brings, as the
+  # Iliasville scene does, and catches them up with the side's rewards; past it the route's own
+  # handling of the companions stays, and so do the side switches, which tell the route.
   #
   # @param side [Symbol] :alice or :ilias.
   def self.choose_side(side)
     @asking = false
+    @own_side = side
+    MGQ_MpStoryState.note_pick(side)
+    own_before = !guest? || MGQ_MpStoryState.sides_differ?(@own[1])
+    unless MGQ_MpStoryState.sides_differ? && own_before
+      log("the player took #{side_name(side)} along, as their own side; their story is past the Great Decision, whose route keeps its side switches and companions")
+      return MGQ_MpOverworldSync.notice("You took #{side_name(side)} along.")
+    end
+
     log("the player took #{side_name(side)} along, as their own side#{guest? ? ', kept for their own story too' : ''}")
     MGQ_MpStoryState::SIDE_SWITCHES.each do |id|
       $game_switches[id] = id == (side == :alice ? MGQ_MpStoryState::ALICE_CHOSEN : MGQ_MpStoryState::ILIAS_CHOSEN)
       @own[0][id] = $game_switches[id] if guest?
     end
-    @own_side = side
     groups.each_with_index do |group, index|
       next unless group[:choice]
 
       (@granted_groups ||= []) << index
       group[side][:skills].each { |id| MGQ_MpStoryState.learn(id) }
-      group[side][:actors].each { |id| MGQ_MpStoryState.bring(id) }
+      allowed_companions(group[side][:actors]).each { |id| MGQ_MpStoryState.bring(id) }
     end
+    dismiss_strangers
     MGQ_MpOverworldSync.notice("You took #{side_name(side)} along.")
     lead = leader
     side_rewards(lead) if lead.is_a?(MGQ_MpOverworldSync::Peers::Peer)
   rescue => e
     log("choosing a side failed: #{e.class}: #{e.message}")
+  end
+
+  # Lets go the companions of the Alice and Ilias choice the member has no right to by the side
+  # they just took along, as the DLL finds it, such as those another player's starting save brought.
+  def self.dismiss_strangers
+    held = MGQ_MpStoryState.roster_ids.map { |id| MGQ_MpStoryState.main_id(id) }.uniq - [MGQ_MpStoryState::HERO]
+    (held - allowed_companions(held)).each do |id|
+      $game_party.remove_actor(id)
+      log("#{MGQ_MpStoryState.actor_label(id)} left the player's roster: of the side they did not take along")
+      MGQ_MpOverworldSync.notice("#{$data_actors[id].name} left you.")
+    end
   end
 
   # Reports whether the leader's holdings have to wait: during a PvP battle, which puts the game

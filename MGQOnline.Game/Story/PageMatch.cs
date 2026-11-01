@@ -3,6 +3,8 @@
 //
 //  Changelog:
 //      Paulinchen  2026-11-01: Left what a choice's answers take out of whether the choice is the receiver's, since a replay takes nothing
+//                            - Told whether an extended choice is the receiver's too, each answer by all the branches it runs
+//                            - Found a choice by its place among the kept commands while the player's list has the database's shape, and followed its answers' jumps
 //      Paulinchen  2026-10-31: Told whether a run's page gives and whether a choice is the receiver's
 //                            - Created
 //
@@ -174,25 +176,52 @@ public sealed class PageMatch(EventStore store)
     /// <summary>
     /// Tells whether a choice a run's player answered is the receiver's to answer (rule 4, answer 11):
     /// its answers do different things to the receiver's own things, the keys a player keeps and
-    /// what they hold. What an answer takes does not count, since a replay takes nothing.
+    /// what they hold, where an answer that jumps to a label does what follows the label too. What
+    /// an answer takes does not count, since a replay takes nothing. An extended choice's answer does
+    /// what each branch it runs does.
     /// </summary>
     /// <param name="run">Where the run started, whose event a self switch the choice writes is of.</param>
     /// <param name="at">The choice's command, as the run's inputs name it: such as "map:1:9:1@0" or "ce:20@3".</param>
+    /// <param name="shapes">The <see cref="ListShape"/> of each of the receiver's lists, by site such as "map:1:9:1".</param>
     /// <param name="own">Tells whether a player keeps a key: a player's or a party's key, by the live scopes.</param>
-    /// <returns>Whether it is; false for a command that is no choice the database holds.</returns>
-    public bool IsReceivers(ReplaySite run, string at, Func<StoryKey, bool> own)
+    /// <returns>Whether it is; false for a command <see cref="ChoiceOf"/> finds no choice at.</returns>
+    public bool IsReceivers(ReplaySite run, string at, IReadOnlyDictionary<string, int> shapes, Func<StoryKey, bool> own)
     {
-        ArgumentNullException.ThrowIfNull(at);
         ArgumentNullException.ThrowIfNull(own);
-        int mark = at.LastIndexOf('@');
-        if (mark < 0 || !int.TryParse(at.AsSpan(mark + 1), NumberStyles.None, CultureInfo.InvariantCulture, out int idx)
-            || !TryParseSite(at[..mark], out ReplaySite site) || ListOf(site) is not { } listId)
+        if (ChoiceOf(at, shapes) is not { } choice)
         {
             return false;
         }
 
-        List<HashSet<string>> effects = [.. store.ChoiceBranches(listId, idx).Select(branch => EffectOf(branch, run, own))];
+        List<HashSet<string>> effects = [.. store.ChoiceBranches(choice.ListId, choice.Idx).GroupBy(branch => branch.Branch)
+            .Select(answer => answer.SelectMany(branch => EffectOf(branch, run, own)).ToHashSet())];
         return effects.Skip(1).Any(effect => !effect.SetEquals(effects[0]));
+    }
+
+    /// <summary>
+    /// Finds the choice an input names in the events database: the Show Choices command or the
+    /// script command of an extended choice at the input's place among its list's kept commands.
+    /// </summary>
+    /// <remarks>
+    /// The database counts the places of the untranslated game, whose text lines a translation
+    /// changes; the kept commands stay where they were while the receiver's list has the same shape.
+    /// </remarks>
+    /// <param name="at">The input's command, such as "map:6:30:2@1": its list, then its place among the kept commands.</param>
+    /// <param name="shapes">The <see cref="ListShape"/> of each of the receiver's lists, by site such as "map:6:30:2".</param>
+    /// <returns>The list and the command's place in it; <see langword="null"/> when the database lacks the list or holds it in another shape, or neither command stands there.</returns>
+    public (int ListId, int Idx)? ChoiceOf(string at, IReadOnlyDictionary<string, int> shapes)
+    {
+        ArgumentNullException.ThrowIfNull(at);
+        ArgumentNullException.ThrowIfNull(shapes);
+        int mark = at.LastIndexOf('@');
+        if (mark < 0 || !int.TryParse(at.AsSpan(mark + 1), NumberStyles.None, CultureInfo.InvariantCulture, out int ord)
+            || !TryParseSite(at[..mark], out ReplaySite site) || ListOf(site) is not { } listId
+            || !shapes.TryGetValue(at[..mark], out int shape) || store.List(listId)?.Shape != shape)
+        {
+            return null;
+        }
+
+        return store.Commands(listId).FirstOrDefault(command => command.Ord == ord) is { Code: EventCodes.ShowChoices or EventCodes.Script } choice ? (listId, choice.Idx) : null;
     }
 
     /// <summary>
@@ -361,7 +390,8 @@ public sealed class PageMatch(EventStore store)
 
     /// <summary>
     /// Writes what a choice's branch does to the receiver's own things: each key a player keeps that
-    /// it writes with its value, and what it does to what a player holds.
+    /// it writes with its value, and what it does to what a player holds; for a branch that jumps to
+    /// a label, those of every command from the first such label on too.
     /// </summary>
     /// <param name="branch">The branch.</param>
     /// <param name="run">Where the run started.</param>
@@ -369,14 +399,87 @@ public sealed class PageMatch(EventStore store)
     /// <returns>Its effects, as texts to compare.</returns>
     private HashSet<string> EffectOf(ChoiceBranchRow branch, ReplaySite run, Func<StoryKey, bool> own)
     {
-        HashSet<string> effect = [.. WrittenOf(branch.ListId, (branch.FirstIdx, branch.LastIdx), run.MapId, run.EventId).Where(write => own(write.Key)).Select(write => $"{write.Key}={write.Value}")];
+        HashSet<string> effect = [.. WrittenOwn(branch.ListId, (branch.FirstIdx, branch.LastIdx), run, own)];
         string holdings = string.Join(';', branch.Holdings.Split(';', StringSplitOptions.RemoveEmptyEntries).Where(part => !IsCost(part)));
         if (holdings.Length > 0)
         {
             effect.Add($"holdings {holdings}");
         }
 
+        if (FirstLabel(branch.ListId, branch.FirstIdx, branch.LastIdx) is { } label)
+        {
+            effect.UnionWith(WrittenOwn(branch.ListId, (label, int.MaxValue), run, own));
+            effect.UnionWith(AddingFrom(branch.ListId, label));
+        }
+
         return effect;
+    }
+
+    /// <summary>
+    /// Writes each key a player keeps that the commands of a range write, with its value.
+    /// </summary>
+    /// <param name="listId">The list.</param>
+    /// <param name="range">The places of the first and last command.</param>
+    /// <param name="run">Where the run started.</param>
+    /// <param name="own">Tells whether a player keeps a key.</param>
+    /// <returns>The writes, as texts to compare.</returns>
+    private IEnumerable<string> WrittenOwn(int listId, (int First, int Last) range, ReplaySite run, Func<StoryKey, bool> own) =>
+        WrittenOf(listId, range, run.MapId, run.EventId).Where(write => own(write.Key)).Select(write => $"{write.Key}={write.Value}");
+
+    /// <summary>
+    /// Finds the first label the jumps of a range lead to, through the jumps that follow each label
+    /// too.
+    /// </summary>
+    /// <param name="listId">The list.</param>
+    /// <param name="first">The place of the range's first command.</param>
+    /// <param name="last">The place of its last command.</param>
+    /// <returns>The label's place, <see langword="null"/> when the range jumps nowhere.</returns>
+    private int? FirstLabel(int listId, int first, int last)
+    {
+        IReadOnlyList<CommandRow> commands = store.Commands(listId);
+        int? found = null;
+        (int First, int Last) range = (first, last);
+        while (commands
+            .Where(command => command.Code == EventCodes.JumpToLabel && command.P0 >= 0 && command.Idx >= range.First && command.Idx <= range.Last)
+            .Select(jump => commands.FirstOrDefault(command => command.Ord == jump.P0))
+            .Where(label => label.Code == EventCodes.Label && (found is null || label.Idx < found))
+            .Select(label => (int?)label.Idx)
+            .Min() is { } next)
+        {
+            found = next;
+            range = (next, int.MaxValue);
+        }
+
+        return found;
+    }
+
+    /// <summary>
+    /// Names what the commands from a place to the list's end add to what a player holds: each
+    /// command that adds gold, an item, a weapon, an armor or a member, and each call of a common
+    /// event that gives.
+    /// </summary>
+    /// <remarks>
+    /// The database tells what scripts do to what a player holds only for a branch's own commands.
+    /// </remarks>
+    /// <param name="listId">The list.</param>
+    /// <param name="from">The place.</param>
+    /// <returns>Each one by its place, as a text to compare.</returns>
+    private IEnumerable<string> AddingFrom(int listId, int from)
+    {
+        foreach (CommandRow command in store.Commands(listId).Where(command => command.Idx >= from))
+        {
+            bool adds = command.Code switch
+            {
+                EventCodes.ChangeGold => command.P0 == 0,
+                EventCodes.ChangeItems or EventCodes.ChangeWeapons or EventCodes.ChangeArmors or EventCodes.ChangePartyMember => command.P1 == 0,
+                EventCodes.CallCommonEvent => command.P0 is > 0 and <= int.MaxValue && store.Common((int)command.P0) is { } common && store.Gives(common.ListId),
+                _ => false,
+            };
+            if (adds)
+            {
+                yield return string.Create(CultureInfo.InvariantCulture, $"adds@{command.Idx}");
+            }
+        }
     }
 
     /// <summary>

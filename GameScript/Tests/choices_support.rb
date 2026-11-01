@@ -3,6 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-01: Dropped the game's window base, which the question's screen no longer builds on
+#                            - Read the outcomes of the branch events, Succubus Village's and their own keys from the table as C# walks them
+#                            - Sent away the companions an outcome sends away on the player's playthrough
 #      Paulinchen  2026-10-31: Stood in for the game's window base the screen of a question builds on
 #                            - Left the choices a stream hands the run of out, as C# does
 #      Paulinchen  2026-10-28: Created
@@ -92,7 +94,7 @@ module ChoicesStandIn
     when "magistea" then switch?(values, 2096) || switch?(values, 2097)
     when "navy" then variable(values, 1050) >= 9 || variable(values, 1051) >= 5
     when "plansect" then variable(values, 1061) >= 1
-    when "succubus" then TABLE["succubus_switches"].first(4).any? { |id| switch?(values, id) }
+    when "succubus" then TABLE["succubus"].any? { |entry| holds?(entry["sign"], values) }
     when "spider" then switch?(values, 2280) || switch?(values, 2281)
     when "sphinx" then switch?(values, 2090) || values["roster"].include?(153)
     when "decision" then variable(values, 1001) >= TABLE["great_decision"]
@@ -100,12 +102,26 @@ module ChoicesStandIn
     end
   end
 
-  # Lists every switch and variable an outcome of a choice sets.
+  # Reports whether a story holds the values that tell a walked outcome apart, such as
+  # "s2280 s2281" or "v1061=3".
+  #
+  # @param sign [String] The values.
+  # @param values [Hash] The story's values.
+  # @return [Boolean] Whether it does.
+  def self.holds?(sign, values)
+    sign.split(" ").all? do |part|
+      key, value = part.split("=")
+      value ? variable(values, key[1..].to_i) == value.to_i : switch?(values, key[1..].to_i)
+    end
+  end
+
+  # Lists the switches and variables that are a choice's own: a branch event's from the table, the
+  # side's those its outcomes set.
   #
   # @param branch [Hash] The choice.
   # @return [Array<Array<Integer>>] The switches, then the variables.
   def self.keys_of(branch)
-    return [TABLE["succubus_switches"], [1065]] if branch["key"] == "succubus"
+    return TABLE["keys"][branch["key"]] if TABLE["keys"].key?(branch["key"])
     return [[], []] if branch["key"] == "decision"
 
     [branch["outcomes"].map { |outcome| (outcome["switches"] || []).map { |id, _on| id } }.flatten.uniq,
@@ -228,6 +244,17 @@ module ChoicesStandIn
     [switch?(values, 2097) || values["roster"].include?(163), switch?(values, 2096) || values["roster"].include?(167)]
   end
 
+  # Picks the outcome of Succubus Village a side brings, by Lily or Lucia being with the player.
+  #
+  # @param side [Integer] The side, 0 Natasha's, 1 the mayor's.
+  # @param answers [Hash] The answers given so far.
+  # @param values [Hash] The player's story.
+  # @return [Hash] The outcome.
+  def self.succubus_outcome(side, answers, values)
+    lily, lucia = magistea_companions(answers, values)
+    TABLE["succubus"].find { |entry| entry["side"] == side && entry["with"] == (side == 0 ? lily : lucia) }
+  end
+
   # Writes the line of what an outcome brings.
   #
   # @param request [Hash] The game, with "key", "index", "answers", "route" and "leader".
@@ -237,11 +264,7 @@ module ChoicesStandIn
     index = request["index"]
     values = request["values"]
     case key
-    when "succubus"
-      lily, lucia = magistea_companions(request["answers"], values)
-      return lily ? "Natasha joins, as Lily is with you." : "Nobody joins: Natasha joins only while Lily is with you." if index == 0
-
-      lucia ? "The mayor joins, as Lucia is with you." : "Nobody joins: the mayor joins only while Lucia is with you."
+    when "succubus" then succubus_outcome(index, request["answers"], values)["note"]
     when "decision"
       if request["raid"]
         (decision_texts(decision_routes(request)[index] || index, values) + ["The whole world plays this route."]).reject { |part| part.empty? }.join(" ")
@@ -262,7 +285,7 @@ module ChoicesStandIn
     [ROUTE_NAMES[index] + ".", variable(values, 912) > 0 ? "" : ROUTE_PARTIES[index]]
   end
 
-  # Finds what an outcome sets and brings.
+  # Finds what an outcome sets, brings and sends away.
   #
   # @param request [Hash] The game, with "key", "index" and "answers".
   # @return [Hash] The writes, or the side chosen.
@@ -274,20 +297,29 @@ module ChoicesStandIn
     found = branch(key)
     if logged?(key, request["start"])
       return { "title" => found["title"], "label" => offered(request)["labels"][index], "switches" => [], "variables" => [], "least" => [], "self_switches" => [],
-               "joins" => [], "ship" => nil }
+               "joins" => [], "leaves" => [], "ship" => nil }
     end
 
     if key == "succubus"
-      lily, lucia = magistea_companions(request["answers"], request["values"])
-      chosen = TABLE["succubus"].find { |entry| entry["side"] == index && entry["with"] == (index == 0 ? lily : lucia) }
-      switches = TABLE["succubus_switches"].map { |id| [id, chosen["switches"].any? { |each, _on| each == id }] }
-      return { "title" => found["title"], "label" => found["outcomes"][index]["label"], "switches" => switches, "variables" => [[1065, 3]], "least" => [], "self_switches" => [],
-               "joins" => chosen["joins"], "ship" => nil }
+      chosen = succubus_outcome(index, request["answers"], request["values"])
+      return { "title" => found["title"], "label" => found["outcomes"][index]["label"], "switches" => chosen["switches"] || [], "variables" => chosen["variables"] || [],
+               "least" => chosen["least"] || [], "self_switches" => chosen["self_switches"] || [], "joins" => chosen["joins"], "leaves" => leaves_of(chosen, request["values"]),
+               "ship" => chosen["ship"] }
     end
 
     outcome = found["outcomes"][outcome_index(key, index, request["values"])]
     { "title" => found["title"], "label" => offered(request)["labels"][index], "switches" => outcome["switches"] || [], "variables" => outcome["variables"] || [],
-      "least" => outcome["least"] || [], "self_switches" => outcome["self_switches"] || [], "joins" => outcome["joins"] || [], "ship" => outcome["ship"] }
+      "least" => outcome["least"] || [], "self_switches" => outcome["self_switches"] || [], "joins" => outcome["joins"] || [], "leaves" => leaves_of(outcome, request["values"]),
+      "ship" => outcome["ship"] }
+  end
+
+  # Lists the companions an outcome sends away on the player's playthrough.
+  #
+  # @param outcome [Hash] The outcome.
+  # @param values [Hash] The player's story.
+  # @return [Array<Integer>] The companions.
+  def self.leaves_of(outcome, values)
+    outcome[variable(values, 912) == 0 ? "leaves" : "later_leaves"] || []
   end
 
   # Lists the keys that are the player's own as choices' outcomes.

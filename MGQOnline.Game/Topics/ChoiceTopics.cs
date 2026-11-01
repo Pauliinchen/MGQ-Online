@@ -4,6 +4,7 @@
 //  Changelog:
 //      Paulinchen  2026-11-01: Dropped the steps on a question, which the framework's list and number field take
 //                            - Handed a question's key line as entries
+//                            - Told the scripts the companions an outcome sends away
 //      Paulinchen  2026-10-31: Added the questions a replay asks on the decision screen
 //                            - Read where the stream that hands the player runs began
 //      Paulinchen  2026-10-28: Created
@@ -73,10 +74,10 @@ public static class ChoiceTopics
     public const string Note = "choices.note";
 
     /// <summary>
-    /// Finds what an outcome sets and brings: the game, <c>start</c>, <c>key</c>, <c>index</c> and
+    /// Finds what an outcome sets, brings and sends away: the game, <c>start</c>, <c>key</c>, <c>index</c> and
     /// <c>answers</c> in; for the side <c>side</c> ("alice" or "ilias"), else <c>title</c>, <c>label</c>,
     /// <c>switches</c> ([id, on]), <c>variables</c> and <c>least</c> ([id, value]),
-    /// <c>self_switches</c> ([map, event, letter]), <c>joins</c> and <c>ship</c> ([map, x, y] or nil) out.
+    /// <c>self_switches</c> ([map, event, letter]), <c>joins</c>, <c>leaves</c> and <c>ship</c> ([map, x, y] or nil) out.
     /// </summary>
     public const string Outcome = "choices.outcome";
 
@@ -269,6 +270,7 @@ public static class ChoiceTopics
             { "least", Pairs(writes.Least) },
             { "self_switches", SelfSwitches(writes.SelfSwitches) },
             { "joins", new RubyArray(writes.Joins.Select(id => (RubyValue)id)) },
+            { "leaves", new RubyArray(writes.Leaves.Select(id => (RubyValue)id)) },
             { "ship", writes.Ship is { } ship ? new RubyArray { ship.Map, ship.X, ship.Y } : RubyNil.Value },
         };
     }

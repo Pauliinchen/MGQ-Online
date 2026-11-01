@@ -2,6 +2,7 @@
 //  StoryReplayTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Covered a choice named by its place among the kept commands, with the shapes of the receiver's lists, and the side pick never handed over
 //      Paulinchen  2026-10-31: Read a Classic party's scopes from a reviewed list that shares the story's progress and map 1
 //                            - Covered story runs handed to the leader's story and the choices a receiver is asked
 //                            - Created
@@ -30,13 +31,14 @@ public sealed class StoryReplayTopicsTests
 {
     /// <summary>
     /// The reviewed list of a Classic world: switch 2045 a chest's, variable 57 a work key, the
-    /// story's progress, the switches 300 to 305 and the self switches of map 1 the world's, and the chest
-    /// 1:7 a party chest.
+    /// story's progress, the switches 300 to 305 and the self switches of map 1 the world's, the chest
+    /// 1:7 a party chest, and 1:11 where the player takes a side along.
     /// </summary>
     private const string Mapping = """
         {"rev": 4, "tables": {"keys": [{"key": "s2045", "kind": "chest"}, {"key": "v57", "kind": "personal", "work": true}, {"key": "v1001", "kind": "shared"},
                     {"key": "s300", "kind": "shared"}, {"key": "s301", "kind": "shared"}, {"key": "s303", "kind": "shared"}, {"key": "s304", "kind": "shared"}, {"key": "s305", "kind": "shared"}],
-         "events": [{"key": "ss1.*.*", "share": "shared"}], "party_chests": [{"key": "ss1.7.A"}]}, "index": null}
+         "events": [{"key": "ss1.*.*", "share": "shared"}], "party_chests": [{"key": "ss1.7.A"}],
+         "side_events": [{"site": "map:1:11", "alice": {"skills": [], "companions": [5]}, "ilias": {"skills": [], "companions": []}, "choice": true, "marks": []}]}, "index": null}
         """;
 
     /// <summary>
@@ -45,11 +47,17 @@ public sealed class StoryReplayTopicsTests
     private readonly BridgeContext _context = new(1, new QuietLog());
 
     /// <summary>
+    /// The shapes of the receiver's lists of the choices a take names, as the scripts hand them over.
+    /// </summary>
+    private readonly RubyHash _shapes;
+
+    /// <summary>
     /// Initializes the topics over a Makina-shaped chest on map 1: page 1 reads the story's progress,
     /// gives the item, turns 2045 on and closes; page 2 shows once it closed. Beside it a story page
     /// that turns the world's switch 300 on and gives a potion, one that only turns 301 on, and one
     /// with two choices: the first one's answers turn on the player's own switch 1001 or 1002, the
-    /// second one's the world's 303 or 304, each with the player's own 1003.
+    /// second one's the world's 303 or 304, each with the player's own 1003; and where the player
+    /// takes a side along, which turns 300 on and gives a potion.
     /// </summary>
     public StoryReplayTopicsTests()
     {
@@ -70,8 +78,10 @@ public sealed class StoryReplayTopicsTests
             .MapEvent(1, 10, 3, 0, new TinyPage([
                 C(102, "Yes", 2), C(402, 0, "Yes"), At(121, 1, 1001, 1001, 0), At(0, 1), C(402, 1, "No"), At(121, 1, 1002, 1002, 0), At(0, 1), C(404),
                 C(102, "Yes", 2), C(402, 0, "Yes"), At(121, 1, 303, 303, 0), At(121, 1, 1003, 1003, 0), At(0, 1),
-                C(402, 1, "No"), At(121, 1, 304, 304, 0), At(121, 1, 1003, 1003, 0), At(0, 1), C(404), C(121, 305, 305, 0)])));
+                C(402, 1, "No"), At(121, 1, 304, 304, 0), At(121, 1, 1003, 1003, 0), At(0, 1), C(404), C(121, 305, 305, 0)]))
+            .MapEvent(1, 11, 4, 0, new TinyPage([C(121, 300, 300, 0), C(126, 1, 0, 0, 1)])));
         topics.Events = () => events;
+        _shapes = new RubyHash { { "map:1:10:1", events.Store.List(events.Store.Page(1, 10, 0)!.Value.ListId)!.Value.Shape } };
         Call(StoryTopics.MappingTopic, "w1");
         Drain(1);
         Drain(2);
@@ -149,7 +159,7 @@ public sealed class StoryReplayTopicsTests
     public void Take_AsksTheReceiverAChoiceWhoseAnswersDifferInTheirOwnKeys()
     {
         RubyArray asked = [new RubyArray { "map:1:10:1@0", 0, "choice", 1 }];
-        RubyArray kept = [new RubyArray { "map:1:10:1@8", 0, "choice", 0 }, new RubyArray { "map:1:10:1@18", 0, "rand", 3 }];
+        RubyArray kept = [new RubyArray { "map:1:10:1@6", 0, "choice", 0 }, new RubyArray { "map:1:10:1@14", 0, "rand", 3 }];
         RubyHash entry = Entry();
         entry["site"] = "map:1:10:1";
         entry["stream"] = "story:lead";
@@ -160,6 +170,23 @@ public sealed class StoryReplayTopicsTests
         Call(StoryTopics.ReplayScopesTopic, new RubyHash { { "party", true } });
 
         Assert.Equal(kept, Take(entry, new RubyHash())["inputs"]);
+    }
+
+    /// <summary>
+    /// Asserts that a run where the player takes a side along is never handed over, though it changed
+    /// a world key and gives, and that an entry of it an earlier build handed over is done at once.
+    /// </summary>
+    [Fact]
+    public void Ran_NeverHandsOverWhereThePlayerTakesASideAlong()
+    {
+        RubyHash entry = Entry();
+        entry["site"] = "map:1:11:1";
+        entry["stream"] = "story:lead";
+        entry["scope"] = "world";
+        entry["keys"] = new RubyHash { { "s300", "0" } };
+
+        Assert.Equal("done", Take(entry, new RubyHash())["do"].AsText());
+        Assert.True(Ran(new RubyHash { { "s300", Pair("0", "1") } }, site: "map:1:11:1").IsNil);
     }
 
     /// <summary>
@@ -349,7 +376,7 @@ public sealed class StoryReplayTopicsTests
     /// <param name="entry">The entry.</param>
     /// <param name="values">The receiver's values the request holds.</param>
     /// <returns>The answer.</returns>
-    private RubyHash Take(RubyHash entry, RubyHash values) => Call(StoryTopics.ReplayTakeTopic, new RubyHash { { "entry", entry }, { "values", values } }).AsHash();
+    private RubyHash Take(RubyHash entry, RubyHash values) => Call(StoryTopics.ReplayTakeTopic, new RubyHash { { "entry", entry }, { "values", values }, { "shapes", _shapes } }).AsHash();
 
     /// <summary>
     /// Makes a key's values before and after a run.

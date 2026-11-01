@@ -5,6 +5,11 @@
 //      Paulinchen  2026-11-01: Handed out found key items too, each once per save, by the rule both world types share
 //                            - Named the found items it gave, whose next gain adds nothing
 //                            - Took a copy of each key item another player's event used up, once per use and save
+//                            - Gave the companions of the Alice and Ilias choice only to the players who took that side along or played a route that gives them
+//                            - Took such a companion away from a player who never had a right to them
+//                            - Noted the side of the player's own save, and asked only a player who started from another player's starting save
+//                            - Took a route's companions away only from a player who plays or played that route
+//                            - Noted the routes the player played
 //      Paulinchen  2026-10-31: Stopped lifting the warp ban on the maps where warping is free, since a world never bans warping
 //                            - Played the recruit page of a companion the player missed once a route finished
 //                            - Gave from the rows only the history the world's story was past where its log starts, which the world's track replays after
@@ -38,7 +43,9 @@ namespace MGQOnline.Game.Catchup;
 /// on, "v" [id, value] each, "ss" the self switches on), "roster" ([id, persona, base level, cap]
 /// each), "items" (counts by "i", "w" or "a" and the id), "worn", "unlocks" (the items unlocking a
 /// job or race), "key_items", "got" (the items the save has held), "spent" (the uses of items it
-/// counted, see <see cref="FoundItems"/>), "encounters", "summary" (the world's summary),
+/// counted, see <see cref="FoundItems"/>), "pick" (the side the save notes the player took along in
+/// Iliasville: "alice" or "ilias", "" for a save of another player's starting save, nil while
+/// unknown), "encounters", "summary" (the world's summary),
 /// "sharing", "starts" ([companion, start level] each) and "start" (the story markers where the
 /// world's log starts, nil while nothing is logged).
 /// </remarks>
@@ -302,12 +309,14 @@ internal sealed class CatchupLook
     public RubyHash Check()
     {
         var answer = new RubyHash();
+        NoteRoute();
         if (_request["look"] is RubyString { Text: "carried" })
         {
             Carried(StoryOf(_request["before"]) ?? new StoryValues([], [], []));
         }
         else
         {
+            NoteSide(_own);
             if (_request["audit"] is RubyBool { Flag: true })
             {
                 Audit(_own);
@@ -353,6 +362,11 @@ internal sealed class CatchupLook
             NoteCapped((long)capped.Value);
         }
 
+        if (_request["side"] is RubyString { Text: "alice" or "ilias" } side)
+        {
+            TakeSide(side.Text);
+        }
+
         return Finish([]);
     }
 
@@ -365,6 +379,17 @@ internal sealed class CatchupLook
         int main = _request["actor"].AsInt();
         RubyValue gate = RubyNil.Value;
         string? site = _request["site"].IsNil ? null : _request["site"].AsText();
+        if (!InRoster(main) && !_tables.Scope.AllowsAt(main, site, NotedSide()))
+        {
+            Log($"left out the join of {{actor:{main}}} at {site}: it is for the players who took the other side along, and the player took {NotedSide() ?? "no side"} along");
+            return Finish(new RubyHash { { "gate", RubyNil.Value }, { "refused", true } });
+        }
+
+        if (_request["scope_only"] is RubyBool { Flag: true })
+        {
+            return Finish(new RubyHash { { "gate", gate } });
+        }
+
         if (!InRoster(main) && !VisitRunning(main, site))
         {
             string part = _own.Part;
@@ -773,30 +798,162 @@ internal sealed class CatchupLook
         StoryRows.NextPart(from, world["part"].IsNil ? "" : world["part"].AsText(), Texts(world["done"]), Texts(world["checkpoints"]));
 
     /// <summary>
-    /// Reports whether the player's story went past the choice of a side without one, before the
-    /// Great Decision.
+    /// Reports whether the player's story went past the choice of a side in Iliasville while the save
+    /// notes no side they took along themselves, before the Great Decision or on a route: a story the
+    /// world's carried past it, or a save of another player's starting save, whose side is that
+    /// player's. A save of the player's own that the notes first saw on a route picked, though which
+    /// side is unknown.
     /// </summary>
     /// <returns>Whether it did.</returns>
     private bool LostSide()
     {
-        if (_tables.Rules.SideStep is not { } step)
+        bool ownSave = Ledger()["side"].IsNil && !OtherStart && _own.Side is not null;
+        if (_tables.Rules.SideStep is not { } step || NotedSide() is not null || ownSave)
         {
             return false;
         }
 
         long progress = _own.Variable(StoryValues.MainProgress) ?? 0;
-        return _own.Side is null && Array.IndexOf(SidedParts, _own.Part) >= 0 && progress >= step && progress <= BeforeDecision;
+        return StoryParts.Routes.Contains(_own.Part) || (Array.IndexOf(SidedParts, _own.Part) >= 0 && progress >= step && progress <= BeforeDecision);
     }
 
     /// <summary>
-    /// Notes the side the player chose before the Great Decision, which the route sets anew.
+    /// Notes the side the player took along in Iliasville: the one the save notes, else before the
+    /// Great Decision, which the route sets anew, the one their story holds, as an empty side while it
+    /// has none. A side another player's starting save brought is not theirs until the notes saw them
+    /// take it, so the player is asked (<see cref="LostSide"/>).
     /// </summary>
     /// <param name="story">The player's story.</param>
     private void NoteSide(StoryValues story)
     {
-        if (story.Side is { } side && Array.IndexOf(SidedParts, story.Part) >= 0)
+        RubyValue noted = Ledger()["side"];
+        bool unnoted = noted.IsNil || noted is RubyString { Text.Length: 0 };
+        if (SavePick is { Length: > 0 } pick)
         {
-            Ledger()["side"] = side;
+            if (unnoted)
+            {
+                Ledger()["side"] = pick;
+            }
+
+            return;
+        }
+
+        if (Array.IndexOf(SidedParts, story.Part) < 0)
+        {
+            return;
+        }
+
+        if (story.Side is { } side)
+        {
+            if (noted is RubyString { Text.Length: 0 } || (noted.IsNil && !OtherStart))
+            {
+                Ledger()["side"] = side;
+            }
+        }
+        else if (noted.IsNil)
+        {
+            Ledger()["side"] = "";
+        }
+    }
+
+    /// <summary>
+    /// Gets the side the save notes the player took along in Iliasville, in any world: "alice" or
+    /// "ilias", empty for a save of another player's starting save, <see langword="null"/> while
+    /// unknown.
+    /// </summary>
+    private string? SavePick => _request["pick"] is RubyString pick ? pick.Text : null;
+
+    /// <summary>
+    /// Gets whether the save came from another player's starting save with that player's side.
+    /// </summary>
+    private bool OtherStart => SavePick is { Length: 0 };
+
+    /// <summary>
+    /// Notes the side the player answered they take along, see <see cref="LostSide"/>.
+    /// </summary>
+    /// <param name="side">"alice" or "ilias".</param>
+    private void TakeSide(string side)
+    {
+        Ledger()["side"] = side;
+        Log($"noted the side the player takes along: {side}");
+    }
+
+    /// <summary>
+    /// Notes the route the player's story is on, which every companion obtained there may stay with.
+    /// </summary>
+    private void NoteRoute()
+    {
+        string part = _own.Part;
+        if (!StoryParts.Routes.Contains(part))
+        {
+            return;
+        }
+
+        RubyHash notes = Ledger();
+        RubyArray routes = notes["routes"] as RubyArray ?? [];
+        if (routes.Any(route => route.AsText() == part))
+        {
+            return;
+        }
+
+        routes.Add(part);
+        notes["routes"] = routes;
+    }
+
+    /// <summary>
+    /// Lists the routes the player played: those the notes saw their story on and the one it is on.
+    /// </summary>
+    /// <param name="cleared">Whether the routes their story holds cleared count too, which a Raid World shares, so a companion a save brought from a route played before the notes kept routes stays.</param>
+    /// <returns>The routes.</returns>
+    private HashSet<string> PlayedRoutes(bool cleared)
+    {
+        HashSet<string> routes = [.. Texts(Ledger()["routes"])];
+        if (StoryParts.Routes.Contains(_own.Part))
+        {
+            routes.Add(_own.Part);
+        }
+
+        if (cleared)
+        {
+            routes.UnionWith(StoryParts.Routes.Where(_own.Cleared));
+        }
+
+        return routes;
+    }
+
+    /// <summary>
+    /// Reports whether a companion of the Alice and Ilias choice may join the player, see
+    /// <see cref="CompanionScope.Allows"/>: by the side they took along, or a route they played.
+    /// </summary>
+    /// <param name="actor">The companion's main persona.</param>
+    /// <returns>Whether they may.</returns>
+    private bool Allowed(int actor) => _tables.Scope.Allows(actor, NotedSide(), PlayedRoutes(false));
+
+    /// <summary>
+    /// Takes away the companions of the Alice and Ilias choice the player never had a right to: of the
+    /// other side, or of a route they never played. One a route the player played gave them stays,
+    /// and while the side they took along is unknown, or they are asked for it, everyone stays.
+    /// </summary>
+    private void DismissStrangers()
+    {
+        if (NotedSide() is not { } pick)
+        {
+            return;
+        }
+
+        HashSet<string> routes = PlayedRoutes(true);
+        foreach (RosterEntry entry in _roster.ToList())
+        {
+            int id = (int)entry.Id;
+            if (id == Hero || !_tables.Scope.IsChoiceCompanion(id) || _tables.Scope.Allows(id, pick, routes) || Visiting(id, _own))
+            {
+                continue;
+            }
+
+            Act("dismiss", id);
+            Log($"{{actor:{id}}} left the roster: the player took {pick} along and played {(routes.Count == 0 ? "no route" : string.Join(", ", routes.Order(StringComparer.Ordinal)))}, which never give them");
+            _roster.Remove(entry);
+            RosterChanged();
         }
     }
 
@@ -818,6 +975,7 @@ internal sealed class CatchupLook
         RestockUnlockItems(story, _told);
         RepairRewards(story);
         MissingCompanions(story, _told, done);
+        DismissStrangers();
         CompanionValues();
         Settle(story, world);
         CheckVehicles(story, world);
@@ -902,7 +1060,7 @@ internal sealed class CatchupLook
         foreach (CatchupJoin row in _tables.Index.StoryJoins)
         {
             string key = KeyOf("j", row);
-            if (!IsTrue(done[key]) || row.Place.Part is null || !row.Ran || InRoster(row.Actor) || !BeforeLog(row.Place) || !PassedAny(row.Place, story, told) || TakenAwaySince(row, story, told))
+            if (!IsTrue(done[key]) || row.Place.Part is null || !row.Ran || InRoster(row.Actor) || !BeforeLog(row.Place) || !PassedAny(row.Place, story, told) || TakenAwaySince(row, story, told) || !Allowed(row.Actor))
             {
                 continue;
             }
@@ -922,7 +1080,16 @@ internal sealed class CatchupLook
     /// <param name="told">The world's story.</param>
     /// <returns>Whether one did.</returns>
     private bool TakenAwaySince(CatchupJoin row, StoryValues story, StoryValues? told) =>
-        _tables.Removals.Any(removal => removal.Actor == row.Actor && StoryRows.After(removal.Place, removal.Index, row.Place, row.Index) && PassedAny(removal.Place, story, told));
+        _tables.Removals.Any(removal => removal.Actor == row.Actor && StoryRows.After(removal.Place, removal.Index, row.Place, row.Index) && OnPlayedRoute(removal.Place) && PassedAny(removal.Place, story, told));
+
+    /// <summary>
+    /// Reports whether a removal's place may take a companion from the player: any but a route's, and
+    /// a route's only while the player plays or played that route, since a route the world finished
+    /// hands its companions out but takes none away.
+    /// </summary>
+    /// <param name="place">The removal's place.</param>
+    /// <returns>Whether it may.</returns>
+    private bool OnPlayedRoute(StoryPlace place) => place.Part is not { } part || !StoryParts.Routes.Contains(part) || PlayedRoutes(false).Contains(part);
 
     /// <summary>
     /// Raises the story values of the companions in the roster to what their joins stand for.
@@ -1422,7 +1589,7 @@ internal sealed class CatchupLook
         foreach (CatchupRemoval row in _tables.Removals)
         {
             string key = KeyOf(row);
-            if (Truthy(done[key]) || !Passed(row.Place, story))
+            if (Truthy(done[key]) || !OnPlayedRoute(row.Place) || !Passed(row.Place, story))
             {
                 continue;
             }
@@ -1449,7 +1616,7 @@ internal sealed class CatchupLook
                     continue;
                 }
 
-                if (row.Place.Part is null || (carried && !BeforeLog(row.Place)))
+                if (row.Place.Part is null || (carried && !BeforeLog(row.Place)) || !Allowed(row.Actor))
                 {
                     done[key] = true;
                     continue;
@@ -1564,7 +1731,7 @@ internal sealed class CatchupLook
                 continue;
             }
 
-            if (!Reached(row.Gate))
+            if (!Reached(row.Gate) || !Allowed(row.Actor))
             {
                 continue;
             }
@@ -1716,7 +1883,7 @@ internal sealed class CatchupLook
             }
 
             CatchupJoin? first = _tables.Index.JoinsOf((int)id).FirstOrDefault();
-            if (first is null && _sharing != "all")
+            if ((first is null && _sharing != "all") || !Allowed((int)id))
             {
                 continue;
             }
@@ -1878,7 +2045,7 @@ internal sealed class CatchupLook
         foreach (CatchupJoin row in _tables.Index.StoryJoins)
         {
             string key = $"m:{row.Actor}";
-            if (IsTrue(done[key]) || InRoster(row.Actor) || !StoryRows.PastByRoute(row.Place, _own, NotedSide()) || TakenAwaySince(row, _own, null) || !Reached(row.Gate))
+            if (IsTrue(done[key]) || InRoster(row.Actor) || !StoryRows.PastByRoute(row.Place, _own, NotedSide()) || TakenAwaySince(row, _own, null) || !Reached(row.Gate) || !Allowed(row.Actor))
             {
                 continue;
             }
@@ -2005,7 +2172,7 @@ internal sealed class CatchupLook
 
         if (told is not null)
         {
-            foreach (CatchupJoin row in _tables.Index.StoryJoins.Where(row => row.Place.Part is not null && row.Ran && Passed(row.Place, told, story) && !TakenAwaySince(row, story, told)))
+            foreach (CatchupJoin row in _tables.Index.StoryJoins.Where(row => row.Place.Part is not null && row.Ran && Passed(row.Place, told, story) && !TakenAwaySince(row, story, told) && Allowed(row.Actor)))
             {
                 Lower(row.Actor, row.Gate);
             }
@@ -2017,7 +2184,7 @@ internal sealed class CatchupLook
             HashSet<long> lost = TakenForGood(done);
             foreach (long id in Numbers(world["comps"]))
             {
-                if (!InRoster(id) && (done[$"s:{id}"] is RubyString { Text: ShareSettled } || lost.Contains(id) || Joined(id, done)))
+                if (!InRoster(id) && (done[$"s:{id}"] is RubyString { Text: ShareSettled } || lost.Contains(id) || Joined(id, done) || !Allowed((int)id)))
                 {
                     continue;
                 }

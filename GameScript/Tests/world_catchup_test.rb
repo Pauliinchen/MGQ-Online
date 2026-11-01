@@ -6,6 +6,7 @@
 #                            - Checked that a Small Medal the player holds is not noted for the world
 #                            - Checked that a key item an event used up leaves every player of the world who holds it, with the Yggdrasil Fruit the Queen Harpy takes
 #                            - Stood in for the replay's name of a command
+#                            - Checked that a player on a route in a save of another player's starting save is asked, keeps the route's switches and loses the other side's companion once they answered, and one in a save of their own is not asked
 #      Paulinchen  2026-10-31: Dropped the warp ban's lift on the maps where warping is free
 #                            - Checked that a missed companion's recruit page is played once a route finished
 #                            - Expected the plainer texts the player reads
@@ -91,7 +92,7 @@ require_relative "catchup_support"
 # Stands in for story_replay.rbx: the pages the catch-up hands the player's game to play, in
 # $derived as [fields, why], with no run of the world's track waiting, and a command's name.
 module MGQ_MpStoryReplay
-  def self.input_at(site, index); "#{site}@#{index}"; end
+  def self.input_at(site, _list, index); "#{site}@#{index}"; end
   def self.derive(fields, why); ($derived ||= []) << [fields, why]; end
   def self.running?; false; end
   def self.waiting; []; end
@@ -572,6 +573,37 @@ choose.call(0)
 frames(40)
 check("taking Alice keeps the side, brings her along and gives the side's key item",
       [$game_switches[4], $game_switches[5], roster.include?(5), $game_party.items[501], $game_message.choices], [true, false, true, 1, []])
+check("and the save notes it as the player's own side", MGQ_MpWorldCatchup.ledger["side"], "alice")
+
+# A player whose save came onto a route without a side of their own, as a world's starting save
+# brings the creator's, is asked too; the answer leaves the switches, which tell the route there.
+# The same save of the player's own is not asked.
+tables(:JOINS => REAL_JOINS.select { |row| [5, 26].include?(row.actor) }, :REMOVALS => REAL_REMOVALS.select { |row| [5, 26].include?(row.actor) })
+$data_actors[26] = ActorData.new(26, "Ilias", 1)
+new_game({ 1001 => 40, 1141 => 10 }, [4], 80)
+$game_party.add_actor(26)
+$game_message = Game_Message.new
+frames(1)
+relay({ "rev" => 27, "wrev" => 27, "p" => 40, "part" => "ad", "route" => "ad" }, packed({ 1001 => 40, 1141 => 10 }, [4]))
+frames(40)
+check("a player on a route in a save of their own is not asked whom they take along, and keeps everyone",
+      [$game_message.choices, roster.include?(26)], [[], true])
+new_game({ 1001 => 40, 1141 => 10 }, [4], 80)
+MGQ_MpStoryState.note_other_start
+$game_party.add_actor(26)
+$game_message = Game_Message.new
+frames(1)
+relay({ "rev" => 28, "wrev" => 28, "p" => 40, "part" => "ad", "route" => "ad" }, packed({ 1001 => 40, 1141 => 10 }, [4]))
+frames(40)
+check("a player on a route without a side of their own is asked whom they take along, and keeps everyone meanwhile",
+      [$game_message.choices, roster.include?(26)], [["Alice", "Ilias"], true])
+choose = $game_message.choice_proc
+$game_message = Game_Message.new
+choose.call(0)
+frames(40)
+check("taking Alice notes the side, leaves the route's switches and takes away Ilias, whom the Angelic Dominion never gives an Alice picker",
+      [MGQ_MpWorldCatchup.ledger["side"], $game_switches[4], $game_switches[5], roster.include?(26), $logs.grep(/Ilias left the player's roster/).size],
+      ["alice", true, false, false, 1])
 
 # A player on Ilias's side who lost the Remina Key Card to Sonya's defeat and loaded a save without
 # it gets it back from the generated rows, as one on Alice's side does.

@@ -2,6 +2,7 @@
 //  CatchupEngine.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Left out a join of a companion of the Alice and Ilias choice the player has no right to, and noted the side the player answered they take along
 //      Paulinchen  2026-10-31: Left the warp ban out of what a snapshot reads
 //                            - Left the chest flags out of what a snapshot reads
 //      Paulinchen  2026-10-28: Read the switch of a world chest the game shuts by a switch
@@ -143,8 +144,9 @@ public sealed class CatchupEngine
 
     /// <summary>
     /// Writes a note of the world's story into the save's notes: the checkpoint the player took
-    /// (<c>checkpoint</c>, nil once the world's story was laid over theirs) or the gate a move on at a
-    /// cap of another mod opened (<c>capped</c>).
+    /// (<c>checkpoint</c>, nil once the world's story was laid over theirs), the gate a move on at a
+    /// cap of another mod opened (<c>capped</c>) or the side the player answered they take along
+    /// (<c>side</c>).
     /// </summary>
     /// <param name="tables">The tables.</param>
     /// <param name="request">The note and the snapshot.</param>
@@ -152,12 +154,14 @@ public sealed class CatchupEngine
     public RubyHash Note(CatchupTables tables, RubyHash request) => new CatchupLook(this, tables, request).Note();
 
     /// <summary>
-    /// Answers whether a companion the player's own story event hands out waits for the gate of a
-    /// join of theirs in the player's part.
+    /// Answers whether a companion the player's game hands out is left out, as one of the Alice and
+    /// Ilias choice the player has no right to (<see cref="CompanionScope.AllowsAt"/>), or waits for
+    /// the gate of a join of theirs in the player's part, the latter only for the player's own story
+    /// event.
     /// </summary>
     /// <param name="tables">The tables.</param>
-    /// <param name="request">"actor" (the companion's main persona), "site" (the page that runs, nil for none) and the snapshot.</param>
-    /// <returns>"gate" (nil when the game's own join goes ahead), "actions" and "ledger".</returns>
+    /// <param name="request">"actor" (the companion's main persona), "site" (the page or common event that runs, nil for none), "scope_only" (true for a join no own story event of the player hands out, such as a replay's) and the snapshot.</param>
+    /// <returns>"gate" (nil when the game's own join goes ahead), "refused" (true when it is left out), "actions" and "ledger".</returns>
     public RubyHash HoldJoin(CatchupTables tables, RubyHash request) => new CatchupLook(this, tables, request).HoldJoin();
 
     /// <summary>

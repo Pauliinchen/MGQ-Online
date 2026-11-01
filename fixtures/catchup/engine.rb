@@ -4,6 +4,10 @@
 #  Changelog:
 #      Paulinchen  2026-11-01: Handed out found key items too, each once per save, as the C# engine does
 #                            - Took a copy of each key item another player's event used up, once per use and save, as the C# engine does
+#                            - Gave the companions of the Alice and Ilias choice only to the players who took that side along or played a route that gives them, as the C# engine does
+#                            - Took such a companion away from a player who never had a right to them, as the C# engine does
+#                            - Noted the side of the player's own save, asked only a player who started from another player's starting save and noted the routes the player played, as the C# engine does
+#                            - Took a route's companions away only from a player who plays or played that route, as the C# engine does
 #      Paulinchen  2026-10-31: Stopped lifting the warp ban on the maps where warping is free, as the C# engine does
 #                            - Read a world chest without its chest flags, as the C# engine does
 #                            - Played the recruit page of a companion the player missed once a route finished, as the C# engine does
@@ -100,7 +104,7 @@ module CatchupEngine
   # The tables read, with what is worked out of them once.
   class Tables
     attr_accessor :parts, :joins, :removals, :key_items, :chests, :rewards, :lessons, :class_levels, :actor_changes, :settings, :vehicles,
-                  :makina, :prize_variables, :rules, :counts, :companion_values
+                  :makina, :prize_variables, :rules, :counts, :companion_values, :side_events
 
     # Keeps what a block builds from the tables once.
     #
@@ -171,6 +175,7 @@ module CatchupEngine
         "done_switch" => row["doneSwitch"], "done_value" => row["doneValue"], "since" => row["since"] && [row["since"]["variable"], row["since"]["atLeast"]] }
     end
     t.companion_values = rows.call("companion_values").map { |row| [row["actor"], row["variable"], row["atLeast"]] }
+    t.side_events = rows.call("side_events")
     t
   end
 
@@ -387,9 +392,11 @@ module CatchupEngine
     #   "sharable", "got", "given", "take" and "spent".
     def check
       answer = {}
+      note_route
       if @request["look"] == "carried"
         carried(CatchupEngine.story_of(@request["before"]))
       else
+        note_side(story_now)
         if @request["audit"]
           audit(story_now)
         elsif @request["vehicles"]
@@ -411,21 +418,30 @@ module CatchupEngine
     end
 
     # Answers catchup.note: the checkpoint the player took ("checkpoint", nil once the world's story
-    # was laid over theirs) or the gate a move on at a cap of another mod opened ("capped").
+    # was laid over theirs), the gate a move on at a cap of another mod opened ("capped") or the side
+    # the player answered they take along ("side").
     #
     # @return [Hash] "actions" and "ledger".
     def note
       ledger["checkpoint"] = @request["checkpoint"] if @request.key?("checkpoint")
       note_capped(@request["capped"]) if @request["capped"]
+      take_side(@request["side"]) if %w(alice ilias).include?(@request["side"])
       finish({})
     end
 
     # Answers catchup.hold_join, see hold_join? of world_catchup.rbx.
     #
-    # @return [Hash] "gate" (nil when the game's own join goes ahead), "actions" and "ledger".
+    # @return [Hash] "gate" (nil when the game's own join goes ahead), "refused" (true when it is left
+    #   out), "actions" and "ledger".
     def hold_join
       main = @request["actor"]
       gate = nil
+      unless in_roster?(main) || allowed_at?(main, @request["site"], noted_side)
+        log("left out the join of {actor:#{main}} at #{@request['site']}: it is for the players who took the other side along, and the player took #{noted_side || 'no side'} along")
+        return finish("gate" => nil, "refused" => true)
+      end
+      return finish("gate" => gate) if @request["scope_only"]
+
       unless in_roster?(main) || visit_running?(main, @request["site"])
         part = own_part
         done = ledger["done"]
@@ -693,28 +709,131 @@ module CatchupEngine
     # @param own [Array] The player's story.
     # @return [Symbol, nil] The side the row asks for in the player's story.
     def side_for(row, own)
-      side = side_of(own[0])
-      return side unless SIDED_PARTS.include?(row.part)
-
-      @noted_side = ledger["side"] || false if @noted_side.nil?
-      @noted_side ? @noted_side.to_sym : side
+      noted = noted_side
+      noted ? noted.to_sym : side_of(own[0])
     end
 
+    # @return [String, nil] The side the save notes the player took along, nil for none.
+    def noted_side
+      side = ledger["side"]
+      side.is_a?(String) && !side.empty? ? side : nil
+    end
+
+    # Notes the side the player took along in Iliasville: the one the save notes, else before the
+    # Great Decision the one their story holds, as an empty side while it has none; a side another
+    # player's starting save brought is not theirs until the notes saw them take it.
+    #
     # @param story [Array] The player's story.
     def note_side(story)
-      side = side_of(story[0])
-      return unless side && SIDED_PARTS.include?(story_part(story))
+      unnoted = ledger["side"].nil? || ledger["side"] == ""
+      pick = @request["pick"]
+      return ledger["side"] = (unnoted ? pick : ledger["side"]) if pick.is_a?(String) && !pick.empty?
+      return unless SIDED_PARTS.include?(story_part(story))
 
-      ledger["side"] = @noted_side = side.to_s
+      side = side_of(story[0])
+      if side
+        ledger["side"] = side.to_s if ledger["side"] == "" || (ledger["side"].nil? && !other_start?)
+      elsif ledger["side"].nil?
+        ledger["side"] = ""
+      end
     end
 
-    # @return [Boolean] Whether the player's story went past the choice of a side without one.
+    # @return [Boolean] Whether the save came from another player's starting save with their side.
+    def other_start?
+      @request["pick"] == ""
+    end
+
+    # Notes the side the player answered they take along.
+    #
+    # @param side [String] "alice" or "ilias".
+    def take_side(side)
+      ledger["side"] = side
+      log("noted the side the player takes along: #{side}")
+    end
+
+    # Notes the route the player's story is on.
+    def note_route
+      part = part_of(story_now)
+      return unless ROUTES.include?(part)
+
+      routes = ledger["routes"] || []
+      ledger["routes"] = routes + [part] unless routes.include?(part)
+    end
+
+    # @param cleared [Boolean] Whether the routes the story holds cleared count too.
+    # @return [Array<String>] The routes the player played.
+    def played_routes(cleared)
+      story = story_now
+      routes = Array(ledger["routes"]).dup
+      part = part_of(story)
+      routes << part if ROUTES.include?(part)
+      routes.concat(ROUTES.select { |route| cleared?(route, story) }) if cleared
+      routes.uniq
+    end
+
+    # @return [Hash{Integer => Array<Join>}] The lasting joins of each companion of the Alice and
+    #   Ilias choice: those with a join that asks for a side.
+    def choice_joins
+      @t.kept(:choice_joins) do
+        joins = {}
+        story_joins.select { |row| row.side }.map { |row| row.actor }.uniq.each { |actor| joins[actor] = story_joins.select { |row| row.actor == actor } }
+        joins
+      end
+    end
+
+    # @return [Boolean] Whether a join's place fits a player by their pick or a route they played.
+    def fits?(row, pick, routes)
+      return false if row.side && row.side.to_s != pick.to_s
+
+      row.part.nil? || !ROUTES.include?(row.part) || routes.include?(row.part)
+    end
+
+    # @return [Boolean] Whether a companion may join the player.
+    def allowed?(actor, pick = noted_side, routes = played_routes(false))
+      joins = choice_joins[actor]
+      joins.nil? || joins.any? { |row| fits?(row, pick, routes) }
+    end
+
+    # @return [Boolean] Whether the game's own join of a companion may go ahead at the event that runs.
+    def allowed_at?(actor, site, pick)
+      joins = choice_joins[actor]
+      return true if site.nil? || joins.nil?
+
+      here = joins.select { |row| row.site == site }
+      pick_site = @t.side_events.any? { |event| event["choice"] && (site == event["site"] || site.start_with?("#{event['site']}:")) }
+      here.empty? || here.any? { |row| row.side.nil? || row.side.to_s == pick.to_s || (pick.nil? && pick_site) }
+    end
+
+    # Takes away the companions of the Alice and Ilias choice the player never had a right to, once
+    # the side they took along is known.
+    def dismiss_strangers
+      pick = noted_side
+      return unless pick
+
+      routes = played_routes(true)
+      story = story_now
+      @roster.dup.each do |entry|
+        id = entry[0]
+        next if id == HERO || !choice_joins[id] || allowed?(id, pick, routes) || visiting?(id, story)
+
+        @actions << ["dismiss", id]
+        log("{actor:#{id}} left the roster: the player took #{pick} along and played #{routes.empty? ? 'no route' : routes.sort.join(', ')}, which never give them")
+        @roster.delete(entry)
+        roster_changed
+      end
+    end
+
+    # @return [Boolean] Whether the player's story went past the choice of a side in Iliasville while
+    #   the save notes no side they took along themselves, before the Great Decision or on a route: a
+    #   story the world's carried past it, or a save of another player's starting save.
     def lost_side?
       step = rule("side_step")
-      return false unless step
-
       story = story_now
-      side_of(story[0]).nil? && SIDED_PARTS.include?(part_of(story)) && story[1][MAIN_PROGRESS].to_i.between?(step, BEFORE_DECISION)
+      return false unless step && noted_side.nil?
+      return false if ledger["side"].nil? && !other_start? && side_of(story[0])
+
+      part = part_of(story)
+      ROUTES.include?(part) || (SIDED_PARTS.include?(part) && story[1][MAIN_PROGRESS].to_i.between?(step, BEFORE_DECISION))
     end
 
     # @param story [Array] The story.
@@ -809,6 +928,7 @@ module CatchupEngine
       restock_unlock_items(story, told)
       repair_rewards(story)
       missing_companions(story, told, done)
+      dismiss_strangers
       companion_values
       settle(story, world)
       check_vehicles(story, world)
@@ -883,7 +1003,7 @@ module CatchupEngine
       story_joins.each do |row|
         key = key_of("j", row)
         next unless done[key] == true && row.part && carries?(row) && !in_roster?(row.actor) && before_log?(row) && passed_any?(row, story, told)
-        next if taken_away_since?(row, story, told)
+        next if taken_away_since?(row, story, told) || !allowed?(row.actor)
 
         done[key] = "c"
         log("{actor:#{row.persona}} of #{row.site} is missing from the roster: joins at level #{row.gate}")
@@ -893,7 +1013,13 @@ module CatchupEngine
 
     # @return [Boolean] Whether a removal after the join took the companion away again.
     def taken_away_since?(row, story, told)
-      @t.removals.any? { |removal| removal.actor == row.actor && after?(removal, row) && passed_any?(removal, story, told) }
+      @t.removals.any? { |removal| removal.actor == row.actor && after?(removal, row) && on_played_route?(removal) && passed_any?(removal, story, told) }
+    end
+
+    # @return [Boolean] Whether a removal may take a companion from the player: a route's only while
+    #   the player plays or played that route.
+    def on_played_route?(row)
+      row.part.nil? || !ROUTES.include?(row.part) || played_routes(false).include?(row.part)
     end
 
     # Raises the story values of the companions in the roster to what their joins stand for.
@@ -1193,7 +1319,7 @@ module CatchupEngine
       removed = {}
       @t.removals.each do |row|
         key = key_of("r", row)
-        next if done[key] || !passed?(row, story)
+        next if done[key] || !on_played_route?(row) || !passed?(row, story)
 
         done[key] = true
         (removed[row.actor] ||= []) << row
@@ -1205,7 +1331,7 @@ module CatchupEngine
         if state.nil?
           next if carried && !carries?(row)
           next unless passed?(row, story)
-          next done[key] = true if row.part.nil? || (carried && !before_log?(row))
+          next done[key] = true if row.part.nil? || (carried && !before_log?(row)) || !allowed?(row.actor)
 
           fresh << row
         elsif state != true && removed[row.actor]
@@ -1263,7 +1389,7 @@ module CatchupEngine
 
         present = in_roster?(row.actor)
         next done[key] = true if present && state == "o"
-        next unless reached?(row.gate)
+        next unless reached?(row.gate) && allowed?(row.actor)
 
         done[key] = true
         level = row.rule == START_RULE ? nil : row.gate
@@ -1391,7 +1517,7 @@ module CatchupEngine
         next done[key] = SHARE_SETTLED if in_roster?(id) || lost[id] || joined?(id, done)
 
         first = joins_of(id).first
-        next unless first || @sharing == "all"
+        next unless (first || @sharing == "all") && allowed?(id)
 
         gate = first ? first.gate : start_level(id)
         next unless reached?(gate)
@@ -1512,7 +1638,7 @@ module CatchupEngine
       story_joins.each do |row|
         key = "m:#{row.actor}"
         next if done[key] || in_roster?(row.actor) || !past_by_route?(row, story)
-        next if taken_away_since?(row, story, nil) || !reached?(row.gate)
+        next if taken_away_since?(row, story, nil) || !reached?(row.gate) || !allowed?(row.actor)
 
         done[key] = true
         @actions << ["replay", { "site" => row.site }, key]
@@ -1581,7 +1707,7 @@ module CatchupEngine
       gates = {}
       if told
         story_joins.each do |row|
-          next unless row.part && carries?(row) && passed?(row, told, story) && !taken_away_since?(row, story, told)
+          next unless row.part && carries?(row) && passed?(row, told, story) && !taken_away_since?(row, story, told) && allowed?(row.actor)
 
           gates[row.actor] = [gates[row.actor], row.gate].compact.min
         end
@@ -1591,7 +1717,7 @@ module CatchupEngine
         done = ledger["done"]
         lost = taken_for_good(done)
         world["comps"].to_a.each do |id|
-          next if !in_roster?(id) && (done["s:#{id}"] == SHARE_SETTLED || lost[id] || joined?(id, done))
+          next if !in_roster?(id) && (done["s:#{id}"] == SHARE_SETTLED || lost[id] || joined?(id, done) || !allowed?(id))
 
           first = joins_of(id).first
           gate = first ? first.gate : (@sharing == "all" ? start_level(id) : nil)

@@ -5,6 +5,10 @@
 #      Paulinchen  2026-11-01: Noted every key item the player gains as found for the world too, and handed the DLL the items the save held
 #                            - Noted the found items the catch-up gave, whose next gain adds nothing
 #                            - Noted each use of a key item by an event of the player's game for the world, and took a copy of each item another player's event used up
+#                            - Left out a join of a companion of the Alice and Ilias choice the player has no right to, in the player's own events and in replays, and in a Classic party through coop_story.rbx
+#                            - Took such a companion away once the DLL found the player never had a right to them
+#                            - Asked a player on a route whom they take along without setting the side switches, which tell the route there
+#                            - Handed the DLL the side the save notes the player took along in Iliasville, which tells a save of another player's starting save
 #      Paulinchen  2026-10-31: Waited for a lost raid boss battle's defeat by the world's story's hold
 #                            - Stopped handing the DLL the player's map, which only the lift of a warp ban read
 #                            - Handed the DLL the world's story where its log starts, and left a vehicle only the log holds in place
@@ -544,10 +548,20 @@ module MGQ_MpWorldCatchup
     {
       "mode" => MGQ_MpWorldStory.mode ? MGQ_MpWorldStory.mode.to_s : nil, "own" => keys ? values(story_now) : nil, "told" => @world_told, "roster" => roster_entries,
       "items" => item_counts, "worn" => worn_items, "unlocks" => unlock_ids, "key_items" => MGQ_MpStoryFound.item_ids, "got" => MGQ_MpStoryFound.got,
-      "spent" => MGQ_MpStoryFound.spent,
+      "spent" => MGQ_MpStoryFound.spent, "pick" => pick_now,
       "encounters" => !$game_system.encounter_disabled, "summary" => world, "sharing" => sharing.to_s, "starts" => comps.map { |id| [id, start_level(id)] },
       "log" => (log = MGQ_MpWorldStory.log_story) && keys ? values(log) : nil,
     }
+  end
+
+  # Reads the side the save notes the player took along in Iliasville, noting it from the story they
+  # play first, see MGQ_MpStoryState.own_pick.
+  #
+  # @return [String, nil] See MGQ_MpStoryState::PICK_FIELD.
+  def self.pick_now
+    story = story_now
+    MGQ_MpStoryState.own_pick(story[0], story[1])
+    MGQ_MpStoryState.pick_note
   end
 
   # Reads the values of a story the DLL's catch-up reads (see keys): the switches and self switches
@@ -713,6 +727,7 @@ module MGQ_MpWorldCatchup
     when "raise" then raise_level(action[1], action[2])
     when "form" then take_form(action[1], action[2])
     when "leave" then take_away(action[1], action[2])
+    when "dismiss" then dismiss(action[1])
     when "change" then change_actors(action[1], action[2], action[3])
     when "set" then $game_variables[action[1]] = action[2]
     when "switch" then $game_switches[action[1]] = action[2]
@@ -1183,18 +1198,24 @@ module MGQ_MpWorldCatchup
     $game_message.choice_proc = Proc.new { |index| take_side(index == 0 ? :alice : :ilias) }
   end
 
-  # Keeps the side the player chose and brings its companion along, as the choice in Iliasville
-  # does; the next look gives what the side's rows owe, as the Pocket Castle.
+  # Keeps the side the player chose in the save's notes and, before the Great Decision, sets its
+  # switch and brings its companion along, as the choice in Iliasville does; the next look gives
+  # what the side's rows owe, as the Pocket Castle. On a route the switches tell the route, so they
+  # stay.
   #
   # @param side [Symbol] :alice or :ilias.
   def self.take_side(side)
     @asking_side = false
-    MGQ_MpStoryState::SIDE_SWITCHES.each { |id| $game_switches[id] = id == (side == :alice ? MGQ_MpStoryState::ALICE_CHOSEN : MGQ_MpStoryState::ILIAS_CHOSEN) }
     name = side == :alice ? "Alice" : "Ilias"
     log("the player took #{name} along")
+    MGQ_MpStoryState.note_pick(side)
+    note("side" => side.to_s)
+    @audit_due = true
+    return log("the player's story is on a route, whose side switches stay") if MGQ_MpStoryState::ROUTE_MARKERS.any? { |id| $game_variables[id].to_i > 0 }
+
+    MGQ_MpStoryState::SIDE_SWITCHES.each { |id| $game_switches[id] = id == (side == :alice ? MGQ_MpStoryState::ALICE_CHOSEN : MGQ_MpStoryState::ILIAS_CHOSEN) }
     companion = keys && (keys["side_companions"] || {})[side.to_s]
     bring_in(companion, nil, "you took #{name} along") if companion
-    @audit_due = true
   rescue => e
     log("taking a side failed: #{e.class}: #{e.message}")
   end
@@ -1291,6 +1312,18 @@ module MGQ_MpWorldCatchup
     nil
   end
 
+  # Takes away a companion of the Alice and Ilias choice the player never had a right to, as the DLL
+  # found: of the side they did not take along, or of a route they never played.
+  #
+  # @param actor [Integer] The companion's main persona.
+  # @return [nil] Nothing to tell among the gifts.
+  def self.dismiss(actor)
+    $game_party.remove_actor(actor)
+    log("#{actor_label(actor)} left the player's roster: the player never took their side along nor played a route that gives them")
+    notice([:left, actor], "#{actor_name(actor)} left you.")
+    nil
+  end
+
   # Reports whether a persona is one of a companion's other personas than the main one.
   #
   # @param persona [Integer] The persona.
@@ -1309,23 +1342,30 @@ module MGQ_MpWorldCatchup
     actor && !form?(persona) && actor.id != persona ? true : false
   end
 
-  # Holds back a companion a story event of the player's own hands out in a Raid World before the
-  # player's level reaches the join's gate, as the DLL finds it: the join waits for it instead.
+  # Leaves out the game's own join of a companion of the Alice and Ilias choice the player has no
+  # right to, in a Raid World as the DLL finds it and in a Classic party through coop_story.rbx;
+  # and in a Raid World holds back a companion a story event of the player's own hands out before
+  # the player's level reaches the join's gate, as the DLL finds it: the join waits for it instead.
   # Called before the game adds a companion to the party.
   #
   # @param actor_id [Integer] The companion, in any persona.
   # @return [Boolean] Whether the game's own join is left out.
   def self.hold_join?(actor_id)
-    return false if @granting || !active? || MGQ_MpWorldStory.mode != :world
-    return false unless defined?(MGQ_MpCoopEvents) && MGQ_MpCoopEvents.telling?
+    return false if @granting
 
     main = MGQ_MpStoryState.main_id(actor_id)
-    return false if MGQ_MpStoryState.in_roster?(main) || keys.nil?
+    return false if MGQ_MpStoryState.in_roster?(main)
+    return defined?(MGQ_MpCoopStory) && MGQ_MpCoopStory.refuses_join?(main, joining_site) ? true : false unless active?
+    return false if keys.nil?
 
-    answer = call(HOLD_TOPIC, "actor" => main, "site" => running_page_site, "own" => values(story_now), "roster" => roster_entries)
+    replaying = defined?(MGQ_MpStoryReplay) && MGQ_MpStoryReplay.respond_to?(:running?) && MGQ_MpStoryReplay.running?
+    own_event = !replaying && MGQ_MpWorldStory.mode == :world && defined?(MGQ_MpCoopEvents) && MGQ_MpCoopEvents.telling?
+    answer = call(HOLD_TOPIC, "actor" => main, "site" => joining_site, "scope_only" => !own_event, "own" => values(story_now), "roster" => roster_entries)
     return false unless answer
 
     run(answer["actions"])
+    return true if answer["refused"]
+
     gate = answer["gate"]
     return false unless gate
 
@@ -1334,6 +1374,14 @@ module MGQ_MpWorldCatchup
   rescue => e
     log("holding back a companion failed: #{e.class}: #{e.message}")
     false
+  end
+
+  # Names the list a join comes from: the run a replay plays, else the map's page that runs.
+  #
+  # @return [String, nil] The site, such as "map:134:34:4" or "ce:380"; nil while none runs.
+  def self.joining_site
+    replay = defined?(MGQ_MpStoryReplay) && MGQ_MpStoryReplay.respond_to?(:current) ? MGQ_MpStoryReplay.current : nil
+    replay ? replay.site : running_page_site
   end
 
   # Names the map event page the map's interpreter runs as the catch-up tables' sites do.

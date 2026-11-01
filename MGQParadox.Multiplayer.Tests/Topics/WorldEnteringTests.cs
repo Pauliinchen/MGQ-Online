@@ -2,6 +2,7 @@
 //  WorldEnteringTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Checked that a starting save another player made is noted as theirs, and the creator's own not
 //      Paulinchen  2026-10-30: Checked the game data once the world's mods loaded, warned of or taken as the creator's, in place of the question and the refusal on entering
 //                            - Checked that a world that turns other mods off waits for the catalog, without the parking
 //                            - Checked the install of a world's mods through the scripts, without a restart
@@ -428,7 +429,7 @@ public sealed class WorldEnteringTests : IDisposable
 
     /// <summary>
     /// Asserts that a creator's starting save is taken only after the warning, and fetched into the
-    /// world's folder.
+    /// world's folder, noted as another player's save.
     /// </summary>
     [Fact]
     public void Start_WarnsBeforeTheCreatorsSaveAndFetchesItOnTake()
@@ -440,8 +441,23 @@ public sealed class WorldEnteringTests : IDisposable
         Assert.Equal(["busy start"], Answer("take_start"));
         Assert.Equal($"fetch {_worlds.Find(folder.Id)!.Code} Patch/Multiplayer/Worlds/{folder.Id}/Save", _directory.Calls.Last());
         _directory.Finish(null, null);
-        Assert.Equal(["idle", "start placed"], Step());
+        Assert.Equal(["idle", "other_start", "start placed"], Step());
         Assert.Equal(["discard", "buzz", "say It broke.", "back"], Answer("start_failed", new RubyHash { { "text", "It broke." }, { "placed", true } }));
+    }
+
+    /// <summary>
+    /// Asserts that the creator fetches their own starting save without the warning, and that it is
+    /// not noted as another player's save.
+    /// </summary>
+    [Fact]
+    public void Start_FetchesTheCreatorsOwnSaveAsTheirs()
+    {
+        LocalWorld folder = Folder();
+        _directory.List(World("w1", start: "ready", creator: Me));
+
+        Assert.Equal(["busy start"], Enter("w1", folder.Id));
+        _directory.Finish(null, null);
+        Assert.Equal(["idle", "start placed"], Step());
     }
 
     /// <summary>

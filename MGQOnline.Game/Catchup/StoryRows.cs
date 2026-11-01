@@ -2,6 +2,7 @@
 //  StoryRows.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Read the side a row asks for as the side the player took along in Iliasville on a route too
 //      Paulinchen  2026-10-31: Found the joins a finished route carried a story past
 //      Paulinchen  2026-10-28: Created
 //
@@ -26,11 +27,6 @@ public static class StoryRows
     /// Where a player moves on to once no part with a checkpoint is left: the world's own story.
     /// </summary>
     public const string WorldTrack = "world";
-
-    /// <summary>
-    /// The parts before the Great Decision, whose sides the player chose themselves.
-    /// </summary>
-    private static readonly string[] SidedParts = ["1", "2", "3"];
 
     /// <summary>
     /// Where each part stands in the story's order; the routes stand side by side.
@@ -108,8 +104,8 @@ public static class StoryRows
         Passed(place, own, own, notedSide, choiceKey) || (told is not null && Passed(place, told, own, notedSide, choiceKey));
 
     /// <summary>
-    /// Finds the side a row asks for in the player's story: before the Great Decision the side they
-    /// chose then, which the save notes, since the route sets it anew.
+    /// Finds the side a row asks for in the player's story: the side they took along in Iliasville,
+    /// which the save notes, since a route sets switches 4 and 5 anew; their story's while none is noted.
     /// </summary>
     /// <param name="place">The row's place.</param>
     /// <param name="own">The player's story.</param>
@@ -119,7 +115,7 @@ public static class StoryRows
     {
         ArgumentNullException.ThrowIfNull(place);
         ArgumentNullException.ThrowIfNull(own);
-        return place.Part is { } part && Array.IndexOf(SidedParts, part) >= 0 && notedSide is not null ? notedSide : own.Side;
+        return notedSide ?? own.Side;
     }
 
     /// <summary>

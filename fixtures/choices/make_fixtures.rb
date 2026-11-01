@@ -15,7 +15,9 @@
 # the reply the old rule gave. MGQOnline.Game.Tests replays every case, and the script tests'
 # stand-in (GameScript/Tests/choices_support.rb) is checked against them. The script no longer holds
 # those rules, so hand it the script of commit 40f11e4d, which still kept them, to write the cases
-# again, on Ruby 3.3:
+# again, on Ruby 3.3 (the table of the branch events and the replies on them have since been
+# rewritten from what C# answers with the outcomes the walk of the game's data found, which a new
+# recording would undo):
 #
 #   git show 40f11e4d:GameScript/Multiplayer/Scripts/coop_choices.rbx > old_choices.rbx
 #   ruby fixtures/choices/make_fixtures.rb old_choices.rbx

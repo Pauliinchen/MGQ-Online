@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-11-01: Registered the topic of the items a Classic party found
+//                            - Registered the topic of which companions of the Alice and Ilias choice may join a player
 //      Paulinchen  2026-10-28: Created
 //
 //----------------------------------------------------------------
@@ -49,6 +50,12 @@ public static class CatchupTopics
     public const string UnlocksTopic = "catchup.unlocks";
 
     /// <summary>
+    /// Which companions of the Alice and Ilias choice may join a player, in either world type, see
+    /// <see cref="CompanionScope.Answer"/>: every companion while the story mapping has not come.
+    /// </summary>
+    public const string ScopeTopic = "catchup.scope";
+
+    /// <summary>
     /// What a player of a Classic party gets of the items the party found, see <see cref="FoundItems.Check"/>.
     /// </summary>
     public const string FoundTopic = "found.check";
@@ -69,6 +76,7 @@ public static class CatchupTopics
         context.Register(NoteTopic, (_, request) => engine.Note(tables() ?? CatchupTables.Empty, request.AsHash()));
         context.Register(HoldTopic, (_, request) => engine.HoldJoin(tables() ?? CatchupTables.Empty, request.AsHash()));
         context.Register(UnlocksTopic, (_, request) => engine.Unlocks(tables() ?? CatchupTables.Empty, request.AsHash()));
+        context.Register(ScopeTopic, (_, request) => (tables() ?? CatchupTables.Empty).Scope.Answer(request.AsHash()));
         context.Register(FoundTopic, (_, request) => FoundItems.Check(request.AsHash()));
         return engine;
     }

@@ -2,6 +2,7 @@
 //  EventTables.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Keyed the branches of a choice by their first command too
 //      Paulinchen  2026-10-31: Added the pairs the one-time repair of stuck saves completes
 //                            - Added the lists that give and the branches of each choice
 //      Paulinchen  2026-10-28: Read the views
@@ -227,7 +228,7 @@ internal static class EventTables
     public static readonly TableShape<ChoiceBranchRow> ChoiceBranches = new(
         "choice_branches",
         ["list_id", "idx", "branch", "first_idx", "last_idx", "holdings"],
-        r => (r.ListId, r.Idx, r.Branch),
+        r => (r.ListId, r.Idx, r.Branch, r.FirstIdx),
         (w, r) => w.Int(r.ListId).Int(r.Idx).Int(r.Branch).Int(r.FirstIdx).Int(r.LastIdx).Text(r.Holdings),
         r => new ChoiceBranchRow(r.Int(), r.Int(), r.Int(), r.Int(), r.Int(), r.TextNotNull()));
 
