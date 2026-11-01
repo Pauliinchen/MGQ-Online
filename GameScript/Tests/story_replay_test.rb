@@ -2,6 +2,9 @@
 #  story_replay_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Checked that a choice the record lacks is asked with what its cancel answers
+#                            - Covered a replay that costs nothing and follows the opener through the checks of what the party holds
+#                            - Covered a replay done with the receiver's own answer only when it differs from the opener's
 #      Paulinchen  2026-10-31: Checked that a party run's entry is kept in the party's stream at once
 #                            - Covered asking the receiver a number, item or present the record lacks
 #                            - Covered a replay committing only once it finished
@@ -182,6 +185,8 @@ class Game_Interpreter
              when 0 then $game_switches[@params[1]] == (@params[2] == 0)
              when 1 then $game_variables[@params[1]] == @params[3]
              when 2 then @event_id > 0 && $game_self_switches[[@map_id, @event_id, @params[1]]] == (@params[2] == 0)
+             when 7 then $game_party.gold >= @params[1]
+             when 8 then $game_party.item_number(@params[1]) > 0
              when 11 then Input.press?(@params[1])
              when 12 then eval(@params[1])
              end
@@ -192,10 +197,18 @@ class Game_Interpreter
   def command_115; @index = @list.size; end
   def command_117; common_event = $data_common_events[@params[0]]; return unless common_event; child = Game_Interpreter.new(@depth + 1); child.setup(common_event.list, same_map? ? @event_id : 0); child.run; end
   def command_121; (@params[0]..@params[1]).each { |id| $game_switches[id] = @params[2] == 0 }; end
-  def command_122; value = @params[3] == 2 ? @params[4] + rand(@params[5] - @params[4] + 1) : @params[4]; $game_variables[@params[0]] = value; end
+  def command_122
+    value = case @params[3]
+            when 2 then @params[4] + rand(@params[5] - @params[4] + 1)
+            when 3 then game_data_operand(@params[4], @params[5], @params[6])
+            else @params[4]
+            end
+    $game_variables[@params[0]] = value
+  end
+  def game_data_operand(type, param1, _param2); type == 7 ? $game_party.gold : $game_party.item_number(param1); end
   def command_123; $game_self_switches[[@map_id, @event_id, @params[0]]] = @params[1] == 0 if @event_id > 0; end
-  def command_125; $game_party.gain_gold(@params[2]); end
-  def command_126; $game_party.gain_item(@params[0], @params[3]); end
+  def command_125; $game_party.gain_gold(@params[0] == 0 ? @params[2] : -@params[2]); end
+  def command_126; $game_party.gain_item(@params[0], @params[1] == 0 ? @params[3] : -@params[3]); end
   def command_201
     if $game_variables[NWConst::Var::MAP_TRANSFER] > 0
       map_id = $game_variables[NWConst::Var::MAP_TRANSFER]
@@ -378,6 +391,49 @@ page(1994, 42, [c(102, ["Give", "Keep"], 2), c(402, 0, "Give"), c(126, 10, 0, 0,
 replay("map:1994:42:1", "inputs" => [["map:1994:42:1@0", 0, "choice", 1], ["map:1994:42:1@6", 0, "rand", 41]])
 check("a recorded choice and random draw are used", [$game_party.item_number(10), $game_party.item_number(11), $game_variables[200]], [0, 1, 42])
 
+# The Fortune Teller (51:23): her intro behind self switch A, then the trade of a wrist for a job
+# item behind a check that the party holds the wrist, which turns B on. The opener had heard the
+# intro and traded; the receiver never talked to her and holds no wrist, yet gets what the opener
+# got, and keeps what they hold.
+FORTUNE_TELLER = [c(111, 2, "A", 1), c(123, "A", 0, indent: 1), c(115, indent: 1), c(411), c(111, 8, 1734, indent: 1),
+                  c(102, ["Trade", "Decline"], 1, indent: 2), c(402, 0, "Trade", indent: 2), c(126, 1734, 1, 0, 1, indent: 3),
+                  c(126, 610, 0, 0, 1, indent: 3), c(123, "B", 0, indent: 3), c(402, 1, "Decline", indent: 2), c(404, indent: 2), c(412, indent: 1), c(412)]
+TRADED = [["map:51:23:1@0", 0, "branch", 0], ["map:51:23:1@4", 0, "branch", 1], ["map:51:23:1@5", 0, "choice", 0]]
+new_game
+page(51, 23, FORTUNE_TELLER)
+traded = replay("map:51:23:1", "keys" => { "ss51.23.B" => "0" }, "inputs" => TRADED)
+check("a receiver who never heard the intro and holds no wrist goes the opener's way and gets the job item, the trade's B on",
+      [traded.committed?, $game_party.item_number(610), $game_party.item_number(1734), $game_self_switches[[51, 23, "B"]], $game_self_switches[[51, 23, "A"]]],
+      [true, 1, 0, true, false])
+new_game
+$game_party.gain_item(1734, 1)
+replay("map:51:23:1", "keys" => { "ss51.23.B" => "0" }, "inputs" => TRADED)
+check("a receiver who holds a wrist keeps it", [$game_party.item_number(610), $game_party.item_number(1734)], [1, 1])
+
+# A chest closed by its own B: the opener's B was off, the receiver's is on, so the receiver's own
+# decides and the chest gives nothing again.
+new_game
+$game_self_switches[[51, 24, "B"]] = true
+page(51, 24, [c(111, 2, "B", 1), c(126, 611, 0, 0, 1, indent: 1), c(123, "B", 0, indent: 1), c(412)])
+again = replay("map:51:24:1", "keys" => { "ss51.24.B" => "0" }, "inputs" => [["map:51:24:1@0", 0, "branch", 1]])
+check("a check of the step's own self switch reads the receiver's, so a chest they opened gives nothing again", [again.committed?, $game_party.item_number(611)], [false, 0])
+
+# The Medal King (CE 140): the medals held read into a variable, a prize for two of them, and a
+# bet of gold; the opener held 50 medals and the gold, the receiver neither, and pays nothing.
+new_game
+page(140, 1, [c(122, 300, 300, 0, 3, 0, 32, 0), c(111, 1, 300, 0, 50, 0), c(126, 32, 1, 0, 2, indent: 1), c(126, 24, 0, 0, 1, indent: 1), c(412),
+              c(111, 7, 180, 0), c(125, 1, 0, 180, indent: 1), c(126, 25, 0, 0, 1, indent: 1), c(412), c(123, "A", 0)])
+replay("map:140:1:1", "inputs" => [["map:140:1:1@0", 0, "holding", 50], ["map:140:1:1@5", 0, "branch", 1]])
+check("a count and gold the opener held decide, and the receiver gets the prizes without paying medals or gold",
+      [$game_variables[300], $game_party.item_number(24), $game_party.item_number(25), $game_party.item_number(32), $game_party.gold], [50, 1, 1, 0, 0])
+
+# A page that takes back what it gave keeps nothing of it, and still takes nothing of the receiver's.
+new_game
+$game_party.gain_item(26, 1)
+page(140, 2, [c(126, 26, 0, 0, 1), c(126, 26, 1, 0, 3), c(123, "A", 0)])
+replay("map:140:2:1")
+check("a page that takes back what it gave leaves the receiver what they held", $game_party.item_number(26), 1)
+
 # A page that gives an item, a companion's affection and the receiver's own switch and variable,
 # then stops at a lock before its step's key: nothing of it stays, and once the lock opens the
 # replay from the start gives each once.
@@ -442,7 +498,7 @@ module MGQ_MpOverworldSync; def self.in_world?; true; end; def self.map_free?; t
 # Stands in for the co-op events: the entries handed to the party kept in $handed.
 module MGQ_MpCoopEvents; def self.hand_entry(entry); $handed << entry; end; end
 # Stands in for the choices' screen: the question kept in $asked.
-module MGQ_MpCoopChoices; def self.ask(opener, lines, labels, done); $asked = [opener, lines, labels, done]; end; end
+module MGQ_MpCoopChoices; def self.ask(opener, lines, labels, done, cancel = nil); $asked = [opener, lines, labels, done, cancel]; end; end
 # The currency's name.
 module Vocab; def self.currency_unit; "G"; end; end
 # An item of the database, a key item or a present as its flags say.
@@ -531,9 +587,18 @@ $notices = []
 MGQ_MpStoryReplay.receive(entry.merge("inputs" => []))
 MGQ_MpStoryReplay.update
 asked = $asked
-check("a choice the record lacks is asked with its labels, and the run waits", [asked[0], asked[2], $game_self_switches[[215, 23, "A"]]], ["Ana", ["Take", "Leave"], false])
+check("a choice the record lacks is asked with its labels and the label its cancel answers, and the run waits",
+      [asked[0], asked[2], asked[4], $game_self_switches[[215, 23, "A"]]], ["Ana", ["Take", "Leave"], 0, false])
 asked[3].call(1)
 check("the receiver's own answer plays on", [$game_self_switches[[215, 23, "A"]], $game_variables[300], $notices.size], [true, 0, 1])
+
+# A choice without cancel hands none, and one with its own cancel branch hands the place after its
+# labels, whose answer it adds last.
+replay = MGQ_MpStoryReplay::Replay.allocate
+choice = Struct.new(:choices, :choice_cancel_type)
+check("a choice hands no cancel, or its own branch after the labels",
+      [replay.send(:choices_of, "choice", choice.new(["Yes", "No"], 0)), replay.send(:choices_of, "choice", choice.new(["Sword", "Shield"], 3))],
+      [[["Yes", "No"], [0, 1], nil], [["Sword", "Shield"], [0, 1, 2], 2]])
 
 # A run that waits, as for a lock, is taken again once the DLL names it due.
 new_game
@@ -590,6 +655,30 @@ MGQ_MpStoryReplay.update
 check("a guest keeps the chest's A and 2045 a replay wrote in their own story", [$kept.include?([0, 2045, true]), $kept.include?([2, [215, 23, "A"], true])], [true, true])
 module MGQ_MpCoopStory; def self.guest?; false; end; end
 
+# A receiver asked the Fortune Teller's trade who answers Decline is done with their own answer, so
+# the question does not come back.
+new_game
+$notices = []
+done.clear
+MGQ_MpStoryReplay.receive(entry.merge("id" => "e7", "site" => "map:51:23:1", "keys" => { "ss51.23.B" => "0" }, "inputs" => TRADED.first(2)))
+MGQ_MpStoryReplay.update
+$asked[3].call(1)
+check("a receiver who declines the trade they are asked is done with their answer, which gave nothing",
+      [done.last["reached"], $game_party.item_number(610), $game_self_switches[[51, 23, "B"]], MGQ_MpStoryReplay.waiting], [true, 0, false, []])
+
+# A receiver asked the trade who answers Trade, as the opener did, goes the opener's way: a later
+# check of their own that fails leaves the run waiting instead of done.
+page(51, 25, [c(102, ["Trade", "Decline"], 1), c(402, 0, "Trade"), c(111, 0, 900, 0, indent: 1), c(126, 612, 0, 0, 1, indent: 2), c(123, "B", 0, indent: 2),
+              c(412, indent: 1), c(402, 1, "Decline"), c(404)])
+fake.answer("story.replay_take") { |_request| { "do" => "replay", "page" => 1, "inputs" => [] } }
+new_game
+MGQ_MpStoryReplay.receive(entry.merge("id" => "e8", "site" => "map:51:25:1", "keys" => { "ss51.25.B" => "0" }, "inputs" => [["map:51:25:1@0", 0, "choice", 0]]))
+MGQ_MpStoryReplay.update
+$asked[3].call(0)
+check("a receiver who answers as the opener did and fails a later check of their own is not done",
+      [done.last["reached"], $game_party.item_number(612), $game_self_switches[[51, 25, "B"]]], [false, 0, false])
+fake.answer("story.replay_take") { |_request| { "do" => "replay", "page" => 1 } }
+
 # The save keeps the DLL's log; a loaded save hands it back with its place.
 logs = []
 fake.answer("story.replay_log_save") { |_request| { "version" => 1, "steps" => [] } }
@@ -635,6 +724,18 @@ $game_message.clear
 opener.update while opener.running?
 check("a battle's outcome and a number asked after a text are noted by the commands that started them",
       $ran.last["inputs"], [["map:215:23:1@0", 0, "battle", 1], ["map:215:23:1@1", 0, "number", 12]])
+
+# The opener's checks of the event's own self switch and of what the party holds, and a count of
+# what it holds read into a variable, are noted by their commands.
+new_game
+$game_map.map_id = 215
+$game_party.gain_item(1734, 1)
+$game_party.gain_item(32, 5)
+opener = Game_Interpreter.new
+opener.setup([c(111, 2, "B", 1), c(111, 8, 1734, indent: 1), c(412, indent: 1), c(412), c(122, 300, 300, 0, 3, 0, 32, 0), c(123, "A", 0), c(0)], 23)
+opener.update while opener.running?
+check("the opener's checks of its self switch and of what the party holds and a count it read are noted by their commands",
+      $ran.last["inputs"], [["map:215:23:1@0", 0, "branch", 1], ["map:215:23:1@1", 0, "branch", 1], ["map:215:23:1@4", 0, "holding", 5]])
 
 # Without the choices' screen asking inputs, a number the record lacks stops the replay, which
 # writes nothing of what it did before; one the record holds is used.

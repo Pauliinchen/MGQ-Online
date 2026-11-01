@@ -2,6 +2,7 @@
 //  PageMatch.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Left what a choice's answers take out of whether the choice is the receiver's, since a replay takes nothing
 //      Paulinchen  2026-10-31: Told whether a run's page gives and whether a choice is the receiver's
 //                            - Created
 //
@@ -14,6 +15,7 @@ using System.Linq;
 using MGQOnline.Bridge.Ruby;
 using MGQOnline.Data.Events;
 using MGQOnline.Game.Events;
+using MGQOnline.Game.Events.Data;
 
 namespace MGQOnline.Game.Story;
 
@@ -81,6 +83,11 @@ public sealed class PageMatch(EventStore store)
     /// The letters of an event's self switches.
     /// </summary>
     private static readonly string[] Letters = ["A", "B", "C", "D"];
+
+    /// <summary>
+    /// The operation of a command that changes gold, items, weapons or armors that takes them away.
+    /// </summary>
+    private const string DecreaseOperation = "1";
 
     /// <summary>
     /// Picks the page: the last page of the run's event whose conditions hold, replayed when it is
@@ -167,7 +174,7 @@ public sealed class PageMatch(EventStore store)
     /// <summary>
     /// Tells whether a choice a run's player answered is the receiver's to answer (rule 4, answer 11):
     /// its answers do different things to the receiver's own things, the keys a player keeps and
-    /// what they hold.
+    /// what they hold. What an answer takes does not count, since a replay takes nothing.
     /// </summary>
     /// <param name="run">Where the run started, whose event a self switch the choice writes is of.</param>
     /// <param name="at">The choice's command, as the run's inputs name it: such as "map:1:9:1@0" or "ce:20@3".</param>
@@ -363,12 +370,36 @@ public sealed class PageMatch(EventStore store)
     private HashSet<string> EffectOf(ChoiceBranchRow branch, ReplaySite run, Func<StoryKey, bool> own)
     {
         HashSet<string> effect = [.. WrittenOf(branch.ListId, (branch.FirstIdx, branch.LastIdx), run.MapId, run.EventId).Where(write => own(write.Key)).Select(write => $"{write.Key}={write.Value}")];
-        if (branch.Holdings.Length > 0)
+        string holdings = string.Join(';', branch.Holdings.Split(';', StringSplitOptions.RemoveEmptyEntries).Where(part => !IsCost(part)));
+        if (holdings.Length > 0)
         {
-            effect.Add($"holdings {branch.Holdings}");
+            effect.Add($"holdings {holdings}");
         }
 
         return effect;
+    }
+
+    /// <summary>
+    /// Tells whether a command of a branch's holdings takes gold, an item, a weapon or an armor,
+    /// which a replay never takes from the receiver.
+    /// </summary>
+    /// <param name="part">The command as its code and numbers, such as "128:1734:1:0:1:0".</param>
+    /// <returns>Whether it does.</returns>
+    private static bool IsCost(string part)
+    {
+        string[] numbers = part.Split(':');
+        if (!int.TryParse(numbers[0], NumberStyles.None, CultureInfo.InvariantCulture, out int code))
+        {
+            return false;
+        }
+
+        int operation = code switch
+        {
+            EventCodes.ChangeGold => 1,
+            EventCodes.ChangeItems or EventCodes.ChangeWeapons or EventCodes.ChangeArmors => 2,
+            _ => 0,
+        };
+        return operation > 0 && numbers.Length > operation && numbers[operation] == DecreaseOperation;
     }
 
     /// <summary>

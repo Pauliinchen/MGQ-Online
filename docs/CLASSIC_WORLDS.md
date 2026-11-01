@@ -70,6 +70,8 @@ Everyone goes where they like (see [Travelling](GUIDE.md#travelling)); only stor
 
 Chests are everyone's own: when a member opens one, it opens in every other member's game too, as if they had opened it themselves, once they stand free on the map. What the chest does for you it does: a chest that checks something of yours, such as a lock or a switch, reads your own, and one you looted already gives nothing more. A notice tells what you got.
 
+It costs you nothing: what the member paid, such as the item a trader takes or the gold of a bet, is never taken from you, and a check of what they held goes their way, so you get what they got without holding it yourself. A trade you're asked about yourself and turn down is done for you and isn't asked again.
+
 Some chests of the Final Chapter, such as those in the castles of the Angelic Dominion and the Monster Realm and in the Chaos Domain, aren't shared this way: each of you opens them in your own game.
 
 ## Co-op battles

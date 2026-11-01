@@ -2,6 +2,7 @@
 //  ChoiceTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Handed a question's key line as entries and whether cancel put it off
 //      Paulinchen  2026-10-31: Added the questions a replay asks on the decision screen
 //                            - Read where the stream that hands the player runs began
 //      Paulinchen  2026-10-28: Created
@@ -124,10 +125,11 @@ public static class ChoiceTopics
     /// <summary>
     /// Takes a step of the player on a question: <c>input</c> (the question as answered before),
     /// <c>action</c> (see <see cref="ChoiceInputAction"/>, in lower case), <c>at</c>, <c>notches</c>
-    /// and <c>wrap</c> in; the question out: <c>kind</c>, <c>title</c>, <c>keys</c>, <c>hint</c>,
-    /// <c>result</c>, <c>rows</c> ([answer, name, count or nil, description, cancel] each),
-    /// <c>digits</c>, <c>cursor</c>, <c>top</c>, <c>visible</c>, <c>cancel</c>, <c>answer</c> (nil
-    /// until given) and <c>cue</c>.
+    /// and <c>wrap</c> in; the question out: <c>kind</c>, <c>title</c>, <c>keys</c> ([key, text]
+    /// each, the key "cancel" for the game's cancel button), <c>hint</c>, <c>result</c>, <c>rows</c>
+    /// ([answer, name, count or nil, description, cancel] each), <c>digits</c>, <c>cursor</c>,
+    /// <c>top</c>, <c>visible</c>, <c>cancel</c> (nil where cancel puts it off), <c>answer</c> (nil
+    /// until given), <c>cue</c> and <c>later</c> (whether cancel put it off).
     /// </summary>
     public const string InputStep = "choices.input_step";
 
@@ -214,7 +216,7 @@ public static class ChoiceTopics
         {
             { "kind", input.Kind.ToString().ToLowerInvariant() },
             { "title", input.Title },
-            { "keys", input.Keys },
+            { "keys", new RubyArray(input.Keys.Select(key => (RubyValue)new RubyArray { key.Key, key.Text })) },
             { "hint", input.Hint },
             { "result", input.Result },
             { "rows", rows },
@@ -225,6 +227,7 @@ public static class ChoiceTopics
             { "cancel", input.CancelAnswer is { } cancel ? cancel : RubyNil.Value },
             { "answer", input.Answer is { } answer ? answer : RubyNil.Value },
             { "cue", input.Cue is { } cue ? cue : RubyNil.Value },
+            { "later", input.Later },
         };
     }
 
@@ -244,8 +247,10 @@ public static class ChoiceTopics
 
         List<ChoiceInputRow> rows = [.. input["rows"].AsArray().Select(row => row.AsArray()).Select(row =>
             new ChoiceInputRow(row[0].AsInt(), row[1].AsText(), row[2].IsNil ? null : row[2].AsInt(), row[3].AsText(), row[4].AsBool()))];
-        return new ChoiceInput(kind, input["title"].AsText(), input["keys"].AsText(), input["result"].AsText(), rows, Ints(input["digits"]), input["cursor"].AsInt(),
-            input["top"].AsInt(), input["visible"].AsInt(), input["cancel"].IsNil ? null : input["cancel"].AsInt(), input["answer"].IsNil ? null : input["answer"].AsInt(), null);
+        List<ChoiceInputKey> keys = [.. input["keys"].AsArray().Select(key => key.AsArray()).Select(key => new ChoiceInputKey(key[0].AsText(), key[1].AsText()))];
+        return new ChoiceInput(kind, input["title"].AsText(), keys, input["result"].AsText(), rows, Ints(input["digits"]), input["cursor"].AsInt(),
+            input["top"].AsInt(), input["visible"].AsInt(), input["cancel"].IsNil ? null : input["cancel"].AsInt(), input["answer"].IsNil ? null : input["answer"].AsInt(), null,
+            input["later"].AsBool());
     }
 
     /// <summary>

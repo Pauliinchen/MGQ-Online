@@ -2,6 +2,7 @@
 #  story_keys.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Noted a run's checks of what the party holds and of the event's own self switches as inputs, which a replay follows
 #      Paulinchen  2026-10-31: Bracketed each run of the player's own game with its shared writes, start values, inputs and resets
 #                            - Logged each run that changed a party or world key with the DLL
 #                            - Told whether a run belongs to a party chest's page
@@ -917,8 +918,9 @@ module MGQ_MpStoryKeys
     input("present", item_id, @present_at[1], @present_at[0]) if @present_at
   end
 
-  # Notes what a command reads of the player, an event or the timer before it runs: a conditional
-  # branch on the timer or a character's direction, a variable set from the timer or a character.
+  # Notes what a command reads of the player, an event, the timer or what the party holds before it
+  # runs: a conditional branch on the timer or a character's direction, a variable set from the
+  # timer, a character or a count of what the party holds.
   #
   # @param interpreter [Game_Interpreter] The interpreter.
   # @param code [Integer] The command's code.
@@ -936,9 +938,23 @@ module MGQ_MpStoryKeys
       note_character(interpreter, params[5], read) if read
     elsif code == 122 && params[3] == 3 && params[4] == 7 && params[5] == 5
       input("timer.sec", $game_timer.sec)
+    elsif code == 122 && params[3] == 3 && MGQ_MpStoryReplay.holding_read?(params[4], params[5])
+      input("holding", interpreter.game_data_operand(params[4], params[5], params[6]))
     end
   rescue => e
     log_once([:note_reads, e.class], "noting what a command reads failed: #{e.class}: #{e.message}")
+  end
+
+  # Notes a conditional branch's result as an input once it ran: a key held, and the checks a
+  # replay follows the opener through (MGQ_MpStoryReplay::BRANCH_INPUTS).
+  #
+  # @param interpreter [Game_Interpreter] The interpreter.
+  # @param type [Integer] The branch's type.
+  def self.note_branch(interpreter, type)
+    kind = MGQ_MpStoryReplay::BRANCH_INPUTS[type]
+    input(kind, MGQ_MpGame.get(interpreter, :branch)[MGQ_MpGame.get(interpreter, :indent)]) if kind
+  rescue => e
+    log_once([:note_branch, e.class], "noting a branch's result failed: #{e.class}: #{e.message}")
   end
 
   # Notes a read of a character as an input: the player's or an event's.
@@ -1176,13 +1192,14 @@ begin
   end
 
   # A conditional branch: what it reads of the timer or a character before it runs, a script's
-  # reads while it runs, the key it found pressed.
+  # reads while it runs, the key it found pressed and its check of what the party holds or of the
+  # event's own self switch.
   if has.call(Game_Interpreter, :command_111)
     MGQ_MpHooks.around(Game_Interpreter, :command_111, "story_keys") do |interpreter, _args, original|
       params = interpreter.instance_variable_get(:@params)
       MGQ_MpStoryKeys.note_reads(interpreter, 111, params)
       result = params[0] == 12 ? MGQ_MpStoryKeys.reading_script { original.call } : original.call
-      MGQ_MpStoryKeys.input("key", MGQ_MpGame.get(interpreter, :branch)[MGQ_MpGame.get(interpreter, :indent)]) if params[0] == 11
+      MGQ_MpStoryKeys.note_branch(interpreter, params[0])
       result
     end
   end

@@ -2,6 +2,8 @@
 #  choice_inputs_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Checked that cancel puts a number and a choice without cancel off, the key line naming the bound key
+#                            - Checked that a label's names are filled in
 #      Paulinchen  2026-10-31: Stood in for the Mod Framework's cancel
 #                            - Checked that a catch-up asks only the choices up to where the player started keeping the leader's story
 #                            - Created
@@ -10,7 +12,8 @@
 
 # Checks the questions a replay asks on the decision screen (coop_choices.rbx, ask_input): the screen
 # opens once the player is free on the map, and the answer of a number, an item or a present reaches
-# the replay; cancel answers 0. The DLL's model of the inputs (ChoiceInputs in MGQOnline.Game) is
+# the replay; cancel answers what the question's cancel answers, or puts a number and a choice
+# without cancel off. The DLL's model of the inputs (ChoiceInputs in MGQOnline.Game) is
 # stood in for by its answers alone.
 
 require_relative "support"
@@ -57,7 +60,7 @@ load_script "ui_online"
 load_script "coop_choices"
 
 # The DLL's model of the inputs, as far as its answers: confirm answers the number or the row under
-# the cursor, a click the row clicked, cancel what the question names.
+# the cursor, a click the row clicked, cancel what the question names or puts it off.
 opened = []
 fake = ($world_bridge ||= FakeBridge.new)
 fake.answer("choices.input_open") do |request|
@@ -66,7 +69,8 @@ fake.answer("choices.input_open") do |request|
   rows = (spec["items"] || []).map { |id, name, count, description| [id, name, count, description, false] }
   { "kind" => request["kind"], "title" => "t", "keys" => "k", "hint" => "h", "result" => "", "rows" => rows + [[0, "None", nil, "", true]],
     "digits" => spec["digits"] ? spec["value"].to_s.rjust(spec["digits"], "0").chars.map(&:to_i) : [], "cursor" => 0, "top" => 0,
-    "visible" => request["visible"], "cancel" => request["kind"] == "number" ? nil : 0, "answer" => nil, "cue" => nil }
+    "visible" => request["visible"], "cancel" => { "number" => nil, "choice" => spec["cancel"] }.fetch(request["kind"], 0), "answer" => nil, "cue" => nil,
+    "later" => false }
 end
 fake.answer("choices.input_step") do |request|
   input = request["input"]
@@ -76,7 +80,8 @@ fake.answer("choices.input_step") do |request|
     when "click" then input["rows"][request["at"]][0]
     when "cancel" then input["cancel"]
     end
-  input.merge("answer" => answer, "cue" => answer ? "ok" : nil)
+  later = request["action"] == "cancel" && answer.nil?
+  input.merge("answer" => answer, "cue" => answer ? "ok" : nil, "later" => later)
 end
 MGQ_Multiplayer::Bridge.open(fake)
 
@@ -98,24 +103,29 @@ check("the speaker heads the message's lines", choices.speaker_of(choices.questi
 check("the place is the map's name", choices.question[:place], "Iliasburg")
 choices.open_question(4)
 check("the DLL gets the number's digits and value", opened.last.values_at("kind", "opener", "spec"), ["number", "Ana", { "digits" => 3, "value" => 42, "index" => 0 }])
-check("cancel answers no number", choices.step_question("cancel"), nil)
+check("cancel puts a number off without an answer", [choices.step_question("cancel"), choices.question[:input]["later"]], [nil, true])
+choices.open_question(4)
 answer = choices.step_question("ok")
 choices.answered_question(answer)
 check("confirm hands the number to the replay", answers, [42])
 check("and the question is done", choices.question, nil)
 
-# The keys on a number: the number row types digits, the numpad none; Esc and B do nothing, as in
-# the game, and Numpad 0 closes the screen without an answer.
+# The keys on a number: the number row types digits, the numpad none; the game's cancel and Numpad 0
+# cancel, which puts the number off.
 screen = Scene_MpStoryQuestion.allocate
 screen.instance_variable_set(:@question, { :input => { "kind" => "number" } })
 keys = lambda { |buttons, codes| $buttons, $codes = buttons, codes; screen.keys_step }
 check("a digit of the number row types it", keys.call([], [0x37]), ["digit", 7, 0, false])
 check("a digit of the numpad types nothing", keys.call([], [0x67]), nil)
-check("Esc and B do nothing", keys.call([:B], []), nil)
-check("Numpad 0 closes the number, with Num Lock on and off", [keys.call([:B], [0x60]), keys.call([], [0x2D])], [["later", 0, 0, false]] * 2)
+check("the game's cancel and Numpad 0 cancel, with Num Lock on and off", [keys.call([:B], []), keys.call([], [0x60]), keys.call([], [0x2D])], [["cancel", 0, 0, false]] * 3)
 $buttons, $codes = [], []
+info = Struct.new(:lines) { def show(lines); self.lines = lines; end }.new
+screen.instance_variable_set(:@info_window, info)
+screen.instance_variable_set(:@question, { :input => { "hint" => "h", "keys" => [["Enter", "answer"], ["cancel", "answer later"]] } })
+screen.show_hint
+check("the key line names the bound cancel key", info.lines, ["h", "Enter: answer. #{Mod_Framework::UI.cancel_keys}: answer later."])
 
-# A number closed with Numpad 0 waits: walking on does not reopen it; a message, a menu or a battle
+# A number put off waits: walking on does not reopen it; a message, a menu or a battle
 # of the player's own does, once they stand free again.
 choices.ask_input("Ana", ["How many?"], "number", { "digits" => 2, "value" => 0 }, done)
 shown = lambda { choices.update; $scenes.size }
@@ -151,10 +161,16 @@ choices.open_question(4)
 choices.answered_question(choices.step_question("cancel"))
 check("the present given, then no present", answers.last(2), [12, 0])
 
-# A choice asked as before goes through the same screen.
+# A choice goes through the same screen; one without cancel is put off as a number is, one with
+# its own branch answers it.
 choices.ask("Ana", ["Will you help?"], ["Yes", "No"], done)
 choices.open_question(4)
-check("ask is a choice with the labels", opened.last.values_at("kind", "spec"), ["choice", { "labels" => ["Yes", "No"], "index" => 0 }])
+check("ask is a choice with the labels and its cancel", opened.last.values_at("kind", "spec"), ["choice", { "labels" => ["Yes", "No"], "cancel" => nil, "index" => 0 }])
+check("cancel puts a choice without cancel off", [choices.step_question("cancel"), choices.question[:input]["later"]], [nil, true])
+choices.forget("next check")
+choices.ask("Ana", [], ["Sword", "Shield"], done, 2)
+choices.open_question(4)
+check("and a choice with its own branch answers it", choices.step_question("cancel"), 2)
 
 # A save loaded drops the question; the replay asks again when it takes the run.
 choices.forget("a save was loaded")
@@ -167,3 +183,10 @@ answer_choices(fake)
 module MGQ_MpCoop; module Scope; def self.raid?; false; end; end; end
 module MGQ_MpCoopStory; def self.follow_place; [17, 0, 0, 0]; end; end
 check("a catch-up asks only the choices up to where the player started keeping the leader's story", choices.passed(5, 40, [], [], []), [:side, :magistea])
+
+# A label's names are filled in as the game's windows fill them, its other codes kept.
+class Window_Base; def convert_escape_characters(text); text.gsub("\\", "\e").gsub(/\eN\[(\d+)\]/i) { $game_actors[$1.to_i].name }; end; end
+choices.forget("next check")
+choices.ask("Ana", [], ['Help \N[5]', '\C[2]Leave\C[0]'], done, 1)
+choices.open_question(4)
+check("a label's names are filled in, its other codes kept", opened.last["spec"]["labels"], ["Help Alice", '\C[2]Leave\C[0]'])

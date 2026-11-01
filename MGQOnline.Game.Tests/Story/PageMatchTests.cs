@@ -2,6 +2,7 @@
 //  PageMatchTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Covered a choice whose answers differ only in what they take
 //      Paulinchen  2026-10-31: Covered whether a page gives and which choices the receiver is asked
 //                            - Created
 //
@@ -26,8 +27,10 @@ public sealed class PageMatchTests
     /// <summary>
     /// A chest on map 1: page 1 gives and turns switch 40 on, page 2 shows once switch 5 is on and
     /// calls common event 20, which turns switch 40 on too, page 3 shows once its self switch A is on;
-    /// an event beside it that shows only once switch 5 is on; and two choices, the first one's
-    /// answers turning on switch 10 or 11, the second one's switch 1001 or 1002, each with switch 10.
+    /// an event beside it that shows only once switch 5 is on; two choices, the first one's
+    /// answers turning on switch 10 or 11, the second one's switch 1001 or 1002, each with switch 10;
+    /// and two trades, the first one's "Pay" taking 100 G and item 3 for nothing the receiver keeps,
+    /// the second one's taking 100 G for item 4.
     /// </summary>
     private readonly PageMatch _match = new(EventDatabases.Of(new TinyGame()
         .MapEvent(1, 7, 0, 0,
@@ -39,6 +42,9 @@ public sealed class PageMatchTests
             C(102, "Yes", 2), C(402, 0, "Yes"), At(121, 1, 10, 10, 0), At(0, 1), C(402, 1, "No"), At(121, 1, 11, 11, 0), At(0, 1), C(404),
             C(102, "Yes", 2), C(402, 0, "Yes"), At(121, 1, 1001, 1001, 0), At(121, 1, 10, 10, 0), At(0, 1),
             C(402, 1, "No"), At(121, 1, 1002, 1002, 0), At(121, 1, 10, 10, 0), At(0, 1), C(404)]))
+        .MapEvent(1, 10, 3, 0, new TinyPage([
+            C(102, "Pay", 2), C(402, 0, "Pay"), At(125, 1, 1, 0, 100), At(126, 1, 3, 1, 0, 1), At(0, 1), C(402, 1, "No"), At(0, 1), C(404),
+            C(102, "Pay", 2), C(402, 0, "Pay"), At(125, 1, 1, 0, 100), At(126, 1, 4, 0, 0, 1), At(0, 1), C(402, 1, "No"), At(0, 1), C(404)]))
         .Common(20, C(111, 1, 1020, 0, 2, 0), C(121, 40, 40, 0))
         .Files()));
 
@@ -108,6 +114,19 @@ public sealed class PageMatchTests
 
         Assert.True(_match.IsReceivers(site, "map:1:9:1@0", own));
         Assert.False(_match.IsReceivers(site, "map:1:9:1@8", own));
+    }
+
+    /// <summary>
+    /// Asserts that a choice whose answers differ only in what they take is the opener's, since a
+    /// replay takes nothing, and one whose answers differ in what they give the receiver's.
+    /// </summary>
+    [Fact]
+    public void IsReceivers_NotWhenTheAnswersDifferOnlyInWhatTheyTake()
+    {
+        ReplaySite site = ReplaySite.Page(1, 10, 0);
+
+        Assert.False(_match.IsReceivers(site, "map:1:10:1@0", _ => false));
+        Assert.True(_match.IsReceivers(site, "map:1:10:1@8", _ => false));
     }
 
     /// <summary>

@@ -2,6 +2,10 @@
 #  story_replay.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Handed the question screen what a choice's cancel answers
+#                            - Let a replay cost the receiver nothing, taking back of the gold and the items only what it gave
+#                            - Followed the opener's path through the checks of what the party holds and of the event's own self switches
+#                            - Counted a replay whose receiver answered a question other than the opener as done with their own answer
 #      Paulinchen  2026-10-31: Replayed a run with the inputs the DLL leaves of the opener's, asking the receiver the choices that are theirs
 #                            - Asked the receiver a number, item or present the record lacks
 #                            - Committed a replay only once it finished
@@ -18,8 +22,10 @@
 # keys and holdings are staged, and the replay keeps them only once it finished and reached its step;
 # the screen, the message, the player, the timer, the map's display and events, the sound and the
 # scenes are stand-ins or closed; and every input (a choice, a number, an item, a present, a random
-# draw, a read of the player's or an event's position, the timer, a key press, a battle's outcome) is
-# answered from the opener's record by the place of the command that asked for it. An input the
+# draw, a read of the player's or an event's position, the timer, a key press, a battle's outcome,
+# a check of what the party holds or of the event's own self switch) is answered from the opener's
+# record by the place of the command that asked for it, so the receiver gets what the opener got. A
+# replay costs the receiver nothing: it takes back only what it gave. An input the
 # record lacks is the receiver's own: a choice, a number, an item or a present is asked of them on
 # the choices' screen, and while that screen asks only choices, any other of them stops the replay,
 # which waits like a check that fails; a battle counts as won; any other input reads their own game.
@@ -106,6 +112,21 @@ module MGQ_MpStoryReplay
   # The keys script 167's input_keys notes, in the order the record numbers them.
   KEY_SYMBOLS = [:U, :D, :L, :R, :B1, :B2, :B3, :B4, :B5, :B6, :B7, :B8].freeze
 
+  # The conditional branches whose result is an input, by their type: a key held, and the checks a
+  # replay follows the opener through, the event's own self switch and the gold, items, weapons and
+  # armors the party holds.
+  BRANCH_INPUTS = { 2 => "branch", 7 => "branch", 8 => "branch", 9 => "branch", 10 => "branch", 11 => "key" }.freeze
+
+  # The game data a Control Variables command reads whose value is an input: the counts of an item,
+  # a weapon and an armor the party holds.
+  HOLDING_DATA = [0, 1, 2].freeze
+
+  # The game data of another kind a Control Variables command reads, such as the party's gold.
+  OTHER_DATA = 7
+
+  # The party's gold among the game data of another kind, whose value is an input too.
+  GOLD_DATA = 2
+
   # The map's methods that change its display, which the replay leaves out, and its refresh, which
   # would read the replay's view into the receiver's events.
   MAP_CLOSED = [:start_scroll, :scroll_down, :scroll_left, :scroll_right, :scroll_up, :set_display_pos, :change_tileset,
@@ -147,7 +168,8 @@ module MGQ_MpStoryReplay
   #   (the open world's kept keys when missing); :own_write, a block called with each write of the
   #   receiver's own keys it keeps, such as a borrowing guest's keep_own; :page, the page of the run's
   #   event the receiver's game picked, from 1, the run's own when missing; :around_commit, a block
-  #   called with the replay and a block that keeps what it did, to measure what changed.
+  #   called with the replay and a block that keeps what it did, to measure what changed; :recorded,
+  #   the opener's whole record when "inputs" lacks the answers asked of the receiver.
   # @return [Replay, nil] The replay: done, asking or failed; nil for a site the game does not have.
   def self.play(entry, options = {})
     return refuse("a replay asked for #{entry['site']} while #{@current.site} runs") if @current
@@ -183,15 +205,38 @@ module MGQ_MpStoryReplay
   # What an input reads is its kind: a message's answer ("choice", a choice's place or an extended
   # choice's id; "number"; "item"; "present"), a random draw ("rand"), a key held ("key"), each key
   # pressed while the game read keys ("keys", its place in KEY_SYMBOLS), the map at a place
-  # ("location"), a battle's outcome ("battle", 0 won, 1 escaped, 2 lost), or a read of the timer,
-  # the map, the player or an event ("timer.sec", "map.field?", "player.x", "event12.direction").
-  # A yes or no is 1 or 0.
+  # ("location"), a battle's outcome ("battle", 0 won, 1 escaped, 2 lost), a branch's check of the
+  # event's own self switch or of what the party holds ("branch", see BRANCH_INPUTS), a count of
+  # what the party holds read into a variable ("holding", see holding_read?), or a read of the
+  # timer, the map, the player or an event ("timer.sec", "map.field?", "player.x",
+  # "event12.direction"). A yes or no is 1 or 0.
   #
   # @param site [String] The list: "map:<map>:<event>:<page from 1>" or "ce:<id>".
   # @param index [Integer] The command's place in the list.
   # @return [String] Such as "map:1994:42:1@12".
   def self.input_at(site, index)
     "#{site}@#{index}"
+  end
+
+  # Tells whether a Control Variables command's read of the game data is a read of what the party
+  # holds, which a replay takes from the opener's record.
+  #
+  # @param type [Integer] The kind of game data.
+  # @param param [Integer] Its first parameter: the item, or for OTHER_DATA what is read.
+  # @return [Boolean] Whether it is.
+  def self.holding_read?(type, param)
+    HOLDING_DATA.include?(type) || (type == OTHER_DATA && param == GOLD_DATA)
+  end
+
+  # Tells how much of a change of what the receiver holds the replay that runs makes: all of a gain,
+  # and of a loss only what the replay itself gained of the same thing, since a replay costs the
+  # receiver nothing.
+  #
+  # @param what [Object] What changes: :gold, or the item.
+  # @param amount [Integer] The change, below 0 for a loss.
+  # @return [Integer] The change to make.
+  def self.kept_change(what, amount)
+    @current ? @current.kept_change(what, amount) : amount
   end
 
   # Refuses a replay, which leaves the game as it is.
@@ -254,7 +299,7 @@ module MGQ_MpStoryReplay
     answer = ask_with_values(TAKE_TOPIC, "entry" => entry)
     return false unless answer.is_a?(Hash) && answer["do"]
 
-    start(answer["inputs"] ? entry.merge("inputs" => answer["inputs"]) : entry, answer["page"]) if answer["do"] == "replay"
+    start(answer["inputs"] ? entry.merge("inputs" => answer["inputs"]) : entry, answer["page"], entry["inputs"]) if answer["do"] == "replay"
     true
   end
 
@@ -279,9 +324,11 @@ module MGQ_MpStoryReplay
   #
   # @param entry [Hash] The run's entry.
   # @param page [Integer, nil] The page, from 1; nil for a common event.
-  def self.start(entry, page)
+  # @param recorded [Array<Array>, nil] The opener's whole record, before the DLL left out the
+  #   choices asked of the player; nil when the entry holds it.
+  def self.start(entry, page, recorded = nil)
     state = { :entry => entry }
-    replay = play(entry, :view => view_test, :own_write => own_write, :page => page,
+    replay = play(entry, :view => view_test, :own_write => own_write, :page => page, :recorded => recorded,
                          :around_commit => lambda { |kept, keep| committing(state, kept, keep) })
     return log("entry #{entry['id']} of #{entry['site']} could not be replayed") unless replay
 
@@ -332,7 +379,7 @@ module MGQ_MpStoryReplay
     log("entry #{entry['id']} of #{entry['site']} asks the player: #{question['labels'].join(' / ')}")
     return answered(question["values"].empty? ? 0 : question["values"].first) unless defined?(MGQ_MpCoopChoices) && !question["labels"].empty?
 
-    MGQ_MpCoopChoices.ask(entry["opener"], question["lines"], question["labels"], lambda { |place| answered(question["values"][place.to_i]) })
+    MGQ_MpCoopChoices.ask(entry["opener"], question["lines"], question["labels"], lambda { |place| answered(question["values"][place.to_i]) }, question["cancel"])
   end
 
   # Reports whether the choices' screen asks a number, an item or a present, which a replay
@@ -1251,12 +1298,35 @@ module MGQ_MpStoryReplay
       child.run
     end
 
-    # Reads a key press from the record; any other branch as the game does.
+    # Reads a key press from the record, and the checks the replay follows the opener through: what
+    # the party holds and the event's own self switches, so the receiver gets what the opener got.
+    # A self switch of the run's step reads the receiver's own, which tells whether they took the
+    # step already. Any other branch as the game does.
     def command_111
-      return game(:command_111) unless @params[0] == 11
+      kind = BRANCH_INPUTS[@params[0]]
+      return game(:command_111) unless kind
 
-      @branch[@indent] = @replay.flag("key") { Input.press?(@params[1]) }
+      own = own_branch
+      opener = @replay.flag(kind) { own }
+      @branch[@indent] = step_switch? ? own : opener
       command_skip unless @branch[@indent]
+    end
+
+    # Skips a branch's commands as the game does, unless the replay only reads the branch's result.
+    def command_skip
+      game(:command_skip) unless @deciding
+    end
+
+    # Reads what the party holds as the opener's record holds it, and any other game data as the
+    # game does.
+    #
+    # @param type [Integer] The kind of game data.
+    # @param param1 [Integer] Its first parameter.
+    # @param param2 [Integer] Its second parameter.
+    # @return [Numeric] The value.
+    def game_data_operand(type, param1, param2)
+      own = game(:game_data_operand, type, param1, param2)
+      MGQ_MpStoryReplay.holding_read?(type, param1) ? @replay.input("holding") { own } : own
     end
 
     # Reads the map at a place from the record, or from the receiver's own map without one.
@@ -1336,6 +1406,26 @@ module MGQ_MpStoryReplay
     # @param _duration [Integer] The frames.
     def wait(_duration)
     end
+
+    private
+
+    # Finds the receiver's own result of the conditional branch running now, as the game finds it.
+    #
+    # @return [Boolean] The result.
+    def own_branch
+      @deciding = true
+      game(:command_111)
+      @branch[@indent]
+    ensure
+      @deciding = false
+    end
+
+    # Tells whether the conditional branch running now checks a self switch of the run's step.
+    #
+    # @return [Boolean] Whether it does.
+    def step_switch?
+      @params[0] == 2 && @event_id > 0 && @replay.step_key?(2, [@map_id, @event_id, @params[1]])
+    end
   end
 
   # One replay: its run's binding, its view and record, and where it stands.
@@ -1379,11 +1469,12 @@ module MGQ_MpStoryReplay
     # Binds a run.
     #
     # @param entry [Hash] The run, see MGQ_MpStoryReplay.play.
-    # @param options [Hash] The view's test, the own writes' block, the page and the commit's
-    #   measure, see MGQ_MpStoryReplay.play.
+    # @param options [Hash] The view's test, the own writes' block, the page, the commit's measure
+    #   and the opener's whole record, see MGQ_MpStoryReplay.play.
     def initialize(entry, options)
       @site = options[:page] ? entry["site"].to_s.sub(/:\d+\z/, ":#{options[:page]}") : entry["site"].to_s
       @record = Record.new(entry["inputs"] || [])
+      @opener = Record.new(options[:recorded] || entry["inputs"] || [])
       @view = View.new(start_values(entry["start"] || {}), options[:view] || method(:kept_key?))
       @keys = entry["keys"] || {}
       @own_write = options[:own_write]
@@ -1396,6 +1487,8 @@ module MGQ_MpStoryReplay
       @journal = []
       @made = []
       @reset = []
+      @gained = {}
+      @own_way = false
       @committed = false
       @state = :running
       @list = bind(entry)
@@ -1440,6 +1533,8 @@ module MGQ_MpStoryReplay
     def answer(value)
       return self unless @state == :asking
 
+      opener = @opener.take(@question["at"], @question["kind"])
+      @own_way ||= opener.nil? || opener.to_s != value.to_s
       @record.add(@question["at"], @question["kind"], value)
       @question = nil
       step
@@ -1546,6 +1641,28 @@ module MGQ_MpStoryReplay
       @writes << [kind, key, value, viewed]
     end
 
+    # Tells whether a key is one of the run's step.
+    #
+    # @param kind [Integer] 0 for a switch, 1 for a variable, 2 for a self switch.
+    # @param key [Integer, Array] The key.
+    # @return [Boolean] Whether it is.
+    def step_key?(kind, key)
+      @keys.key?(MGQ_MpStoryKeys.key_text(kind, key))
+    end
+
+    # Tells how much of a change of what the receiver holds the replay makes, and notes what it
+    # gained: all of a gain, and of a loss only what the replay itself gained of the same thing.
+    #
+    # @param what [Object] What changes: :gold, or the item.
+    # @param amount [Integer] The change, below 0 for a loss.
+    # @return [Integer] The change to make.
+    def kept_change(what, amount)
+      gained = @gained[what].to_i
+      change = amount < 0 ? -[-amount, gained].min : amount
+      @gained[what] = gained + change
+      change
+    end
+
     # Resets the self switches of maps, the view's at once and the receiver's own once committed.
     #
     # @param map_ids [Array<Integer>] The maps.
@@ -1568,12 +1685,13 @@ module MGQ_MpStoryReplay
       nil
     end
 
-    # Reports whether the replay finished and wrote one of its step's keys, or finished a run that
-    # names none.
+    # Reports whether the replay finished and wrote one of its step's keys, finished a run that names
+    # none, or finished after the receiver answered a question other than the opener, whose own way
+    # it is done with.
     #
     # @return [Boolean] Whether it did.
     def reached?
-      @state == :done && (@keys.empty? || @writes.any? { |kind, key, _value, _viewed| @keys.key?(MGQ_MpStoryKeys.key_text(kind, key)) })
+      @state == :done && (@keys.empty? || @own_way || @writes.any? { |kind, key, _value, _viewed| step_key?(kind, key) })
     end
 
     # Keeps what the replay did: its holdings merged into the receiver's, then its own keys' writes
@@ -1809,25 +1927,44 @@ module MGQ_MpStoryReplay
     # @param lines [Array<String>] The message's lines.
     # @return [Boolean] False: not answered.
     def ask(at, kind, message, lines)
-      labels, values = choices_of(kind, message)
-      @question = { "at" => at, "kind" => kind, "labels" => labels, "values" => values, "lines" => lines, "spec" => spec_of(kind, message) }
+      labels, values, cancel = choices_of(kind, message)
+      @question = { "at" => at, "kind" => kind, "labels" => labels, "values" => values, "cancel" => cancel, "lines" => lines, "spec" => spec_of(kind, message) }
       @state = :asking
       false
     end
 
-    # Lists the choices of a message's input and the answer each gives.
+    # Lists the choices of a message's input, the answer each gives and the place cancel answers,
+    # as the game's choice window cancels: a label's place, or the place after the labels for the
+    # choice's own branch, whose answer goes last.
     #
     # @param kind [String] The input's kind.
     # @param message [Game_Message] The message.
-    # @return [Array<Array>] The labels and the answers.
+    # @return [Array] The labels, the answers and the cancel's place (nil where the choice has no
+    #   cancel).
     def choices_of(kind, message)
-      return [[], []] unless kind == "choice"
+      return [[], [], nil] unless kind == "choice"
 
       if message.respond_to?(:ex_choice?) && message.ex_choice?
         items = message.ex_choice_item || []
-        return [items.map { |item| item[0].to_s }, items.map { |item| item[1] }]
+        setting = message.ex_choice_setting
+        return with_cancel(items.map { |item| item[0].to_s }, items.map { |item| item[1] }, setting && setting[0].to_i >= 0 ? setting[0] : nil)
       end
-      [message.choices.map { |label| label.to_s }, (0...message.choices.size).to_a]
+      type = message.choice_cancel_type.to_i
+      with_cancel(message.choices.map { |label| label.to_s }, (0...message.choices.size).to_a, type > 0 ? type - 1 : nil)
+    end
+
+    # Finds the place of the answer cancel gives among a choice's answers, adding it last where no
+    # label gives it, as a choice's own branch.
+    #
+    # @param labels [Array<String>] The labels.
+    # @param values [Array] The answer of each label.
+    # @param answer [Object, nil] What cancel answers, nil for no cancel.
+    # @return [Array] The labels, the answers and the cancel's place.
+    def with_cancel(labels, values, answer)
+      return [labels, values, nil] if answer.nil?
+
+      place = values.index(answer)
+      place ? [labels, values, place] : [labels, values + [answer], labels.size]
     end
 
     # Applies an answer as the message window does.
@@ -1939,6 +2076,18 @@ begin
   end
 rescue => e
   MGQ_MpStoryReplay.log("hooks FAILED: #{e.class}: #{e.message}")
+end
+
+begin
+  # A replay costs the receiver nothing: it takes back of the gold and the items only what it gave.
+  MGQ_MpHooks.around(Game_Party, :gain_gold, "story_replay") do |_party, args, original|
+    original.call(MGQ_MpStoryReplay.kept_change(:gold, args[0]), *args[1..-1])
+  end
+  MGQ_MpHooks.around(Game_Party, :gain_item, "story_replay") do |_party, args, original|
+    original.call(args[0], MGQ_MpStoryReplay.kept_change(args[0], args[1]), *args[2..-1])
+  end
+rescue => e
+  MGQ_MpStoryReplay.log("party hooks FAILED: #{e.class}: #{e.message}")
 end
 
 begin

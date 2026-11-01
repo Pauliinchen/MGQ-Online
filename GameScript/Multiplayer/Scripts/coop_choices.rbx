@@ -2,6 +2,8 @@
 #  coop_choices.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Put off a number and a choice without cancel on the game's cancel key, the hints naming the bound key
+#                            - Filled in the names and variables of a replayed choice's labels
 #      Paulinchen  2026-10-31: Read the keys and the mouse through the Mod Framework
 #                            - Asked the player the question a replay waits on
 #                            - Asked a number, a key item or a present a replay waits on, on a screen of its own
@@ -690,7 +692,8 @@ module MGQ_MpCoopChoices
   end
 
   # Keeps the question shown closed until the player leaves standing free on the map and comes
-  # back, as Numpad 0 closes the screen of a number, whose game window has no cancel.
+  # back, as cancel closes the screen of a number or a choice without cancel, whose game window
+  # has none.
   def self.put_off_question
     @question[:later] = true
     log("the player closed the #{@question[:kind]} a replay asks: it opens again once they stand free after a message, menu, battle or transfer")
@@ -743,13 +746,16 @@ module MGQ_MpCoopChoices
   # @param lines [Array<String>] The message's lines.
   # @param labels [Array<String>] The answers' labels.
   # @param done [Proc] Takes the place of the answer picked.
-  def self.ask(opener, lines, labels, done)
-    ask_input(opener, lines, "choice", { "labels" => labels }, done)
+  # @param cancel [Integer, nil] The place cancel answers, the labels' size for the choice's own
+  #   branch; nil where the choice cannot be cancelled, which cancel then puts off.
+  def self.ask(opener, lines, labels, done, cancel = nil)
+    ask_input(opener, lines, "choice", { "labels" => labels, "cancel" => cancel }, done)
   end
 
   # Asks the player the input a replay waits on, as the game's own window for it would, on the
-  # screen of the question once they stand free on the map. The game's keys never put the answer
-  # off; only Numpad 0 closes the screen of a number without one, see put_off_question.
+  # screen of the question once they stand free on the map. The game's cancel answers what the
+  # game's window answers on cancel, and puts off a number and a choice without cancel, see
+  # put_off_question.
   #
   # @param opener [String, nil] Who ran the event, nil for the player's own history.
   # @param lines [Array<String>] The message's lines, the speaker's code first.
@@ -791,11 +797,26 @@ module MGQ_MpCoopChoices
   def self.open_question(visible)
     question = @question
     spec = question[:spec].merge("index" => question[:spec]["index"].to_i)
+    spec["labels"] = spec["labels"].map { |label| filled(label) } if spec["labels"]
     spec["items"] = spec["items"].map { |id, name, count| [id, name, count, $data_items[id].description.to_s] } if spec["items"]
     spec["result"] = spec["result"].to_s if question[:kind] == "present"
     companion = question[:kind] == "present" ? $game_actors[spec["actor"]].name : nil
     question[:input] = MGQ_Multiplayer::Bridge.call(INPUT_OPEN_TOPIC, "kind" => question[:kind], "opener" => question[:opener], "companion" => companion,
                                                                        "visible" => visible, "spec" => spec)
+  end
+
+  # Fills in the names, variables and the currency a label's codes stand for, with the game's own
+  # conversion, keeping its other codes for the list to draw.
+  #
+  # @param label [String] The label.
+  # @return [String] The label filled in; as it was where the game cannot convert it.
+  def self.filled(label)
+    return label.to_s unless defined?(Window_Base) && (Window_Base.method_defined?(:convert_escape_characters) || Window_Base.private_method_defined?(:convert_escape_characters))
+
+    Window_Base.allocate.send(:convert_escape_characters, label.to_s).gsub("\e", "\\")
+  rescue => e
+    log("filling in the label #{label.inspect} failed, so it shows as it is: #{e.class}: #{e.message}")
+    label.to_s
   end
 
   # Takes a step of the player on the question shown, with its sound.
@@ -979,8 +1000,8 @@ end
 
 # The screen of the story's choices, opened over the map.
 class Scene_MpStoryChoices < Scene_MenuBase
-  # Keys the lines at the top name.
-  KEYS_HINT = "Left/Right or Enter: change the outcome. Up/Down: move. Esc: cancel."
+  # Keys the lines at the top name, after the bound cancel key.
+  KEYS_HINT = "Left/Right or Enter: change the outcome. Up/Down: move. %s: cancel."
 
   # Keys the lines at the top name on a screen that only confirms.
   CONFIRM_HINT = "Left/Right or Enter: change the outcome. Up/Down: move."
@@ -1048,7 +1069,7 @@ class Scene_MpStoryChoices < Scene_MenuBase
   # Shows the hint of the field the cursor is on and the keys.
   def show_hint
     field = @form_window.field
-    @info_window.show([field ? field.hint : nil, @screen[:buttons].size > 1 ? KEYS_HINT : CONFIRM_HINT])
+    @info_window.show([field ? field.hint : nil, @screen[:buttons].size > 1 ? format(KEYS_HINT, Mod_Framework::UI.cancel_keys) : CONFIRM_HINT])
   end
 
   # Turns the switch the cursor is on.
@@ -1316,16 +1337,18 @@ class Scene_MpStoryQuestion < Scene_MenuBase
     leave("opening the screen of the question failed: #{e.class}: #{e.message}")
   end
 
-  # Takes the player's step, and closes the screen with the answer once given.
+  # Takes the player's step, and closes the screen with the answer once given, or once cancel put
+  # the question off.
   def update
     super
     return if held_since_open?
 
     step = keys_step || mouse_step
     return unless step
-    return put_off if step[0] == "later"
 
     answer = MGQ_MpCoopChoices.step_question(*step)
+    return put_off if @question[:input]["later"]
+
     @window.refresh
     show_hint
     return if answer.nil?
@@ -1346,9 +1369,8 @@ class Scene_MpStoryQuestion < Scene_MenuBase
     @fresh = Input.press?(:C) || Input.press?(:B) || Mod_Framework::UI::Mouse.held? || Mod_Framework::UI::NUMPAD_ZERO.any? { |code| Mod_Framework::UI::Key.down?(code) }
   end
 
-  # Reads the step the keys and the pad take: arrows, a typed digit on a number, confirm, and
-  # cancel on a list. A number ignores the game's cancel, as the game's window does, and closes on
-  # Numpad 0 alone ("later").
+  # Reads the step the keys and the pad take: arrows, a typed digit on a number, confirm, and the
+  # game's cancel or Numpad 0, which answer what the question's cancel answers or put it off.
   #
   # @return [Array, nil] The step's action, place, notches and wrap; nil for none.
   def keys_step
@@ -1357,8 +1379,7 @@ class Scene_MpStoryQuestion < Scene_MenuBase
     arrows.each { |key, action| return [action, 0, 0, Input.trigger?(key)] if Input.repeat?(key) }
     DIGIT_KEYS.each { |code, digit| return ["digit", digit, 0, false] if Mod_Framework::UI::Key.triggered?(code) } if number
     return ["ok", 0, 0, false] if Input.trigger?(:C)
-    return ["later", 0, 0, false] if number && Mod_Framework::UI::NUMPAD_ZERO.map { |code| Mod_Framework::UI::Key.triggered?(code) }.any?
-    return ["cancel", 0, 0, false] if !number && MGQ_MpUi.cancel?
+    return ["cancel", 0, 0, false] if Mod_Framework::UI.cancel?
 
     nil
   end
@@ -1393,16 +1414,16 @@ class Scene_MpStoryQuestion < Scene_MenuBase
     spot && spot[0] == :digit ? ["wheel", spot[1], notches, false] : nil
   end
 
-  # Shows the hint and the keys of the question.
+  # Shows the hint and the keys of the question, the game's cancel by the key the player bound.
   def show_hint
     input = @question[:input]
-    @info_window.show([input["hint"], input["keys"]])
+    keys = input["keys"].map { |key, text| "#{key == 'cancel' ? Mod_Framework::UI.cancel_keys : key}: #{text}" }
+    @info_window.show([input["hint"], "#{keys.join('. ')}."])
   end
 
-  # Closes the screen of a number without an answer, which waits until the player next stands
-  # free after a message, menu, battle or transfer of their own.
+  # Closes the screen of a question cancel put off, which waits until the player next stands free
+  # after a message, menu, battle or transfer of their own.
   def put_off
-    Sound.play_cancel
     MGQ_MpCoopChoices.put_off_question
     return_scene
   end

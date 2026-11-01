@@ -2,6 +2,7 @@
 //  ChoiceInputsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Checked that cancel puts a number and a choice without cancel off, and the key entries
 //      Paulinchen  2026-10-31: Created
 //
 //----------------------------------------------------------------
@@ -42,16 +43,16 @@ public sealed class ChoiceInputsTests
     }
 
     /// <summary>
-    /// Asserts that a number tells the player that the numpad types no digits and that Numpad 0
-    /// puts the answer off.
+    /// Asserts that a number tells the player that the numpad types no digits, and names last by the
+    /// bound cancel key that cancel puts the answer off.
     /// </summary>
     [Fact]
-    public void Number_NamesTheNumpadInItsHintAndKeys()
+    public void Number_NamesTheNumpadInItsHintAndCancelInItsKeys()
     {
         ChoiceInput input = ChoiceInputs.Number(null, 3, 5);
 
         Assert.Contains("the numpad types no digits", input.Hint);
-        Assert.Contains("Numpad 0: answer later.", input.Keys);
+        Assert.Equal(new ChoiceInputKey(ChoiceInputs.CancelKey, "answer later"), input.Keys[^1]);
     }
 
     /// <summary>
@@ -64,14 +65,16 @@ public sealed class ChoiceInputsTests
     }
 
     /// <summary>
-    /// Asserts that cancel leaves a number unanswered, as the game's number window ignores it.
+    /// Asserts that cancel puts a number off unanswered, with the cancel sound, and that a number put
+    /// off takes no more steps.
     /// </summary>
     [Fact]
-    public void Number_IgnoresCancel()
+    public void Number_PutsOffOnCancel()
     {
         ChoiceInput input = ChoiceInputs.Step(ChoiceInputs.Number(null, 3, 5), ChoiceInputAction.Cancel);
 
-        Assert.Null(input.Answer);
+        Assert.Equal(((int?)null, true, "cancel"), (input.Answer, input.Later, input.Cue));
+        Assert.Null(ChoiceInputs.Step(input, ChoiceInputAction.Ok).Answer);
     }
 
     /// <summary>
@@ -104,8 +107,8 @@ public sealed class ChoiceInputsTests
     }
 
     /// <summary>
-    /// Asserts that a choice answers the label's place, and that cancel gives what the choice's
-    /// cancel names: nothing without one, its own branch as a last row.
+    /// Asserts that a choice answers the label's place, and that cancel does what the choice's cancel
+    /// names: puts it off without one, answers its own branch from a last row.
     /// </summary>
     [Fact]
     public void Choice_AnswersThePlaceAndCancelsAsTheChoiceSays()
@@ -115,9 +118,22 @@ public sealed class ChoiceInputsTests
 
         Assert.Equal("Your own story", plain.Title);
         Assert.Equal(1, ChoiceInputs.Step(ChoiceInputs.Step(plain, ChoiceInputAction.Down), ChoiceInputAction.Ok).Answer);
-        Assert.Null(ChoiceInputs.Step(plain, ChoiceInputAction.Cancel).Answer);
+        Assert.Equal(((int?)null, true), (ChoiceInputs.Step(plain, ChoiceInputAction.Cancel).Answer, ChoiceInputs.Step(plain, ChoiceInputAction.Cancel).Later));
+        Assert.Equal("answer later", plain.Keys[^1].Text);
         Assert.Equal(["Yes", "No", "Cancel"], branch.Rows.Select(row => row.Name));
         Assert.Equal(2, ChoiceInputs.Step(branch, ChoiceInputAction.Cancel).Answer);
+    }
+
+    /// <summary>
+    /// Asserts that the key line names a cancel label without the game's text codes, which only the
+    /// list draws.
+    /// </summary>
+    [Fact]
+    public void Choice_NamesTheCancelLabelWithoutTextCodes()
+    {
+        ChoiceInput input = ChoiceInputs.Choice(null, ["Yes", @"\C[2]No\C[0]"], 1, 0, 8);
+
+        Assert.Equal(("No", @"\C[2]No\C[0]"), (input.Keys[^1].Text, input.Rows[1].Name));
     }
 
     /// <summary>
