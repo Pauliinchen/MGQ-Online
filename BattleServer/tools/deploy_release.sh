@@ -3,6 +3,7 @@
 #  deploy_release.sh
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Stopped installing MGQ Online's Mod.ini, which the release no longer ships
 #      Paulinchen  2026-10-31: Installed the Mod Framework the release ships inside MGQ Online, its entry file and MGQ Online's Mod.ini with it
 #      Paulinchen  2026-10-28: Created
 #
@@ -24,7 +25,7 @@ backups=${MGQ_BATTLE_BACKUPS:-/var/cache/mgq-battle}
 service=${MGQ_BATTLE_SERVICE:-mgq-battle}
 from=$release/Patch
 patch=$game/Patch
-installed=(Multiplayer.rb Multiplayer/Mod.ini Multiplayer/Scripts Multiplayer/Data/events.db '!Mod_Framework.rb' Multiplayer/Mod_Framework)
+installed=(Multiplayer.rb Multiplayer/Scripts Multiplayer/Data/events.db '!Mod_Framework.rb' Multiplayer/Mod_Framework)
 
 for path in "${installed[@]}"; do
   [ -e "$from/$path" ] || { echo "$from/$path is missing" >&2; exit 1; }
@@ -37,7 +38,6 @@ echo "backed up $patch to $backup"
 
 # Root-owned and not writable by others, so a battle child cannot change what every battle reads.
 rsync -a --chown=root:root --chmod=go-w "$from/Multiplayer.rb" "$patch/Multiplayer.rb"
-rsync -a --chown=root:root --chmod=go-w "$from/Multiplayer/Mod.ini" "$patch/Multiplayer/Mod.ini"
 rsync -a --delete --chown=root:root --chmod=go-w "$from/Multiplayer/Scripts/" "$patch/Multiplayer/Scripts/"
 # The Mod Framework MGQ Online's scripts read their keys and draw through, booted by its entry file.
 rsync -a --chown=root:root --chmod=go-w "$from/!Mod_Framework.rb" "$patch/!Mod_Framework.rb"

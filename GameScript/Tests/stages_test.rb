@@ -2,6 +2,7 @@
 #  stages_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Dropped the check of a tag the package declares in the mod's folder
 #      Paulinchen  2026-10-31: Checked that the mod stays off without the Mod Framework, and logs whether the framework keeps it off and keeps the game running behind other windows as its first stage loads
 #      Paulinchen  2026-10-30: Created
 #
@@ -16,12 +17,6 @@ require "fileutils"
 require "tmpdir"
 
 source = File.read(File.expand_path("../Multiplayer.rb", __dir__), :encoding => "UTF-8")
-
-# The Mod Framework loads the mod as a Title mod from the tag the package declares while the
-# website and the relay are unknown, as on the first start after an update or with the site out
-# of reach.
-declared = File.read(File.expand_path("../../package/Multiplayer/Mod.ini", __dir__)).lines.map { |line| line.split("=", 2).map(&:strip) }
-check("the package declares the Title tag in the mod's folder", declared.find { |key, _value| key.casecmp("tag") == 0 }, %w[tag Title])
 
 $calls = []
 $log = []
