@@ -2,6 +2,7 @@
 //  HudTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Answered the seats of the arrows alone, the Mod Framework's markers placing them
 //      Paulinchen  2026-10-31: Worked out the raid bars of a battle and of the map from the raid pools
 //                            - Created
 //
@@ -24,18 +25,11 @@ namespace MGQParadox.Multiplayer.Topics;
 internal sealed class HudTopics
 {
     /// <summary>
-    /// The topic that points the arrows for a frame: {"reason" (why none show, nil while they may),
-    /// "screen" ([width, height]), "top_room", "from" ([x, y] of the player's sprite), "ghosts"
-    /// ({seat => [screen x, screen y, tiles, color's name]} of the ghosts on the map)} in;
-    /// [[seat, x, y, stepped angle], ...] out, nearest first.
+    /// The topic that picks the players the arrows point at for a frame: {"reason" (why none show,
+    /// nil while they may), "screen" ([width, height]), "ghosts" ({seat => [screen x, screen y,
+    /// tiles, color's name]} of the ghosts on the map)} in; [seat, ...] out, nearest first.
     /// </summary>
     public const string ArrowsTopic = "hud.arrows";
-
-    /// <summary>
-    /// The topic that lays out an arrow's picture: [stepped angle, plate's width] in; [left, top,
-    /// width, height, plate x, plate y, slide x, slide y, rows ([[x, y, width, fill], ...])] out.
-    /// </summary>
-    public const string PictureTopic = "hud.arrow_picture";
 
     /// <summary>
     /// The topic that forgets which arrows were logged, as the map's sprites go.
@@ -91,7 +85,6 @@ internal sealed class HudTopics
     {
         var topics = new HudTopics(room, pools);
         context.Register(ArrowsTopic, (_, request) => topics.Arrows(request.AsHash()));
-        context.Register(PictureTopic, (_, request) => Picture(request.AsArray()));
         context.Register(ForgetTopic, (_, _) =>
         {
             topics.arrows.Forget();
@@ -135,22 +128,10 @@ internal sealed class HudTopics
     }
 
     /// <summary>
-    /// Lays out an arrow's picture.
-    /// </summary>
-    /// <param name="request">[stepped angle, plate's width].</param>
-    /// <returns>The picture, see <see cref="PictureTopic"/>.</returns>
-    private static RubyArray Picture(RubyArray request)
-    {
-        ArrowPicture picture = EdgeArrows.Picture(request[0].AsInt(), request[1].AsInt());
-        RubyArray rows = new(picture.Rows.Select(row => (RubyValue)new RubyArray([row.X, row.Y, row.Width, row.Fill])));
-        return new RubyArray([picture.Left, picture.Top, picture.Width, picture.Height, picture.PlateX, picture.PlateY, picture.SlideX, picture.SlideY, rows]);
-    }
-
-    /// <summary>
-    /// Points the arrows for a frame and logs those that came and went.
+    /// Picks the players the arrows point at for a frame and logs those that came and went.
     /// </summary>
     /// <param name="request">See <see cref="ArrowsTopic"/>.</param>
-    /// <returns>The arrows.</returns>
+    /// <returns>The players' seats, nearest first.</returns>
     private RubyArray Arrows(RubyHash request)
     {
         int width = request["screen"].AsArray()[0].AsInt();
@@ -160,19 +141,7 @@ internal sealed class HudTopics
         string? reason = request["reason"].IsNil ? null : request["reason"].AsText();
         List<ArrowCandidate> targets = reason is null ? EdgeArrows.Targets(players, room.Raid, width, height) : [];
         arrows.Note(reason, targets, players, room.Raid, width, height);
-        (int Left, int Top, int Right, int Bottom) edge = EdgeArrows.EdgeRect(width, height, request["top_room"].AsInt());
-        int fromX = request["from"].AsArray()[0].AsInt();
-        int fromY = request["from"].AsArray()[1].AsInt() - EdgeArrows.HalfTile;
-        var shown = new RubyArray();
-        foreach (ArrowCandidate target in targets)
-        {
-            if (EdgeArrows.Point(fromX, fromY, target.ScreenX, target.MiddleY, edge) is { } point)
-            {
-                shown.Add(new RubyArray([target.Seat, point.X, point.Y, EdgeArrows.StepAngle(point.Angle)]));
-            }
-        }
-
-        return shown;
+        return new RubyArray(targets.Select(target => (RubyValue)target.Seat));
     }
 
     /// <summary>

@@ -2,6 +2,7 @@
 //  Clipboard.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Dropped reading the clipboard, which the Mod Framework's text fields paste from
 //      Paulinchen  2026-10-31: Found the game's window itself, since the Mod Framework hooks it
 //      Paulinchen  2026-10-07: Logged clipboard failures with the Windows error
 //                            - Found the game's window through GameWindow
@@ -16,7 +17,7 @@ using System.Runtime.InteropServices;
 namespace MGQParadox.Multiplayer.Windows;
 
 /// <summary>
-/// The Windows clipboard, which the mod copies text to and pastes text from.
+/// The Windows clipboard, which the mod copies text to.
 /// </summary>
 internal static unsafe partial class Clipboard
 {
@@ -93,54 +94,6 @@ internal static unsafe partial class Clipboard
     }
 
     /// <summary>
-    /// Reads the clipboard's text.
-    /// </summary>
-    /// <returns>The text, or <see langword="null"/> when the clipboard holds none.</returns>
-    public static string? GetText()
-    {
-        if (!OpenClipboard(0))
-        {
-            LogError("could not be opened to read");
-            return null;
-        }
-
-        try
-        {
-            var memory = GetClipboardData(UnicodeText);
-
-            if (memory == 0)
-            {
-                return null;
-            }
-
-            var source = (char*)GlobalLock(memory);
-
-            try
-            {
-                if (source == null)
-                {
-                    LogError("could not lock its memory to read");
-                    return null;
-                }
-
-                // Another application's text may lack its terminating null, so the read stays inside
-                // the memory.
-                var text = new ReadOnlySpan<char>(source, (int)Math.Min((ulong)GlobalSize(memory) / sizeof(char), int.MaxValue));
-                var end = text.IndexOf('\0');
-                return new string(end >= 0 ? text[..end] : text);
-            }
-            finally
-            {
-                GlobalUnlock(memory);
-            }
-        }
-        finally
-        {
-            CloseClipboard();
-        }
-    }
-
-    /// <summary>
     /// Logs why the clipboard failed, with the error Windows names.
     /// </summary>
     /// <param name="what">What failed.</param>
@@ -181,14 +134,6 @@ internal static unsafe partial class Clipboard
     private static partial nint SetClipboardData(uint format, nint memory);
 
     /// <summary>
-    /// Finds the memory of a format on the open clipboard.
-    /// </summary>
-    /// <param name="format">The clipboard format.</param>
-    /// <returns>The memory, still owned by the clipboard, or 0 when the format is missing.</returns>
-    [LibraryImport("user32.dll")]
-    private static partial nint GetClipboardData(uint format);
-
-    /// <summary>
     /// Allocates memory the clipboard can take over.
     /// </summary>
     /// <param name="flags">How to allocate it.</param>
@@ -204,14 +149,6 @@ internal static unsafe partial class Clipboard
     /// <returns>0 when it was freed.</returns>
     [LibraryImport("kernel32.dll")]
     private static partial nint GlobalFree(nint memory);
-
-    /// <summary>
-    /// Reads the size of memory.
-    /// </summary>
-    /// <param name="memory">The memory.</param>
-    /// <returns>Its size in bytes, 0 when it failed.</returns>
-    [LibraryImport("kernel32.dll")]
-    private static partial nuint GlobalSize(nint memory);
 
     /// <summary>
     /// Makes memory addressable.

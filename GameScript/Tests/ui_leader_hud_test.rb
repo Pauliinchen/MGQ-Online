@@ -2,6 +2,8 @@
 #  ui_leader_hud_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Read the HUD from the Mod Framework's components it builds
+#                            - Stood in for the emote wheel of the Mod Framework
 #      Paulinchen  2026-10-31: Kept the boxes' places in the Mod Framework's settings
 #      Paulinchen  2026-10-30: Dropped the checks that restate pixel positions
 #      Paulinchen  2026-10-23: Kept the HUD in the corner through Player.ini, the drag gone to C#
@@ -12,84 +14,15 @@
 #
 #----------------------------------------------------------------
 
-# Covers the Leader HUD, ui_leader_hud.rbx: the Formation Leader's face or map sprite, name, level,
-# bars and levels' progress in the Large and Small sizes, the hotkey that switches them, hiding it,
-# its place in the layout, the room it takes from the notification box and the map's top left
-# windows, and its Mod Config rows.
+# Covers the Leader HUD, ui_leader_hud.rbx: its box of the Mod Framework docked at the top left
+# under the game's windows, the Formation Leader's face or figure, name, level, bars and levels'
+# progress in the Large and Small sizes, the hotkey that switches them, hiding it, the map's top
+# left windows moved below the docked boxes, and its Mod Config rows.
 
-require_relative "world_support"
+require_relative "hud_support"
 
-# A text drawn on a picture: what, where, how wide, its font's size and color, aligned how.
-Text = Struct.new(:text, :x, :y, :width, :size, :color, :align)
-
-# Stands in for the game's picture, recording the texts, fills, gradients and faces or sprites drawn
-# on it, each character 8 pixels wide.
-class Bitmap
-  # The picture's font.
-  Font = Struct.new(:size, :color, :bold, :outline, :out_color)
-  attr_reader :texts, :fills, :gradients, :faces, :font, :width, :height
-  # Makes an empty picture.
-  def initialize(width = 1, height = 1); @width = width; @height = height; @font = Font.new; clear; end
-  # Answers whether the picture was disposed.
-  def disposed?; @disposed ? true : false; end
-  # Forgets everything drawn.
-  def clear; @texts = []; @fills = []; @gradients = []; @faces = []; end
-  # Records a fill, given by a rectangle or by its sides, as its sides and color.
-  def fill_rect(*args); @fills << (args.size == 2 ? args[0].to_a + [args[1]] : args); end
-  # Records a gradient fill.
-  def gradient_fill_rect(x, y, width, height, left, right); @gradients << [x, y, width, height, left, right]; end
-  # Measures a text at 8 pixels a character and 16 high.
-  def text_size(text); Rect.new(0, 0, text.to_s.size * 8, 16); end
-  # Records a text in the font's size and color.
-  def draw_text(x, y, width, _height, text, align = 0); @texts << Text.new(text, x, y, width, font.size, font.color, align); end
-  # Records a part of a face or sprite sheet drawn: the sheet, the part and where it lands.
-  def stretch_blt(dest, sheet, source, *_); @faces << [sheet, source.to_a, dest.to_a]; end
-  # Disposes of the picture.
-  def dispose; @disposed = true; end
-end
-# Gives the sprite stand-in what the HUD sets and calls.
-class Sprite
-  attr_accessor :bitmap, :x, :y, :z, :visible, :opacity, :viewport
-  # Takes the viewport.
-  def initialize(viewport = nil); @viewport = viewport; end
-  # Stands in for the sprite's update, which does nothing here.
-  def update; end
-  # Disposes of the sprite.
-  def dispose; @disposed = true; end
-  # Answers whether the sprite was disposed.
-  def disposed?; @disposed ? true : false; end
-end
-# Stands in for the game's cache of faces and character sheets.
-module Cache
-  # Answers a face by its name.
-  def self.face(name); "face:#{name}"; end
-  # Answers the sheet in $sheet for every character.
-  def self.character(_name); $sheet; end
-end
-
-# A sheet of eight characters in frames of 32 by 48, whose sixth character's standing frame facing
-# down (128, 192) draws its figure 24 wide and 36 high, from 4 pixels in and 12 below the frame's
-# top; every other pixel is see-through.
-class Sheet
-  # The figure's left, top, width and height on the sheet.
-  FIGURE = [132, 204, 24, 36]
-  # Answers the sheet's width.
-  def width; 384; end
-  # Answers the sheet's height.
-  def height; 384; end
-  # Answers a pixel's color: opaque inside the figure, see-through elsewhere.
-  #
-  # @param x [Integer] The pixel's column.
-  # @param y [Integer] The pixel's row.
-  # @return [Color] The color.
-  def get_pixel(x, y)
-    left, top, width, height = FIGURE
-    Color.new(0, 0, 0, x.between?(left, left + width - 1) && y.between?(top, top + height - 1) ? 255 : 0)
-  end
-end
-$sheet = Sheet.new
 # Stands in for the emote wheel, which stays shut, unless a test defined it already.
-module MGQ_MpEmotes; def self.open?; false; end; end unless defined?(MGQ_MpEmotes)
+module MGQ_MpEmotes; def self.wheel; StandInWheel.new(lambda { false }); end; end unless defined?(MGQ_MpEmotes)
 # Stands in for the game's names of HP and MP.
 module Vocab; def self.hp_a; "HP"; end; def self.mp_a; "MP"; end; end
 # Stands in for the map's top left windows, which the HUD moves by their y.
@@ -110,8 +43,6 @@ NWConst::Config::MOD_CONTENTS = [{ :key => :return }] unless NWConst::Config.con
 # The Formation Leader: a character at base level 30 halfway to the next, at the job's highest level,
 # and just come to a race level.
 class Leader
-  # The character's base, job and race levels.
-  LEVELS = { :base => 30, :class => 20, :tribe => 5 }
   attr_accessor :hp, :mp, :name
   # Makes Alice with 189 HP and 40 MP.
   def initialize; @hp = 189; @mp = 40; @name = "Alice"; end
@@ -126,7 +57,7 @@ class Leader
   # Answers the character's index on its sheet.
   def character_index; 5; end
   # Answers the base level.
-  def base_level; LEVELS[:base]; end
+  def base_level; 30; end
   # Answers the most HP.
   def mhp; 252; end
   # Answers the most MP.
@@ -158,22 +89,14 @@ $leader = leader
 
 load_script "ui_leader_hud"
 
-style = MGQ_MpUi::Style
 hud = MGQ_MpLeaderHud
-box_class = Sprite_MpLeaderHud
-layout = MGQ_MpUi::Layout
-stored = layout.instance_variable_get(:@stored)
-# Tells where the HUD offers itself to the layout, nil while it offers nothing.
-offered = lambda { offer = layout.instance_variable_get(:@offers).find { |each| each.id == :leader_hud }; offer && offer.rect.to_a }
-box = box_class.new(:viewport3)
-# Finds a text drawn on the HUD.
-text = lambda { |wanted| box.bitmap.texts.find { |each| each.text == wanted } }
-large = box_class.layout(hud::LARGE)
-small = box_class.layout(hud::SMALL)
-large_height = box_class.height(large)
+ui = Mod_Framework::UI
+view = hud::View.new
+view.update
+root = view.root
+gauges = lambda { parts_of_kind(root, ui::Gauge) }
+picture = lambda { parts_of_kind(root, ui::Picture).first }
 
-check("the box is movable as Leader HUD, never resized, at least as large as the Small size",
-      registered_box(:leader_hud), ["Leader HUD", 170, box_class.height(small), :none])
 check("its rows in the Mod Config: on and off, then the size, both kept by the mod",
       NWConst::Config::MOD_CONTENTS.select { |row| row[:mod_stored] }.map { |row| [row[:key], row[:values].call] }.last(2),
       [[:mp_leader_hud, ["On", "Off"]], [:mp_leader_hud_size, ["Large", "Small"]]])
@@ -182,38 +105,39 @@ check("both in the Settings, the single player row left to ui_single_player.rbx"
        NWConst::Config::MOD_CONTENTS.any? { |row| row[:key] == hud::SP_SHOWN_OPTION }],
       [[MGQ_Multiplayer::OPTION_PREFIX + hud::SHOWN_OPTION_NAME, MGQ_Multiplayer::OPTION_PREFIX + hud::SIZE_OPTION_NAME], false])
 
-# The Large size shows the face, the name, the level, both bars with their numbers and the levels'
-# progress.
-box.update
-check("it shows at once in the Large size until the player picks another, at the top left, offered to the layout where it lies",
-      [box.instance_variable_get(:@motion).shown?, box.x, box.y, box.bitmap.width, offered.call], [true, 8, 8, 240, [8, 8, 240, large_height]])
-bars = box.bitmap.gradients
-check("the HP bar red and three quarters full, the MP bar half full",
-      [bars[0][4..5], bars[0][2], bars[1][2]], [box_class::HP_COLORS, ((240 - 8 - 70) * 0.75).round, ((240 - 8 - 70) * 0.5).round])
-check("the base level half done, the job at its highest full, the race just begun empty, across the box",
-      [bars.size, bars[2][2], bars[3][2], bars[2][4..5], bars[3][4..5]], [4, 112, 224, box_class::EXP_COLORS[:base], box_class::EXP_COLORS[:class]])
-check("the room it takes below the top of the screen for the notification box", hud.room, 8 + large_height + 4)
+# The Large size: the face, the name, the level, both bars with their texts and the levels'
+# progress, in a box docked at the top left under the game's windows.
+check("it opens as the movable Leader HUD at the top left, before the notices, under the game's windows, the pointer passing but for its parts",
+      [root.open?, root.id, root.place_name, root.dock, root.dock_order, root.under_windows, root.movable, root.resizable, root.mouse],
+      [true, :leader_hud, "Leader HUD", :top_left, 10, true, true, false, :parts])
+check("in the Large size until the player picks another: 240 wide, the leader's face in its square",
+      [root.width, picture.call.face.face_name, picture.call.face.face_index, picture.call.figure], [240, "alice_fc1", 5, nil])
+check("the name and the base level", texts_of(root), ["Alice", "Lv 30"])
+check("the HP bar three quarters full in red with its name and numbers, the MP bar half full in blue",
+      gauges.call[0, 2].map { |gauge| [gauge.rate, gauge.label, gauge.value] } + [gauges.call[0].colors, gauges.call[1].colors],
+      [[0.75, "HP", "189 / 252"], [0.5, "MP", "40 / 80"], hud::View::HP_COLORS, hud::View::MP_COLORS])
+check("the base level half done, the job at its highest full, the race just begun empty",
+      gauges.call[2, 3].map { |gauge| [gauge.rate, gauge.colors] }, hud::View::EXP_KINDS.zip([0.5, 1.0, 0.0]).map { |kind, rate| [rate, hud::View::EXP_COLORS[kind]] })
 
-# The map's top left windows move below the HUD.
-scene = Scene_Map.new
-name_window = Window_Stand.new(0)
-medal_window = Window_Stand.new(0)
-scene.instance_variable_set(:@map_name_window, name_window)
-scene.instance_variable_set(:@gain_medal_window, medal_window)
-SceneManager.scene = scene
-hud.lower_windows
-check("the map's name and the medal just won move below it", [name_window.y, medal_window.y], [hud.room, hud.room])
+# Nothing is set anew while nothing changed; a change of HP sets the bar.
+name_label = part_with_text(root, "Alice")
+sets = 0
+name_label.define_singleton_method(:text=) { |value| sets += 1; super(value) }
+view.update
+check("a frame where nothing changed sets nothing", sets, 0)
+leader.hp = 63
+view.update
+check("a change of HP sets the bar's share and numbers", [gauges.call[0].rate, gauges.call[0].value], [0.25, "63 / 252"])
 
-# The Small size draws smaller, with the whole map sprite in place of the face.
+# The Small size: the figure and bars without texts, in the same box.
 hud.resize("Small")
-box.update
-check("the Small size keeps Player.ini's choice and draws smaller, the bars without numbers",
-      [$player_ini["leader_hud_size"], box.bitmap.width, box.bitmap.height, text.call("HP"), text.call("189 / 252"), box.bitmap.gradients.size],
-      ["Small", 170, box_class.height(small), nil, nil, 4])
-check("the name and level still show", [text.call("Alice").nil?, text.call("Lv 30").nil?], [false, false])
-check("in place of the face, the sixth character's whole figure standing and facing down, shrunk into the square, standing on its bottom",
-      box.bitmap.faces.map { |_sheet, source, dest| [source.to_a, dest] }, [[[132, 204, 24, 36], [12, 7, 23, 34]]])
+view.update
+check("the Small size keeps Player.ini's choice: 170 wide, the leader's figure in the square, the bars without texts",
+      [$player_ini["leader_hud_size"], root.width, picture.call.figure.character_name, picture.call.face, gauges.call[0].label, gauges.call[0].value],
+      ["Small", 170, "Actor1", nil, nil, nil])
+check("in the same box, the name and level still showing", [view.root.equal?(root), root.open?, texts_of(root)], [true, true, ["Alice", "Lv 30"]])
 hud.resize("Large")
+view.update
 
 # The size's hotkey switches the sizes, but not while the player types.
 $sounds = []
@@ -235,30 +159,28 @@ MGQ_Multiplayer::Log.define_singleton_method(:write) { |line| puts "  log: #{lin
 check("while the chat box is open the key changes nothing and the letter typed stays out of the log", [hud.size, logged], ["Large", []])
 MGQ_MpChat.singleton_class.send(:alias_method, :typing?, :leader_hud_test_typing?)
 
-# A change of HP or of the preset draws the HUD anew.
-leader.hp = 63
-box.update
-check("a change of HP draws it anew", box.bitmap.gradients[0][2], ((240 - 8 - 70) * 0.25).round)
-MGQ_MpUi::Theme.apply("Monarch", "a test")
-box.update
-monarch = box.bitmap.fills.size
-MGQ_MpUi::Theme.apply("Legacy", "a test")
-box.update
-check("a preset change draws it anew, its frame with the preset's rim", monarch - box.bitmap.fills.size, 4)
+# The map's top left windows move below the boxes docked there.
+scene = Scene_Map.new
+name_window = Window_Stand.new(0)
+medal_window = Window_Stand.new(0)
+scene.instance_variable_set(:@map_name_window, name_window)
+scene.instance_variable_set(:@gain_medal_window, medal_window)
+SceneManager.scene = scene
+$docked_room[:top_left] = 92
+hud.lower_windows
+check("the map's name and the medal just won move 4 pixels below the boxes docked at the top left", [name_window.y, medal_window.y], [96, 96])
+$docked_room[:top_left] = 0
+hud.lower_windows
+check("and back where the game put them once nothing is docked there", [name_window.y, medal_window.y], [0, 0])
 
 # A message at the top, turning the HUD off and a party without a leader hide it.
 $game_message.visible = true
 $game_message.position = 0
-box.update
-check("a message at the top hides it and gives its room back", [box.instance_variable_get(:@motion).shown?, hud.room], [false, 0])
-hud.lower_windows
-check("and the map's windows go back where the game put them", [name_window.y, medal_window.y], [0, 0])
+check("a message at the top hides it", [hud.shows?, hidden_root?(root)], [false, true])
 $game_message.visible = false
-box.update
-check("it shows again once the message is gone", box.instance_variable_get(:@motion).shown?, true)
+check("it shows again once the message is gone", [hud.shows?, hidden_root?(root)], [true, false])
 hud.show(false)
-box.update
-check("turned off it hides, kept in Player.ini", [box.instance_variable_get(:@motion).shown?, $player_ini["leader_hud"], hud.room], [false, "0", 0])
+check("turned off it hides, kept in Player.ini", [hidden_root?(root), $player_ini["leader_hud"]], [true, "0"])
 logged = []
 MGQ_Multiplayer::Log.define_singleton_method(:write) { |line| logged << line }
 $pressed = 0x48
@@ -268,59 +190,33 @@ check("while it is off the key changes nothing and the log says why",
       [hud.size, logged.grep(/ignored/)], ["Large", ["keys: hotkey H (Leader HUD Size) ignored: the HUD is off"]])
 hud.show(true)
 $leader = nil
-box.update
-check("a party without a leader shows nothing", box.instance_variable_get(:@motion).shown?, false)
+check("a party without a leader shows nothing", hidden_root?(root), true)
 $leader = leader
 
 # Outside a world the single player row decides, inside a world the Settings row.
 in_world = MGQ_MpOverworldSync.method(:in_world?)
 hud.show(false)
 MGQ_MpOverworldSync.define_singleton_method(:in_world?) { false }
-box.update
-check("outside a world the single player row follows the Settings row until the player sets it",
-      [hud.on?, box.instance_variable_get(:@motion).shown?], [false, false])
+check("outside a world the single player row follows the Settings row until the player sets it", [hud.on?, hidden_root?(root)], [false, true])
 hud.show_sp(true)
-box.update
-check("set, the single player row decides whatever the Settings row says",
-      [hud.on?, box.instance_variable_get(:@motion).shown?, $player_ini["sp_leader_hud"]], [true, true, "1"])
+check("set, the single player row decides whatever the Settings row says", [hud.on?, hidden_root?(root), $player_ini["sp_leader_hud"]], [true, false, "1"])
 hud.show_sp(false)
-box.update
-check("turned off there it hides, kept in Player.ini apart from the Settings row",
-      [hud.on?, box.instance_variable_get(:@motion).shown?, $player_ini["sp_leader_hud"]], [false, false, "0"])
+check("turned off there it hides, kept in Player.ini apart from the Settings row", [hud.on?, hidden_root?(root), $player_ini["sp_leader_hud"]], [false, true, "0"])
 check("so the size hotkey changes nothing there", hud.busy_reason, "the HUD is off")
 hud.show(true)
 MGQ_MpOverworldSync.define_singleton_method(:in_world?, in_world)
-box.update
-check("inside a world the Settings row decides, whatever the single player row says", [hud.on?, box.instance_variable_get(:@motion).shown?], [true, true])
+check("inside a world the Settings row decides, whatever the single player row says", [hud.on?, hidden_root?(root)], [true, false])
 hud.show_sp(true)
 
-# Its place under a strip at the top and where the player left it, as high as the Legacy preset's
-# frame leaves it.
-large_height = box_class.height(large)
-MGQ_MpHud.top_room = 30
-box.update
-check("a strip at the top moves its default down", [box.y, offered.call[1], hud.room], [38, 38, 8 + large_height + 4])
-Mod_Framework::Settings.store("ui_leader_hud", "300,200,10,10")
-stored.clear
-box.update
-check("a place the player left it in holds whatever the strip, as large as its size, and takes no room at the top left",
-      [box.x, box.y, offered.call, hud.room], [300, 200, [300, 200, 240, large_height], 0])
-Mod_Framework::Settings.forget("ui_leader_hud")
-stored.clear
-MGQ_MpHud.top_room = 0
-
-# Dragged into the bottom right corner in the Small size, the HUD stays on the screen in either size;
-# the preset's frame is thinner than at the start, when the layout learned the HUD's least size.
-hud.resize("Small")
-small_height = box_class.height(small)
-# A drag into the bottom right corner, which C# keeps (LayoutModel), leaves a place there.
-Mod_Framework::Settings.store("ui_leader_hud", "2000,2000,170,#{small_height}")
-layout.instance_variable_get(:@stored).clear
-box.update
-check("the Small size kept past the bottom right corner stays there, wholly on the screen", offered.call, [640 - 170, 480 - small_height, 170, small_height])
-hud.resize("Large")
-box.update
-check("the Large size from there stays wholly on the screen", offered.call, [640 - 240, 480 - large_height, 240, large_height])
-Mod_Framework::Settings.forget("ui_leader_hud")
-stored.clear
-$mouse = nil
+# The map's sprites open the HUD and close it as they go; the map behind a menu shows none.
+spriteset = Spriteset_Map.new
+spriteset.update
+shown = spriteset.instance_variable_get(:@mgq_mp_leader_hud)
+spriteset.dispose
+check("the map's sprites open the HUD and close it with them", [shown.root.id, shown.root.open?, spriteset.instance_variable_get(:@mgq_mp_leader_hud)], [:leader_hud, false, nil])
+behind = Spriteset_Map.new
+behind.define_singleton_method(:mgq_mp_hud?) { false }
+behind.update
+check("the map behind a menu opens none", behind.instance_variable_get(:@mgq_mp_leader_hud), nil)
+view.close
+check("closed, its box is gone", root.open?, false)

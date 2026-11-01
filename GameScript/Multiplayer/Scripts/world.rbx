@@ -2,8 +2,12 @@
 #  world.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-01: Dropped the title command and the update message for a game without the Mod Framework, whose Multiplayer command opens the world screen
+#      Paulinchen  2026-11-01: Dropped the seats, difficulty, required and essential mods and mod path readers that nothing calls
+#                            - Dropped the typing state of a form, which only the old form window kept
+#                            - Named the Mod Framework's interface by its own name
+#                            - Dropped the title command and the update message for a game without the Mod Framework, whose Multiplayer command opens the world screen
 #                            - Kept the title's commands off while the update question is still coming
+#                            - Dropped the text screen's result and telling a gamepad's press apart, which the Mod Framework's text fields do
 #      Paulinchen  2026-10-31: Forgot the runs handed to the player once a world closed
 #      Paulinchen  2026-10-30: Measured the game data again once a world's mods loaded
 #                            - Carried a Discord invite taken during a game through the Mod Framework's restart
@@ -172,10 +176,10 @@ module MGQ_MpWorld
   MODS_TEXTS_KEPT = 256
 
   # Colour of the featured worlds, which the relay's admins make, the style's gold.
-  FEATURED_COLOR = MGQ_MpUi::Style::GOLD
+  FEATURED_COLOR = Mod_Framework::UI::Style::GOLD
 
   # Colour of the Raid Worlds, the style's bad color, which wins over the featured worlds' gold.
-  RAID_COLOR = MGQ_MpUi::Style::BAD
+  RAID_COLOR = Mod_Framework::UI::Style::BAD
 
   # The type of a Classic world, where each party plays its own story, as the directory and
   # world.ini name it.
@@ -211,11 +215,6 @@ module MGQ_MpWorld
   # The export that tells a development build from a release.
   DEV_BUILD_EXPORT = 'mp_dev_build'
 
-  # The buttons whose press, in a frame no key went down, tells a gamepad from the keyboard.
-  #
-  # Directions count by their first frame only, since an arrow key held down reports its
-  # direction in later frames too.
-  GAMEPAD_BUTTONS = [:C, :B, :A, :UP, :DOWN, :LEFT, :RIGHT]
 
   # Reports whether the path wraps can be installed.
   #
@@ -328,27 +327,6 @@ module MGQ_MpWorld
     @rules ? @rules[name] : nil
   end
 
-  # Fewest players a world seats.
-  #
-  # @return [Integer] The seats.
-  def self.min_seats
-    (rule("seats") || {})["min"].to_i
-  end
-
-  # Most players a world seats.
-  #
-  # @return [Integer] The seats.
-  def self.max_seats
-    (rule("seats") || {})["max"].to_i
-  end
-
-  # Players a new world seats unless the player chooses otherwise.
-  #
-  # @return [Integer] The seats.
-  def self.default_seats
-    (rule("seats") || {})["default"].to_i
-  end
-
   # Lists the difficulties a Raid World may set for every player, the game's own values of its
   # difficulty variable, in the order the forms offer them.
   #
@@ -362,13 +340,6 @@ module MGQ_MpWorld
   # @return [Array<String>] The names, in the order of difficulties.
   def self.difficulty_names
     Array(rule("difficulties")).map { |_, name| name }
-  end
-
-  # Tells the difficulty the forms offer first.
-  #
-  # @return [Integer, nil] The value.
-  def self.default_difficulty
-    rule("difficulty")
   end
 
   # Lists the Formation sizes a Raid World may set, the team every player keeps, in the order the
@@ -495,30 +466,6 @@ module MGQ_MpWorld
 
     @world.change("raid_bosses" => on ? true : false)
     true
-  end
-
-  # What the text screen handed back: what the text was for, and the text, nil when the player left it.
-  #
-  # @return [Array, nil] [kind, text or nil], nil while none waits.
-  def self.take_text_result
-    result = @text_result
-    @text_result = nil
-    result
-  end
-
-  # Keeps what the text screen hands back.
-  #
-  # @param result [Array] [kind, text or nil].
-  def self.text_result=(result)
-    @text_result = result
-  end
-
-  # Reports whether a button or direction was pressed this frame, which only a gamepad does in a
-  # frame no key went down.
-  #
-  # @return [Boolean] Whether one was.
-  def self.gamepad_pressed?
-    GAMEPAD_BUTTONS.any? { |button| Input.trigger?(button) }
   end
 
   # Shortens a long id for the log, which tells worlds apart well enough by its start.
@@ -1233,24 +1180,6 @@ module MGQ_MpWorld
     mods_text(text)["names"]
   end
 
-  # Lists the mods a world's creator marked as required, with an exclamation mark in front: a
-  # game needs their script to enter, see installed_mod?.
-  #
-  # @param text [String, nil] The mods as written.
-  # @return [Array<String>] Their names.
-  def self.required_mods(text)
-    mods_text(text)["required"]
-  end
-
-  # Lists the mods a world's creator marked as essential, with a question mark in front: they
-  # stand out, but nothing is looked for, since a mod of data files has no script.
-  #
-  # @param text [String, nil] The mods as written.
-  # @return [Array<String>] Their names.
-  def self.essential_mods(text)
-    mods_text(text)["essential"]
-  end
-
   # Reads a world's mods as written through the DLL (ModsText in MGQOnline.Game), each text asked
   # once.
   #
@@ -1280,16 +1209,6 @@ module MGQ_MpWorld
 
     key = mod_key(name)
     scripts.any? { |script| script[0] == key }
-  end
-
-  # Finds a mod's script in the Patch folder, as installed_mod? does.
-  #
-  # @param name [String] The mod's name, with or without ".rb".
-  # @return [String, nil] Its path relative to the game's folder, nil when it is not installed or the folder cannot be read.
-  def self.installed_path(name)
-    key = mod_key(name)
-    found = (installed_scripts || []).find { |script| script[0] == key }
-    found && found[1]
   end
 
   # Lists the scripts the Patch folder holds, as the DLL reads them, since the game's Ruby reads file
@@ -1825,12 +1744,6 @@ module MGQ_MpWorld
       @fields.select { |field| field.shows.nil? || field.shows.call(self) }
     end
 
-    # The key of the text box being typed into, nil while none is.
-    attr_accessor :editing
-
-    # The editor of the text box being typed into, nil while none is.
-    attr_accessor :edit
-
     # Creates a form.
     #
     # @param title [String] What the form is called.
@@ -2204,13 +2117,6 @@ module MGQ_MpWorld
     # @return [Boolean] Whether they do.
     def choose?
       derived("choose") == true
-    end
-
-    # Tells whether the world turns off every mod it does not name.
-    #
-    # @return [Boolean] Whether it does.
-    def other_mods_off?
-      derived("other_mods_off") == true
     end
 
     private

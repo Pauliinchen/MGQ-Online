@@ -2,6 +2,9 @@
 #  world_overview_pages.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Showed the pages in the Mod Framework's page views
+#                            - Drew the portraits itself from the faces and figures the Mod Framework finds
+#                            - Laid the World, Quests and Unlocks pages out and kept their folds in the DLL
 #      Paulinchen  2026-10-31: Kept its row and read the mouse through the Mod Framework
 #      Paulinchen  2026-10-24: Laid the pages of other mods out like the World page, with buttons and controls in the pane
 #      Paulinchen  2026-10-23: Took the World page's note of the world from the DLL
@@ -14,10 +17,10 @@
 #----------------------------------------------------------------
 
 # The World overview's pages laid out with a head, a list and a reading pane: the World page, the
-# Quests page and a Raid World's Unlocks page. A page's model names what its head shows, the rows
-# of its list and what the pane shows of the entry picked; one drawing serves every such page.
-# Up and Down or a click pick an entry or a group, confirm or a click folds or opens a group, Page
-# Up and Page Down and the mouse wheel scroll.
+# Quests page and a Raid World's Unlocks page, each in a page view of the Mod Framework. The DLL lays
+# each page out (OverviewPages in MGQOnline.Game) from what the script reads of the game; the script
+# adds the pictures and the panes that name the game's things, and the view shows it and tells the
+# picks and the folds.
 #
 # The Quests page reads the main quest and the side quests as Amira tells them and the companions'
 # requests on the Pocket Castle's board from the game's events, without running them.
@@ -28,22 +31,43 @@ module MGQ_MpWorldOverview
   # The pages laid out with a head, a list and a reading pane.
   SPLIT_PAGES = [:world, :quests, :unlocks]
 
+  # The topic that lays the World page out: "seats", "story" (nil, or "part" and "done"), "main"
+  # (see quest_text), "sections" ([name, [boss names]] each), "bosses" ({boss name => [section,
+  # tier]}) and "tiers" ({tier => [[stat, factor]]}) in; the page out, see model_of.
+  WORLD_TOPIC = "overview.world"
+
+  # The topic that lays the Quests page out: "main", "side" and "companion" (see quest_text) in;
+  # the page out, see model_of.
+  QUESTS_TOPIC = "overview.quests"
+
+  # The topic that lays the Unlocks page out: "target", "level" and "unlocks" ([level, name, got,
+  # due] each) in; the page out, see model_of.
+  UNLOCKS_TOPIC = "overview.unlocks"
+
+  # The topic that keeps whether the player opened or folded a group of a page: "page", "key" and
+  # "open" in.
+  FOLD_TOPIC = "overview.fold"
+
+  # The whole parts a gauge's share crosses the bridge in, since no float crosses it.
+  GAUGE_PARTS = 1_000_000
+
+  # The kind of the companions' requests on the board, as the DLL names it.
+  COMPANION = "companion"
+
   # A page's head: how a character looks or an icon in a framed box, its title with a note at the
   # right, and under it lines or a grid of columns; the entry picking the head shows, if any.
   Head = Struct.new(:looks, :icon, :title, :note, :lines, :grid, :entry)
 
-  # A page's model: its head, the rows of its list ([:none, text], [:fold, Fold] or [:entry, entry])
-  # and what can be picked, the head's entry first.
+  # A page's model as the DLL laid it out: its head, the rows of its list ([:none, text], [:fold,
+  # Entry] or [:entry, Entry]) and what can be picked, the head's entry first.
   Model = Struct.new(:head, :rows, :picks)
 
-  # A group's row, which folds its entries away until it is opened again.
-  Fold = Struct.new(:key, :title, :open)
-
-  # A text of the World page: its title and its messages.
-  Note = Struct.new(:title, :texts)
-
-  # A raid boss of the World page with its section.
-  BossEntry = Struct.new(:boss, :section)
+  # A group or an entry of a page's list as the DLL describes it: its kind ("fold", "note", "quest",
+  # "boss" or "level"), what its row shows (RowView, nil for the head's entry) and what it holds,
+  # the DLL's description itself: ["fold", key, title, open], ["note", title, texts], ["quest",
+  # kind, speaker, texts, number, title], ["boss", section, name, defeated, by, pane lines] or
+  # ["level", level, unlocks (places in the list handed), got, due].
+  Entry = Struct.new(:kind, :row, :value)
 
   # A level of the Unlocks page: the level, what it brings (MGQ_MpWorldCatchup::Unlock), whether the
   # player got all of it, and whether any of it is due.
@@ -53,67 +77,15 @@ module MGQ_MpWorldOverview
   # and the share of a gauge, if any.
   RowView = Struct.new(:label, :text, :note, :dim, :gauge)
 
-  # What the reading pane shows: its title, how the one it is about looks, its lines, each
-  # [:text, paragraph], [:item, PaneItem], [:control, Control], [:gauge, share, text] or [:gap], and
-  # on another mod's page the buttons beside its title, each [text, enabled], and a line under it.
-  Pane = Struct.new(:title, :looks, :lines, :buttons, :subtitle)
+  # What the reading pane shows: its title, how the one it is about looks, and its lines, each
+  # [:text, paragraph], [:item, PaneItem], [:gauge, share, text] or [:gap].
+  Pane = Struct.new(:title, :looks, :lines)
 
   # A pane line naming something by its icon or how it looks, with a note at the right.
   PaneItem = Struct.new(:icon, :looks, :name, :note, :dim)
 
-  # What the World page says of the players online.
-  PLAYERS_LINE = "Players online: %s"
-
-  # What the World page says of a Raid World's story.
-  STORY_LINE = "Story: %s"
-
-  # What the World page says of a Classic world's story.
-  CLASSIC_STORY = "Each party plays its leader's story."
-
-  # The World page's heading over a section's raid bosses, with how many it holds.
-  BOSS_SECTION = "%s (%d)"
-
-  # What the World page says of a Raid World without raid bosses to list.
-  NO_BOSSES = "No raid bosses yet."
-
-  # What the World page says of raid bosses in a Classic world.
-  CLASSIC_BOSSES = "Raid bosses fight in Raid Worlds."
-
-  # How the pane tells a raid boss's tier and what it changes.
-  TIER_LINE = "Tier %d: enemies have %s."
-
-  # How the pane tells one stat a tier changes and its factor.
-  TIER_STAT = "%s x%s"
-
-  # The names of the stats a tier changes.
-  TIER_STATS = { :mhp => "HP", :def => "DEF", :mdf => "MDF", :atk => "ATK", :mat => "MAT", :agi => "AGI", :luk => "LUK", :mmp => "MP" }
-
-  # How the pane tells who last hurt a raid boss.
-  LAST_HURT = "Last hurt by %s."
-
-  # What the list and the pane say of a defeated raid boss.
-  DEFEATED = "Defeated"
-
-  # The note of the Unlocks page's head with the player's level.
-  YOUR_LEVEL_NOTE = "Your level %d"
-
   # A member's level in the Unlocks page's grid.
   LEVEL_SHORT = "Lv %d"
-
-  # The Unlocks page's folded group of the levels whose every unlock the player got.
-  PASSED = "Passed (%d)"
-
-  # The Unlocks page's group of the levels still to come.
-  COMING_UP = "Coming up (%d)"
-
-  # The mark of a folded group.
-  FOLDED = "▸ "
-
-  # The mark of an opened group.
-  UNFOLDED = "▾ "
-
-  # What the pane says of a group, by whether it is open.
-  FOLD_HINT = { true => "Enter or a click folds this group.", false => "Enter or a click opens this group." }
 
   # How the pane titles a level once it passed.
   LEVEL_PASSED = "%s, passed"
@@ -124,19 +96,10 @@ module MGQ_MpWorldOverview
   # How a pane item names an amount above one.
   AMOUNT = "%s x%d"
 
-  # Reports whether a page is laid out with a head, a list and a pane, as the pages of other mods
-  # are too.
-  #
-  # @param page [Symbol] The page.
-  # @return [Boolean] Whether it is.
-  def self.split_page?(page)
-    SPLIT_PAGES.include?(page) || mod_page?(page)
-  end
-
   # Reads a page's model, every READ_FRAMES or once forget_model asked for it again.
   #
   # @param page [Symbol] One of SPLIT_PAGES.
-  # @return [Model] The model; the same object while nothing changed, which the drawing goes by.
+  # @return [Model] The model; the same object while nothing changed, which the view goes by.
   def self.model(page)
     @models ||= {}
     @models_at ||= {}
@@ -147,8 +110,7 @@ module MGQ_MpWorldOverview
     built = case page
             when :world then world_model
             when :quests then quest_model
-            when :unlocks then unlock_model
-            else mod_model(page)
+            else unlock_model
             end
     old = @models[page]
     @models[page] = old && old.to_a == built.to_a ? old : built
@@ -162,105 +124,89 @@ module MGQ_MpWorldOverview
   # @param page [Symbol] One of SPLIT_PAGES.
   def self.forget_model(page)
     @models_at.delete(page) if @models_at
-    forget_mod_panes(page)
   end
 
-  # Lays the World page out: the world's name, type, difficulty, players and story at the top; the
-  # objective and in a Raid World every raid boss by its section in the list.
+  # Lays the World page out through the DLL: the world's name, type, difficulty, players and story
+  # at the top; the objective and in a Raid World every raid boss by its section in the list. The
+  # script hands what only the game knows: Amira's objective and the raid bosses' tables.
   #
   # @return [Model] The model.
   def self.world_model
-    raid = MGQ_MpCoop::Scope.raid?
     world = MGQ_MpWorld.world
-    seats = world ? world.seats.to_i : 0
-    online = rows.size
-    lines = [PLAYERS_LINE % (seats > 0 ? PLAYERS_OF % [online, seats] : online.to_s)]
-    lines << (raid ? STORY_LINE % world_story_text : CLASSIC_STORY)
-    head = Head.new(nil, WORLD_ICON, world_name, world_note, lines, nil, nil)
-    list = []
-    main = main_quest
-    list << [:entry, Note.new(OBJECTIVE_LABEL, main.texts)] if main
-    sections = raid ? boss_sections : []
-    sections.each do |section, bosses|
-      add_group(list, :world, section, BOSS_SECTION % [section, bosses.size], true, bosses.map { |boss| BossEntry.new(boss, section) })
-    end
-    list << [:none, raid ? NO_BOSSES : CLASSIC_BOSSES] if sections.empty?
-    Model.new(head, list, picks_of(list))
+    counters = MGQ_MpWorldStory.world
+    story = counters ? { "part" => counters["part"].to_s, "done" => Array(counters["done"]).map { |part| part.to_s } } : nil
+    sections = MGQ_MpRaidBosses.sections.map { |section, names| [section.to_s, names.map { |name| name.to_s }] }
+    pooled = MGQ_MpRaidPool.pools.keys.map { |key| MGQ_MpRaidPool.boss_key(key) }
+    bosses = {}
+    (sections.map { |_, names| names }.flatten + pooled).uniq.each { |name| bosses[name] = [section_of(name), tier_of(name)] }
+    tiers = {}
+    MGQ_MpRaidBosses::TIERS.each { |tier, stats| tiers[tier] = stats.map { |stat, factor| [stat.to_s, factor.to_s] } }
+    request = { "seats" => world ? world.seats.to_i : 0, "story" => story, "main" => quest_text(main_quest), "sections" => sections, "bosses" => bosses, "tiers" => tiers }
+    data = model_of(MGQ_Multiplayer::Bridge.call(WORLD_TOPIC, request))
+    data.head.title = world_name
+    data.head.note = world_note
+    data.head.icon = WORLD_ICON
+    data
   end
 
-  # Lays the Quests page out: Amira with the main quest at the top, the side quests numbered and
-  # the companion quests by each companion's name in the list.
+  # Lays the Quests page out through the DLL: Amira with the main quest at the top, the side quests
+  # numbered and the companion quests by each companion's name in the list, from the quests the
+  # script reads of the game's events.
   #
   # @return [Model] The model.
   def self.quest_model
-    main = main_quest
+    request = { "main" => quest_text(main_quest), "side" => side_quests.map { |quest| quest_text(quest) },
+                "companion" => companion_quests.map { |quest| quest_text(quest) } }
+    data = model_of(MGQ_Multiplayer::Bridge.call(QUESTS_TOPIC, request))
     amira = $data_actors && $data_actors[AMIRA]
-    head = Head.new(amira ? looks(amira) : nil, nil, QUEST_TITLES[:main], nil, [main ? main.first : NO_QUESTS], nil, main)
-    list = []
-    [[:side, side_quests], [:companion, companion_quests]].each do |kind, quests|
-      add_group(list, :quests, kind, QUEST_HEADINGS[kind] % quests.size, true, quests, NO_QUESTS)
-    end
-    Model.new(head, list, (main ? [main] : []) + picks_of(list))
+    data.head.looks = looks(amira) if amira
+    data
   end
 
-  # Lays the Unlocks page out: Luka with the formation's catch-up experience at the top; the levels
-  # whose every unlock the player got folded under Passed, the others under Coming up.
+  # Lays the Unlocks page out through the DLL: Luka with the formation's catch-up experience at the
+  # top; the levels whose every unlock the player got folded under Passed, the others under Coming
+  # up. The script adds the formation's grid and Luka's looks.
   #
   # @return [Model] The model.
   def self.unlock_model
     target = MGQ_MpWorldCatchupExp.target
-    level = MGQ_MpWorldCatchup.counted_level
+    @unlocks = MGQ_MpWorldCatchup.unlocks
+    request = { "target" => target, "level" => MGQ_MpWorldCatchup.counted_level,
+                "unlocks" => @unlocks.map { |unlock| [unlock.level, unlock.name.to_s, unlock.got ? true : false, unlock.due ? true : false] } }
+    data = model_of(MGQ_Multiplayer::Bridge.call(UNLOCKS_TOPIC, request))
     hero = $game_actors ? $game_actors[LUKA] : nil
-    grid = target ? $game_party.battle_members.select { |actor| MGQ_MpWorldCatchup.counts?(actor) }.map { |actor| exp_cells(actor, target) } : nil
-    head = Head.new(hero ? looks(hero) : nil, nil, target ? EXP_HEADING % target : EXP_HEADING_NONE, level ? YOUR_LEVEL_NOTE % level : nil,
-                    target ? [] : [NO_CATCH_UP], grid, nil)
-    levels = MGQ_MpWorldCatchup.unlocks.group_by { |unlock| unlock.level }.sort.map do |at, unlocks|
-      Level.new(at, unlocks, unlocks.all? { |unlock| unlock.got }, unlocks.any? { |unlock| unlock.due })
+    data.head.looks = looks(hero) if hero
+    data.head.grid = $game_party.battle_members.select { |actor| MGQ_MpWorldCatchup.counts?(actor) }.map { |actor| exp_cells(actor, target) } if target
+    data
+  end
+
+  # Writes a quest the way the DLL takes it.
+  #
+  # @param quest [Quest, nil] The quest.
+  # @return [Array, nil] [speaker, texts]; nil for none.
+  def self.quest_text(quest)
+    quest ? [quest.speaker, quest.texts] : nil
+  end
+
+  # Reads a page the DLL laid out.
+  #
+  # @param answer [Hash, nil] "head" ("title", "note", "lines", "entry"), "rows" (["none", text], or
+  #   ["fold"] or ["entry"] with the row's view [label, text, note, dim, gauge in GAUGE_PARTS] and
+  #   the entry, see Entry) and "picks" (each pick's place among the rows, -1 for the head's entry).
+  # @return [Model] The model; an empty one while the DLL did not answer.
+  def self.model_of(answer)
+    return Model.new(Head.new(nil, nil, "", nil, [], nil, nil), [], []) unless answer
+
+    told = answer["head"]
+    head = Head.new(nil, nil, told["title"].to_s, told["note"], Array(told["lines"]), nil, told["entry"] ? Entry.new(told["entry"][0], nil, told["entry"]) : nil)
+    rows = answer["rows"].map do |kind, view, value|
+      next [:none, view.to_s] if kind == "none"
+
+      label, text, note, dim, gauge = view
+      [kind == "fold" ? :fold : :entry, Entry.new(value[0], RowView.new(label, text.to_s, note, dim ? true : false, gauge && gauge.to_f / GAUGE_PARTS), value)]
     end
-    passed, coming = levels.partition { |entry| entry.got }
-    list = []
-    add_group(list, :unlocks, :passed, PASSED % passed.size, false, passed) unless passed.empty?
-    add_group(list, :unlocks, :coming, COMING_UP % coming.size, true, coming) unless levels.empty?
-    list << [:none, NOTHING_UNLOCKED] if levels.empty?
-    Model.new(head, list, picks_of(list))
-  end
-
-  # Adds a group to a list: its row, which folds it, and while open its entries, or a text without any.
-  #
-  # @param list [Array<Array>] The list's rows.
-  # @param page [Symbol] The page.
-  # @param key [Object] The group's key, which keeps whether it is open.
-  # @param title [String] The group's title.
-  # @param open [Boolean] Whether it is open until the player folds or opens it.
-  # @param entries [Array] Its entries.
-  # @param empty [String, nil] What it says without entries.
-  def self.add_group(list, page, key, title, open, entries, empty = nil)
-    fold = Fold.new(key, title, fold_open?(page, key, open))
-    list << [:fold, fold]
-    return unless fold.open
-
-    list << [:none, empty] if entries.empty? && empty
-    entries.each { |entry| list << [:entry, entry] }
-  end
-
-  # Tells whether a group of a page is open: as the player left it, else as it starts.
-  #
-  # @param page [Symbol] The page.
-  # @param key [Object] The group's key.
-  # @param open [Boolean] Whether it starts open.
-  # @return [Boolean] Whether it is open.
-  def self.fold_open?(page, key, open)
-    @folds ||= {}
-    chosen = (@folds[page] ||= {})[key]
-    chosen.nil? ? open : chosen
-  end
-
-  # Lists what can be picked of a list's rows: its groups and their entries.
-  #
-  # @param list [Array<Array>] The rows.
-  # @return [Array] The groups and the entries, in their order.
-  def self.picks_of(list)
-    list.select { |kind, _| kind == :entry || kind == :fold }.map { |_, entry| entry }
+    picks = answer["picks"].map { |place| place < 0 ? head.entry : rows[place][1] }
+    Model.new(head, rows, picks)
   end
 
   # Tells a formation member's catch-up experience for the Unlocks page's head.
@@ -272,36 +218,23 @@ module MGQ_MpWorldOverview
     [actor.name.to_s, LEVEL_SHORT % actor.base_level, MGQ_MpWorldCatchupExp.factor_text(actor.base_level, target)]
   end
 
-  # Tells what a list row shows of an entry.
+  # Tells what the reading pane shows of an entry: a note or a quest with its paragraphs, a
+  # companion's request beside how they look, a raid boss as the DLL wrote its pane, or what a
+  # level brings, see level_pane.
   #
-  # @param entry [Object] A Quest, Note, BossEntry, Level, ModEntry or Fold.
-  # @return [RowView] The row.
-  def self.row_view(entry)
-    case entry
-    when ModEntry then mod_row_view(entry)
-    when Quest then RowView.new(entry.kind == :side ? "#{entry.number}." : entry.speaker.to_s, entry.first, nil, false, nil)
-    when Note then RowView.new(entry.title, first_sentence(entry.texts.first), nil, false, nil)
-    when BossEntry
-      boss = entry.boss
-      RowView.new(nil, boss.name, boss.defeated ? DEFEATED : share_text(boss.left), boss.defeated, boss.defeated ? nil : boss.left)
-    when Level
-      RowView.new(LEVEL_HEADING % entry.level, entry.unlocks.map { |unlock| unlock.name }.join(", "), entry.due ? DUE : nil, entry.got, nil)
-    when Fold then RowView.new(nil, (entry.open ? UNFOLDED : FOLDED) + entry.title, nil, false, nil)
-    end
-  end
-
-  # Tells what the reading pane shows of an entry.
-  #
-  # @param entry [Object, nil] A Quest, Note, BossEntry, Level, ModEntry or Fold.
-  # @return [Pane, nil] The pane; nil for nothing picked.
+  # @param entry [Entry, nil] The entry.
+  # @return [Pane, nil] The pane; nil for nothing picked and for a group.
   def self.pane_of(entry)
-    case entry
-    when ModEntry then mod_pane(entry)
-    when Quest then Pane.new(entry.title, entry.looks, paragraphs(entry.texts))
-    when Note then Pane.new(entry.title, nil, paragraphs(entry.texts))
-    when BossEntry then boss_pane(entry)
-    when Level then level_pane(entry)
-    when Fold then Pane.new(entry.title, nil, [[:text, FOLD_HINT[entry.open]]])
+    return nil unless entry
+
+    value = entry.value
+    case entry.kind
+    when "note" then Pane.new(value[1].to_s, nil, paragraphs(value[2]))
+    when "quest" then Pane.new(value[5].to_s, value[1] == COMPANION ? looks_of(value[2]) : nil, paragraphs(value[3]))
+    when "boss"
+      lines = value[5].map { |kind, text, share| kind == "gauge" ? [:gauge, share.to_f / GAUGE_PARTS, text] : [:text, text] }
+      Pane.new(value[2].to_s, nil, lines)
+    when "level" then level_pane(Level.new(value[1], value[2].map { |place| Array(@unlocks)[place] }.compact, value[3], value[4]))
     end
   end
 
@@ -311,24 +244,6 @@ module MGQ_MpWorldOverview
   # @return [Array<Array>] The pane's lines.
   def self.paragraphs(texts)
     texts.each_with_index.inject([]) { |lines, (text, index)| lines + (index > 0 ? [[:gap]] : []) + [[:text, text]] }
-  end
-
-  # Lays a raid boss out for the pane: its section, its tier and what it changes, how much of its
-  # HP the world left it, and who last hurt it.
-  #
-  # @param entry [BossEntry] The boss.
-  # @return [Pane] The pane.
-  def self.boss_pane(entry)
-    boss = entry.boss
-    lines = [[:text, entry.section]]
-    stats = boss.tier ? MGQ_MpRaidBosses::TIERS.fetch(boss.tier, {}) : {}
-    unless stats.empty?
-      text = stats.map { |stat, factor| TIER_STAT % [TIER_STATS.fetch(stat, stat.to_s.upcase), factor == factor.round ? factor.round : factor] }.join(", ")
-      lines << [:text, TIER_LINE % [boss.tier, text]]
-    end
-    lines << [:gauge, boss.defeated ? 0.0 : boss.left, boss.defeated ? DEFEATED : share_text(boss.left)]
-    lines << [:text, LAST_HURT % boss.by] if boss.by
-    Pane.new(boss.name, nil, lines)
   end
 
   # Lays a level out for the pane: what it brings in groups half a line apart, the key items and the
@@ -365,188 +280,6 @@ module MGQ_MpWorldOverview
     end
     lines = kinds.map { |items| items.map { |item| [:item, item] } }.inject { |all, group| all + [[:gap]] + group }
     Pane.new(title, nil, lines || [])
-  end
-
-  # The view of a page laid out with a head, a list and a pane.
-  #
-  # @param page [Symbol] One of SPLIT_PAGES or another mod's page.
-  # @param calls [Boolean] Whether a player's invite, challenge or offer reaches the player.
-  # @return [Hash] The view, see view, with :model, :pick, :list_scroll, :pane_scroll and :pane; on
-  #   another mod's page what the cursor steps to in the pane in :targets and the one it is on in
-  #   :focused (nil while it is in the list), and the open menu in :menu and :menu_index.
-  def self.split_view(page, calls)
-    data = model(page)
-    state = split_state(page)
-    state[:pick] = MGQ_MpUi.within(state[:pick], 0, [data.picks.size - 1, 0].max)
-    # The box may have changed its height since the last look.
-    state[:list] = MGQ_MpUi.within(state[:list], 0, [data.rows.size - Sprite_MpWorldOverview.list_rows_shown, 0].max)
-    picked = data.picks[state[:pick]]
-    pane = pane_of(picked)
-    state[:pane] = pane ? MGQ_MpUi.within(state[:pane], 0, Sprite_MpWorldOverview.most_pane_scroll(pane)) : 0
-    targets = picked.is_a?(ModEntry) ? focus_targets(pane) : []
-    @focus = targets.empty? || @focus.nil? ? nil : MGQ_MpUi.within(@focus, 0, targets.size - 1)
-    menu = @menu && @focus && !@menu_path.empty? ? mod_menu(picked) : nil
-    menu = nil if menu && menu.empty?
-    @menu = menu ? MGQ_MpUi.within(@menu, 0, menu.size - 1) : nil
-    { :page => page, :lines => [], :selected => nil, :scroll => 0, :menu => menu, :menu_index => @menu, :calls => calls,
-      :model => data, :pick => state[:pick], :list_scroll => state[:list], :pane_scroll => state[:pane], :pane => pane,
-      :targets => targets, :focused => @focus && targets[@focus] }
-  end
-
-  # The pick and the scrolls of a page, kept while the overview is open.
-  #
-  # @param page [Symbol] One of SPLIT_PAGES.
-  # @return [Hash] :pick, :list and :pane.
-  def self.split_state(page)
-    @split ||= {}
-    @split[page] ||= { :pick => 0, :list => 0, :pane => 0 }
-  end
-
-  # Picks an entry with Up and Down, opens or folds a group with confirm, moves the cursor into the
-  # pane of another mod's entry with confirm, scrolls the pane with Page Up and Page Down, scrolls
-  # with the mouse wheel, turns the page, follows clicks, or closes the overview.
-  #
-  # @param page [Symbol] One of SPLIT_PAGES or another mod's page.
-  def self.update_split(page)
-    view = split_view(page, false)
-    mouse_split(page, view)
-    return unless @open && @page == page
-
-    picks = view[:model].picks
-    picked = picks[view[:pick]]
-    return update_mod_menu(picked, view[:menu]) if view[:menu]
-    return update_focus(page, picked, view) if view[:focused]
-    return if closed_by_cancel? || turn_by_keys
-    return toggle(page, picked) if picked.is_a?(Fold) && Mod_Framework::UI::Capture.trigger?(:C)
-    return focus_pane(page, picked) if picked.is_a?(ModEntry) && Mod_Framework::UI::Capture.trigger?(:C)
-
-    step = axis_step(:UP, :DOWN)
-    return pick_entry(page, (view[:pick] + step) % picks.size) if step != 0 && picks.size > 1
-
-    turn = axis_step(:L, :R)
-    scroll_pane(page, turn * [Sprite_MpWorldOverview.pane_rows - 1, 1].max) if turn != 0
-  end
-
-  # Opens or folds a group of the list.
-  #
-  # @param page [Symbol] The page.
-  # @param fold [Fold] The group.
-  def self.toggle(page, fold)
-    @folds ||= {}
-    (@folds[page] ||= {})[fold.key] = !fold.open
-    forget_model(page)
-    Sound.play_ok
-    log("#{fold.open ? 'folded' : 'opened'} #{fold.title} on the #{page} page")
-  end
-
-  # Picks an entry, showing its pane from the top and keeping its row in sight.
-  #
-  # @param page [Symbol] The page.
-  # @param index [Integer] Its place among what can be picked.
-  def self.pick_entry(page, index)
-    state = split_state(page)
-    return if index == state[:pick]
-
-    close_mod_menu
-    @focus = nil
-    state[:pick] = index
-    state[:pane] = 0
-    data = model(page)
-    row = Sprite_MpWorldOverview.entry_row(data, index)
-    rows = Sprite_MpWorldOverview.list_rows_shown
-    if row
-      # The group above its first entry shows with it.
-      top = row > 0 && data.rows[row - 1][0] == :fold && data.rows[row][0] == :entry ? row - 1 : row
-      state[:list] = top if top < state[:list]
-      state[:list] = row - rows + 1 if row >= state[:list] + rows
-    else
-      state[:list] = 0
-    end
-    Sound.play_cursor
-  end
-
-  # Scrolls the list by rows, never past its end.
-  #
-  # @param page [Symbol] The page.
-  # @param step [Integer] Rows down, negative up.
-  def self.scroll_list(page, step)
-    state = split_state(page)
-    most = [model(page).rows.size - Sprite_MpWorldOverview.list_rows_shown, 0].max
-    state[:list] = MGQ_MpUi.within(state[:list] + step, 0, most)
-  end
-
-  # Scrolls the pane by lines, never past its last line.
-  #
-  # @param page [Symbol] The page.
-  # @param step [Integer] Lines down, negative up.
-  def self.scroll_pane(page, step)
-    state = split_state(page)
-    data = model(page)
-    pane = pane_of(data.picks[state[:pick]])
-    return unless pane
-
-    scroll = MGQ_MpUi.within(state[:pane] + step, 0, Sprite_MpWorldOverview.most_pane_scroll(pane))
-    return if scroll == state[:pane]
-
-    state[:pane] = scroll
-    Sound.play_cursor
-  end
-
-  # Follows the mouse on a page laid out with a head, a list and a pane: the wheel scrolls the list
-  # or the pane it points at, a click picks an entry or opens a group, a second click on another
-  # mod's entry moves the cursor into its pane or back, a click in that pane presses a button or
-  # changes a control, pointing picks a choice of an open menu and a click takes it, a click beside
-  # it closes it, a click on a tab turns the page, a click outside the box closes the overview.
-  #
-  # @param page [Symbol] The page.
-  # @param view [Hash] The page's view, see split_view.
-  def self.mouse_split(page, view)
-    position = Mod_Framework::UI::Mouse.position
-    clicked = Mod_Framework::UI::Mouse.clicked?
-    turned = wheel
-    moved = position && position != @mouse
-    @mouse = position
-    return unless position
-
-    x, y = position
-    return mouse_mod_menu(view, x, y, moved, clicked) if view[:menu]
-    if turned != 0
-      area = Sprite_MpWorldOverview.area_at(x, y)
-      scroll_list(page, -turned) if area == :list
-      scroll_pane(page, -turned * WHEEL_LINES) if area == :pane
-    end
-    return unless clicked
-
-    tab = Sprite_MpWorldOverview.tab_at(x, y)
-    return turn_to(tab, "a click on its tab") if tab
-
-    pick = Sprite_MpWorldOverview.entry_at(x, y, view)
-    if pick
-      entry = view[:model].picks[pick]
-      again = pick == view[:pick]
-      pick_entry(page, pick)
-      toggle(page, entry) if entry.is_a?(Fold)
-      leave_or_focus_pane(page, entry, view) if entry.is_a?(ModEntry) && again
-      return
-    end
-    return if !view[:targets].empty? && click_pane(page, view, x, y)
-    return if Sprite_MpWorldOverview.inside?(x, y)
-
-    Sound.play_cancel
-    close("a click outside the box")
-  end
-
-  # Lines the pane scrolls for a notch of the mouse wheel.
-  WHEEL_LINES = 3
-
-  # Reads the mouse wheel's notches since the last frame.
-  #
-  # @return [Integer] Up positive, down negative; 0 without a wheel.
-  def self.wheel
-    mouse = Mod_Framework::UI::Mouse
-    mouse.respond_to?(:wheel) ? mouse.wheel.to_i : 0
-  rescue
-    0
   end
 
   # Runs through a list of commands as the game would run it now, without running any.
@@ -685,25 +418,6 @@ module MGQ_MpWorldOverview
     name = line[/\\n<([^>]*)>/, 1] || line[/\A\s*【([^】]*)】/, 1]
     name = TEXT_CODES.inject(name) { |plain, code| plain.gsub(code, "") }.strip if name
     name && !name.empty? ? name : nil
-  end
-
-  # Finds a text's first sentence: up to the first end of a sentence followed by a space or the
-  # text's end, or a Japanese one.
-  #
-  # Abbreviations such as "Mt." end no sentence, so "Mt. Saint Amos" stays whole.
-  #
-  # @param text [String] The text.
-  # @return [String] The sentence; the whole text without an end.
-  def self.first_sentence(text)
-    text = text.to_s.strip
-    offset = 0
-    while (match = SENTENCE_END.match(text, offset))
-      word = text[0, match.begin(0)][/\S+\z/].to_s
-      return text[0, match.end(0)].strip unless ABBREVIATIONS.include?(word)
-
-      offset = match.end(0)
-    end
-    text
   end
 
   # Reads the main quest: every message Amira's objective shows now, her side quests left out.
@@ -846,57 +560,6 @@ module MGQ_MpWorldOverview
     log(added ? "added the Quest Portraits to Options > Mods" : "no Quest Portraits in Options > Mods, see the Mod Framework's log")
   end
 
-  # Finds the picture that shows faintly behind the Quests page: Amira's in the Library.
-  #
-  # @return [Bitmap, nil] The picture; nil when the game has none.
-  def self.backdrop
-    return @backdrop if @backdrop && !@backdrop.disposed?
-    return nil if @backdrop_missing
-
-    image = defined?(NWConst::Library::ACTOR_IMAGE) ? NWConst::Library::ACTOR_IMAGE[AMIRA] : nil
-    @backdrop_missing = !image.is_a?(Array)
-    @backdrop = @backdrop_missing ? nil : Cache.load_bitmap(image[0].to_s, image[1].to_s)
-  rescue => e
-    log_once(:backdrop, "loading Amira's picture failed: #{e.class}: #{e.message}")
-    @backdrop_missing = true
-    @backdrop = nil
-  end
-
-  # Lists the raid bosses for the World page by the story's sections in story order: each section
-  # the world's story reached (see reached?) or holding a boss the relay told a pool of, its bosses
-  # in the order the story meets them, then the pools of its fights that take their own name, such
-  # as Sisel's; last, under OTHER_SECTION, the pools whose bosses the tables lack, by name.
-  #
-  # @return [Array<Array(String, Array<Boss>)>] Each section's name with its bosses.
-  def self.boss_sections
-    pools = MGQ_MpRaidPool.pools.group_by { |key, _| MGQ_MpRaidPool.boss_key(key) }
-    counters = MGQ_MpWorldStory.world
-    listed = MGQ_MpRaidBosses.sections.map do |section, keys|
-      names = keys + pools.keys.select { |name| !keys.include?(name) && section_of(name) == section }.sort
-      next unless reached?(section, counters) || names.any? { |name| pools.key?(name) }
-
-      [section, names.map { |name| boss_of(name, tier_of(name), pools.delete(name)) }]
-    end
-    others = pools.keys.sort.map { |name| boss_of(name, nil, pools[name]) }
-    listed.compact + (others.empty? ? [] : [[OTHER_SECTION, others]])
-  end
-
-  # Reports whether the world's story reached a section of raid bosses, see SECTION_REACH.
-  #
-  # @param section [String] The section's name.
-  # @param counters [Hash, nil] The world's story, see MGQ_MpWorldStory.world; nil before the relay
-  #   told it, which reaches no section.
-  # @return [Boolean] Whether it did.
-  def self.reached?(section, counters)
-    return false unless counters
-
-    reach = SECTION_REACH[section]
-    reach.nil? || !(reach & ([counters["part"].to_s] + Array(counters["done"]))).empty?
-  rescue => e
-    log_once(:boss_sections, "reading the world's story for the raid bosses failed: #{e.class}: #{e.message}")
-    false
-  end
-
   # Finds the section of a pool's boss: its milestone's or OPTIONAL's, else that of the troop a
   # fight with its own name belongs to.
   #
@@ -914,652 +577,176 @@ module MGQ_MpWorldOverview
     MGQ_MpRaidBosses.key_tier(name) || MGQ_MpRaidBosses.tier(MGQ_MpRaidPool.troop_of_key(name))
   end
 
-  # Sums a raid boss up from its pools: the share left over them, whether every one is empty for
-  # good, and who hurt the one last told of.
+  # Makes the page view of an own page, Amira's Library picture faintly behind the Quests page.
   #
-  # @param name [String] The boss's name, see Boss.
-  # @param tier [Integer, nil] Its tier.
-  # @param entries [Array<Array>, nil] Its pools, each with its key; nil while the relay told none.
-  # @return [Boss] The boss.
-  def self.boss_of(name, tier, entries)
-    pools = (entries || []).map { |_, pool| pool }
-    return Boss.new(name, tier, UNTOUCHED, false, nil) if pools.empty?
-
-    now = Time.now
-    left = pools.inject(0.0) { |sum, pool| sum + MGQ_MpRaidPool.left_now(pool, now) } / pools.size
-    hurt = pools.select { |pool| !pool.by.to_s.empty? }.max_by { |pool| pool.at.to_f }
-    Boss.new(name, tier, left, pools.all? { |pool| pool.defeated }, hurt && hurt.by.to_s)
+  # @param page [Symbol] One of SPLIT_PAGES.
+  # @param tab [Mod_Framework::UI::Stack] The page of its tab.
+  # @return [Mod_Framework::UI::PageView] The view.
+  def self.own_view(page, tab)
+    options = { :id => :"overview_#{page}" }
+    options[:backdrop] = { :portrait => AMIRA, :opacity => BACKDROP_OPACITY, :anchor => :bottom_right } if page == :quests
+    view = tab.add_page_view(options)
+    view.on(:change) { |data| picked(page, data) }
+    view.on(:fold) { |key, open| fold(page, key, open) }
+    view
   end
 
-  # Writes the share of a raid boss's HP left, never 0% while any is.
+  # Shows an own page's model in its view once the model changed: its head, its rows and the pane
+  # of the entry picked, found again by its key in the new model.
   #
-  # @param left [Float] The share, 0 to 1.
-  # @return [String] Such as "68%".
-  def self.share_text(left)
-    SHARE_LEFT % [(left * PERCENT).round, left > 0 ? 1 : 0].max
-  end
-end
+  # @param page [Symbol] One of SPLIT_PAGES.
+  def self.show_split(page)
+    data = model(page)
+    shown = [data.object_id, portraits]
+    @shown_models ||= {}
+    return if shown == @shown_models[page]
 
-# The drawing of the pages with a head, a list and a pane.
-class Sprite_MpWorldOverview < Sprite
-  # The most columns the pane sets the things it names in.
-  PANE_COLUMNS = 4
-
-  # The room between two of those columns.
-  COLUMN_GAP = 16
-
-  # The width of a button beside the pane's title.
-  BUTTON_WIDTH = 80
-
-  # The room at either end of a control for its arrow, which a click on changes it.
-  ARROW_ROOM = 24
-
-  # How far an arrow of a control reaches across, half its height.
-  ARROW = 6
-
-  # The colors a control's tone draws it in; the Style's own, which follow the interface preset.
-  TONES = { :good => MGQ_MpUi::Style::GOOD, :warn => MGQ_MpUi::Style::WARN, :bad => MGQ_MpUi::Style::BAD, :dim => MGQ_MpUi::Style::DIM }
-
-  # Draws a page laid out with a head, a list and a pane.
-  #
-  # @param view [Hash] The page's view, see MGQ_MpWorldOverview.split_view.
-  def draw_split(view)
-    data = view[:model]
-    layout = self.class.split_layout(bitmap.width, bitmap.height)
-    picked = data.picks[view[:pick]]
-    draw_split_head(data.head, picked, layout) if data.head
-    draw_split_list(data, view[:list_scroll], picked, layout)
-    bitmap.fill_rect(layout[:pane_x] - SPLIT_DIVIDE / 2, layout[:body_y], 1, layout[:body_h], MGQ_MpUi::Style::EDGE)
-    draw_split_pane(view[:pane], view[:pane_scroll], layout, view[:focused])
+    @shown_models[page] = shown
+    view = @views[page]
+    view.head = head_value(data.head)
+    view.rows = data.rows.map { |kind, value| row_value(kind, value) }
+    @picks ||= {}
+    @picks[page] = pick_in(data, @picks[page])
+    view.pane = pane_value(pick_pane(data, @picks[page]))
   end
 
-  # Draws a page's head: its box with a portrait or an icon, its title with its note at the right,
-  # and its lines or its grid; on the picked color while its entry is picked.
+  # Finds an entry picked before in a page's new model: the head's, or the entry of the same key.
   #
-  # @param head [MGQ_MpWorldOverview::Head] The head.
-  # @param picked [Object, nil] The entry picked.
-  # @param layout [Hash] See split_layout.
-  def draw_split_head(head, picked, layout)
-    style = MGQ_MpUi::Style
-    top = layout[:head_y]
-    if head.looks
-      draw_portrait(head.looks, MARGIN, top, PORTRAIT)
-    elsif head.icon
-      bitmap.fill_rect(MARGIN, top, PORTRAIT, PORTRAIT, style::BACK)
-      MGQ_MpUi.draw_icon(bitmap, head.icon, MARGIN + (PORTRAIT - HEAD_ICON) / 2, top + (PORTRAIT - HEAD_ICON) / 2, HEAD_ICON)
-      style.draw_line_box(bitmap, MARGIN, top, PORTRAIT, PORTRAIT, style::EDGE)
-    end
-    x = layout[:text_x]
-    width = bitmap.width - MARGIN - x
-    bitmap.fill_rect(x - style::GAP, top, width + style::GAP, PORTRAIT, style::PICKED) if head.entry && picked.equal?(head.entry)
-    note_width = 0
-    if head.note
-      style.use_font(bitmap, style::SMALL_SIZE, style::DIM)
-      note_width = bitmap.text_size(head.note).width
-      bitmap.draw_text(x, top, width, PANE_LINE, head.note, 2)
-    end
-    style.use_font(bitmap, style::SMALL_SIZE, style::HEADING)
-    title_width = width - note_width - style::GAP
-    bitmap.draw_text(x, top, title_width, PANE_LINE, self.class.fitted([:title, head.title, title_width]) { MGQ_MpUi.cut(bitmap, head.title, title_width) })
-    return draw_grid(head.grid, x, top + PANE_LINE, width) if head.grid
+  # @param data [Model] The model.
+  # @param was [Object, nil] The entry picked, :head for the head's; nil for none yet.
+  # @return [Object, nil] The entry in the model, :head, or nil.
+  def self.pick_in(data, was)
+    head = data.head && data.head.entry ? :head : nil
+    return head if was.nil? || was == :head
 
-    style.use_font(bitmap, style::TEXT_SIZE, head.entry || !head.lines.empty? ? style::TEXT : style::DIM)
-    head_lines(head.lines, width).each_with_index { |line, index| bitmap.draw_text(x, top + PANE_LINE + index * PANE_LINE, width, PANE_LINE, line) }
+    key = entry_key(was)
+    data.picks.find { |entry| entry.kind != "fold" && entry_key(entry) == key }
   end
 
-  # Fits a head's lines into MAIN_LINES: one line wrapped over them, several each cut to one.
+  # Shows the pane of what the player picked on an own page.
   #
-  # @param lines [Array<String>] The lines.
-  # @param width [Integer] Their width.
-  # @return [Array<String>] What shows.
-  def head_lines(lines, width)
-    self.class.fitted([:head, lines, width]) do
-      if lines.size == 1
-        wrapped = MGQ_MpUi.wrap(bitmap, lines.first.to_s, width)
-        shown = wrapped.first(MAIN_LINES)
-        shown[-1] = MGQ_MpUi.cut(bitmap, "#{shown[-1]} #{wrapped[MAIN_LINES]}", width) if wrapped.size > MAIN_LINES
-        shown
-      else
-        lines.first(MAIN_LINES).map { |line| MGQ_MpUi.cut(bitmap, line.to_s, width) }
-      end
+  # @param page [Symbol] One of SPLIT_PAGES.
+  # @param data [Object] The entry picked, or :head for the head's.
+  def self.picked(page, data)
+    @picks ||= {}
+    @picks[page] = data
+    @views[page].pane = pane_value(pick_pane(model(page), data))
+  end
+
+  # Tells the pane of a pick.
+  #
+  # @param data [Model] The page's model.
+  # @param entry [Object, nil] The entry, :head for the head's, nil for none.
+  # @return [Pane, nil] The pane.
+  def self.pick_pane(data, entry)
+    return pane_of(entry) unless entry == :head
+
+    data.head && data.head.entry ? pane_of(data.head.entry) : nil
+  end
+
+  # Opens or folds a group of an own page, which the DLL keeps while the game runs.
+  #
+  # @param page [Symbol] One of SPLIT_PAGES.
+  # @param key [String] The group.
+  # @param open [Boolean] Whether it is open now.
+  def self.fold(page, key, open)
+    MGQ_Multiplayer::Bridge.call(FOLD_TOPIC, "page" => page.to_s, "key" => key.to_s, "open" => open ? true : false)
+    forget_model(page)
+    log("#{open ? 'opened' : 'folded'} #{key} on the #{page} page")
+    show_split(page)
+  end
+
+  # Tells an entry's key, the same in each model read: what keeps its row and its pane picked.
+  #
+  # @param entry [Entry] The entry.
+  # @return [Array] The key.
+  def self.entry_key(entry)
+    value = entry.value
+    case entry.kind
+    when "quest" then ["quest", value[1], value[4] || value[2], Array(value[3]).first]
+    when "boss" then ["boss", value[1], value[2]]
+    else value.first(2)
     end
   end
 
-  # Draws the Unlocks page's grid of the formation's catch-up experience: two members a line, each
-  # with their name, their level and their factor in columns.
+  # Makes a page view's head of a model's head.
   #
-  # @param grid [Array<Array<String>>] Each member's name, level and factor.
-  # @param x [Integer] The grid's left.
-  # @param y [Integer] The grid's top.
-  # @param width [Integer] The grid's width.
-  def draw_grid(grid, x, y, width)
-    style = MGQ_MpUi::Style
-    column = width / 2
-    grid.first(MAIN_LINES * 2).each_with_index do |(name, level, factor), index|
-      left = x + index % 2 * column
-      top = y + index / 2 * PANE_LINE
-      style.use_font(bitmap, style::SMALL_SIZE, style::TITLE)
-      factor_width = bitmap.text_size(factor).width
-      bitmap.draw_text(left, top, column - style::GAP * 2, PANE_LINE, factor, 2)
-      style.use_font(bitmap, style::SMALL_SIZE, style::DIM)
-      level_width = bitmap.text_size(level).width
-      level_right = column - style::GAP * 4 - factor_width
-      bitmap.draw_text(left, top, level_right, PANE_LINE, level, 2)
-      style.use_font(bitmap, style::TEXT_SIZE, style::TEXT)
-      name_width = level_right - level_width - style::GAP * 2
-      bitmap.draw_text(left, top, name_width, PANE_LINE, self.class.fitted([:grid, name, name_width]) { MGQ_MpUi.cut(bitmap, name, name_width) })
-    end
+  # @param head [Head, nil] The head.
+  # @return [Hash, nil] The view's head, see Mod_Framework::UI::PageView.
+  def self.head_value(head)
+    return nil unless head
+
+    value = { :title => head.title.to_s, :note => head.note, :lines => head.lines || [] }
+    value[:grid] = head.grid.map { |name, level, factor| [name, level, { :text => factor, :color => :title }] } if head.grid
+    value[:icon] = head.icon if head.icon
+    value.update(looks_picture(head.looks))
+    value[:pick] = :head if head.entry
+    value
   end
 
-  # Draws the list from its scroll: the groups and entries on the picked color while picked, and its
-  # scrollbar.
+  # Makes a list row of a model's row.
   #
-  # @param data [MGQ_MpWorldOverview::Model] The page's model.
-  # @param scroll [Integer] The first row in sight.
-  # @param picked [Object, nil] The entry picked.
-  # @param layout [Hash] See split_layout.
-  def draw_split_list(data, scroll, picked, layout)
-    style = MGQ_MpUi::Style
-    count = self.class.list_rows_shown(bitmap.height)
-    width = layout[:list_w] - BAR_ROOM
-    data.rows[scroll, count].to_a.each_with_index do |(kind, value), index|
-      y = layout[:body_y] + index * ROW
+  # @param kind [Symbol] :none, :fold or :entry.
+  # @param value [String, Entry] What the row holds.
+  # @return [Hash] The view's row.
+  def self.row_value(kind, value)
+    return { :none => value } if kind == :none
+
+    _kind, key, title, open = value.value
+    return { :group => key, :text => title, :open => open ? true : false } if kind == :fold
+
+    view = value.row
+    row = { :key => entry_key(value), :text => view.text.to_s, :right_color => :dim, :faint => view.dim ? true : false, :data => value }
+    row[:label] = view.label if view.label
+    row[:right] = view.note if view.note
+    row[:gauge] = view.gauge if view.gauge
+    row
+  end
+
+  # Makes a page view's pane of a model's pane.
+  #
+  # @param pane [Pane, nil] The pane.
+  # @return [Hash, nil] The view's pane.
+  def self.pane_value(pane)
+    return nil unless pane
+
+    { :title => pane.title.to_s, :lines => pane_lines(pane.lines) }.update(looks_picture(pane.looks))
+  end
+
+  # Makes a page view's pane lines, the things named next to each other in one run.
+  #
+  # @param lines [Array<Array>] The pane's lines, see Pane.
+  # @return [Array] The view's lines.
+  def self.pane_lines(lines)
+    lines.each_with_object([]) do |(kind, value, text), out|
       case kind
-      when :none
-        style.use_font(bitmap, style::SMALL_SIZE, style::DIM)
-        bitmap.draw_text(MARGIN + ROW_INDENT, y, width - ROW_INDENT, ROW, value)
-      else
-        bitmap.fill_rect(MARGIN, y, width, ROW, style::PICKED) if value.equal?(picked)
-        draw_entry_row(MGQ_MpWorldOverview.row_view(value), kind == :fold ? MARGIN : MARGIN + ROW_INDENT, y, width - ROW_INDENT - style::GAP, kind == :fold)
+      when :text then out << value.to_s
+      when :gap then out << :gap
+      when :gauge then out << { :gauge => value.to_f, :text => text }
+      when :item
+        out << { :items => [] } unless out.last.is_a?(Hash) && out.last.key?(:items)
+        out.last[:items] << item_value(value)
       end
     end
-    style.draw_scrollbar(bitmap, MARGIN + layout[:list_w] - style::SCROLLBAR_WIDTH, layout[:body_y], count * ROW, scroll, count, data.rows.size)
   end
 
-  # Draws one entry of the list: its label, its text cut to the room left, and at the right a
-  # gauge and its note.
+  # Makes a thing named of a pane item: its icon, or how the one it names looks.
   #
-  # @param row [MGQ_MpWorldOverview::RowView] What the row shows.
-  # @param x [Integer] The row's left.
-  # @param y [Integer] The row's top.
-  # @param width [Integer] The row's width.
-  # @param fold [Boolean] Whether it is a group's row, drawn as a heading.
-  def draw_entry_row(row, x, y, width, fold)
-    style = MGQ_MpUi::Style
-    used = 0
-    if row.label
-      style.use_font(bitmap, style::SMALL_SIZE, row.dim ? style::DIM : style::HEADING)
-      label, used = self.class.fitted([:label, row.label, width]) do
-        cut = MGQ_MpUi.cut(bitmap, row.label, width / 3)
-        [cut, bitmap.text_size(cut).width + style::GAP * 2]
-      end
-      bitmap.draw_text(x, y, used, ROW, label)
-    end
-    right = width
-    if row.note
-      style.use_font(bitmap, style::SMALL_SIZE, style::DIM)
-      right -= bitmap.text_size(row.note).width
-      bitmap.draw_text(x, y, width, ROW, row.note, 2)
-      right -= style::GAP * 2
-    end
-    if row.gauge
-      right -= ROW_GAUGE
-      draw_bar(x + right, y + (ROW - GAUGE_HEIGHT) / 2, ROW_GAUGE, row.gauge)
-      right -= style::GAP * 2
-    end
-    style.use_font(bitmap, style::SMALL_SIZE, fold ? style::HEADING : (row.dim ? style::DIM : style::TEXT))
-    room = right - used
-    bitmap.draw_text(x + used, y, room, ROW, self.class.fitted([:row, row.text, room]) { MGQ_MpUi.cut(bitmap, row.text.to_s, room) }) if room > 0
+  # @param item [PaneItem] The item.
+  # @return [Hash] The thing named.
+  def self.item_value(item)
+    { :text => item.name.to_s, :note => item.note, :faint => item.dim ? true : false }.update(item.icon ? { :icon => item.icon } : looks_picture(item.looks))
   end
 
-  # Draws the pane: its title in line with the top of the portrait of whom it is about, its line
-  # under the title and its buttons at the right, and its lines from its scroll, with its scrollbar;
-  # the button or control the cursor is on on the picked color.
+  # Tells how a character's picture shows, as the Quest Portraits row picks: by their face, else
+  # by their map sprite.
   #
-  # @param pane [MGQ_MpWorldOverview::Pane, nil] The pane.
-  # @param scroll [Integer] The first line in sight.
-  # @param layout [Hash] See split_layout.
-  # @param focused [Array, nil] What the cursor is on in the pane, see MGQ_MpWorldOverview.focus_targets.
-  def draw_split_pane(pane, scroll, layout, focused = nil)
-    return unless pane
+  # @param looks [Looks, nil] How they look.
+  # @return [Hash] { :face } or { :figure }, empty for none.
+  def self.looks_picture(looks)
+    return {} unless looks
 
-    style = MGQ_MpUi::Style
-    x = layout[:pane_x]
-    width = layout[:pane_w] - BAR_ROOM
-    top = layout[:body_y]
-    head = self.class.pane_head(pane)
-    title_x = x
-    if pane.looks
-      draw_portrait(pane.looks, x, top, PANE_PORTRAIT)
-      title_x += PANE_PORTRAIT + SPLIT_GAP
-    end
-    buttons = Array(pane.buttons)
-    buttons.each_with_index { |button, index| draw_button(button, x + self.class.button_left(width, buttons.size, index), top, focused == [:button, index]) }
-    title_width = x + width - title_x - buttons.size * (BUTTON_WIDTH + style::GAP)
-    title_height = pane.looks ? PANE_LINE : ROW
-    style.use_font(bitmap, style::SMALL_SIZE, style::HEADING)
-    bitmap.draw_text(title_x, top, title_width, title_height, self.class.fitted([:title, pane.title, title_width]) { MGQ_MpUi.cut(bitmap, pane.title.to_s, title_width) })
-    if pane.subtitle
-      # Under the buttons, so it takes the pane's whole width.
-      subtitle_width = x + width - title_x
-      style.use_font(bitmap, style::SMALL_SIZE, style::TEXT)
-      bitmap.draw_text(title_x, top + ROW, subtitle_width, PANE_LINE, self.class.fitted([:subtitle, pane.subtitle, subtitle_width]) { MGQ_MpUi.cut(bitmap, pane.subtitle.to_s, subtitle_width) })
-    end
-    rows = self.class.pane_layout(pane)
-    y = top + head
-    bottom = top + layout[:body_h]
-    shown = 0
-    rows[scroll..-1].to_a.each do |kind, value, height|
-      break if y + height > bottom
-
-      draw_pane_row(kind, value, x, y, width, focused)
-      y += height
-      shown += 1
-    end
-    style.draw_scrollbar(bitmap, x + layout[:pane_w] - style::SCROLLBAR_WIDTH, top + head, layout[:body_h] - head, scroll, shown, rows.size)
-  end
-
-  # Draws a button beside the pane's title: its plate, on the picked color while the cursor is on
-  # it, and its text, dimmed while it cannot be pressed.
-  #
-  # @param button [Array] Its text and whether it can be pressed.
-  # @param x [Integer] Its left.
-  # @param y [Integer] Its top.
-  # @param picked [Boolean] Whether the cursor is on it.
-  def draw_button(button, x, y, picked)
-    style = MGQ_MpUi::Style
-    text, enabled = button
-    bitmap.fill_rect(x, y, BUTTON_WIDTH, ROW, picked ? style::PICKED : style::TAB)
-    style.draw_line_box(bitmap, x, y, BUTTON_WIDTH, ROW, style::EDGE)
-    style.use_font(bitmap, style::SMALL_SIZE, enabled ? style::TEXT : style::DIM)
-    bitmap.draw_text(x, y, BUTTON_WIDTH, ROW, text, 1)
-  end
-
-  # Draws one line of the pane: a line of text, a row of things named, a control, or a gauge with
-  # its text.
-  #
-  # @param kind [Symbol] :line, :gap, :items, :control or :gauge.
-  # @param value [Object] The line's text, the row's MGQ_MpWorldOverview::PaneItem list with the
-  #   columns it is set in, the MGQ_MpWorldOverview::Control, or the gauge's share and text.
-  # @param x [Integer] The line's left.
-  # @param y [Integer] The line's top.
-  # @param width [Integer] The line's width.
-  # @param focused [Array, nil] What the cursor is on in the pane.
-  def draw_pane_row(kind, value, x, y, width, focused = nil)
-    style = MGQ_MpUi::Style
-    case kind
-    when :line
-      style.use_font(bitmap, style::TEXT_SIZE, style::TEXT)
-      bitmap.draw_text(x, y, width, PANE_LINE, value)
-    when :control
-      draw_control(value, x, y, width, focused == [:control, value.id])
-    when :items
-      items, columns = value
-      column = (width - COLUMN_GAP * (columns - 1)) / columns
-      items.each_with_index { |item, index| draw_pane_item(item, x + index * (column + COLUMN_GAP), y, column) }
-    when :gauge
-      share, text = value
-      draw_bar(x, y + (ROW - GAUGE_HEIGHT * 2) / 2, PANE_GAUGE, share, GAUGE_HEIGHT * 2)
-      style.use_font(bitmap, style::SMALL_SIZE, style::TEXT)
-      bitmap.draw_text(x + PANE_GAUGE + style::GAP * 2, y, width - PANE_GAUGE - style::GAP * 2, ROW, text)
-    end
-  end
-
-  # Draws a control of the pane: on the picked color while the cursor is on it, an arrow at either
-  # end, bright while Left or Right may change it, and between them its name and its note in its
-  # tone's color, the note cut before the name.
-  #
-  # @param control [MGQ_MpWorldOverview::Control] The control.
-  # @param x [Integer] Its left.
-  # @param y [Integer] Its top.
-  # @param width [Integer] Its width.
-  # @param picked [Boolean] Whether the cursor is on it.
-  def draw_control(control, x, y, width, picked)
-    style = MGQ_MpUi::Style
-    bitmap.fill_rect(x, y, width, ROW, style::PICKED) if picked
-    draw_arrow(x + (ARROW_ROOM - ARROW) / 2, y + ROW / 2, -1, control.less ? style::TEXT : style::TAB)
-    draw_arrow(x + width - (ARROW_ROOM + ARROW) / 2, y + ROW / 2, 1, control.more ? style::TEXT : style::TAB)
-    color = TONES[control.tone]
-    inner = width - 2 * ARROW_ROOM
-    style.use_font(bitmap, style::TEXT_SIZE, color || style::TEXT)
-    name = self.class.fitted([:control, control.name, inner]) { MGQ_MpUi.cut(bitmap, control.name.to_s, inner) }
-    used = bitmap.text_size(name).width + style::GAP * 2
-    bitmap.draw_text(x + ARROW_ROOM, y, inner, ROW, name)
-    room = inner - used
-    return unless control.note && room > 0
-
-    style.use_font(bitmap, style::SMALL_SIZE, color || style::DIM)
-    note = self.class.fitted([:control_note, control.note, room]) { MGQ_MpUi.cut(bitmap, control.note.to_s, room) }
-    bitmap.draw_text(x + ARROW_ROOM + used, y, room, ROW, note, 2)
-  end
-
-  # Draws an arrow as a small triangle pointing left or right.
-  #
-  # @param x [Integer] Its left.
-  # @param middle [Integer] Its middle's y.
-  # @param direction [Integer] -1 for left, 1 for right.
-  # @param color [Color] Its color.
-  def draw_arrow(x, middle, direction, color)
-    ARROW.times do |column|
-      left = direction < 0 ? x + column : x + ARROW - 1 - column
-      bitmap.fill_rect(left, middle - column, 1, column * 2 + 1, color)
-    end
-  end
-
-  # Draws a gauge of a share: framed in the edge color, its well, and the share filled.
-  #
-  # @param x [Integer] Its left.
-  # @param y [Integer] Its top.
-  # @param width [Integer] Its width.
-  # @param share [Float] The share filled, 0 to 1.
-  # @param height [Integer] Its height.
-  def draw_bar(x, y, width, share, height = GAUGE_HEIGHT)
-    style = MGQ_MpUi::Style
-    bitmap.fill_rect(x, y, width, height, style::EDGE)
-    bitmap.fill_rect(x + GAUGE_FRAME, y + GAUGE_FRAME, width - 2 * GAUGE_FRAME, height - 2 * GAUGE_FRAME, style::WELL)
-    filled = ((width - 2 * GAUGE_FRAME) * MGQ_MpUi.within(share.to_f, 0.0, 1.0)).round
-    bitmap.fill_rect(x + GAUGE_FRAME, y + GAUGE_FRAME, filled, height - 2 * GAUGE_FRAME, style::BAD) if filled > 0
-  end
-
-  # Lays the pages with a head, a list and a pane out in a box of a size.
-  #
-  # @param width [Integer] The box's width.
-  # @param height [Integer] The box's height.
-  # @return [Hash] :head_y (the head's top), :text_x (the head's text's left), :body_y and :body_h
-  #   (the list's and the pane's top and height), :list_w, :pane_x and :pane_w.
-  def self.split_layout(width = box.width, height = box.height)
-    head_y = LIST_TOP + MGQ_MpUi::Style::GAP
-    body_y = head_y + PORTRAIT + SPLIT_GAP
-    list_w = ((width - 2 * MARGIN - SPLIT_DIVIDE) * LIST_SHARE).to_i
-    pane_x = MARGIN + list_w + SPLIT_DIVIDE
-    { :head_y => head_y, :text_x => MARGIN + PORTRAIT + SPLIT_GAP, :body_y => body_y, :body_h => [height - HINT_HEIGHT - MARGIN - body_y, ROW].max,
-      :list_w => list_w, :pane_x => pane_x, :pane_w => width - MARGIN - pane_x }
-  end
-
-  # Tells how many rows of the list show at once.
-  #
-  # @param height [Integer] The box's height.
-  # @return [Integer] The rows, at least one.
-  def self.list_rows_shown(height = box.height)
-    [split_layout(box.width, height)[:body_h] / ROW, 1].max
-  end
-
-  # Draws a thing the pane names: its icon or how it looks, its name and its note at the right.
-  #
-  # @param item [MGQ_MpWorldOverview::PaneItem] The thing.
-  # @param x [Integer] Its left.
-  # @param y [Integer] Its top.
-  # @param width [Integer] Its column's width.
-  def draw_pane_item(item, x, y, width)
-    style = MGQ_MpUi::Style
-    if item.looks
-      draw_portrait(item.looks, x, y, ROW)
-    elsif item.icon
-      MGQ_MpUi.draw_icon(bitmap, item.icon, x, y, MGQ_MpUi::ICON_SIZE, item.dim ? style::DIM_OPACITY : MGQ_MpUi::Motion::OPAQUE)
-    end
-    right = width
-    if item.note
-      style.use_font(bitmap, style::SMALL_SIZE, style::DIM)
-      right -= bitmap.text_size(item.note).width + style::GAP * 2
-      bitmap.draw_text(x, y, width, ROW, item.note, 2)
-    end
-    left = ROW + style::GAP * 2
-    style.use_font(bitmap, style::TEXT_SIZE, item.dim ? style::DIM : style::TEXT)
-    bitmap.draw_text(x + left, y, right - left, ROW, self.class.fitted([:item, item.name, right - left]) { MGQ_MpUi.cut(bitmap, item.name.to_s, right - left) })
-  end
-
-  # Tells about how many lines of text the pane shows at once, for a page's step of Page Up and Page
-  # Down.
-  #
-  # @param height [Integer] The box's height.
-  # @return [Integer] The lines, at least one.
-  def self.pane_rows(height = box.height)
-    [(split_layout(box.width, height)[:body_h] - ROW) / PANE_LINE, 1].max
-  end
-
-  # Tells how tall the pane's head is: its title, beside a portrait if any.
-  #
-  # @param pane [MGQ_MpWorldOverview::Pane] The pane.
-  # @return [Integer] The height.
-  def self.pane_head(pane)
-    pane.looks ? PANE_PORTRAIT + MGQ_MpUi::Style::GAP : ROW
-  end
-
-  # Lays the pane's lines out at its width: each paragraph wrapped to lines of text, half a line
-  # between paragraphs, the things named after each other in rows of columns, a row for each control
-  # and each gauge.
-  #
-  # @param pane [MGQ_MpWorldOverview::Pane] The pane.
-  # @return [Array<Array>] Each line's kind (:line, :gap, :items, :control or :gauge), value and
-  #   height.
-  def self.pane_layout(pane)
-    width = split_layout[:pane_w] - BAR_ROOM
-    fitted([:pane, pane.lines, width]) do
-      @measure = Bitmap.new(1, 1) if @measure.nil? || @measure.disposed?
-      rows = []
-      items = []
-      pane.lines.each do |kind, value, extra|
-        if kind == :item
-          items << value
-          next
-        end
-        rows.concat(item_rows(items, width))
-        items = []
-        case kind
-        when :text
-          MGQ_MpUi::Style.use_font(@measure, MGQ_MpUi::Style::TEXT_SIZE, MGQ_MpUi::Style::TEXT)
-          rows.concat(MGQ_MpUi.wrap(@measure, value.to_s, width).map { |line| [:line, line, PANE_LINE] })
-        when :gap then rows << [:gap, nil, PANE_LINE / 2]
-        when :control then rows << [:control, value, ROW]
-        else rows << [:gauge, [value, extra], ROW]
-        end
-      end
-      rows.concat(item_rows(items, width))
-    end
-  end
-
-  # Sets things named after each other in rows of as many columns as the widest of them fits without
-  # being cut.
-  #
-  # @param items [Array<MGQ_MpWorldOverview::PaneItem>] The things.
-  # @param width [Integer] The pane's width.
-  # @return [Array<Array>] A row of :items for each, with its things and the columns.
-  def self.item_rows(items, width)
-    return [] if items.empty?
-
-    widest = items.map { |item| item_width(item) }.max
-    columns = [[(width + COLUMN_GAP) / (widest + COLUMN_GAP), 1].max, PANE_COLUMNS].min
-    items.each_slice(columns).map { |row| [:items, [row, columns], ROW] }
-  end
-
-  # Measures the room a thing named takes: its icon, its name and its note.
-  #
-  # @param item [MGQ_MpWorldOverview::PaneItem] The thing.
-  # @return [Integer] The width.
-  def self.item_width(item)
-    style = MGQ_MpUi::Style
-    style.use_font(@measure, style::TEXT_SIZE, style::TEXT)
-    width = ROW + style::GAP * 2 + @measure.text_size(item.name.to_s).width
-    return width unless item.note
-
-    style.use_font(@measure, style::SMALL_SIZE, style::DIM)
-    width + style::GAP * 2 + @measure.text_size(item.note).width
-  end
-
-  # Tells the furthest the pane scrolls: until its last line shows at its bottom.
-  #
-  # @param pane [MGQ_MpWorldOverview::Pane] The pane.
-  # @return [Integer] The first line in sight then.
-  def self.most_pane_scroll(pane)
-    rows = pane_layout(pane)
-    room = split_layout[:body_h] - pane_head(pane)
-    first = rows.size
-    while first > 0 && room >= rows[first - 1][2]
-      room -= rows[first - 1][2]
-      first -= 1
-    end
-    first
-  end
-
-  # Reports whether a line of the pane shows whole while the pane is scrolled to another.
-  #
-  # @param pane [MGQ_MpWorldOverview::Pane] The pane.
-  # @param scroll [Integer] The first line in sight.
-  # @param row [Integer] The line.
-  # @return [Boolean] Whether it shows.
-  def self.pane_row_shown?(pane, scroll, row)
-    return false if row < scroll
-
-    room = split_layout[:body_h] - pane_head(pane)
-    pane_layout(pane)[scroll..row].to_a.inject(0) { |sum, line| sum + line[2] } <= room
-  end
-
-  # Tells where a button beside the pane's title starts, the last at the pane's right.
-  #
-  # @param width [Integer] The pane's width without its scrollbar.
-  # @param count [Integer] The buttons.
-  # @param index [Integer] The button.
-  # @return [Integer] Its left from the pane's left.
-  def self.button_left(width, count, index)
-    width - (count - index) * (BUTTON_WIDTH + MGQ_MpUi::Style::GAP) + MGQ_MpUi::Style::GAP
-  end
-
-  # Finds what the cursor may step to in the pane under a point of the screen: a button beside its
-  # title or a control, and for a control which of its arrows the point is on.
-  #
-  # @param x [Integer] The point's x.
-  # @param y [Integer] The point's y.
-  # @param view [Hash] The page's view, see MGQ_MpWorldOverview.split_view.
-  # @return [Array<Integer>, nil] Its place among view[:targets] and -1 for the left arrow, 1 for the
-  #   right one, else 0; nil for nothing.
-  def self.pane_target_at(x, y, view)
-    pane = view[:pane]
-    return nil unless pane && area_at(x, y) == :pane
-
-    box = self.box
-    layout = split_layout(box.width, box.height)
-    left = x - box.x - layout[:pane_x]
-    top = y - box.y - layout[:body_y]
-    width = layout[:pane_w] - BAR_ROOM
-    head = pane_head(pane)
-    if top < head
-      return nil unless top < ROW
-
-      count = Array(pane.buttons).size
-      index = (0...count).find { |button| left >= button_left(width, count, button) && left < button_left(width, count, button) + BUTTON_WIDTH }
-      return index && [view[:targets].index([:button, index]), 0]
-    end
-    return nil if left >= width
-
-    line_top = head
-    pane_layout(pane)[view[:pane_scroll]..-1].to_a.each do |kind, value, height|
-      if top < line_top + height
-        return nil unless kind == :control
-
-        side = left < ARROW_ROOM ? -1 : left >= width - ARROW_ROOM ? 1 : 0
-        index = view[:targets].index([:control, value.id])
-        return index && [index, side]
-      end
-      line_top += height
-    end
-    nil
-  end
-
-  # Finds the list's row of what can be picked.
-  #
-  # @param data [MGQ_MpWorldOverview::Model] The page's model.
-  # @param pick [Integer] Its place among what can be picked.
-  # @return [Integer, nil] Its row; nil for the head's entry, which the list leaves out.
-  def self.entry_row(data, pick)
-    first = data.head && data.head.entry ? 1 : 0
-    return nil if pick < first
-
-    (0...data.rows.size).select { |row| [:entry, :fold].include?(data.rows[row][0]) }[pick - first]
-  end
-
-  # Tells which part of a page laid out with a head, a list and a pane a point of the screen lies in.
-  #
-  # @param x [Integer] The point's x.
-  # @param y [Integer] The point's y.
-  # @return [Symbol, nil] :list or :pane; nil elsewhere.
-  def self.area_at(x, y)
-    return nil unless inside?(x, y)
-
-    box = self.box
-    layout = split_layout(box.width, box.height)
-    left = x - box.x
-    top = y - box.y
-    return nil if top < layout[:body_y] || top >= layout[:body_y] + layout[:body_h]
-    return :list if left >= MARGIN && left < MARGIN + layout[:list_w]
-
-    left >= layout[:pane_x] ? :pane : nil
-  end
-
-  # Finds what can be picked under a point of the screen: the head's entry, or an entry or group
-  # of the list.
-  #
-  # @param x [Integer] The point's x.
-  # @param y [Integer] The point's y.
-  # @param view [Hash] The page's view.
-  # @return [Integer, nil] Its place among what can be picked; nil for nothing.
-  def self.entry_at(x, y, view)
-    return nil unless inside?(x, y)
-
-    box = self.box
-    layout = split_layout(box.width, box.height)
-    data = view[:model]
-    first = data.head && data.head.entry ? 1 : 0
-    top = y - box.y
-    return (first == 1 ? 0 : nil) if top >= layout[:head_y] && top < layout[:head_y] + PORTRAIT
-    return nil unless area_at(x, y) == :list
-
-    row = view[:list_scroll] + (top - layout[:body_y]) / ROW
-    return nil unless row < view[:list_scroll] + list_rows_shown(box.height) && data.rows[row] && [:entry, :fold].include?(data.rows[row][0])
-
-    first + data.rows[0...row].count { |kind, _| kind == :entry || kind == :fold }
-  end
-
-  # Draws how a character looks in a framed square on the box's background, by the player's choice
-  # of portraits: their map sprite or their face.
-  #
-  # @param looks [MGQ_MpWorldOverview::Looks] How they look.
-  # @param x [Integer] The square's left.
-  # @param y [Integer] The square's top.
-  # @param side [Integer] The square's side.
-  def draw_portrait(looks, x, y, side)
-    return unless defined?(Sprite_MpLeaderHud)
-
-    if MGQ_MpWorldOverview.portraits == MGQ_MpWorldOverview::FACES
-      Sprite_MpLeaderHud.draw_face(bitmap, looks.face_name, looks.face_index, x, y, side, MGQ_MpUi::Style::BACK)
-    else
-      Sprite_MpLeaderHud.draw_figure(bitmap, looks.character_name, looks.character_index, x, y, side, MGQ_MpUi::Style::BACK)
-    end
-  end
-
-  # Draws Amira's picture faintly at the right behind the Quests page's lines.
-  def draw_backdrop
-    picture = MGQ_MpWorldOverview.backdrop
-    return unless picture
-
-    room = bitmap.height - LIST_TOP - HINT_HEIGHT - MARGIN
-    scale = [room.to_f / picture.height, 1.0].min
-    width = (picture.width * scale).to_i
-    height = (picture.height * scale).to_i
-    return if width <= 0 || height <= 0
-
-    target = Rect.new(bitmap.width - MARGIN - width, LIST_TOP + room - height, width, height)
-    bitmap.stretch_blt(target, picture, picture.rect, MGQ_MpWorldOverview::BACKDROP_OPACITY)
-  end
-
-  # Keeps what fitting a text to a width gave, since measuring texts is slow in the game.
-  #
-  # @param key [Array] What the result goes by: its use, the text and the width.
-  # @yieldreturn [Object] The result, worked out once.
-  # @return [Object] The result.
-  def self.fitted(key)
-    @fitted ||= {}
-    @fitted.clear if @fitted.size > FITTED_MOST
-    @fitted.key?(key) ? @fitted[key] : @fitted[key] = yield
+    portraits == FACES && !looks.face_name.to_s.empty? ? { :face => looks } : { :figure => looks }
   end
 end
 

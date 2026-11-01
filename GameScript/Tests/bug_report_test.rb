@@ -2,7 +2,12 @@
 #  bug_report_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-01: Dropped the stand-in of the title screen's commands, which no script hooks any more
+#      Paulinchen  2026-11-01: Drew the form through the Mod Framework's window and answered the request from the DLL's topics
+#                            - Covered a form open at F12
+#                            - Dropped the stand-in of the title screen's commands, which no script hooks any more
+#                            - Took the wheel's screenshot as the wheel is gone and waited while any mod's screen holds the game
+#                            - Waited in the Mod Framework's menu scene of a mod's screen
+#                            - Stopped loading the deleted ui_boxes.rbx
 #      Paulinchen  2026-10-31: Read the hotkey's help from MGQ_MpHotkeys::HOTKEYS
 #                            - Stood in for the Mod Framework's DLL and read the typing from $mgq_text_input
 #                            - Expected the plainer texts the player reads
@@ -25,15 +30,17 @@
 #
 #----------------------------------------------------------------
 
-# Covers the in-game bug report, ui_bug_report.rbx: the hotkey and the wheel's choice, the
-# screenshot, when the form opens, the refusals, the facts and details, the form and its typing,
-# sending and the outcome. The DLL answers from $results and $state.
+# Covers the in-game bug report, ui_bug_report.rbx: what it hands the DLL's request (the scene, the
+# hotkey, the facts and details), the screenshot, the form on the Mod Framework's window, sending,
+# closing, and what it plays, says and logs for the DLL. The request's own rules are
+# BugReportRequestTests'; here the DLL answers from $answers and records each call in $asked.
 
 require_relative "support"
 require_relative "rules_support"
 
 # Stands in for the game's base scene, counting return_scene in $returned.
 class Scene_Base
+  def start; end
   def update; end
   def terminate; end
   def return_scene; $returned += 1; end
@@ -42,8 +49,8 @@ end
 class Scene_MenuBase < Scene_Base; end
 # Stands in for the game's main menu.
 class Scene_Menu < Scene_MenuBase; end
-# Stands in for the mod's screen of the story's choices.
-class Scene_MpStoryChoices < Scene_MenuBase; end
+# Stands in for the Mod Framework's menu scene of a mod's screen, such as the story's choices.
+class Scene_ModScreen < Scene_MenuBase; include Mod_Framework::UI::Scenes::MenuRoot; end
 # Stands in for the game's load screen.
 class Scene_Load < Scene_Base; end
 # Stands in for the game's title screen.
@@ -55,32 +62,30 @@ class Scene_Map < Scene_Base
   def update_scene; end
   def scene_changing?; SceneManager.scene != self; end
 end
-# Stands in for the game's base window.
-class Window_Base; def initialize(*); end; end
-# Stands in for the game's selectable window.
-class Window_Selectable < Window_Base; end
-# Stands in for the game's command window.
-class Window_Command < Window_Selectable; end
-# Stands in for the game's name edit window.
-class Window_NameEdit < Window_Base; end
-# Stands in for the game's name input window.
-class Window_NameInput < Window_Selectable; end
-# Stands in for the game's colors.
-class Color; def initialize(*); end; end
-# Stands in for the game's sprites.
-class Sprite; def initialize(*); end; end
-# A rectangle as the game's Rect holds it.
-Rect = Struct.new(:x, :y, :width, :height)
 # Stands in for the game's data manager.
 module DataManager; def self.save_system; end; end
 # Stands in for the game's sounds, recording each one played in $sounds.
 module Sound; %w[cursor ok cancel buzzer].each { |s| define_singleton_method("play_#{s}") { $sounds << s } }; end
-# Stands in for the game's input, the buttons held in $held.
-module Input; def self.press?(button); $held.include?(button); end; end
 # Stands in for the game's scene manager, recording each scene called in $called.
 module SceneManager
   class << self; attr_accessor :scene; end
-  def self.call(klass); $called << klass; @scene = klass.allocate; end
+  def self.call(klass); $called << klass; @scene = klass.new; end
+end
+
+# Stands in for the game's font, as the framework sets it to measure.
+class Font
+  attr_accessor :name, :size, :bold, :italic, :color, :outline, :out_color, :shadow
+  def initialize(*); @size = 24; end
+end
+# A rectangle as the game's Rect holds it.
+Rect = Struct.new(:x, :y, :width, :height) unless defined?(Rect)
+# Stands in for the game's pictures, measuring each character at half the font's size.
+class Bitmap
+  attr_reader :width, :height, :font
+  def initialize(width, height); @width = width; @height = height; @font = Font.new; end
+  def text_size(text); Rect.new(0, 0, text.to_s.size * @font.size / 2, @font.size); end
+  def dispose; @disposed = true; end
+  def disposed?; @disposed == true; end
 end
 
 # The screen as Graphics.snap_to_bitmap gives it, keeping whether it was disposed.
@@ -90,11 +95,8 @@ class FakeBitmap
   def dispose; @disposed = true; end
   def disposed?; @disposed == true; end
 end
-# Stands in for the game's graphics; each snapshot is kept in $bitmaps, and fails while $snap_fails
-# holds.
+# Stands in for the game's screenshot; each is kept in $bitmaps, and fails while $snap_fails holds.
 module Graphics
-  def self.width; 640; end
-  def self.height; 480; end
   def self.snap_to_bitmap
     raise "no screen" if $snap_fails
 
@@ -117,32 +119,13 @@ module MGQ_Multiplayer
   module Log; def self.write(message); $log << message; end; def self.hand_over; end; end
   # Stands in for the ini reader, finding nothing.
   module Ini; def self.read(_path); {}; end; def self.load(_path, _quiet = false); {}; end; end
-  # Stands in for the player's identity and Player.ini, from $name, $share and $player_ini.
+  # Stands in for the player's identity and Player.ini, from $name and $player_ini.
   module Player
     def self.name; $name; end
-    def self.share; $share; end
+    def self.share; true; end
     def self.setting(key); $player_ini[key]; end
     def self.store(key, value); $player_ini[key] = value.to_s; true; end
   end
-  # Stands in for the Mod Framework's DLL, the keyboard working while $running holds.
-  def Mod_Framework.available?; $running; end
-  # Stands in for the hotkeys' keyboard: $pressed is pressed once, the numpad's 0 while $numpad.
-  module Mod_Framework::UI::Key
-    def self.watch(*_codes); end
-    def self.pressed?(code); $pressed == code ? (($pressed = nil) || true) : false; end
-    def self.triggered?(code); code == 0x60 && $numpad; end
-  end
-  # Stands in for the captured input, each button in $buttons triggered once.
-  module Mod_Framework::UI::Capture
-    def self.start(_owner); end
-    def self.stop(_owner); end
-    def self.trigger?(button); $buttons.delete(button) ? true : false; end
-    def self.press?(_button); false; end
-    def self.repeat?(_button); false; end
-    def self.on?; false; end
-  end
-  # Stands in for the mouse, never clicked.
-  module Mod_Framework::UI::Mouse; def self.clicked?; false; end; end
   # Stands in for the DLL's link, recording each call in $calls.
   module Link
     # A DLL export, checked against the contract and answering from $results.
@@ -150,7 +133,7 @@ module MGQ_Multiplayer
       def call(*args); check_dll_call(name, args); $calls << [name, args]; $results.fetch(name, 1); end
     end
     def self.function(name); Function.new(name, dll_signature(name)); end
-    def self.read(name, _size); name == "mp_report_state" ? $state.dup : ""; end
+    def self.read(_name, _size); ""; end
     def self.player_id; "0123abcd"; end
     # Reads a message into its header fields, its body under :payload.
     def self.parse(text)
@@ -163,29 +146,19 @@ module MGQ_Multiplayer
 end
 
 $sounds = []
-$held = []
-$buttons = []
 $called = []
 $bitmaps = []
 $calls = []
 $results = {}
-$state = ""
 $log = []
 $player_ini = {}
 $returned = 0
 $name = "Player A"
-$share = true
-$running = true
-$typed = ""
 
 load_script "core_hotkeys"
 load_script "world_save_distribution"
 load_script "ui_online"
-load_script "ui_boxes"
 load_script "world"
-load_script "world_mods"
-load_script "world_text"
-load_script "world_screen"
 open_rules_bridge
 
 # The registries and boxes the report takes part in, which keep what it hands them.
@@ -194,7 +167,6 @@ $wheel = []
 $notices = []
 $chat = []
 $map_free = true
-$covered = false
 $in_world = true
 $shown = true
 # Stands in for the overworld sync, keeping each tick in $ticks; the map is free while $map_free.
@@ -203,12 +175,17 @@ module MGQ_MpOverworldSync
   def self.map_free?; $map_free; end
   def self.in_world?; $in_world; end
 end
-# Stands in for the action wheel, keeping each choice in $wheel; covered while $covered.
+# Stands in for the action wheel, keeping each choice in $wheel and what runs as it is gone in
+# $wheel_gone.
 module MGQ_MpActions
   # A choice of the action wheel.
   Option = Struct.new(:text, :run, :refusal, :icon, :leaves)
+  # The wheel, which only takes blocks for its events.
+  WHEEL = Object.new
+  # Keeps a block of the wheel's gone.
+  def WHEEL.on(event, &block); ($wheel_gone ||= []) << block if event == :gone; self; end
   def self.wheel_choice(order, &option); $wheel << [order, option]; end
-  def self.covered?; $covered; end
+  def self.wheel; WHEEL; end
 end
 # Stands in for the notification box, keeping each message in $notices; shown while $shown.
 module MGQ_MpNotices
@@ -219,10 +196,14 @@ end
 module MGQ_MpChat; def self.system(text); $chat << text; end; end
 # Stands in for the World overview, with the progress variable's English and Japanese names.
 module MGQ_MpWorldOverview; PROGRESS = ["Overall Events Progress", "総合イベント進行度"]; end
+# Stands in for the keyboard of the hotkeys: the bug report's hotkey goes down once while $hotkey.
+def MGQ_MpHotkeys.pressed?(name)
+  pressed = name == :bug_report && $hotkey
+  $hotkey = false
+  pressed ? true : false
+end
 
 load_script "ui_bug_report"
-# Lets the tests tell whether a report is being sent.
-def MGQ_MpBugReport.sending?; @sending; end
 
 report = MGQ_MpBugReport
 
@@ -244,21 +225,9 @@ $listing = ["ready", "", [Listed.new("dir0123", "Test World", false)]]
 # Stands in for the world directory, listing $listing.
 module MGQ_MpWorld::Directory; def self.list; $listing; end; end
 
-# Runs a frame: the hooks after Graphics.update, then the map's update_scene when the map is the
-# scene.
-def frame
-  $ticks.each { |tick| tick.call($in_world) }
-  SceneManager.scene.update_scene if SceneManager.scene.is_a?(Scene_Map)
-end
-
-# Drops the form waiting to open and forgets every call, so a check reads only what follows.
-def reset
-  MGQ_MpBugReport.take_opening
-  [$called, $calls, $notices, $chat, $sounds, $log].each(&:clear)
-end
-
 # The registrations.
-check("the report follows every frame and adds its choice after the wheel's others", [$ticks.size, $wheel.map(&:first)], [1, [60]])
+check("the report follows every frame, adds its choice after the wheel's others and hears the wheel gone",
+      [$ticks.size, $wheel.map(&:first), $wheel_gone.size], [1, [60], 1])
 
 # The facts and details.
 SceneManager.scene = Scene_Map.new
@@ -299,394 +268,251 @@ def broken.x; raise "gone"; end
 $game_player, kept_player = broken, $game_player
 check("a detail that cannot be read is unknown, and the others stay", report.details(SceneManager.scene)[3], ["Position", "unknown"])
 $game_player = kept_player
-check("facts are lines of a label and a value, on one line, cut to the relay's lengths",
-      report.lines([["A" * 40, "x\ty\nz"], ["Long", "v" * 200]], report::MAX_VALUE_CHARS), "#{'A' * 32}\tx y z\nLong\t#{'v' * 120}")
 
-# The screenshot goes to C#, which walks to its pixels (GameBridge.Snap, ScreenshotWalk): here a
-# FakeBridge keeps each Bitmap's address and size in $calls and keeps it unless $results says 0.
-snap_fake = FakeBridge.new
-snap_fake.answer(report::Screenshot::TOPIC) { |request| $calls << [report::Screenshot::TOPIC, request]; $results[report::Screenshot::TOPIC] != 0 }
-MGQ_Multiplayer::Bridge.open(snap_fake)
+# The DLL's side: the request's topics answer from $answers and record each call in $asked; the
+# screenshot's topic keeps each Bitmap unless $answers says false.
+fake, _ui, _edit = open_fake_ui { ["", 0] }
+fake.answer("ui.tree.layout") { |_changes| {} }
+$answers = {}
+$asked = []
+(%w[tick snapped on_map wheel_refusal wheel wheel_gone take_opening send closed].map { |name| "report.#{name}" } + [report::Screenshot::TOPIC]).each do |topic|
+  fake.answer(topic) { |request| $asked << [topic, request]; $answers.key?(topic) ? $answers[topic] : (topic == report::Screenshot::TOPIC || nil) }
+end
+tree = Mod_Framework::UI::Tree
 
-# The hotkey on the map: the screenshot at the press, then the form from the map's update.
+# Runs a frame: the hooks after Graphics.update, the map's update_scene when the map is the scene,
+# then the frame's end, whose drain hands the DLL's events over.
+def frame
+  $ticks.each { |tick| tick.call($in_world) }
+  SceneManager.scene.update_scene if SceneManager.scene.is_a?(Scene_Map)
+  ui_frame
+end
+
+# Forgets every call and answer and what was played and said, so a check reads only what follows.
+def reset
+  [$called, $asked, $notices, $chat, $sounds, $log, $calls].each(&:clear)
+  $answers.clear
+end
+
+# Tells what the DLL was asked under a topic.
+#
+# @param topic [String] The topic.
+# @return [Array] Each request.
+def asked(topic)
+  $asked.select { |name, _| name == topic }.map { |_, request| request }
+end
+
+# What a frame hands the DLL.
+SceneManager.scene = Scene_Map.new
 reset
-$pressed = 0x72
 frame
-snap = $calls.find { |name, _| name == report::Screenshot::TOPIC }
-check("the hotkey hands C# the screen's bitmap by its address, with its size", snap && snap[1], [$bitmaps.last.object_id * 2, 4, 2])
-check("and disposes the screen's bitmap", $bitmaps.last.disposed?, true)
-check("and the form opened on the free map", $called, [Scene_MpBugReport])
-opening = report.take_opening
-check("with the screenshot, the facts and the details", [opening[:snapped], opening[:facts].last, opening[:details].first],
-      [true, ["Where", "Scene_Map, map 154"], ["Player", "Player A (0123abcd)"]])
-
-# In a menu the form opens at once.
-reset
-SceneManager.scene = Scene_Menu.new
-$pressed = 0x72
-frame
-check("in a menu the form opens at once", [$called, $sounds], [[Scene_MpBugReport], ["ok"]])
-$pressed = 0x72
-frame
-check("pressing again while the form opens does nothing", [$called.size, report.take_opening.nil?], [1, false])
-reset
-
-# In a battle the screenshot is taken at the press and the form opens back on the map.
-SceneManager.scene = Scene_Battle.new
-$pressed = 0x72
-frame
-check("in a battle the screenshot is taken at the press, the chat says the form opens after it",
-      [$calls.map(&:first), $chat, $called], [[report::Screenshot::TOPIC], [report::BATTLE_TEXT], []])
-$pressed = 0x72
-frame
-check("a second press while one waits is refused in the chat", $chat.last, report::WAITING_REFUSAL)
+check("each frame tells the DLL the scene, whether the map is ready, the box shows and the player types, without facts",
+      [asked("report.tick").last["scene"], asked("report.tick").last["hotkey"], asked("report.tick").last.key?("facts")],
+      [{ "name" => "Scene_Map", "place" => "map", "in_world" => true, "map_ready" => true, "shown" => true, "typing" => false }, false, false])
+places = [Scene_Battle, Scene_Menu, Scene_ModScreen, Scene_Title, Scene_Load].map do |klass|
+  SceneManager.scene = klass.new
+  frame
+  asked("report.tick").last["scene"]["place"]
+end
+check("a battle, a menu, a mod's menu scene such as the story's choices, the title and any other scene each have their place", places,
+      ["battle", "menu", "waiting_menu", "title", "other"])
+ui = Mod_Framework::UI
+known = ui.respond_to?(:menu_screen?) ? ui.method(:menu_screen?) : nil
+ui.singleton_class.send(:remove_method, :menu_screen?) if known
+check("an older Mod Framework without UI.menu_screen? still waits in a mod's menu scene and opens over the game's menu",
+      [report.place_of(Scene_ModScreen.new), report.place_of(Scene_Menu.new)], ["waiting_menu", "menu"])
+ui.define_singleton_method(:menu_screen?, known) if known
 SceneManager.scene = Scene_Map.new
 $map_free = false
-frame
-check("the form waits while the map is busy", $called, [])
-$map_free = true
-$covered = true
-frame
-check("and while a screen of the mod lies over it", $called, [])
-$covered = false
-frame
-check("then opens on the free map", $called, [Scene_MpBugReport])
-reset
-
-# Outside a world, a battle's report is told in the notification box, where the chat is closed.
-$in_world = false
-SceneManager.scene = Scene_Battle.new
-$pressed = 0x72
-frame
-check("outside a world the box is told instead", [$chat, $notices.map { |_, text| text }], [[], [report::BATTLE_TEXT]])
-$in_world = true
-report.forget("a test")
-check("forgetting a waiting report drops its screenshot", $calls.last.first, "mp_report_drop_snap")
-reset
-
-# Where the box hides, as in a battle outside a world, what it says waits until it shows.
-$in_world = false
-SceneManager.scene = Scene_Battle.new
-$shown = false
-$pressed = 0x72
-frame
-check("a battle's report outside a world says nothing while the box hides", [$notices, $chat], [[], []])
-SceneManager.scene = Scene_Map.new
-$map_free = false
-$shown = true
-frame
-check("back on a busy map the box says the form opens once the player is free", [$notices.map { |_, text| text }, $called], [[report::BUSY_TEXT], []])
-$map_free = true
-frame
-check("which it then does", $called, [Scene_MpBugReport])
-reset
-SceneManager.scene = Scene_Battle.new
-$shown = false
-$pressed = 0x72
-frame
-SceneManager.scene = Scene_Map.new
-$shown = true
-frame
-check("back on a free map the form opens with nothing said", [$notices, $called], [[], [Scene_MpBugReport]])
-reset
-SceneManager.scene = Scene_Battle.new
-$shown = false
-$pressed = 0x72
-frame
-SceneManager.scene = Scene_Map.new
-frame
-$shown = true
-frame
-check("what waited is dropped once the form opened while the box still hid", [$notices, $called], [[], [Scene_MpBugReport]])
-reset
-SceneManager.scene = Scene_Battle.new
-$shown = false
-$pressed = 0x72
-frame
-report.forget("a test")
-SceneManager.scene = Scene_Map.new
-$shown = true
-frame
-check("and once the report is forgotten", $notices, [])
-$in_world = true
-reset
-
-# The map busy at the press, and a menu that cannot be left.
-SceneManager.scene = Scene_Map.new
-$map_free = false
-$pressed = 0x72
-frame
-check("on a busy map the box says the form opens once the player is free", [$notices.map { |_, text| text }, $called], [[report::BUSY_TEXT], []])
-$map_free = true
-frame
-check("which it then does", $called, [Scene_MpBugReport])
-reset
-SceneManager.scene = Scene_MpStoryChoices.new
-$pressed = 0x72
-frame
-check("the screen of the story's choices is not left for the form", $called, [])
-SceneManager.scene = Scene_Title.new
-frame
-check("a waiting report is forgotten once the game went to the title screen", [$calls.last.first, report.instance_variable_get(:@pending)], ["mp_report_drop_snap", nil])
-reset
-
-# Refusals.
-$log.clear
-$pressed = 0x72
-frame
-check("the title screen opens no report", [$called, $calls, $sounds], [[], [], []])
-check("which the log says under the hotkeys", $log.grep(/ignored/), ["keys: hotkey F3 (Report a Bug) ignored: the game shows the title or game over screen"])
-SceneManager.scene = Scene_Map.new
 $mgq_text_input = true
-$log.clear
-$pressed = 0x72
 frame
-check("nor does a press while the player types, which the log leaves out", [$called, $calls, $log.grep(/ignored|no report/)], [[], [], []])
+check("a busy map is not ready, and typing is told", asked("report.tick").last["scene"].values_at("map_ready", "typing"), [false, true])
+$map_free = true
 $mgq_text_input = false
-$share = false
-$pressed = 0x72
+capture = Mod_Framework::UI::Capture
+held = capture.method(:on?)
+capture.define_singleton_method(:on?) { true }
 frame
-check("without a name the box says how to choose one", [$called, $notices.last[1], $sounds], [[], report::NO_NAME_REFUSAL, ["buzzer"]])
-$share = true
-SceneManager.scene = Scene_MpBugReport.allocate
-$pressed = 0x72
+check("nor is a free map while a screen of a mod holds the game", asked("report.tick").last["scene"]["map_ready"], false)
+capture.define_singleton_method(:on?, held)
+$hotkey = true
 frame
-check("nor while the form is open", [$called, $calls], [[], []])
-reset
+by_hotkey = asked("report.tick").last
+check("the hotkey goes with where the player is and the report's facts and details",
+      [by_hotkey["hotkey"], by_hotkey["where"], by_hotkey["facts"].last, by_hotkey["details"].first],
+      [true, "Scene_Map, map 154", ["Where", "Scene_Map, map 154"], ["Player", "Player A (0123abcd)"]])
+check("nothing is snapped while the DLL does not say so", [$bitmaps, asked("report.snapped")], [[], []])
 
-# A form another scene took the place of is forgotten, so later reports are not refused.
+# The screenshot the DLL asks for, then the form at once in a menu.
+reset
 SceneManager.scene = Scene_Menu.new
-$pressed = 0x72
+$answers["report.tick"] = true
+$answers["report.snapped"] = true
+$answers["report.take_opening"] = true
 frame
-SceneManager.scene = Scene_Menu.new
+check("the screenshot hands C# the screen's bitmap by its address, with its size, and disposes it",
+      [asked(report::Screenshot::TOPIC).first, $bitmaps.last.disposed?], [[$bitmaps.last.object_id * 2, 4, 2], true])
+check("then tells the DLL it was kept, in the menu", asked("report.snapped").first,
+      { "kept" => true, "scene" => asked("report.tick").last["scene"] })
+form = report.form
+check("the form opens in place over the menu", [form && form.window.open?, $called], [true, []])
+$answers.delete("report.tick")
 frame
-check("a form that never opened is forgotten with its screenshot", [report.take_opening, $calls.last.first], [nil, "mp_report_drop_snap"])
+check("while it is open the DLL finds the form in front", asked("report.tick").last["scene"]["place"], "form")
+tree.take("events" => [[form.window.node, "close"]])
+check("cancel closes it and tells the DLL the player left it", [form.window.open?, asked("report.closed"), report.form],
+      [false, ["the player left it"], nil])
+reset
+$answers.update("report.tick" => true, "report.snapped" => true, "report.take_opening" => true)
+frame
+opened = report.form && report.form.window.open?
+tree.reset
+$answers.clear
+$hotkey = true
+frame
+$hotkey = false
+check("a form open at F12 is told closed, and the next hotkey asks again from the menu",
+      [opened, asked("report.closed"), report.form, asked("report.tick").last["scene"]["place"]], [true, ["F12 started the game again"], nil, "menu"])
 reset
 
-# The action wheel's choice: the screenshot once the wheel faded out.
-SceneManager.scene = Scene_Map.new
-option = $wheel.first[1].call
-check("the wheel offers Report a Bug", [option.text, option.run.nil?], ["Report a Bug", false])
-option.run.call
-check("the screenshot waits for the wheel to fade out", $calls, [])
-(report.wheel_frames - 1).times { frame }
-check("still none a frame before it is gone", [$calls, $called], [[], []])
-frame
-check("then it is taken and the form opens", [$calls.map(&:first), $called], [[report::Screenshot::TOPIC], [Scene_MpBugReport]])
-reset
-
-# A screenshot that fails leaves the report without one.
+# A screenshot that fails or the DLL did not keep.
 $snap_fails = true
-SceneManager.scene = Scene_Menu.new
-$pressed = 0x72
+$answers["report.tick"] = true
 frame
-check("a screenshot that fails opens the form without one", [$called, report.take_opening[:snapped]], [[Scene_MpBugReport], false])
+check("a screenshot that fails is told as not kept", asked("report.snapped").last["kept"], false)
 $snap_fails = false
-$results[report::Screenshot::TOPIC] = 0
-SceneManager.scene = Scene_Menu.new
-$pressed = 0x72
+$answers[report::Screenshot::TOPIC] = false
 frame
-check("as does one the DLL did not keep", [report.take_opening[:snapped], $bitmaps.last.disposed?], [false, true])
-$results.delete(report::Screenshot::TOPIC)
+check("as is one the DLL did not keep, its bitmap disposed", [asked("report.snapped").last["kept"], $bitmaps.last.disposed?], [false, true])
+reset
+
+# On the map the form opens in a menu scene of its own.
+SceneManager.scene = Scene_Map.new
+$answers["report.on_map"] = true
+$answers["report.take_opening"] = false
+frame
+form = report.form
+check("the map's update asks the DLL, which opens the form in a menu scene of the framework's",
+      [asked("report.on_map").size, $called.size, form && form.window.open?, form && form.screenshot], [1, 1, false, nil])
+$answers.delete("report.on_map")
+frame
+check("while the menu scene starts the form is in front and not lost", [asked("report.tick").last["scene"]["place"], asked("report.closed")], ["form", []])
+SceneManager.scene.start
+check("then it opens there", form.window.open?, true)
+returned = $returned
+form.window.close(:cancel)
+check("and closing it goes back to the map", $returned, returned + 1)
+reset
+map = Scene_Map.new
+SceneManager.scene = map
+$answers["report.on_map"] = true
+$answers["report.take_opening"] = true
+frame
+SceneManager.scene = Scene_Battle.new
+tree.scene_ended(map)
+check("a form another scene took the place of before it opened is told closed",
+      [asked("report.closed"), report.form], [["another scene took its place"], nil])
+reset
+SceneManager.scene = Scene_Map.new
+$answers["report.on_map"] = true
+frame
+check("no form opens when the DLL hands none over", [report.form, $log.last], [nil, "bug report: no report waits for a form"])
+reset
+
+# The action wheel's choice.
+$bitmaps.clear
+$answers["report.wheel_refusal"] = "The last bug report is still being sent."
+option = $wheel.first[1].call
+check("the wheel's choice is refused as the DLL says", [option.text, option.run, option.refusal], ["Report a Bug", nil, "The last bug report is still being sent."])
+$answers.delete("report.wheel_refusal")
+option = $wheel.first[1].call
+option.run.call
+taken = asked("report.wheel").first
+check("taken, it hands the DLL the scene, where and the facts", [taken["scene"]["place"], taken["where"], taken["facts"].first],
+      ["map", "Scene_Map, map 154", ["Game", "v3.06.00, translated"]])
+check("the screenshot waits while the wheel still shows", [$bitmaps.size, asked("report.wheel_gone")], [0, []])
+$answers["report.wheel_gone"] = true
+$wheel_gone.each(&:call)
+check("once the wheel is gone, it is taken when the DLL says so", [$bitmaps.size, asked("report.snapped").size], [1, 1])
+$answers["report.wheel_gone"] = false
+$wheel_gone.each(&:call)
+check("a wheel gone later takes none", [$bitmaps.size, asked("report.snapped").size], [1, 1])
+$bitmaps.clear
+reset
+
+# What the DLL tells.
+fake.post("report.sound", "buzzer")
+fake.post("report.notice", "text" => "Sending the bug report . . .", "frames" => 600)
+fake.post("report.notice", "text" => "A bug report waits to open already.", "frames" => nil)
+fake.post("report.chat_line", "The bug report opens after the battle.")
+fake.post("report.hotkey_refused", "the game shows the title or game over screen")
+ui_frame
+check("the DLL's sounds play, its messages go to the box, its lines to the battle's chat",
+      [$sounds, $notices, $chat],
+      [["buzzer"], [[:bug_report, "Sending the bug report . . .", 600], [:bug_report, "A bug report waits to open already.", 180]],
+       ["The bug report opens after the battle."]])
+check("and a refused hotkey is logged under the hotkeys", $log.grep(/ignored/),
+      ["keys: hotkey F3 (Report a Bug) ignored: the game shows the title or game over screen"])
 reset
 
 # The form.
-form = report.form(true)
-check("the form: title, text, both attachments on one row, and the button", form.fields.map { |field| [field.key, field.kind, field.side] },
-      [[:title, :text, nil], [:text, :area, nil], [:screenshot, :check, :left], [:logs, :check, :right], [:send, :button, nil]])
-check("the title takes 100 characters, the text 2000 in about 6 lines",
-      [form.fields[0].max_chars, form.fields[1].max_chars, form.fields[1].lines], [100, 2000, 6])
-check("both attachments start ticked", [form[:screenshot], form[:logs]], [true, true])
-check("without a screenshot only the logs", report.form(false).fields.map { |field| [field.key, field.side] }, [[:title, nil], [:text, nil], [:logs, nil], [:send, nil]])
-check("an empty title keeps the form from being sent", form.problem, [0, report::TITLE_MISSING])
-form[:title] = "Formation stays shut"
-check("then the empty text", form.problem, [1, report::TEXT_MISSING])
-
-# Sending.
-done = { :facts => [["Mod", "0.6.3"], ["Where", "Scene_Map, map 154"]], :details => [["Player", "Player A (0123abcd)"]], :snapped => true }
-check("a report is sent", report.send_report(done, "Formation stays shut", "After the meeting.", true, true), nil)
-sent = $calls.last
-check("with its texts ended for the DLL, the facts and details as lines, and both attachments",
-      sent, ["mp_report_send", ["Formation stays shut\0", "After the meeting.\0", "Mod\t0.6.3\nWhere\tScene_Map, map 154\0", "Player\tPlayer A (0123abcd)\0", 3]])
-check("the box says it is being sent", $notices.last, [:bug_report, report::SENDING_TEXT, report::NOTICE_FRAMES])
-check("a second one is refused while it is sent", report.send_report(done, "T", "X", true, true), report::SENDING_REFUSAL)
-check("as is the wheel's choice", $wheel.first[1].call.refusal, report::SENDING_REFUSAL)
-SceneManager.scene = Scene_Map.new
-$pressed = 0x72
-frame
-check("and the hotkey", $notices.last[1], report::SENDING_REFUSAL)
-
-# The outcome.
-$state = "sending"
-reset
-(report::POLL_FRAMES - 1).times { frame }
-check("the state is read every half second", $notices, [])
-$state = "sent\t42\thttps://github.com/Pauliinchen/MGQ-Online/issues/42"
-$shown = false
-$in_world = false
-SceneManager.scene = Scene_Battle.new
-$pressed = 0x72
-report::POLL_FRAMES.times { frame }
-check("an outcome waits while the box hides, as in a battle", [$notices, report.sending?], [[], false])
-SceneManager.scene = Scene_Map.new
-$in_world = true
-$shown = true
-frame
-check("then the box thanks the player with the issue's number, the refusal kept in the battle dropped",
-      $notices.map { |_, text| text }, ["Bug report sent as issue #42. Thank you!"])
-report.instance_variable_set(:@sending, true)
-outcomes = [["rate", "too many"], ["off", "off"], ["busy", "busy"], ["http500", "GitHub refused the report"], ["unreachable", ""]].map do |code, reason|
-  report.instance_variable_set(:@sending, true)
-  $state = "failed\t#{code}\t#{reason}"
-  report::POLL_FRAMES.times { frame }
-  $notices.last[1]
-end
-check("a failure says why in friendly words for the rate limit, a relay without reports and a busy one, else asks to try again", outcomes,
-      ["The bug report failed: you sent several reports in a short time. Try again in an hour.",
-       "The bug report failed: bug reports are off right now.",
-       "The bug report failed: too many reports at once. Try again in a minute.",
-       "The bug report failed: try again later.", "The bug report failed: try again later."])
+SceneManager.scene = Scene_Menu.new
+$answers["report.take_opening"] = true
+report.open_form
+form = report.form
+check("the title takes 100 characters, the text 2000 in 6 lines, both typed only once confirmed",
+      [form.title.max_length, form.text.max_length, form.text.lines, form.title.confirm_to_type, form.text.confirm_to_type], [100, 2000, 6, true, true])
+check("both attachments start ticked", [form.screenshot.checked?, form.logs.checked?], [true, true])
+check("the help line names the key that starts typing on both boxes", [form.title.help, form.text.help].map { |help| help.end_with?("#{Mod_Framework::UI::Game.key_name(:C)}: type") },
+      [true, true])
+form.send_report
+check("an empty title keeps the form from being sent, with the buzzer", [asked("report.send"), $sounds], [[], ["buzzer"]])
+tree.take("states" => { form.title.node => tree::FOCUSED }, "events" => [[form.title.node, "focus"]])
+check("the focus goes to the title, and the help line says why", form.help.text, report::TITLE_MISSING)
+form.title.text = "Formation stays shut"
+form.send_report
+tree.take("states" => { form.title.node => 0, form.text.node => tree::FOCUSED }, "events" => [[form.text.node, "focus"]])
+check("then the empty text", form.help.text, report::TEXT_MISSING)
+form.text.text = "  After the meeting I cannot change my formation.  "
+tree.take("events" => [[form.logs.node, "click"]])
+check("a click on Attach the logs unticks it", form.logs.checked?, false)
+$answers["report.send"] = "The last bug report is still being sent."
+form.send_report
+check("a report the DLL refuses stays open and says why", [form.window.open?, form.help.text], [true, "The last bug report is still being sent."])
+$answers.delete("report.send")
+form.send_report
+check("a filled form is sent tidied, as the player ticked it", asked("report.send").last,
+      { "title" => "Formation stays shut", "text" => "After the meeting I cannot change my formation.", "screenshot" => true, "logs" => false })
+check("and closes, telling the DLL the report went", [form.window.open?, asked("report.closed"), report.form], [false, ["the report went"], nil])
 reset
 
-# The flags and the refusals of sending.
-report.send_report(done, "T", "X", false, true)
-report.instance_variable_set(:@sending, false)
-report.send_report({ :facts => [], :details => [], :snapped => false }, "T", "X", true, false)
-report.instance_variable_set(:@sending, false)
-check("unticked attachments and a missing screenshot leave their bits out", $calls.map { |_, args| args[4] }, [2, 0])
-$results["mp_report_send"] = 0
-check("a send the DLL did not start says so and keeps nothing sending", [report.send_report(done, "T", "X", true, true), report.sending?],
-      [report::NOT_STARTED_REFUSAL, false])
-$results.delete("mp_report_send")
-$share = false
-check("without a name nothing is sent", report.send_report(done, "T", "X", true, true), report::NO_NAME_REFUSAL)
-$share = true
+$answers["report.take_opening"] = false
+report.open_form
+form = report.form
+check("without a screenshot only the logs can be attached", [form.screenshot, form.logs.checked?], [nil, true])
+form.title.text = "T"
+form.text.text = "X"
+form.send_report
+check("and the screenshot is not asked for", asked("report.send").last["screenshot"], false)
 reset
 
-# Stands in for the form's window, counting redraws; the wheel scrolls a line once after
-# wheel_scrolls is set.
-class FakeForm
-  attr_accessor :index, :active
-  attr_reader :form, :redrawn
-  def initialize(form); @form = form; @index = 0; @active = true; @redrawn = 0; end
-  def field; @form.fields[@index]; end
-  def select(index); @index = index; end
-  def activate; @active = true; end
-  def refresh; end
-  def redraw_current_item; @redrawn += 1; end
-  def wheel_lines; scrolls = @wheel_scrolls == true; @wheel_scrolls = false; scrolls ? 1 : 0; end
-  attr_writer :wheel_scrolls
-end
-# The text box types what $typed holds.
-_fake, fake_ui, _edit = open_fake_ui { text = $typed.to_s; $typed = ""; [text, text.size] }
-# Stands in for the lines above the form, keeping the lines shown.
-class FakeInfo
-  attr_reader :lines
-  def show(lines); @lines = lines; end
-end
-
-# Builds the form's screen without its windows, for a report with a screenshot.
-#
-# @return [Scene_MpBugReport] The screen.
-def new_screen
-  scene = Scene_MpBugReport.allocate
-  form = MGQ_MpBugReport.form(true)
-  scene.instance_variable_set(:@report, { :facts => [["Mod", "0.6.3"]], :details => [], :snapped => true })
-  scene.instance_variable_set(:@form, form)
-  scene.instance_variable_set(:@form_window, FakeForm.new(form))
-  scene.instance_variable_set(:@info_window, FakeInfo.new)
-  scene
-end
-
-scene = new_screen
-window = scene.instance_variable_get(:@form_window)
-info = scene.instance_variable_get(:@info_window)
-form = scene.instance_variable_get(:@form)
-scene.update
-ui_frame
-check("the lines above the form say who sees what, then the field's hint", info.lines, [report::HELP, report::TITLE_HINT])
-# The form window deactivates itself before it calls on_field, as the game's windows do.
-window.active = false
-scene.on_field
-check("confirm on the title types into it in place, the hint naming the keys that go back", [$mgq_text_input, form.editing, info.lines[1]], [true, :title, Scene_MpWorlds.typing_hint])
-$typed = "Formation stays shut\r"
-$held = [:C]
-scene.update
-ui_frame
-scene.update
-check("Enter keeps what was typed and stops the typing", [form[:title], form.editing, $mgq_text_input], ["Formation stays shut", nil, false])
-scene.update
-ui_frame
-check("the form waits until the press that ended the typing is let go", window.active, false)
-$held = []
-scene.update
-ui_frame
-check("then takes the cursor again", window.active, true)
-scene.on_field
-$typed = "xx\e"
-scene.update
-ui_frame
-scene.update
-check("Escape puts the text back as it was", [form[:title], form.editing], ["Formation stays shut", nil])
-scene.on_field
-$typed = "yy"
-scene.update
-ui_frame
-window.wheel_scrolls = true
-scene.update
-ui_frame
-check("the wheel turned over the box being typed into scrolls it", fake_ui.ticks.last[MGQ_MpUi::TextEdit::MODEL][3], 1)
-$numpad = true
-scene.update
-ui_frame
-$numpad = false
-check("the numpad's 0 leaves the box as Escape does", [form[:title], form.editing], ["Formation stays shut", nil])
-scene.on_field
-$typed = "#{'z' * 120}\r"
-scene.update
-ui_frame
-scene.update
-check("the title takes 100 characters at most", form[:title].size, 100)
-form[:title] = "Formation stays shut"
-window.index = 3
-scene.on_field
-check("confirm on Attach the logs unticks it", form[:logs], false)
-window.index = 4
-window.active = false
-scene.on_field
-check("sending without a text points at it and says why", [window.index, info.lines[1], $sounds.last], [1, report::TEXT_MISSING, "buzzer"])
-form[:text] = "  After the meeting I cannot change my formation.  "
-window.index = 4
-scene.on_field
-check("a filled form is sent tidied, without the logs, and closes", [$calls.last[1][1], $calls.last[1][4], $returned > 0],
-      ["After the meeting I cannot change my formation.\0", 1, true])
-returned = $returned
-scene.terminate
-check("the form that sent its report keeps the screenshot for it", $calls.map(&:first).include?("mp_report_drop_snap"), false)
-report.instance_variable_set(:@sending, false)
+# A box that cannot be typed into while another mod types.
+$answers["report.take_opening"] = true
+report.open_form
+form = report.form
+tree.take("states" => { form.title.node => tree::FOCUSED }, "events" => [[form.title.node, "focus"]])
+form.title.send(:emit, :refuse)
+check("a box another mod keeps from typing says so", form.help.text, report::NO_KEYBOARD_REFUSAL)
+form.window.close(:cancel)
 reset
 
-scene = new_screen
-window = scene.instance_variable_get(:@form_window)
-$buttons = [:B]
-scene.update
-ui_frame
-scene.terminate
-check("cancel leaves the form and drops the screenshot", [$returned, $calls.map(&:first)], [returned + 1, ["mp_report_drop_snap"]])
+# A form the framework does not open.
+Mod_Framework.available = false
+$answers["report.take_opening"] = true
+report.open_form
+check("a form the framework does not open is told closed", [asked("report.closed").size, report.form], [1, nil])
+Mod_Framework.available = true
 reset
-scene = new_screen
-$numpad = true
-scene.update
-ui_frame
-$numpad = false
-check("as does the numpad's 0", $returned, returned + 2)
-reset
-$running = false
-scene = new_screen
-scene.on_field
-check("without the keyboard the box is not typed into, and the form says why",
-      [scene.instance_variable_get(:@form).editing, scene.instance_variable_get(:@info_window).lines[1]], [nil, report::NO_KEYBOARD_REFUSAL])
-$running = true
 
 # The texts.
 check("the hotkey's help names it a hotkey", MGQ_MpHotkeys::HOTKEYS[:bug_report].help.start_with?("The hotkey"), true)

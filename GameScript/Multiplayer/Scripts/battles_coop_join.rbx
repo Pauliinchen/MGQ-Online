@@ -2,6 +2,8 @@
 #  battles_coop_join.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Showed the prompt as a button of the Mod Framework below the player, which a click presses as the hotkey does
+#                            - Asked the wheels of the Mod Framework whether one is open
 #      Paulinchen  2026-10-31: Compared the Join Battle key with every hotkey through MGQ_MpHotkeys.names
 #      Paulinchen  2026-10-30: Checked requests to join and told the battle's room through the rules in C#
 #                            - Found what the prompt offers and asked and waited for the battle's host through the DLL
@@ -23,8 +25,8 @@
 
 # Joining a battle by choice in a Raid World: while the player is free on the map and another player
 # within three steps fights a battle whose host's state says it takes players in (state_fields), a
-# prompt below the player's character names the hotkey that joins it (Sprite_MpJoinPrompt). Its
-# press asks the battle's host (the DLL's JoinChoice), who takes the player in as a late guest
+# prompt below the player's character names the hotkey that joins it (Prompt), which a click on the
+# prompt presses too. Its press asks the battle's host (the DLL's JoinChoice), who takes the player in as a late guest
 # without enemies (MGQ_MpBattlesHotjoin.take_in_player), so an event's battle and a boss battle take
 # them too, or refuses, which the player reads in the notification box. Near a raid boss battle that
 # takes the player in no more, such as a full one, the prompt offers a side battle against the same
@@ -127,8 +129,8 @@ module MGQ_MpBattlesJoin
              end
     after = if MGQ_MpHooks.player_held? then "the player stands still for a battle or the story"
             elsif MGQ_MpChat.typing? then "the chat box is open"
-            elsif MGQ_MpActions::Wheel.open? then "the action wheel is open"
-            elsif MGQ_MpEmotes.open? then "the emote wheel is open"
+            elsif MGQ_MpActions.wheel.open? then "the action wheel is open"
+            elsif MGQ_MpEmotes.wheel.open? then "the emote wheel is open"
             elsif defined?(MGQ_MpWorldOverview) && MGQ_MpWorldOverview.open? then "the World overview is open"
             elsif MGQ_MpBattlesCoop.trading? || MGQ_MpCoopGather.coming? then "the player trades or is about to teleport"
             end
@@ -149,7 +151,9 @@ module MGQ_MpBattlesJoin
     @side = nil
     @freeze = nil
     reads = reads_hotkey?
-    pressed = reads && MGQ_MpHotkeys.pressed?(:join_battle) ? true : false
+    clicked = @clicked
+    @clicked = false
+    pressed = reads && (MGQ_MpHotkeys.pressed?(:join_battle) || clicked) ? true : false
     request = { "facts" => MGQ_MpBattlesCoop.facts, "reads" => reads, "pressed" => pressed, "changing" => changing ? true : false,
                 "busy" => reads ? busy_reasons : [nil, nil], "sides" => reads ? sides : nil, "freeze" => reads ? freeze_candidate : nil }
     answer = MGQ_Multiplayer::Bridge.call(FRAME_TOPIC, request)
@@ -215,7 +219,13 @@ module MGQ_MpBattlesJoin
     false
   end
 
-  # Tells the prompt below the player's character, see Sprite_MpJoinPrompt.
+  # Takes a click on the prompt, which the next frame on the map presses as the Join Battle
+  # hotkey, with the same refusals and log.
+  def self.click
+    @clicked = true
+  end
+
+  # Tells the prompt below the player's character, see Prompt.
   #
   # The map stops finding its battle while a message shows, so the prompt hides then too.
   #
@@ -268,64 +278,49 @@ module MGQ_MpBattlesJoin
 
   # Forgets the prompt a reset interrupted; the DLL forgets the request with the matchmaking.
   def self.drop
+    @clicked = false
     @target = nil
     @side = nil
     @freeze = nil
   end
 end
 
-# The prompt below the player's character while a battle near them takes them in, naming the
-# hotkey that joins it, in the style's small font and solid outline.
-class Sprite_MpJoinPrompt < Sprite
-  # Width of the prompt.
-  WIDTH = 240
+module MGQ_MpBattlesJoin
+  # The prompt below the player's character while a battle near them takes them in, naming the
+  # hotkey that joins it, in the small font and the color every request and offer shares: a button
+  # of the Mod Framework that follows the player, kept whole on the screen at the map's edges,
+  # which a click presses as the hotkey does.
+  class Prompt
+    # Width of the prompt.
+    WIDTH = 240
 
-  # Height of the prompt.
-  HEIGHT = 20
+    # Pixels between the character's feet and the prompt.
+    GAP = 2
 
-  # Pixels between the character's feet and the prompt.
-  GAP = 2
+    # @return [Mod_Framework::UI::Box] The prompt's box.
+    attr_reader :root
 
-  # Size of the prompt's font, the style's small one.
-  FONT_SIZE = MGQ_MpUi::Style::SMALL_SIZE
+    # Makes the prompt below the player and opens it, hidden while it has nothing to offer.
+    def initialize
+      @text = nil
+      @root = Mod_Framework::UI::Box.new(:frame => false, :follow => :player, :side => :below, :follow_gap => GAP, :on_screen => true, :width => WIDTH,
+                                         :mouse => :parts, :z => Mod_Framework::UI::Z[:labels], :hide_while => lambda { @text.nil? })
+      @button = @root.add_button("", :flat => true, :quiet => true, :font_size => :small, :color => :own, :align => :center)
+      @button.on(:click) { MGQ_MpBattlesJoin.click }
+      @root.open
+    end
 
-  # Color of the prompt, the one every request and offer shares.
-  COLOR = MGQ_MpActions::LINE_COLOR
+    # Shows what the prompt offers now, see MGQ_MpBattlesJoin.prompt_text. Called by the map every
+    # frame.
+    def update
+      @text = MGQ_MpBattlesJoin.prompt_text
+      @button.text = @text if @text && @button.text != @text
+    end
 
-  # Creates the prompt, empty.
-  #
-  # @param viewport [Viewport] The map's viewport of characters.
-  def initialize(viewport)
-    super(viewport)
-    self.bitmap = Bitmap.new(WIDTH, HEIGHT)
-    self.ox = WIDTH / 2
-    self.z = MGQ_MpUi::Z[:labels]
-    @shown = nil
-  end
-
-  # Draws the prompt, if it changed, below the player's sprite, or hides it. At the map's edges the
-  # prompt stays whole on the screen.
-  #
-  # @param sprite [Sprite_Character, nil] The player's sprite.
-  def show(sprite)
-    text = MGQ_MpBattlesJoin.prompt_text
-    self.visible = !text.nil? && !sprite.nil? && sprite.visible && sprite.opacity > 0
-    return unless visible
-
-    self.x = MGQ_MpUi.within(sprite.x, ox, Graphics.width - WIDTH + ox)
-    self.y = MGQ_MpUi.within(sprite.y + GAP, 0, Graphics.height - HEIGHT)
-    return if text == @shown
-
-    @shown = text
-    bitmap.clear
-    MGQ_MpUi::Style.use_font(bitmap, FONT_SIZE, COLOR)
-    bitmap.draw_text(0, 0, WIDTH, HEIGHT, text, 1)
-  end
-
-  # Frees the prompt's picture.
-  def dispose
-    bitmap.dispose
-    super
+    # Closes the prompt, with the map's sprites.
+    def close
+      @root.close
+    end
   end
 end
 
@@ -344,17 +339,17 @@ begin
   # joins the battle once the host's invite came.
   MGQ_MpHooks.after(Scene_Map, :update_scene, "battles_coop_join") { MGQ_MpBattlesJoin.on_map(scene_changing?) }
 
-  # After the map's sprites, the prompt below the player's character.
+  # After the map's sprites, the prompt below the player's character, never on the map behind a
+  # menu.
   MGQ_MpHooks.after(Spriteset_Map, :update, "battles_coop_join") do
     next unless mgq_mp_hud?
 
-    @mgq_mp_join_prompt ||= Sprite_MpJoinPrompt.new(MGQ_MpGame.get(self, :viewport1))
-    @mgq_mp_join_prompt.show(MGQ_MpGame.get(self, :character_sprites).find { |sprite| sprite.character.equal?($game_player) })
+    (@mgq_mp_join_prompt ||= MGQ_MpBattlesJoin::Prompt.new).update
   end
 
   # Before the map's sprites go, the prompt goes with them.
   MGQ_MpHooks.before(Spriteset_Map, :dispose, "battles_coop_join") do
-    @mgq_mp_join_prompt.dispose if @mgq_mp_join_prompt
+    @mgq_mp_join_prompt.close if @mgq_mp_join_prompt
     @mgq_mp_join_prompt = nil
   end
 

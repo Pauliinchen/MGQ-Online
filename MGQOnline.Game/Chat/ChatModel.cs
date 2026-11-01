@@ -2,6 +2,9 @@
 //  ChatModel.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Dropped the buzz of a refused character, which the Mod Framework's text field plays
+//                            - Named the close keys the scripts hand over in the help tab's last line
+//                            - Told how far a line of the closed log has faded
 //      Paulinchen  2026-10-31: Created
 //
 //----------------------------------------------------------------
@@ -88,6 +91,17 @@ public sealed partial class ChatModel
     public const int BubbleFrames = 360;
 
     /// <summary>
+    /// The last frames of a line of the closed log, over which it fades out.
+    /// </summary>
+    public const int FadeFrames = 12;
+
+    /// <summary>
+    /// The keys that close the chat box, as the help tab names them until the scripts hand over the
+    /// keys the player bound.
+    /// </summary>
+    public const string DefaultCloseKeys = "Esc or Numpad 0";
+
+    /// <summary>
     /// Lines sent that Alt with up and down bring back, kept for the session alone.
     /// </summary>
     public const int HistorySize = 20;
@@ -151,9 +165,16 @@ public sealed partial class ChatModel
     public static readonly string[] Tabs = [All, Global, Map, Party, Whisper];
 
     /// <summary>
-    /// What the help tab says.
+    /// What the help tab says, naming <see cref="DefaultCloseKeys"/>.
     /// </summary>
-    public static readonly string[] HelpText =
+    public static readonly string[] HelpText = HelpTextNaming(DefaultCloseKeys);
+
+    /// <summary>
+    /// Writes what the help tab says.
+    /// </summary>
+    /// <param name="closeKeys">The keys that close the chat box, such as "Esc or Numpad 0".</param>
+    /// <returns>The help tab's lines.</returns>
+    public static string[] HelpTextNaming(string closeKeys) =>
     [
         "A chat stays chosen until you choose another, by a command or a tab.",
         "/g <text>   Global: everyone in the world",
@@ -164,7 +185,7 @@ public sealed partial class ChatModel
         "Tabs: click one, or Alt with Left or Right. All shows every chat.",
         "Alt and a drag with the mouse move or resize the chat, Alt and a double click put it back.",
         "Alt with Up or Down brings back the lines you sent. Ctrl+V pastes.",
-        "Up, Down, Page Up, Page Down and the mouse wheel scroll. Enter sends, Esc or the numpad's 0 closes.",
+        $"Up, Down, Page Up, Page Down and the mouse wheel scroll. Enter sends, {closeKeys} closes.",
     ];
 
     /// <summary>
@@ -192,11 +213,6 @@ public sealed partial class ChatModel
         ["p"] = Party,
         ["party"] = Party,
     };
-
-    /// <summary>
-    /// The help tab's lines, which no other tab shows.
-    /// </summary>
-    private static readonly ChatLine[] HelpLines = [.. HelpText.Select(text => new ChatLine(null, text, Help, Help))];
 
     /// <summary>
     /// The room whose players the chat names and whose party it asks.
@@ -229,6 +245,11 @@ public sealed partial class ChatModel
     private readonly List<string> history = [];
 
     /// <summary>
+    /// The help tab's lines, which no other tab shows, naming the close keys the box opened with.
+    /// </summary>
+    private ChatLine[] helpLines = HelpLinesNaming(DefaultCloseKeys);
+
+    /// <summary>
     /// The sent line a walk through them stands at, <see langword="null"/> outside a walk.
     /// </summary>
     private int? historyAt;
@@ -259,14 +280,9 @@ public sealed partial class ChatModel
     private int pick;
 
     /// <summary>
-    /// The drain's frame, which ends a buzz and a chime once a frame.
+    /// The drain's frame, which ends a chime once a frame.
     /// </summary>
     private long frame;
-
-    /// <summary>
-    /// The frame in which a refused character last buzzed.
-    /// </summary>
-    private long? buzzed;
 
     /// <summary>
     /// The frame in which a whisper last chimed.
@@ -377,10 +393,22 @@ public sealed partial class ChatModel
     {
         if (Tab == Help)
         {
-            return HelpLines;
+            return helpLines;
         }
 
         return Typing ? [.. log.Where(line => line.ShownIn(Tab))] : [.. log.Where(line => line.Left > 0 && (line.ShownIn(Tab) || line.Channel == Whisper))];
+    }
+
+    /// <summary>
+    /// Tells how far a line of the log has faded: the frames it has left while the chat box is
+    /// closed and fewer than <see cref="FadeFrames"/> are left.
+    /// </summary>
+    /// <param name="line">The line.</param>
+    /// <returns>The frames left, <see langword="null"/> for a line that shows whole.</returns>
+    public int? FadeOf(ChatLine line)
+    {
+        ArgumentNullException.ThrowIfNull(line);
+        return Typing || line.Left >= FadeFrames ? null : line.Left;
     }
 
     /// <summary>
@@ -413,9 +441,12 @@ public sealed partial class ChatModel
     /// </summary>
     /// <param name="byKey">Whether its hotkey opened it, rather than the action wheel.</param>
     /// <param name="scene">The scene it opens in, for the log.</param>
-    public void Open(bool byKey, string scene)
+    /// <param name="closeKeys">The keys that close it as the player bound them, which the help tab
+    /// names; <see langword="null"/> for <see cref="DefaultCloseKeys"/>.</param>
+    public void Open(bool byKey, string scene, string? closeKeys = null)
     {
         Box = new ChatBox(string.Empty, 0, false);
+        helpLines = HelpLinesNaming(string.IsNullOrEmpty(closeKeys) ? DefaultCloseKeys : closeKeys);
         historyAt = null;
         draft = null;
         Log($"chat box opened {(byKey ? "with its key" : "from the action wheel")} in {scene}");
@@ -492,20 +523,6 @@ public sealed partial class ChatModel
     {
         Close("Escape");
         host.Sound("cancel");
-    }
-
-    /// <summary>
-    /// Buzzes for a character the box refused, once a frame, so a paste longer than the box takes
-    /// buzzes once.
-    /// </summary>
-    public void Refused()
-    {
-        if (buzzed != frame)
-        {
-            host.Sound("buzzer");
-        }
-
-        buzzed = frame;
     }
 
     /// <summary>
@@ -835,6 +852,13 @@ public sealed partial class ChatModel
     /// <returns>The expression.</returns>
     [GeneratedRegex("[\\r\\n]+", RegexOptions.CultureInvariant)]
     private static partial Regex LineEnds();
+
+    /// <summary>
+    /// Makes the help tab's lines.
+    /// </summary>
+    /// <param name="closeKeys">The keys that close the chat box.</param>
+    /// <returns>The lines.</returns>
+    private static ChatLine[] HelpLinesNaming(string closeKeys) => [.. HelpTextNaming(closeKeys).Select(text => new ChatLine(null, text, Help, Help))];
 
     /// <summary>
     /// Writes a line of the chat into the log.

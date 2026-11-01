@@ -2,6 +2,9 @@
 #  battles_join_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Named the Mod Framework's interface by its own name
+#                            - Checked the prompt as a button of the Mod Framework below the player, which a click presses as the hotkey does
+#                            - Stood in for the wheels of the Mod Framework
 #      Paulinchen  2026-10-31: Stood in for the Mod Framework's keys
 #                            - Expected the plainer texts the player reads
 #      Paulinchen  2026-10-30: Read the players taken in from the joins stand-in
@@ -78,9 +81,9 @@ module MGQ_MpTrade; def self.session; $trading; end; end
 # The chat box, typed in while $typing is set.
 module MGQ_MpChat; def self.typing?; $typing ? true : false; end; end
 # The line color requests and offers share, and the action wheel, open while $wheel is set.
-module MGQ_MpActions; LINE_COLOR = MGQ_MpUi::Style::OWN; module Wheel; def self.open?; $wheel ? true : false; end; end; end
-# The emotes, never open.
-module MGQ_MpEmotes; def self.open?; false; end; end
+module MGQ_MpActions; LINE_COLOR = Mod_Framework::UI::Style::OWN; def self.wheel; StandInWheel.new(lambda { $wheel }); end; end
+# The emote wheel, never open.
+module MGQ_MpEmotes; def self.wheel; StandInWheel.new(lambda { false }); end; end
 # The notification box, keeping each message's text in $messages.
 module MGQ_MpNotices
   def self.message(_key, text, _frames = 180); ($messages ||= []) << text; end
@@ -289,24 +292,20 @@ map_frame
 check("the prompt shows again once the player is free", join.prompt_text, "Press J to join battle")
 
 # The prompt below the player's character.
-prompt = Sprite_MpJoinPrompt.new(nil)
-feet = Struct.new(:x, :y, :height, :visible, :opacity).new(200, 200, 48, true, 255)
-prompt.show(feet)
-check("the prompt shows below the player's feet", [prompt.visible, prompt.x, prompt.y, prompt.bitmap.drawn.map { |args| args[4] }], [true, 200, 202, ["Press J to join battle"]])
-font = prompt.bitmap.font
-check("in the style's small font and solid outline, as the other labels", [font.size, font.outline, font.out_color.equal?(MGQ_MpUi::Style::OUTLINE), font.color.equal?(Sprite_MpJoinPrompt::COLOR)], [MGQ_MpUi::Style::SMALL_SIZE, true, true, true])
-feet.opacity = 0
-prompt.show(feet)
-check("not while the player's character is hidden", prompt.visible, false)
-feet.opacity = 255
-feet.x = 10
-feet.y = 470
-prompt.show(feet)
-check("at the screen's left and bottom edges the prompt stays whole on the screen",
-      [prompt.x - prompt.ox, prompt.y], [0, 480 - Sprite_MpJoinPrompt::HEIGHT])
-feet.x = 630
-prompt.show(feet)
-check("so it does at the right edge", prompt.x - prompt.ox + Sprite_MpJoinPrompt::WIDTH, 640)
+prompt = join::Prompt.new
+prompt.update
+root = prompt.root
+button = root.children.first
+check("the prompt is a button following the player, under their feet, kept whole on the screen",
+      [root.follow, root.side, root.follow_gap, root.on_screen, root.width, button.class, button.text],
+      [:player, :below, 2, true, 240, Mod_Framework::UI::Button, "Press J to join battle"])
+check("in the small font and the player's own color, as every request and offer", [button.font_size, button.color, root.send(:hidden_now?)], [:small, :own, false])
+$scene_now = Object.new
+prompt.update
+check("it hides while it offers nothing", root.send(:hidden_now?), true)
+map_frame
+prompt.update
+prompt.close
 
 # The hotkey asks the host.
 $sent.clear
@@ -331,6 +330,13 @@ $down = []
 $coop_ask.age_join(AskStandIn::ANSWER_SECONDS + 1)
 map_frame
 check("without an answer the player walks on", [$messages.last, MGQ_MpHooks.player_held?], ["No answer from P5's battle.", false])
+map_frame
+$sent.clear
+join.click
+map_frame
+check("a click on the prompt asks the battle's host as the hotkey does", map_sent("pick").map { |seat, f| [seat, f["bid"]] }, [[5, "b1"]])
+$coop_ask.age_join(AskStandIn::ANSWER_SECONDS + 1)
+map_frame
 reset
 MGQ_MpOverworldSync::Peers.all.replace([])
 map_frame

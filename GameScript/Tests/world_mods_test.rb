@@ -2,8 +2,14 @@
 #  world_mods_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-01: Checked the row of Shared Mod Settings shown only in a world, changed only by its creator and never set by a world
+#      Paulinchen  2026-11-01: Dropped the checks that read the old screen prototype instead of the scripts
+#                            - Checked the row of Shared Mod Settings shown only in a world, changed only by its creator and never set by a world
 #                            - Dropped the stand-in of the title screen's commands, which no script hooks any more
+#                            - Stopped loading the deleted ui_boxes.rbx
+#                            - Showed the mods in the list box of the Mod Framework's components
+#                            - Asked the download of a world's mods through the world screen on the Mod Framework's components and its menu
+#                            - Stopped loading the deleted world_text.rbx
+#                            - Dropped the stand-ins of the name box and letters of the deleted text screen
 #      Paulinchen  2026-10-31: Listed MGQ Online's hotkey by the row the Mod Framework gives it
 #                            - Read the options a world sets from the Mod Framework, which the mod runs with
 #                            - Checked that the world's settings come from the relay alone
@@ -63,7 +69,7 @@ require "zlib"
 # Stand-ins for the game.
 
 # The game's scene base: returning to the last scene sets $returned.
-class Scene_Base; def return_scene; $returned = true; end; def update; end; end
+class Scene_Base; def start; end; def terminate; end; def scene_changing?; false; end; def return_scene; $returned = true; end; def update; end; end
 # The game's base of menu scenes.
 class Scene_MenuBase < Scene_Base; end
 # The game's load screen.
@@ -74,10 +80,6 @@ class Window_Base; def initialize(*); end; end
 class Window_Selectable < Window_Base; end
 # The game's command window.
 class Window_Command < Window_Selectable; end
-# The game's name box of its text screen.
-class Window_NameEdit < Window_Base; end
-# The game's letter table of its text screen.
-class Window_NameInput < Window_Selectable; end
 # The game's color, which keeps nothing.
 class Color; def initialize(*); end; end
 # The game's sprite, which draws nothing.
@@ -86,6 +88,18 @@ class Sprite; def initialize(*); end; end
 module Graphics; def self.update; end; end
 # The game's rectangle.
 Rect = Struct.new(:x, :y, :width, :height)
+# The game's pictures, which the framework's list box measures its key line on: half the font's
+# size a character.
+class Bitmap
+  # The picture's font.
+  attr_reader :font
+  # Creates a picture in a font of 24.
+  def initialize(*); @font = Struct.new(:size, :color, :bold, :outline, :out_color).new(24); end
+  # Measures a text.
+  def text_size(text); Rect.new(0, 0, text.to_s.size * @font.size / 2, @font.size); end
+  # Tells whether the picture was freed, never.
+  def disposed?; false; end
+end
 # The game's title screen, which does nothing.
 class Scene_Title; def start; end; def create_command_window; end; def update; end; def terminate; end; def scene_changing?; false; end; end
 # The game's system sounds: each one played is added to $sounds.
@@ -236,8 +250,12 @@ module MGQ_Multiplayer
   def self.path(name); name; end
   # The mod's log, kept in $log.
   module Log; def self.write(message); ($log ||= []) << message; end; end
+  # The Discord mod, which knows no name.
+  module Discord; def self.player_name; nil; end; end
   # The player Me, whose settings live in $ini.
   module Player
+    # The key of the name Discord told, which Player.ini keeps.
+    DISCORD_NAME = "discord_name"
     # Shares nothing.
     def self.share; end
     # The player's name.
@@ -253,6 +271,8 @@ module MGQ_Multiplayer
   module Ini; def self.read(_path); {}; end; def self.load(_path, _quiet = false); {}; end; end
   # The link to the DLL: records each call in $calls and reads its values from $dll.
   module Link
+    # Answers the player's id.
+    def self.player_id; "me"; end
     # A DLL function: a call is checked against its signature, recorded and answered as the DLL would.
     Function = Struct.new(:name, :signature) do
       # Calls the function: mp_restart_game answers $restart, and the functions in $refused answer 0.
@@ -296,63 +316,25 @@ module MGQ_Multiplayer
   end
 end
 
+require_relative "world_screen_support"
 load_script "world_save_distribution"
 load_script "core_hotkeys"
 load_script "ui_online"
-load_script "ui_boxes"
 load_script "world"
 load_script "world_mods"
-load_script "world_text"
 load_script "world_screen"
 open_rules_bridge
+open_fake_ui { typed = $typed.to_s; $typed = nil; [typed, typed.size] }
 # GameData.ini, which the title screen writes, is world_data_test.rb's; this game has no database to read.
 MGQ_MpWorld::GameData.instance_variable_set(:@written, true)
 
-# A small window of the world screen: keeps the commands it opened with.
-class FakeChoice
-  # The commands it opened with last, nil while closed.
-  attr_reader :choices
-  # Opens with commands.
-  def start(choices); @choices = choices; end
-  # Closes.
-  def finish; @choices = nil; end
-  # Takes input.
-  def activate; end
-  # Takes no input.
-  def deactivate; end
-  # Takes the cursor off.
-  def unselect; end
-  # Whether it is open and takes input.
-  def active; !@choices.nil?; end
-  # The cursor's row, -1 for none.
-  def index; -1; end
-end
-
-# The lines at the top of the world screen: keeps what they show.
-class FakeInfo
-  # What they show.
-  attr_reader :lines
-  # Shows lines.
-  def show(lines); @lines = lines; end
-end
-
-# Builds the world screen without its windows.
+# Opens the world screen with the player's id.
 #
 # @return [Scene_MpWorlds] The screen.
 def new_scene
-  scene = Scene_MpWorlds.allocate
-  [:@actions_window, :@members_window, :@confirm_window, :@start_window, :@list_window, :@form_window].each { |name| scene.instance_variable_set(name, FakeChoice.new) }
-  scene.instance_variable_set(:@info_window, FakeInfo.new)
-  scene.instance_variable_set(:@forms, { :new_world => MGQ_MpWorld::WorldForm.create(:new_world) })
+  scene = world_scene
+  scene.instance_variable_set(:@me, "me")
   scene
-end
-
-# What the lines at the top of the world screen say, the player's name left out.
-#
-# @param scene [Scene_MpWorlds] The world screen.
-# @return [String] The message.
-def said(scene)
-  scene.instance_variable_get(:@info_window).lines[1]
 end
 
 # Hands the mods module a catalog and forgets what it read before.
@@ -384,7 +366,7 @@ scene = new_scene
 scene.instance_variable_set(:@entry, MGQ_MpWorld::Entry.new("w1", "Modded", listed, nil, false, false))
 $screen_steps = [["say", offer], ["confirm", "mods", [["Download", "yes"], ["See the mods", "show_mods"], ["Back", "cancel"]]]]
 scene.on_enter
-check("the DLL's steps offer to download the mods, to see them, or to go back", [said(scene), scene.instance_variable_get(:@confirm_window).choices.map { |choice| choice[1] }], [offer, [:yes, :show_mods, :cancel]])
+check("the DLL's steps offer to download the mods, to see them, or to go back", [said(scene), menu_texts], [offer, ["Download", "See the mods", "Back"]])
 
 # The Mod Framework installs the mods: one of the game's mods is installed already, the world's
 # is one it finds on the website.
@@ -404,7 +386,7 @@ $installed_forgotten = 0
 MGQ_MpWorldMods.singleton_class.send(:alias_method, :tested_forget_installed, :forget_installed)
 MGQ_MpWorldMods.define_singleton_method(:forget_installed) { $installed_forgotten += 1; tested_forget_installed }
 $screen_steps = [["install", [["Level Cap", "levelcap"]]]]
-scene.on_confirmed
+pick_menu(scene, 0)
 ids, done = Mod_Framework::Mods.installing
 check("download hands the framework the mod by the id it finds for it, holding the screen meanwhile",
       [screen_requests("screen.answer").last, ids, scene.instance_variable_get(:@busy)], [{ "answer" => "yes" }, ["site:level-cap"], "mods"])
@@ -423,12 +405,10 @@ scene.instance_variable_set(:@entry, MGQ_MpWorld::Entry.new("w1", "Modded", list
 $sounds.clear
 $screen_steps = [["buzz"], ["say", "Modded needs mods that are missing or in another version here: Other Mod (get it from its author)."], ["confirm", "mods", [["See the mods", "show_mods"], ["Back", "cancel"]]]]
 scene.on_enter
-check("a mod the relay cannot give is named, with no download", [said(scene), scene.instance_variable_get(:@confirm_window).choices.map { |choice| choice[1] }, $sounds],
-      ["Modded needs mods that are missing or in another version here: Other Mod (get it from its author).", [:show_mods, :cancel], ["buzzer"]])
-scene.instance_variable_set(:@list_box, Object.new)
-scene.on_show_mods
-check("seeing the mods tells the DLL, which ends an entry after a restart", screen_requests("screen.answer").last, { "answer" => "show_mods" })
-check("the mods box shows the difference", screen_detail.mod_lines(listed.mods, nil, mods.differing(listed)), [[:head, "Mods (1)"], [:item, "Other Mod", :gold, "required, yours differs from the world creator's copy"]])
+check("a mod the relay cannot give is named, with no download", [said(scene), $asked.last[1], $sounds],
+      ["Modded needs mods that are missing or in another version here: Other Mod (get it from its author).", ["See the mods", "Back"], ["buzzer"]])
+answer_question(scene, true)
+check("seeing the mods tells the DLL, which ends an entry after a restart, and opens the list box", [screen_requests("screen.answer").last, scene.box_open?], [{ "answer" => "show_mods" }, true])
 $mod_check = nil
 listed.mod_hashes = ""
 
@@ -438,12 +418,10 @@ $called = nil
 title = Scene_Title.new
 mods.on_title_update(title)
 check("the title screen opens the world screen once to enter the world again", [$called, mods.rejoining, mods.take_rejoin], [Scene_MpWorlds, "w1", nil])
-scene = new_scene
-scene.instance_variable_set(:@me, "me")
 MGQ_MpWorld::GameData.instance_variable_set(:@fingerprint, "1:x")
-scene.open_steps
+scene = new_scene
 MGQ_MpWorld::GameData.instance_variable_set(:@fingerprint, nil)
-check("the world screen hands the DLL the world to enter again, which it enters once the list holds it", [screen_requests("screen.do").last["rejoin"], mods.rejoining], ["w1", nil])
+check("the world screen hands the DLL the world to enter again as it opens, which it enters once the list holds it", [screen_requests("screen.do").select { |request| request["do"] == "open" }.last["rejoin"], mods.rejoining], ["w1", nil])
 
 # A world that turns other mods off: the Mod Framework enters the game with the mods of its session.
 entered = []

@@ -2,6 +2,7 @@
 //  BugReportRequest.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Took the wheel's screenshot once the action wheel is gone
 //      Paulinchen  2026-10-31: Created
 //
 //----------------------------------------------------------------
@@ -151,7 +152,7 @@ internal interface IReportHost
 
 /// <summary>
 /// The in-game bug report's request: asked for by the hotkey or the wheel, it takes the screenshot
-/// at once or once the wheel faded out, opens the form at once in a menu or waits until the player
+/// at once or once nothing of the wheel shows, opens the form at once in a menu or waits until the player
 /// is free on the map, is forgotten once the game leaves for the title, sends the report the form
 /// filled and follows the sending, telling the player its outcome in the notification box once it shows.
 /// </summary>
@@ -161,12 +162,6 @@ internal interface IReportHost
 /// </remarks>
 internal sealed partial class BugReportRequest
 {
-    /// <summary>
-    /// Frames between the wheel's choice and its screenshot: the wheel's fade out of 12 frames and
-    /// one more, so the wheel is not in it.
-    /// </summary>
-    public const int WheelFrames = 13;
-
     /// <summary>
     /// Frames between two looks at how the sending stands.
     /// </summary>
@@ -273,9 +268,9 @@ internal sealed partial class BugReportRequest
     private Report? form;
 
     /// <summary>
-    /// Frames left until the screenshot the wheel asked for, <see langword="null"/> while none waits.
+    /// Whether the screenshot the wheel asked for waits until nothing of the wheel shows.
     /// </summary>
-    private int? snapIn;
+    private bool snapWaits;
 
     /// <summary>
     /// How the report asked for continues once the screenshot was taken, <see langword="null"/> for
@@ -322,7 +317,7 @@ internal sealed partial class BugReportRequest
 
     /// <summary>
     /// Asks for a report: refused where it cannot open; otherwise the screenshot follows, at once or
-    /// once the wheel faded out, and the form opens at once in a menu or waits until the player is
+    /// once nothing of the wheel shows, and the form opens at once in a menu or waits until the player is
     /// free on the map.
     /// </summary>
     /// <param name="via">How it was asked for.</param>
@@ -345,7 +340,7 @@ internal sealed partial class BugReportRequest
         if (via == ReportVia.Wheel)
         {
             // The wheel played its own sound as the choice was taken.
-            snapIn = WheelFrames;
+            snapWaits = true;
             return false;
         }
 
@@ -410,25 +405,19 @@ internal sealed partial class BugReportRequest
     }
 
     /// <summary>
-    /// Counts down to the screenshot the wheel asked for. Comes after the hotkey in each frame.
+    /// Takes the screenshot the wheel asked for, as the action wheel is gone.
     /// </summary>
     /// <returns>Whether the scripts take the screenshot now, then telling <see cref="Snapped"/>.</returns>
-    public bool SnapDue()
+    public bool WheelGone()
     {
-        if (snapIn is null || pending is null)
+        if (!snapWaits)
         {
             return false;
         }
 
-        snapIn--;
-        if (snapIn > 0)
-        {
-            return false;
-        }
-
-        snapIn = null;
+        snapWaits = false;
         afterSnap = null;
-        return true;
+        return pending is not null;
     }
 
     /// <summary>
@@ -688,7 +677,7 @@ internal sealed partial class BugReportRequest
     {
         Report? report = pending;
         pending = null;
-        snapIn = null;
+        snapWaits = false;
         told = null;
         if (report is null)
         {

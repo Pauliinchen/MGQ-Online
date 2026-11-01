@@ -382,7 +382,7 @@ module ScreenPrototype
     # Writes the list box's lines for a world's players: those online, then the others.
     #
     # @param members [Array<MGQ_MpWorld::Directory::Member>] Everyone who ever joined.
-    # @return [Array<Array>] The lines, see Sprite_MpListBox::View.
+    # @return [Array<Array>] The lines, each [:head, text] or [:item, text, color, note], as screen.box hands them out.
     def player_lines(members)
       online = members.select { |member| member.online }
       lines = []
@@ -404,7 +404,7 @@ module ScreenPrototype
     # @param differing [Array<String>, nil] What of this game's data differs from the world's, see MGQ_MpWorld::Entry#differing.
     # @param rows [Array<MGQ_MpWorldMods::Row>, nil] The required mods this game has in another version or lacks, see MGQ_MpWorldMods.differing.
     # @param turned_off [Array<Array>, nil] The player's mods the world turns off with their scripts counted, see MGQ_MpModParking.turned_off_mods; nil or none for no such section.
-    # @return [Array<Array>] The lines, see Sprite_MpListBox::View; one per mod turned off.
+    # @return [Array<Array>] The lines, as screen.box hands them out; one per mod turned off.
     def mod_lines(text, differing = nil, rows = nil, turned_off = nil)
       mods = ScreenPrototype.mods_of(text)
       marks = mod_marks(text, differing, rows)

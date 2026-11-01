@@ -2,6 +2,7 @@
 //  StoryTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Dropped the topic of the player's telling, which the telling machine holds
 //      Paulinchen  2026-10-31: Told the scripts the routes the Great Decision offers
 //                            - Answered the replay of runs handed over, in StoryTopics.Replay.cs
 //                            - Sent the player's Raid World runs to their track and handed the scripts its entries in order from the cursors of the save's log
@@ -73,11 +74,6 @@ internal sealed partial class StoryTopics : IStoryTrackHost
     /// The topic that hands the player's story the relay asked for: {key => value}.
     /// </summary>
     public const string SeedTopic = "story.seed";
-
-    /// <summary>
-    /// The topic the scripts stage the player's telling with: {"site", "map"}, nil once it ended.
-    /// </summary>
-    public const string TellTopic = "story.tell";
 
     /// <summary>
     /// The topic the scripts stage the seat of the teller the player watches with, nil for none.
@@ -343,20 +339,6 @@ internal sealed partial class StoryTopics : IStoryTrackHost
         context.Register(SeedTopic, (_, request) =>
         {
             topics._track.Seed(SeedOf(request.AsHash()));
-            return null;
-        });
-        context.Register(TellTopic, (_, request) =>
-        {
-            if (request.IsNil)
-            {
-                topics._track.Tell(null, 0);
-            }
-            else
-            {
-                RubyHash telling = request.AsHash();
-                topics._track.Tell(telling["site"].AsText(), telling["map"].AsInt());
-            }
-
             return null;
         });
         context.Register(WatchTopic, (_, request) =>

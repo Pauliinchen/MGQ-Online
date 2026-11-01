@@ -2,6 +2,7 @@
 //  EdgeArrowsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Kept the players picked and the log alone, the Mod Framework's markers placing the arrows
 //      Paulinchen  2026-10-31: Created
 //
 //----------------------------------------------------------------
@@ -14,9 +15,9 @@ using MGQOnline.Game.Hud;
 namespace MGQOnline.Game.Tests.Hud;
 
 /// <summary>
-/// Covers the edge arrows against the cases ui_edge_arrows.rbx drew and logged before its rules
-/// moved to C# (fixtures/hud/arrows.json, written by make_arrows_fixtures.rb there), and players at
-/// the same distance taken by their ids.
+/// Covers the edge arrows against the cases ui_edge_arrows.rbx pointed at and logged before its
+/// rules moved to C# (fixtures/hud/arrows.json, written by make_arrows_fixtures.rb there), and
+/// players at the same distance taken by their ids.
 /// </summary>
 public sealed class EdgeArrowsTests
 {
@@ -29,52 +30,6 @@ public sealed class EdgeArrowsTests
     /// The screen's height in the cases.
     /// </summary>
     private const int ScreenHeight = 480;
-
-    /// <summary>
-    /// Asserts that every line meets the edge where the script put the arrow, at its angle.
-    /// </summary>
-    [Fact]
-    public void Point_PlacesEveryArrowAsTheScriptDid()
-    {
-        foreach (JsonElement each in Cases().GetProperty("points").EnumerateArray())
-        {
-            int[] line = [.. each.GetProperty("line").EnumerateArray().Select(value => value.GetInt32())];
-            (int X, int Y, int Angle)? point = EdgeArrows.Point(line[0], line[1], line[2], line[3], EdgeArrows.EdgeRect(ScreenWidth, ScreenHeight, each.GetProperty("top_room").GetInt32()));
-            JsonElement expected = each.GetProperty("point");
-            int[]? want = expected.ValueKind == JsonValueKind.Null ? null : [.. expected.EnumerateArray().Select(value => value.GetInt32())];
-            Assert.Equal(want, point is { } at ? [at.X, at.Y, at.Angle] : null);
-        }
-    }
-
-    /// <summary>
-    /// Asserts that every angle steps as the script stepped it, halves away from zero.
-    /// </summary>
-    [Fact]
-    public void StepAngle_RoundsEveryAngleAsTheScriptDid()
-    {
-        foreach (JsonElement each in Cases().GetProperty("steps").EnumerateArray())
-        {
-            Assert.Equal(each[1].GetInt32(), EdgeArrows.StepAngle(each[0].GetInt32()));
-        }
-    }
-
-    /// <summary>
-    /// Asserts that every arrow's picture, plate, slide and triangle rows are the script's.
-    /// </summary>
-    [Fact]
-    public void Picture_LaysOutEveryArrowAsTheScriptDrewIt()
-    {
-        foreach (JsonElement each in Cases().GetProperty("plates").EnumerateArray())
-        {
-            ArrowPicture picture = EdgeArrows.Picture(each.GetProperty("angle").GetInt32(), each.GetProperty("width").GetInt32());
-            string at = $"angle {each.GetProperty("angle").GetInt32()}, width {each.GetProperty("width").GetInt32()}";
-            Assert.True(Ints(each.GetProperty("picture")).SequenceEqual([picture.Left, picture.Top, picture.Width, picture.Height]), at);
-            Assert.True(Ints(each.GetProperty("plate")).SequenceEqual([picture.PlateX, picture.PlateY]), at);
-            Assert.True(Ints(each.GetProperty("slide")).SequenceEqual([picture.SlideX, picture.SlideY]), at);
-            int[] rows = [.. each.GetProperty("rows").EnumerateArray().SelectMany(Ints)];
-            Assert.True(rows.SequenceEqual(picture.Rows.SelectMany(row => new[] { row.X, row.Y, row.Width, row.Fill })), at);
-        }
-    }
 
     /// <summary>
     /// Asserts that every frame points at the players the script pointed at and logs its lines.

@@ -51,7 +51,6 @@
     <File Path="GameScript/Multiplayer/Scripts/world_save_distribution.rbx" />
     <File Path="GameScript/Multiplayer/Scripts/world_save_export.rbx" />
     <File Path="GameScript/Multiplayer/Scripts/world_screen.rbx" />
-    <File Path="GameScript/Multiplayer/Scripts/world_text.rbx" />
   </Folder>
   <Folder Name="/GameScript/Tests/">
     <File Path="GameScript/Tests/actors_test.rb" />
@@ -88,6 +87,8 @@
     <File Path="GameScript/Tests/world_mods_test.rb" />
     <File Path="GameScript/Tests/world_open_test.rb" />
     <File Path="GameScript/Tests/world_overview_test.rb" />
+    <File Path="GameScript/Tests/world_screen_support.rb" />
+    <File Path="GameScript/Tests/world_screen_test.rb" />
     <File Path="GameScript/Tests/wire_fixtures_test.rb" />
     <File Path="GameScript/Tests/world_support.rb" />
   </Folder>

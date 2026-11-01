@@ -2,7 +2,12 @@
 #  start_choice_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-01: Dropped the stand-in of the title screen's commands, which no script hooks any more
+#      Paulinchen  2026-11-01: Dropped the checks that read the old screen prototype instead of the scripts
+#                            - Dropped the stand-in of the title screen's commands, which no script hooks any more
+#                            - Stopped loading the deleted ui_boxes.rbx
+#                            - Played the start's choices through the world screen on the Mod Framework's components and its menu
+#                            - Dropped the stand-ins of the name box and letters of the deleted text screen
+#                            - Stopped loading the deleted world_text.rbx
 #      Paulinchen  2026-10-31: Loaded ui_online.rbx and ui_boxes.rbx in place of the scripts the Mod Framework took over
 #      Paulinchen  2026-10-30: Stopped loading the deleted world_mods_parking.rbx
 #      Paulinchen  2026-10-23: Checked that a new world goes to the DLL and that the screen plays the steps it answers
@@ -47,7 +52,7 @@ require "tmpdir"
 # Stand-ins for the game.
 
 # The game's scene base: returning to the last scene sets $returned.
-class Scene_Base; def return_scene; $returned = true; end; end
+class Scene_Base; def start; end; def update; end; def terminate; end; def scene_changing?; false; end; def return_scene; $returned = true; end; end
 # The game's base of menu scenes.
 class Scene_MenuBase < Scene_Base; end
 # The game's load screen.
@@ -58,10 +63,6 @@ class Window_Base; def initialize(*); end; end
 class Window_Selectable < Window_Base; end
 # The game's command window.
 class Window_Command < Window_Selectable; end
-# The game's name box of its text screen.
-class Window_NameEdit < Window_Base; end
-# The game's letter table of its text screen.
-class Window_NameInput < Window_Selectable; end
 # The game's color, which keeps nothing.
 class Color; def initialize(*); end; end
 # The game's sprite, which draws nothing.
@@ -98,13 +99,15 @@ module MGQ_Multiplayer
   # A log that writes nothing.
   module Log; def self.write(_message); end; end
   # The player Me, without favourites.
-  module Player; def self.share; end; def self.name; "Me"; end; def self.keys_under(_prefix); []; end; end
+  module Player; def self.share; end; def self.name; "Me"; end; def self.keys_under(_prefix); []; end; def self.setting(_key); nil; end; end
   # An ini file reader that reads every file as empty.
   module Ini; def self.read(_path); {}; end; def self.load(_path, _quiet = false); {}; end; end
   # Leaves a path as it is.
   def self.path(name); name; end
   # The link to the DLL: records each call in $calls and reads its values from $dll.
   module Link
+    # Answers the player's id.
+    def self.player_id; "me"; end
     # A DLL function: a call is checked against its signature, recorded and answered with 1.
     Function = Struct.new(:name, :signature) do
       # Checks a call's arguments against the signature, records the call in $calls and answers 1.
@@ -127,98 +130,27 @@ module MGQ_Multiplayer
   end
 end
 
+require_relative "world_screen_support"
 load_script "world_save_distribution"
 load_script "ui_online"
-load_script "ui_boxes"
 load_script "world"
 load_script "world_mods"
-load_script "world_text"
 load_script "world_screen"
 open_rules_bridge
+open_fake_ui { typed = $typed.to_s; $typed = nil; [typed, typed.size] }
 
 $started = []
 $start_error = nil
 # Records the world started in $started and answers $start_error.
 def MGQ_MpWorld.start(world, _scene); $started << world; $start_error; end
 
-# A small window of the world screen: keeps the commands it opened with and whether it takes input.
-class FakeChoice
-  # The commands it opened with, nil while closed.
-  attr_reader :choices
-
-  # Whether it takes input.
-  attr_reader :active
-
-  # Opens with commands and takes input.
-  #
-  # @param choices [Array<Array>] The commands.
-  def start(choices); @choices = choices; @active = true; end
-
-  # Closes.
-  def finish; @choices = nil; @active = false; end
-
-  # Tells whether it is open.
-  #
-  # @return [Boolean] Whether it has commands.
-  def open?; !@choices.nil?; end
-
-  # Takes input.
-  def activate; @active = true; end
-
-  # Takes no input.
-  def deactivate; @active = false; end
-
-  # Takes the cursor off.
-  def unselect; end
-
-  # The cursor's row.
-  #
-  # @return [Integer] -1, no cursor.
-  def index; -1; end
-
-  # Keeps the world to put the cursor on.
-  #
-  # @param _id [String] The world's directory id.
-  def select_world(_id); end
-end
-
-# The lines at the top of the world screen: keeps what they show.
-class FakeInfo
-  # What they show.
-  attr_reader :lines
-
-  # Shows lines.
-  #
-  # @param lines [Array<String, nil>] The lines.
-  def show(lines); @lines = lines; end
-end
-
-# Builds the world screen without its windows, with stand-ins for those the start choice uses.
+# Opens the world screen with the player's id, as the start choice reads it.
 #
 # @return [Scene_MpWorlds] The screen.
 def new_scene
-  scene = Scene_MpWorlds.allocate
-  [:@actions_window, :@members_window, :@confirm_window, :@start_window, :@list_window, :@form_window].each { |name| scene.instance_variable_set(name, FakeChoice.new) }
-  scene.instance_variable_set(:@info_window, FakeInfo.new)
-  scene.instance_variable_set(:@forms, { :new_world => MGQ_MpWorld::WorldForm.create(:new_world) })
+  scene = world_scene
+  scene.instance_variable_set(:@me, "me")
   scene
-end
-
-# The commands the start window opened with, by their symbols.
-#
-# @param scene [Scene_MpWorlds] The world screen.
-# @return [Array<Symbol>, nil] The symbols, nil while it is closed.
-def start_choices(scene)
-  choices = scene.instance_variable_get(:@start_window).choices
-  choices && choices.map { |choice| choice[1] }
-end
-
-# What the lines at the top of the world screen say, the player's name left out.
-#
-# @param scene [Scene_MpWorlds] The world screen.
-# @return [String] The message.
-def said(scene)
-  scene.instance_variable_get(:@info_window).lines[1]
 end
 
 # The form.
@@ -234,16 +166,6 @@ $dll["mp_dir_list"] = "state=ready\n\nworld\tw1\t4\t0\tc\t0\tC\tFree\tnone\t0\t1
 _, _, listed, = MGQ_MpWorld::Directory.list
 check("the list reads which worlds let their players choose", listed.map { |world| world.choose }, [true, false, false])
 
-# What the details say.
-detail = screen_detail
-# A listed world with a starting save's state and whether its players choose.
-listed_as = lambda { |start, choose| MGQ_MpWorld::Directory::ListedWorld.new("w", 4, 0, "c", 0, "C", "W", start, [], false, choose) }
-check("details: choose with the creator's save", detail.start_text(listed_as.call("ready", true)), "Your choice: beginning, own or creator's save")
-check("details: choose without one", detail.start_text(listed_as.call("none", true)), "Your choice: beginning or own save")
-check("details: the creator's save only", detail.start_text(listed_as.call("ready", false)), "The creator's save")
-check("details: the beginning for everyone", detail.start_text(listed_as.call("none", false)), "The beginning")
-check("details: uploading comes first", detail.start_text(listed_as.call("pending", true)), "Its creator is still setting it up")
-
 Dir.mktmpdir do |root|
   Dir.chdir(root) do
     FileUtils.mkdir_p("Save")
@@ -258,39 +180,38 @@ Dir.mktmpdir do |root|
     # form, leave it and say where to enter it (WorldEnteringTests); its creator is asked on
     # entering it.
     scene = new_scene
-    scene.instance_variable_set(:@form_symbol, :new_world)
-    scene.instance_variable_get(:@forms)[:new_world].tap { |made| made[:name] = "Free"; made[:choose] = true }
+    scene.enter_form(:new_world)
+    scene.form.tap { |made| made[:name] = "Free"; made[:choose] = true }
     $screen_steps = [["busy", "create"]]
     scene.send_form
     check("sending the form has the DLL make the world, with no starting save to copy", screen_requests("screen.do").last.values_at("do", "start"), ["create", []])
     scene.play("steps" => [["idle"], ["fresh_form", "new_world"], ["close_form"], ["select", "w"], ["say", "Free was created. #{MGQ_MpWorldScreen.text("enter_hint")}"], ["back"]])
     check("once made, the form is empty and no longer has the cursor", [scene.instance_variable_get(:@forms)[:new_world][:name], scene.form], ["", nil])
-    check("and the screen says where to enter it", [said(scene), start_choices(scene)], ["Free was created. #{MGQ_MpWorldScreen.text("enter_hint")}", nil])
+    check("and the screen says where to enter it", [said(scene), menu_texts], ["Free was created. #{MGQ_MpWorldScreen.text("enter_hint")}", nil])
     # Where to start, which the DLL's steps decide (WorldEnteringTests); the screen plays them.
     where = [["say", "Where do you start in Free? A save cannot be undone."],
              ["choices", [["From the creator's save", "from_creator"], ["At the beginning", "from_beginning"], ["From one of my saves", "from_own"], ["Back", "cancel"]]]]
     scene = new_scene
-    scene.instance_variable_get(:@list_window).activate
     scene.instance_variable_set(:@entry, MGQ_MpWorld::Entry.new("w", "Free", nil, world, false, false))
     scene.instance_variable_set(:@me, "me")
     $screen_steps = where
     scene.on_enter
     check("entering hands the DLL the world, its folder, the player and the game data",
           screen_requests("screen.enter").last.values_at("id", "folder", "name", "gone", "me"), ["w", world.id, "Free", false, "me"])
-    check("and shows the choices the steps name", start_choices(scene), [:from_creator, :from_beginning, :from_own, :cancel])
+    check("and shows the choices the steps name in a menu", menu_texts, ["From the creator's save", "At the beginning", "From one of my saves", "Back"])
     check("with the question they say", said(scene), "Where do you start in Free? A save cannot be undone.")
-    check("and only the choice takes input", [scene.instance_variable_get(:@list_window).active, scene.instance_variable_get(:@form_window).active], [false, false])
+    check("and the screen waits for the answer", scene.idle?, false)
 
-    scene.on_from_beginning
-    check("a choice goes back to the DLL as the answer", [screen_requests("screen.answer").last["answer"], start_choices(scene)], ["from_beginning", nil])
+    pick_menu(scene, 1)
+    check("a choice goes back to the DLL as the answer", [screen_requests("screen.answer").last["answer"], menu_texts], ["from_beginning", nil])
     $screen_steps = where
     scene.on_enter
-    scene.on_from_creator
-    scene.on_take_start
+    pick_menu(scene, 0)
+    scene.dll_pick("take_start")
     check("the creator's save and Take go back too", screen_requests("screen.answer").last(2).map { |request| request["answer"] }, ["from_creator", "take_start"])
     $screen_steps = where
     scene.on_enter
-    scene.on_back
+    cancel_menu(scene)
     check("Back out of the choice goes back to the DLL", screen_requests("screen.answer").last["answer"], "back")
 
     # The steps of the running action.
@@ -310,7 +231,7 @@ Dir.mktmpdir do |root|
     scene = new_scene
     scene.instance_variable_set(:@entry, MGQ_MpWorld::Entry.new("w", "Free", nil, world, false, false))
     $screen_steps = [["save_screen"]]
-    scene.on_from_own
+    scene.dll_pick("from_own")
     check("From one of my saves opens the save screen", $called, Scene_MpStartSave)
     check("which says what the save is for", Scene_MpStartSave.allocate.help_window_text, MGQ_MpSaveDistribution::HELP_TEXTS[:own])
     check("every text of the save screen fits its line of help, 48 characters at most", MGQ_MpSaveDistribution::HELP_TEXTS.values.select { |text| text.size > 48 }, [])

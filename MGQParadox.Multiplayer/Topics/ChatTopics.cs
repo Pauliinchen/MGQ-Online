@@ -2,6 +2,8 @@
 //  ChatTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Dropped the topics of sending a line, Escape and a refused character, which no script calls
+//                            - Took the chat's messages, the close keys of the help tab, and told each line's tag, name and fade apart
 //      Paulinchen  2026-10-31: Answered the chat model's topics and posted its view, sounds and notices
 //                            - Created
 //
@@ -19,20 +21,15 @@ using MGQParadox.Multiplayer.Network.World;
 namespace MGQParadox.Multiplayer.Topics;
 
 /// <summary>
-/// The bridge topics of the chat over the world room (<see cref="ChatModel"/>): sending a line, and
-/// the chat box's typing, the tabs, the whisper chosen and the game's own lines in; the chat's view,
-/// its sounds and the relay's notices out as drained events.
+/// The bridge topics of the chat over the world room (<see cref="ChatModel"/>): the chat box's typing,
+/// the tabs, the whisper chosen and the game's own lines in; the chat's view, its sounds and the
+/// relay's notices out as drained events.
 /// </summary>
 internal sealed class ChatTopics : IChatHost
 {
     /// <summary>
-    /// The topic that sends a line of a chat: {"channel" ("global", "map", "party", "whisper"),
-    /// "text", "seat" (the whisper's), "map" (the map chat's)} in, {"sent", "said"} out.
-    /// </summary>
-    public const string SendTopic = "chat.send";
-
-    /// <summary>
-    /// The topic that opens the chat box: {"key" (whether its hotkey opened it), "scene"} in.
+    /// The topic that opens the chat box: {"key" (whether its hotkey opened it), "scene", "close"
+    /// (the keys that close it as the player bound them, which the help tab names)} in.
     /// </summary>
     public const string OpenTopic = "chat.open";
 
@@ -50,16 +47,6 @@ internal sealed class ChatTopics : IChatHost
     /// The topic of Enter in the box: the picked name, the help tab or the line sent.
     /// </summary>
     public const string EnterTopic = "chat.enter";
-
-    /// <summary>
-    /// The topic of Escape in the box, which closes it.
-    /// </summary>
-    public const string EscapeTopic = "chat.escape";
-
-    /// <summary>
-    /// The topic of a character the box refused, which buzzes once a frame.
-    /// </summary>
-    public const string RefusedTopic = "chat.refused";
 
     /// <summary>
     /// The topic of the arrows with the left Alt: [tab step, line step] in.
@@ -100,8 +87,9 @@ internal sealed class ChatTopics : IChatHost
     /// <summary>
     /// Every topic of the chat's model answers its view, and the frame posts it once it changed:
     /// {"channel", "tab", "tabs", "unread", "whisper_to", "reply_to", "box" ([text, cursor, locked],
-    /// nil while closed), "suggestions", "pick", "lines" ([[head, text, who, channel, id], ...]),
-    /// "bubbles" ({seat => [text, channel]}, -1 for the player)}.
+    /// nil while closed), "suggestions", "pick", "lines" ([[tag, name, text, who, channel, id, fade],
+    /// ...], the name with what follows it, such as "Ana: " or "* ", fade the frames left of a fading
+    /// line), "bubbles" ({seat => [text, channel]}, -1 for the player)}.
     /// </summary>
     public const string ViewEvent = "chat.view";
 
@@ -161,8 +149,7 @@ internal sealed class ChatTopics : IChatHost
     public ChatModel Chat { get; }
 
     /// <summary>
-    /// Registers the topics and the chat's frame on a context. The chat's messages stay the scripts'
-    /// until ui_chat.rbx reads the model, which then has <see cref="ChatModel.Listen"/> take them.
+    /// Registers the topics, the chat's frame and its messages on a context.
     /// </summary>
     /// <param name="context">The context the handshake opened.</param>
     /// <param name="room">The world room.</param>
@@ -172,17 +159,11 @@ internal sealed class ChatTopics : IChatHost
     {
         var topics = new ChatTopics(context, room, session);
         ChatModel chat = topics.Chat;
-        context.Register(SendTopic, (_, request) => topics.Send(request.AsHash()));
-        context.Register(OpenTopic, (_, request) => topics.Act(() => chat.Open(request.AsHash()["key"].AsBool(), request.AsHash()["scene"].AsText())));
+        chat.Listen();
+        context.Register(OpenTopic, (_, request) => topics.Act(() => topics.Open(request.AsHash())));
         context.Register(CloseTopic, (_, request) => topics.Act(() => chat.Close(request.IsNil ? null : request.AsText())));
         context.Register(TypedTopic, (_, request) => topics.Act(() => chat.Typed(request.AsHash()["text"].AsText(), request.AsHash()["cursor"].AsInt())));
         context.Register(EnterTopic, (_, _) => topics.Act(chat.Enter));
-        context.Register(EscapeTopic, (_, _) => topics.Act(chat.Escape));
-        context.Register(RefusedTopic, (_, _) =>
-        {
-            chat.Refused();
-            return null;
-        });
         context.Register(AltTopic, (_, request) => topics.Act(() => chat.Alt(request.AsArray()[0].AsInt(), request.AsArray()[1].AsInt())));
         context.Register(PickTopic, (_, request) => topics.Act(() => chat.MovePick(request.AsInt())));
         context.Register(TakePickTopic, (_, _) => topics.Act(() => chat.TakeSuggestion()));
@@ -235,9 +216,21 @@ internal sealed class ChatTopics : IChatHost
             { "box", chat.Box is { } box ? new RubyArray([box.Text, box.Cursor, box.Locked]) : RubyNil.Value },
             { "suggestions", Texts(chat.Suggestions()) },
             { "pick", chat.Pick },
-            { "lines", new RubyArray(chat.Entries().Select(line => (RubyValue)new RubyArray([line.Head, line.Text, line.Who, line.Channel, line.Id]))) },
+            { "lines", new RubyArray(chat.Entries().Select(line => (RubyValue)LineOf(chat, line))) },
             { "bubbles", bubbles },
         };
+    }
+
+    /// <summary>
+    /// Writes a line of the log as the view hands it.
+    /// </summary>
+    /// <param name="chat">The chat.</param>
+    /// <param name="line">The line.</param>
+    /// <returns>[tag, name, text, who, channel, id, fade], see <see cref="ViewEvent"/>.</returns>
+    private static RubyArray LineOf(ChatModel chat, ChatLine line)
+    {
+        RubyValue fade = chat.FadeOf(line) is { } left ? (long)left : RubyNil.Value;
+        return new RubyArray([line.Tag, line.Head[line.Tag.Length..], line.Text, line.Who, line.Channel, line.Id, fade]);
     }
 
     /// <summary>
@@ -256,6 +249,16 @@ internal sealed class ChatTopics : IChatHost
     {
         action();
         return told = ViewOf(Chat);
+    }
+
+    /// <summary>
+    /// Opens the chat box.
+    /// </summary>
+    /// <param name="request">{"key", "scene", "close"}.</param>
+    private void Open(RubyHash request)
+    {
+        RubyValue close = request["close"];
+        Chat.Open(request["key"].AsBool(), request["scene"].AsText(), close.IsNil ? null : close.AsText());
     }
 
     /// <summary>
@@ -287,19 +290,6 @@ internal sealed class ChatTopics : IChatHost
     {
         Peer peer = room.At(seat) ?? throw new BridgeRequestException($"Nobody told a state from seat {seat}.");
         Chat.ChooseWhisper(room.Labels().Find(label => label.Peer == peer).Label ?? peer.Name, peer);
-    }
-
-    /// <summary>
-    /// Sends a line of a chat as the scripts ask for it.
-    /// </summary>
-    /// <param name="request">{"channel", "text", "seat", "map"}.</param>
-    /// <returns>{"sent", "said"}: whether it went out, and for the global chat what the relay's mirror
-    /// did (0 not mirrored, 1 mirrored, 2 too fast).</returns>
-    private RubyHash Send(RubyHash request)
-    {
-        string channel = request["channel"].AsText();
-        (bool sent, int said) = Send(channel, request["text"].AsText(), channel == ChatModel.Whisper ? request["seat"].AsInt() : -1, WorldRoomTopics.TextOf(request["map"]));
-        return new RubyHash { { "sent", sent }, { "said", (long)said } };
     }
 
     /// <summary>

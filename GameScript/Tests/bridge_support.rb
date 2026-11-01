@@ -2,6 +2,11 @@
 #  bridge_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Stood in for every wheel the Mod Framework defines and handed the framework's wheels their frames
+#                            - Stood in for the Mod Framework's component tree
+#                            - Placed the tree's nodes and told the focus back as focus and blur
+#                            - Queued the states of the tree's nodes for a test
+#                            - Told a component's node as the tree holds it
 #      Paulinchen  2026-10-31: Opened the Mod Framework's bridge on the same FakeBridge, its interface events drained there, and stood in for its question box
 #      Paulinchen  2026-10-23: Stood in for the layout
 #                            - Stood in for the confirm box
@@ -527,10 +532,190 @@ class FakeEdit
   end
 end
 
+# C#'s component tree on a FakeBridge, as far as the screens' tests need it: the components the
+# scripts add, set and remove, by node, a place for each (a root at its place and size, each child
+# a row under the one before), the focus the scripts ask for told back as focus and blur, and the
+# events a test hands them, which reach them in the next frame as C#'s report. The layout, the
+# keys and the drawing are the Mod Framework's tests'.
+class FakeTree
+  # The height of the rows a child takes under the one before.
+  ROW = 24
+
+  # @return [Hash{Integer => Hash}] Each node: :parent, :kind, :props and :children.
+  attr_reader :nodes
+
+  # @return [Integer, nil] The node that has the focus, nil for none.
+  attr_reader :focused
+
+  # Answers the tree's layout and takes its changes from the tick, and has the framework hand the
+  # tree its changes and the text fields their keys every frame, as its start does in the game.
+  #
+  # @param fake [FakeBridge] The bridge.
+  # @param ui [FakeUi] The tick.
+  def initialize(fake, ui)
+    @fake = fake
+    @nodes = {}
+    @told = {}
+    @pending = {}
+    @focused = nil
+    tree = Mod_Framework::UI::Tree
+    ui.model(tree::MODEL) { |changes| apply(changes); send_report }
+    fake.answer(tree::LAYOUT) { |changes| apply(changes); report }
+    fake.answer(tree::RESET) { |_request| reset; nil }
+    return if $tree_collecting
+
+    $tree_collecting = true
+    Mod_Framework::UI::Tick.collect("Mod Framework components") { Mod_Framework::UI::Tree.collect }
+    Mod_Framework::UI::Tick.collect("Mod Framework text fields") { Mod_Framework::UI::TextField.follow }
+  end
+
+  # Hands a component an event of C#'s tree in the next frame, such as "close" or "submit".
+  #
+  # @param component [Mod_Framework::UI::Component] The component.
+  # @param name [String] The event.
+  # @param values [Array] Its values.
+  def tell(component, name, *values)
+    post([[component.node, name] + values])
+  end
+
+  # Queues events for the next report, as the player's keys and clicks make them.
+  #
+  # @param events [Array<Array>] The events, each [node, name, values...].
+  def post(events)
+    (@pending["events"] ||= []).concat(events)
+  end
+
+  # Tells whether a component is in the tree.
+  #
+  # @param component [Mod_Framework::UI::Component] The component.
+  # @return [Boolean] Whether it is.
+  def holds?(component)
+    !component.node.nil? && @nodes.key?(component.node)
+  end
+
+  # Queues the states of nodes for the next report, as C# tells them when they change.
+  #
+  # @param states [Hash{Integer => Integer}] The states by node, such as Mod_Framework::UI::Tree::FOCUSED.
+  def post_states(states)
+    (@pending["states"] ||= {}).update(states)
+  end
+
+  # Tells a component's node as the tree holds it.
+  #
+  # @param component [Mod_Framework::UI::Component] The component.
+  # @return [Hash, nil] Its :parent, :kind, :props and :children; nil while it is not in the tree.
+  def node_of(component)
+    @nodes[component.node]
+  end
+
+  private
+
+  # Takes the scripts' changes, as Change does in C#, and tells the focus they ask for.
+  #
+  # @param changes [Hash] The changes, see Mod_Framework::UI::Tree.changes.
+  def apply(changes)
+    Array(changes["add"]).each { |node, parent, kind, index, props| add(node, parent, kind, index, props || {}) }
+    Array(changes["set"]).each { |node, props| @nodes[node][:props].update(props) if @nodes[node] }
+    Array(changes["remove"]).each { |node| remove(node) }
+    move_focus(changes["focus"]) if changes["focus"]
+    move_focus(nil) if changes["blur"] && changes["blur"] == @focused
+  end
+
+  # Forgets every node, as the tree's reset does in C#.
+  def reset
+    @nodes.clear
+    @told.clear
+    @focused = nil
+  end
+
+  # Adds a node, leaving out one whose parent is gone, as C# does.
+  #
+  # @param node [Integer] The node.
+  # @param parent [Integer, nil] Its parent, nil for a root.
+  # @param kind [String] Its kind.
+  # @param index [Integer, nil] Its place among its siblings, nil for the last.
+  # @param props [Hash] Its properties.
+  def add(node, parent, kind, index, props)
+    return if parent && !@nodes[parent]
+
+    @nodes[node] = { :parent => parent, :kind => kind, :props => props, :children => [] }
+    return unless parent
+
+    siblings = @nodes[parent][:children]
+    index ? siblings.insert([index, siblings.size].min, node) : siblings << node
+  end
+
+  # Removes a node with every node it holds.
+  #
+  # @param node [Integer] The node.
+  def remove(node)
+    entry = @nodes.delete(node)
+    return unless entry
+
+    @told.delete(node)
+    move_focus(nil) if @focused == node
+    @nodes[entry[:parent]][:children].delete(node) if entry[:parent] && @nodes[entry[:parent]]
+    entry[:children].each { |child| remove(child) }
+  end
+
+  # Moves the focus, telling the node that lost it and the one that took it.
+  #
+  # @param node [Integer, nil] The node that takes it, nil for none.
+  def move_focus(node)
+    return if node == @focused
+
+    post([[@focused, "blur"]]) if @focused && @nodes[@focused]
+    @focused = node
+    post([[node, "focus"]]) if node
+  end
+
+  # Builds what changed since the last report: the places of the nodes that are new or moved, and
+  # the events queued.
+  #
+  # @return [Hash] The report, see Mod_Framework::UI::Tree.take.
+  def report
+    report = @pending
+    @pending = {}
+    rects = {}
+    @nodes.each_key do |node|
+      rect = rect_of(node)
+      rects[node] = rect unless @told[node] == rect
+      @told[node] = rect
+    end
+    report["rects"] = rects unless rects.empty?
+    report
+  end
+
+  # Posts the report, unless nothing changed, as the tree's event in the next frame.
+  def send_report
+    report = self.report
+    @fake.post(Mod_Framework::UI::Tree::EVENT, report) unless report.empty?
+  end
+
+  # Tells a node's place.
+  #
+  # @param node [Integer] The node.
+  # @return [Array(Integer, Integer, Integer, Integer)] Its x, y, width and height.
+  def rect_of(node)
+    entry = @nodes[node]
+    props = entry[:props]
+    unless entry[:parent]
+      at = props["at"] || [0, 0]
+      size = props["size"] || [nil, nil]
+      return [at[0] || 0, at[1] || 0, size[0] || 200, size[1] || 100]
+    end
+
+    parent = rect_of(entry[:parent])
+    place = @nodes[entry[:parent]][:children].index(node)
+    [parent[0], parent[1] + ROW * place, parent[2], ROW]
+  end
+end
+
 # Opens the bridges, MGQ Online's and the Mod Framework's, to the test's one FakeBridge,
 # $world_bridge, made here unless the world room's or the rules' stand-ins made it, adding the
 # frame's tick, the text box, typing what a block hands out, the wheels, the layout, the
-# framework's settings in $framework_ini and a stand-in for its question box.
+# framework's settings in $framework_ini, a stand-in for its question box and its component tree
+# in $fake_tree.
 #
 # @yieldreturn [Array(String, Integer)] What was typed since the last take, and the keys pressed.
 # @return [Array(FakeBridge, FakeUi, FakeEdit)] The bridge, the tick and the box.
@@ -540,6 +725,7 @@ def open_fake_ui(&typed)
   edit = FakeEdit.new(fake, ui, &typed)
   FakeWheels.new(fake, ui)
   FakeLayout.new(fake)
+  $fake_tree = FakeTree.new(fake, ui)
   answer_framework_ini(fake)
   StandInConfirm.install
   open_framework(fake)
@@ -547,6 +733,7 @@ def open_fake_ui(&typed)
   reregister_boxes
   wheel = Mod_Framework::UI::Wheel
   wheel.instance_variable_get(:@definitions).each_key { |name| wheel.send(:send_definition, name) }
+  Mod_Framework::UI::Tick.collect("Mod Framework wheels") { Mod_Framework::UI::Wheel.collect } unless Mod_Framework::Run.started?
   [fake, ui, edit]
 end
 
@@ -576,8 +763,8 @@ def ui_frame
   MGQ_Multiplayer::Bridge.frame
 end
 
-# The wheels on a FakeBridge, as far as their owners' tests need them: the hotkey opens a wheel the
-# map leaves free and closes it, as cancel does and a map that no longer leaves it free, the arrows
+# The wheels on a FakeBridge, as far as their owners' tests need them: a wheel opens as it asks and
+# closes on its key, as cancel does and a map that no longer leaves it free, the arrows
 # held point at once, without the grace of a diagonal, at the direction with a choice, else the
 # action wheel's middle or the emote wheel's last pick, and confirm takes the pick, closing the
 # emote wheel. The places are those of the Mod Framework's wheel fixtures; the grace and the rest of
@@ -590,9 +777,6 @@ class FakeWheels
   PLACES = { 1 => %w[UP], 2 => %w[UP DOWN], 3 => %w[UP DOWN_RIGHT DOWN_LEFT], 4 => %w[UP RIGHT DOWN LEFT], 5 => %w[UP RIGHT DOWN_RIGHT DOWN_LEFT LEFT],
              6 => %w[UP UP_RIGHT DOWN_RIGHT DOWN DOWN_LEFT UP_LEFT], 7 => %w[UP UP_RIGHT RIGHT DOWN_RIGHT DOWN_LEFT LEFT UP_LEFT], 8 => DIRECTIONS }
 
-  # The names of MGQ Online's two wheels, with whether each has a middle choice.
-  WHEELS = { "mgq_online_action_wheel" => true, "mgq_online_emote_wheel" => false }
-
   # The directions, by the row and the column the arrows point to.
   STEPS = { [-1, 0] => 0, [-1, 1] => 1, [0, 1] => 2, [1, 1] => 3, [1, 0] => 4, [1, -1] => 5, [0, -1] => 6, [-1, -1] => 7 }
 
@@ -602,17 +786,28 @@ class FakeWheels
   # @param ui [FakeUi] The tick.
   def initialize(fake, ui)
     @fake = fake
+    @ui = ui
     @wheels = {}
-    WHEELS.each { |name, center| @wheels[name] = { :center => center } }
     wheel = Mod_Framework::UI::Wheel
-    fake.answer(wheel::DEFINE) { |request| WHEELS.key?(request[0]) }
+    fake.answer(wheel::DEFINE) { |request| define(*request) }
     fake.answer(wheel::PLACES) { |request| places(request[0]).map { |name| DIRECTIONS.index(name) } }
-    fake.answer(wheel::CLOSE) { |request| @wheels[request[0]][:open] = false; nil }
+    fake.answer(wheel::CLOSE) { |request| (@wheels[request[0]] || {})[:open] = false; nil }
     @directions = DIRECTIONS
-    @wheels.each_key { |name| ui.model(name) { |input| tick(name, input) } }
   end
 
   private
+
+  # Defines a wheel and takes its frames from the tick.
+  #
+  # @param name [String] The wheel.
+  # @param center [Boolean] Whether it has a middle choice.
+  # @param closes [Boolean] Whether confirm closes it, else its owner closes it.
+  # @return [Boolean] true.
+  def define(name, center, closes)
+    @wheels[name] = { :center => center, :closes => closes }
+    @ui.model(name) { |input| tick(name, input) }
+    true
+  end
 
   # Places a count of choices.
   #
@@ -658,8 +853,8 @@ class FakeWheels
     return post(name, wheel, "cues" => moved ? ["cursor"] : []) if moved && !confirm
     return unless confirm
 
-    wheel[:open] = false unless wheel[:center]
-    post(name, wheel, "take" => wheel[:selected], "cues" => !wheel[:center] && wheel[:selected].nil? ? ["cancel"] : [])
+    wheel[:open] = false if wheel[:closes]
+    post(name, wheel, "take" => wheel[:selected], "cues" => wheel[:closes] && wheel[:selected].nil? ? ["cancel"] : [])
   end
 
   # Posts a wheel's event.

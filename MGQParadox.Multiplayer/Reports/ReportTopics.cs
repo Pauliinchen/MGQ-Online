@@ -2,6 +2,7 @@
 //  ReportTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Took the wheel's screenshot once the action wheel is gone
 //      Paulinchen  2026-10-31: Created
 //
 //----------------------------------------------------------------
@@ -55,6 +56,12 @@ internal sealed class ReportTopics : IReportHost
     /// The topic of the wheel's choice taken: {"scene", "where", "facts", "details"} in.
     /// </summary>
     public const string WheelTopic = "report.wheel";
+
+    /// <summary>
+    /// The topic of the action wheel gone: whether the scripts take the screenshot the wheel asked
+    /// for now, then telling <see cref="SnappedTopic"/>.
+    /// </summary>
+    public const string WheelGoneTopic = "report.wheel_gone";
 
     /// <summary>
     /// The topic the form takes its report by: whether a screenshot was kept out, nil when none opens.
@@ -161,6 +168,7 @@ internal sealed class ReportTopics : IReportHost
             request.Request(ReportVia.Wheel, SceneOf(asked["scene"]), asked["where"].AsText(), PairsOf(asked["facts"]), PairsOf(asked["details"]));
             return null;
         });
+        context.Register(WheelGoneTopic, (_, _) => request.WheelGone());
         context.Register(OpeningTopic, (_, _) => request.TakeOpening() is { } snapped ? snapped : RubyNil.Value);
         context.Register(SendTopic, (_, value) =>
         {
@@ -224,7 +232,7 @@ internal sealed class ReportTopics : IReportHost
 
     /// <summary>
     /// Runs a frame up to a screenshot that is due: the form a scene took the place of, the hotkey,
-    /// the wheel's screenshot, then the frame's rest unless a screenshot comes first.
+    /// then the frame's rest unless its screenshot comes first.
     /// </summary>
     /// <param name="frame">See <see cref="TickTopic"/>.</param>
     /// <returns>Whether the scripts take the screenshot now.</returns>
@@ -233,7 +241,6 @@ internal sealed class ReportTopics : IReportHost
         ReportScene scene = SceneOf(frame["scene"]);
         Request.ForgetLostForm(scene);
         bool snap = frame["hotkey"].AsBool() && Request.Request(ReportVia.Hotkey, scene, frame["where"].AsText(), PairsOf(frame["facts"]), PairsOf(frame["details"]));
-        snap = snap || Request.SnapDue();
         if (!snap)
         {
             Request.Frame(scene);

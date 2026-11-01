@@ -2,6 +2,7 @@
 #  battles_coop.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Named the Mod Framework's interface by its own name
 #      Paulinchen  2026-10-31: Took a player's color from MGQ_MpPlayerColor
 #                            - Checked a rebuilt character before its battle start states, as its owner's game measured it
 #      Paulinchen  2026-10-30: Decided offers, held encounters, the stand-still and the encounter's steps through the matchmaking in the DLL
@@ -1362,7 +1363,7 @@ module MGQ_MpBattlesCoop
     text = hotjoin.late? ? "Joining #{MGQ_MpBattlesSync.player}'s battle at its next turn..." : "Joining #{MGQ_MpBattlesSync.player}'s battle..."
     # A late join may last a whole turn, which the box's names line tells, since the text line
     # would clip with that note and the wait names nobody.
-    limit_text = lambda { [MGQ_MpUi::SECONDS_TEXT % (limit / MGQ_MpUi::FRAMES_PER_SECOND)] }
+    limit_text = lambda { [Mod_Framework::UI::SECONDS_TEXT % (limit / Mod_Framework::UI::FRAMES_PER_SECOND)] }
     roster = MGQ_MpBattlesSync::Waiting.wait_for(scene, text, hotjoin.late? ? limit_text : nil, UP_TO_PREFIX) do
       next :called_off if hotjoin.called_off?
       next :moved if @moved
@@ -2620,8 +2621,8 @@ module MGQ_MpBattlesCoop
   end
 
   # Draws a character's name in the status window of a co-op battle: the player's own in
-  # MGQ_MpUi::Style::OWN, another player's character by its own name, without its owner, in its
-  # owner's MGQ_MpPlayerColor. A character in crisis or knocked out is left to the game, which
+  # Mod_Framework::UI::Style::OWN, another player's character by its own name, without its owner,
+  # in its owner's MGQ_MpPlayerColor. A character in crisis or knocked out is left to the game, which
   # colors it (hp_color: below a quarter of its max HP, which covers 0); so is every character
   # outside a co-op battle, and one drawn without a width.
   #
@@ -2634,8 +2635,8 @@ module MGQ_MpBattlesCoop
     return original.call unless active? && actor && width && actor.hp >= actor.mhp / 4
 
     ally = actor.is_a?(Game_MpAlly)
-    window.change_color(ally ? MGQ_MpPlayerColor.of(MGQ_MpBattlesSync.peer_at(actor.mp_seat) || actor.owner) : MGQ_MpUi::Style::OWN)
-    window.draw_text(x, y, width, window.line_height, MGQ_MpUi.cut(window, ally ? actor.base_name : actor.name, width))
+    window.change_color(ally ? MGQ_MpPlayerColor.of(MGQ_MpBattlesSync.peer_at(actor.mp_seat) || actor.owner) : Mod_Framework::UI::Style::OWN)
+    window.draw_text(x, y, width, window.line_height, Mod_Framework::UI.cut(window, ally ? actor.base_name : actor.name, width))
     nil
   rescue => e
     # A wrapped method's body runs without MGQ_MpHooks' rescue, and a raise here would take the

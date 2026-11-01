@@ -2,6 +2,7 @@
 #  screen_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Dropped the details' old methods for tests, which read only the prototype
 #      Paulinchen  2026-10-31: Stopped calling the deleted mp_dir_refresh as the screen opens
 #      Paulinchen  2026-10-30: Turned off none of the player's mods, without the parking
 #      Paulinchen  2026-10-23: Fetched the list as the DLL's screen does when it opens
@@ -201,35 +202,6 @@ end
 # @return [Array<MGQ_MpWorld::Entry>] The entries, each with its key and row.
 def screen_entries(listed, complete, admin = false)
   stand_in_screen_rows(listed, complete, admin).map { |row| MGQ_MpWorldScreen.entry_of(row) }
-end
-
-# Reads the details' old methods for a test through the prototype, which the C# model follows,
-# such as panels(entry, me) or start_text(listed).
-class ScreenDetail
-  # Runs a method of the prototype's details.
-  #
-  # @param name [Symbol] The method.
-  # @param args [Array] Its arguments.
-  # @return [Object] What it answers.
-  def method_missing(name, *args)
-    model = ScreenPrototype::Model.new(nil, $screen_me, false, StandInScreenFacts.new)
-    model.respond_to?(name) ? model.send(name, *args) : super
-  end
-
-  # Tells whether the prototype's details answer a method.
-  #
-  # @param name [Symbol] The method.
-  # @return [Boolean] Whether they do.
-  def respond_to_missing?(name, include_private = false)
-    ScreenPrototype::Model.method_defined?(name) || super
-  end
-end
-
-# Gives a test the details' old methods, see ScreenDetail.
-#
-# @return [ScreenDetail] The details.
-def screen_detail
-  ScreenDetail.new
 end
 
 # The worlds a test made itself, by the key screen_entry gave them, which the stand-ins answer as

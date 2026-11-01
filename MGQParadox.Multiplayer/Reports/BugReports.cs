@@ -20,7 +20,7 @@ namespace MGQParadox.Multiplayer.Reports;
 
 /// <summary>
 /// The in-game bug reports: the screenshot taken when the report opened, and sending one report at a
-/// time to the relay on a thread of its own, which files it as a GitHub issue. The game script reads
+/// time to the relay on a thread of its own, which files it as a GitHub issue. The request (<see cref="BugReportRequest"/>) reads
 /// how the last report went.
 /// </summary>
 internal sealed class BugReports
@@ -116,7 +116,7 @@ internal sealed class BugReports
     private bool _sending;
 
     /// <summary>
-    /// What the game script reads, see <see cref="Describe"/>.
+    /// What the request reads, see <see cref="Describe"/>.
     /// </summary>
     private string _state = Idle;
 
@@ -291,7 +291,7 @@ internal sealed class BugReports
     }
 
     /// <summary>
-    /// Describes how the last report went, for the game script.
+    /// Describes how the last report went, for the request.
     /// </summary>
     /// <returns><c>idle</c> before the first report, <c>sending</c>, <c>sent\t&lt;issue&gt;\t&lt;url&gt;</c>, or <c>failed\t&lt;code&gt;\t&lt;reason&gt;</c>, where the code is the relay's, <c>http&lt;status&gt;</c>, <c>unreachable</c> or <c>error</c>.</returns>
     public string Describe()
@@ -366,7 +366,7 @@ internal sealed class BugReports
     }
 
     /// <summary>
-    /// Describes a failure as the game script reads it.
+    /// Describes a failure as the request reads it.
     /// </summary>
     /// <param name="ex">Why the report failed.</param>
     /// <returns><c>failed\t&lt;code&gt;\t&lt;reason&gt;</c>, the reason on one line without tabs.</returns>

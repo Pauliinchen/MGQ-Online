@@ -2,6 +2,9 @@
 #  ui_trade.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Built the trade screen of the Mod Framework's components in one window
+#                            - Asked for the gold in the framework's number box
+#                            - Stepped back by the game's cancel from the bag to its tab and from an offer to Confirm
 #      Paulinchen  2026-10-31: Wore the look and scrolled the lists through the Mod Framework
 #                            - Worded what the player reads plainly, leaving causes and internals to the log
 #      Paulinchen  2026-10-24: Gave the help window the boxes' background opacity, the look now worn by every window
@@ -25,26 +28,50 @@
 #
 #----------------------------------------------------------------
 
-# The trade screen (trade.rbx): both offers side by side, the player's bag below with the game's
-# categories, and commands to change the gold, confirm and cancel. The world keeps running behind
-# it (core_async.rbx), and it closes once the trade ended.
+# The trade screen (trade.rbx): one Mod Framework window with both offers side by side, the
+# player's bag below by the game's categories, and buttons to change the gold, confirm and cancel.
+# The world keeps running behind it (core_async.rbx), and it closes once the trade ended.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpTradeUi
-  # What the confirm box asks before the trade is cancelled, with the other player's name.
+  # The Mod Framework's components.
+  UI = Mod_Framework::UI
+
+  # What the question box asks before the trade is cancelled, with the other player's name.
   CANCEL_QUESTION = "Cancel the trade with %s? Both offers are lost."
 
-  # The confirm box's choices for cancelling: the yes and the no label.
+  # The question box's choices for cancelling: the yes and the no label.
   CANCEL_CHOICES = ["Cancel trade", "Keep trading"]
 
-  # Pixels between whose offer it is and whether its player confirmed, in an offer's first row.
+  # The bag's categories, by the tab that shows them.
+  CATEGORIES = [[:item, "Items"], [:weapon, "Weapons"], [:armor, "Armor"], [:stone, "Stones"]]
+
+  # The window's title, with the other player's name.
+  TITLE = "Trading with %s"
+
+  # Pixels between whose offer it is and whether its player confirmed, in an offer's head.
   HEAD_GAP = 8
 
-  # Font size of an offer's first row, smaller than the game's, so a name fits beside the status.
-  HEAD_FONT_SIZE = 20
+  # Pixels between the two offers.
+  OFFER_GAP = 8
 
-  # The bag's categories, by the command that shows them.
-  CATEGORIES = [[:item, "Items"], [:weapon, "Weapons"], [:armor, "Armor"], [:stone, "Stones"]]
+  # Pixels inside an offer's frame.
+  OFFER_PADDING = 4
+
+  # Lines of the game's font an offer is high: its head and five rows.
+  OFFER_LINES = 6
+
+  # Lines of the small font the status takes, so the parts under it never move.
+  STATUS_LINES = 2
+
+  # Digits of the largest amount of gold the gold box takes.
+  GOLD_DIGITS = 9
+
+  # Items one press of the game's L or R offers more or fewer.
+  PAGE_STEP = 10
+
+  # The window's id, which a window made anew finds the focus by.
+  WINDOW_ID = :mgq_online_trade
 
   # Reports whether an item belongs to a category of the bag.
   #
@@ -61,7 +88,7 @@ module MGQ_MpTradeUi
     end
   end
 
-  # Says how the trade stands, for the screen's second line: a message about the trade while it
+  # Says how the trade stands, for the screen's status line: a message about the trade while it
   # lasts, such as a refused confirmation.
   #
   # @param session [MGQ_MpTrade::Session] The trade.
@@ -79,663 +106,500 @@ module MGQ_MpTradeUi
     "You confirmed. Waiting for #{session.name} . . ."
   end
 
-  # Keeps a list window's picture as tall as the rows it shows, plus a hidden row above and below
-  # that make the window show its scroll arrows, and draws the rows anew as the list scrolls.
-  #
-  # The game's lists hold all their rows in one picture, which for a large bag grows past what the
-  # game can make.
-  module VisibleRows
-    # Returns the first row shown.
+  # The trade screen's window: it builds the components, reads the trade into them each frame and
+  # acts on what the player does in them.
+  class Screen
+    # @return [UI::Window] The window.
+    attr_reader :window
+
+    # @return [UI::Label] The status line.
+    attr_reader :status
+
+    # @return [Hash{Symbol => Hash}] Each side's parts by :mine and :theirs: :box, :name, :count,
+    #   :mark and :list.
+    attr_reader :sides
+
+    # @return [UI::Tabs] The bag's tabs.
+    attr_reader :tabs
+
+    # @return [Array<UI::List>] The bag's lists, one per category of CATEGORIES.
+    attr_reader :bags
+
+    # @return [UI::Button] The button that opens the gold box.
+    attr_reader :gold_button
+
+    # @return [UI::Button] The button that confirms or takes the confirmation back.
+    attr_reader :confirm_button
+
+    # @return [UI::Button] The button that asks whether to cancel the trade.
+    attr_reader :cancel_button
+
+    # @return [UI::KeyHelp] The key help line.
+    attr_reader :key_help
+
+    # Builds the window, closed.
     #
-    # @return [Integer] The row.
-    def top_row
-      @top_row || 0
+    # @param name [String] The other player's name.
+    def initialize(name)
+      @shown = {}
+      @place = :bar
+      @window = UI::Window.new(:id => WINDOW_ID, :title => format(TITLE, name), :size => :screen, :captures => true, :hosts_scene => true,
+                               :closable => true, :log => MGQ_MpTrade)
+      @status = @window.add_label("", :font_size => :small, :wrap => true, :steady => true, :min_size => [0, STATUS_LINES * UI::SMALL_LINE_HEIGHT])
+      offers = @window.add_row(:gap => OFFER_GAP, :height => OFFER_LINES * UI::LINE_HEIGHT + 2 * OFFER_PADDING)
+      @sides = { :mine => build_side(offers, :mine), :theirs => build_side(offers, :theirs) }
+      build_bag
+      @key_help = @window.add_key_help(key_entries)
+      @sides.each_value { |side| side[:list].cancel_to = @confirm_button }
+      @window.on(:cancel) { guard("cancelling") { ask_cancel }; false }
+      @window.on(:page) { |step, _pad| page_bag(step) }
     end
 
-    # Scrolls to a row, kept within the list, and draws the rows shown from it.
+    # Opens the window, the focus on the first tab.
     #
-    # @param row [Integer] The row.
-    def top_row=(row)
-      row = [[row, last_top_row].min, 0].max
-      return if row == top_row
-
-      @top_row = row
-      create_contents
-      draw_all_items
+    # @return [Boolean] Whether it opened.
+    def open
+      @tabs.tab(0).focus
+      @window.open.open?
     end
 
-    # Makes the picture for the rows around the first row shown, which the list may have moved
-    # past, and scrolls it so the first row shown sits at the window's top.
-    def create_contents
-      @top_row = [[top_row, last_top_row].min, 0].max
-      super
-      self.oy = (top_row - first_row) * item_height
-    end
-
-    # Returns the picture's height: the rows shown and the hidden rows around them.
+    # Tells whether the window is open.
     #
-    # @return [Integer] The height.
-    def contents_height
-      [last_row - first_row + 1, 1].max * item_height
+    # @return [Boolean] Whether it is.
+    def open?
+      @window.open?
     end
 
-    # Places a row in the picture, which begins at the hidden row above the first row shown.
+    # Closes the window and the boxes the screen opened over it.
+    def close
+      gold_box = @gold_box
+      @gold_box = nil
+      gold_box.close(:script) if gold_box && gold_box.open?
+      asking = @asking
+      @asking = false
+      UI::Confirm.close("the trade ended") if asking && UI::Confirm.open?
+      @window.close(:script)
+    end
+
+    # Reads the trade into the components, each only once what it shows changed.
     #
-    # @param index [Integer] The row's item.
-    # @return [Rect] Where it sits in the picture.
-    def item_rect(index)
-      rect = super
-      rect.y -= first_row * item_height
-      rect
+    # @param session [MGQ_MpTrade::Session] The trade.
+    def update(session)
+      show_side(:mine, session)
+      show_side(:theirs, session)
+      show_state(session)
+      show_bag(session)
+      line = MGQ_MpTradeUi.status_line(session)
+      @status.text = line unless @status.text == line
+      place = focus_place
+      return if place == @place
+
+      @place = place
+      @key_help.refresh
     end
 
-    # Draws the items of the rows shown.
-    def draw_all_items
-      first = top_row * col_max
-      [page_item_max, item_max - first].min.times { |offset| draw_item(first + offset) }
+    # Fills a tab's list with the category's tradeable items, the cursor on the first.
+    #
+    # @param index [Integer] The tab's place in CATEGORIES.
+    def fill_bag(index)
+      session = MGQ_MpTrade.session
+      return unless session
+
+      category = CATEGORIES[index][0]
+      list = @bags[index]
+      list.rows = MGQ_MpTrade::Items.bag.select { |item| MGQ_MpTradeUi.in_category?(item, category) }.map { |item| bag_row(item, session) }
+      list.index = 0
+      @bag_offer = MGQ_MpTrade::Items.write_offer(session.mine)
     end
 
-    # Draws nothing: the game's lists draw newly scrolled rows here, which these lists draw when
-    # they scroll.
-    def draw_page
+    # Changes how many of a row's item the offer holds: the cursor sound and the row drawn anew,
+    # or the buzzer and the reason in the log when nothing changed.
+    #
+    # @param list [UI::List] The bag's list.
+    # @param place [Integer] The row.
+    # @param step [Integer] How many more, fewer when negative.
+    def step_bag(list, place, step)
+      session = MGQ_MpTrade.session
+      row = list.row_at(place)
+      return unless session && row.is_a?(Hash) && row[:item]
+
+      item = row[:item]
+      before = offered(item, session)
+      MGQ_MpTrade.set_amount(item, before + step)
+      return refuse_step(item, before, step) if offered(item, session) == before
+
+      Sound.play_cursor
+      list.set_row(place, bag_row(item, session))
+      @bag_offer = MGQ_MpTrade::Items.write_offer(session.mine)
+    end
+
+    # Offers all of a row's item, or none once all are offered.
+    #
+    # @param list [UI::List] The bag's list.
+    # @param place [Integer] The row.
+    def all_or_none(list, place)
+      session = MGQ_MpTrade.session
+      row = list.row_at(place)
+      return UI.buzz unless session && row.is_a?(Hash) && row[:item]
+
+      item = row[:item]
+      most = [MGQ_MpTrade::Items.held(item), MGQ_MpTrade::Items.unique?(item) ? 1 : MGQ_MpTrade::MAX_AMOUNT].min
+      before = offered(item, session)
+      step_bag(list, place, (before == most ? 0 : most) - before)
+    end
+
+    # Opens the gold box at the gold offered; its answer offers the gold, at most the party's.
+    def ask_gold
+      session = MGQ_MpTrade.session
+      return unless session
+
+      unit = Vocab::currency_unit
+      MGQ_MpTrade.log("gold box opened at #{session.mine.gold.to_i} gold")
+      @gold_box = UI::NumberField.ask(session.mine.gold.to_i, :digits => GOLD_DIGITS, :unit => unit, :max => $game_party.gold,
+                                                             :note => "You have #{$game_party.gold} #{unit}", :ok_text => "Offer", :cancel_text => "Back") do |number, _shown|
+        guard("the gold box") { take_gold(number) }
+      end
+      MGQ_MpTrade.log("the gold box did not open") unless @gold_box.open?
+    end
+
+    # Offers the gold the box gave, or keeps the gold as it was.
+    #
+    # @param number [Integer, nil] The gold, nil when the box closed without an offer.
+    def take_gold(number)
+      @gold_box = nil
+      return MGQ_MpTrade.log("the gold box closed without an offer") if number.nil? || MGQ_MpTrade.session.nil?
+
+      MGQ_MpTrade.log("typed #{number} gold to offer")
+      MGQ_MpTrade.set_gold(number)
+    end
+
+    # Confirms both offers as they stand, or takes the confirmation back: the buzzer and the reason
+    # in the log when the confirmation does not hold, the confirm sound otherwise.
+    def toggle_confirm
+      session = MGQ_MpTrade.session
+      return UI.buzz unless session && session.stage == :open
+
+      refusal = session.confirmed ? nil : MGQ_MpTrade.confirm_refusal
+      MGQ_MpTrade.toggle_confirm
+      return UI.confirm_sound unless refusal
+
+      MGQ_MpTrade.log("not confirmed: #{refusal}")
+      UI.buzz
+    end
+
+    # Asks through the question box whether to cancel the trade, since both offers are lost: yes
+    # cancels it; no, and a box that could not open, leave the focus where it was.
+    def ask_cancel
+      session = MGQ_MpTrade.session
+      return unless session
+
+      MGQ_MpTrade.log("asked whether to cancel the trade with #{session.name}")
+      asked = UI::Confirm.ask(format(CANCEL_QUESTION, session.name), CANCEL_CHOICES) { |yes| guard("the cancel question") { answer_cancel(yes) } }
+      return @asking = true if asked
+
+      MGQ_MpTrade.log("the question did not open, so trading goes on")
+    end
+
+    # Cancels the trade on yes. It touches no component, since the trade may have ended under the
+    # box, and a box the screen closed itself answers nothing.
+    #
+    # @param yes [Boolean] Whether the player chose to cancel.
+    def answer_cancel(yes)
+      return unless @asking
+
+      @asking = false
+      MGQ_MpTrade.log(yes ? "chose to cancel the trade" : "chose to keep trading")
+      MGQ_MpTrade.cancel if yes && MGQ_MpTrade.session
+    end
+
+    # Tells where the focus is, for the key help: :bag, :offers or :bar.
+    #
+    # @return [Symbol] The place.
+    def focus_place
+      return :bag if @bags.any? { |list| list.focused? }
+      return :offers if @sides.values.any? { |side| side[:list].focused? }
+
+      :bar
+    end
+
+    # Runs a block of the screen; a failure is logged with its place and closes the window, which
+    # the scene takes as the end of the trade.
+    #
+    # @param place [String] What runs, for the log.
+    # @return [Object, nil] The block's value, nil after a failure.
+    def guard(place)
+      yield
+    rescue => e
+      MGQ_MpTrade.log("trade screen failed in #{place}: #{MGQ_MpLog.failure(e)} at #{Array(e.backtrace).first}")
+      close
+      nil
     end
 
     private
 
-    # Returns the picture's first row: the hidden row above the first row shown, if there is one.
+    # Builds one side's offer: a head with whose offer it is, its count and whether its player
+    # confirmed, and the list of its gold and items.
     #
-    # @return [Integer] The row.
-    def first_row
-      [top_row - 1, 0].max
+    # @param row [UI::Component] The row the offers lie in.
+    # @param side [Symbol] :mine or :theirs.
+    # @return [Hash] The side's parts.
+    def build_side(row, side)
+      box = row.add_box(:grow => 1, :padding => OFFER_PADDING)
+      head = box.add_row(:gap => HEAD_GAP, :justify => :between)
+      who = head.add_row(:shrink => true)
+      parts = { :box => box }
+      parts[:name] = who.add_label(side == :mine ? "You" : "", :font_size => :small, :color => :system, :shrink => true)
+      parts[:count] = who.add_label("", :font_size => :small, :color => :system)
+      parts[:mark] = head.add_label("Not confirmed", :font_size => :small, :color => :dim)
+      parts[:list] = box.add_list(:id => :"mgq_online_trade_#{side}", :rows => [], :rows_shown => :fill, :grow => 1, :leave_ends => true, :describe => true)
+      parts
     end
 
-    # Returns the picture's last row: the hidden row below the rows shown, if there is one.
+    # Builds the bag: a tab per category, each with its list, and the gold, confirm and cancel
+    # buttons beside the tabs.
+    def build_bag
+      @tabs = @window.add_tabs(:grow => 1, :enter => true, :index => 0)
+      @bags = CATEGORIES.each_with_index.map { |(category, name), index| build_bag_list(category, name, index) }
+      @tabs.on(:change) { |index| guard("the tabs") { pick_tab(index) } }
+      @gold_button = @tabs.bar.add_button("Gold")
+      @gold_button.on(:click) { guard("the gold") { ask_gold } }
+      @confirm_button = @tabs.bar.add_button("Confirm", :quiet => true)
+      @confirm_button.on(:click) { guard("confirming") { toggle_confirm } }
+      @cancel_button = @tabs.bar.add_button("Cancel")
+      @cancel_button.on(:click) { guard("cancelling") { ask_cancel } }
+    end
+
+    # Builds a tab of the bag with its list: Left and Right step the amount, confirm offers all or
+    # none, and cancel goes back to the tab.
     #
-    # @return [Integer] The row.
-    def last_row
-      [top_row + page_row_max, row_max - 1].min
+    # @param category [Symbol] The category.
+    # @param name [String] The tab's text.
+    # @param index [Integer] The tab's place.
+    # @return [UI::List] The list.
+    def build_bag_list(category, name, index)
+      list = @tabs.add_tab(name, :grow => 1).add_list(:id => :"mgq_online_trade_bag_#{category}", :rows => [], :rows_shown => :fill, :grow => 1,
+                                                      :sides => true, :shoulder_pages => false, :leave_ends => true, :describe => true,
+                                                      :quiet => true, :empty_text => "Nothing to trade")
+      list.cancel_to = @tabs.tab(index)
+      list.on(:side) { |_row, place, step| guard("the bag") { step_bag(list, place, step) } }
+      list.on(:submit) { |_row, place| guard("the bag") { all_or_none(list, place) } }
+      list
     end
 
-    # Returns the furthest the first row shown may go, where the list's last page is shown.
+    # Shows a category of the bag.
     #
-    # @return [Integer] The row.
-    def last_top_row
-      [row_max - page_row_max, 0].max
-    end
-  end
-end
-
-# One side of the trade as a list: whose it is and whether they confirmed, the gold, then the
-# items. The Offers command moves the cursor in, where up and down scroll through a long offer and
-# left and right switch to the other side.
-class Window_MpTradeOffer < Window_Selectable
-  include Mod_Framework::UI::Themed
-  include MGQ_MpTradeUi::VisibleRows
-  include MGQ_MpScrollingWindow
-
-  # Creates the window, inactive.
-  #
-  # @param x [Integer] Its left edge.
-  # @param y [Integer] Its top edge.
-  # @param width [Integer] Its width.
-  # @param height [Integer] Its height.
-  # @param own [Boolean] Whether it shows the player's offer.
-  def initialize(x, y, width, height, own)
-    # The window counts its rows while it is made, before the offer is read.
-    @own = own
-    @rows = []
-    @shown = nil
-    super(x, y, width, height)
-    deactivate
-  end
-
-  # Counts the rows: whose offer, the gold, and each item.
-  #
-  # @return [Integer] How many.
-  def item_max
-    @rows.size
-  end
-
-  # Reads the offer again and draws it, if it changed.
-  def update
-    super
-    session = MGQ_MpTrade.session
-    return unless session
-
-    offer = @own ? session.mine : session.theirs
-    shown = [MGQ_MpTrade::Items.write_offer(offer), confirmed?(session), session.stage]
-    return if shown == @shown
-
-    @shown = shown
-    @session = session
-    @rows = [:head, :gold] + offer.entries
-    @gold = offer.gold.to_i
-    select([index, item_max - 1].min) if index >= 0
-    refresh
-  end
-
-  # Reports whether the side's player confirmed the offers as they stand.
-  #
-  # @param session [MGQ_MpTrade::Session] The trade.
-  # @return [Boolean] Whether they did.
-  def confirmed?(session)
-    @own ? session.confirmed : session.their_confirmed?
-  end
-
-  # Draws one row.
-  #
-  # @param index [Integer] The row.
-  def draw_item(index)
-    row = @rows[index]
-    rect = item_rect_for_text(index)
-    case row
-    when :head then draw_head(rect)
-    when :gold then draw_currency_value(@gold, Vocab::currency_unit, rect.x, rect.y, rect.width)
-    else draw_entry(row, rect)
-    end
-  end
-
-  # Draws whether its player confirmed at the right, and whose offer it is and how many items it
-  # holds in the room left of that.
-  #
-  # @param rect [Rect] The row.
-  def draw_head(rect)
-    contents.font.size = MGQ_MpTradeUi::HEAD_FONT_SIZE
-    confirmed = confirmed?(@session)
-    status = confirmed ? "Confirmed" : "Not confirmed"
-    change_color(confirmed ? MGQ_MpUi::Style::GOOD : MGQ_MpUi::Style::DIM)
-    draw_text(rect, status, 2)
-    room = rect.width - text_size(status).width - MGQ_MpTradeUi::HEAD_GAP
-    change_color(system_color)
-    draw_text(rect.x, rect.y, room, rect.height, head_text(room))
-    reset_font_settings
-  end
-
-  # Says whose offer it is and how many items it holds, the other player's name cut to fit a width.
-  #
-  # @param room [Integer] The width.
-  # @return [String] The text.
-  def head_text(room)
-    count = @rows.size - 2
-    suffix = count > 0 ? " (#{count})" : ""
-    return "You#{suffix}" if @own
-
-    MGQ_MpUi.cut(self, @session.name, room, suffix)
-  end
-
-  # Draws an item and its amount.
-  #
-  # @param entry [MGQ_MpTrade::Entry] The item.
-  # @param rect [Rect] The row.
-  def draw_entry(entry, rect)
-    if entry.item
-      draw_item_name(entry.item, rect.x, rect.y, true, rect.width - 48)
-    else
-      change_color(normal_color, false)
-      draw_text(rect.x + 24, rect.y, rect.width - 72, line_height, "Unknown item")
-    end
-    change_color(normal_color)
-    draw_text(rect, "x#{entry.amount}", 2)
-  end
-
-  # Takes the input, and notes that the arrows must not move the cursor before the next frame.
-  #
-  # The other side's window may be updated later in the frame of the press that switched to it,
-  # and would switch straight back.
-  #
-  # @return [Window_MpTradeOffer] The window.
-  def activate
-    @just_activated = true
-    super
-  end
-
-  # Moves the cursor with the arrows, except in the frame the window took the input.
-  def process_cursor_move
-    return @just_activated = false if @just_activated
-
-    super
-  end
-
-  # Switches to the other side.
-  #
-  # @param wrap [Boolean] Unused, the game's argument for wrapping round.
-  def cursor_right(wrap = false)
-    call_handler(:switch)
-  end
-
-  # Switches to the other side.
-  #
-  # @param wrap [Boolean] Unused, the game's argument for wrapping round.
-  def cursor_left(wrap = false)
-    call_handler(:switch)
-  end
-end
-
-# The commands of the trade screen: the bag's categories, the gold, looking through both offers,
-# confirming and cancelling.
-class Window_MpTradeCommand < Window_HorzCommand
-  include Mod_Framework::UI::Themed
-
-  # Creates the commands.
-  #
-  # @param y [Integer] Its top edge.
-  def initialize(y)
-    super(0, y)
-  end
-
-  # Returns the window's width, the screen's.
-  #
-  # @return [Integer] The width.
-  def window_width
-    Graphics.width
-  end
-
-  # Returns how many commands fit side by side.
-  #
-  # @return [Integer] All of them.
-  def col_max
-    MGQ_MpTradeUi::CATEGORIES.size + 4
-  end
-
-  # Lists the commands, enabled while the trade is open; cancelling also while the relay decides.
-  def make_command_list
-    session = MGQ_MpTrade.session
-    open = session && session.stage == :open
-    MGQ_MpTradeUi::CATEGORIES.each { |symbol, name| add_command(name, symbol, open) }
-    add_command("Gold", :gold, open)
-    add_command("Offers", :offers, !session.nil?)
-    add_command(session && session.confirmed ? "Unconfirm" : "Confirm", :confirm, open)
-    add_command("Cancel", :cancel_trade, !session.nil?)
-  end
-
-  # Lists the commands again, if the trade's stage or the player's confirmation changed.
-  def update
-    super
-    session = MGQ_MpTrade.session
-    shown = session ? [session.stage, session.confirmed] : nil
-    return if shown == @shown
-
-    @shown = shown
-    refresh
-  end
-end
-
-# The player's bag, one category at a time, with how many of each item the offer holds. Right and
-# left change the amount by one, R and L by ten, confirm offers all or none.
-class Window_MpTradeBag < Window_Selectable
-  include Mod_Framework::UI::Themed
-  include MGQ_MpTradeUi::VisibleRows
-  include MGQ_MpScrollingWindow
-
-  # Creates the list, inactive.
-  #
-  # @param y [Integer] Its top edge.
-  # @param height [Integer] Its height.
-  def initialize(y, height)
-    # The window counts its items while it is made, before refresh lists them.
-    @category = :item
-    @items = []
-    super(0, y, Graphics.width, height)
-    refresh
-    deactivate
-  end
-
-  # Shows another category.
-  #
-  # @param category [Symbol] A category of MGQ_MpTradeUi::CATEGORIES.
-  def category=(category)
-    return if @category == category
-
-    @category = category
-    refresh
-    select(0)
-  end
-
-  # Counts the items listed.
-  #
-  # @return [Integer] How many.
-  def item_max
-    @items.size
-  end
-
-  # Tells the item under the cursor.
-  #
-  # @return [RPG::BaseItem, nil] The item.
-  def item
-    @items[index]
-  end
-
-  # Lists the category's tradeable items again and draws them.
-  def refresh
-    @items = MGQ_MpTrade::Items.bag.select { |item| MGQ_MpTradeUi.in_category?(item, @category) }
-    create_contents
-    draw_all_items
-  end
-
-  # Draws one item: its name, and how many the offer holds of how many the bag holds.
-  #
-  # @param index [Integer] Its place in the list.
-  def draw_item(index)
-    item = @items[index]
-    return unless item
-
-    rect = item_rect_for_text(index)
-    offered = offered(item)
-    draw_item_name(item, rect.x, rect.y, true, rect.width - 120)
-    change_color(offered > 0 ? MGQ_MpUi::Style::GOOD : normal_color)
-    draw_text(rect.x, rect.y, rect.width, line_height, "#{offered} / #{MGQ_MpTrade::Items.held(item)}", 2)
-  end
-
-  # Counts how many of an item the player's offer holds.
-  #
-  # @param item [RPG::BaseItem] The item.
-  # @return [Integer] How many.
-  def offered(item)
-    session = MGQ_MpTrade.session
-    entry = session && session.mine.entry(MGQ_MpTrade::Items.token(item))
-    entry ? entry.amount : 0
-  end
-
-  # Changes how many of the item under the cursor the offer holds.
-  #
-  # @param step [Integer] How many more, fewer when negative.
-  def change(step)
-    return unless item
-
-    before = offered(item)
-    MGQ_MpTrade.set_amount(item, before + step)
-    return Sound.play_buzzer if offered(item) == before
-
-    Sound.play_cursor
-    redraw_current_item
-  end
-
-  # Offers one more.
-  #
-  # @param wrap [Boolean] Unused, the game's argument for wrapping round.
-  def cursor_right(wrap = false)
-    change(1)
-  end
-
-  # Offers one fewer.
-  #
-  # @param wrap [Boolean] Unused, the game's argument for wrapping round.
-  def cursor_left(wrap = false)
-    change(-1)
-  end
-
-  # Offers ten more.
-  def cursor_pagedown
-    change(10)
-  end
-
-  # Offers ten fewer.
-  def cursor_pageup
-    change(-10)
-  end
-
-  # Reports whether confirm does something, which it always does here.
-  #
-  # @return [Boolean] true.
-  def ok_enabled?
-    true
-  end
-
-  # Offers all of the item under the cursor, or none once all are offered.
-  def process_ok
-    return Sound.play_buzzer unless item
-
-    held = [MGQ_MpTrade::Items.held(item), MGQ_MpTrade::MAX_AMOUNT].min
-    change((offered(item) == held ? 0 : held) - offered(item))
-  end
-end
-
-# The gold the player offers, digit by digit: left and right pick a digit, up and down change it.
-class Window_MpTradeGold < Window_Base
-  include Mod_Framework::UI::Themed
-
-  # Digits of the largest amount.
-  DIGITS = 9
-
-  # Width of a digit.
-  DIGIT_WIDTH = 20
-
-  # Creates the window, hidden.
-  def initialize
-    width = DIGITS * DIGIT_WIDTH + standard_padding * 2 + 64
-    super((Graphics.width - width) / 2, (Graphics.height - fitting_height(2)) / 2, width, fitting_height(2))
-    self.z = MGQ_MpUi::Z[:labels]
-    self.visible = false
-    @digits = [0] * DIGITS
-    @place = DIGITS - 1
-    @handlers = {}
-  end
-
-  # Sets what confirming and cancelling do.
-  #
-  # @param ok [Proc] Takes the amount.
-  # @param cancel [Proc] Runs on cancel.
-  def on(ok, cancel)
-    @handlers = { :ok => ok, :cancel => cancel }
-  end
-
-  # Shows the window with an amount.
-  #
-  # @param gold [Integer] The amount.
-  def start(gold)
-    @digits = format("%0#{DIGITS}d", [gold.to_i, 10**DIGITS - 1].min).chars.map(&:to_i)
-    @place = DIGITS - 1
-    self.visible = true
-    refresh
-  end
-
-  # Tells the amount shown.
-  #
-  # @return [Integer] The amount.
-  def amount
-    @digits.join.to_i
-  end
-
-  # Follows the arrows, confirm and cancel while shown.
-  def update
-    super
-    return unless visible
-
-    if Input.repeat?(:LEFT) || Input.repeat?(:RIGHT)
-      @place = (@place + (Input.repeat?(:RIGHT) ? 1 : -1)) % DIGITS
-      Sound.play_cursor
-      refresh
-    elsif Input.repeat?(:UP) || Input.repeat?(:DOWN)
-      @digits[@place] = (@digits[@place] + (Input.repeat?(:UP) ? 1 : -1)) % 10
-      Sound.play_cursor
-      refresh
-    elsif Input.trigger?(:C)
-      Sound.play_ok
-      self.visible = false
-      @handlers[:ok].call(amount) if @handlers[:ok]
-    elsif !Mod_Framework::UI::Capture.on? && MGQ_MpUi.cancel?
-      Sound.play_cancel
-      self.visible = false
-      @handlers[:cancel].call if @handlers[:cancel]
-    end
-  end
-
-  # Draws the digits, the picked one marked, and the party's gold below.
-  def refresh
-    contents.clear
-    left = (contents_width - DIGITS * DIGIT_WIDTH - 32) / 2
-    @digits.each_with_index do |digit, place|
-      x = left + place * DIGIT_WIDTH
-      contents.fill_rect(x, line_height - 2, DIGIT_WIDTH - 2, 2, normal_color) if place == @place
-      change_color(normal_color)
-      draw_text(x, 0, DIGIT_WIDTH, line_height, digit.to_s, 1)
-    end
-    change_color(system_color)
-    draw_text(left + DIGITS * DIGIT_WIDTH + 4, 0, 32, line_height, Vocab::currency_unit)
-    # The game's own centered currency line names a variable it never sets, so it is drawn here.
-    change_color(normal_color)
-    draw_text(0, line_height, contents_width, line_height, "You have #{$game_party.gold} #{Vocab::currency_unit}", 1)
-  end
-end
-
-# The trade screen.
-class Scene_MpTrade < Scene_MenuBase
-  # Builds the windows.
-  def start
-    super
-    create_help_window
-    wear_theme(@help_window)
-    half = Graphics.width / 2
-    offer_height = @help_window.height + @help_window.fitting_height(6)
-    @mine_window = Window_MpTradeOffer.new(0, @help_window.height, half, offer_height - @help_window.height, true)
-    @theirs_window = Window_MpTradeOffer.new(half, @help_window.height, Graphics.width - half, offer_height - @help_window.height, false)
-    @command_window = Window_MpTradeCommand.new(offer_height)
-    bag_top = offer_height + @command_window.height
-    @bag_window = Window_MpTradeBag.new(bag_top, Graphics.height - bag_top)
-    @gold_window = Window_MpTradeGold.new
-    @gold_window.on(method(:on_gold_ok), method(:on_gold_cancel))
-    MGQ_MpTradeUi::CATEGORIES.each { |symbol, _| @command_window.set_handler(symbol, method(:on_category)) }
-    @command_window.set_handler(:gold, method(:on_gold))
-    @command_window.set_handler(:offers, method(:on_offers))
-    [@mine_window, @theirs_window].each do |window|
-      window.set_handler(:switch, method(:on_switch_offer))
-      window.set_handler(:cancel, method(:on_offers_cancel))
-    end
-    @command_window.set_handler(:confirm, method(:on_confirm))
-    @command_window.set_handler(:cancel_trade, method(:on_cancel_trade))
-    @command_window.set_handler(:cancel, method(:on_cancel_trade))
-    @bag_window.set_handler(:cancel, method(:on_bag_cancel))
-    @status = nil
-    session = MGQ_MpTrade.session
-    MGQ_MpTrade.log("trade screen opened#{session ? " for trade #{MGQ_MpTrade.short(session.id)} with #{session.name}" : ', but there is no trade'}")
-  rescue => e
-    MGQ_MpTrade.log("opening the trade screen failed: #{MGQ_MpLog.failure(e)} at #{Array(e.backtrace).first}")
-    MGQ_MpTrade.cancel
-    return_scene
-  end
-
-  # Closes the screen once the trade ended, and keeps the status line current.
-  def update
-    super
-    session = MGQ_MpTrade.session
-    unless session
-      MGQ_MpTrade.log("trade screen closed, the trade ended")
-      return return_scene
+    # @param index [Integer] The tab's place in CATEGORIES.
+    def pick_tab(index)
+      MGQ_MpTrade.log("showing the bag's #{CATEGORIES[index][1]}")
+      fill_bag(index)
     end
 
-    leave_bag if session.stage != :open && @bag_window.active
-    status = MGQ_MpTradeUi.status_line(session)
-    return if status == @status
-
-    @status = status
-    @help_window.set_text("Trading with #{session.name}\n#{status}")
-  rescue => e
-    MGQ_MpTrade.log("trade screen failed: #{MGQ_MpLog.failure(e)} at #{Array(e.backtrace).first}")
-    MGQ_MpTrade.cancel
-    return_scene
-  end
-
-  # Marks a window of the game's own class as one of the mod's, so it takes the boxes' background
-  # opacity as the trade screen's own windows do.
-  #
-  # @param window [Window_Base] The window.
-  def wear_theme(window)
-    window.extend(Mod_Framework::UI::Themed)
-    MGQ_MpUi::Theme.dress(window)
-  end
-
-  # Moves the cursor into the other player's offer, to look through it.
-  def on_offers
-    show_offer(@theirs_window)
-  end
-
-  # Moves the cursor to the other side's offer.
-  def on_switch_offer
-    show_offer(@theirs_window.active ? @mine_window : @theirs_window)
-  end
-
-  # Moves the cursor into one side's offer, at its first item.
-  #
-  # @param window [Window_MpTradeOffer] The side.
-  def show_offer(window)
-    [@mine_window, @theirs_window].each do |side|
-      side.deactivate
-      side.unselect
+    # Steps the item under the bag's cursor by ten, for the game's L and R, which the lists leave
+    # alone.
+    #
+    # @param step [Integer] -1 for L, 1 for R.
+    def page_bag(step)
+      list = @bags.find { |each| each.focused? }
+      guard("the bag") { step_bag(list, list.index, step * PAGE_STEP) } if list
     end
-    window.activate
-    window.select([2, window.item_max - 1].min)
-  end
 
-  # Hands the input back to the commands.
-  def on_offers_cancel
-    [@mine_window, @theirs_window].each do |side|
-      side.deactivate
-      side.unselect
+    # Lists the key help's entries, each shown while the focus is where it names.
+    #
+    # Cancel comes first, as a line too wide for the window leaves out entries from the last.
+    #
+    # @return [Array<Hash>] The entries.
+    def key_entries
+      [{ :button => :B, :text => lambda { @place == :bar ? "Cancel the trade" : "Back" } },
+       { :key => "Left/Right", :text => lambda { @place == :bag ? "1 more or less" : nil } },
+       { :button => [:L, :R], :text => lambda { @place == :bag ? "10 less or more" : nil } },
+       { :button => :C, :text => lambda { @place == :bag ? "All or none" : nil } },
+       { :key => "Up", :text => lambda { @place == :bar ? "Offers" : nil } }]
     end
-    @command_window.activate
-  end
 
-  # Shows a category of the bag.
-  def on_category
-    @bag_window.category = @command_window.current_symbol
-    @bag_window.activate
-    @bag_window.select(0) if @bag_window.index < 0
-  end
+    # Reads one side's offer into its head and list, once the offer, its confirmation or the stage
+    # changed; the other player's box pulses when their offer changed.
+    #
+    # @param side [Symbol] :mine or :theirs.
+    # @param session [MGQ_MpTrade::Session] The trade.
+    def show_side(side, session)
+      own = side == :mine
+      offer = own ? session.mine : session.theirs
+      confirmed = own ? session.confirmed : session.their_confirmed?
+      text = MGQ_MpTrade::Items.write_offer(offer)
+      shown = [text, confirmed, session.stage]
+      before = @shown[side]
+      return if shown == before
 
-  # Hands the input back to the commands.
-  def on_bag_cancel
-    leave_bag
-  end
+      @shown[side] = shown
+      parts = @sides[side]
+      parts[:name].text = session.name unless own
+      parts[:count].text = offer.entries.empty? ? "" : " (#{offer.entries.size})"
+      parts[:mark].text = confirmed ? "Confirmed" : "Not confirmed"
+      parts[:mark].color = confirmed ? :good : :dim
+      parts[:list].rows = offer_rows(offer)
+      parts[:box].pulse if !own && before && before[0] != text
+    end
 
-  # Leaves the bag for the commands.
-  def leave_bag
-    @bag_window.deactivate
-    @bag_window.unselect
-    @command_window.activate
-  end
-
-  # Opens the gold's digits.
-  def on_gold
-    @command_window.deactivate
-    @gold_window.start(MGQ_MpTrade.session ? MGQ_MpTrade.session.mine.gold : 0)
-  end
-
-  # Takes the gold typed, at most the party's.
-  #
-  # @param gold [Integer] The gold.
-  def on_gold_ok(gold)
-    MGQ_MpTrade.log("typed #{gold} gold to offer")
-    MGQ_MpTrade.set_gold(gold)
-    @command_window.activate
-  end
-
-  # Leaves the gold as it was.
-  def on_gold_cancel
-    @command_window.activate
-  end
-
-  # Confirms both offers, or takes the confirmation back.
-  def on_confirm
-    MGQ_MpTrade.toggle_confirm
-    @command_window.activate
-  end
-
-  # Asks through the confirm box before cancelling the trade, since both offers are lost: yes
-  # cancels it, no hands the input back to the commands, as does a box that could not open. The
-  # box takes the buttons meanwhile, so the windows stay quiet under it.
-  def on_cancel_trade
-    session = MGQ_MpTrade.session
-    return @command_window.activate unless session
-
-    asked = MGQ_MpUi::Confirm.ask(MGQ_MpTradeUi::CANCEL_QUESTION % session.name, MGQ_MpTradeUi::CANCEL_CHOICES) do |yes|
-      # A trade that ended under the box returned the scene, whose windows are disposed by now.
-      if yes
-        MGQ_MpTrade.cancel
-      elsif !@command_window.disposed?
-        @command_window.activate
+    # Lists an offer's rows: the gold, then each item with its amount, an item this game does not
+    # know faint.
+    #
+    # @param offer [MGQ_MpTrade::Offer] The offer.
+    # @return [Array<Hash>] The rows.
+    def offer_rows(offer)
+      gold = { :text => "Gold", :right => "#{offer.gold.to_i} #{Vocab::currency_unit}" }
+      [gold] + offer.entries.map do |entry|
+        amount = "x#{entry.amount}"
+        entry.item ? { :item => entry.item, :right => amount } : { :text => "Unknown item", :faint => true, :right => amount }
       end
     end
-    @command_window.activate unless asked
+
+    # Follows the stage and the player's confirmation: the confirm button's text, and the tabs,
+    # gold, confirm and the bag taking input only while the trade is open, the focus moved to
+    # Cancel from what stops taking it.
+    #
+    # @param session [MGQ_MpTrade::Session] The trade.
+    def show_state(session)
+      shown = [session.stage, session.confirmed]
+      return if shown == @shown[:state]
+
+      @shown[:state] = shown
+      @confirm_button.text = session.confirmed ? "Unconfirm" : "Confirm"
+      open = session.stage == :open
+      parts = (0...CATEGORIES.size).map { |index| @tabs.tab(index) } + [@gold_button, @confirm_button] + @bags
+      focused = parts.any? { |part| part.focused? }
+      parts.each { |part| part.enabled = open }
+      @cancel_button.focus if focused && !open
+    end
+
+    # Fills the picked tab's list anew, the cursor kept, when the player's offer changed other than
+    # by a step of the bag, which draws its own row.
+    #
+    # @param session [MGQ_MpTrade::Session] The trade.
+    def show_bag(session)
+      return if MGQ_MpTrade::Items.write_offer(session.mine) == @bag_offer
+
+      list = @bags[@tabs.index]
+      kept = list.index
+      fill_bag(@tabs.index)
+      list.index = [kept, 0].max
+    end
+
+    # Writes a row of the bag: the item and how many the offer holds of how many the bag holds, in
+    # the good color while some are offered.
+    #
+    # @param item [RPG::BaseItem] The item.
+    # @param session [MGQ_MpTrade::Session] The trade.
+    # @return [Hash] The row.
+    def bag_row(item, session)
+      offered = offered(item, session)
+      row = { :item => item, :bag => true, :value => "#{offered} / #{MGQ_MpTrade::Items.held(item)}" }
+      row[:right_color] = :good if offered > 0
+      row
+    end
+
+    # Counts how many of an item the player's offer holds.
+    #
+    # @param item [RPG::BaseItem] The item.
+    # @param session [MGQ_MpTrade::Session] The trade.
+    # @return [Integer] How many.
+    def offered(item, session)
+      entry = session.mine.entry(MGQ_MpTrade::Items.token(item))
+      entry ? entry.amount : 0
+    end
+
+    # Buzzes at a step of the bag that changed nothing, and logs why.
+    #
+    # @param item [RPG::BaseItem] The item.
+    # @param before [Integer] How many the offer held.
+    # @param step [Integer] The step.
+    def refuse_step(item, before, step)
+      why = if step == 0 then "nothing to change"
+            elsif step < 0 then "none offered"
+            elsif MGQ_MpTrade::Items.unique?(item) then "a unique copy goes once"
+            elsif before >= MGQ_MpTrade::MAX_AMOUNT then "a trade moves at most #{MGQ_MpTrade::MAX_AMOUNT}"
+            else "the bag holds #{MGQ_MpTrade::Items.held(item)}"
+            end
+      MGQ_MpTrade.log("not offering #{step < 0 ? 'fewer' : 'more'} of #{MGQ_MpTrade::Items.label(item)}: #{why}")
+      UI.buzz
+    end
+  end
+end
+
+# The trade screen: a scene of its own that hosts the screen's window, since the chat follows it by
+# class and the map calls it, and returns once the trade ended.
+class Scene_MpTrade < Scene_MenuBase
+  # @return [MGQ_MpTradeUi::Screen, nil] The screen, nil before it was built and after it closed.
+  attr_reader :screen
+
+  # Builds and opens the window; when it does not open, the trade is cancelled.
+  def start
+    super
+    session = MGQ_MpTrade.session
+    return leave("opened, but there is no trade") unless session
+
+    @screen = MGQ_MpTradeUi::Screen.new(session.name)
+    @screen.update(session)
+    return cancel_trade("the trade screen's window did not open") unless @screen.open
+
+    MGQ_MpTrade.log("trade screen opened for trade #{MGQ_MpTrade.short(session.id)} with #{session.name}")
+  rescue => e
+    failed("opening the trade screen", e)
+  end
+
+  # Reads the trade into the window, and returns once the trade ended or the window closed.
+  def update
+    super
+    return unless @screen
+
+    session = MGQ_MpTrade.session
+    unless session
+      @screen.close
+      return leave("closed, the trade ended")
+    end
+    return cancel_trade("the trade screen's window closed while the trade went on") unless @screen.open?
+
+    @screen.update(session)
+  rescue => e
+    failed("the trade screen", e)
+  end
+
+  # Closes the window as the scene ends.
+  def terminate
+    super
+    @screen.close if @screen && @screen.open?
+  end
+
+  private
+
+  # Cancels the trade, which nothing shows any more, and returns.
+  #
+  # @param why [String] What happened, for the log.
+  def cancel_trade(why)
+    MGQ_MpTrade.log("#{why}, so the trade is cancelled")
+    MGQ_MpTrade.cancel
+    @screen = nil
+    return_scene
+  end
+
+  # Logs and returns.
+  #
+  # @param what [String] What happened, after "trade screen ".
+  def leave(what)
+    MGQ_MpTrade.log("trade screen #{what}")
+    @screen = nil
+    return_scene
+  end
+
+  # Logs a failure with its place, cancels the trade and returns.
+  #
+  # @param place [String] What failed.
+  # @param error [Exception] The failure.
+  def failed(place, error)
+    MGQ_MpTrade.log("#{place} failed: #{MGQ_MpLog.failure(error)} at #{Array(error.backtrace).first}")
+    MGQ_MpTrade.cancel
+    @screen.close if @screen
+    @screen = nil
+    return_scene
   end
 end
 

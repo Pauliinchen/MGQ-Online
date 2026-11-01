@@ -3,6 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-01: Dropped the stand-in of the title screen's commands, which no script hooks any more
+#                            - Stopped loading the deleted ui_boxes.rbx
+#                            - Dropped the stand-ins of the name box and letters of the deleted text screen
 #      Paulinchen  2026-10-31: Loaded ui_online.rbx and ui_boxes.rbx in place of the scripts the Mod Framework took over
 #                            - Expected a Classic party to keep the difficulty each player's own, by the reviewed list
 #      Paulinchen  2026-10-30: Expected the forms without the game data's fields
@@ -48,10 +50,6 @@ class Window_Base; def initialize(*); end; end
 class Window_Selectable < Window_Base; end
 # Stands in for the game's command windows.
 class Window_Command < Window_Selectable; end
-# Stands in for the game's name entry.
-class Window_NameEdit < Window_Base; end
-# Stands in for the game's name entry's letters.
-class Window_NameInput < Window_Selectable; end
 # Stands in for the game's colors.
 class Color; def initialize(*); end; end
 # Stands in for the game's sprites.
@@ -194,7 +192,6 @@ module MGQ_MpCoop; module Scope; def self.raid?; MGQ_MpWorld.raid?; end; end; en
 
 load_script "world_save_distribution"
 load_script "ui_online"
-load_script "ui_boxes"
 load_script "world"
 load_script "story_state"
 load_script "world_difficulty"

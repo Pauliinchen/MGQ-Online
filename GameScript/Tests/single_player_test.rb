@@ -2,6 +2,7 @@
 #  single_player_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Named the Mod Framework's interface by its own name, and took the framework away only for the restart's answer
 #      Paulinchen  2026-10-31: Read the single player group from MGQ_Multiplayer::SP_PREFIX
 #                            - Checked that the restart question starts on Restart
 #      Paulinchen  2026-10-30: Started the game again through the Mod Framework's stand-in
@@ -125,8 +126,8 @@ module MGQ_MpNotices; def self.message(key, text, _frames = nil); $notices << [k
 module MGQ_MpWorld::Update; def self.asking?; $update_offer == true; end; end
 # The confirm box: each question noted in $asks with its block in $answer, open while
 # $confirm_open is set.
-MGQ_MpUi::Confirm.define_singleton_method(:ask) { |question, choices, options = {}, &answer| $asks << [question, choices]; $yes_first = options[:index] == 0; $answer = answer; true }
-MGQ_MpUi::Confirm.define_singleton_method(:open?) { $confirm_open == true }
+Mod_Framework::UI::Confirm.define_singleton_method(:ask) { |question, choices, options = {}, &answer| $asks << [question, choices]; $yes_first = options[:index] == 0; $answer = answer; true }
+Mod_Framework::UI::Confirm.define_singleton_method(:open?) { $confirm_open == true }
 
 sp = MGQ_MpSinglePlayer
 hud = MGQ_MpLeaderHud
@@ -370,8 +371,10 @@ check("a game kept from a restart before goes aside, the new one in its place",
       [kept.size, kept.map { |file| File.open(file, "rb") { |each| Marshal.load(each) } }, File.open(sp::RESUME_FILE, "rb") { |file| Marshal.load(file) }, $exits],
       [1, ["on map 5 at 3, 4"], "in the Pocket Castle", 1])
 reset
+change
+map_frame
 framework = Object.send(:remove_const, :Mod_Framework)
-restart
+$answer.call(true)
 Object.const_set(:Mod_Framework, framework)
 check("a game without the Mod Framework, which cannot start itself again, removes the save, tells the player in the notification box and plays on",
       [File.exist?(sp::RESUME_FILE), $notices, $exits], [false, [[sp::NOTICE_KEY, sp::FAILED_TEXT]], 0])

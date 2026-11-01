@@ -2,6 +2,7 @@
 #  battles_hotjoin_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Read the waiting box's lines from its box of the Mod Framework
 #      Paulinchen  2026-10-30: Checked that the battle server places joining enemies by the widths of the troop its setup carried
 #                            - Read the players taken in from the joins stand-in
 #                            - Found the running battle an encounter asks through the asking stand-in
@@ -222,10 +223,9 @@ coop_deliver(host, { "coop" => "hot_ok", "bid" => "hb1", "escape" => "1", "lose"
 $scene_now = scene
 coop::Mode.before_start(scene)
 $frames = 0
-# The waiting box, which the window stand-in keeps as it opens.
-$windows = []
+# The waiting box's lines while it waits.
 box_lines = nil
-$inject = lambda { |frame| box_lines = $windows.last.contents.lines.dup if frame == 2 }
+$inject = lambda { |frame| box_lines = waiting_lines if frame == 2 }
 check("a late guest whose roster never comes fights its encounter alone", [coop.join(scene), $frames], [:gone, hotjoin::ROSTER_FRAMES - 1])
 $inject = nil
 check("having read how long the wait may last, and the seconds, in its box",

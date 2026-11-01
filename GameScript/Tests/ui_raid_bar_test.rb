@@ -2,6 +2,8 @@
 #  ui_raid_bar_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Read the bars from the Mod Framework's components they build, the DLL's bars answered by a stand-in
+#                            - Stopped loading the deleted ui_boxes.rbx
 #      Paulinchen  2026-10-31: Kept the strip's place in the Mod Framework's settings
 #      Paulinchen  2026-10-30: Told the pools through the stand-in of the pools' ledger in C#
 #                            - Dropped the checks that restate pixel positions
@@ -25,17 +27,17 @@
 #
 #----------------------------------------------------------------
 
-# Covers the raid bosses' HP bars, ui_raid_bar.rbx, with battles_raid_pool.rbx: the numbers grouped
-# by commas, the battle's strip with the boss's title, each enemy's name over its gauge with its
-# numbers and share left inside, a boss of several enemies sharing the gauge's width, hidden under
-# the game's top message, the game's own boss bar it pushes down, and on the map the bosses' events
-# found through their pages and common events, the bar above each that shows, the strip at the top
-# while none shows, and the room it takes from the boxes there; the strip where the player puts it
-# with Alt and the interface presets' colors; with battles_raid_tiers.rbx the bars of the raid
-# bosses outside Raid Worlds, which the player turns off in the Mod Config; and the bars above the
-# bosses' stand-ins of frozen fights.
+# Covers the raid bosses' HP bars, ui_raid_bar.rbx, with battles_raid_pool.rbx: what the battle and
+# the map ask the DLL for their bars (hud.battle_bar, hud.map_bar, whose rules MGQOnline.Game.Tests
+# checks against their golden cases), the battle's strip with the boss's title, each enemy's name
+# over its gauge with its numbers and share left inside, hidden under the game's top message, small
+# by the hotkey or a click on its hint, the game's own boss bar it pushes down, and on the map the
+# bosses' events found through their pages and common events, the bar above each that shows and the
+# strip docked at the top while none shows; with battles_raid_tiers.rbx the bars of the raid bosses
+# outside Raid Worlds, which the player turns off in the Mod Config; and the bars above the bosses'
+# stand-ins of frozen fights.
 
-require_relative "support"
+require_relative "components_support"
 
 # The mod's log, printed with the checks.
 module MGQ_Multiplayer; module Log; def self.write(m); puts "  log: #{m}"; end; end; end
@@ -48,72 +50,17 @@ $now = Time.at(1_000_000)
 # The time in $now.
 def Time.now; $now; end
 
-# Stand-ins for the game's pictures.
-
-# The game's color.
-Color = Struct.new(:red, :green, :blue, :alpha)
-# The game's rectangle.
-Rect = Struct.new(:x, :y, :width, :height)
-# A rectangle set in place, as a sprite's part of its picture is.
-class Rect; def set(x, y, width, height); self.x, self.y, self.width, self.height = x, y, width, height; end; end
-# The game's font.
-Font = Struct.new(:size, :outline, :color, :bold, :out_color)
-# The game's picture: measures each character at half the font's size and records its texts, their
-# boxes, gauges, fills and outline copies.
-class Bitmap
-  # Its size, its font, and what it drew: texts, their rectangles, gauges, outline copies and fills.
-  attr_reader :width, :height, :font, :texts, :boxes, :gauges, :outlines, :fills
-  # Creates an empty picture in a font of 24.
-  def initialize(width, height); @width = width; @height = height; @font = Font.new(24); clear; end
-  # Forgets everything drawn.
-  def clear; @texts = []; @boxes = []; @gauges = []; @outlines = 0; @fills = []; end
-  # Measures a text at half the font's size a character.
-  def text_size(text); Rect.new(0, 0, (text.to_s.size * font.size * 0.5).ceil, font.size); end
-  # Records a text drawn and its rectangle, or counts it as an outline copy when drawn in black.
-  #
-  # @param x [Integer] Its left.
-  # @param y [Integer] Its top.
-  # @param width [Integer] Its width.
-  # @param height [Integer] Its height.
-  # @param text [String] The text.
-  # @param align [Integer] Its alignment.
-  def draw_text(x, y, width, height, text, align = 0)
-    return @outlines += 1 if font.color.to_a == [0, 0, 0, 255]
-
-    @texts << [x, text.to_s, font.size, align]
-    @boxes << [x, y, width, height]
-  end
-  # Records a fill with its rectangle and color.
-  #
-  # @param args [Array] A rectangle and a color, or x, y, width, height and a color.
-  def fill_rect(*args)
-    x, y, width, height, color = args[0].is_a?(Rect) ? [args[0].x, args[0].y, args[0].width, args[0].height, args[1]] : args
-    @fills << [x, y, width, height, color]
-  end
-  # Records a gauge's left and width.
-  def gradient_fill_rect(x, _y, width, *); @gauges << [x, width]; end
-  # Frees the picture.
-  def dispose; @disposed = true; end
-  # Whether the picture was freed.
-  def disposed?; @disposed ? true : false; end
-end
 # The game's window base, which draws nothing.
 class Window_Base; def initialize(*); end; end
-# A sprite, the part of its picture it shows starting as the whole picture, as RGSS sets it anew with
-# each picture.
+# The game's sprite.
 class Sprite
-  # Its place, depth, origin, whether it shows and its viewport.
-  attr_accessor :x, :y, :z, :ox, :visible, :viewport
-  # Its picture and the part of it shown.
-  attr_reader :bitmap, :src_rect
-  # Creates a sprite at the top left without a picture.
-  def initialize(viewport = nil); @viewport = viewport; @x = 0; @y = 0; @src_rect = Rect.new(0, 0, 0, 0); end
-  # Takes a picture and shows the whole of it.
-  def bitmap=(bitmap); @bitmap = bitmap; @src_rect = Rect.new(0, 0, bitmap.width, bitmap.height); end
+  attr_accessor :x, :y, :z, :ox, :oy, :visible, :opacity, :viewport, :bitmap, :src_rect
+  # Creates a sprite at the top left.
+  def initialize(viewport = nil); @viewport = viewport; @x = 0; @y = 0; end
   # Frees the sprite.
   def dispose; @disposed = true; end
   # Whether the sprite was freed.
-  def disposed?; @disposed; end
+  def disposed?; @disposed ? true : false; end
 end
 # The game's screen of 640 by 480 pixels, at frame $frame.
 module Graphics
@@ -164,7 +111,7 @@ end
 # The live battle, in which the player is a guest.
 module MGQ_MpBattlesSync; def self.role; :guest; end; end
 # The party box's hotkey, held for one update by $tab_pressed and named Tab, its refusals kept in
-# $refusals, Player.ini and the cursor sound.
+# $refusals.
 module MGQ_MpHotkeys
   # Whether the party box's hotkey is pressed.
   def self.pressed?(action); action == :party_box && $tab_pressed; end
@@ -185,15 +132,8 @@ module MGQ_Multiplayer
     def self.forget(name); ($settings ||= {}).delete(name); end
   end
 end
-# The left Alt and the mouse, which the layout reads, never held or pointing.
-module MGQ_Multiplayer
-  # Windows' keys, none held.
-  module Mod_Framework::UI::Key; def self.down?(_code); false; end; end
-  # The mouse, off the screen.
-  module Mod_Framework::UI::Mouse; def self.position; nil; end; end
-end
-# The game's cursor sound, which plays nothing.
-module Sound; def self.play_cursor; end; end
+# The game's cursor sound, counted in $cursor_sounds.
+module Sound; def self.play_cursor; $cursor_sounds = $cursor_sounds.to_i + 1; end; end
 # The game's switches, off until set.
 class Game_Switches; def initialize; @data = []; end; def [](id); @data[id] || false; end; def []=(id, value); @data[id] = value; end; end
 # The game's variables, 0 until set.
@@ -205,7 +145,7 @@ TroopMember = Struct.new(:enemy_id)
 # A troop of the database.
 TroopData = Struct.new(:members)
 $data_enemies = []
-{ 1 => ["Queen Harpy", 800], 4 => ["Metatronne", 2000], 5 => ["Sandalphone", 3000], 6 => ["Black Dahlia", 1200], 7 => ["Black Mamba", 1400], 8 => ["Black Rose", 1000] }.each { |id, (name, hp)| $data_enemies[id] = EnemyData.new(name, [hp]) }
+{ 1 => ["Queen Harpy", 750], 4 => ["Metatronne", 2000], 5 => ["Sandalphone", 3000], 6 => ["Black Dahlia", 1200], 7 => ["Black Mamba", 1400], 8 => ["Black Rose", 1000] }.each { |id, (name, hp)| $data_enemies[id] = EnemyData.new(name, [hp]) }
 $data_troops = []
 { 71 => [1], 1599 => [4, 5], 126 => [1], 836 => [6, 7, 8] }.each { |id, enemies| $data_troops[id] = TroopData.new(enemies.map { |enemy| TroopMember.new(enemy) }) }
 
@@ -251,10 +191,10 @@ class Game_Interpreter; def command_301; end; end
 class Game_Message; attr_accessor :visible, :position; end
 # The battle's sprites.
 class Spriteset_Battle; def update; end; def dispose; end; end
-# The map's sprites: its viewports and its characters' sprites.
+# The map's sprites: its characters' sprites.
 class Spriteset_Map
   # Creates the map's sprites with the characters' sprites.
-  def initialize(sprites); @viewport1 = :characters; @viewport3 = :top; @character_sprites = sprites; end
+  def initialize(sprites); @character_sprites = sprites; end
   # Updates nothing.
   def update; end
   # Frees nothing.
@@ -295,14 +235,11 @@ end
 # The game's scene base, which does nothing.
 class Scene_Base; def update; end; def start; end; end
 load_script "ui_online"
-load_script "ui_boxes"
 load_script "battles_raid_bosses"
 load_script "battles_raid_pool"
 load_script "battles_raid_tiers"
-# The real tiers, checked on their own; the battles below count on 7.5 times the max HP in every
-# tier.
-REAL_TIERS = MGQ_MpRaidBosses::TIERS.dup
-MGQ_MpRaidBosses::TIERS.replace(REAL_TIERS.keys.each_with_object({}) { |tier, tiers| tiers[tier] = { :mhp => 7.5 } })
+# The battles below count on 8 times the max HP in every tier.
+MGQ_MpRaidBosses::TIERS.keys.each { |tier| MGQ_MpRaidBosses::TIERS[tier] = { :mhp => 8 } }
 # Stands in for the DLL's command index of the map's pages: the troops each page fights, through
 # the common events of $data_common_events it calls, each once; the asks noted in $troops_asked.
 module MGQ_MpCoopEvents
@@ -331,8 +268,54 @@ open_fake_ui { ["", 0] }
 $pools = PoolLedgerStandIn.new($world_bridge) { (Time.now.to_f * 1000).round }
 SceneManager.run
 
+# Stands in for the DLL's bars (HudTopics), as far as the scripts need them: the requests kept in
+# $bar_requests, each gauge's HP by the pool the scripts know, numbers as plain "hp / max".
+module BarStandIn
+  # Writes a gauge as the DLL answers it.
+  def self.gauge(name, hp, max)
+    [name, hp, max, "#{hp} / #{max}", format("%.1f%%", max > 0 ? hp * 100.0 / max : 0)]
+  end
+
+  # Answers the battle's bar.
+  def self.battle(request)
+    ($bar_requests ||= []) << [:battle, request]
+    gauges = request["enemies"].map do |name, hp, mhp, dead, key|
+      known = key && MGQ_MpRaidPool.pool(key)
+      max = known && known.max.to_i > 0 ? known.max.to_i : mhp
+      gauge(name, dead ? 0 : (key ? MGQ_MpRaidPool.hp_of(hp.to_f / mhp, max) : hp), max)
+    end
+    gauges.empty? ? nil : [request["title"], gauges]
+  end
+
+  # Answers a troop's bar on the map.
+  def self.map(request)
+    ($bar_requests ||= []) << [:map, request]
+    names = request["enemies"].map(&:first)
+    lettered = Hash.new(0)
+    names = names.map do |name|
+      next name if names.count(name) < 2
+
+      letters = request["letters"]
+      letter = letters ? letters[lettered[name] % letters.size] : " #{(65 + lettered[name]).chr}"
+      lettered[name] += 1
+      name + letter
+    end
+    own = request["enemies"].map { |_name, hp| hp * request["factor"] }
+    keys = request["keys"]
+    gauges = (keys || names).each_with_index.map do |key, index|
+      known = keys && MGQ_MpRaidPool.pool(key)
+      max = known && known.max.to_i > 0 ? known.max.to_i : own[index].to_i
+      gauge(names[index].to_s, known ? MGQ_MpRaidPool.hp_of(MGQ_MpRaidPool.left_now(known), max) : max, max)
+    end
+    [request["title"], gauges]
+  end
+end
+$world_bridge.answer(MGQ_MpRaidBar::BATTLE_BAR_TOPIC) { |request| BarStandIn.battle(request) }
+$world_bridge.answer(MGQ_MpRaidBar::MAP_BAR_TOPIC) { |request| BarStandIn.map(request) }
+
 bar = MGQ_MpRaidBar
 pool = MGQ_MpRaidPool
+ui = Mod_Framework::UI
 
 # Starts the game's objects anew and forgets every pool.
 def reset
@@ -345,7 +328,7 @@ def reset
   $frame += MGQ_MpRaidBar::SCAN_FRAMES
   MGQ_MpRaidPool.forget
   $pools.reset
-  MGQ_MpHud.top_room = 0
+  $bar_requests = []
 end
 
 # Has the relay push a pool, which the pools read at once.
@@ -372,99 +355,65 @@ end
 # @param bar [MGQ_MpRaidBar::Bar, nil] The bar.
 # @return [Array, nil] The content, nil for no bar.
 def flat(bar)
-  bar ? [bar.title, bar.gauges.map { |gauge| gauge.to_a }] : nil
+  bar ? [bar.title, bar.gauges.map { |gauge| [gauge.name, gauge.hp, gauge.max] }] : nil
 end
 
-# A bar of one enemy.
+# Lists a bar's gauges: each one's rate and the texts it shows, the first that fits.
 #
-# @param name [String] Its name.
-# @param hp [Integer] Its HP.
-# @param max [Integer] Its max HP.
-# @param title [String, nil] The bar's title.
-# @return [MGQ_MpRaidBar::Bar] The bar.
-def one(name, hp, max, title = nil)
-  MGQ_MpRaidBar::Bar.new(title, [MGQ_MpRaidBar::Gauge.new(name, hp, max)])
+# @param parts [MGQ_MpRaidBar::BarParts] The bar's parts.
+# @return [Array<Array>] Each gauge's rate and texts.
+def gauges_of(parts)
+  parts.gauges.map { |gauge| [gauge.rate, gauge.text] }
 end
-
-# The plates of a bar's picture.
-#
-# @param sprite [Sprite_MpRaidBar] The bar.
-# @return [Array<Array>] Each plate's rectangle.
-def plates_of(sprite)
-  sprite.bitmap.fills.select { |_x, _y, _w, _h, color| color.equal?(MGQ_MpUi::Style::PLATE) }.map { |x, y, w, h, _color| [x, y, w, h] }
-end
-
-# Puts the strip where the framework's settings keep it, as the player left it with Alt, or back
-# where it starts.
-#
-# @param placement [String, nil] The setting, "x,y,width,height", nil for where it starts.
-def place_strip(placement)
-  MGQ_MpUi::Layout.reset(:raid_bar, "a test")
-  Mod_Framework::Settings.store("ui_raid_bar", placement) if placement
-end
-
-# What the layout was offered this frame, and forgets it, as its tick does.
-#
-# @return [Array<Array>] Each box's id, rectangle and depth.
-def offers
-  offered = MGQ_MpUi::Layout.instance_variable_get(:@offers)
-  taken = offered.map { |offer| [offer.id, offer.rect.to_a, offer.z] }
-  offered.clear
-  taken
-end
-
-# The numbers grouped by commas.
-check("small numbers stay as they are", [MGQ_MpUi.grouped(0), MGQ_MpUi.grouped(999)], ["0", "999"])
-check("thousands are grouped by commas", [MGQ_MpUi.grouped(1000), MGQ_MpUi.grouped(3_412_880.4), MGQ_MpUi.grouped(-1_234_567)], ["1,000", "3,412,880", "-1,234,567"])
-check("numbers past 2^53 too", MGQ_MpUi.grouped(2_362_500_000_000_000_000), "2,362,500,000,000,000,000")
 
 # The battle's strip.
 reset
-check("a battle that fights no pool shows no strip", bar.battle_bar, nil)
+check("a battle that fights no pool shows no strip, without asking the DLL", [bar.battle_bar, $bar_requests], [nil, []])
 pool.note_invite("troop" => "71", "pool" => "1")
 BattleManager.setup(71)
 $game_troop.members[0].hp = 4500
-check("the battle's bar is its boss's HP as the battle has it", flat(bar.battle_bar), ["Tier 9 Raid Boss", [["Queen Harpy", 4500, 6000]]])
+check("the battle asks the DLL for its boss's bar with each enemy's HP as the battle has it and its pool",
+      [flat(bar.battle_bar), $bar_requests.last], [["Tier 9 Raid Boss", [["Queen Harpy", 4500, 6000]]], [:battle, { "title" => "Tier 9 Raid Boss", "enemies" => [["Queen Harpy", 4500, 6000, false, "Queen Harpy"]] }]])
 push("Queen Harpy", "0.9", "7000")
 check("against the relay's max once it told one", flat(bar.battle_bar), ["Tier 9 Raid Boss", [["Queen Harpy", 5250, 7000]]])
 spriteset = Spriteset_Battle.new
 spriteset.update
 strip = spriteset.instance_variable_get(:@mgq_mp_raid_bar)
-check("with the hotkey that makes it small at the right of its title line, dim and small, the boss's title, its name below it over the gauge and the HP with the share left inside the gauge, all centered",
-      strip.bitmap.texts.map { |x, text, size, align| [x, text, size, align] },
-      [[0, "Tab: bars", 14, 2], [67, "Tier 9 Raid Boss", 20, 1], [0, "Queen Harpy", 24, 1], [112, "5,250 / 7,000  (75.0%)", 21, 1]])
+root = strip.root
+check("the strip is the movable Raid boss bar, resized in width alone, under the game's windows over the battlers, not docked in battle",
+      [root.open?, root.id, root.place_name, root.resizable, root.under_windows, root.z, root.dock, root.at, root.min_size],
+      [true, :raid_bar, "Raid boss bar", :width, true, 90, nil, [0, 0], [MGQ_MpRaidBar::StripView.min_width, 36]])
+check("the boss's title in the title color and the name over the gauge on plates as wide as their texts, the hint of the hotkey that makes it small",
+      [texts_of(root), part_with_text(root, "Tier 9 Raid Boss").color, [part_with_text(root, "Tier 9 Raid Boss").plate, part_with_text(root, "Queen Harpy").plate], part_with_text(root, "Tab: bars").is_a?(ui::Button)],
+      [["Tier 9 Raid Boss", "Tab: bars", "Queen Harpy"], :title, [:text, :text], true])
+gauge = strip.parts.gauges.first
+check("the gauge framed, maroon from its top down, with a damage trail, and the HP with the share left inside, else the HP, else the share",
+      [gauge.framed, gauge.vertical, gauge.colors, gauge.trail, gauges_of(strip.parts)],
+      [true, true, MGQ_MpRaidBar::BarParts::FILL_COLORS, true, [[0.75, ["5250 / 7000  (75.0%)", "5250 / 7000", "75.0%"]]]])
 sprite = Sprite_Battler.new(Struct.new(:boss).new(true).tap { |battler| def battler.boss?; boss; end })
+MGQ_MpRaidBar.battle_bottom = 86
 sprite.update_hp_bar
-check("the game's own boss bar moves below the strip", sprite.instance_variable_get(:@hp_bar).y, 74)
+check("the game's own boss bar moves below the strip while it lies at the top", sprite.instance_variable_get(:@hp_bar).y, 74)
 $game_message.visible = true
 $game_message.position = 0
 spriteset.update
 sprite.update_hp_bar
-check("the game's top message hides the strip, and the game's bar stays", [strip.visible, sprite.instance_variable_get(:@hp_bar).y], [false, -12])
+check("the game's top message hides the strip, and the game's bar stays", [hidden_root?(root), sprite.instance_variable_get(:@hp_bar).y], [true, -12])
 $game_message.visible = false
+spriteset.update
 $game_troop.members[0].hp = 4400
 spriteset.update
-check("numbers that changed wait for the next drawing", strip.bitmap.texts.last[1], "5,250 / 7,000  (75.0%)")
+check("numbers that changed wait a few frames", gauges_of(strip.parts).first[1][1], "5250 / 7000")
 $frame += MGQ_MpRaidBar::REDRAW_FRAMES
 spriteset.update
-check("which comes a few frames later", strip.bitmap.texts.last[1], "5,134 / 7,000  (73.3%)")
+check("then show", gauges_of(strip.parts).first[1][1], "5134 / 7000")
 $tab_pressed = true
 spriteset.update
 $tab_pressed = false
-check("Tab starts cropping the strip from its top where it stands and keeps the choice", [strip.y, strip.src_rect.to_a, strip.bitmap.texts.size, $settings["raid_bar_small"]], [0, [0, 6, 640, 80], 4, "1"])
-(MGQ_MpUi::Style::SLIDE_FRAMES - 1).times { spriteset.update }
-check("until after SLIDE_FRAMES only its gauge with the HP shows at the strip's top, the title and the name cropped", [strip.y, strip.src_rect.to_a], [0, [0, 50, 640, 36]])
-check("the layout grabs what shows", MGQ_MpUi::Layout.instance_variable_get(:@offers).map { |offer| [offer.id, offer.rect.to_a, offer.z] }, [[:raid_bar, [0, 0, 640, 36], 90]])
-sprite.update_hp_bar
-check("the game's own boss bar follows it up", sprite.instance_variable_get(:@hp_bar).y, 24)
-spriteset.update
-check("and it stays so", [strip.y, strip.src_rect.to_a], [0, [0, 50, 640, 36]])
-$tab_pressed = true
-spriteset.update
-$tab_pressed = false
-MGQ_MpUi::Style::SLIDE_FRAMES.times { spriteset.update }
-sprite.update_hp_bar
-check("Tab again shows it in full", [strip.y, strip.src_rect.to_a, sprite.instance_variable_get(:@hp_bar).y, $settings["raid_bar_small"]], [0, [0, 0, 640, 86], 74, "0"])
+check("Tab makes it small and keeps the choice, its height easing down to the gauges alone, which it keeps at its bottom",
+      [$settings["raid_bar_small"], root.tail, $cursor_sounds], ["1", true, 1])
+part_with_text(root, "Tab: bars").send(:emit, :click)
+check("a click on its hint shows it whole again", [$settings["raid_bar_small"], MGQ_MpRaidBar.small?], ["0", false])
 # The chat, which the player types in while $chat_typing.
 module MGQ_MpChat; def self.typing?; $chat_typing; end; end
 $chat_typing = true
@@ -475,92 +424,27 @@ $chat_typing = false
 check("Tab typed into the chat box changes nothing, its refusal left to the hotkeys, which log none while the player types",
       [$settings["raid_bar_small"], $refusals], ["0", [[:party_box, "the chat box is open"]]])
 spriteset.dispose
+check("the battle's sprites close the strip as they go", root.open?, false)
 spriteset.update
 check("a new battle's sprites make a new strip", spriteset.instance_variable_get(:@mgq_mp_raid_bar).equal?(strip), false)
+spriteset.dispose
 
 # A boss of several enemies in battle: a name and a gauge per enemy.
 reset
-pool.note_invite("troop" => "1599", "pool" => "2")
-BattleManager.setup(1599)
-$game_troop.members[1].hp = 9000
-check("the battle's bar has a gauge per enemy of the boss, with its own HP", flat(bar.battle_bar), ["Archangel", [["Metatronne", 15000, 15000], ["Sandalphone", 9000, 22500]]])
-spriteset = Spriteset_Battle.new
-spriteset.update
-strip = spriteset.instance_variable_get(:@mgq_mp_raid_bar)
-check("the strip shows the hint and the title once and each enemy's name over its gauge, with the numbers of each inside",
-      strip.bitmap.texts,
-      [[0, "Tab: bars", 14, 2], [67, "Archangel", 20, 1], [112, "Metatronne", 24, 1], [323, "Sandalphone", 24, 1], [112, "15,000 / 15,000", 21, 1], [323, "9,000 / 22,500", 21, 1]])
-spriteset.dispose
-reset
 pool.note_invite("troop" => "836", "pool" => "3")
 BattleManager.setup(836)
-check("the Three Nobles of Black are three gauges", flat(bar.battle_bar), ["Tier 5 Raid Boss", [["Black Dahlia", 9000, 9000], ["Black Mamba", 10500, 10500], ["Black Rose", 7500, 7500]]])
 spriteset = Spriteset_Battle.new
 spriteset.update
 strip = spriteset.instance_variable_get(:@mgq_mp_raid_bar)
-check("the names share the largest font size down from the layout's at which every name fits its gauge",
-      strip.bitmap.texts[2..4], [[112, "Black Dahlia", 21, 1], [252, "Black Mamba", 21, 1], [392, "Black Rose", 21, 1]])
-spriteset.dispose
-strip = Sprite_MpRaidBar.new(nil, false)
-strip.show(MGQ_MpRaidBar::Bar.new("Tier 5 Raid Boss", [MGQ_MpRaidBar::Gauge.new("Queen Harpy of the Sky Realm", 1, 1), MGQ_MpRaidBar::Gauge.new("Black Mamba", 1, 1), MGQ_MpRaidBar::Gauge.new("Black Rose", 1, 1)]))
-check("a name too long even at the smallest size is cut, every name at that size", strip.bitmap.texts[2..4],
-      [[112, "Queen Harpy of...", 14, 1], [252, "Black Mamba", 14, 1], [392, "Black Rose", 14, 1]])
-strip = Sprite_MpRaidBar.new(nil, false)
-strip.show(one("Black Rose", 1, 1, "A Raid Boss Whose Title Goes On And On And On And On Far Past The Strip's Width"))
-title = strip.bitmap.texts[1]
-check("a long title of the strip is cut before the hint's room on either side, so it stays centered and never meets the hint",
-      [title[0], title[1].end_with?(MGQ_MpUi::ELLIPSIS), strip.bitmap.boxes[1].values_at(0, 2), plates_of(strip).first], [67, true, [67, 506], [67, 0, 506, 26]])
-
-# The strip where the player puts it.
-check("the strip is one box of the layout, resized in width alone, as narrow as its title line needs with the hint at either side of the longest title",
-      [registered_box(:raid_bar), Sprite_MpRaidBar.min_strip_width], [["Raid boss bar", 322, 86, :width], 322])
-reset
-pool.note_invite("troop" => "836", "pool" => "3")
-BattleManager.setup(836)
-$game_troop.members[0].hp = 4500
-place_strip("10,200,100,30")
-spriteset = Spriteset_Battle.new
-spriteset.update
-strip = spriteset.instance_variable_get(:@mgq_mp_raid_bar)
-check("a strip kept narrower and lower than it may be stays at the least width and its own height, where the player put it",
-      [strip.x, strip.y, strip.bitmap.width, strip.bitmap.height, strip.src_rect.to_a], [10, 200, 322, 86, [0, 0, 322, 86]])
-check("which still shows the hint, the whole title, every name and how much each enemy has left", strip.bitmap.texts,
-      [[0, "Tab: bars", 14, 2], [67, "Tier 5 Raid Boss", 20, 1], [6, "Black Dahlia", 15, 1], [111, "Black Mamba", 15, 1], [216, "Black Rose", 15, 1],
-       [6, "50.0%", 21, 1], [111, "100.0%", 21, 1], [216, "100.0%", 21, 1]])
-check("the layout grabs it where it lies", offers, [[:raid_bar, [10, 200, 322, 86], 90]])
-sprite = Sprite_Battler.new(Struct.new(:boss).new(true).tap { |battler| def battler.boss?; boss; end })
-sprite.update_hp_bar
-check("the game's own boss bar stays at the top while the strip lies elsewhere", sprite.instance_variable_get(:@hp_bar).y, -12)
-$tab_pressed = true
-spriteset.update
-$tab_pressed = false
-MGQ_MpUi::Style::SLIDE_FRAMES.times { spriteset.update }
-check("small, it shows its gauges alone where it lies", [strip.y, strip.src_rect.to_a, offers], [200, [0, 50, 322, 36], [[:raid_bar, [10, 200, 322, 36], 90]]])
-place_strip("0,3,640,86")
-spriteset.update
-sprite.update_hp_bar
-check("a strip within a few pixels of the top still moves the game's bar below what shows of it", sprite.instance_variable_get(:@hp_bar).y, -12 + 3 + 36)
-$tab_pressed = true
-spriteset.update
-$tab_pressed = false
-MGQ_MpUi::Style::SLIDE_FRAMES.times { spriteset.update }
-place_strip(nil)
-spriteset.update
-check("put back, it lies across the top again", [strip.x, strip.y, strip.bitmap.width], [0, 0, 640])
-MGQ_MpUi::Theme.apply("Monarch", "a test")
+names = parts_of_kind(strip.root, ui::Label).select { |label| label.text.start_with?("Black") }
+check("the Three Nobles of Black are three gauges, each name over its own and shrinking with the others down to 14 so each fits",
+      [strip.parts.gauges.size, names.map(&:text), names.map(&:min_font_size).uniq], [3, ["Black Dahlia", "Black Mamba", "Black Rose"], [14]])
+first_gauges = strip.parts.gauges
+$game_troop.members[0].hp = 600
 $frame += MGQ_MpRaidBar::REDRAW_FRAMES
 spriteset.update
-# The colors a sprite's picture was filled with.
-colors = lambda { |sprite_of| sprite_of.bitmap.fills.map { |fill| fill[4].to_a }.uniq }
-check("another preset draws the gauges anew in its edge and well, the outer frame staying black",
-      [colors.call(strip).include?([200, 164, 96, 230]), colors.call(strip).include?([36, 10, 14, 235]), colors.call(strip).include?([0, 0, 0, 255])], [true, true, true])
-check("and the title in its title color", [Sprite_MpRaidBar::TITLE_COLOR.to_a, Sprite_MpRaidBar::EDGE.equal?(MGQ_MpUi::Style::EDGE)], [[255, 224, 140, 255], true])
-MGQ_MpUi::Theme.apply("Legacy", "a test")
-$frame += MGQ_MpRaidBar::REDRAW_FRAMES
-spriteset.update
-check("and back", [colors.call(strip).include?([140, 140, 140, 220]), colors.call(strip).include?([200, 164, 96, 230])], [true, false])
+check("the same boss keeps its gauges, so their trails drain on", strip.parts.gauges.equal?(first_gauges) || strip.parts.gauges == first_gauges, true)
 spriteset.dispose
-offers
 
 # The bosses' events on the map.
 reset
@@ -586,141 +470,51 @@ $frame += MGQ_MpRaidBar::SCAN_FRAMES
 check("nor any while a Hades rematch's switch is on", bar.boss_events, [])
 $game_switches[MGQ_MpRaidPool::HADES_SWITCH] = false
 $frame += MGQ_MpRaidBar::SCAN_FRAMES
-check("a bar before any pool shows the boss's full HP at the player's difficulty", flat(bar.map_bar(71)), ["Tier 9 Raid Boss", [["Queen Harpy", 6000, 6000]]])
 $game_variables[41] = 150
-check("which the difficulty raises, a gauge per enemy of the troop", flat(bar.map_bar(1599)), ["Archangel", [["Metatronne", 22500, 22500], ["Sandalphone", 33750, 33750]]])
-push("Metatronne and Sandalphone#1", "0.5", "22500")
-check("the pool the relay told counts with its max, the other keeps the enemy's own",
-      flat(bar.map_bar(1599)), ["Archangel", [["Metatronne", 22500, 22500], ["Sandalphone", 11250, 22500]]])
-check("names that repeat within a troop get letters, as the game letters them in battle", bar.map_names([4, 4, 5, 1, 1, 1]),
-      ["Metatronne A", "Metatronne B", "Sandalphone", "Queen Harpy A", "Queen Harpy B", "Queen Harpy C"])
+bar.map_bar(1599)
+check("the map asks the DLL for a troop's bar with its pools, each enemy's own max HP at the player's difficulty and its tier's factor",
+      $bar_requests.last, [:map, { "title" => "Archangel", "keys" => pool.troop_keys(1599), "enemies" => [["Metatronne", 3000], ["Sandalphone", 4500]],
+                                   "factor" => MGQ_MpRaidBosses.factor(1599, :mhp), "letters" => nil }])
 # The letters the game gives repeated names.
 def $game_troop.letter_table; ["Ａ", "Ｂ"]; end
-twins = $data_troops[1599]
-$data_troops[1599] = TroopData.new([TroopMember.new(4), TroopMember.new(4)])
-check("the game's own letters when the troop knows them", flat(bar.map_bar(1599)), ["Archangel", [["MetatronneＡ", 22500, 22500], ["MetatronneＢ", 11250, 22500]]])
-$data_troops[1599] = twins
+bar.map_bar(1599)
+check("with the game's own letters when the troop knows them", $bar_requests.last[1]["letters"], ["Ａ", "Ｂ"])
+$game_troop = Game_Troop.new
+$game_variables[41] = 0
 spriteset = Spriteset_Map.new([CharacterSprite.new(harpy, 200, 300, 48, true, 255), CharacterSprite.new(gate, 300, 50, 32, true, 255)])
 spriteset.update
 bars = spriteset.instance_variable_get(:@mgq_mp_raid_bars)
-overhead = bars.instance_variable_get(:@overhead)
-check("a bar above the boss whose event shows", [overhead.size, overhead[harpy].x, overhead[harpy].y, overhead[harpy].viewport], [1, 200, 300 - 48 - 52 - 4, :characters])
+overhead = bars.overhead
+above = overhead[harpy]
+check("a bar above the boss whose event shows, following the event, under its feet where the screen has no room above",
+      [overhead.size, above.root.follow.equal?(harpy), above.root.side, above.root.flip, above.root.mouse], [1, true, :above, true, false])
 check("with its title and its name over a thin gauge without numbers, 240 wide for a boss of one enemy",
-      [overhead[harpy].bitmap.texts, overhead[harpy].bitmap.gauges.size, overhead[harpy].bitmap.width, overhead[harpy].ox],
-      [[[0, "Tier 9 Raid Boss", 16, 1], [0, "Queen Harpy", 18, 1]], 2, 240, 120])
-check("no strip while a boss's event shows", [bars.instance_variable_get(:@strip), MGQ_MpHud.top_room], [nil, 0])
+      [texts_of(above.root), above.parts.gauges.map { |each| [each.height, each.text] }, above.root.width], [["Tier 9 Raid Boss", "Queen Harpy"], [[8, nil]], 240])
+check("no strip while a boss's event shows", bars.strip, nil)
+spriteset.instance_variable_set(:@character_sprites, [CharacterSprite.new(harpy, 200, 300, 48, true, 255), CharacterSprite.new(gate, 300, 50, 32, true, 255)])
+spriteset.update
+check("once the map rebuilds its sprites after a transfer, the same bar still follows the event", [overhead[harpy].equal?(above), above.root.follow.equal?(harpy)], [true, true])
 $game_map.events.delete(1)
 $frame += MGQ_MpRaidBar::SCAN_FRAMES
 spriteset.update
-strip = bars.instance_variable_get(:@strip)
-check("a boss without an event that shows gets the strip at the top", [overhead.size, strip.visible, strip.viewport], [0, true, :top])
-check("which tells the boxes at the top its room", MGQ_MpHud.top_room, 86)
-check("the layout grabs it at the top", offers, [[:raid_bar, [0, 0, 640, 86], MGQ_MpUi::Z[:labels]]])
-place_strip("100,120,400,86")
-spriteset.update
-check("moved down and narrower, it lies there and leaves the boxes at the top their room", [strip.x, strip.y, strip.bitmap.width, MGQ_MpHud.top_room], [100, 120, 400, 0])
-check("its row of gauges takes the strip's width less the margins once that is less than the share of the screen, shared by the gauges", strip.bitmap.gauges.each_slice(2).map(&:first), [[6, 191], [203, 96]])
-check("where the layout grabs it", offers, [[:raid_bar, [100, 120, 400, 86], MGQ_MpUi::Z[:labels]]])
-place_strip("0,2,640,86")
-spriteset.update
-check("within a few pixels of the top, the boxes there make room for it to its bottom", MGQ_MpHud.top_room, 88)
-place_strip(nil)
-spriteset.update
+strip = bars.strip
+check("a boss without an event that shows gets the strip, docked at the top, which the boxes at the top corners make room for",
+      [overhead.size, strip.root.open?, hidden_root?(strip.root), strip.root.dock, strip.root.z, texts_of(strip.root).include?("Tab: bars")],
+      [0, true, false, :top, ui::Z[:labels], false])
 gate.character_name = "!Flame"
 $frame += MGQ_MpRaidBar::SCAN_FRAMES
 spriteset.update
-check("a marker counts as the boss's sprite, under its feet when the screen has no room above", [overhead.size, overhead[gate].y, strip.visible, MGQ_MpHud.top_room], [1, 52, false, 0])
+check("a marker counts as the boss's sprite, and the strip hides again", [overhead.size, hidden_root?(strip.root)], [1, true])
 check("the bar of a boss of several enemies is 480 wide, a name and a thin gauge per enemy",
-      [overhead[gate].bitmap.width, overhead[gate].ox, overhead[gate].bitmap.texts, overhead[gate].bitmap.gauges.each_slice(2).map(&:first)],
-      [480, 240, [[0, "Archangel", 16, 1], [2, "Metatronne", 18, 1], [243, "Sandalphone", 18, 1]], [[2, 235], [243, 118]]])
+      [overhead[gate].root.width, texts_of(overhead[gate].root), overhead[gate].parts.gauges.size], [480, ["Archangel", "Metatronne", "Sandalphone"], 2])
+bar_of_gate = overhead[gate]
 $raid = false
 spriteset.update
-check("no bars outside a Raid World's story", [overhead.size, MGQ_MpHud.top_room], [0, 0])
+check("no bars outside a Raid World's story", [overhead.size, bar_of_gate.root.open?], [0, false])
 $raid = true
 gate.character_name = ""
-$frame += MGQ_MpRaidBar::SCAN_FRAMES
-spriteset.update
 spriteset.dispose
-check("the strip's room is free once the map's sprites go", MGQ_MpHud.top_room, 0)
-remade = Sprite_MpRaidBar.new(:characters, true)
-remade.show(one("Queen Harpy", 1, 1))
-first = remade.bitmap
-remade.show(MGQ_MpRaidBar::Bar.new(nil, [MGQ_MpRaidBar::Gauge.new("Metatronne", 1, 1), MGQ_MpRaidBar::Gauge.new("Sandalphone", 1, 1)]))
-check("a bar above an event remakes its picture when the boss it shows needs another width, freeing the old one",
-      [first.width, first.disposed?, remade.bitmap.width, remade.ox, remade.bitmap.texts.size], [240, true, 480, 240, 3])
-remade.show(one("Queen Harpy", 1, 1))
-check("and back", [remade.bitmap.width, remade.ox, remade.bitmap.texts.size], [240, 120, 2])
-
-# Long numbers in the strip.
-reset
-long = Sprite_MpRaidBar.new(nil, false)
-short = MGQ_MpRaidBar
-check("numbers up to 7 digits stay whole", [short.short_numbers(3_412_880, 5_000_000), short.short_numbers(9_999_999, 10_000_000)],
-      ["3,412,880 / 5,000,000", "9,999,999 / 10,000,000"])
-check("longer ones take the largest unit that leaves the max at least 7 digits",
-      [short.short_numbers(999_999_999, 1_000_000_000), short.short_numbers(236_166_381_881_187, 1_009_500_000_000_000)],
-      ["1,000,000 K / 1,000,000 K", "236,167 B / 1,009,500 B"])
-check("the HP rounds up, so a boss with HP left never reads 0", short.short_numbers(1, 2_362_500_000_000), "1 M / 2,362,500 M")
-check("but never above the max, which rounds down, for a full boss whose max is no multiple of the unit",
-      [short.short_numbers(1_234_567_891, 1_234_567_891), short.short_numbers(1_234_567_001, 1_234_567_891), short.short_numbers(1, 1_234_567_891)],
-      ["1,234,567 K / 1,234,567 K", "1,234,567 K / 1,234,567 K", "1 K / 1,234,567 K"])
-long.show(one("Chaos", 2_362_500_000_000, 2_362_500_000_000))
-check("the strip shows them shortened, with the share left", long.bitmap.texts.last[1..2], ["2,362,500 M / 2,362,500 M  (100.0%)", 21])
-long.show(one("Chaos", 10**27, 10**27))
-$frame += MGQ_MpRaidBar::REDRAW_FRAMES
-long.show(one("Chaos", 10**27, 10**27))
-check("numbers too long for both show the HP alone", long.bitmap.texts.last[1], "1,000,000,000 Qi / 1,000,000,000 Qi")
-long.show(one("Chaos", 10**30, 10**30))
-$frame += MGQ_MpRaidBar::REDRAW_FRAMES
-long.show(one("Chaos", 10**30, 10**30))
-check("and too long even so only the share left", long.bitmap.texts.last[1..2], ["100.0%", 21])
-long.show(one("Chaos", 1, 2_362_500_000_000))
-$frame += MGQ_MpRaidBar::REDRAW_FRAMES
-long.show(one("Chaos", 1, 2_362_500_000_000))
-check("a share left too small to show is never 0 %", long.percent(MGQ_MpRaidBar::Gauge.new("Chaos", 1, 2_362_500_000_000)), "<0.1%")
-check("and its gauge shows a sliver, the HP it just lost in the damage trail behind it", long.bitmap.gauges, [[113, 415], [112, 1], [112, 1]])
-
-# The damage trail: the HP of the last two seconds, draining down to the HP left.
-trail = Sprite_MpRaidBar.new(nil, true)
-# The Queen Harpy's bar at an HP.
-harpy = lambda { |hp| one("Queen Harpy", hp, 1000, "Tier 9 Raid Boss") }
-# The share each damage trail shows.
-shown = lambda { trail.instance_variable_get(:@trails).map { |each| each.shown } }
-trail.show(harpy.call(1000))
-$frame += 10
-trail.show(harpy.call(600))
-check("a loss shows in the damage trail from the HP before it", [shown.call, trail.bitmap.gauges.first], [[1.0], [144, 94]])
-$frame += Sprite_MpRaidBar::TRAIL_FRAMES
-trail.show(harpy.call(600))
-check("which holds for TRAIL_FRAMES", shown.call, [1.0])
-$frame += 1
-trail.show(harpy.call(600))
-check("then drains", shown.call.first.between?(0.6001, 0.99), true)
-120.times { $frame += 1; trail.show(harpy.call(600)) }
-check("down to the HP left", shown.call, [0.6])
-$frame += 1
-trail.show(harpy.call(500))
-$frame += 30
-trail.show(harpy.call(400))
-$frame += Sprite_MpRaidBar::TRAIL_FRAMES - 40
-trail.show(harpy.call(400))
-check("blows in a row keep the HP before the first of them while it is within TRAIL_FRAMES", shown.call, [0.6])
-$frame += 1
-trail.show(harpy.call(900))
-check("healing rises at once, without a trail", shown.call, [0.9])
-trail.show(one("Morrigan", 100, 1000, "Tier 8 Raid Boss"))
-check("another boss starts without a trail", shown.call, [0.1])
-# The bar of two of the Three Nobles of Black at their HP.
-nobles = lambda { |dahlia, mamba| MGQ_MpRaidBar::Bar.new("Tier 5 Raid Boss", [MGQ_MpRaidBar::Gauge.new("Black Dahlia", dahlia, 1000), MGQ_MpRaidBar::Gauge.new("Black Mamba", mamba, 1000)]) }
-trail.show(nobles.call(1000, 1000))
-check("a boss of several enemies starts a trail per gauge", shown.call, [1.0, 1.0])
-$frame += 10
-trail.show(nobles.call(1000, 600))
-(Sprite_MpRaidBar::TRAIL_FRAMES + 121).times { $frame += 1; trail.show(nobles.call(1000, 600)) }
-check("each gauge's trail drains on its own", shown.call, [1.0, 0.6])
-$frame += 1
-trail.show(nobles.call(500, 600))
-check("a hit on one gauge leaves the other's trail alone", [shown.call, trail.bitmap.gauges], [[1.0, 0.6], [[120, 117], [2, 118], [2, 118], [243, 141], [243, 141]]])
+check("every bar closes once the map's sprites go", strip.root.open?, false)
 
 # The raid bosses outside Raid Worlds: a battle's bar by its enemies' own HP, the map's full, each
 # turned off by its Mod Config row; a Raid World's bars go by the pools whatever those rows say.
@@ -731,8 +525,8 @@ tiers.choose(true)
 tiers.note_invite("troop" => "71", "tiers" => "1")
 BattleManager.setup(71)
 $game_troop.members[0].hp = 4500
-check("outside a Raid World a battle whose boss fights at its tier has a bar of its enemies' own HP",
-      [pool.fight, flat(bar.battle_bar)], [nil, ["Tier 9 Raid Boss", [["Queen Harpy", 4500, 6000]]]])
+check("outside a Raid World a battle whose boss fights at its tier asks for a bar of its enemies' own HP, without a pool",
+      [pool.fight, flat(bar.battle_bar), $bar_requests.last[1]["enemies"]], [nil, ["Tier 9 Raid Boss", [["Queen Harpy", 4500, 6000]]], [["Queen Harpy", 4500, 6000, false, nil]]])
 bar.show_bar(:battle, false)
 check("none once the player turned the battle's bar off, kept in Player.ini", [bar.battle_bar, $settings["raid_bar_battle"]], [nil, "0"])
 bar.show_bar(:battle, true)
@@ -740,8 +534,8 @@ BattleManager.setup(126)
 check("nor in a battle no event, retry or invite started", bar.battle_bar, nil)
 $game_map.events = { 1 => Game_Event.new([battle(71)], "$Harpy", 0, false, 255, 10, 10) }
 check("on the map the boss's events show, with a bar of its full HP at its tier, nothing keeping it between battles",
-      [bar.tier_map?, bar.boss_events.map { |_event, troop| troop }, bar.shown_troop?(71), flat(bar.map_bar(71))],
-      [true, [71], true, ["Tier 9 Raid Boss", [["Queen Harpy", 6000, 6000]]]])
+      [bar.tier_map?, bar.boss_events.map { |_event, troop| troop }, bar.shown_troop?(71), flat(bar.map_bar(71)), $bar_requests.last[1]["keys"]],
+      [true, [71], true, ["Tier 9 Raid Boss", [["Queen Harpy", 6000, 6000]]], nil])
 $game_variables[1011] = 4
 $frame += MGQ_MpRaidBar::SCAN_FRAMES
 check("a boss the story beat shows none", [bar.shown_troop?(71), bar.boss_events], [false, []])
@@ -793,14 +587,15 @@ reset
 $raid = true
 frozen_boss = StandIn.new("$Harpy", 0, false, 255, 20, 20)
 $freeze_targets = [[frozen_boss, 71], [StandIn.new("$Slime", 0, false, 255, 1, 1), 50]]
-$freeze_sprites = [CharacterSprite.new(frozen_boss, 240, 320, 48, true, 255)]
+standin_sprite = CharacterSprite.new(frozen_boss, 240, 320, 48, true, 255)
+$freeze_sprites = [standin_sprite]
 check("a frozen fight's boss stand-in counts as the boss's event, one whose troop shows no bar left out",
       bar.boss_events.map { |event, troop| [event.equal?(frozen_boss), troop] }, [[true, 71]])
 check("the steps to the boss count its stand-in", bar.distance_to_boss(71, 22, 21), 2)
 spriteset = Spriteset_Map.new([])
 spriteset.update
-overhead = spriteset.instance_variable_get(:@mgq_mp_raid_bars).instance_variable_get(:@overhead)
-check("the bar stands above the stand-in's sprite", [overhead.size, overhead[frozen_boss] && [overhead[frozen_boss].x, overhead[frozen_boss].y]], [1, [240, 320 - 48 - 52 - 4]])
+overhead = spriteset.instance_variable_get(:@mgq_mp_raid_bars).overhead
+check("the bar stands above the stand-in's sprite", [overhead.size, overhead[frozen_boss] && overhead[frozen_boss].root.follow.equal?(standin_sprite)], [1, true])
 $freeze_targets = []
 $freeze_sprites = []
 $frame += MGQ_MpRaidBar::SCAN_FRAMES

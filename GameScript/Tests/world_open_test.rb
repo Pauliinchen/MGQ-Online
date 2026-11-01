@@ -2,8 +2,14 @@
 #  world_open_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-01: Reached the update over the title's commands through the world screen's opening alone, the Mod Framework adding Multiplayer
+#      Paulinchen  2026-11-01: Dropped the checks that read the old screen prototype instead of the scripts
+#                            - Dropped the checks of the form window no screen draws with any more
+#                            - Reached the update over the title's commands through the world screen's opening alone, the Mod Framework adding Multiplayer
 #                            - Checked that the title's commands stay off while the update question is still coming
+#                            - Stopped loading the deleted ui_boxes.rbx
+#                            - Dropped the stand-ins of the name box and letters of the deleted text screen
+#                            - Checked the password form, the switches, the row colors, the invite and the world just made on the world screen built on the Mod Framework's components
+#                            - Stopped loading the deleted world_text.rbx
 #      Paulinchen  2026-10-31: Typed through the Mod Framework's text box, reading the typing from $mgq_text_input
 #                            - Checked that a gamepad's cancel leaves a form's text box
 #                            - Expected the plainer texts the player reads
@@ -72,7 +78,7 @@ require_relative "rules_support"
 require "tmpdir"
 
 # Stands in for the game's scenes: returning notes $returned.
-class Scene_Base; def return_scene; $returned = true; end; end
+class Scene_Base; def start; end; def update; end; def terminate; end; def scene_changing?; false; end; def return_scene; $returned = true; end; end
 # Stands in for the game's menu scenes.
 class Scene_MenuBase < Scene_Base; end
 # Stands in for the load screen.
@@ -83,10 +89,6 @@ class Window_Base; def initialize(*); end; end
 class Window_Selectable < Window_Base; end
 # Stands in for a window of commands.
 class Window_Command < Window_Selectable; end
-# Stands in for the game's name box.
-class Window_NameEdit < Window_Base; end
-# Stands in for the game's letters to pick a name from.
-class Window_NameInput < Window_Selectable; end
 # Stands in for a colour.
 class Color; def initialize(*); end; end
 # Stands in for a sprite, which draws nothing.
@@ -200,6 +202,9 @@ module MGQ_Multiplayer
   # Stands in for the DLL: each call is checked against its signature and noted in $calls, and what
   # it reads is in $dll.
   module Link
+    # Answers the player's id.
+    def self.player_id; "me"; end
+
     # A function of the DLL with its signature.
     Function = Struct.new(:name, :signature) do
       # Checks the call against the signature, notes it in $calls and answers 1, started.
@@ -225,69 +230,21 @@ module MGQ_Multiplayer
   end
 end
 
+require_relative "world_screen_support"
 load_script "world_save_distribution"
 load_script "ui_online"
-load_script "ui_boxes"
 load_script "world"
 load_script "world_mods"
-load_script "world_text"
 load_script "world_screen"
 fake = open_rules_bridge
 
-# A small window of the world screen: keeps the commands it opened with and whether it takes input.
-class FakeChoice
-  # Whether it takes input.
-  attr_reader :active
+open_fake_ui { typed = $typed.to_s; $typed = nil; [typed, typed.size] }
 
-  # Opens with commands and takes input.
-  #
-  # @param _choices [Array<Array>] The commands.
-  def start(_choices); @active = true; end
-
-  # Closes.
-  def finish; @active = false; end
-
-  # Takes input.
-  def activate; @active = true; end
-
-  # Takes no input.
-  def deactivate; @active = false; end
-
-  # The cursor's row.
-  #
-  # @return [Integer] -1, no cursor.
-  def index; -1; end
-
-  # The world asked for with select_world.
-  attr_reader :asked
-
-  # Keeps the world to put the cursor on.
-  #
-  # @param id [String] The world's directory id.
-  def select_world(id); @asked = id; end
-
-  # Takes the worlds shown, keeping none.
-  #
-  # @param _entries [Array<MGQ_MpWorld::Entry>] The worlds.
-  def entries=(_entries); end
-end
-
-# The lines at the top of the world screen, which show nothing.
-class FakeInfo
-  # Shows nothing.
-  #
-  # @param _lines [Array<String, nil>] The lines.
-  def show(_lines); end
-end
-
-# Builds the world screen without its windows.
+# Opens the world screen.
 #
 # @return [Scene_MpWorlds] The screen.
 def new_scene
-  scene = Scene_MpWorlds.allocate
-  [:@actions_window, :@members_window, :@confirm_window, :@start_window, :@list_window, :@form_window].each { |name| scene.instance_variable_set(name, FakeChoice.new) }
-  scene.instance_variable_set(:@info_window, FakeInfo.new)
-  scene
+  world_scene
 end
 
 # The forms.
@@ -341,122 +298,18 @@ scene.on_enter
 check("entering hands the DLL the world", screen_requests("screen.enter").last.values_at("id", "name", "gone"), ["w2", "Golden", false])
 check("and a busy step holds the input while the DLL's action runs", [scene.instance_variable_get(:@busy), $called], ["unlock", nil])
 
-# What typing in place needs.
-module MGQ_Multiplayer
-  # Stands in for the keyboard, with no key pressed.
-  module Mod_Framework::UI::Key; def self.pressed?(_code); false; end; def self.triggered?(code); pressed?(code); end; end
-end
-
-# Stands in for the game's buttons, none pressed.
-module Input; def self.trigger?(_button); false; end; def self.press?(_button); false; end; end
-
-# The form window of the world screen: shows a form and keeps the field the cursor is on.
-class FakeForm < FakeChoice
-  # The form shown.
-  attr_accessor :form
-
-  # Picks a row.
-  #
-  # @param index [Integer] The row.
-  def select(index); @row = index; end
-
-  # The cursor's row.
-  #
-  # @return [Integer] The row picked last, the first before any.
-  def index; @row || 0; end
-
-  # The field the cursor is on.
-  #
-  # @return [MGQ_MpWorld::Form::Field] The field.
-  def field; form.fields[index]; end
-
-  # Takes the cursor off.
-  def unselect; @row = nil; end
-
-  # Draws nothing.
-  def refresh; end
-
-  # Draws nothing.
-  def redraw_current_item; end
-  # Scrolls nothing, as a box of one line.
-  def wheel_lines; 0; end
-end
-
-# The text box types what $typed holds.
-open_fake_ui { typed = $typed.to_s; $typed = nil; [typed, typed.size] }
-
-# Builds the world screen with a form window and no forms yet.
-#
-# @return [Scene_MpWorlds] The screen.
-def form_scene
-  scene = new_scene
-  scene.instance_variable_set(:@form_window, FakeForm.new)
-  scene.instance_variable_set(:@forms, {})
-  scene
-end
-
-scene = form_scene
+scene = new_scene
 scene.instance_variable_set(:@entry, entries[2])
 $called = nil
 $screen_steps = [["password", "Plain"]]
 scene.on_enter
-check("the password step asks for it in a form typed in place", [$called, scene.form.title, scene.form.editing, $mgq_text_input], [nil, "Enter Plain", :password, true])
-$typed = "secret"
-scene.update_typing
-ui_frame
-scene.update_typing
-check("Enter hands the password to the DLL", [screen_requests("screen.answer").last, $mgq_text_input], [{ "answer" => "password", "text" => "secret" }, false])
+check("the password step asks for it in a form typed in place", [$called, scene.form.title, $focused.id, $mgq_text_input], [nil, "Enter Plain", "form:password", true])
+type_in("secret\r")
+check("Enter hands the password to the DLL", screen_requests("screen.answer").last, { "answer" => "password", "text" => "secret" })
 $screen_steps = [["password", "Plain"]]
 scene.on_enter
-scene.stop_typing
-scene.on_form_cancel
+cancel_in($focused)
 check("backing out of the password tells the DLL, which may end an entry after a restart", [screen_requests("screen.answer").last, scene.form], [{ "answer" => "password_back" }, nil])
-
-# A details window that draws on nothing and keeps the texts it draws.
-#
-# @param width [Integer] The width of its contents.
-# @param height [Integer] The height of its contents.
-# @return [Array] The window and the texts drawn, which fill as it shows a world.
-def new_detail(width, height)
-  detail = Window_MpWorldDetail.allocate
-  # The details' old methods, such as panels, are the prototype's, which the DLL's model follows.
-  detail.define_singleton_method(:method_missing) { |name, *args| screen_detail.send(name, *args) }
-  texts = []
-  font = Struct.new(:size).new(24)
-  canvas = Struct.new(:font).new(font)
-  canvas.define_singleton_method(:clear) { texts.clear }
-  canvas.define_singleton_method(:fill_rect) { |*| }
-  detail.define_singleton_method(:contents) { canvas }
-  detail.define_singleton_method(:contents_width) { width }
-  detail.define_singleton_method(:contents_height) { height }
-  detail.define_singleton_method(:change_color) { |*| }
-  detail.define_singleton_method(:reset_font_settings) { font.size = 24 }
-  detail.define_singleton_method(:text_size) { |text| Struct.new(:width).new(text.size * font.size / 2) }
-  detail.define_singleton_method(:draw_text) { |*args| texts << args[4] }
-  %w[system_color normal_color power_up_color crisis_color].each { |name| detail.define_singleton_method(name) { name } }
-  [detail, texts]
-end
-
-# Finds a value of the details by its label.
-#
-# @param panels [Array<Window_MpWorldDetail::Panel>] The panels.
-# @param label [String] The label.
-# @return [Window_MpWorldDetail::Cell, nil] The cell.
-def cell_of(panels, label)
-  panels.map { |panel| panel.rows }.flatten.compact.find { |cell| cell.label == label }
-end
-
-# What the details say.
-detail, texts = new_detail(386, 336)
-panels = detail.panels(entries[1], "me")
-check("a featured world says so beside its heading", [panels[0].title, panels[0].note], ["World", "featured"])
-check("a world without a password needs none", cell_of(panels, "Password").text, "None")
-check("made by the admin tool's player", cell_of(panels, "Creator").text, "Global")
-check("a world of the player's own is made by them", cell_of(detail.panels(entries[1], "c"), "Creator").text, "You")
-check("a world the directory no longer lists says only so", detail.panels(gone, "me").map { |panel| panel.rows.flatten.map { |cell| cell.text } }, [["Only on this PC: deleted, or you were removed"]])
-detail.show(entries[1], "me")
-check("the name is drawn with when it was played, then the headings in capitals", [texts[0, 2], texts.include?("WORLD"), texts.include?("PLAYERS"), texts.include?("DESCRIPTION")], [["not entered yet", "Golden"], true, true, true])
-check("a world without a description says so at the bottom", texts.last, "No description.")
 
 # The seats, which the world code tells.
 check("a world's code tells its seats", local_world("abcdef012345", "code" => "mgqmp2;abcdefghjkmnpqrs;r1;8").seats, 8)
@@ -486,44 +339,11 @@ check("but comes after every world the directory lists", screen_entries(typed, t
 $local_worlds.clear
 
 # The colour of a row in the list and of the details' title.
-list_window = Window_MpWorldList.allocate
-colors = []
-list_window.define_singleton_method(:item_rect_for_text) { |_index| Rect.new(0, 0, 200, 24) }
-list_window.define_singleton_method(:change_color) { |color, _enabled = true| colors << color }
-list_window.define_singleton_method(:draw_text) { |*| }
-%w[normal_color crisis_color].each { |name| list_window.define_singleton_method(name) { name } }
-list_window.instance_variable_set(:@list, raid_entries.map { |entry| { :ext => entry } })
-(0...raid_entries.size).each { |index| list_window.draw_item(index) }
+scene = new_scene
+colors = raid_entries.map { |entry| scene.world_row(entry)[:color] }
 check("a Raid World's row is red, which wins over a featured one's gold and a favourite's colour",
-      colors.map { |color| color.equal?(MGQ_MpWorld::RAID_COLOR) ? :red : color }, [:red, :red, "crisis_color", "normal_color"])
-detail, = new_detail(386, 336)
-title_colors = []
-detail.define_singleton_method(:change_color) { |color, _enabled = true| title_colors << color }
-detail.draw_title(MGQ_MpWorldScreen.details(raid_entries[0]))
-check("and so is a Raid World's name above its details", title_colors.last.equal?(MGQ_MpWorld::RAID_COLOR), true)
-check("whose cells may ask for the red too", detail.color_of(:raid).equal?(MGQ_MpWorld::RAID_COLOR), true)
-
-# The details.
-raid_panels = detail.panels(raid_entries[1], "me")
-check("the details tell a Raid World and how it shares companions", [cell_of(raid_panels, "Type").text, cell_of(raid_panels, "Type").color, cell_of(raid_panels, "Sharing").text],
-      ["Raid", :raid, "Story"])
-check("or that it shares story companions and battle recruits", cell_of(detail.panels(raid_entries[0], "me"), "Sharing").text, "Story, recruits")
-check("a Raid World's players start at the beginning, on the difficulty it sets", [cell_of(raid_panels, "Start").text, cell_of(raid_panels, "Difficulty").text], ["The beginning", "HARD"])
-check("or each on their own in one that sets none", cell_of(detail.panels(raid_entries[0], "me"), "Difficulty").text, "Per player")
-check("and a Classic world names no difficulty", cell_of(detail.panels(raid_entries[3], "me"), "Difficulty"), nil)
-plain_panels = detail.panels(raid_entries[3], "me")
-check("but a Classic world's World panel keeps its three rows, with no type row", [plain_panels[0].rows.size, cell_of(plain_panels, "Type"), raid_panels[0].rows.size], [3, nil, 6])
-check("a Raid World's details tell its squad rules", ["Luka", "Formation", "Frontline"].map { |label| cell_of(raid_panels, label).text }, ["Replaceable", "6", "2 | 1  (regular | raids)"])
-check("the defaults for one that names none", ["Luka", "Formation", "Frontline"].map { |label| cell_of(detail.panels(raid_entries[0], "me"), label).text }, ["Fixed", "4", "1 | 1  (regular | raids)"])
-check("and a Classic world's none", ["Luka", "Formation", "Frontline"].map { |label| cell_of(plain_panels, label) }, [nil, nil, nil])
-saved_raid = typed[0].dup
-saved_raid.start = "ready"
-check("a Raid World with a shared save starts from the creator's save", cell_of(detail.panels(MGQ_MpWorld::Entry.new("r1", "Raid Night", saved_raid, nil, false, false), "me"), "Start").text,
-      "The creator's save")
-saved_raid.start = "pending"
-check("or tells that its creator is still setting it up", detail.raid_start_text(saved_raid), "Its creator is still setting it up")
-saved_raid.start = "none"
-check("and one without starts at the beginning", detail.raid_start_text(saved_raid), "The beginning")
+      colors.map { |color| color.equal?(MGQ_MpWorld::RAID_COLOR) ? :red : color }, [:red, :red, :warn, nil])
+check("and so is a Raid World's name above its details", scene.title_color(MGQ_MpWorldScreen.details(raid_entries[0])["title_color"]).equal?(MGQ_MpWorld::RAID_COLOR), true)
 
 # A world entered while the directory listed it hands its type, sharing, difficulty and squad rules
 # to the DLL, which keeps them in world.ini (LocalWorldsTests).
@@ -591,10 +411,6 @@ $dll["mp_dir_list"] = "state=ready\n\n" \
   "world\tw3\t4\t0\tc\t0\tC\tOld\tnone\t0\t0\t\t\t\t\t\t\t\t\tclassic\toff\t\t0\t\t0\n"
 _, _, bossed, = MGQ_MpWorld::Directory.list
 check("the list reads a Classic world's raid bosses, never a Raid World's, none for a world without them", bossed.map { |world| world.raid_bosses }, [true, false, false, false])
-bossed_panels = detail.panels(MGQ_MpWorld::Entry.new("w1", "Plain", bossed[0], nil, false, false), "me")
-check("the details of a Classic world with them add a row that says so", [cell_of(bossed_panels, "Raid Bosses").text, bossed_panels[0].rows.size], ["On: story bosses of their tier", 4])
-check("but none for one without them nor for a Raid World", [bossed[1], bossed[2]].map { |world| cell_of(detail.panels(MGQ_MpWorld::Entry.new(world.id, world.name, world, nil, false, false), "me"), "Raid Bosses") },
-      [nil, nil])
 bossed_found = MGQ_MpWorld::World.found("mgqmp2;abcdefghjkmnpqrs;r1;4", "Plain", "w1", "classic", "off", nil, nil, true)
 check("a Classic world found goes over with its raid bosses and reads back with them",
       [Marshal.load(fake.calls.reverse.find { |topic, _| topic == "worlds.found" }[1])["raid_bosses"], bossed_found.raid_bosses], [true, true])
@@ -622,86 +438,14 @@ share_field = raid_form.fields.find { |field| field.key == :share }
 check("a Raid World brings it back below the type", [share_field.kind, share_field.row, share_field.choices.size, raid_form.type, raid_form.share], [:switch, 3, 3, "raid", "story"])
 
 # Turning the form's switches on the world screen.
-scene = form_scene
-scene.instance_variable_set(:@forms, { :new_world => MGQ_MpWorld::WorldForm.create(:new_world) })
-scene.instance_variable_set(:@form_symbol, :new_world)
-form_window = scene.instance_variable_get(:@form_window)
-form_window.form = scene.form
-form_window.select(scene.form.fields.index { |field| field.key == :type })
+scene = new_scene
+scene.enter_form(:new_world)
 $sounds.clear
-scene.on_field
-check("confirm turns a switch", [scene.form.type, $sounds.last], ["raid", "cursor"])
-form_window.select(scene.form.fields.index { |field| field.key == :share })
-scene.turn_switch(-1)
-check("and an arrow back turns it round", scene.form.share, "all")
-
-# The form window's arrows and switches.
-window = Window_MpWorldForm.allocate
-window.instance_variable_set(:@form, MGQ_MpWorld::WorldForm.create(:new_world))
-picked = [nil]
-window.define_singleton_method(:field) { picked[0] }
-turned = []
-moved = []
-window.on_turn = lambda { |step| turned << step }
-window.define_singleton_method(:move_side) { |side| moved << side }
-picked[0] = type_field
-window.cursor_right
-window.cursor_left
-check("an arrow away from a switch's neighbour turns it, one toward it moves there", [turned, moved], [[1], [:left]])
-picked[0] = MGQ_MpWorld::Form::Field.new(:greyed, :switch, "Greyed", 3, "", :choices => ["A", "B"], :needs => lambda { |_form| false })
-$sounds.clear
-window.cursor_right
-check("a greyed-out switch buzzes", [turned, $sounds], [[1], ["buzzer"]])
-picked[0] = share_field
-window.form[:type] = 1
-window.cursor_left
-check("a switch across its row turns both ways", turned, [1, -1])
-picked[0] = window.form.fields.find { |field| field.key == :password }
-window.cursor_right
-check("other fields move as before", moved, [:left, :right])
-
-# A switch's label takes the field's width, else the window's, which a window of its own may widen.
-
-# A form window of its own, whose switches' names are wider.
-class WideForm < Window_MpWorldForm
-  # Width of the switches' names.
-  LABEL_WIDTH = 150
-end
-
-# Builds a form window that draws on nothing and keeps the label widths it draws.
-#
-# @param kind [Class] Window_MpWorldForm or a window of its own.
-# @param form [MGQ_MpWorld::Form] The form.
-# @return [Array] The window and the texts drawn with their widths.
-def drawing_form(kind, form)
-  window = kind.allocate
-  window.instance_variable_set(:@form, form)
-  drawn = []
-  font = Struct.new(:size).new(24)
-  canvas = Struct.new(:font).new(font)
-  canvas.define_singleton_method(:fill_rect) { |*| }
-  window.define_singleton_method(:contents) { canvas }
-  window.define_singleton_method(:change_color) { |*| }
-  window.define_singleton_method(:cut) { |text, _width| text }
-  window.define_singleton_method(:draw_text) { |*args| drawn << [args[2], args[4]] }
-  %w[system_color normal_color].each { |name| window.define_singleton_method(name) { name } }
-  [window, drawn]
-end
-plain_window, plain_drawn = drawing_form(Window_MpWorldForm, raid_form)
-plain_window.draw_switch(Rect.new(0, 0, 188, 21), type_field, true)
-plain_window.draw_switch(Rect.new(0, 0, 380, 21), share_field, true)
-check("the world type's label is narrower, Sharing companions takes the window's", [plain_drawn[0], plain_drawn[2]], [[70, "World type"], [84, "Sharing companions"]])
-check("each shows its outcome between arrows", [plain_drawn[1][1], plain_drawn[3][1]], ["< Raid >", "< Story companions >"])
-noted = MGQ_MpWorld::Form::Field.new(:way, :switch, "Way", 0, "Which way.", :choices => %w(Left Right), :note => lambda { |_, index| "Picked #{index}" })
-wide_window, wide_drawn = drawing_form(WideForm, MGQ_MpWorld::Form.new("Ways", [noted], :way => 1))
-wide_window.draw_switch(Rect.new(0, 0, 380, 37), noted, true)
-check("a window of its own draws its names wider, and a switch's line below it", wide_drawn, [[150, "Way"], [380 - 150 - 8, "< Right >"], [376, "Picked 1"]])
-check("which makes its row higher than a switch without one", [wide_window.height_of(noted), wide_window.height_of(type_field)], [21 + 16, 21])
-saved_form = MGQ_MpWorld::WorldForm.create(:new_world)
-saved_form[:type] = 1
-save_window, save_drawn = drawing_form(Window_MpWorldForm, saved_form)
-save_window.draw_box(Rect.new(0, 0, 188, 21), saved_form.fields.find { |field| field.key == :save }, true)
-check("a Raid World draws its Save's label narrower, asking for a save while none is chosen", save_drawn, [[40, "Save"], [188 - 40 - 8, "Choose one of your saves"]])
+form_part(scene, :type).receive("step", 1)
+check("a switch turned takes the form anew from the DLL, the new fields with it", [scene.form.type, form_part(scene, :share).nil?], ["raid", false])
+form_part(scene, :share).receive("step", -1)
+check("and a step back turns it round", scene.form.share, "all")
+cancel_in($focused || form_part(scene, :share))
 
 # An outdated game.
 $outdated = true
@@ -896,18 +640,17 @@ MGQ_Multiplayer::Stages.define_singleton_method(:restart_needed?) { false }
 MGQ_MpWorld::Invite.drop
 
 # The DLL takes the invite and enters the world once the list holds it (WorldEnteringTests).
-invited = new_scene
-invited.instance_variable_set(:@me, "me")
 $screen_waiting = true
-invited.open_steps
-check("the world screen tells the DLL it opened, which takes the invite", screen_requests("screen.do").last.values_at("do", "rejoin", "me"), ["open", nil, "me"])
-invited.instance_variable_get(:@actions_window).start([])
+invited = new_scene
+check("the world screen tells the DLL it opened, which takes the invite", screen_requests("screen.do").select { |request| request["do"] == "open" }.last.values_at("do", "rejoin", "me"), ["open", nil, "me"])
+invited.on_world(entries[0])
 $screen_steps = [["entry", "w3"], ["busy", "unlock"]]
 invited.look_for_entry(entries, "ready")
 check("while it waits, the list goes to the DLL with whether the screen is free", screen_requests("screen.do").last.values_at("do", "state", "idle", "entries"),
       ["look", "ready", false, entries.map { |entry| [entry.id, entry.local && entry.local.id, entry.name, entry.gone ? true : false] }])
-check("and the entry step points the screen at the invited world", [invited.instance_variable_get(:@entry).id, invited.instance_variable_get(:@busy)], ["w3", "unlock"])
+check("and the entry step points the screen at the invited world", [invited.instance_variable_get(:@entry).id, invited.busy], ["w3", "unlock"])
 $screen_waiting = false
+
 
 # A later screen of the session reads the list on its first look although the list bit was taken
 # before, so the DLL sees how the list stands and not an empty one it would drop the invite over.
@@ -958,10 +701,9 @@ end
 # The world just created gets the cursor, and the screen says to confirm to enter it, as the DLL's
 # steps after the request tell it (WorldEnteringTests).
 made = local_world("abcdef012345", "code" => "code", "name" => "Free")
-scene = form_scene
-scene.instance_variable_set(:@forms, { :new_world => MGQ_MpWorld::WorldForm.create(:new_world) })
-scene.instance_variable_set(:@form_symbol, :new_world)
-scene.instance_variable_set(:@busy, "create")
+scene = new_scene
+scene.enter_form(:new_world)
+scene.play("steps" => [["busy", "create"]])
 $screen_steps = [["idle"], ["place_start", { "id" => made.id, "name" => "Free", "code" => "code" }, [["Save01.rvdata2", "Save/Save01.rvdata2"]]]]
 placed = []
 place_was = MGQ_MpSaveDistribution.method(:place)
@@ -971,176 +713,30 @@ scene.play(MGQ_Multiplayer::Bridge.call("screen.step"))
 check("the starting save is copied in as the steps say, and the DLL told so", [placed, screen_requests("screen.answer").last.values_at("answer", "ok")],
       [[["Free", [["Save01.rvdata2", "Save/Save01.rvdata2"]]]], ["placed", true]])
 MGQ_MpSaveDistribution.define_singleton_method(:place, place_was)
-scene.play("steps" => $screen_steps_after)
+logged = logged_lines { scene.play("steps" => $screen_steps_after) }
 check("a world created is the one the list puts the cursor on, and the screen says to confirm to enter it",
-      [scene.instance_variable_get(:@list_window).asked, said(scene), scene.form, scene.instance_variable_get(:@busy)], ["w7", "Free was created. #{MGQ_MpWorldScreen.text("enter_hint")}", nil, nil])
+      [scene.instance_variable_get(:@select), said(scene), scene.form, scene.busy], ["w7", "Free was created. #{MGQ_MpWorldScreen.text("enter_hint")}", nil, nil])
 check("the hint says to confirm to enter it, as the guide does", MGQ_MpWorldScreen.text("enter_hint"), "Confirm to enter it.")
-
-# The pane moves the cursor onto the world asked for once the list shows it.
-
-# A window of the left side of the world screen: keeps its rows, its cursor and whether it takes input.
-class PaneList
-  # The cursor's row, whether it takes input, whether it is picked as a whole, and its pane.
-  attr_accessor :index, :active, :boxed, :pane
-  # The rows, each [symbol, ext].
-  attr_reader :rows
-
-  # Creates the window with its rows, each [symbol, ext], the cursor on the first.
-  #
-  # @param rows [Array<Array>] The rows.
-  def initialize(rows); @rows = rows; @index = 0; @active = true; end
-
-  # The number of rows.
-  def item_max; @rows.size; end
-
-  # Puts the cursor on a row.
-  def select(index); @index = index; end
-
-  # Takes the cursor off.
-  def unselect; @index = -1; end
-
-  # Takes input.
-  def activate; @active = true; end
-
-  # Takes no input.
-  def deactivate; @active = false; end
-
-  # The window's width.
-  def width; 230; end
-
-  # The window's height.
-  def height; 100; end
-
-  # The symbol of the cursor's row, nil without a cursor.
-  def current_symbol; @index >= 0 && @rows[@index] ? @rows[@index][0] : nil; end
-
-  # The ext of the cursor's row, nil without a cursor.
-  def current_ext; @index >= 0 && @rows[@index] ? @rows[@index][1] : nil; end
-
-  # Puts the cursor on the row of a symbol.
-  def select_symbol(symbol); @index = @rows.index { |row| row[0] == symbol }; end
-
-  # Shows worlds as its rows, keeping a cursor within them.
-  def entries=(entries); @rows = entries.map { |entry| [:world, entry] }; @index = [@index, @rows.size - 1].min if @index >= 0; end
-
-  # Takes a handler, keeping none.
-  def set_handler(_symbol, _method); end
-end
-
-# A world the list shows, known by its id.
-Shown = Struct.new(:id)
-worlds = PaneList.new([])
-commands = PaneList.new([[:new_world, nil], [:join_hidden, nil], [:back, nil]])
-pane = MpWorldListPane.new(worlds, commands)
-pane.entries = [Shown.new("w1"), Shown.new("w2")]
-pane.pick(:commands)
-pane.enter
-commands.select(1)
-pane.select_world("w7")
-pane.entries = [Shown.new("w1"), Shown.new("w2")]
-check("a world asked for that the list does not show yet leaves the cursor on the command", [pane.inside?, pane.current_symbol, commands.index], [true, :join_hidden, 1])
-pane.entries = [Shown.new("w1"), Shown.new("w7"), Shown.new("w2")]
-check("once the list shows it, the cursor is on it inside the worlds, which take the input", [pane.inside?, pane.current_ext, worlds.index, worlds.active, commands.active, commands.index], [true, Shown.new("w7"), 1, true, false, -1])
-worlds.deactivate
-pane.back_out
-pane.select_world("w1")
-pane.entries = [Shown.new("w7"), Shown.new("w1")]
-check("a pane picking between its windows moves into the worlds too", [pane.inside?, pane.current_ext, worlds.active], [true, Shown.new("w1"), true])
-worlds.deactivate
-pane.back_out
-pane.pick(:commands)
-pane.enter
-commands.select(0)
-pane.select_world("w2")
-pane.deactivate
-pane.entries = [Shown.new("w2"), Shown.new("w7")]
-check("but not once the player moved on to a form, which takes the input", [pane.inside?, pane.current_symbol, commands.index], [true, :new_world, 0])
-pane.activate
-pane.entries = [Shown.new("w2"), Shown.new("w7")]
-check("and the ask is over then", pane.current_symbol, :new_world)
-
-# The worlds take the mouse wheel while they have the cursor, or have none while the pane takes the
-# input, never behind a form or a box.
-list = Window_MpWorldList.allocate
-state = { :active => false, :index => -1 }
-list.define_singleton_method(:active) { state[:active] }
-list.define_singleton_method(:index) { state[:index] }
-list.pane = pane
-taking = [pane.active, list.takes_wheel?]
-pane.deactivate
-behind = list.takes_wheel?
-state[:active] = true
-state[:index] = 0
-check("the worlds without a cursor scroll while the pane takes the input, not behind a form, and always with the cursor",
-      [worlds.pane.equal?(pane), taking, behind, list.takes_wheel?, Window_MpWorldList.include?(MGQ_MpScrollingWindow)], [true, [true, true], false, true, true])
-pane.activate
-
-# The ask is logged, a world asked for before and not shown yet named as the one giving way.
-logged = []
-write_was = MGQ_Multiplayer::Log.method(:write)
-MGQ_Multiplayer::Log.define_singleton_method(:write) { |line| logged << line }
-pane.select_world("w1")
-pane.select_world("w2")
-MGQ_Multiplayer::Log.define_singleton_method(:write, write_was)
-check("the ask is logged, and a world asked for before gives way", [logged.map { |line| line[/the cursor goes onto .*/] }, pane.instance_variable_get(:@select)],
-      [["the cursor goes onto world w1 once the list shows it", "the cursor goes onto world w2 once the list shows it, instead of world w1"], "w2"])
-pane.entries = [Shown.new("w2"), Shown.new("w7")]
-check("until the list shows the one asked for last", [pane.current_ext, pane.instance_variable_get(:@select)], [Shown.new("w2"), nil])
+logged += logged_lines { scene.select_world("w8") }
+check("the ask is logged, and a world asked for before gives way", [logged.map { |line| line[/the cursor goes onto .*/] }.compact, scene.instance_variable_get(:@select)],
+      [["the cursor goes onto world w7 once the list shows it", "the cursor goes onto world w8 once the list shows it, instead of world w7"], "w8"])
 
 # Enter in the hidden world's id sends the form, as in the password form.
-scene = form_scene
-scene.instance_variable_set(:@forms, { :join_hidden => MGQ_MpWorld::WorldForm.join(:join_hidden) })
-scene.instance_variable_set(:@form_symbol, :join_hidden)
-form_window = scene.instance_variable_get(:@form_window)
-form_window.form = scene.form
-form_window.select(0)
-scene.start_typing(scene.form.fields.first)
+scene = new_scene
+scene.enter_form(:join_hidden)
 $calls.clear
-$typed = "#{'ab' * 16}\r"
 $screen_steps = [["busy", "find"]]
-scene.update_typing
-ui_frame
-scene.update_typing
-check("Enter in the world id has the DLL look the world up", [scene.sends_on_enter?, screen_requests("screen.do").last["do"], scene.instance_variable_get(:@busy), $mgq_text_input], [true, "find", "find", false])
-check("and the action holds the form's cursor, so its button cannot send it again meanwhile", [scene.instance_variable_get(:@resume_form), form_window.active], [false, false])
-scene.instance_variable_set(:@busy, nil)
-two = MGQ_MpWorld::Form.new("Two", [
-  MGQ_MpWorld::Form::Field.new(:first, :text, "First", 0, "One.", :max_chars => 10),
-  MGQ_MpWorld::Form::Field.new(:second, :text, "Second", 1, "Two.", :max_chars => 10),
-  MGQ_MpWorld::Form::Field.new(:confirm, :button, "Send", 2, "Sends."),
-], :first => "", :second => "")
-scene.instance_variable_set(:@forms, { :password => two })
-scene.instance_variable_set(:@form_symbol, :password)
-form_window.form = two
-form_window.select(0)
-scene.start_typing(two.fields.first)
+type_in("#{'ab' * 16}\r")
+check("Enter in the world id has the DLL look the world up, holding the screen", [scene.form.sends_on_enter?, screen_requests("screen.do").last["do"], scene.busy, scene.root.inert?],
+      [true, "find", "find", true])
+scene.play("steps" => [["idle"], ["close_form"]])
+scene.enter_form(:new_world)
 $calls.clear
-$typed = "x\r"
-scene.update_typing
-ui_frame
-scene.update_typing
-check("a form with two text boxes keeps the text with Enter and is sent from its button", [scene.sends_on_enter?, two[:first], two.editing, $calls, scene.instance_variable_get(:@busy)], [false, "x", nil, [], nil])
-
-# A gamepad's cancel leaves a text box, as the keyboard's does, and opens no letters screen.
-form_window.select(0)
-scene.start_typing(two.fields.first)
-scene.update_typing
-$called = nil
-$pressed = :B
-Input.define_singleton_method(:trigger?) { |button| $pressed == button }
-scene.update_typing
-Input.define_singleton_method(:trigger?) { |_button| false }
-$pressed = nil
-check("a gamepad's cancel leaves a form's text box with its text as it was, no letters screen opened", [two.editing, two[:first], $called, $mgq_text_input], [nil, "x", nil, false])
-scene.instance_variable_set(:@forms, {})
-check("without a form Enter sends nothing", scene.sends_on_enter?, false)
-
+type_in("x\r")
+check("a form with more text boxes keeps the text with Enter and moves down, sent from its button", [scene.form.sends_on_enter?, scene.form[:name], $focused.id, $calls, scene.busy],
+      [false, "x", "form:password", [], nil])
 # The details say Known once this PC's folder holds the world code, which entering reads.
 plain = entries[2]
 held = local_world("abcdef012345", "code" => "x", "name" => "Plain")
 known = MGQ_MpWorld::Entry.new("w1", "Plain", plain.listed, held, false, false)
 check("a world's password is known with its folder on this PC, which holds the world code, not without", [known.password_known?, plain.password_known?], [true, false])
-detail, = new_detail(386, 336)
-check("the details say so", [cell_of(detail.panels(known, "me"), "Password").text, cell_of(detail.panels(plain, "me"), "Password").text], ["Known", "Needed"])
-open_known = MGQ_MpWorld::Entry.new("w2", "Golden", entries[1].listed, held, false, false)
-check("while a world without a password needs none, entered or not", cell_of(detail.panels(open_known, "me"), "Password").text, "None")

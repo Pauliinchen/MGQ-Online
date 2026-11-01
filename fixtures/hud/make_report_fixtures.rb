@@ -2,6 +2,7 @@
 #  make_report_fixtures.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Took the wheel's screenshot once the action wheel is gone, as the scripts of commit 861fb7e6 do
 #      Paulinchen  2026-10-31: Wrote the texts C# words anew as C# words them
 #                            - Created
 #
@@ -16,7 +17,7 @@
 # logged, played, told, snapped, opened, dropped and sent. MGQParadox.Multiplayer.Tests replays
 # them.
 #
-# It runs on the scripts of commit 2f6888c0, which still kept the request in ui_bug_report.rbx,
+# It runs on the scripts of commit 861fb7e6, the last that kept the request in ui_bug_report.rbx,
 # with the stand-ins below, on Ruby 3.3, from a checkout of that commit with this file copied in:
 #
 #   ruby fixtures/hud/make_report_fixtures.rb
@@ -28,7 +29,7 @@ require_relative "../../GameScript/Tests/support"
 class Scene_Base; def update; end; def terminate; end; end
 class Scene_MenuBase < Scene_Base; end
 class Scene_Menu < Scene_MenuBase; end
-class Scene_MpStoryChoices < Scene_MenuBase; end
+class Scene_MpStoryChoices < Scene_MenuBase; def menu_root; end; end
 class Scene_Load < Scene_Base; end
 class Scene_Title < Scene_Base; end
 class Scene_Battle < Scene_Base; end
@@ -70,7 +71,6 @@ module MGQ_Multiplayer
     def self.read(name, _size); name == "mp_report_state" ? $state.dup : ""; end
   end
 end
-module MGQ_MpUi; module Style; FADE_FRAMES = 12; end; end
 module MGQ_MpHotkeys
   def self.pressed?(_action); hotkey = $hotkey; $hotkey = false; hotkey; end
   def self.log_refusal(_action, reason); $refusals << reason; end
@@ -82,9 +82,12 @@ module MGQ_MpOverworldSync
 end
 module MGQ_MpActions
   Option = Struct.new(:text, :run, :refusal, :icon, :leaves)
+  WHEEL = Object.new
+  def WHEEL.on(event, &block); $wheel_gone = block if event == :gone; self; end
   def self.wheel_choice(_order, &_option); end
-  def self.covered?; false; end
+  def self.wheel; WHEEL; end
 end
+module Mod_Framework::UI; def self.busy?; false; end; end
 module MGQ_MpNotices
   def self.message(_key, text, frames = nil); $notices << [text, frames]; end
   def self.shown?; $shown; end
@@ -138,7 +141,7 @@ end
 # Runs one operation and reads what the script did.
 #
 # @param step [Hash] "op" and its fields: "scene" ("place", "in_world", "map_ready", "shown",
-#   "typing"), "frame" ("hotkey", "count"), "wheel", "take_opening", "send" ("title", "text",
+#   "typing"), "frame" ("hotkey", "count"), "wheel", "wheel_gone", "take_opening", "send" ("title", "text",
 #   "screenshot", "logs"), "closed" ("reason"), "state" ("text"), "named" ("named"), "snap"
 #   ("kept"), "started" ("started").
 # @return [Hash] What the script did.
@@ -166,6 +169,7 @@ def run_step(step)
     option = REPORT.wheel_option
     answer = option.refusal
     option.run.call if option.run
+  when "wheel_gone" then $wheel_gone.call
   when "take_opening"
     $form = REPORT.take_opening
     answer = $form && $form[:snapped]
@@ -225,10 +229,12 @@ scenario("the hotkey in a battle and in a menu that waits, the notification box 
   { "op" => "frame" },
 ])
 
-scenario("the wheel, its screenshot after the fade and its refusals", [
+scenario("the wheel, its screenshot once the wheel is gone and its refusals", [
   { "op" => "wheel" },
-  { "op" => "frame", "count" => 12 },
+  { "op" => "frame", "count" => 13 },
   { "op" => "scene", "place" => "map", "map_ready" => false },
+  { "op" => "wheel_gone" },
+  { "op" => "wheel_gone" },
   { "op" => "frame" },
   { "op" => "wheel" },
   { "op" => "frame", "hotkey" => true },

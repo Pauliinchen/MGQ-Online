@@ -2,7 +2,8 @@
 //  ChoiceTopics.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-01: Handed a question's key line as entries and whether cancel put it off
+//      Paulinchen  2026-11-01: Dropped the steps on a question, which the framework's list and number field take
+//                            - Handed a question's key line as entries
 //      Paulinchen  2026-10-31: Added the questions a replay asks on the decision screen
 //                            - Read where the stream that hands the player runs began
 //      Paulinchen  2026-10-28: Created
@@ -114,24 +115,15 @@ public static class ChoiceTopics
     /// <summary>
     /// Opens a question a replay asks, see <see cref="ChoiceInputs"/>: <c>kind</c> ("choice",
     /// "number", "item" or "present"), <c>opener</c> (nil for the player's own history),
-    /// <c>companion</c> (a present's), <c>visible</c> (the rows the screen has room for) and
-    /// <c>spec</c> in. The spec holds per kind <c>labels</c> and <c>cancel</c> (a choice's),
-    /// <c>digits</c> and <c>value</c> (a number's), <c>items</c> ([id, name, count, description]
-    /// each, an item's and a present's), <c>result</c> (a present's, empty for the first) and
-    /// <c>index</c> (the row a list starts on). The question out, see <see cref="InputStep"/>.
+    /// <c>companion</c> (a present's) and <c>spec</c> in. The spec holds per kind <c>labels</c> and
+    /// <c>cancel</c> (a choice's), <c>digits</c> and <c>value</c> (a number's), <c>items</c> ([id,
+    /// name, count, description] each, an item's and a present's), <c>result</c> (a present's, empty
+    /// for the first) and <c>index</c> (the row a list starts on). The question out: <c>kind</c>,
+    /// <c>title</c>, <c>keys</c> ([key, text] each, the key "cancel" for the game's cancel button),
+    /// <c>hint</c>, <c>rows</c> ([answer, name, count or nil, hint, cancel] each), <c>digits</c>,
+    /// <c>value</c>, <c>index</c> and <c>cancel</c> (what cancel answers, nil to answer later).
     /// </summary>
     public const string InputOpen = "choices.input_open";
-
-    /// <summary>
-    /// Takes a step of the player on a question: <c>input</c> (the question as answered before),
-    /// <c>action</c> (see <see cref="ChoiceInputAction"/>, in lower case), <c>at</c>, <c>notches</c>
-    /// and <c>wrap</c> in; the question out: <c>kind</c>, <c>title</c>, <c>keys</c> ([key, text]
-    /// each, the key "cancel" for the game's cancel button), <c>hint</c>, <c>result</c>, <c>rows</c>
-    /// ([answer, name, count or nil, description, cancel] each), <c>digits</c>, <c>cursor</c>,
-    /// <c>top</c>, <c>visible</c>, <c>cancel</c> (nil where cancel puts it off), <c>answer</c> (nil
-    /// until given), <c>cue</c> and <c>later</c> (whether cancel put it off).
-    /// </summary>
-    public const string InputStep = "choices.input_step";
 
     /// <summary>
     /// Registers the topics on a context.
@@ -153,7 +145,6 @@ public static class ChoiceTopics
         context.Register(Lapsed, (_, request) => LapsedOf(request.AsHash()));
         context.Register(Table, (_, _) => TableOf());
         context.Register(InputOpen, (_, request) => InputText(InputOf(request.AsHash())));
-        context.Register(InputStep, (_, request) => InputText(StepOf(request.AsHash())));
     }
 
     /// <summary>
@@ -166,33 +157,15 @@ public static class ChoiceTopics
     {
         RubyHash spec = request["spec"].AsHash();
         string? opener = request["opener"].IsNil ? null : request["opener"].AsText();
-        int visible = request["visible"].AsInt();
         int index = spec["index"].AsInt();
         return request["kind"].AsText() switch
         {
-            "choice" => ChoiceInputs.Choice(opener, TextsOf(spec["labels"]), spec["cancel"].IsNil ? null : spec["cancel"].AsInt(), index, visible),
+            "choice" => ChoiceInputs.Choice(opener, TextsOf(spec["labels"]), spec["cancel"].IsNil ? null : spec["cancel"].AsInt(), index),
             "number" => ChoiceInputs.Number(opener, spec["digits"].AsInt(), spec["value"].AsLong()),
-            "item" => ChoiceInputs.Item(opener, ItemsOf(spec["items"]), index, visible),
-            "present" => ChoiceInputs.Present(request["companion"].AsText(), ItemsOf(spec["items"]), spec["result"].AsText(), index, visible),
+            "item" => ChoiceInputs.Item(opener, ItemsOf(spec["items"]), index),
+            "present" => ChoiceInputs.Present(request["companion"].AsText(), ItemsOf(spec["items"]), spec["result"].AsText(), index),
             string kind => throw new BridgeRequestException($"{kind} is no input a replay asks."),
         };
-    }
-
-    /// <summary>
-    /// Answers <see cref="InputStep"/>.
-    /// </summary>
-    /// <param name="request">The request.</param>
-    /// <returns>The question after the step.</returns>
-    /// <exception cref="BridgeRequestException">The action names none.</exception>
-    private static ChoiceInput StepOf(RubyHash request)
-    {
-        string name = request["action"].AsText();
-        if (!Enum.TryParse(name, true, out ChoiceInputAction action) || !Enum.IsDefined(action))
-        {
-            throw new BridgeRequestException($"{name} is no step on a question.");
-        }
-
-        return ChoiceInputs.Step(ReadInput(request["input"].AsHash()), action, request["at"].AsInt(), request["notches"].AsInt(), request["wrap"].AsBool());
     }
 
     /// <summary>
@@ -211,46 +184,19 @@ public static class ChoiceTopics
     private static RubyHash InputText(ChoiceInput input)
     {
         var rows = new RubyArray(input.Rows.Select(row =>
-            (RubyValue)new RubyArray { row.Answer, row.Name, row.Count is { } count ? count : RubyNil.Value, row.Description, row.Cancel }));
+            (RubyValue)new RubyArray { row.Answer, row.Name, row.Count is { } count ? count : RubyNil.Value, row.Hint, row.Cancel }));
         return new RubyHash
         {
             { "kind", input.Kind.ToString().ToLowerInvariant() },
             { "title", input.Title },
             { "keys", new RubyArray(input.Keys.Select(key => (RubyValue)new RubyArray { key.Key, key.Text })) },
             { "hint", input.Hint },
-            { "result", input.Result },
             { "rows", rows },
-            { "digits", Ints(input.Digits) },
-            { "cursor", input.Cursor },
-            { "top", input.Top },
-            { "visible", input.Visible },
+            { "digits", input.Digits },
+            { "value", input.Value },
+            { "index", input.Index },
             { "cancel", input.CancelAnswer is { } cancel ? cancel : RubyNil.Value },
-            { "answer", input.Answer is { } answer ? answer : RubyNil.Value },
-            { "cue", input.Cue is { } cue ? cue : RubyNil.Value },
-            { "later", input.Later },
         };
-    }
-
-    /// <summary>
-    /// Reads a question as the scripts hold it, see <see cref="InputText"/>.
-    /// </summary>
-    /// <param name="input">The question.</param>
-    /// <returns>The question.</returns>
-    /// <exception cref="BridgeRequestException">The kind names no input.</exception>
-    private static ChoiceInput ReadInput(RubyHash input)
-    {
-        string name = input["kind"].AsText();
-        if (!Enum.TryParse(name, true, out ChoiceInputKind kind) || !Enum.IsDefined(kind))
-        {
-            throw new BridgeRequestException($"{name} is no input a replay asks.");
-        }
-
-        List<ChoiceInputRow> rows = [.. input["rows"].AsArray().Select(row => row.AsArray()).Select(row =>
-            new ChoiceInputRow(row[0].AsInt(), row[1].AsText(), row[2].IsNil ? null : row[2].AsInt(), row[3].AsText(), row[4].AsBool()))];
-        List<ChoiceInputKey> keys = [.. input["keys"].AsArray().Select(key => key.AsArray()).Select(key => new ChoiceInputKey(key[0].AsText(), key[1].AsText()))];
-        return new ChoiceInput(kind, input["title"].AsText(), keys, input["result"].AsText(), rows, Ints(input["digits"]), input["cursor"].AsInt(),
-            input["top"].AsInt(), input["visible"].AsInt(), input["cancel"].IsNil ? null : input["cancel"].AsInt(), input["answer"].IsNil ? null : input["answer"].AsInt(), null,
-            input["later"].AsBool());
     }
 
     /// <summary>

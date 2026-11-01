@@ -2,6 +2,10 @@
 #  world_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Fired the Mod Framework's hotkeys after each map frame and gave the message and the player what the free map asks
+#                            - Stopped loading the deleted ui_boxes.rbx
+#                            - Stood in for the DLL's chat model
+#                            - Dropped the chat log's lines, which the chat's model holds
 #      Paulinchen  2026-10-31: Stood in for the Mod Framework's window, keys, mouse and capture, which the scripts read now
 #      Paulinchen  2026-10-23: Counted the frames ui_frame ended
 #                            - Typed through the stand-in text box at the end of each frame
@@ -60,8 +64,8 @@ class Game_Map
   # Stands in for the map's update, which does nothing here.
   def update(main = false); end
 end
-# Stands in for the game's message, busy while busy is set.
-class Game_Message; attr_accessor :busy; def busy?; @busy; end; end
+# Stands in for the game's message, busy while busy is set, never shown.
+class Game_Message; attr_accessor :busy, :visible; def busy?; @busy; end; end
 # Stands in for the map's interpreter, which never runs.
 class Interpreter; def running?; false; end; end
 # Stands in for the map scene, which allows a change of scene unless $scene_change_ok is false.
@@ -117,6 +121,8 @@ Player = Struct.new(:x, :y, :direction, :character_name, :character_index, :real
   def refresh; end
   # Answers that no transfer waits.
   def transfer?; false; end
+  # Answers that no move route moves the player.
+  def move_route_forcing; false; end
 end
 $game_party = Struct.new(:party_member_max, :all_members, :stand_members).new(8, [], [])
 # The game's system data: the names of its variables and switches.
@@ -217,11 +223,11 @@ module MGQ_MpWorld; def self.open?; $open; end; def self.new_game_pending?; $new
 $player_ini = {}
 
 require_relative "world_room_support"
+require_relative "chat_support"
 $inbox = WorldInbox.new
 
 load_script "core_hotkeys"
 load_script "ui_online"
-load_script "ui_boxes"
 load_script "overworld_sync"
 load_script "ui_actions"
 load_script "ui_chat"
@@ -232,12 +238,15 @@ load_script "coop_squad"
 load_script "coop_gather"
 load_script "coop_teleport"
 
-# The bridge to the fake models of the interface, the text box typing what $typed holds.
-open_fake_ui { text = $typed.to_s; $typed = ""; [text, text.size] }
+# The bridge to the fake models of the interface, the text box typing what $typed holds, the
+# component tree and the chat's model.
+$world_fake, $fake_ui = open_fake_ui { text = $typed.to_s; $typed = ""; [text, text.size] }
+$fake_chat = FakeChat.new($world_fake)
 
-# Runs one frame on the map: the wheel's keys, then the chat's, then the end of the frame, as
-# Graphics.update ends it, which types what $typed holds into an open text box.
-def map_frame; MGQ_MpActions.on_map; MGQ_MpChat.on_map; ui_frame; end
+# Runs one frame on the map: the action wheel's choice, then the chat's keys, then the end of the
+# frame, as Graphics.update ends it, which types what $typed holds into an open text box, and the
+# hotkeys of the next frame, which open and close the wheels.
+def map_frame; MGQ_MpActions.on_map; MGQ_MpChat.on_map; ui_frame; Mod_Framework::Hotkeys.fire; end
 
 # Stands in for the world room's link: the messages sent in $sent.
 module MGQ_MpOverworldSync::Link
@@ -249,12 +258,6 @@ end
 module MGQ_MpOverworldSync::Status
   # Tells the texts the line shows, without their icons.
   def self.lines; shown.map(&:first); end
-end
-
-# Lets the tests read the chat log's lines.
-module MGQ_MpChat
-  # Writes the log's lines to show as text, oldest first.
-  def self.log_lines; log_entries.map(&:to_s); end
 end
 
 # An entry of the world room's inbox, as the DLL hands it out.

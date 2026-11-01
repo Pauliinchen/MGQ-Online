@@ -2,7 +2,8 @@
 //  ChoiceInputs.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-01: Put off a number and a choice without cancel on cancel
+//      Paulinchen  2026-11-01: Left the cursor and the digits to the framework's list and number field
+//                            - Put off a number and a choice without cancel on cancel
 //                            - Handed the key line as entries naming the bound cancel key
 //                            - Named a cancel label on the key line without the game's text codes
 //      Paulinchen  2026-10-31: Created
@@ -17,7 +18,7 @@ using System.Text.RegularExpressions;
 namespace MGQOnline.Game.Story.Choices;
 
 /// <summary>
-/// The inputs a replay asks the receiver on the decision screen, each after the game's own window
+/// The inputs a replay asks the receiver on the question screen, each after the game's own window
 /// ("MGQ Online UI specs/Story decisions.md", section 1).
 /// </summary>
 public enum ChoiceInputKind
@@ -44,58 +45,6 @@ public enum ChoiceInputKind
 }
 
 /// <summary>
-/// What the player does on a question.
-/// </summary>
-public enum ChoiceInputAction
-{
-    /// <summary>
-    /// Up: the row above, or the digit under the cursor turned up.
-    /// </summary>
-    Up,
-
-    /// <summary>
-    /// Down: the row below, or the digit under the cursor turned down.
-    /// </summary>
-    Down,
-
-    /// <summary>
-    /// Left: the digit to the left.
-    /// </summary>
-    Left,
-
-    /// <summary>
-    /// Right: the digit to the right.
-    /// </summary>
-    Right,
-
-    /// <summary>
-    /// A typed digit, set on the digit under the cursor.
-    /// </summary>
-    Digit,
-
-    /// <summary>
-    /// A click: on a row it answers that row, on a digit it moves the cursor there.
-    /// </summary>
-    Click,
-
-    /// <summary>
-    /// The mouse wheel: it moves the cursor over a list, or turns the digit under the pointer.
-    /// </summary>
-    Wheel,
-
-    /// <summary>
-    /// Confirm: answers the row or the number.
-    /// </summary>
-    Ok,
-
-    /// <summary>
-    /// The game's cancel: answers what the game's window answers on cancel, or puts the question off
-    /// where that answers nothing.
-    /// </summary>
-    Cancel,
-}
-
-/// <summary>
 /// An item a question lists.
 /// </summary>
 /// <param name="Id">The item.</param>
@@ -110,9 +59,9 @@ public sealed record ChoiceInputItem(int Id, string Name, int Count, string Desc
 /// <param name="Answer">What picking it answers: a label's place or an item.</param>
 /// <param name="Name">What it shows.</param>
 /// <param name="Count">How many the player holds, <see langword="null"/> for a row without a count.</param>
-/// <param name="Description">What the hint line shows while the cursor is on it, empty for nothing.</param>
+/// <param name="Hint">What the hint line shows while the cursor is on it.</param>
 /// <param name="Cancel">Whether it is the cancel answer's own row, which shows last and dim.</param>
-public sealed record ChoiceInputRow(int Answer, string Name, int? Count, string Description, bool Cancel);
+public sealed record ChoiceInputRow(int Answer, string Name, int? Count, string Hint, bool Cancel);
 
 /// <summary>
 /// An entry of a question's key line.
@@ -122,44 +71,28 @@ public sealed record ChoiceInputRow(int Answer, string Name, int? Count, string 
 public sealed record ChoiceInputKey(string Key, string Text);
 
 /// <summary>
-/// A question on the decision screen, where its cursor stands, and its answer once given.
+/// A question on the question screen: what it offers, where it starts and what cancel answers.
 /// </summary>
 /// <param name="Kind">The input.</param>
 /// <param name="Title">The screen's title.</param>
 /// <param name="Keys">The entries of the key line this input takes.</param>
-/// <param name="Result">What the last present did, empty for none.</param>
 /// <param name="Rows">The answers of a list, empty for a number.</param>
-/// <param name="Digits">The digits of a number, the highest first; empty for a list.</param>
-/// <param name="Cursor">The row or digit the cursor is on.</param>
-/// <param name="Top">The first row shown.</param>
-/// <param name="Visible">The rows the screen has room for.</param>
+/// <param name="Digits">The digits of a number, 0 for a list.</param>
+/// <param name="Value">The number the digits start at, 0 for a list.</param>
+/// <param name="Index">The row a list starts on, as the game's window starts.</param>
 /// <param name="CancelAnswer">What cancel answers, <see langword="null"/> where cancel puts the question off to answer later.</param>
-/// <param name="Answer">The answer, <see langword="null"/> until given.</param>
-/// <param name="Cue">The sound of the last step: "cursor", "ok" or "cancel"; <see langword="null"/> for none.</param>
-/// <param name="Later">Whether cancel put the question off to answer later.</param>
-public sealed record ChoiceInput(ChoiceInputKind Kind, string Title, IReadOnlyList<ChoiceInputKey> Keys, string Result, IReadOnlyList<ChoiceInputRow> Rows,
-    IReadOnlyList<int> Digits, int Cursor, int Top, int Visible, int? CancelAnswer, int? Answer, string? Cue, bool Later = false)
+public sealed record ChoiceInput(ChoiceInputKind Kind, string Title, IReadOnlyList<ChoiceInputKey> Keys, IReadOnlyList<ChoiceInputRow> Rows, int Digits, int Value,
+    int Index, int? CancelAnswer)
 {
     /// <summary>
-    /// Gets the hint line: the description of the row under the cursor, after what the last present
-    /// did; for a choice the ask to pick, for a number which keys type its digits.
+    /// Gets the hint line the screen opens with: a number's, else the starting row's.
     /// </summary>
-    public string Hint => Kind switch
-    {
-        ChoiceInputKind.Choice => ChoiceInputs.PickHint,
-        ChoiceInputKind.Number => ChoiceInputs.NumberHint,
-        _ => string.Join(" ", new[] { Result, Rows[Cursor].Description }.Where(part => part.Length > 0)),
-    };
-
-    /// <summary>
-    /// Gets the number the digits make.
-    /// </summary>
-    public int Value => Digits.Aggregate(0, (value, digit) => value * 10 + digit);
+    public string Hint => Kind == ChoiceInputKind.Number ? ChoiceInputs.NumberHint : Rows[Index].Hint;
 }
 
 /// <summary>
-/// The questions a replay asks the receiver: what each offers and answers, as the game's own window
-/// for that input does, and how the cursor, the digits and the list's scrolling follow the player.
+/// The questions a replay asks the receiver: what each offers and what cancel answers, as the game's
+/// own window for that input does; the framework's list and number field move the cursor.
 /// </summary>
 public static class ChoiceInputs
 {
@@ -216,7 +149,7 @@ public static class ChoiceInputs
     /// <summary>
     /// The game's text codes, such as <c>\C[2]</c> or <c>\I[5]</c>, and its escaped backslash.
     /// </summary>
-    private static readonly Regex TextCodes = new(@"\\\\|\\[A-Za-z]+(\[[^\]]*\])?|\\[{}$.|!<>^]", RegexOptions.CultureInvariant);
+    private static readonly Regex TextCodes = new(@"\\\\|\\[A-Za-z]+(\[[^\]]*\])?|\\[{}$.|!<>^]",RegexOptions.CultureInvariant);
 
     /// <summary>
     /// Asks a choice.
@@ -225,19 +158,25 @@ public static class ChoiceInputs
     /// <param name="labels">The labels.</param>
     /// <param name="cancel">What cancel answers: a label's place, or the place after the labels for the choice's own branch, which gets a row; <see langword="null"/> where the choice cannot be cancelled, which puts it off.</param>
     /// <param name="index">The row the game's window starts on.</param>
-    /// <param name="visible">The rows the screen has room for.</param>
     /// <returns>The question.</returns>
-    public static ChoiceInput Choice(string? opener, IReadOnlyList<string> labels, int? cancel, int index, int visible)
+    /// <exception cref="ArgumentOutOfRangeException">The cancel names no label and no branch.</exception>
+    public static ChoiceInput Choice(string? opener, IReadOnlyList<string> labels, int? cancel, int index)
     {
         ArgumentNullException.ThrowIfNull(labels);
-        List<ChoiceInputRow> rows = [.. labels.Select((label, place) => new ChoiceInputRow(place, label, null, string.Empty, false))];
+        if (cancel is { } place)
+        {
+            ArgumentOutOfRangeException.ThrowIfNegative(place, nameof(cancel));
+            ArgumentOutOfRangeException.ThrowIfGreaterThan(place, labels.Count, nameof(cancel));
+        }
+
+        List<ChoiceInputRow> rows = [.. labels.Select((label, place) => new ChoiceInputRow(place, label, null, PickHint, false))];
         if (cancel == labels.Count)
         {
-            rows.Add(new ChoiceInputRow(labels.Count, CancelRow, null, string.Empty, true));
+            rows.Add(new ChoiceInputRow(labels.Count, CancelRow, null, PickHint, true));
         }
 
         ChoiceInputKey cancelKey = new(CancelKey, cancel is { } answer ? PlainOf(rows[answer].Name) : LaterText);
-        return List(ChoiceInputKind.Choice, TitleOf(opener), [MoveKeys, AnswerKey, cancelKey], string.Empty, rows, cancel, index, visible);
+        return List(ChoiceInputKind.Choice, TitleOf(opener), [MoveKeys, AnswerKey, cancelKey], rows, cancel, index);
     }
 
     /// <summary>
@@ -249,10 +188,9 @@ public static class ChoiceInputs
     /// <returns>The question.</returns>
     public static ChoiceInput Number(string? opener, int digits, long value)
     {
-        long start = Math.Clamp(value, 0, (long)Math.Pow(10, digits) - 1);
-        int[] places = [.. start.ToString(System.Globalization.CultureInfo.InvariantCulture).PadLeft(digits, '0').Select(digit => digit - '0')];
+        int start = (int)Math.Clamp(value, 0, (long)Math.Pow(10, digits) - 1);
         ChoiceInputKey[] keys = [new("Left/Right", "digit"), new("Up/Down or 0-9", "change it"), AnswerKey, new(CancelKey, LaterText)];
-        return new ChoiceInput(ChoiceInputKind.Number, TitleOf(opener), keys, string.Empty, [], places, 0, 0, 1, null, null, null);
+        return new ChoiceInput(ChoiceInputKind.Number, TitleOf(opener), keys, [], digits, start, 0, null);
     }
 
     /// <summary>
@@ -261,10 +199,9 @@ public static class ChoiceInputs
     /// <param name="opener">Who ran the event, <see langword="null"/> for the player's own history.</param>
     /// <param name="items">The player's key items, in the game's window's order.</param>
     /// <param name="index">The row the game's window starts on.</param>
-    /// <param name="visible">The rows the screen has room for.</param>
     /// <returns>The question.</returns>
-    public static ChoiceInput Item(string? opener, IReadOnlyList<ChoiceInputItem> items, int index, int visible) =>
-        List(ChoiceInputKind.Item, TitleOf(opener), [MoveKeys, AnswerKey, new(CancelKey, "none")], string.Empty, RowsOf(items, NoItemRow), Nothing, index, visible);
+    public static ChoiceInput Item(string? opener, IReadOnlyList<ChoiceInputItem> items, int index) =>
+        List(ChoiceInputKind.Item, TitleOf(opener), [MoveKeys, AnswerKey, new(CancelKey, "none")], RowsOf(items, NoItemRow, string.Empty), Nothing, index);
 
     /// <summary>
     /// Asks a present for a companion, which cancel answers with no present.
@@ -273,185 +210,47 @@ public static class ChoiceInputs
     /// <param name="items">The player's items the companion takes, in the game's window's order.</param>
     /// <param name="result">What the last present did, as the game's line says it; empty for the first.</param>
     /// <param name="index">The row the game's window starts on.</param>
-    /// <param name="visible">The rows the screen has room for.</param>
     /// <returns>The question.</returns>
-    public static ChoiceInput Present(string companion, IReadOnlyList<ChoiceInputItem> items, string result, int index, int visible) =>
-        List(ChoiceInputKind.Present, $"A present for {companion}", [MoveKeys, new("Enter", "give"), new(CancelKey, "no present")], result, RowsOf(items, NoPresentRow),
-            Nothing, index, visible);
+    public static ChoiceInput Present(string companion, IReadOnlyList<ChoiceInputItem> items, string result, int index) =>
+        List(ChoiceInputKind.Present, $"A present for {companion}", [MoveKeys, new("Enter", "give"), new(CancelKey, "no present")], RowsOf(items, NoPresentRow, result),
+            Nothing, index);
 
     /// <summary>
-    /// Takes a step of the player on a question.
-    /// </summary>
-    /// <param name="input">The question.</param>
-    /// <param name="action">What the player did.</param>
-    /// <param name="at">The row or digit clicked or pointed at, or the digit typed.</param>
-    /// <param name="notches">The wheel's notches, positive up.</param>
-    /// <param name="wrap">Whether a move past the end comes round, as only a fresh press does in the game.</param>
-    /// <returns>The question after the step; one answered or put off already stays as it is.</returns>
-    public static ChoiceInput Step(ChoiceInput input, ChoiceInputAction action, int at = 0, int notches = 0, bool wrap = false)
-    {
-        ArgumentNullException.ThrowIfNull(input);
-        if (input.Answer is not null || input.Later)
-        {
-            return input with { Cue = null };
-        }
-
-        return input.Kind == ChoiceInputKind.Number ? StepNumber(input, action, at, notches, wrap) : StepList(input, action, at, notches, wrap);
-    }
-
-    /// <summary>
-    /// Takes a step on a list.
-    /// </summary>
-    /// <param name="input">The question.</param>
-    /// <param name="action">What the player did.</param>
-    /// <param name="at">The row clicked.</param>
-    /// <param name="notches">The wheel's notches.</param>
-    /// <param name="wrap">Whether a move comes round.</param>
-    /// <returns>The question after the step.</returns>
-    private static ChoiceInput StepList(ChoiceInput input, ChoiceInputAction action, int at, int notches, bool wrap) => action switch
-    {
-        ChoiceInputAction.Up => MoveRow(input, input.Cursor - 1, wrap),
-        ChoiceInputAction.Down => MoveRow(input, input.Cursor + 1, wrap),
-        ChoiceInputAction.Wheel => MoveRow(input, input.Cursor - notches, false),
-        ChoiceInputAction.Click => Answered(input with { Cursor = at }, input.Rows[at].Answer, "ok"),
-        ChoiceInputAction.Ok => Answered(input, input.Rows[input.Cursor].Answer, "ok"),
-        ChoiceInputAction.Cancel when input.CancelAnswer is { } answer => Answered(input, answer, "cancel"),
-        ChoiceInputAction.Cancel => PutOff(input),
-        _ => input with { Cue = null },
-    };
-
-    /// <summary>
-    /// Takes a step on a number.
-    /// </summary>
-    /// <param name="input">The question.</param>
-    /// <param name="action">What the player did.</param>
-    /// <param name="at">The digit clicked or pointed at, or the digit typed.</param>
-    /// <param name="notches">The wheel's notches.</param>
-    /// <param name="wrap">Whether a move comes round.</param>
-    /// <returns>The question after the step.</returns>
-    private static ChoiceInput StepNumber(ChoiceInput input, ChoiceInputAction action, int at, int notches, bool wrap) => action switch
-    {
-        ChoiceInputAction.Up => Turn(input, input.Cursor, 1),
-        ChoiceInputAction.Down => Turn(input, input.Cursor, -1),
-        ChoiceInputAction.Wheel => Turn(input, at, notches),
-        ChoiceInputAction.Left => MoveDigit(input, input.Cursor - 1, wrap),
-        ChoiceInputAction.Right => MoveDigit(input, input.Cursor + 1, wrap),
-        ChoiceInputAction.Click => input with { Cursor = at, Cue = "cursor" },
-        ChoiceInputAction.Digit => Typed(input, at),
-        ChoiceInputAction.Ok => Answered(input, input.Value, "ok"),
-        ChoiceInputAction.Cancel => PutOff(input),
-        _ => input with { Cue = null },
-    };
-
-    /// <summary>
-    /// Moves the cursor over a list, scrolling it into view: past an end only with wrap.
-    /// </summary>
-    /// <param name="input">The question.</param>
-    /// <param name="to">The row wanted.</param>
-    /// <param name="wrap">Whether a move past an end comes round.</param>
-    /// <returns>The question.</returns>
-    private static ChoiceInput MoveRow(ChoiceInput input, int to, bool wrap)
-    {
-        int count = input.Rows.Count;
-        int row = wrap ? ((to % count) + count) % count : Math.Clamp(to, 0, count - 1);
-        return row == input.Cursor ? input with { Cue = null } : input with { Cursor = row, Top = TopFor(row, input.Top, input.Visible), Cue = "cursor" };
-    }
-
-    /// <summary>
-    /// Moves the cursor over the digits: past an end only with wrap.
-    /// </summary>
-    /// <param name="input">The question.</param>
-    /// <param name="to">The digit wanted.</param>
-    /// <param name="wrap">Whether a move past an end comes round.</param>
-    /// <returns>The question.</returns>
-    private static ChoiceInput MoveDigit(ChoiceInput input, int to, bool wrap)
-    {
-        int count = input.Digits.Count;
-        int digit = wrap ? ((to % count) + count) % count : Math.Clamp(to, 0, count - 1);
-        return digit == input.Cursor ? input with { Cue = null } : input with { Cursor = digit, Cue = "cursor" };
-    }
-
-    /// <summary>
-    /// Turns a digit, round from 9 to 0 and back as the game's number window does, and puts the
-    /// cursor on it.
-    /// </summary>
-    /// <param name="input">The question.</param>
-    /// <param name="at">The digit.</param>
-    /// <param name="steps">The steps, positive up.</param>
-    /// <returns>The question.</returns>
-    private static ChoiceInput Turn(ChoiceInput input, int at, int steps)
-    {
-        int[] digits = [.. input.Digits];
-        digits[at] = (((digits[at] + steps) % 10) + 10) % 10;
-        return input with { Digits = digits, Cursor = at, Cue = "cursor" };
-    }
-
-    /// <summary>
-    /// Sets the digit under the cursor to one typed, and moves the cursor one right.
-    /// </summary>
-    /// <param name="input">The question.</param>
-    /// <param name="digit">The digit typed.</param>
-    /// <returns>The question.</returns>
-    private static ChoiceInput Typed(ChoiceInput input, int digit)
-    {
-        int[] digits = [.. input.Digits];
-        digits[input.Cursor] = digit;
-        return input with { Digits = digits, Cursor = Math.Min(input.Cursor + 1, digits.Length - 1), Cue = "cursor" };
-    }
-
-    /// <summary>
-    /// Gives a question its answer.
-    /// </summary>
-    /// <param name="input">The question.</param>
-    /// <param name="answer">The answer.</param>
-    /// <param name="cue">The sound.</param>
-    /// <returns>The question, answered.</returns>
-    private static ChoiceInput Answered(ChoiceInput input, int answer, string cue) => input with { Answer = answer, Cue = cue };
-
-    /// <summary>
-    /// Puts a question off to answer later, as cancel does where it answers nothing.
-    /// </summary>
-    /// <param name="input">The question.</param>
-    /// <returns>The question, put off.</returns>
-    private static ChoiceInput PutOff(ChoiceInput input) => input with { Later = true, Cue = "cancel" };
-
-    /// <summary>
-    /// Makes a question that lists its answers, scrolled to the row it starts on.
+    /// Makes a question that lists its answers, starting on a row it holds.
     /// </summary>
     /// <param name="kind">The input.</param>
     /// <param name="title">The title.</param>
     /// <param name="keys">The key line's entries.</param>
-    /// <param name="result">What the last present did.</param>
     /// <param name="rows">The rows.</param>
     /// <param name="cancel">What cancel answers.</param>
     /// <param name="index">The row it starts on.</param>
-    /// <param name="visible">The rows the screen has room for.</param>
     /// <returns>The question.</returns>
-    private static ChoiceInput List(ChoiceInputKind kind, string title, IReadOnlyList<ChoiceInputKey> keys, string result, IReadOnlyList<ChoiceInputRow> rows, int? cancel, int index, int visible) =>
-        new(kind, title, keys, result, rows, [], index, TopFor(index, 0, visible), visible, cancel, null, null);
+    private static ChoiceInput List(ChoiceInputKind kind, string title, IReadOnlyList<ChoiceInputKey> keys, IReadOnlyList<ChoiceInputRow> rows, int? cancel, int index) =>
+        new(kind, title, keys, rows, 0, 0, Math.Clamp(index, 0, rows.Count - 1), cancel);
 
     /// <summary>
-    /// Lists items as rows, with the row of no item last.
+    /// Lists items as rows, each hinting at its description after what the last present did, with the
+    /// row of no item last.
     /// </summary>
     /// <param name="items">The items.</param>
     /// <param name="none">The name of the row of no item.</param>
+    /// <param name="result">What the last present did, empty for nothing.</param>
     /// <returns>The rows.</returns>
-    private static List<ChoiceInputRow> RowsOf(IReadOnlyList<ChoiceInputItem> items, string none)
+    private static List<ChoiceInputRow> RowsOf(IReadOnlyList<ChoiceInputItem> items, string none, string result)
     {
         ArgumentNullException.ThrowIfNull(items);
-        List<ChoiceInputRow> rows = [.. items.Select(item => new ChoiceInputRow(item.Id, item.Name, item.Count, item.Description, false))];
-        rows.Add(new ChoiceInputRow(Nothing, none, null, string.Empty, true));
+        List<ChoiceInputRow> rows = [.. items.Select(item => new ChoiceInputRow(item.Id, item.Name, item.Count, HintOf(result, item.Description), false))];
+        rows.Add(new ChoiceInputRow(Nothing, none, null, result, true));
         return rows;
     }
 
     /// <summary>
-    /// Finds the first row shown so the cursor's row is in view, moving the list as little as it can.
+    /// Joins what the last present did and a row's description into its hint.
     /// </summary>
-    /// <param name="cursor">The cursor's row.</param>
-    /// <param name="top">The first row shown before.</param>
-    /// <param name="visible">The rows the screen has room for.</param>
-    /// <returns>The first row shown.</returns>
-    private static int TopFor(int cursor, int top, int visible) => Math.Max(0, Math.Clamp(top, cursor - visible + 1, cursor));
+    /// <param name="result">What the last present did, empty for nothing.</param>
+    /// <param name="description">The row's description, empty for none.</param>
+    /// <returns>The hint.</returns>
+    private static string HintOf(string result, string description) => string.Join(" ", new[] { result, description }.Where(part => part.Length > 0));
 
     /// <summary>
     /// Takes the game's text codes out of a label, as the key line draws none of them.

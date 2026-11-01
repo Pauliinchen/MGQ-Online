@@ -2,6 +2,9 @@
 #  Multiplayer.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Stopped loading ui_boxes.rbx, whose boxes the Mod Framework's components replaced
+#                            - Dropped the bug report exports, which the bridge's report topics replace
+#                            - Stopped loading world_text.rbx, whose text screen the Mod Framework's text fields replace
 #      Paulinchen  2026-10-31: Named the lowest Mod Framework the mod runs with, and stayed off without it, logging why when it is older or runs without its DLL
 #                            - Took the keys, the mouse, the typing and the game running behind other windows from the Mod Framework
 #                            - Loaded ui_online.rbx and ui_boxes.rbx where ui.rbx and the interface scripts the Mod Framework took over stood
@@ -193,9 +196,9 @@ module MGQ_Multiplayer
   # hooks once the game runs, the last loaded first, so their order decides how those hooks wrap
   # each other.
   SCRIPTS = %w[
-    core_log core_hooks core_game_access core_hotkeys ui_online ui_boxes core_actors core_async overworld_sync ui_actions ui_chat ui_emotes overworld
+    core_log core_hooks core_game_access core_hotkeys ui_online core_actors core_async overworld_sync ui_actions ui_chat ui_emotes overworld
     coop coop_scope coop_squad coop_events coop_gather coop_teleport coop_scene coop_npcs story_state story_keys story_replay coop_story coop_castle
-    world world_mods world_story world_catchup world_catchup_exp world_opening world_difficulty world_gates world_save_distribution world_text world_screen world_save_export coop_choices
+    world world_mods world_story world_catchup world_catchup_exp world_opening world_difficulty world_gates world_save_distribution world_screen world_save_export coop_choices
     battles battles_raid_bosses battles_coop battles_coop_hotjoin battles_coop_join battles_raid_pool battles_raid_freeze world_freeze battles_raid_tiers battles_coop_level_sync
     battles_sync battles_sync_wire battles_sync_recorder battles_sync_playback battles_sync_live battles_served
     battles_balance_pvp battles_pvp battles_pvp_backline battles_duel battles_team
@@ -205,12 +208,12 @@ module MGQ_Multiplayer
 
   # The scripts that load under the Mod Framework as the game starts: the log, the hooks, the
   # hotkeys and the boxes the title screen shows too. The first of SCRIPTS, in their order.
-  BOOT_SCRIPTS = %w[core_log core_hooks core_game_access core_hotkeys ui_online ui_boxes]
+  BOOT_SCRIPTS = %w[core_log core_hooks core_game_access core_hotkeys ui_online]
 
   # The scripts of the world screens, which list, create and join worlds, loaded under the Mod
   # Framework once the player picks Multiplayer, or a Discord invite or a restart opens them. With
   # BOOT_SCRIPTS they are the title part; the rest of SCRIPTS loads as the player enters the game.
-  WORLD_SCRIPTS = %w[world world_mods world_save_distribution world_text world_screen world_save_export]
+  WORLD_SCRIPTS = %w[world world_mods world_save_distribution world_screen world_save_export]
 
   # Extension of the scripts, which the mod loader skips, since only this script may load them.
   SCRIPT_EXTENSION = ".rbx"
@@ -1054,11 +1057,6 @@ module MGQ_Multiplayer
       'mp_battle_receive' => READ_ARGUMENTS,
       'mp_battle_state' => READ_ARGUMENTS,
       'mp_battle_close' => 'v',
-
-      # Bug reports.
-      'mp_report_drop_snap' => 'v',
-      'mp_report_send' => 'ppppl',
-      'mp_report_state' => READ_ARGUMENTS,
     }
 
     # Finds the mod folder and starts the DLL's log.

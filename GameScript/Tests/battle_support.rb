@@ -2,6 +2,9 @@
 #  battle_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Gave the pictures a font, which the Mod Framework measures texts in
+#                            - Read the waiting box's lines from its box of the Mod Framework
+#                            - Stopped loading the deleted ui_boxes.rbx
 #      Paulinchen  2026-10-31: Stood in for the Mod Framework's question box, answered at the battle's waits as the framework collects it
 #      Paulinchen  2026-10-30: Answered the co-op battles' topics
 #                            - Stood in for the enemies of the database as a list, whose size the troop's repair reads
@@ -395,11 +398,16 @@ module Graphics; def self.width; 640; end; def self.height; 480; end; def self.f
 Rect = Struct.new(:x, :y, :width, :height)
 # Stands in for the game's sprite.
 class Sprite; def initialize(*); end; end
-# A window's contents: the texts drawn by line, each line's drawings counted. The records are made
-# as needed, since a test may open the class anew with an initialize of its own.
+# A window's contents: the texts drawn by line, each line's drawings counted, in a font the Mod
+# Framework measures texts in. The records are made as needed, since a test may open the class anew
+# with an initialize of its own.
 class Bitmap
+  # The picture's font.
+  Font = Struct.new(:size, :color, :bold, :outline, :out_color, :name, :italic)
   attr_reader :width, :height
-  def initialize(width, height); @width = width; @height = height; end
+  def initialize(width = 1, height = 1); @width = width; @height = height; end
+  def font; @font ||= Font.new(24); end
+  def rect; Rect.new(0, 0, @width, @height); end
   def lines; @lines ||= {}; end
   def draws; @draws ||= Hash.new(0); end
   def text_size(text); Rect.new(0, 0, text.to_s.size * 8, 24); end
@@ -413,7 +421,7 @@ end
 class Window_Base
   attr_reader :width, :height, :contents
   attr_accessor :x, :y, :z
-  # Every window opened, newest last, for a test that reads the waiting box's lines.
+  # Every window opened, newest last.
   def initialize(x = 0, y = 0, width = 0, height = 0); @x, @y, @width, @height = x, y, width, height; @contents = Bitmap.new(width - 24, height - 24); ($windows ||= []) << self; end
   def line_height; 24; end
   def width=(width); @width = width; end
@@ -421,6 +429,21 @@ class Window_Base
   def update; end
   def dispose; @disposed = true; end
   def disposed?; @disposed ? true : false; end
+end
+# Reads the open waiting box's lines by their place, as its box of the Mod Framework shows them:
+# the text, the names, then the seconds or the leave offer, the empty ones left out.
+#
+# @return [Hash{Integer => String}] The lines by place, none while no waiting box is open.
+def waiting_lines
+  root = Mod_Framework::UI::Tree.roots.find { |each| each.id == :waiting_box }
+  return {} unless root
+
+  labels = root.children.first(3)
+  leave = root.children[3]
+  lines = {}
+  labels.each_with_index { |label, index| lines[index] = label.text if label.visible && !label.text.to_s.empty? }
+  lines[2] = leave.text if leave && leave.visible
+  lines
 end
 # The cancel button, which $leave presses.
 module Input; def self.trigger?(button); button == :B && $leave ? true : false; end; end
@@ -448,7 +471,6 @@ end
 open_rules_bridge
 $live = answer_live($world_bridge)
 load_script "ui_online"
-load_script "ui_boxes"
 # Stands in for the Mod Framework's question box: each question lands in $asked, and $confirm
 # answers the open one at the next wait, as the framework collects it at every frame, true for yes,
 # false for no, nil to keep it open.

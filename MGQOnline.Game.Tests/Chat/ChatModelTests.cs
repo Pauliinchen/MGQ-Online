@@ -2,6 +2,7 @@
 //  ChatModelTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Checked the close keys of the help tab and the fade of the closed log's lines
 //      Paulinchen  2026-10-31: Created
 //
 //----------------------------------------------------------------
@@ -19,7 +20,8 @@ namespace MGQOnline.Game.Tests.Chat;
 /// <summary>
 /// Covers the chat: the scenarios ui_chat.rbx played before its rules moved to C#
 /// (fixtures/chat/cases.json, written by make_fixtures.rb there), replayed through the world
-/// room's routes, a whisper to a player who left, the help tab and the party chat's gate.
+/// room's routes, a whisper to a player who left, the help tab and the keys it names, the fade of
+/// the closed log's last frames and the party chat's gate.
 /// </summary>
 public sealed class ChatModelTests
 {
@@ -103,6 +105,42 @@ public sealed class ChatModelTests
         world.Chat.Escape();
 
         Assert.Equal(ChatModel.Map, world.Chat.Tab);
+    }
+
+    /// <summary>
+    /// Asserts that the help tab's last line names the keys the box opened with.
+    /// </summary>
+    [Fact]
+    public void Open_NamesItsCloseKeysOnTheHelpTab()
+    {
+        var world = new ChatWorld();
+        world.Chat.Open(true, "Scene_Map", "C or Numpad 0");
+        world.Chat.Typed("/help ", 6);
+
+        Assert.Equal("Up, Down, Page Up, Page Down and the mouse wheel scroll. Enter sends, C or Numpad 0 closes.", world.Chat.Entries()[^1].ToString());
+    }
+
+    /// <summary>
+    /// Asserts that a line of the closed log fades over its last frames only, and shows whole while
+    /// the box is open.
+    /// </summary>
+    [Fact]
+    public void FadeOf_CountsTheLastFramesOfTheClosedLog()
+    {
+        var world = new ChatWorld();
+        world.Chat.GameLine("Ana left the battle.");
+        long frame = 0;
+        while (frame < ChatModel.LogFrames - ChatModel.FadeFrames)
+        {
+            world.Chat.Tick(true, true, "Scene_Map", ++frame);
+        }
+
+        int? whole = world.Chat.FadeOf(world.Chat.Entries()[0]);
+        world.Chat.Tick(true, true, "Scene_Map", ++frame);
+        int? fading = world.Chat.FadeOf(world.Chat.Entries()[0]);
+        world.Chat.Open(true, "Scene_Map");
+
+        Assert.Equal(new int?[] { null, ChatModel.FadeFrames - 1, null }, new[] { whole, fading, world.Chat.FadeOf(world.Chat.Entries()[0]) });
     }
 
     /// <summary>

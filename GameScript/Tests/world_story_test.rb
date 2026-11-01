@@ -2,6 +2,7 @@
 #  world_story_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Dropped the stand-in of the form window no script draws with any more
 #      Paulinchen  2026-10-31: Checked that the Great Decision offers the routes the relay grants
 #                            - Checked that a run goes to the relay after its writes and that the track's runs reach the replay one at a time while the player is free
 #      Paulinchen  2026-10-28: Left the player's telling to the DLL's telling machine
@@ -232,8 +233,6 @@ module MGQ_MpWorld
 end
 MGQ_MpWorld.world = MGQ_MpWorld::World.new("w1")
 
-# Stands in for the world screen's form window, which the screen of choices builds on.
-class Window_MpWorldForm; def initialize(*); end; end
 # Stands in for the game's menu scenes.
 class Scene_MenuBase; end
 # Stands in for the map scene.

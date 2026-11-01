@@ -2,6 +2,7 @@
 //  WorldRoomTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Sent the chat line from the chat box, as the chat script does
 //      Paulinchen  2026-10-31: Sent the chat line through ChatTopics
 //      Paulinchen  2026-10-23: Checked that the event data reads ahead as the world opens
 //                            - Created
@@ -93,14 +94,16 @@ public sealed class WorldRoomTopicsTests
     }
 
     /// <summary>
-    /// Asserts that a global chat line is turned down without a connection: not mirrored, not sent.
+    /// Asserts that a global chat line typed without a connection is not sent and the player is told.
     /// </summary>
     [Fact]
     public void Chat_SendsNothingWithoutAConnection()
     {
-        RubyHash answer = Call(ChatTopics.SendTopic, new RubyHash { { "channel", "global" }, { "text", "hello" } }).AsHash();
+        Call(ChatTopics.OpenTopic, new RubyHash { { "key", true }, { "scene", "Scene_Map" }, { "close", "Esc" } });
+        Call(ChatTopics.TypedTopic, new RubyHash { { "text", "hello" }, { "cursor", 5 } });
+        Call(ChatTopics.EnterTopic, RubyNil.Value);
 
-        Assert.Equal(new RubyHash { { "sent", false }, { "said", 0 } }, answer);
+        Assert.Contains(Drain(1), entry => entry.Item1 == WorldRoomTopics.NoticeEvent && entry.Item2.AsText() == "The message could not be sent.");
     }
 
     /// <summary>

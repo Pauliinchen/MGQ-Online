@@ -2,6 +2,10 @@
 #  ui_actions.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Dropped the lapse after a frame count, which nothing calls
+#                            - Named the Mod Framework's interface by its own name
+#                            - Left the line above the player's head to overworld.rbx
+#                            - Built the action wheel as a Mod Framework wheel of boxes that follows the player
 #      Paulinchen  2026-10-31: Defined and steered its wheel through the Mod Framework
 #      Paulinchen  2026-10-23: Left the action wheel's rules to C#, taking a choice in the frame after confirm
 #                            - Kept the own line and the action wheel off the live map behind menus
@@ -52,12 +56,11 @@
 #
 #----------------------------------------------------------------
 
-# The action wheel on the map: its key (B unless the player binds another, see core_hotkeys.rbx) opens it
-# around the player. The scripts after this one fill its ring (wheel_choice) and its middle
+# The action wheel on the map: its hotkey (B unless the player binds another, see core_hotkeys.rbx)
+# opens it around the player. The scripts after this one fill its ring (wheel_choice) and its middle
 # (wheel_center), say the line above the player's own head (own_line_from, own_doing_from) and add
-# what they offer between two players to the World overview and the notification box (offer). It
-# builds on ui_wheel.rbx, which reads the arrows, and overworld_sync.rbx, which knows the other
-# players.
+# what they offer between two players to the World overview and the notification box (offer). The
+# wheel is the Mod Framework's; overworld_sync.rbx knows the other players.
 #
 # It must never interrupt the game, so its per-frame work rescues.
 module MGQ_MpActions
@@ -88,12 +91,18 @@ module MGQ_MpActions
   # The wheel's middle choice while no script fills it.
   NO_OPTION = Option.new("", nil, nil)
 
+  # What the wheel's choices name its middle by.
+  CENTER = :CENTER
+
+  # The action wheel's id among the roots of the Mod Framework.
+  WHEEL_ID = :mgq_online_action_wheel
+
   # Color of the line above the player's own head, the style's own color, which the invites'
   # notices share.
-  LINE_COLOR = MGQ_MpUi::Style::OWN
+  LINE_COLOR = Mod_Framework::UI::Style::OWN
 
   # How the seconds left are written after a doing in the line above the player's own head.
-  TIME_LEFT = " (#{MGQ_MpUi::SECONDS_TEXT})"
+  TIME_LEFT = " (#{Mod_Framework::UI::SECONDS_TEXT})"
 
   # The registered offers between two players, see offer.
   @offers = []
@@ -110,8 +119,12 @@ module MGQ_MpActions
   # The blocks that name a doing, see own_doing_from.
   @doings = []
 
-  # The blocks that tell whether a screen lies over the map, see cover.
-  @covers = []
+  # The action wheel, see build_wheel.
+  @wheel = nil
+
+  # The choice the wheel took, its registration index or CENTER, with the frame it did in; nil
+  # while none waits.
+  @taken = nil
 
   extend MGQ_MpLog
 
@@ -149,14 +162,6 @@ module MGQ_MpActions
     option.icon ? "the choice with icon #{option.icon}" : "nothing"
   rescue
     "a choice"
-  end
-
-  # Closes the wheel once the map is left. Called by overworld_sync.rbx every frame in every
-  # scene.
-  #
-  # @param in_world [Boolean] Whether a world is open.
-  def self.tick(in_world)
-    Wheel.close(in_world ? "the map was left" : "no world is open") unless in_world && SceneManager.scene.is_a?(Scene_Map)
   end
 
   # Adds what a script offers between two players, such as party invites or duels, to the World
@@ -243,17 +248,7 @@ module MGQ_MpActions
   # @param frames [Integer] The frames left; 0 or less lapse now.
   # @return [Time] The moment.
   def self.lapse_in(frames)
-    Time.now + frames / MGQ_MpUi::FRAMES_PER_SECOND.to_f
-  end
-
-  # Tells the moment some frames after a moment lapse, for a timer that counts frames from a
-  # Graphics.frame_count.
-  #
-  # @param since [Integer] The moment's Graphics.frame_count.
-  # @param frames [Integer] The frames it lasts.
-  # @return [Time] The moment, now or past once they passed.
-  def self.lapse_at(since, frames)
-    lapse_in(since + frames - Graphics.frame_count)
+    Time.now + frames / Mod_Framework::UI::FRAMES_PER_SECOND.to_f
   end
 
   # Writes a doing with its seconds left, such as "Asking Player A to teleport (45 s)"; the text
@@ -280,23 +275,6 @@ module MGQ_MpActions
     nil
   end
 
-  # Lets a script tell that one of its screens lies over the map, which the wheel leaves the
-  # buttons to.
-  #
-  # @yieldparam wheel_key [Boolean] Whether the wheel key went down this frame, which may close the screen.
-  # @yieldreturn [Boolean] Whether the screen is open.
-  def self.cover(&open)
-    @covers << open
-  end
-
-  # Reports whether a screen of the mod lies over the map: the action wheel, or a screen that
-  # registered with cover, such as the emote wheel, the chat box or the World overview.
-  #
-  # @return [Boolean] Whether one does.
-  def self.covered?
-    Wheel.open? || @covers.any? { |open| open.call(false) }
-  end
-
   # Tells what the line above the player's own head says, if anything: a script's line, else the
   # doings with their seconds left, and the same without the seconds, which the line falls back
   # to once the seconds make it too wide. The seconds stay out of the log, which says the line
@@ -304,7 +282,7 @@ module MGQ_MpActions
   #
   # @return [Array(String, String), nil] The line with the seconds and without them, nil for none.
   def self.own_lines
-    return nil unless MGQ_MpOverworldSync.in_world? && !Wheel.open?
+    return nil unless MGQ_MpOverworldSync.in_world? && !(@wheel && @wheel.open?)
 
     line = key = @lines.map { |block| named_by(block) }.compact.first
     unless line
@@ -332,399 +310,108 @@ module MGQ_MpActions
 
   # The action wheel's choices, by the direction that picks them.
   #
-  # @return [Hash{Symbol => Option}] The middle's choice under Wheel::CENTER, then the ring's under
-  #   their directions.
+  # @return [Hash{Symbol => Option}] The middle's choice under CENTER, then the ring's under their
+  #   directions.
   def self.wheel_options
-    options = { Wheel::CENTER => @center ? @center.call : NO_OPTION }
+    options = { CENTER => @center ? @center.call : NO_OPTION }
     wheel_places.zip(@choices) { |direction, (_, _, option)| options[direction] = option.call }
     options
   end
 
-  # Opens, steers or closes the action wheel on the map, but leaves the keys to a screen that lies
-  # over it, such as the chat box, and takes the choice the wheel reported confirmed. Called by the
-  # map every frame, so a press of the key is seen once.
+  # Tells the action wheel, a Mod Framework wheel of boxes around the player.
+  #
+  # @return [Mod_Framework::UI::Wheel] The wheel.
+  def self.wheel
+    @wheel
+  end
+
+  # Makes the action wheel: its hotkey opens it on a free map in a world, its ring and middle are
+  # the choices the scripts registered, asked every frame, and a choice taken runs in the frame
+  # after, once the wheel closed, so its confirm never reaches the screen the choice opens.
+  def self.build_wheel
+    @wheel = Mod_Framework::UI::Wheel.new(:id => WHEEL_ID, :look => :boxes, :follow => :player, :hotkey => MGQ_MpHotkeys.action(:wheel),
+                                          :if => lambda { MGQ_MpActions.free_reason || true },
+                                          :choices => lambda { MGQ_MpActions.wheel_choices }, :center => lambda { MGQ_MpActions.wheel_middle })
+    @wheel.on(:open) { log("action wheel opened: #{choices_text}") }
+    @wheel.on(:close) { |why| log("action wheel closed: #{why}") }
+    @wheel.on(:refuse) { |choice| refused(choice) }
+    @wheel.on(:submit) { |choice| @taken = [choice == :center ? CENTER : choice[:data], Mod_Framework::UI::Key.frame] }
+  end
+
+  # Tells why the action wheel may not show now.
+  #
+  # @return [String, nil] Why, nil while the player stands free on the map of a world.
+  def self.free_reason
+    return "no world is open" unless MGQ_MpOverworldSync.in_world?
+
+    Mod_Framework::UI::Game.map_free_reason
+  end
+
+  # Lists the ring's choices as the wheel draws them.
+  #
+  # @return [Array<Hash>] Each choice: its text, icon, whether it can be taken, why not, and its
+  #   registration index as its data.
+  def self.wheel_choices
+    @choices.map { |_, added, option| wheel_choice_of(option.call, added) }
+  end
+
+  # Tells the middle's choice as the wheel draws it.
+  #
+  # @return [Hash, nil] The choice, nil while no script fills the middle.
+  def self.wheel_middle
+    @center ? wheel_choice_of(@center.call, CENTER) : nil
+  end
+
+  # Turns a choice into one of the wheel.
+  #
+  # @param option [Option] The choice.
+  # @param data [Integer, Symbol] Its registration index, or CENTER.
+  # @return [Hash] The wheel's choice.
+  def self.wheel_choice_of(option, data)
+    { :text => option.text.to_s, :icon => option.icon, :enabled => !option.run.nil?, :tooltip => option.refusal, :data => data }
+  end
+
+  # Tells the player why a choice of the wheel cannot be taken; the wheel buzzed and stays open.
+  #
+  # @param choice [Hash] The wheel's choice.
+  def self.refused(choice)
+    name = choice[:text].to_s.empty? ? "the choice with icon #{choice[:icon]}" : "\"#{choice[:text]}\""
+    log("refused #{name}: #{choice[:tooltip] || 'it cannot be chosen now'}")
+    MGQ_MpOverworldSync.notice(choice[:tooltip]) if choice[:tooltip]
+  end
+
+  # Runs the choice the wheel took in the frame before, asked anew, so it is the one that stands
+  # now. Called by the map every frame.
   def self.on_map
-    Wheel.take_pending
-    wheel_key = MGQ_MpHotkeys.pressed?(:wheel)
-    unless MGQ_MpOverworldSync.in_world? && MGQ_MpOverworldSync.map_quiet?
-      MGQ_MpHotkeys.log_refusal(:wheel, MGQ_MpOverworldSync.in_world? ? 'an event runs or a message shows' : 'no world is open') if wheel_key
-      Wheel.follow("an event started or a message shows", false)
-      return
-    end
-    if @covers.any? { |open| open.call(wheel_key) }
-      MGQ_MpHotkeys.log_refusal(:wheel, "it went to the screen over the map") if wheel_key
-      return
-    end
+    taken, frame = @taken
+    return unless taken && frame < Mod_Framework::UI::Key.frame
 
-    Wheel.follow(true, wheel_key)
+    @taken = nil
+    return log("dropped the choice taken in frame #{frame}: the map did not run in the frame after") if frame < Mod_Framework::UI::Key.frame - 1
+
+    choose(taken == CENTER ? wheel_options[CENTER] : @choices.find { |_, added, _| added == taken }[2].call)
   rescue => e
-    log("action wheel failed: #{e.class}: #{e.message}")
-    Wheel.close("it failed")
+    log("running the action wheel's choice failed: #{e.class}: #{e.message}")
   end
 
-  # The action wheel: a ring of choices around the player and one over them, taken with the game's
-  # confirm button, whose rules C# keeps (WheelModel "wheel"). It opens on the middle; the arrows
-  # held point at a choice, like a joystick, which stays picked once they are let go, and a
-  # direction without a choice picks the middle again. It holds the buttons while open, so the
-  # player stands still and the game's menu stays shut.
-  module Wheel
-    # The choice over the player.
-    CENTER = :CENTER
-
-    # The wheel's name in the tick and its events.
-    NAME = "mgq_online_action_wheel"
-
-    # Whether the wheel is open.
-    @open = false
-
-    # The direction whose choice is picked.
-    @selected = CENTER
-
-    # The direction confirm took and the frame it did in, nil while none waits.
-    @take = nil
-
-    # Reports whether the wheel is open.
-    #
-    # @return [Boolean] Whether it is.
-    def self.open?
-      @open
-    end
-
-    # The direction whose choice is picked.
-    #
-    # @return [Symbol] One of Mod_Framework::UI::Wheel::DIRECTIONS, or CENTER.
-    def self.selected
-      @selected
-    end
-
-    # Hands the wheel its frame: while the map leaves it free its hotkey and, while open, its
-    # buttons; else, while open, why it closes.
-    #
-    # @param free [Boolean, String] true, or why the wheel may not show.
-    # @param key [Boolean] Whether its hotkey went down.
-    def self.follow(free, key)
-      return unless @open || (free == true && key)
-
-      Mod_Framework::UI::Wheel.put(NAME, free, key, MGQ_MpActions.wheel_places.size, @open)
-    end
-
-    # Takes the wheel's event: opened, closed, the pick moved or a choice taken.
-    #
-    # @param event [Hash] The event, see WheelModel.EventTopic.
-    def self.take_event(event)
-      was = @open
-      @open = event["open"] == true
-      @selected = Mod_Framework::UI::Wheel.direction_of(event["selected"], CENTER) || CENTER
-      MGQ_MpUi::Tick.play(event)
-      if @open && !was
-        Mod_Framework::UI::Capture.start(:wheel)
-        MGQ_MpActions.log("action wheel opened: #{choices_text}")
-      elsif was && !@open
-        Mod_Framework::UI::Capture.stop(:wheel)
-        MGQ_MpActions.log("action wheel closed: #{event['reason']}")
-      end
-      @take = [@selected, Mod_Framework::UI::Key.frame] if event.key?("take")
-    end
-
-    # Takes the choice confirm picked in the frame before, closing the wheel once it was taken.
-    def self.take_pending
-      direction, frame = @take
-      @take = nil
-      return unless direction && @open && frame >= Mod_Framework::UI::Key.frame - 1
-
-      MGQ_MpActions.choose(MGQ_MpActions.wheel_options[direction]) { close("took the #{direction} choice") }
-    end
-
-    # Lists the wheel's choices for the log, those that cannot be taken marked.
-    #
-    # @return [String] Each choice by its direction.
-    def self.choices_text
-      MGQ_MpActions.wheel_options.map do |direction, option|
-        "#{direction} #{MGQ_MpActions.option_name(option)}#{option.run ? '' : ' (refused)'}"
-      end.join(", ")
-    rescue => e
-      "unreadable (#{e.class})"
-    end
-
-    # Closes the wheel, if it is open, and gives the buttons back, here and in C#.
-    #
-    # @param reason [String, nil] Why, for the log.
-    def self.close(reason = nil)
-      return unless @open
-
-      @open = false
-      Mod_Framework::UI::Capture.stop(:wheel)
-      Mod_Framework.bridge.call(Mod_Framework::UI::Wheel::CLOSE, [NAME])
-      MGQ_MpActions.log("action wheel closed#{reason ? ": #{reason}" : ''}")
-    end
+  # Lists the wheel's choices for the log, those that cannot be taken marked.
+  #
+  # @return [String] Each choice by its direction.
+  def self.choices_text
+    wheel_options.map { |direction, option| "#{direction} #{option_name(option)}#{option.run ? '' : ' (refused)'}" }.join(", ")
+  rescue => e
+    "unreadable (#{e.class})"
   end
 end
 
-# The line above the player's own head: what the scripts say there, such as an invite to a party,
-# a trade offer or the wait for the party's story, see MGQ_MpActions.own_line. Half the screen
-# wide, cut to that, in the style's own color, fading in and out.
-class Sprite_MpOwnLine < Sprite
-  # How many times the line fits across the screen.
-  SCREEN_SHARE = 2
-
-  # Height of the line.
-  HEIGHT = 24
-
-  # Creates the line, empty.
-  #
-  # @param viewport [Viewport] The map's viewport of characters.
-  def initialize(viewport)
-    super(viewport)
-    width = Graphics.width / SCREEN_SHARE
-    self.bitmap = Bitmap.new(width, HEIGHT)
-    self.ox = width / 2
-    self.z = MGQ_MpUi::Z[:labels]
-    @motion = MGQ_MpUi::Motion.new(self)
-    @shown = nil
-  end
-
-  # Draws the line, if it changed, above the player's sprite, fading it in, and fades it out once
-  # there is none, keeping its picture until it is gone.
-  #
-  # @param sprite [Sprite_Character, nil] The player's sprite.
-  def show(sprite)
-    lines = MGQ_MpActions.own_lines
-    unless lines && sprite
-      @motion.hide
-      @motion.update
-      return
-    end
-
-    @motion.place(sprite.x, sprite.y - sprite.height - MGQ_MpActions::HEAD_ROOM - HEIGHT)
-    @motion.show
-    draw(lines) unless lines == @shown
-    @motion.update
-  end
-
-  # Draws the line: with its seconds while that fits the picture, else without them, cut to the
-  # picture's width, so a cut only ever loses the end of a text, never a countdown that fits.
-  #
-  # @param lines [Array(String, String)] The line with the seconds and without them.
-  def draw(lines)
-    style = MGQ_MpUi::Style
-    @shown = lines
-    bitmap.clear
-    style.use_font(bitmap, style::TEXT_SIZE, style::OWN)
-    text = bitmap.text_size(lines[0]).width <= bitmap.width ? lines[0] : MGQ_MpUi.cut(bitmap, lines[1], bitmap.width)
-    bitmap.draw_text(0, 0, bitmap.width, HEIGHT, text, 1)
-  end
-
-  # Frees the line's picture.
-  def dispose
-    bitmap.dispose
-    super
-  end
-end
-
-# The action wheel around the player: the ring's boxes in a column left and right of them and one
-# above and below, a square one with an icon over them, the picked one lit, those that cannot be
-# taken dim, and under them the hint that names what closes the wheel. The boxes are laid out
-# from the directions the ring has, so the picture fits them. Drawn in the shared style, it fades
-# in and out.
-class Sprite_MpActionWheel < Sprite
-  # Width of a choice's box.
-  BOX_WIDTH = 200
-
-  # Height of a choice's box.
-  BOX_HEIGHT = 26
-
-  # Width of the middle choice's box, square and narrower than the player's sprite, so it never
-  # reaches the boxes left and right of the player.
-  CENTER_WIDTH = BOX_HEIGHT
-
-  # Size of an icon in the game's icon set.
-  ICON_SIZE = MGQ_MpUi::ICON_SIZE
-
-  # Room between a box's side edges and its text.
-  TEXT_MARGIN = 4
-
-  # Room kept free around the player's sprite, which is 32 by 48 pixels, and between boxes.
-  GAP = 4
-
-  # Height of the player's sprite.
-  PLAYER_HEIGHT = 48
-
-  # Half the width of the player's sprite, plus the gap.
-  PLAYER_SIDE = 20
-
-  # The column and the row of each direction beside the player: -1 for the left column and 1 for
-  # the right; -1 for the row above the side's middle, 0 for the middle and 1 for the row below.
-  # Up and down sit above and below every box beside the player.
-  SIDES = {
-    :UP_RIGHT => [1, -1], :RIGHT => [1, 0], :DOWN_RIGHT => [1, 1],
-    :DOWN_LEFT => [-1, 1], :LEFT => [-1, 0], :UP_LEFT => [-1, -1],
-  }
-
-  # Lays the boxes out around the player.
-  #
-  # @param directions [Array<Symbol>] The directions of the ring's choices.
-  # @return [Hash{Symbol => Rect}] Each box by its direction, the middle's under
-  #   MGQ_MpActions::Wheel::CENTER, measured from the middle of the player's feet.
-  def self.layout(directions)
-    middle = -(PLAYER_HEIGHT + BOX_HEIGHT) / 2
-    boxes = { MGQ_MpActions::Wheel::CENTER => Rect.new(-CENTER_WIDTH / 2, middle, CENTER_WIDTH, BOX_HEIGHT) }
-    directions.each do |direction|
-      column, row = SIDES[direction]
-      next unless column
-
-      x = column > 0 ? PLAYER_SIDE : -PLAYER_SIDE - BOX_WIDTH
-      boxes[direction] = Rect.new(x, middle + row * (BOX_HEIGHT + GAP), BOX_WIDTH, BOX_HEIGHT)
-    end
-    beside = boxes.values
-    top = [-PLAYER_HEIGHT - MGQ_MpActions::HEAD_ROOM, beside.map { |box| box.y }.min].min - GAP - BOX_HEIGHT
-    bottom = [0, beside.map { |box| box.y + box.height }.max].max + GAP
-    boxes[:UP] = Rect.new(-BOX_WIDTH / 2, top, BOX_WIDTH, BOX_HEIGHT) if directions.include?(:UP)
-    boxes[:DOWN] = Rect.new(-BOX_WIDTH / 2, bottom, BOX_WIDTH, BOX_HEIGHT) if directions.include?(:DOWN)
-    boxes
-  end
-
-  # Creates the wheel, hidden.
-  #
-  # @param viewport [Viewport] The map's topmost viewport.
-  def initialize(viewport)
-    super(viewport)
-    self.z = MGQ_MpUi::Z[:wheels]
-    @motion = MGQ_MpUi::Motion.new(self)
-    @shown = nil
-    @places = nil
-    @boxes = {}
-    @hint = nil
-  end
-
-  # Draws the wheel around the player's sprite while it is open, if it changed, and fades it in;
-  # fades it out once it closed, keeping its picture until it is gone.
-  #
-  # @param sprite [Sprite_Character, nil] The player's sprite.
-  def show(sprite)
-    unless MGQ_MpActions::Wheel.open? && sprite
-      @motion.hide
-      @motion.update
-      return
-    end
-
-    arrange(MGQ_MpActions.wheel_places)
-    @motion.place(sprite.x, sprite.y)
-    @motion.show
-    options = MGQ_MpActions.wheel_options
-    drawn = [MGQ_MpActions::Wheel.selected, MGQ_MpUi::Theme.serial] + options.map { |direction, option| [direction, option.text, option.icon, !option.run.nil?] }
-    draw(options, drawn) unless drawn == @shown
-    @motion.update
-  end
-
-  # Draws the boxes and the hint under them.
-  #
-  # @param options [Hash{Symbol => MGQ_MpActions::Option}] The choices by their direction.
-  # @param drawn [Array] What the picture then shows, which show compares.
-  def draw(options, drawn)
-    style = MGQ_MpUi::Style
-    @shown = drawn
-    bitmap.clear
-    options.each { |direction, option| draw_box(direction, option) }
-    Mod_Framework::UI::Wheel.draw_hint(bitmap, @hint.x, @hint.y, @hint.width, MGQ_MpHotkeys.label(:wheel))
-  end
-
-  # Lays the boxes out, with the hint's room under them, and sizes the picture to them, when the
-  # ring's directions changed.
-  #
-  # @param places [Array<Symbol>] The directions of the ring's choices.
-  def arrange(places)
-    return if places == @places
-
-    @places = places
-    @boxes = self.class.layout(places)
-    left = @boxes.values.map { |box| box.x }.min
-    top = @boxes.values.map { |box| box.y }.min
-    right = @boxes.values.map { |box| box.x + box.width }.max
-    bottom = @boxes.values.map { |box| box.y + box.height }.max
-    @boxes.each_value do |box|
-      box.x -= left
-      box.y -= top
-    end
-    @hint = Rect.new(0, bottom - top, right - left, Mod_Framework::UI::Wheel::HINT_HEIGHT)
-    bitmap.dispose if bitmap
-    self.bitmap = Bitmap.new(right - left, bottom - top + Mod_Framework::UI::Wheel::HINT_HEIGHT)
-    self.ox = -left
-    self.oy = -top
-    @shown = nil
-  end
-
-  # Draws one choice's box in its frame, lit while picked, its text cut to the box.
-  #
-  # @param direction [Symbol] The direction that picks it.
-  # @param option [MGQ_MpActions::Option] The choice.
-  def draw_box(direction, option)
-    box = @boxes[direction]
-    return unless box
-
-    style = MGQ_MpUi::Style
-    if direction == MGQ_MpActions::Wheel.selected
-      bitmap.fill_rect(box.x, box.y, box.width, box.height, style::PICKED)
-      style.draw_frame(bitmap, box.x, box.y, box.width, box.height)
-    else
-      style.draw_box(bitmap, box.x, box.y, box.width, box.height)
-    end
-    return draw_icon(option, box.x + (box.width - ICON_SIZE) / 2, box.y + (box.height - ICON_SIZE) / 2) if option.icon
-
-    style.use_font(bitmap, style::TEXT_SIZE, option.run ? style::TEXT : style::DIM)
-    room = box.width - 2 * TEXT_MARGIN
-    bitmap.draw_text(box.x + TEXT_MARGIN, box.y, room, box.height, MGQ_MpUi.cut(bitmap, option.text, room), 1)
-  end
-
-  # Draws a choice's icon, dim while it cannot be taken.
-  #
-  # @param option [MGQ_MpActions::Option] The choice.
-  # @param x [Integer] The icon's left edge.
-  # @param y [Integer] The icon's top edge.
-  def draw_icon(option, x, y)
-    MGQ_MpUi.draw_icon(bitmap, option.icon, x, y, ICON_SIZE, option.run ? MGQ_MpUi::Motion::OPAQUE : MGQ_MpUi::Style::DIM_OPACITY)
-  end
-
-  # Frees the wheel's picture.
-  def dispose
-    bitmap.dispose if bitmap
-    super
-  end
-end
-
-# What this script takes part in of the world's messages, through overworld_sync.rbx.
+# Game hooks, through core_hooks.rbx, and the action wheel.
 
 begin
-  MGQ_MpOverworldSync.on_tick { |in_world| MGQ_MpActions.tick(in_world) }
-rescue => e
-  MGQ_MpActions.log("overworld sync FAILED: #{e.class}: #{e.message}")
-end
-
-# Game hooks, through core_hooks.rbx.
-
-begin
-  # After the map's update, the action wheel. The game checks its own keys there too, only while no
-  # scene change is in the way.
+  # After the map's update, the choice the action wheel took. The game checks its own keys there
+  # too, only while no scene change is in the way.
   MGQ_MpHooks.after(Scene_Map, :update_scene, "ui_actions") { MGQ_MpActions.on_map unless scene_changing? }
 
-  # The wheel in C#, which the Mod Framework holds, and what it reports.
-  Mod_Framework::UI::Wheel.define(MGQ_MpActions::Wheel::NAME, :center => true)
-  Mod_Framework.bridge.on(Mod_Framework::UI::Wheel::EVENT) { |event| MGQ_MpActions::Wheel.take_event(event) if event["wheel"] == MGQ_MpActions::Wheel::NAME }
-
-  # After the map's sprites, the line above the player's head and the action wheel.
-  MGQ_MpHooks.after(Spriteset_Map, :update, "ui_actions") do
-    next unless mgq_mp_hud?
-
-    @mgq_mp_own_line ||= Sprite_MpOwnLine.new(MGQ_MpGame.get(self, :viewport1))
-    @mgq_mp_wheel ||= Sprite_MpActionWheel.new(MGQ_MpGame.get(self, :viewport3))
-    player = MGQ_MpGame.get(self, :character_sprites).find { |sprite| sprite.character.equal?($game_player) }
-    @mgq_mp_own_line.show(player)
-    @mgq_mp_wheel.show(player)
-  end
-
-  MGQ_MpHooks.before(Spriteset_Map, :dispose, "ui_actions") do
-    [@mgq_mp_own_line, @mgq_mp_wheel].compact.each { |sprite| sprite.dispose }
-    @mgq_mp_own_line = @mgq_mp_wheel = nil
-  end
+  MGQ_MpActions.build_wheel
 rescue => e
   MGQ_MpActions.log("hooks FAILED: #{e.class}: #{e.message}")
 end

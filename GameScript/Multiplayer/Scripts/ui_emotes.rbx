@@ -2,6 +2,7 @@
 #  ui_emotes.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Built the emote wheel as a Mod Framework wheel that follows the player
 #      Paulinchen  2026-10-31: Defined and steered its wheel through the Mod Framework
 #      Paulinchen  2026-10-23: Left the emote wheel's rules to C#, playing the emote in the frame after confirm
 #                            - Kept the emote wheel off the live map behind menus
@@ -25,9 +26,9 @@
 
 # The emote wheel on the map: its hotkey (E unless the player binds another, see core_hotkeys.rbx)
 # opens a ring of emotes around the player, a jump and the game's balloons, such as a heart or a
-# light bulb. The arrows point at an emote (see ui_wheel.rbx); the game's confirm button plays it
-# on the player's character, and every other game showing the player's map plays it on the
-# player's ghost.
+# light bulb, on the Mod Framework's wheel. The game's confirm button plays the emote pointed at on
+# the player's character, and every other game showing the player's map plays it on the player's
+# ghost.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpEmotes
@@ -47,16 +48,25 @@ module MGQ_MpEmotes
   # Frames between two emotes of the player, so nobody floods the others with them.
   COOLDOWN_FRAMES = 30
 
-  # The wheel's name in the tick and its events, whose rules C# keeps (WheelModel "emotes").
-  NAME = "mgq_online_emote_wheel"
+  # The emote wheel's id among the roots of the Mod Framework.
+  WHEEL_ID = :mgq_online_emote_wheel
 
-  # Whether the wheel is open.
-  @open = false
+  # What the wheel says while no emote is picked.
+  NONE_TEXT = "None"
 
-  # The place in EMOTES of the emote pointed at, nil for none.
-  @selected = nil
+  # Column of Balloon.png whose balloon is drawn in full.
+  BALLOON_FRAME = 7
 
-  # The emote confirm took and the frame it did in, nil while none waits.
+  # Size of a balloon in the game's Balloon.png.
+  BALLOON = 32
+
+  # The emote wheel, see build_wheel.
+  @wheel = nil
+
+  # The emotes as the wheel's choices, made once the wheel first asks.
+  @choices = nil
+
+  # The emote the wheel took and the frame it did in, nil while none waits.
   @take = nil
 
   # The frame count of the player's last emote, nil before the first.
@@ -67,117 +77,67 @@ module MGQ_MpEmotes
   # What starts this script's lines in the log.
   LOG_TAG = "emotes"
 
-  # Reports whether the wheel is open.
+  # Tells the emote wheel, a ring of the Mod Framework around the player.
   #
-  # @return [Boolean] Whether it is.
-  def self.open?
-    @open
+  # @return [Mod_Framework::UI::Wheel] The wheel.
+  def self.wheel
+    @wheel
   end
 
-  # Tells the place in EMOTES of the emote pointed at.
-  #
-  # @return [Integer, nil] The place, nil until the arrows pointed at one.
-  def self.selected
-    @selected
+  # Makes the emote wheel: its hotkey opens it on a free map in a world, the arrows point at an
+  # emote, and the emote taken plays in the frame after.
+  def self.build_wheel
+    @wheel = Mod_Framework::UI::Wheel.new(:id => WHEEL_ID, :follow => :player, :hotkey => MGQ_MpHotkeys.action(:emotes), :none_text => NONE_TEXT,
+                                          :if => lambda { MGQ_MpEmotes.busy_reason || true }, :choices => lambda { MGQ_MpEmotes.choices })
+    @wheel.on(:open) { log("emote wheel opened") }
+    @wheel.on(:close) { |why| log("emote wheel closed: #{why}") }
+    @wheel.on(:submit) { |choice| @take = [choice[:data], Mod_Framework::UI::Key.frame] }
   end
 
-  # Closes the wheel, if it is open, and gives the buttons back, here and in C#.
+  # Lists the emotes as the wheel's choices: a jump as its name, a balloon as its picture.
   #
-  # @param reason [String, nil] Why, for the log.
-  def self.close(reason = nil)
-    return unless @open
-
-    @open = false
-    Mod_Framework::UI::Capture.stop(:emotes)
-    Mod_Framework.bridge.call(Mod_Framework::UI::Wheel::CLOSE, [NAME])
-    log("emote wheel closed#{reason ? ": #{reason}" : ''}")
-  end
-
-  # Reports whether the player may play an emote: on a quiet map, not held by the party or a
-  # battle that waits, and with no other screen of the mod over the map.
-  #
-  # @return [Boolean] Whether they may.
-  def self.free?
-    MGQ_MpOverworldSync.in_world? && MGQ_MpOverworldSync.map_quiet? && !MGQ_MpHooks.player_held? &&
-      !MGQ_MpActions::Wheel.open? && !MGQ_MpChat.typing? && !(defined?(MGQ_MpWorldOverview) && MGQ_MpWorldOverview.open?)
-  end
-
-  # Opens, steers or closes the wheel, and plays the emote it reported confirmed. Called by the map
-  # every frame, so a press of the hotkey is seen once.
-  def self.on_map
-    take_pending
-    key = MGQ_MpHotkeys.pressed?(:emotes)
-    unless free?
-      MGQ_MpHotkeys.log_refusal(:emotes, busy_reason) if key
-      return @open ? follow(busy_reason, false) : nil
+  # @return [Array<Hash>] Each emote's choice, its place in EMOTES as its data.
+  def self.choices
+    @choices ||= EMOTES.each_with_index.map do |emote, index|
+      choice = { :text => emote.name, :data => index }
+      choice[:bitmap] = balloon_of(emote) if emote.balloon
+      choice
     end
+  end
 
-    follow(true, key)
+  # Cuts an emote's balloon out of Balloon.png.
+  #
+  # @param emote [Emote] The emote.
+  # @return [Bitmap, nil] The balloon, nil when the sheet cannot be read, which leaves the name.
+  def self.balloon_of(emote)
+    Mod_Framework::UI.sheet_cell("Balloon", BALLOON_FRAME, emote.balloon - 1, BALLOON)
+  rescue => e
+    log_once(:balloon, "the balloons could not be read, so the wheel shows their names: #{e.class}: #{e.message}")
+    nil
+  end
+
+  # Plays the emote the wheel took in the frame before. Called by the map every frame.
+  def self.on_map
+    index, frame = @take
+    return unless index && frame < Mod_Framework::UI::Key.frame
+
+    @take = nil
+    play_own(index) if frame >= Mod_Framework::UI::Key.frame - 1
   rescue => e
     log("emote wheel failed: #{e.class}: #{e.message}")
-    close("it failed")
   end
 
-  # Hands the wheel its frame: while the map leaves it free its hotkey and, while open, its
-  # buttons; else, while open, why it closes.
+  # Tells why the player may not play an emote now.
   #
-  # @param free [Boolean, String] true, or why the wheel may not show.
-  # @param key [Boolean] Whether its hotkey went down.
-  def self.follow(free, key)
-    return unless @open || (free == true && key)
-
-    Mod_Framework::UI::Wheel.put(NAME, free, key, EMOTES.size, @open)
-  end
-
-  # Takes the wheel's event: opened, closed, the pick moved, or confirm with the emote pointed at.
-  #
-  # @param event [Hash] The event, see WheelModel.EventTopic.
-  def self.take_event(event)
-    was = @open
-    @open = event["open"] == true
-    direction = Mod_Framework::UI::Wheel.direction_of(event["selected"], nil)
-    @selected = direction && Mod_Framework::UI::Wheel.places(EMOTES.size).index(direction)
-    MGQ_MpUi::Tick.play(event)
-    if @open && !was
-      Mod_Framework::UI::Capture.start(:emotes)
-      log("emote wheel opened")
-    elsif was && !@open
-      Mod_Framework::UI::Capture.stop(:emotes)
-      log("emote wheel closed: #{closed_reason(event)}")
-    end
-    @take = [@selected, Mod_Framework::UI::Key.frame] if event.key?("take") && @selected
-  end
-
-  # Tells why the wheel closed, for the log.
-  #
-  # @param event [Hash] The event that closed it.
-  # @return [String] The reason.
-  def self.closed_reason(event)
-    return event["reason"].to_s unless event.key?("take")
-
-    @selected ? "chose #{EMOTES[@selected].name}" : "confirmed with no emote pointed at"
-  end
-
-  # Plays the emote confirm took in the frame before.
-  def self.take_pending
-    index, frame = @take
-    @take = nil
-    play_own(index) if index && frame >= Mod_Framework::UI::Key.frame - 1
-  end
-
-  # Tells why the player may not play an emote now, for the log.
-  #
-  # @return [String] The first reason that holds.
+  # @return [String, nil] Why, nil while the player stands free on the map of a world, not held
+  #   by the party or a battle that waits.
   def self.busy_reason
     return "no world is open" unless MGQ_MpOverworldSync.in_world?
-    return "an event runs or a message shows" unless MGQ_MpOverworldSync.map_quiet?
-    return "the player is held" if MGQ_MpHooks.player_held?
-    return "the action wheel is open" if MGQ_MpActions::Wheel.open?
-    return "the chat box is open" if MGQ_MpChat.typing?
 
-    "the World overview is open"
-  rescue
-    "?"
+    reason = Mod_Framework::UI::Game.map_free_reason
+    return reason if reason
+
+    MGQ_MpHooks.player_held? ? "the player is held" : nil
   end
 
   # Plays an emote on the player's character and tells the others, unless the last was too soon.
@@ -227,164 +187,22 @@ module MGQ_MpEmotes
   end
 end
 
-# The emote wheel around the player: a box per emote in a ring and a small one in the middle for
-# none, the one the arrows point at lit, with its name below the ring and under it the hint that
-# names what closes the wheel. Drawn in the shared style, it fades in and out.
-class Sprite_MpEmoteWheel < Sprite
-  # Size of an emote's box.
-  BOX = 36
-
-  # Pixels from the middle of the player's sprite to the middle of each box.
-  RADIUS = 60
-
-  # Height of the line naming the picked emote.
-  NAME_HEIGHT = 22
-
-  # Width and height of the wheel's picture.
-  SIZE = (RADIUS + BOX) * 2
-
-  # Half the height of the player's sprite, from their feet to their middle.
-  PLAYER_MIDDLE = 24
-
-  # Size of a balloon in the game's Balloon.png.
-  BALLOON = 32
-
-  # Column of Balloon.png whose balloon is drawn in full.
-  BALLOON_FRAME = 7
-
-  # Size of the box in the middle, which stands for no emote; small, so the player stays in sight.
-  NONE_BOX = 12
-
-  # What the wheel says while no arrow is held.
-  NONE_NAME = "None"
-
-  # Creates the wheel, hidden.
-  #
-  # @param viewport [Viewport] The map's topmost viewport.
-  def initialize(viewport)
-    super(viewport)
-    self.bitmap = Bitmap.new(SIZE, SIZE + NAME_HEIGHT + Mod_Framework::UI::Wheel::HINT_HEIGHT)
-    self.ox = SIZE / 2
-    self.oy = SIZE / 2 + PLAYER_MIDDLE
-    self.z = MGQ_MpUi::Z[:wheels]
-    @motion = MGQ_MpUi::Motion.new(self)
-    @shown = nil
-    @drawn = nil
-  end
-
-  # Draws the wheel around the player's sprite while it is open, if the picked emote or the preset
-  # changed, and fades it in; fades it out once it closed, keeping its picture until it is gone.
-  #
-  # @param sprite [Sprite_Character, nil] The player's sprite.
-  def show(sprite)
-    unless MGQ_MpEmotes.open? && sprite
-      @motion.hide
-      @motion.update
-      return
-    end
-
-    @motion.place(sprite.x, sprite.y)
-    @motion.show
-    draw unless @drawn == MGQ_MpUi::Theme.serial && @shown == MGQ_MpEmotes.selected
-    @motion.update
-  end
-
-  # Draws the ring, the box in the middle, the name of the picked emote and the hint.
-  def draw
-    style = MGQ_MpUi::Style
-    @drawn = MGQ_MpUi::Theme.serial
-    @shown = MGQ_MpEmotes.selected
-    bitmap.clear
-    MGQ_MpEmotes::EMOTES.each_with_index { |emote, index| draw_box(emote, index) }
-    middle = (SIZE - NONE_BOX) / 2
-    draw_square(middle, middle, NONE_BOX, @shown.nil?)
-    style.use_font(bitmap, style::TEXT_SIZE, style::TEXT)
-    bitmap.draw_text(0, SIZE, SIZE, NAME_HEIGHT, MGQ_MpUi.cut(bitmap, @shown ? MGQ_MpEmotes::EMOTES[@shown].name : NONE_NAME, SIZE), 1)
-    Mod_Framework::UI::Wheel.draw_hint(bitmap, 0, SIZE + NAME_HEIGHT, SIZE, MGQ_MpHotkeys.label(:emotes))
-  end
-
-  # Draws one emote's box on the ring, clockwise from the top.
-  #
-  # @param emote [MGQ_MpEmotes::Emote] The emote.
-  # @param index [Integer] Its place on the ring.
-  def draw_box(emote, index)
-    style = MGQ_MpUi::Style
-    directions = Mod_Framework::UI::Wheel::DIRECTIONS
-    angle = Math::PI * 2 * directions.index(Mod_Framework::UI::Wheel.places(MGQ_MpEmotes::EMOTES.size)[index]) / directions.size
-    x = (SIZE / 2 + Math.sin(angle) * RADIUS - BOX / 2).round
-    y = (SIZE / 2 - Math.cos(angle) * RADIUS - BOX / 2).round
-    draw_square(x, y, BOX, index == @shown)
-    if emote.balloon
-      source = Rect.new(BALLOON_FRAME * BALLOON, (emote.balloon - 1) * BALLOON, BALLOON, BALLOON)
-      bitmap.blt(x + (BOX - BALLOON) / 2, y + (BOX - BALLOON) / 2, Cache.system("Balloon"), source)
-    else
-      style.use_font(bitmap, style::TINY_SIZE, style::TEXT)
-      bitmap.draw_text(x, y, BOX, BOX, MGQ_MpUi.cut(bitmap, emote.name, BOX), 1)
-    end
-  end
-
-  # Draws a square box of the wheel in its frame, lit while picked.
-  #
-  # @param x [Integer] Its left.
-  # @param y [Integer] Its top.
-  # @param side [Integer] Its side.
-  # @param picked [Boolean] Whether the arrows point at it.
-  def draw_square(x, y, side, picked)
-    style = MGQ_MpUi::Style
-    return style.draw_box(bitmap, x, y, side, side) unless picked
-
-    bitmap.fill_rect(x, y, side, side, style::PICKED)
-    style.draw_frame(bitmap, x, y, side, side)
-  end
-
-  # Frees the wheel's picture.
-  def dispose
-    bitmap.dispose
-    super
-  end
-end
-
 # What this script takes part in of the world's messages, through overworld_sync.rbx.
 
 begin
   MGQ_MpOverworldSync.route("emote") { |peer, message| MGQ_MpEmotes.take(peer, message) }
-  MGQ_MpOverworldSync.on_tick { |in_world| MGQ_MpEmotes.close(in_world ? "the map was left" : "no world is open") unless in_world && SceneManager.scene.is_a?(Scene_Map) }
 rescue => e
   MGQ_MpEmotes.log("overworld sync FAILED: #{e.class}: #{e.message}")
 end
 
-# What the emote wheel adds to the action wheel, through ui_actions.rbx: the action wheel leaves the
-# buttons to it while it is open.
+# Game hooks, through core_hooks.rbx, and the emote wheel.
 
 begin
-  MGQ_MpActions.cover { |_wheel_key| MGQ_MpEmotes.open? }
-rescue => e
-  MGQ_MpEmotes.log("action wheel FAILED: #{e.class}: #{e.message}")
-end
-
-# Game hooks, through core_hooks.rbx.
-
-begin
-  # After the map's update, the emote wheel. The game checks its own keys there too, only while no
-  # scene change is in the way.
+  # After the map's update, the emote the wheel took. The game checks its own keys there too, only
+  # while no scene change is in the way.
   MGQ_MpHooks.after(Scene_Map, :update_scene, "ui_emotes") { MGQ_MpEmotes.on_map unless scene_changing? }
 
-  # The wheel in C#, which the Mod Framework holds, and what it reports.
-  Mod_Framework::UI::Wheel.define(MGQ_MpEmotes::NAME, :closes => true)
-  Mod_Framework.bridge.on(Mod_Framework::UI::Wheel::EVENT) { |event| MGQ_MpEmotes.take_event(event) if event["wheel"] == MGQ_MpEmotes::NAME }
-
-  # After the map's sprites, the emote wheel around the player.
-  MGQ_MpHooks.after(Spriteset_Map, :update, "ui_emotes") do
-    next unless mgq_mp_hud?
-
-    @mgq_mp_emotes ||= Sprite_MpEmoteWheel.new(MGQ_MpGame.get(self, :viewport3))
-    @mgq_mp_emotes.show(MGQ_MpGame.get(self, :character_sprites).find { |sprite| sprite.character.equal?($game_player) })
-  end
-
-  MGQ_MpHooks.before(Spriteset_Map, :dispose, "ui_emotes") do
-    @mgq_mp_emotes.dispose if @mgq_mp_emotes
-    @mgq_mp_emotes = nil
-  end
+  MGQ_MpEmotes.build_wheel
 rescue => e
   MGQ_MpEmotes.log("hooks FAILED: #{e.class}: #{e.message}")
 end

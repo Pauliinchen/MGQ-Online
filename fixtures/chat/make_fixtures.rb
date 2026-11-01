@@ -2,6 +2,7 @@
 #  make_fixtures.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Named the close keys in the help tab's last line as ChatModel names them
 #      Paulinchen  2026-10-31: Wrote the texts C# words anew as C# words them
 #                            - Created
 #
@@ -322,7 +323,8 @@ scenario("the party chat", [
 ])
 
 # The texts C# words anew, each the script's text and the one ChatModel shows.
-REWORDED = { "You are in no party, so nobody hears the party chat." => "You are not in a party." }
+REWORDED = { "You are in no party, so nobody hears the party chat." => "You are not in a party.",
+              "Enter sends, Esc or the numpad's 0 closes." => "Enter sends, Esc or Numpad 0 closes." }
 
 text = JSON.pretty_generate({ "scenarios" => SCENARIOS }) + "\n"
 File.write(File.join(__dir__, "cases.json"), REWORDED.inject(text) { |cases, (old, now)| cases.gsub(old, now) })

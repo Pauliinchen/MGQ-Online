@@ -2,6 +2,7 @@
 //  ChoiceTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Checked a question of a replay opened through the topic
 //      Paulinchen  2026-10-31: Checked a question of a replay through the topics
 //      Paulinchen  2026-10-28: Created
 //
@@ -87,18 +88,19 @@ public sealed class ChoiceTopicsTests
     }
 
     /// <summary>
-    /// Asserts that a question opened and stepped through the topics answers the item clicked.
+    /// Asserts that a question opened through the topic hands its rows, start row, cancel answer and
+    /// key entries as the scripts read them.
     /// </summary>
     [Fact]
-    public void Input_AnswersTheItemClickedThroughTheTopics()
+    public void Input_HandsTheQuestionThroughTheTopic()
     {
         var spec = new RubyHash { { "items", new RubyArray { new RubyArray { 12, "Silver Ring", 1, "A ring." } } }, { "index", 0 } };
-        RubyValue input = Call(ChoiceTopics.InputOpen, new RubyHash { { "kind", "item" }, { "opener", "Ana" }, { "companion", RubyNil.Value }, { "visible", 4 }, { "spec", spec } });
-        RubyHash step = new() { { "input", input }, { "action", "click" }, { "at", 0 }, { "notches", 0 }, { "wrap", false } };
 
-        RubyHash answered = Call(ChoiceTopics.InputStep, step).AsHash();
+        RubyHash input = Call(ChoiceTopics.InputOpen, new RubyHash { { "kind", "item" }, { "opener", "Ana" }, { "companion", RubyNil.Value }, { "spec", spec } }).AsHash();
 
-        Assert.Equal((12, "ok"), (answered["answer"].AsInt(), answered["cue"].AsText()));
+        RubyArray rows = input["rows"].AsArray();
+        Assert.Equal((12, "A ring.", 0, 0), (rows[0].AsArray()[0].AsInt(), rows[0].AsArray()[3].AsText(), input["index"].AsInt(), input["cancel"].AsInt()));
+        Assert.Equal(["cancel", "none"], input["keys"].AsArray()[^1].AsArray().Select(part => part.AsText()));
     }
 
     /// <summary>

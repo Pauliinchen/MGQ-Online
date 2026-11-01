@@ -2,7 +2,8 @@
 #  world_mods.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-01: Added the row of Shared Mod Settings once as the script loads, through the Mod Framework's options, shown only in a world
+#      Paulinchen  2026-11-01: Dropped the download check of a mod row, which nothing calls
+#                            - Added the row of Shared Mod Settings once as the script loads, through the Mod Framework's options, shown only in a world
 #      Paulinchen  2026-10-31: Took the group of its row from MGQ_Multiplayer::OPTION_PREFIX
 #                            - Took the world's settings the relay tells every player, instead of the creator's game telling each
 #      Paulinchen  2026-10-30: Checked the game data once the world's mods loaded and warned in the notification box of a difference
@@ -203,14 +204,7 @@ module MGQ_MpWorldMods
   # @!attribute key [String, nil] The catalog mod's key, which can be downloaded; nil for a mod outside the catalog.
   # @!attribute target [String, nil] Where a link mod's script goes, relative to the game's folder.
   # @!attribute text [String] The difference for the player, such as "Level Cap: yours 1.0.0, the world's 1.1.0".
-  Row = Struct.new(:name, :yours, :worlds, :key, :target, :text) do
-    # Tells whether the world's version can be downloaded.
-    #
-    # @return [Boolean] Whether it can.
-    def downloadable?
-      !key.nil?
-    end
-  end
+  Row = Struct.new(:name, :yours, :worlds, :key, :target, :text)
 
   # Takes part in the open world's messages: the relay's word on the world's settings and on its
   # mods rule.

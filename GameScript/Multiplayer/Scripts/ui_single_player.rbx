@@ -2,6 +2,7 @@
 #  ui_single_player.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Named the Mod Framework's interface by its own name
 #      Paulinchen  2026-10-31: Kept its rows through the Mod Framework
 #                            - Worded what the player reads plainly, leaving causes and internals to the log
 #                            - Started the restart question on Restart
@@ -145,13 +146,13 @@ module MGQ_MpSinglePlayer
   # changed a row that needs it, on the map while nothing runs there. Called
   # by the map every frame no scene change is in the way.
   def self.on_map
-    return unless @changed && quiet? && !MGQ_MpUi::Confirm.open?
+    return unless @changed && quiet? && !Mod_Framework::UI::Confirm.open?
     unless MGQ_Multiplayer.available?
       settle
       return log("no restart offered: the DLL that starts the game again is missing")
     end
 
-    settle if MGQ_MpUi::Confirm.ask(RESTART_QUESTION, RESTART_CHOICES, :index => 0) { |yes| answered(yes) }
+    settle if Mod_Framework::UI::Confirm.ask(RESTART_QUESTION, RESTART_CHOICES, :index => 0) { |yes| answered(yes) }
   rescue => e
     log_once(:on_map, "offering a restart failed: #{e.class}: #{e.message}")
   end

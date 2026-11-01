@@ -2,6 +2,7 @@
 #  world_room_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Handed the chat's messages to C#, which the chat's model takes, and dropped the stand-in for its send
 #      Paulinchen  2026-10-31: Dropped the messages whose field a rule in C# takes, as the room does
 #      Paulinchen  2026-10-23: Kept the stand-in bridge a test already opened
 #                            - Created
@@ -20,7 +21,7 @@ load_bridge unless defined?(MGQ_Multiplayer::Bridge)
 
 # The fields the rules in C# take through WorldRoom.Take, the party's own included: the room hands
 # a message carrying one of them to C#, never to the scripts.
-CSHARP_FIELDS = %w[kick party_decline ptp npcs map_npcs coop map_coop trade]
+CSHARP_FIELDS = %w[kick party_decline ptp npcs map_npcs coop map_coop trade chat whisper pchat]
 
 # The fake DLL the scripts' world room topics go to, the test's one FakeBridge, which the rules' and
 # the interface's answers share.
@@ -29,23 +30,12 @@ $world_bridge ||= FakeBridge.new
 $staged_world = []
 # The party's actions the scripts asked the DLL for, each [action, request].
 $party_calls = []
-# The chat lines the scripts sent through the DLL, each chat.send request.
-$chats = []
-# The global chat's lines mirrored to the relay.
-$said = []
 
 %w[world.me world.routes world.reset_since].each do |topic|
   $world_bridge.answer(topic) { |request| $staged_world << [topic, request]; nil }
 end
 # Answers when the player entered a map: $map_since, 1000 by default.
 $world_bridge.answer("world.since") { |map| { "map" => map, "since" => $map_since || 1_000 } }
-# Records a chat line; a global one is mirrored, answered $say_result (1, the relay got it, by default).
-$world_bridge.answer("chat.send") do |request|
-  $chats << request
-  said = request["channel"] == "global" ? ($say_result || 1) : 0
-  $said << request["text"] if request["channel"] == "global" && said == 1
-  { "sent" => said != 2 && $chat_sent != false, "said" => said }
-end
 # Records a party action and answers $party_answer, else the view the scripts hold.
 %w[invite stop_inviting join decline leave remove].each do |action|
   $world_bridge.answer("party.#{action}") do |request|

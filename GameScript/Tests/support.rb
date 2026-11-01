@@ -2,6 +2,7 @@
 #  support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Stood in for a wheel of the Mod Framework
 #      Paulinchen  2026-10-31: Loaded the Mod Framework's scripts before the mod's, as the game does
 #      Paulinchen  2026-10-28: Stood in for the game's sizes and chest flags the DLL reads from its events database
 #                            - Kept the script's own Classic party's table for the test that builds it
@@ -39,6 +40,13 @@ require_relative "framework_support"
 
 # The mod folder as Multiplayer.rb names it, which the scripts build their files' paths on.
 module MGQ_Multiplayer; MOD_DIR = "Patch\\Multiplayer"; end
+
+# Stands in for a wheel of the Mod Framework, for a test that loads no wheel: open while its block
+# answers true.
+StandInWheel = Struct.new(:block) do
+  # Answers whether the wheel is open.
+  def open?; block.call ? true : false; end
+end
 
 # Counts a test file's checks and reports them once the file ends.
 module Checks

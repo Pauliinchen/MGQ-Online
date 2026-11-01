@@ -2,6 +2,11 @@
 #  ui_bug_report.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Built the form on the Mod Framework's components
+#                            - Left when the report opens, its refusals, sending and the outcome to the DLL
+#                            - Took the wheel's screenshot once the action wheel is gone and waited while any mod's screen holds the game
+#                            - Waited in the Mod Framework's menu scene of a mod's screen, where the story's choices now show
+#                            - Showed the lines across the top in the info strip of the Mod Framework's components
 #      Paulinchen  2026-10-31: Typed and cancelled through the Mod Framework
 #                            - Worded what the player reads plainly, leaving causes and internals to the log
 #      Paulinchen  2026-10-30: Named the game version as the mod loader names it, a translation's own loader included
@@ -18,21 +23,27 @@
 #----------------------------------------------------------------
 
 # The in-game bug report: its hotkey (F3 unless the player binds another, see core_hotkeys.rbx) or
-# the action wheel's Report a Bug takes a screenshot and opens a form, typed in place, whose title
-# and text the DLL sends to the relay with a few public facts, the screenshot and the logs. The
-# relay makes a public GitHub issue of the title, the text and the facts; the screenshot, the logs
-# and the private details reach the developer only. The world screen's form window draws the form
-# (world_screen.rbx), and the notification box tells how the sending went (ui_notices.rbx).
+# the action wheel's Report a Bug takes a screenshot and opens a form, a Mod Framework window, whose
+# title and text the DLL sends to the relay with a few public facts, the screenshot and the logs.
+# The relay makes a public GitHub issue of the title, the text and the facts; the screenshot, the
+# logs and the private details reach the developer only.
 #
-# It must never interrupt the game, so its per-frame work rescues.
+# The DLL keeps the request (Reports/BugReportRequest): where a report is refused, when the
+# screenshot is taken and the form opens, what waits for the notification box, sending and its
+# outcome. This script hands it the scene and the facts, takes the screenshot, draws the form and
+# plays, says and logs what the DLL tells. It must never interrupt the game, so its per-frame work
+# rescues.
 module MGQ_MpBugReport
+  # The framework's components and everything that draws.
+  UI = Mod_Framework::UI
+
   # The action wheel's choice, and the form's title.
   WHEEL_TEXT = "Report a Bug"
 
   # The choice's place on the action wheel's ring, after every other choice.
   WHEEL_ORDER = 60
 
-  # What the first line above the form says.
+  # What the line at the top of the form says.
   HELP = "Title and text go public on GitHub. The screenshot and logs reach the developer only."
 
   # Longest title, within what the relay takes.
@@ -44,19 +55,19 @@ module MGQ_MpBugReport
   # Lines the text's box shows.
   TEXT_LINES = 6
 
-  # What the lines above the form say while the cursor is on the title.
+  # What the help line says while the focus is on the title.
   TITLE_HINT = "A short name for the problem. It becomes the title of the issue on GitHub."
 
-  # What the lines above the form say while the cursor is on the text.
-  TEXT_HINT = "What you did, what happened and what you expected. Confirm to type, Enter keeps the text."
+  # What the help line says while the focus is on the text.
+  TEXT_HINT = "What you did, what happened and what you expected."
 
-  # What the lines above the form say while the cursor is on the screenshot's checkbox.
+  # What the help line says while the focus is on the screenshot's checkbox.
   SCREENSHOT_HINT = "The screen as it was when you opened the report. Only the developer sees it."
 
-  # What the lines above the form say while the cursor is on the logs' checkbox.
+  # What the help line says while the focus is on the logs' checkbox.
   LOGS_HINT = "The mod's logs of this game session and the list of your mods. Only the developer sees them."
 
-  # What the lines above the form say while the cursor is on the send button.
+  # What the help line says while the focus is on the send button.
   SEND_HINT = "Sends the report. Title and text become a public issue on GitHub."
 
   # Why the form is not sent while its title is empty.
@@ -65,83 +76,25 @@ module MGQ_MpBugReport
   # Why the form is not sent while its text is empty.
   TEXT_MISSING = "Say what happened."
 
-  # The bit of the DLL's flags that attaches the screenshot.
-  ATTACH_SCREENSHOT = 1
+  # Why a box cannot be typed into while another mod types.
+  NO_KEYBOARD_REFUSAL = "Another window is using the keyboard. Close it, then try again."
 
-  # The bit of the DLL's flags that attaches the logs.
-  ATTACH_LOGS = 2
+  # Widest the form gets.
+  FORM_WIDTH = 520
 
-  # Frames between two looks at how the sending stands, half a second.
-  POLL_FRAMES = 30
-
-  # Bytes the DLL may write how the sending stands into at first.
-  STATE_SIZE = 1024
-
-  # Most public facts a report carries, as the relay takes them.
-  MAX_FACTS = 12
-
-  # Longest label of a fact or detail, as the relay takes it.
-  MAX_LABEL_CHARS = 32
-
-  # Longest value of a public fact, as the relay takes it.
-  MAX_VALUE_CHARS = 120
-
-  # Longest value of a private detail, which only report.txt holds.
-  MAX_DETAIL_CHARS = 1000
+  # The captions of the form's boxes, which line up.
+  CAPTIONS = ["Title", "What happened"]
 
   # What the notification box keeps the report's messages under, each replacing the one before.
   NOTICE_KEY = :bug_report
 
-  # Frames the sending's messages show, ten seconds, since an upload may take a while.
-  NOTICE_FRAMES = 600
-
-  # What the notification box says while the report is sent.
-  SENDING_TEXT = "Sending the bug report . . ."
-
-  # What the notification box says once the report went, with the issue's number.
-  SENT_TEXT = "Bug report sent as issue #%s. Thank you!"
-
-  # What the notification box says when the report failed, with why.
-  FAILED_TEXT = "The bug report failed: %s"
-
-  # The friendly words for a failure, by the relay's code.
-  FRIENDLY_REASONS = {
-    "rate" => "you sent several reports in a short time. Try again in an hour.",
-    "off" => "bug reports are off right now.",
-    "busy" => "too many reports at once. Try again in a minute.",
-  }
-
-  # What a failure says for any other code.
-  OTHER_FAILURE = "try again later."
-
-  # What the player is told when the report waits for a battle to end.
-  BATTLE_TEXT = "The bug report opens after the battle."
-
-  # What the player is told when the report waits for the player to be free on the map.
-  BUSY_TEXT = "The bug report opens once you are free on the map."
-
-  # Why a report does not open while the last one is still being sent.
-  SENDING_REFUSAL = "The last bug report is still being sent."
-
-  # Why a report does not open while another waits to open.
-  WAITING_REFUSAL = "A bug report waits to open already."
-
-  # Why a report does not open or is not sent without the player's name.
-  NO_NAME_REFUSAL = "Bug reports need your name: pick Multiplayer on the title screen to choose one."
-
-  # Why the report cannot be typed while the keyboard cannot reach the game.
-  NO_KEYBOARD_REFUSAL = "The bug report cannot be typed right now."
-
-  # Why the report is not sent once the DLL did not start sending it.
-  NOT_STARTED_REFUSAL = "The bug report could not be sent. Try again later."
+  # Why the form closed without sending, for the log, by why the window closed.
+  CLOSED_REASONS = { :cancel => "the player left it", :outside => "the player left it", :scene => "another scene took its place",
+                     :script => "the script closed it", :reset => "F12 started the game again" }
 
   # Scenes a report never opens from, by their class's name: the title and game over screens,
   # which leave the game being played.
   REFUSED_SCENES = /\AScene_(Title|Gameover)\z/
-
-  # Menus a report waits in until the player is back on the map, by their class's name, since they
-  # cannot be left for the form and come back.
-  WAITING_MENUS = ["Scene_MpStoryChoices"]
 
   # Largest side of a screenshot the DLL keeps.
   MAX_SIDE = 4096
@@ -150,403 +103,226 @@ module MGQ_MpBugReport
   # them apart.
   TRANSLATED_VARIABLE = "Overall Events Progress"
 
-  # The report asked for that waits to open, nil while none does.
-  @pending = nil
+  # The DLL's topic of a frame, see ReportTopics.TickTopic: whether to take the screenshot now.
+  TICK_TOPIC = "report.tick"
 
-  # The report whose form opens, see take_opening.
-  @opening = nil
+  # The DLL's topic of the screenshot taken: whether the form opens now.
+  SNAPPED_TOPIC = "report.snapped"
 
-  # Frames left until the screenshot the wheel asked for, nil while none waits.
-  @snap_in = nil
+  # The DLL's topic of the map's update: whether the form opens now.
+  MAP_TOPIC = "report.on_map"
 
-  # Whether a report is being sent.
-  @sending = false
+  # The DLL's topic that tells why the wheel's choice is refused, nil while it may be taken.
+  WHEEL_REFUSAL_TOPIC = "report.wheel_refusal"
 
-  # Frames since the last look at how the sending stands.
-  @poll_frames = 0
+  # The DLL's topic of the wheel's choice taken.
+  WHEEL_TOPIC = "report.wheel"
 
-  # The sending's outcome kept for the notification box, nil while none waits.
-  @outcome = nil
+  # The DLL's topic of the action wheel gone: whether to take the screenshot the wheel asked for now.
+  WHEEL_GONE_TOPIC = "report.wheel_gone"
 
-  # What the player is told once the notification box shows, nil while nothing waits.
-  @told = nil
+  # The DLL's topic the form takes its report by: whether a screenshot was kept, nil for none.
+  OPENING_TOPIC = "report.take_opening"
+
+  # The DLL's topic that sends the form's report: why it was not sent, nil once it is being sent.
+  SEND_TOPIC = "report.send"
+
+  # The DLL's topic of the form closing, with why.
+  CLOSED_TOPIC = "report.closed"
+
+  # The DLL's event of a sound to play, by its name after Sound.play_.
+  SOUND_EVENT = "report.sound"
+
+  # The DLL's event of a line for the battle's chat log.
+  CHAT_LINE_EVENT = "report.chat_line"
+
+  # The DLL's event of a message for the notification box: "text" and "frames", nil for the box's own.
+  NOTICE_EVENT = "report.notice"
+
+  # The DLL's event of the hotkey refused, which the hotkeys log.
+  HOTKEY_REFUSED_EVENT = "report.hotkey_refused"
+
+  # The game's sounds the DLL plays by name.
+  SOUNDS = ["ok", "buzzer"]
+
+  # The form, from its opening to its closing, nil while none is open.
+  @form = nil
 
   extend MGQ_MpLog
 
   # What starts this script's lines in the log.
   LOG_TAG = "bug report"
 
-  # Reads the hotkey, takes the screenshot the wheel asked for, forgets a waiting report once the
-  # game left for the title screen and a form another scene took the place of, follows the sending
-  # and tells what waits for the notification box. Called by overworld_sync.rbx every frame in
-  # every scene.
+  class << self
+    # @return [Form, nil] The form, from its opening to its closing.
+    attr_reader :form
+  end
+
+  # Hands the DLL the frame with the hotkey, and takes the screenshot when the DLL says so. Called
+  # by overworld_sync.rbx every frame in every scene.
   #
   # @param _in_world [Boolean] Whether a world is open.
   def self.tick(_in_world)
-    forget_lost_form
     # Asked every frame, so a press in another scene never counts later.
-    request(:hotkey) if MGQ_MpHotkeys.pressed?(:bug_report)
-    snap_after_wheel
-    forget_on_leaving
-    poll
-    show_outcome
-    show_told
+    hotkey = MGQ_MpHotkeys.pressed?(:bug_report)
+    return unless MGQ_Multiplayer::Bridge.open?
+
+    scene = SceneManager.scene
+    frame = { "scene" => scene_of(scene), "hotkey" => hotkey }
+    frame.update(asked_in(scene)) if hotkey
+    snap if MGQ_Multiplayer::Bridge.call(TICK_TOPIC, frame) == true
   rescue => e
     log_once(:tick, "tick failed: #{e.class}: #{e.message}")
   end
 
-  # Opens the report that waits, once the player is free on the map and no screen of the mod lies
-  # over it. Called by the map every frame.
+  # Opens the form of the report that waits, once the DLL finds the player free on the map. Called
+  # by the map every frame.
   def self.on_map
-    return unless @pending && @pending[:ready] && map_ready?
+    return unless MGQ_Multiplayer::Bridge.open?
 
-    open
+    open_form if MGQ_Multiplayer::Bridge.call(MAP_TOPIC, scene_of(SceneManager.scene)) == true
   rescue => e
     log("opening the report from the map failed: #{e.class}: #{e.message}")
-    forget("it failed")
   end
 
-  # The action wheel's choice, which opens the report once the wheel faded out.
+  # The action wheel's choice, which asks for a report.
   #
-  # @return [MGQ_MpActions::Option] The choice, refused while a report is sent or waits to open,
-  #   and without a name.
+  # @return [MGQ_MpActions::Option] The choice, refused as the DLL says.
   def self.wheel_option
-    option = MGQ_MpActions::Option
-    refusal = @sending ? SENDING_REFUSAL : @pending ? WAITING_REFUSAL : MGQ_Multiplayer::Player.name.nil? ? NO_NAME_REFUSAL : nil
-    option.new(WHEEL_TEXT, refusal ? nil : lambda { MGQ_MpBugReport.request(:wheel) }, refusal)
+    refusal = MGQ_Multiplayer::Bridge.call(WHEEL_REFUSAL_TOPIC)
+    MGQ_MpActions::Option.new(WHEEL_TEXT, refusal ? nil : lambda { MGQ_MpBugReport.request_by_wheel }, refusal)
   end
 
-  # Asks for a report: refused where it cannot open; otherwise takes the screenshot, at once or
-  # once the wheel faded out, and opens the form at once in a menu, or keeps it waiting until the
-  # player is free on the map.
-  #
-  # @param via [Symbol] :hotkey or :wheel.
-  def self.request(via)
+  # Asks the DLL for a report by the wheel's choice, whose screenshot waits until nothing of the
+  # wheel shows.
+  def self.request_by_wheel
     scene = SceneManager.scene
-    refusal = refusal_at(scene)
-    return refuse(via, refusal) if refusal
-
-    @pending = { :via => via, :facts => facts(scene), :details => details(scene), :snapped => false, :ready => false }
-    log("asked for a report by #{via} in #{where_text(scene)}")
-    # The wheel played its own sound as the choice was taken.
-    return @snap_in = wheel_frames if via == :wheel
-
-    Sound.play_ok
-    snap
-    if scene.is_a?(Scene_Map)
-      tell(BUSY_TEXT, scene) unless map_ready?
-    elsif menu?(scene)
-      open
-    else
-      tell(scene.is_a?(Scene_Battle) ? BATTLE_TEXT : BUSY_TEXT, scene)
-    end
+    MGQ_Multiplayer::Bridge.call(WHEEL_TOPIC, asked_in(scene).merge("scene" => scene_of(scene)))
   rescue => e
-    log("asking for a report failed: #{e.class}: #{e.message}")
-    forget("it failed")
+    log("asking for a report by the wheel failed: #{e.class}: #{e.message}")
   end
 
-  # Tells why a report cannot open here, if it cannot.
+  # Takes the screenshot the wheel's choice asked for when the DLL says so. Called as the action
+  # wheel is gone.
+  def self.wheel_gone
+    return unless MGQ_Multiplayer::Bridge.open?
+
+    snap if MGQ_Multiplayer::Bridge.call(WHEEL_GONE_TOPIC) == true
+  rescue => e
+    log("taking the wheel's screenshot failed: #{e.class}: #{e.message}")
+  end
+
+  # Tells where a report is asked for and what it reports, as the DLL takes them.
   #
   # @param scene [Scene_Base, nil] The scene in front.
-  # @return [String, Symbol, nil] What the player is told; a Symbol, which the log names, where the
-  #   player is told nothing; nil when it can open.
-  def self.refusal_at(scene)
-    return :no_dll unless MGQ_Multiplayer.available?
-    return :typing if $mgq_text_input
-    return :open if scene.is_a?(Scene_MpBugReport)
-    return :title if scene.nil? || scene.class.name.to_s =~ REFUSED_SCENES
-    return SENDING_REFUSAL if @sending
-    return WAITING_REFUSAL if @pending || @opening
-    return NO_NAME_REFUSAL unless MGQ_Multiplayer::Player.share
-
-    nil
+  # @return [Hash] "where", "facts" and "details".
+  def self.asked_in(scene)
+    { "where" => where_text(scene), "facts" => text_pairs(facts(scene)), "details" => text_pairs(details(scene)) }
   end
 
-  # Logs why a report does not open, and tells the player when they should know.
+  # Puts labels and values as Strings, which cross the bridge.
   #
-  # @param via [Symbol] :hotkey or :wheel.
-  # @param refusal [String, Symbol] See refusal_at.
-  def self.refuse(via, refusal)
-    reasons = { :no_dll => "the DLL is missing", :typing => "the player types", :open => "the form is open already",
-                :title => "the game shows the title or game over screen" }
-    reason = refusal.is_a?(Symbol) ? reasons[refusal] : refusal
-    via == :hotkey ? MGQ_MpHotkeys.log_refusal(:bug_report, reason) : log("no report by #{via}: #{reason}")
-    return if refusal.is_a?(Symbol)
-
-    Sound.play_buzzer
-    tell(refusal, SceneManager.scene)
+  # @param pairs [Array<Array(Object, Object)>] The labels and their values.
+  # @return [Array<Array(String, String)>] The pairs.
+  def self.text_pairs(pairs)
+    pairs.map { |label, value| [label.to_s, value.to_s] }
   end
 
-  # Frames between the wheel's choice and its screenshot: the wheel's fade out and one more, so
-  # the wheel is not in it.
+  # Tells the DLL what the scene in front is, see ReportTopics.
   #
-  # @return [Integer] The frames.
-  def self.wheel_frames
-    MGQ_MpUi::Style::FADE_FRAMES + 1
+  # @param scene [Scene_Base, nil] The scene in front.
+  # @return [Hash] The scene.
+  def self.scene_of(scene)
+    { "name" => scene.class.name.to_s, "place" => place_of(scene), "in_world" => MGQ_MpOverworldSync.in_world? ? true : false,
+      "map_ready" => map_ready?, "shown" => MGQ_MpNotices.shown? ? true : false, "typing" => $mgq_text_input ? true : false }
   end
 
-  # Takes the screenshot the wheel's choice asked for, once the wheel faded out.
-  def self.snap_after_wheel
-    return unless @snap_in && @pending
-
-    @snap_in -= 1
-    return if @snap_in > 0
-
-    @snap_in = nil
-    snap
-  end
-
-  # Takes the screenshot and hands it to the DLL, which keeps it for the report; the report opens
-  # without one when that fails.
-  def self.snap
-    @pending[:snapped] = Screenshot.take
-    @pending[:ready] = true
-  end
-
-  # Forgets a waiting report once the game left for the title or game over screen.
-  def self.forget_on_leaving
-    scene = SceneManager.scene
-    forget("the game left for #{scene.class.name}") if @pending && scene && scene.class.name.to_s =~ REFUSED_SCENES
-  end
-
-  # Forgets the waiting report and its screenshot.
+  # Tells what kind of scene the report is asked for or waits in.
   #
-  # @param reason [String] Why, for the log.
-  def self.forget(reason)
-    report = @pending
-    @pending = nil
-    @snap_in = nil
-    @told = nil
-    return unless report
+  # @param scene [Scene_Base, nil] The scene in front.
+  # @return [String] "form" while the form opens or is open, else "title", "map", "battle",
+  #   "waiting_menu", "menu" or "other".
+  def self.place_of(scene)
+    return "form" if @form
+    return "title" if scene.nil? || scene.class.name.to_s =~ REFUSED_SCENES
+    return "map" if scene.is_a?(Scene_Map)
+    return "battle" if scene.is_a?(Scene_Battle)
+    return "waiting_menu" if menu_screen?(scene)
 
-    drop_snap(report)
-    log("forgot the waiting report: #{reason}")
+    scene.is_a?(Scene_MenuBase) ? "menu" : "other"
   end
 
-  # Opens the form of the waiting report.
-  def self.open
-    @opening = @pending
-    @pending = nil
-    @told = nil
-    log("opening the form#{@opening[:snapped] ? ' with the screenshot' : ' without a screenshot'}")
-    SceneManager.call(Scene_MpBugReport)
-  end
-
-  # Forgets the report of a form that never opened, since another scene took its place before it
-  # started, which would refuse every later report as waiting.
-  def self.forget_lost_form
-    return unless @opening && !SceneManager.scene.is_a?(Scene_MpBugReport)
-
-    report = @opening
-    @opening = nil
-    closed(report, "#{SceneManager.scene.class.name} took the place of the form before it opened")
-  end
-
-  # The report whose form opens, taken once by the form.
+  # Tells whether a scene is the Mod Framework's menu scene of a mod's screen, such as the story's
+  # choices, which cannot be left for the form and come back, so a report waits there until the
+  # player is back on the map.
   #
-  # @return [Hash, nil] The report: :facts, :details, :snapped; nil when none opens.
-  def self.take_opening
-    report = @opening
-    @opening = nil
-    report
-  end
-
-  # Tells whether the player is free on the map and no screen of the mod lies over it.
-  #
-  # @return [Boolean] Whether they are.
-  def self.map_ready?
-    MGQ_MpOverworldSync.map_free? && !(defined?(MGQ_MpActions) && MGQ_MpActions.covered?)
-  end
-
-  # Tells whether a scene is a menu the form opens over at once.
+  # An older framework without UI.menu_screen? still marks that scene by its menu root.
   #
   # @param scene [Scene_Base] The scene.
   # @return [Boolean] Whether it is.
-  def self.menu?(scene)
-    scene.is_a?(Scene_MenuBase) && !WAITING_MENUS.include?(scene.class.name)
+  def self.menu_screen?(scene)
+    UI.respond_to?(:menu_screen?) ? UI.menu_screen?(scene) : scene.respond_to?(:menu_root)
   end
 
-  # Tells the player something: in the battle's chat log in a battle of a world, else in the
-  # notification box, or once it shows, see show_told.
+  # Tells whether the player is free on the map and no screen of any mod holds the game.
   #
-  # The box counts a message down while it hides, as in a battle outside a world or a Novel scene,
-  # so a message posted there would run out unseen.
-  #
-  # @param text [String] What to say.
-  # @param scene [Scene_Base, nil] The scene in front.
-  def self.tell(text, scene)
-    if scene.is_a?(Scene_Battle) && defined?(MGQ_MpChat) && MGQ_MpOverworldSync.in_world?
-      MGQ_MpChat.system(text)
-    elsif defined?(MGQ_MpNotices)
-      return keep_told(text) unless MGQ_MpNotices.shown?
-
-      @told = nil
-      MGQ_MpNotices.message(NOTICE_KEY, text)
-    end
+  # @return [Boolean] Whether they are.
+  def self.map_ready?
+    MGQ_MpOverworldSync.map_free? && !UI.busy? ? true : false
   end
 
-  # Keeps what the player is told until the notification box shows, a later text taking its place.
-  #
-  # @param text [String] What to say.
-  def self.keep_told(text)
-    @told = text
-    log("kept for the notification box until it shows: #{text}")
+  # Takes the screenshot, hands it to the DLL and opens the form when the DLL says so.
+  def self.snap
+    kept = Screenshot.take
+    open_form if MGQ_Multiplayer::Bridge.call(SNAPPED_TOPIC, "kept" => kept, "scene" => scene_of(SceneManager.scene)) == true
   end
 
-  # Tells what waits for the notification box once it shows. A text saying when the form opens is
-  # told only while the report still waits and not on a free map, where it opens at once, and as
-  # BUSY_TEXT, since the battle it waited for is over.
-  def self.show_told
-    return unless @told && defined?(MGQ_MpNotices) && MGQ_MpNotices.shown?
+  # Opens the form of the report the DLL hands over: in place in a menu, else in a menu scene of
+  # its own.
+  def self.open_form
+    snapped = MGQ_Multiplayer::Bridge.call(OPENING_TOPIC)
+    return log("no report waits for a form") if snapped.nil?
 
-    text = @told
-    @told = nil
-    if text == BATTLE_TEXT || text == BUSY_TEXT
-      return log("dropped what waited for the notification box, the report no longer waits: #{text}") unless @pending
-      return if SceneManager.scene.is_a?(Scene_Map) && map_ready?
-
-      text = BUSY_TEXT
-    end
-    MGQ_MpNotices.message(NOTICE_KEY, text)
-  end
-
-  # Builds the form: the title, the text, whether to attach the screenshot, when there is one, and
-  # the logs, and the button that sends it.
-  #
-  # @param snapped [Boolean] Whether a screenshot was taken.
-  # @return [MGQ_MpWorld::Form] The form, both attachments ticked.
-  def self.form(snapped)
-    field = MGQ_MpWorld::Form::Field
-    fields = [
-      field.new(:title, :text, "Title", 0, TITLE_HINT, :max_chars => MAX_TITLE_CHARS, :group => "Report", :empty_text => TITLE_MISSING),
-      field.new(:text, :area, "What happened", 1, TEXT_HINT, :max_chars => MAX_TEXT_CHARS, :lines => TEXT_LINES, :group => "Report", :empty_text => TEXT_MISSING),
-    ]
-    fields << field.new(:screenshot, :check, "Attach the screenshot", 2, SCREENSHOT_HINT, :side => :left, :group => "Attach") if snapped
-    fields << field.new(:logs, :check, "Attach the logs", 2, LOGS_HINT, :side => snapped ? :right : nil, :group => "Attach")
-    fields << field.new(:send, :button, "Send the report", 3, SEND_HINT)
-    MGQ_MpWorld::Form.new(WHEEL_TEXT, fields, :title => "", :text => "", :screenshot => snapped, :logs => true)
-  end
-
-  # Starts sending a report on the DLL's own thread, and says so in the notification box.
-  #
-  # @param report [Hash] The report, see take_opening.
-  # @param title [String] Its title.
-  # @param text [String] What happened.
-  # @param screenshot [Boolean] Whether to attach the screenshot.
-  # @param logs [Boolean] Whether to attach the logs.
-  # @return [String, nil] Why it was not sent, nil once it is being sent.
-  def self.send_report(report, title, text, screenshot, logs)
-    return SENDING_REFUSAL if @sending
-    return NO_NAME_REFUSAL unless MGQ_Multiplayer::Player.share
-
-    flags = (screenshot && report[:snapped] ? ATTACH_SCREENSHOT : 0) | (logs ? ATTACH_LOGS : 0)
-    facts = lines(report[:facts].first(MAX_FACTS), MAX_VALUE_CHARS)
-    details = lines(report[:details], MAX_DETAIL_CHARS)
-    MGQ_Multiplayer::Log.hand_over
-    started = MGQ_Multiplayer::Link.function('mp_report_send').call("#{title}\0", "#{text}\0", "#{facts}\0", "#{details}\0", flags) == 1
-    attached = "#{flags & ATTACH_SCREENSHOT != 0 ? 'with' : 'without'} the screenshot, #{flags & ATTACH_LOGS != 0 ? 'with' : 'without'} the logs"
-    unless started
-      log("the DLL did not start sending \"#{MGQ_MpLog.short(title)}\" (#{attached})")
-      return NOT_STARTED_REFUSAL
-    end
-
-    report[:sent] = true
-    @sending = true
-    @poll_frames = 0
-    @outcome = nil
-    log("sending \"#{MGQ_MpLog.short(title)}\" (#{text.length} characters, #{attached}) with #{[report[:facts].size, MAX_FACTS].min} facts")
-    MGQ_MpNotices.message(NOTICE_KEY, SENDING_TEXT, NOTICE_FRAMES) if defined?(MGQ_MpNotices)
-    nil
-  end
-
-  # Forgets the screenshot of a report whose form closed without sending it.
-  #
-  # @param report [Hash, nil] The report.
-  # @param reason [String] Why the form closed, for the log.
-  def self.closed(report, reason)
-    return unless report && !report[:sent]
-
-    drop_snap(report)
-    log("the form closed without sending: #{reason}")
-  end
-
-  # Has the DLL forget a report's screenshot, if it took one.
-  #
-  # @param report [Hash] The report.
-  def self.drop_snap(report)
-    return unless report[:snapped]
-
-    MGQ_Multiplayer::Link.function('mp_report_drop_snap').call
-    report[:snapped] = false
-    log("dropped the screenshot")
+    @form = Form.new(snapped == true)
+    log("opening the form#{snapped == true ? ' with the screenshot' : ' without a screenshot'}")
+    @form.open
   rescue => e
-    log("dropping the screenshot failed: #{e.class}: #{e.message}")
+    log("the form could not open: #{MGQ_MpLog.failure(e)} at #{Array(e.backtrace).first}")
+    @form = nil
+    MGQ_Multiplayer::Bridge.call(CLOSED_TOPIC, "it could not open")
   end
 
-  # Writes facts or details as the DLL takes them: a line per pair, its label and value split by a
-  # tab, each on one line and cut to its length.
+  # Tells the DLL that the form closed, which forgets the screenshot unless the report went.
   #
-  # @param pairs [Array<Array(String, String)>] The labels and their values.
-  # @param most [Integer] The most characters of a value.
-  # @return [String] The lines.
-  def self.lines(pairs, most)
-    pairs.map { |label, value| "#{one_line(label, MAX_LABEL_CHARS)}\t#{one_line(value, most)}" }.join("\n")
+  # @param form [Form] The form.
+  # @param reason [String] Why, for the log.
+  def self.closed(form, reason)
+    return unless form.equal?(@form)
+
+    @form = nil
+    MGQ_Multiplayer::Bridge.call(CLOSED_TOPIC, reason)
   end
 
-  # Puts a text on one line without tabs, cut to a length.
+  # Plays a sound the DLL tells.
   #
-  # @param text [Object] The text.
-  # @param most [Integer] The most characters kept.
-  # @return [String] The text.
-  def self.one_line(text, most)
-    text.to_s.gsub(/[\x00-\x1f]+/, " ").strip[0, most]
+  # @param name [String] Its name after Sound.play_.
+  def self.play(name)
+    Sound.send("play_#{name}") if SOUNDS.include?(name.to_s)
   end
 
-  # Looks at how the sending stands every POLL_FRAMES while a report is being sent, and keeps its
-  # outcome for the notification box.
-  def self.poll
-    return unless @sending
-
-    @poll_frames += 1
-    return if @poll_frames < POLL_FRAMES
-
-    @poll_frames = 0
-    kind, value, reason = MGQ_Multiplayer::Link.read('mp_report_state', STATE_SIZE).force_encoding("UTF-8").split("\t", 3)
-    case kind
-    when "sent"
-      finish(SENT_TEXT % value, "was sent as issue #{value}: #{reason}")
-    when "failed"
-      finish(FAILED_TEXT % failure_text(value), "failed (#{value}): #{reason}")
-    end
-  end
-
-  # Ends the sending and keeps its outcome for the notification box.
+  # Shows a message the DLL tells in the notification box.
   #
-  # @param text [String] What the box says.
-  # @param logged [String] What the log says.
-  def self.finish(text, logged)
-    @sending = false
-    @outcome = text
-    @told = nil
-    log("the report #{logged}")
+  # @param notice [Hash] "text", and "frames" or nil for the box's own time.
+  def self.notice(notice)
+    frames = notice["frames"]
+    frames ? MGQ_MpNotices.message(NOTICE_KEY, notice["text"].to_s, frames) : MGQ_MpNotices.message(NOTICE_KEY, notice["text"].to_s)
   end
 
-  # Tells why a report failed, in friendly words for the relay's rate limit, a relay that takes no
-  # reports and one busy with others; the rest only asks to try again, the log keeps why.
+  # Adds a line the DLL tells to the battle's chat log.
   #
-  # @param code [String, nil] The relay's code, or "http<status>" or "unreachable".
-  # @return [String] The reason.
-  def self.failure_text(code)
-    FRIENDLY_REASONS.fetch(code.to_s, OTHER_FAILURE)
-  end
-
-  # Shows the sending's outcome in the notification box once it shows, so a report that ends in a
-  # battle is told after it.
-  def self.show_outcome
-    return unless @outcome && defined?(MGQ_MpNotices) && MGQ_MpNotices.shown?
-
-    MGQ_MpNotices.message(NOTICE_KEY, @outcome, NOTICE_FRAMES)
-    @outcome = nil
+  # @param text [String] The line.
+  def self.chat_line(text)
+    MGQ_MpChat.system(text.to_s) if defined?(MGQ_MpChat)
   end
 
   # Lists the public facts of a report, as the report is asked for.
@@ -699,236 +475,132 @@ module MGQ_MpBugReport
       bitmap.dispose if bitmap && !bitmap.disposed?
     end
   end
-end
 
-# The bug report's form, over the map or the menu it was opened from: the lines that say who sees
-# what, and the world screen's form window with the title, the text, the attachments and the button
-# that sends it. Text is typed in place on the keyboard.
-class Scene_MpBugReport < Scene_MenuBase
-  # Lines above the form.
-  INFO_LINES = 4
+  # The report's form, a framework window over the menu it was asked for in, or in a menu scene of
+  # its own: who sees what, the help line, the title and the text typed in place once confirmed,
+  # whether to attach the screenshot, when there is one, and the logs, and the button that sends it.
+  class Form
+    # @return [UI::Window] The window.
+    attr_reader :window
 
-  # Widest the form gets.
-  FORM_WIDTH = 520
+    # @return [UI::TextField] The title's box.
+    attr_reader :title
 
-  # Room between the form and the screen's edges.
-  MARGIN = 8
+    # @return [UI::TextField] The text's box.
+    attr_reader :text
 
-  # Builds the windows for the report the hotkey or the wheel asked for.
-  def start
-    super
-    @report = MGQ_MpBugReport.take_opening
-    return return_scene unless @report
+    # @return [UI::Checkbox, nil] Whether to attach the screenshot, nil without one.
+    attr_reader :screenshot
 
-    @form = MGQ_MpBugReport.form(@report[:snapped])
-    @info_window = Window_MpInfo.new(INFO_LINES)
-    width = [Graphics.width - 2 * MARGIN, FORM_WIDTH].min
-    @form_window = Window_MpWorldForm.new((Graphics.width - width) / 2, @info_window.height + MARGIN, width,
-                                          Graphics.height - @info_window.height - 2 * MARGIN)
-    @form_window.form = @form
-    @form_window.set_handler(:ok, method(:on_field))
-    @form_window.visible = true
-    @form_window.activate
-    @form_window.select(0)
-    @message = nil
-    @hinted = nil
-    show_info
-    MGQ_MpBugReport.log("the form opened")
-  rescue => e
-    MGQ_MpBugReport.log("the form could not open: #{MGQ_MpLog.failure(e)} at #{Array(e.backtrace).first}")
-    return_scene
-  end
+    # @return [UI::Checkbox] Whether to attach the logs.
+    attr_reader :logs
 
-  # Types into the box being typed into, hands the cursor back to the form once the press that ended
-  # the typing is let go, and leaves the form on cancel.
-  def update
-    super
-    return unless @form
+    # @return [UI::HelpLine] The line that tells what the focused part does, or why something is refused.
+    attr_reader :help
 
-    if @form.editing
-      update_typing
-    elsif @resume
-      resume
-    elsif @form_window.active && MGQ_MpUi.cancel?
-      on_cancel
-    end
-    show_info
-  rescue => e
-    MGQ_MpBugReport.log("the form failed: #{MGQ_MpLog.failure(e)} at #{Array(e.backtrace).first}")
-    return_scene
-  end
-
-  # Stops taking what is typed, and forgets the screenshot unless the report went.
-  def terminate
-    @form.edit.close if @form && @form.edit
-    MGQ_MpBugReport.closed(@report, @left || "the screen closed")
-    super
-  end
-
-  # Hands the cursor back to the form once confirm and cancel are let go, so the press that ended
-  # the typing never reaches it.
-  def resume
-    return if Input.press?(:C) || Input.press?(:B)
-
-    @resume = false
-    @form_window.activate
-  end
-
-  # Acts on the chosen field: ticks a checkbox, sends the report, or starts typing into a box.
-  def on_field
-    field = @form_window.field
-    case field.kind
-    when :check
-      @form.tick(field.key)
-      MGQ_MpBugReport.log("#{@form[field.key] ? 'ticked' : 'unticked'} #{field.label}")
-      @form_window.refresh
-      @form_window.activate
-    when :button
-      send_report
-    else
-      start_typing(field)
-    end
-  end
-
-  # Leaves the form without sending the report.
-  def on_cancel
-    Sound.play_cancel
-    @left = "the player left it"
-    return_scene
-  end
-
-  # Starts typing into a box in place.
-  #
-  # @param field [MGQ_MpWorld::Form::Field] The box.
-  def start_typing(field)
-    return refuse(MGQ_MpBugReport::NO_KEYBOARD_REFUSAL) unless Mod_Framework.available?
-
-    @form.editing = field.key
-    @form.edit = MGQ_MpUi::TextEdit.new(@form[field.key], :max_chars => field.max_chars, :allowed => field.allowed)
-    @typed_before = @form[field.key]
-    @form_window.refresh
-    say(Scene_MpWorlds.typing_hint)
-    MGQ_MpBugReport.log("typing into #{field.label}")
-  end
-
-  # Acts on what was typed and hands the editor the keys that move the cursor and the mouse wheel.
-  # Cancel leaves the box, as Escape does.
-  def update_typing
-    field = @form_window.field
-    editor = @form.edit
-    taken = editor.take
-    return type(field, :escape) if Mod_Framework::UI.cancel?
-
-    taken.outcomes.each do |outcome|
-      type(field, outcome)
-      # Enter or Escape may have ended the typing.
-      return unless @form.editing
+    # Builds the form, both attachments ticked.
+    #
+    # @param snapped [Boolean] Whether a screenshot was taken.
+    def initialize(snapped)
+      @sent = false
+      @window = UI::Window.new(:title => WHEEL_TEXT, :menu => true, :center => true, :width => FORM_WIDTH, :log => MGQ_MpBugReport)
+      @window.add_label(HELP, :wrap => true, :font_size => :small)
+      @help = @window.add_help(:lines => 2)
+      report = @window.add_group("Report")
+      @title = add_box(report, "Title", :max_length => MAX_TITLE_CHARS, :help => TITLE_HINT)
+      @text = add_box(report, "What happened", :max_length => MAX_TEXT_CHARS, :lines => TEXT_LINES, :help => TEXT_HINT)
+      attach = @window.add_group("Attach").add_row(:gap => 16)
+      @screenshot = add_check(attach, "Attach the screenshot", SCREENSHOT_HINT) if snapped
+      @logs = add_check(attach, "Attach the logs", LOGS_HINT)
+      @window.add_button("Send the report", :quiet => true, :align => :center, :help => SEND_HINT).on(:click) { send_report }
+      @window.add_key_help([{ :button => :B, :text => "close" }])
+      @window.on(:close) { |why| closed(why) }
     end
 
-    editor.follow(true, @form_window.wheel_lines)
-    @form[field.key] = editor.text
-    @form_window.redraw_current_item if taken.changed
-  end
+    # Opens the window; a refused open tells close like any other end.
+    def open
+      @window.open
+    end
 
-  # Acts on what typing did: Enter keeps the text if it is accepted, Escape puts the text back as it
-  # was.
-  #
-  # @param field [MGQ_MpWorld::Form::Field] The box.
-  # @param outcome [Symbol] What typing did, see MGQ_MpUi::TextEdit::Taken.
-  def type(field, outcome)
-    case outcome
-    when :enter
-      text, error = @form.check(field, @form.edit.text)
-      if error
-        MGQ_MpBugReport.log("#{field.label} refused: #{error}")
-        return refuse(error)
-      end
+    # Sends the report and closes the form, or puts the focus on the box that keeps it from being
+    # sent, or says why the DLL did not take it.
+    def send_report
+      title = @title.text.to_s.strip
+      text = @text.text.to_s.strip
+      return refuse(TITLE_MISSING, @title) if title.empty?
+      return refuse(TEXT_MISSING, @text) if text.empty?
 
-      @form[field.key] = text
+      request = { "title" => title, "text" => text, "screenshot" => @screenshot ? @screenshot.checked? : false, "logs" => @logs.checked? }
+      refusal = MGQ_Multiplayer::Bridge.call(SEND_TOPIC, request)
+      return refuse(refusal) if refusal
+
       Sound.play_ok
-      MGQ_MpBugReport.log("kept #{field.label}, #{text.length} characters")
-      return stop_typing
-    when :escape
-      @form[field.key] = @typed_before
-      Sound.play_cancel
-      MGQ_MpBugReport.log("put #{field.label} back as it was")
-      return stop_typing
-    when :refused
+      @sent = true
+      @window.close(:button)
+    end
+
+    private
+
+    # Adds a box typed into once confirmed, under its caption.
+    #
+    # @param group [UI::Group] Where it goes.
+    # @param caption [String] Its caption.
+    # @param options [Hash] Its options.
+    # @return [UI::TextField] The box.
+    def add_box(group, caption, options)
+      box = group.add_field(caption, :caption_width => CAPTIONS).add_text_field(options.merge(:confirm_to_type => true))
+      box.on(:type) { MGQ_MpBugReport.log("typing into #{caption}") }
+      box.on(:submit) { |typed| MGQ_MpBugReport.log("kept #{caption}, #{typed.to_s.length} characters") }
+      box.on(:revert) { MGQ_MpBugReport.log("put #{caption} back as it was") }
+      box.on(:refuse) { refuse(NO_KEYBOARD_REFUSAL) }
+      box
+    end
+
+    # Adds a checkbox, ticked.
+    #
+    # @param row [UI::Component] Where it goes.
+    # @param text [String] Its text.
+    # @param hint [String] What the help line says on it.
+    # @return [UI::Checkbox] The checkbox.
+    def add_check(row, text, hint)
+      check = row.add_checkbox(text, :checked => true, :help => hint)
+      check.on(:change) { |checked| MGQ_MpBugReport.log("#{checked ? 'ticked' : 'unticked'} #{text}") }
+      check
+    end
+
+    # Says why something is not accepted, with the focus on the box it names.
+    #
+    # @param why [String] Why.
+    # @param box [UI::TextField, nil] The box that keeps the form from being sent.
+    def refuse(why, box = nil)
       Sound.play_buzzer
-    when :typed, :erased
-      Sound.play_cursor
-    end
-    @form[field.key] = @form.edit.text
-    @form_window.redraw_current_item
-  end
-
-  # Stops typing and hands the cursor back to the form.
-  def stop_typing
-    @form.edit.close if @form.edit
-    @form.editing = nil
-    @form.edit = nil
-    @form_window.refresh
-    @message = nil
-    @resume = true
-  end
-
-  # Sends the report and closes the form, or points at the field that keeps it from being sent, or
-  # says why the DLL did not take it.
-  def send_report
-    index, error = @form.problem
-    if error
-      MGQ_MpBugReport.log("not sent: #{error}")
-      @form_window.select(index)
-      @hinted = index
-      return refuse(error)
+      MGQ_MpBugReport.log("refused: #{why}")
+      box.focus if box
+      @help.say(why)
     end
 
-    @form.fields.each { |field| @form[field.key] = @form.check(field, @form[field.key].to_s)[0] if field.typed? }
-    refusal = MGQ_MpBugReport.send_report(@report, @form[:title], @form[:text], @form[:screenshot] == true, @form[:logs] == true)
-    return refuse(refusal) if refusal
-
-    @left = "the report went"
-    return_scene
-  end
-
-  # Says why something is not accepted, and hands the cursor back to the form unless the player
-  # types.
-  #
-  # @param error [String] Why.
-  def refuse(error)
-    Sound.play_buzzer
-    say(error)
-    @resume = true unless @form.editing
-  end
-
-  # Says something in the second line above the form, until the cursor moves.
-  #
-  # @param message [String] What to say.
-  def say(message)
-    @message = message
-    @hinted = @form_window.index
-    show_info
-  end
-
-  # Shows the lines above the form: who sees what, then what was said last or the hint of the field
-  # the cursor is on.
-  def show_info
-    index = @form_window.index
-    if index != @hinted && !@form.editing
-      @hinted = index
-      @message = nil
+    # Tells the DLL the form closed, and why.
+    #
+    # @param why [Symbol, String] Why the window closed.
+    def closed(why)
+      reason = @sent ? "the report went" : CLOSED_REASONS.fetch(why, why.to_s)
+      MGQ_MpBugReport.log("the form closed: #{reason}")
+      MGQ_MpBugReport.closed(self, reason)
     end
-    field = @form_window.field
-    @info_window.show([MGQ_MpBugReport::HELP, @message || (field ? field.hint : nil)])
   end
 end
 
-# What this script takes part in of the world and the action wheel, through overworld_sync.rbx and
-# ui_actions.rbx.
+# What this script takes part in of the world, the action wheel and the DLL's events, through
+# overworld_sync.rbx, ui_actions.rbx and the bridge.
 
 begin
   MGQ_MpOverworldSync.on_tick { |in_world| MGQ_MpBugReport.tick(in_world) }
   MGQ_MpActions.wheel_choice(MGQ_MpBugReport::WHEEL_ORDER) { MGQ_MpBugReport.wheel_option }
+  MGQ_MpActions.wheel.on(:gone) { MGQ_MpBugReport.wheel_gone }
+  MGQ_Multiplayer::Bridge.on(MGQ_MpBugReport::SOUND_EVENT) { |name| MGQ_MpBugReport.play(name) }
+  MGQ_Multiplayer::Bridge.on(MGQ_MpBugReport::NOTICE_EVENT) { |notice| MGQ_MpBugReport.notice(notice) }
+  MGQ_Multiplayer::Bridge.on(MGQ_MpBugReport::CHAT_LINE_EVENT) { |text| MGQ_MpBugReport.chat_line(text) }
+  MGQ_Multiplayer::Bridge.on(MGQ_MpBugReport::HOTKEY_REFUSED_EVENT) { |reason| MGQ_MpHotkeys.log_refusal(:bug_report, reason.to_s) }
 rescue => e
   MGQ_MpBugReport.log("registering FAILED: #{e.class}: #{e.message}")
 end

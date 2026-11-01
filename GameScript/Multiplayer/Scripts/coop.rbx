@@ -2,7 +2,9 @@
 #  coop.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-01: Dropped register_option, the rows going into the Mod Framework's options
+#      Paulinchen  2026-11-01: Named the Mod Framework's interface by its own name
+#                            - Dropped register_option, the rows going into the Mod Framework's options
+#                            - Left the party chat to the DLL's chat
 #      Paulinchen  2026-10-23: Left the party, its invites and its message gate to the DLL, reading its view each frame
 #                            - Made up ids through the DLL instead of the game's rand
 #      Paulinchen  2026-10-17: Offered the teleport to the story on the action wheel
@@ -609,7 +611,7 @@ module MGQ_MpCoop
       if Party.member?(peer.state)
         return nil unless Party.leader == :me
 
-        return option.new("Remove from party", lambda { MGQ_MpUi::Confirm.ask(REMOVE_QUESTION % peer.state["name"], REMOVE_CHOICES) { |yes| Party.remove(peer) if yes } }, nil)
+        return option.new("Remove from party", lambda { Mod_Framework::UI::Confirm.ask(REMOVE_QUESTION % peer.state["name"], REMOVE_CHOICES) { |yes| Party.remove(peer) if yes } }, nil)
       end
       refusal = invite_refusal("Your party is full.")
       return option.new("Invite to party", nil, refusal) if refusal
@@ -634,7 +636,7 @@ module MGQ_MpCoop
       choices = []
       unless Party.members.empty?
         # The party may have dissolved while the box asked, and leaving none would still say so.
-        leave = asking ? lambda { MGQ_MpUi::Confirm.ask(LEAVE_QUESTION, LEAVE_CHOICES) { |yes| Party.leave if yes && !Party.members.empty? } } : lambda { Party.leave }
+        leave = asking ? lambda { Mod_Framework::UI::Confirm.ask(LEAVE_QUESTION, LEAVE_CHOICES) { |yes| Party.leave if yes && !Party.members.empty? } } : lambda { Party.leave }
         choices << MGQ_MpActions::Option.new("Leave the party", leave, nil)
       end
       choices << MGQ_MpActions::Option.new("Stop inviting", lambda { Party.stop_inviting }, nil) if Party.inviting?
@@ -699,8 +701,6 @@ end
 
 begin
   MGQ_MpOverworldSync.label_line { |peer| MGQ_MpCoop.label_line(peer) }
-  # The party chat of ui_chat.rbx, which loads before the party's gate.
-  MGQ_MpCoop.route("pchat") { |peer, message| MGQ_MpChat.receive_party(peer, message) }
   MGQ_Multiplayer::Bridge.on("party.view") { |view| MGQ_MpCoop::Party.take_view(view) }
 rescue => e
   MGQ_MpCoop.log("overworld sync FAILED: #{e.class}: #{e.message}")

@@ -2,6 +2,7 @@
 #  choices_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Dropped the game's window base, which the question's screen no longer builds on
 #      Paulinchen  2026-10-31: Stood in for the game's window base the screen of a question builds on
 #                            - Left the choices a stream hands the run of out, as C# does
 #      Paulinchen  2026-10-28: Created
@@ -14,10 +15,6 @@
 # case of that file as this file loads, so it cannot drift from what C# answers.
 
 require_relative "rules_support"
-
-# The game's window base, which the screen of a question in coop_choices.rbx builds on, for the
-# tests that load that script without a window of their own; it draws nothing.
-class Window_Base; def initialize(*); end; end unless defined?(Window_Base)
 
 # The golden cases of the story's choices, with the table the rules read.
 CHOICES_CASES = rule_cases("choices", "cases.json")

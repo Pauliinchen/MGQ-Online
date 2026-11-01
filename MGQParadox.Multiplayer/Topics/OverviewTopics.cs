@@ -2,6 +2,7 @@
 //  OverviewTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Dropped the story topics no script calls, since the rows and pages write the story
 //      Paulinchen  2026-10-31: Built the world, quests and unlocks pages
 //                            - Built the player, party, raid and map rows
 //                            - Kept the told levels, place and progress of the player
@@ -21,30 +22,11 @@ using MGQParadox.Multiplayer.Network.World;
 namespace MGQParadox.Multiplayer.Topics;
 
 /// <summary>
-/// The bridge topics through which the World overview writes the story and the title, see
-/// <see cref="OverviewText"/>, and keeps what the player tells the others, see <see cref="OverviewState"/>.
+/// The bridge topics through which the World overview writes the title, see <see cref="OverviewText"/>,
+/// and keeps what the player tells the others, see <see cref="OverviewState"/>.
 /// </summary>
 internal static class OverviewTopics
 {
-    /// <summary>
-    /// Finds a player's place in the story: <c>p</c> (variable 1001), <c>routes</c> ({route name =>
-    /// its variable}, of <see cref="OverviewText.Routes"/>) and <c>sides</c> ({side name => whether it
-    /// was chosen}, of <see cref="OverviewText.Sides"/>) in; the code out, such as "2:alice".
-    /// </summary>
-    public const string Story = "overview.story";
-
-    /// <summary>
-    /// Writes a place in the story: the code in, nil for none; the text out, such as "Part 2: Alice side",
-    /// empty while unknown.
-    /// </summary>
-    public const string StoryText = "overview.story_text";
-
-    /// <summary>
-    /// Writes the world's place in the story: its part as <c>story.part</c> finds it in, nil before the
-    /// relay told the story; <c>code</c> and <c>text</c> out.
-    /// </summary>
-    public const string WorldStory = "overview.world_story";
-
     /// <summary>
     /// Writes what the title and the World page say of the world: <c>raid</c> and <c>difficulty</c>
     /// (the world's value, nil while the players keep their own) in; <c>tail</c> (after the world's
@@ -60,7 +42,7 @@ internal static class OverviewTopics
 
     /// <summary>
     /// Keeps what the game read: <c>lv</c>, <c>flv</c> (nil outside a Raid World), <c>story</c> (as
-    /// <see cref="Story"/> takes it) and <c>battle</c> (whether a co-op battle runs) in; the log's
+    /// <see cref="StoryOf"/> takes it) and <c>battle</c> (whether a co-op battle runs) in; the log's
     /// line out, nil while nothing changed.
     /// </summary>
     public const string Tell = "overview.tell";
@@ -116,9 +98,6 @@ internal static class OverviewTopics
     /// <param name="context">The context the handshake opened.</param>
     public static void Register(BridgeContext context)
     {
-        context.Register(Story, (_, request) => StoryOf(request.AsHash()));
-        context.Register(StoryText, (_, request) => OverviewText.StoryText(request.IsNil ? null : request.AsText()));
-        context.Register(WorldStory, (_, request) => WorldStoryOf(request.IsNil ? null : request.AsText()));
         context.Register(Title, (_, request) => TitleOf(request.AsHash()));
     }
 
@@ -416,10 +395,12 @@ internal static class OverviewTopics
     }
 
     /// <summary>
-    /// Answers <see cref="Story"/>.
+    /// Finds a player's place in the story from what the game read: <c>p</c> (variable 1001),
+    /// <c>routes</c> ({route name => its variable}, of <see cref="OverviewText.Routes"/>) and <c>sides</c>
+    /// ({side name => whether it was chosen}, of <see cref="OverviewText.Sides"/>).
     /// </summary>
-    /// <param name="request">The request.</param>
-    /// <returns>The code.</returns>
+    /// <param name="request">The story as the game read it.</param>
+    /// <returns>The code, such as "2:alice".</returns>
     private static RubyValue StoryOf(RubyHash request)
     {
         var routes = new Dictionary<string, long>();
@@ -436,17 +417,6 @@ internal static class OverviewTopics
 
         return OverviewText.StoryCode(request["p"].AsLong(), routes, sides);
     }
-
-    /// <summary>
-    /// Answers <see cref="WorldStory"/>.
-    /// </summary>
-    /// <param name="part">The part, <see langword="null"/> before the relay told the story.</param>
-    /// <returns>The code and the text.</returns>
-    private static RubyHash WorldStoryOf(string? part) => new()
-    {
-        { "code", OverviewText.WorldStoryCode(part) },
-        { "text", OverviewText.WorldStoryText(part) },
-    };
 
     /// <summary>
     /// Answers <see cref="Title"/>.

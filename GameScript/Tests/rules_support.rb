@@ -2,6 +2,7 @@
 #  rules_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Dropped the stand-ins of the World overview's story topics and of marking settings shared, which no script calls
 #      Paulinchen  2026-10-30: Dropped the stand-ins of the parking's topics
 #                            - Dropped the stand-in of mods.install, which the Mod Framework does
 #      Paulinchen  2026-10-28: Answered the chests, page flags and command index of a map's pages as a DLL without an events database
@@ -325,13 +326,10 @@ OVERVIEW_TEXTS["titles"].each do |entry|
   raise "the title stand-in writes #{entry.inspect} otherwise" if stand_in_title(entry) != { "tail" => entry["tail"], "note" => entry["note"] }
 end
 
-# Answers the World overview's story and title topics as fixtures/overview/story.json shows them.
+# Answers the World overview's title topic as fixtures/overview/story.json shows them.
 #
 # @param fake [FakeBridge] The bridge.
 def answer_overview(fake)
-  fake.answer("overview.story") { |request| stand_in_story(request) }
-  fake.answer("overview.story_text") { |code| stand_in_story_text(code) }
-  fake.answer("overview.world_story") { |part| stand_in_world_story(part) }
   fake.answer("overview.title") { |request| stand_in_title(request) }
 end
 
@@ -714,16 +712,7 @@ def stand_in_shared(text)
   !text.to_s.strip.empty?
 end
 
-# Writes settings shared as the golden cases show it: the marker, then every other pair.
-#
-# @param text [String, nil] The settings.
-# @return [String] The settings.
-def stand_in_marked(text)
-  (["@shared=o:1"] + text.to_s.split(";").reject { |pair| pair.split("=", 2)[0].to_s.empty? || pair.split("=", 2)[0] == "@shared" }).join(";")
-end
-
 SETTINGS_CASES["shared"].each { |entry| raise "the shared stand-in reads #{entry['text'].inspect} otherwise" if stand_in_shared(entry["text"]) != entry["shared"] }
-SETTINGS_CASES["marked"].each { |entry| raise "the marker stand-in writes #{entry['text'].inspect} otherwise" if stand_in_marked(entry["text"]) != entry["marked"] }
 
 # Each settings topic called, as [topic, request], and the steps the next calls answer, one Array
 # of steps per call, which a test queues.
@@ -739,7 +728,6 @@ def answer_settings(fake)
   confirmed = {}
   reply = lambda { |topic, request| $settings_calls << [topic, request]; { "world" => world, "steps" => $settings_steps.shift || [] } }
   fake.answer("settings.shared") { |text| stand_in_shared(text) }
-  fake.answer("settings.marked") { |text| stand_in_marked(text) }
   fake.answer("settings.confirmed") { |request| confirmed[request["id"]] = request["text"]; nil }
   fake.answer("settings.of") { |request| request["fresh"] || !confirmed.key?(request["id"]) ? request["settings"] : confirmed[request["id"]] }
   fake.answer("settings.details") { |request| $settings_calls << ["settings.details", request]; "Mod settings: #{stand_in_shared(request['settings']) ? 'shared' : "each player's own"}" }

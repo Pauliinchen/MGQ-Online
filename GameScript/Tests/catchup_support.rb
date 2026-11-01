@@ -2,6 +2,7 @@
 #  catchup_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Dropped the stand-in of the form window no script draws with any more
 #      Paulinchen  2026-10-31: Dropped the maps where warping is free
 #                            - Told the place where the world's log starts with the world's summary
 #      Paulinchen  2026-10-28: Read the generated tables from fixtures/catchup/generated in place of the deleted world_catchup_data.rbx
@@ -195,8 +196,6 @@ module MGQ_MpWorld
   end
 end
 MGQ_MpWorld.world = MGQ_MpWorld::World.new("w1")
-# Stands in for the window that draws a form.
-class Window_MpWorldForm; def initialize(*); end; end
 # Stands in for the base of menu screens.
 class Scene_MenuBase; end
 # Stands in for the map screen.

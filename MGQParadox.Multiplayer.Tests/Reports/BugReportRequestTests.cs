@@ -2,6 +2,7 @@
 //  BugReportRequestTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Took the wheel's screenshot as the action wheel is gone
 //      Paulinchen  2026-10-31: Created
 //
 //----------------------------------------------------------------
@@ -20,7 +21,7 @@ namespace MGQParadox.Multiplayer.Tests.Reports;
 /// Covers the bug report's request against the scenarios ui_bug_report.rbx played before it moved
 /// to C# (fixtures/hud/report.json, written by make_report_fixtures.rb there), each frame acted on
 /// in the script's order: the form a scene took the place of, the hotkey and its screenshot, the
-/// wheel's screenshot, the rest of the frame, then the map.
+/// rest of the frame, then the map.
 /// </summary>
 public sealed class BugReportRequestTests
 {
@@ -177,6 +178,13 @@ public sealed class BugReportRequestTests
                     }
 
                     break;
+                case "wheel_gone":
+                    if (request.WheelGone())
+                    {
+                        Snap();
+                    }
+
+                    break;
                 case "take_opening": answer = request.TakeOpening(); break;
                 case "send":
                     answer = request.Send(Text(step, "title"), Text(step, "text"), step.GetProperty("screenshot").GetBoolean(), step.GetProperty("logs").GetBoolean());
@@ -276,18 +284,13 @@ public sealed class BugReportRequestTests
 
         /// <summary>
         /// Runs a frame as the script does: the form a scene took the place of, the hotkey and its
-        /// screenshot, the wheel's screenshot, the rest of the frame, then the map.
+        /// screenshot, the rest of the frame, then the map.
         /// </summary>
         /// <param name="hotkey">Whether the hotkey was pressed.</param>
         private void Frame(bool hotkey)
         {
             request.ForgetLostForm(scene);
             if (hotkey && request.Request(ReportVia.Hotkey, scene, Where, Facts, Details))
-            {
-                Snap();
-            }
-
-            if (request.SnapDue())
             {
                 Snap();
             }

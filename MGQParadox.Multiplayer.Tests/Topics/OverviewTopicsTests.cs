@@ -2,6 +2,7 @@
 //  OverviewTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Dropped the checks of the story topics, which the tell topic and the overview's texts cover
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -44,28 +45,4 @@ public sealed class OverviewTopicsTests
             Assert.Equal(new RubyHash { { "tail", entry.GetProperty("tail").GetString()! }, { "note", entry.GetProperty("note").GetString()! } }, _topics.Call(OverviewTopics.Title, request));
         }
     }
-
-    /// <summary>
-    /// Asserts that a player's story crosses as the scripts send it and comes back as its code.
-    /// </summary>
-    [Fact]
-    public void Story_ReadsTheRoutesAndSidesByName()
-    {
-        RubyHash request = new()
-        {
-            { "p", 45 },
-            { "routes", new RubyHash { { "chaos", 0 }, { "destroyer", 0 }, { "judgment", 1 } } },
-            { "sides", new RubyHash { { "ilias", false }, { "alice", true } } },
-        };
-
-        Assert.Equal((RubyValue)"3:judgment", _topics.Call(OverviewTopics.Story, request));
-        Assert.Equal((RubyValue)"Part 3: Judgment route", _topics.Call(OverviewTopics.StoryText, "3:judgment"));
-    }
-
-    /// <summary>
-    /// Asserts that the world's story before the relay told it says so.
-    /// </summary>
-    [Fact]
-    public void WorldStory_SaysWhenUntold() =>
-        Assert.Equal(new RubyHash { { "code", "" }, { "text", "Not told yet" } }, _topics.Call(OverviewTopics.WorldStory));
 }

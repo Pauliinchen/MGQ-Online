@@ -2,6 +2,7 @@
 #  framework_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Ran a frame of the Mod Framework's components as the game does
 #      Paulinchen  2026-10-31: Created
 #
 #----------------------------------------------------------------
@@ -126,6 +127,17 @@ def open_framework(fake)
   Mod_Framework.bridge.open(fake)
   fake.ui_context = Mod_Framework.bridge.instance_variable_get(:@context)
   Mod_Framework.available = true
+end
+
+# Runs a frame of the framework's components as the game does before Graphics.update, but for the
+# drawing: each open root follows its :if and its hiding, the components that count frames count
+# one, and the changes queued since the tick go to the tree; then the frame ends with its tick.
+def tree_frame
+  tree = Mod_Framework::UI::Tree
+  tree.send(:tick_components)
+  tree.instance_variable_get(:@roots).dup.each { |root| tree.send(:watch, root) }
+  tree.flush
+  ui_frame
 end
 
 load_framework

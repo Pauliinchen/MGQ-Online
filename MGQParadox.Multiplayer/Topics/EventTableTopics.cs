@@ -2,6 +2,7 @@
 //  EventTableTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Dropped the topics of troops' members and whether a file exists, which no script calls
 //      Paulinchen  2026-10-28: Handed the frozen fights the excluded maps and the preamble's commands with the sites
 //                            - Created
 //
@@ -10,7 +11,6 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.IO;
 using System.Linq;
 using MGQOnline.Bridge;
 using MGQOnline.Bridge.Ruby;
@@ -22,8 +22,7 @@ namespace MGQParadox.Multiplayer.Topics;
 
 /// <summary>
 /// The bridge topics that read rows of the events database for the scripts: a map's chests and
-/// page flags, troops' members, the story's battle sites of the frozen fights, and whether a file
-/// of the game exists.
+/// page flags, and the story's battle sites of the frozen fights.
 /// </summary>
 internal static class EventTableTopics
 {
@@ -44,12 +43,6 @@ internal static class EventTableTopics
     public const string Pages = "events.pages";
 
     /// <summary>
-    /// Tells the enemies of troops: <c>troops</c> (ids). Answers <c>members</c>: per troop the database
-    /// holds, each enemy as [enemy, x, y, hidden] in the troop's order.
-    /// </summary>
-    public const string Members = "troops.members";
-
-    /// <summary>
     /// Tells where the story fights troops, for the frozen fights: <c>troops</c> (ids). Answers
     /// <c>sites</c> (per troop each [site, index, indent, preamble's index, cutscene map, battle number],
     /// a site "map:map:event:page from 1" or "ce:id" and its index the battle command's place in the
@@ -64,12 +57,6 @@ internal static class EventTableTopics
     /// of a battle's preamble), as <see cref="RaidRules"/> holds them.
     /// </summary>
     public const string Sites = "raid.sites";
-
-    /// <summary>
-    /// Tells whether a file of the game exists, in its archive or loose: a path relative to the game
-    /// folder, such as "Data/Map407.rvdata2". Answers true or false, without reading the file.
-    /// </summary>
-    public const string Exists = "files.exists";
 
     /// <summary>
     /// The part of the game data that gates the troops' tables, as <see cref="GameDataCompare.Parts"/> names it.
@@ -90,9 +77,7 @@ internal static class EventTableTopics
     {
         context.Register(Chests, (_, request) => ChestsOf(events(), request.AsHash()));
         context.Register(Pages, (_, request) => PagesOf(events(), request.AsHash()));
-        context.Register(Members, (_, request) => MembersOf(events(), request.AsHash()));
         context.Register(Sites, (_, request) => SitesOf(events(), request.AsHash()));
-        context.Register(Exists, (_, request) => ExistsOf(events(), request.AsText()));
     }
 
     /// <summary>
@@ -134,29 +119,6 @@ internal static class EventTableTopics
                 } : RubyNil.Value))
             },
         };
-    }
-
-    /// <summary>
-    /// Answers <see cref="Members"/>.
-    /// </summary>
-    /// <param name="events">The game's events.</param>
-    /// <param name="request">The request.</param>
-    /// <returns>The answer.</returns>
-    internal static RubyHash MembersOf(GameEvents events, RubyHash request)
-    {
-        var members = new RubyHash();
-        if (events.Reads(TroopsPart))
-        {
-            foreach (int troop in TroopsOf(request))
-            {
-                if (events.Store.Troop(troop) is not null)
-                {
-                    members[troop] = new RubyArray(events.Store.TroopMembers(troop).Select(member => (RubyValue)new RubyArray([member.EnemyId, member.X, member.Y, member.Hidden])));
-                }
-            }
-        }
-
-        return new RubyHash { { "members", members } };
     }
 
     /// <summary>
@@ -228,24 +190,6 @@ internal static class EventTableTopics
             { "variables", IdsOf(defeat, KeyKind.Variable) },
         };
         return answer;
-    }
-
-    /// <summary>
-    /// Answers <see cref="Exists"/>.
-    /// </summary>
-    /// <param name="events">The game's events, whose game folder is read.</param>
-    /// <param name="path">The path.</param>
-    /// <returns>Whether the file exists.</returns>
-    /// <exception cref="BridgeRequestException">The path leaves the game folder.</exception>
-    internal static bool ExistsOf(GameEvents events, string path)
-    {
-        string[] parts = path.Split('/', '\\');
-        if (path.Length == 0 || Path.IsPathRooted(path) || path.Contains(':', StringComparison.Ordinal) || parts.Any(part => part == ".."))
-        {
-            throw new BridgeRequestException("the path must stay inside the game folder");
-        }
-
-        return events.Files.Exists(path);
     }
 
     /// <summary>

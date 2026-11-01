@@ -2,7 +2,17 @@
 #  loader_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-01: Checked that no script hooks the game's command windows or puts rows into the options itself
+#      Paulinchen  2026-11-01: Checked that no script or test names the old interface the screens reached the Mod Framework by
+#                            - Checked that none of the HUD's pictures the Mod Framework's components replaced comes back
+#                            - Checked that no script or test names the World overview's own drawing
+#                            - Checked that no script hooks the game's command windows or puts rows into the options itself
+#                            - Checked that no script or test names the old notification box
+#                            - Checked that the trade screen is built of framework components
+#                            - Checked that no script or test names the old wheel sprites, the action wheel's module or its covering screens
+#                            - Checked that the old screens of the story's choices and the replay's question and the parking lists are gone
+#                            - Checked that no script or test names the old list, message and info boxes
+#                            - Checked that no script or test names the world screen's old windows or its text screen
+#                            - Checked that no script or test names the chat's old log and bubble sprites
 #      Paulinchen  2026-10-31: Checked that the mod names the lowest Mod Framework before any script loads, that it stays off, logged, with an older one
 #                              or one without its DLL, that no script or test names what moved into the framework, that the input's exports are gone and that the served scripts' fingerprint names no framework script
 #                            - Dropped the checks of the keys, the mouse, the capture and the guard of Input, which the Mod Framework's tests cover
@@ -100,16 +110,18 @@ check("the frozen fights' stand-ins load after the bars that draw over them and 
       %w[battles_coop_join battles_raid_freeze world_freeze ui_raid_bar].all? { |name| scripts.index(name) < scripts.index("ui_raid_freeze") }, true)
 
 # The Mod Framework: the lowest version the mod runs with is named before any script loads, and
-# nothing the framework took over is named by a script or a test any more.
+# nothing the framework took over, nor the old interface the screens reached it by, is named by a
+# script or a test any more.
 required_at = source.index("MOD_FRAMEWORK_REQUIRED = ")
 check("the lowest Mod Framework is named before the scripts and before the mod loads them",
       [source[/MOD_FRAMEWORK_REQUIRED = "([\d.]+)"/, 1], required_at < source.index("SCRIPTS = %w["), required_at < source.index("MGQ_Multiplayer::Stages.boot")],
       ["0.1.0", true, true])
 moved = ["MGQ_Multiplayer::Key", "MGQ_Multiplayer::Capture", "MGQ_Multiplayer::Mouse", "MGQ_Multiplayer::Windows", "MGQ_Multiplayer::Background",
          "Link.typing", "mp_typing", "mp_mouse_wheel", "mp_keep_running", "MGQ_MpWheel", "Sprite_MpConfirmBox", "Confirm.tick", "Theme::Skinned",
-         "numpad_cancel?", "NUMPAD_CANCEL_KEYS", "CLOSE_KEYS", "Style.close_hint", "MGQ_MpUi::PlayerColor", "MGQ_MpUi::OPTION_PREFIX",
-         "MGQ_MpUi::SP_PREFIX", "MGQ_MpUi.top_room", "MGQ_MpUi.add_option", "MGQ_MpUi::ScrollingWindow", ":mp_ui_positions", ":mp_ui_preset", ":mp_ui_game_windows", "module MGQ_MpUi",
-         "MGQ_MpHotkeys::BINDINGS", ":mp_key_"]
+         "numpad_cancel?", "NUMPAD_CANCEL_KEYS", "CLOSE_KEYS", "Style.close_hint", "MGQ_MpUi", "MGQ_MpScrollingWindow", ":mp_ui_positions",
+         ":mp_ui_preset", ":mp_ui_game_windows", "MGQ_MpHotkeys::BINDINGS", ":mp_key_", "Sprite_MpNoticeBox", "Sprite_MpActionWheel", "Sprite_MpEmoteWheel",
+         "MGQ_MpActions.cover", "MGQ_MpActions::Wheel", "Sprite_MpListBox", "Sprite_MpMessageBox", "Window_MpInfo", "Window_MpSaveExportNotice", "ui_boxes",
+         "Sprite_MpChatLog", "Sprite_MpChatBubble", "Sprite_MpWorldOverview"]
 # The hints name the cancel key as the player bound it, never Escape or the numpad's 0 alone.
 hinted = ["Esc or Numpad 0", "\"Numpad 0"]
 mod_files = Dir[File.join(SCRIPTS_DIR, "*.rbx")] + [File.expand_path("../Multiplayer.rb", __dir__)]
@@ -126,6 +138,26 @@ own_commands = mod_files.flat_map do |file|
   own_ways.select { |way| code =~ way }.map { |way| "#{File.basename(file)}: #{way.source}" }
 end
 check("no script hooks the title's or the menu's commands or puts options rows in itself", own_commands, [])
+trade_screen = File.read(File.join(SCRIPTS_DIR, "ui_trade.rbx"), :encoding => "BOM|UTF-8").lines.reject { |line| line.strip.start_with?("#") }.join
+check("the trade screen is built of framework components, none of the game's windows",
+      ["Window_MpTrade", "VisibleRows", "Theme::Skinned", "ScrollingWindow", "< Window_"].select { |name| trade_screen.include?(name) }, [])
+# The world screen is built on the framework's components: its old windows and its text screen are
+# gone.
+gone = %w[Scene_MpText Window_MpTextEdit Window_MpTextInput Window_MpWorldList Window_MpWorldCommands Window_MpWorldDetail Window_MpChoice MpWorldListPane
+          MGQ_MpBoxCursor text_result]
+left = swept.flat_map do |file|
+  code = File.read(file, :encoding => "BOM|UTF-8").lines.reject { |line| line.strip.start_with?("#") }.join
+  gone.select { |name| code =~ /\b#{name}\b/ }.map { |name| "#{File.basename(file)}: #{name}" }
+end
+check("no script or test names the world screen's old windows or its text screen", left, [])
+# The HUD lies on the Mod Framework's components: none of the pictures they replaced comes back.
+replaced = %w[Sprite_MpLeaderHud Sprite_MpPartyBox Sprite_MpRaidBar Sprite_MpWorldStatus Window_MpWaiting Sprite_MpJoinPrompt Sprite_MpEdgeArrow
+              Sprite_MpGhostLabel Sprite_MpOwnPing Sprite_MpOwnLine MGQ_MpHud MGQ_MpLeaderHud.room hud.arrow_picture]
+redrawn = swept.flat_map do |file|
+  code = File.read(file, :encoding => "BOM|UTF-8").lines.reject { |line| line.strip.start_with?("#") }.join
+  replaced.select { |name| code =~ /#{Regexp.escape(name)}/ }.map { |name| "#{File.basename(file)}: #{name}" }
+end
+check("no script or test names the HUD's pictures the Mod Framework's components replaced", redrawn, [])
 csharp = Dir[File.expand_path("../../{MGQOnline.Game,MGQParadox.Multiplayer,MGQOnline.Game.Tests,MGQParadox.Multiplayer.Tests}/**/*.cs", __dir__)].reject { |file| file =~ %r{/(bin|obj)/} }
 in_csharp = csharp.flat_map do |file|
   code = File.read(file, :encoding => "BOM|UTF-8").lines.reject { |line| line.strip.start_with?("//") }.join
@@ -134,6 +166,17 @@ in_csharp = csharp.flat_map do |file|
   names.map { |name| "#{File.basename(file)}: #{name}" }
 end
 check("no C# file names the interface's models, the window hook or the keyboard the Mod Framework holds", in_csharp, [])
+# The story's choices and the replay's question are the framework's windows: their old screens,
+# the mods parking lists and the question's steps are gone. The bug report's C# cases keep the old
+# scene's name, the recorded fixture's.
+gone = %w[Scene_MpStoryChoices Window_MpStoryChoices Scene_MpStoryQuestion Window_MpStoryQuestion MGQ_MpModParking world_mods_parking
+          ParkingRules ParkingTexts choices.input_step]
+left = (swept + csharp).flat_map do |file|
+  code = File.read(file, :encoding => "BOM|UTF-8").lines.reject { |line| line.strip.start_with?("#", "//") }.join
+  names = csharp.include?(file) ? gone - %w[Scene_MpStoryChoices] : gone
+  names.select { |name| code.include?(name) }.map { |name| "#{File.basename(file)}: #{name}" }
+end
+check("no script, test or C# file names the old dialogs' screens, the parking lists or the question's steps", left, [])
 
 # The DLL's export table: each export once, and every call of the scripts names one of them.
 table_names = source[/    EXPORTS = \{.*?\n    \}\n/m].scan(/^      '(mp_[a-z_]+)' =>/).flatten

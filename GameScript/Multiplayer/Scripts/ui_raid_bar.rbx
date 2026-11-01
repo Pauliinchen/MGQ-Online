@@ -2,6 +2,8 @@
 #  ui_raid_bar.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Built the bars on the Mod Framework's components and took them from the DLL's bars
+#                            - Docked the map's strip at the top and made the battle's small by a click on its hint too
 #      Paulinchen  2026-10-31: Placed its strip through the Mod Framework's layout
 #      Paulinchen  2026-10-28: Asked the DLL for the troops the map's pages fight in one call
 #      Paulinchen  2026-10-23: Kept the bars off the live map behind menus
@@ -26,14 +28,15 @@
 
 # The HP bars of a Raid World's bosses (see battles_raid_pool.rbx): in a battle that fights a boss's
 # pools, a strip across the top of the screen with the boss's title and, for each of its enemies, its
-# name over a gauge with its HP and how much is left inside (Sprite_MpRaidBar); on the map, a bar
-# above each event that starts a boss battle and each boss's stand-in of a frozen fight (see
-# ui_raid_freeze.rbx), or the same strip at the top of the screen while no
-# such event shows, which the notification and party boxes then make room for (see
-# MGQ_MpHud.top_room). The player moves the strip and resizes it in width with Alt (see
-# MGQ_MpUi::Layout), one place for the map's and the battle's. A bar shows while the relay keeps
-# the boss's pool, or the story has not beaten it; its max HP is the relay's once it told one, else
-# the boss's own at the player's difficulty, scaled by its tier.
+# name over a gauge with its HP and how much is left inside (StripView); on the map, a bar above
+# each event that starts a boss battle and each boss's stand-in of a frozen fight (see
+# ui_raid_freeze.rbx, OverheadView), or the same strip docked at the top of the screen while no such
+# event shows, which the boxes docked at the top corners make room for. The player moves the strip
+# and resizes it in width with Alt, one place for the map's and the battle's. A bar shows while the
+# relay keeps the boss's pool, or the story has not beaten it. The DLL works the bars out
+# (hud.battle_bar, hud.map_bar): the max HP is the relay's once it told one, else the boss's own at
+# the player's difficulty, scaled by its tier; the scripts find the boss's events and enemies and
+# draw the bars on the Mod Framework's components.
 #
 # The raid bosses of a Classic world or of single player (see battles_raid_tiers.rbx) show the same
 # bars: in battle each enemy's own HP, on the map the boss's full HP, since nothing keeps it between
@@ -42,42 +45,40 @@
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpRaidBar
-  # Fewest digits a bar's max HP keeps once its numbers are shortened, see short_numbers.
-  MIN_DIGITS = 7
+  # The topic that works out the bar of the battle running, HudTopics.BattleBarTopic.
+  BATTLE_BAR_TOPIC = "hud.battle_bar"
 
-  # The units a bar's numbers are shortened by, each a thousand times the one before.
-  UNITS = ["", "K", "M", "B", "T", "Qa", "Qi"]
+  # The topic that works out a troop's bar on the map, HudTopics.MapBarTopic.
+  MAP_BAR_TOPIC = "hud.map_bar"
 
-  # Frames between two drawings of a bar whose numbers changed, since the HP the pool gains back
+  # Frames between two settings of a bar whose numbers changed, since the HP the pool gains back
   # changes them every frame.
   REDRAW_FRAMES = 6
 
   # Frames between two looks at the map's events for the bosses' battles.
   SCAN_FRAMES = 30
 
-  # Height of the strip across the top of the screen: its title, the names and the gauges, see
-  # Sprite_MpRaidBar::STRIP_LAYOUT.
+  # Height of the strip across the top of the screen: its title, the names and the gauges.
   STRIP_HEIGHT = 86
 
-  # Height of what shows of the battle's strip while it shows its gauges alone, see small? and
-  # Sprite_MpRaidBar#crop.
+  # Height of the battle's strip while it shows its gauges alone, see small?.
   SMALL_STRIP_HEIGHT = 36
 
-  # The strip's box in MGQ_MpUi::Layout.
+  # The strip's place id, which names its place in the Mod Framework's settings.
   STRIP_BOX = :raid_bar
 
-  # The strip's name in MGQ_MpUi::Layout.
+  # The strip's name while the player arranges the boxes.
   STRIP_BOX_NAME = "Raid boss bar"
 
-  # Pixels from the screen's top within which the strip counts as lying at the top, where the boxes
-  # there make room for it and the game's own boss bar moves below it.
+  # Pixels from the screen's top within which the strip counts as lying at the top, where the game's
+  # own boss bar moves below it.
   TOP_REACH = 4
 
   # The setting in Player.ini that keeps the battle's strip to its gauges alone.
   SMALL_SETTING = "raid_bar_small"
 
-  # Depth of the strip in battle: under the game's windows, which start at 100 and so cover it while
-  # they show, and over the battlers and pictures.
+  # Depth of the strip in battle among the roots under the game's windows: over the battlers and
+  # pictures.
   BATTLE_Z = 90
 
   # Where the game's own HP bar of a boss lies (Basic Enemy HP Bars Lite), which the strip pushes down.
@@ -108,9 +109,9 @@ module MGQ_MpRaidBar
                "Outside Raid Worlds only: single player and Classic worlds with raid bosses.",
   }
 
-  # A bar's content.
+  # A bar's content, as the DLL works it out.
   #
-  # @!attribute title [String, nil] What shows above the names, see MGQ_MpRaidBosses.title.
+  # @!attribute title [String] What shows above the names, see MGQ_MpRaidBosses.title.
   # @!attribute gauges [Array<Gauge>] One gauge per enemy of the boss, in the troop's order.
   Bar = Struct.new(:title, :gauges)
 
@@ -119,7 +120,9 @@ module MGQ_MpRaidBar
   # @!attribute name [String] The enemy's name, lettered as the game letters repeated names.
   # @!attribute hp [Integer] Its HP.
   # @!attribute max [Integer] Its max HP.
-  Gauge = Struct.new(:name, :hp, :max)
+  # @!attribute numbers [String] Its HP and max HP shortened, such as "236,167 B / 1,009,500 B".
+  # @!attribute percent [String] How much is left, such as "23.4%", never "0.0%" while any is.
+  Gauge = Struct.new(:name, :hp, :max, :numbers, :percent)
 
   # The last look at the map's events: its map id and SCAN_FRAMES step, and the events found.
   @scanned = nil
@@ -127,8 +130,8 @@ module MGQ_MpRaidBar
   # Each event's command list with the troops it starts, by the event, see troops_of.
   @event_troops = {}
 
-  # Enemies' own max HP, by the enemy and the difficulty, see raid_max.
-  @base_hp = {}
+  # Enemies' own max HP, by the enemy and the difficulty, see own_hp.
+  @own_hp = {}
 
   # Whether the strip shows in battle.
   @battle_shown = false
@@ -140,6 +143,9 @@ module MGQ_MpRaidBar
 
   # What starts this script's lines in the log.
   LOG_TAG = "raid bar"
+
+  # The Mod Framework's interface.
+  UI = Mod_Framework::UI
 
   # Reports whether the player wants a bar of the raid bosses outside Raid Worlds, as Player.ini
   # keeps it, on until they turn it off.
@@ -164,42 +170,34 @@ module MGQ_MpRaidBar
   end
 
   # Finds the bar of the battle running when it fights a boss's pools, or its boss fights at its
-  # tier outside a Raid World (see tier_battle_bar): a gauge per own enemy with its HP as the battle
-  # has it, against its pool's max HP once the relay told it.
+  # tier outside a Raid World while the player shows that bar: the DLL's gauge per own enemy with
+  # its HP as the battle has it, against its pool's max HP once the relay told it.
   #
   # @return [Bar, nil] The bar, nil for none.
   def self.battle_bar
     fight = MGQ_MpRaidPool.fight
-    return tier_battle_bar unless fight
+    if fight
+      enemies = fight.members.map do |member|
+        enemy = $game_troop.members[member.index]
+        enemy ? [enemy.name.to_s, enemy.hp.to_i, enemy.mhp.to_i, enemy.dead? ? true : false, member.key.to_s] : nil
+      end
+    else
+      fight = defined?(MGQ_MpRaidTiers) ? MGQ_MpRaidTiers.fight : nil
+      return nil unless fight && shown?(:battle)
 
-    gauges = fight.members.map do |member|
-      enemy = $game_troop.members[member.index]
-      next nil unless enemy
-
-      local = enemy.mhp.to_i
-      next nil unless local > 0
-
-      pool = MGQ_MpRaidPool.pool(member.key)
-      shown = pool && pool.max.to_i > 0 ? pool.max.to_i : local
-      Gauge.new(enemy.name.to_s, MGQ_MpRaidPool.hp_of(enemy.dead? ? 0.0 : enemy.hp.to_f / local, shown), shown)
-    end.compact
-    gauges.empty? ? nil : Bar.new(MGQ_MpRaidBosses.title(fight.troop), gauges)
+      enemies = MGQ_MpRaidPool.own_enemies(fight.own).map { |enemy| enemy ? [enemy.name.to_s, enemy.hp.to_i, enemy.mhp.to_i, enemy.dead? ? true : false, nil] : nil }
+    end
+    bar_of(MGQ_Multiplayer::Bridge.call(BATTLE_BAR_TOPIC, "title" => MGQ_MpRaidBosses.title(fight.troop).to_s, "enemies" => enemies.compact))
   end
 
-  # Finds the bar of the battle running when its boss fights at its tier outside a Raid World, while
-  # the player shows that bar: a gauge per own enemy with its HP as the battle has it.
+  # Reads a bar as the DLL answers it.
   #
+  # @param answer [Array, nil] [title, [[name, hp, max, numbers, percent], ...]], nil for none.
   # @return [Bar, nil] The bar, nil for none.
-  def self.tier_battle_bar
-    fight = defined?(MGQ_MpRaidTiers) ? MGQ_MpRaidTiers.fight : nil
-    return nil unless fight && shown?(:battle)
+  def self.bar_of(answer)
+    return nil unless answer.is_a?(Array) && answer[1].is_a?(Array) && !answer[1].empty?
 
-    gauges = MGQ_MpRaidPool.own_enemies(fight.own).map do |enemy|
-      next nil unless enemy && enemy.mhp.to_i > 0
-
-      Gauge.new(enemy.name.to_s, enemy.dead? ? 0 : enemy.hp.to_i, enemy.mhp.to_i)
-    end.compact
-    gauges.empty? ? nil : Bar.new(MGQ_MpRaidBosses.title(fight.troop), gauges)
+    Bar.new(answer[0].to_s, answer[1].map { |name, hp, max, numbers, percent| Gauge.new(name.to_s, hp.to_i, max.to_i, numbers.to_s, percent.to_s) })
   end
 
   # Reports whether the map shows the bars of the raid bosses outside a Raid World: they fight at
@@ -228,8 +226,8 @@ module MGQ_MpRaidBar
   # Notes where the battle's strip ends while it lies at the top of the screen, which the game's own
   # bar of a boss moves below.
   #
-  # @param bottom [Integer, nil] The bottom of what shows of the strip, nil while the strip lies
-  #   elsewhere, which leaves the game's bar where the game draws it.
+  # @param bottom [Integer, nil] The bottom of the strip, nil while it lies elsewhere, which leaves
+  #   the game's bar where the game draws it.
   def self.battle_bottom=(bottom)
     @battle_bottom = bottom
   end
@@ -258,12 +256,20 @@ module MGQ_MpRaidBar
     return unless defined?(MGQ_MpHotkeys) && MGQ_MpHotkeys.pressed?(:party_box)
     return MGQ_MpHotkeys.log_refusal(:party_box, "the chat box is open") if defined?(MGQ_MpChat) && MGQ_MpChat.typing?
 
+    toggle_small
+  rescue => e
+    log_once(:on_battle, "changing the battle's boss bar failed: #{e.class}: #{e.message}")
+  end
+
+  # Shows the battle's strip with or without the boss's title and the names, keeping the choice in
+  # Player.ini, as its hotkey and a click on its hint do.
+  def self.toggle_small
     @small = !small?
     MGQ_Multiplayer::Player.store(SMALL_SETTING, @small ? 1 : 0)
     log("the battle's boss bar shows #{@small ? 'its gauges alone' : 'the title and the names again'}")
     Sound.play_cursor
   rescue => e
-    log_once(:on_battle, "changing the battle's boss bar failed: #{e.class}: #{e.message}")
+    log("changing the battle's boss bar FAILED: #{e.class}: #{e.message}")
   end
 
   # Moves the game's own HP bar of a boss below the strip while the strip shows at the top of the
@@ -368,73 +374,21 @@ module MGQ_MpRaidBar
     pool.pooled_troop?(troop) || keys.any? { |key| pool.pool(key) }
   end
 
-  # Finds a troop's bar on the map: a gauge per pool of the troop with its HP now, the HP the pool
-  # gained back since included, the enemy's own max HP for a pool the relay told nothing of; outside
-  # a Raid World a full gauge per enemy, see tier_map_bar.
+  # Finds a troop's bar on the map, as the DLL works it out: in a Raid World a gauge per pool of the
+  # troop with its HP now, the HP the pool gained back since included, the enemy's own max HP times
+  # its tier's factor for a pool the relay told nothing of; outside a Raid World a full gauge per
+  # enemy at its max HP in battle, since every battle fights the boss anew. Names that repeat
+  # within the troop are lettered as the game letters them in battle.
   #
   # @param troop [Integer] The troop.
-  # @return [Bar] The bar.
+  # @return [Bar, nil] The bar, nil for none.
   def self.map_bar(troop)
     pool = MGQ_MpRaidPool
-    return tier_map_bar(troop) unless pool.active?
-
-    enemies = troop_enemies(troop)
-    names = map_names(enemies)
-    now = Time.now
-    gauges = pool.troop_keys(troop).each_with_index.map do |key, index|
-      known = pool.pool(key)
-      if known && known.max.to_i > 0
-        max = known.max.to_i
-        hp = pool.hp_of(pool.left_now(known, now), max)
-      else
-        max = raid_max(enemies[index], troop)
-        hp = known ? pool.hp_of(pool.left_now(known, now), max) : max
-      end
-      Gauge.new(names[index].to_s, hp, max)
-    end
-    Bar.new(MGQ_MpRaidBosses.title(troop), gauges)
-  end
-
-  # Finds a troop's bar on the map outside a Raid World: a full gauge per enemy the troop's setup
-  # makes, at its max HP in battle, since every battle fights the boss anew.
-  #
-  # @param troop [Integer] The troop.
-  # @return [Bar] The bar.
-  def self.tier_map_bar(troop)
-    enemies = troop_enemies(troop)
-    names = map_names(enemies)
-    gauges = enemies.each_with_index.map do |enemy_id, index|
-      max = raid_max(enemy_id, troop)
-      Gauge.new(names[index].to_s, max, max)
-    end
-    Bar.new(MGQ_MpRaidBosses.title(troop), gauges)
-  end
-
-  # Names a troop's enemies for the map's bar, by the database, a name that repeats within the troop
-  # lettered as the game letters it in battle.
-  #
-  # @param enemy_ids [Array<Integer>] The enemies.
-  # @return [Array<String>] Their names, such as "Metatronne A" and "Metatronne B".
-  def self.map_names(enemy_ids)
-    names = enemy_ids.map { |id| $data_enemies[id].name.to_s }
-    counts = names.each_with_object(Hash.new(0)) { |name, seen| seen[name] += 1 }
-    lettered = Hash.new(0)
-    names.map do |name|
-      next name if counts[name] < 2
-
-      letter = letter(lettered[name])
-      lettered[name] += 1
-      name + letter
-    end
-  end
-
-  # Finds the letter the game appends to the nth enemy of a repeated name.
-  #
-  # @param n [Integer] The enemy's number among those of its name, from 0.
-  # @return [String] Such as " A".
-  def self.letter(n)
-    table = $game_troop && $game_troop.respond_to?(:letter_table) ? $game_troop.letter_table : nil
-    table && !table.empty? ? table[n % table.size].to_s : " #{(65 + n % 26).chr}"
+    enemies = troop_enemies(troop).map { |id| [$data_enemies[id].name.to_s, own_hp(id)] }
+    table = $game_troop && $game_troop.respond_to?(:letter_table) ? Array($game_troop.letter_table) : []
+    request = { "title" => MGQ_MpRaidBosses.title(troop).to_s, "keys" => pool.active? ? pool.troop_keys(troop).map { |key| key.to_s } : nil, "enemies" => enemies,
+                "factor" => MGQ_MpRaidBosses.factor(troop, :mhp).to_i, "letters" => table.empty? ? nil : table.map { |letter| letter.to_s } }
+    bar_of(MGQ_Multiplayer::Bridge.call(MAP_BAR_TOPIC, request))
   end
 
   # Lists the enemies a troop's setup makes, by the database.
@@ -446,49 +400,18 @@ module MGQ_MpRaidBar
     data ? data.members.map { |member| member.enemy_id }.select { |id| $data_enemies[id] } : []
   end
 
-  # Finds the max HP an enemy has in a battle that fights its pool: its own at the player's
-  # difficulty, kept while the difficulty stays, times the factor of its boss's tier.
-  #
-  # @param enemy_id [Integer, nil] The enemy.
-  # @param troop [Integer] The boss's troop.
-  # @return [Integer] The max HP, 0 for none.
-  def self.raid_max(enemy_id, troop)
-    return 0 unless enemy_id
-
-    key = [enemy_id, $game_variables[DIFFICULTY_VARIABLE]]
-    @base_hp[key] ||= own_max(enemy_id)
-    (@base_hp[key] * MGQ_MpRaidBosses.factor(troop, :mhp)).round
-  end
-
-  # Writes a gauge's HP and max HP, both in the largest unit of UNITS that leaves the max at least
-  # MIN_DIGITS digits, such as "236,167 B / 1,009,500 B".
-  #
-  # The HP rounds up, so a boss with any HP left never reads 0, but never past the max, which
-  # rounds down.
-  #
-  # @param hp [Integer] The HP.
-  # @param max [Integer] The max HP.
-  # @return [String] The numbers.
-  def self.short_numbers(hp, max)
-    power = 0
-    power += 1 while power + 1 < UNITS.size && max.to_i / 1000**(power + 1) >= 10**(MIN_DIGITS - 1)
-    unit = 1000**power
-    suffix = power > 0 ? " #{UNITS[power]}" : ""
-    shown_max = max.to_i / unit
-    shown_hp = [(hp.to_i + unit - 1) / unit, shown_max].min
-    "#{MGQ_MpUi.grouped(shown_hp)}#{suffix} / #{MGQ_MpUi.grouped(shown_max)}#{suffix}"
-  end
-
-  # Finds an enemy's own max HP at the player's difficulty, as the game computes it in battle, or
-  # its database value when that fails.
+  # Finds an enemy's own max HP at the player's difficulty, as the game computes it in battle, kept
+  # while the difficulty stays, or its database value when that fails.
   #
   # @param enemy_id [Integer] The enemy.
   # @return [Integer] The max HP.
-  def self.own_max(enemy_id)
-    Game_Enemy.new(0, enemy_id).mhp.to_i
-  rescue => e
-    log_once([:own_max, enemy_id], "computing the max HP of enemy #{enemy_id} failed (#{e.class}: #{e.message}), its database value stands in")
-    $data_enemies[enemy_id].params[0].to_i
+  def self.own_hp(enemy_id)
+    @own_hp[[enemy_id, $game_variables[DIFFICULTY_VARIABLE]]] ||= begin
+      Game_Enemy.new(0, enemy_id).mhp.to_i
+    rescue => e
+      log_once([:own_hp, enemy_id], "computing the max HP of enemy #{enemy_id} failed (#{e.class}: #{e.message}), its database value stands in")
+      $data_enemies[enemy_id].params[0].to_i
+    end
   end
 
   # Reports whether an event shows on the map, a marker such as a flame or a tile counting as its
@@ -517,611 +440,393 @@ module MGQ_MpRaidBar
     FAR
   end
 
+  # A raid boss's bar on the Mod Framework's components: its title and, below it, each enemy's name
+  # over a gauge with the HP inside, the gauges sharing the row's width; the strip at the top or the
+  # smaller bar above its event (Look). The parts are built anew for a boss of other enemies, so
+  # their damage trails start anew, and their numbers are set at most every REDRAW_FRAMES.
+  class BarParts
+    # The sizes of a bar's parts: the fonts of its title and names, the height of the title's line,
+    # the gauges' height and the font of the numbers inside them, nil for gauges without numbers.
+    Look = Struct.new(:title, :name, :title_height, :gauge, :numbers)
+
+    # The strip's parts, which take STRIP_HEIGHT.
+    STRIP_LOOK = Look.new(20, 24, 24, 30, 21)
+
+    # The parts of the bar above an event: thin gauges without numbers.
+    OVERHEAD_LOOK = Look.new(16, 18, 20, 8, nil)
+
+    # Pixels between the gauges and the names of a boss of several enemies.
+    GAUGE_GAP = 6
+
+    # Smallest font size the names of a boss of several enemies shrink to, so each fits its gauge.
+    MIN_NAME_SIZE = 14
+
+    # The filled part's colors from its top down, a maroon gradient.
+    FILL_COLORS = [Color.new(156, 32, 50), Color.new(110, 16, 30), Color.new(70, 8, 18)]
+
+    # How a gauge's HP reads with how much is left.
+    LONG_TEXT = "%s  (%s)"
+
+    # Makes the parts, empty until the first bar: the title as the first part of where it goes, the
+    # names and the gauges each in a row added after the parts already there.
+    #
+    # @param look [Look] The sizes of the parts.
+    # @param title_parent [Mod_Framework::UI::Component] Where the title goes.
+    # @param names_parent [Mod_Framework::UI::Component] Where the row of names goes.
+    # @param gauges_parent [Mod_Framework::UI::Component] Where the row of gauges goes.
+    # @param row_width [Integer, nil] The width of the names' and gauges' rows, nil for their
+    #   parent's.
+    def initialize(look, title_parent, names_parent, gauges_parent, row_width = nil)
+      @look = look
+      @names_parent = names_parent
+      @gauges_parent = gauges_parent
+      @row_width = row_width
+      row = title_parent.layout == :row
+      @title = title_parent.add_label("", :height => look.title_height, :align => :center, :font_size => look.title, :color => :title, :plate => :text,
+                                      :grow => row ? 1 : 0)
+      @names = nil
+      @set = nil
+      @set_at = nil
+    end
+
+    # Shows a bar: builds the names and gauges anew for other enemies, and sets the title, the rates
+    # and the numbers once they changed, the numbers at most every REDRAW_FRAMES.
+    #
+    # @param bar [Bar] The bar.
+    def show(bar)
+      names = bar.gauges.map { |gauge| gauge.name }
+      build(names) unless names == @names
+      content = [bar.title, bar.gauges.map { |gauge| [gauge.hp, gauge.max, gauge.numbers, gauge.percent] }]
+      return if content == @set
+
+      now = Graphics.frame_count
+      return if @set && @set[0] == bar.title && @set_at && now - @set_at < REDRAW_FRAMES
+
+      @set = content
+      @set_at = now
+      @title.text = bar.title
+      bar.gauges.each_with_index do |gauge, index|
+        @gauges[index].rate = gauge.max > 0 ? UI.within(gauge.hp.to_f / gauge.max, 0.0, 1.0) : 0.0
+        @gauges[index].text = [format(LONG_TEXT, gauge.numbers, gauge.percent), gauge.numbers, gauge.percent] if @look.numbers
+      end
+    end
+
+    # Sets the width of the names' and gauges' rows.
+    #
+    # @param width [Integer] The width.
+    def row_width=(width)
+      return if width == @row_width
+
+      @row_width = width
+      [@name_row, @gauge_row].compact.each { |row| row.width = width }
+    end
+
+    # Lists the gauges, for the tests.
+    #
+    # @return [Array<Mod_Framework::UI::Gauge>] The gauges, one per enemy.
+    def gauges
+      @gauges || []
+    end
+
+    private
+
+    # Builds a name and a gauge per enemy of a boss, in place of those of another.
+    #
+    # @param names [Array<String>] The enemies' names.
+    def build(names)
+      @names = names
+      @set = nil
+      @names_parent.remove(@name_row) if @name_row
+      @gauges_parent.remove(@gauge_row) if @gauge_row
+      @name_row = @names_parent.add_row(:gap => GAUGE_GAP, :align => :center, :width => @row_width)
+      names.each do |name|
+        @name_row.add_label(name, :grow => 1, :align => :center, :font_size => @look.name, :min_font_size => MIN_NAME_SIZE, :plate => :text)
+      end
+      @gauge_row = @gauges_parent.add_row(:gap => GAUGE_GAP, :align => :center, :width => @row_width)
+      options = { :grow => 1, :height => @look.gauge, :framed => true, :colors => FILL_COLORS, :vertical => true, :trail => true }
+      options[:font_size] = @look.numbers if @look.numbers
+      @gauges = names.map { @gauge_row.add_gauge(options.dup) }
+    end
+  end
+
+  # The strip across the top of the screen: in battle where the player put it, over the battlers
+  # and under the battle's windows, hidden while the game's message shows at the top; on the map
+  # docked at the top while no boss event shows, which the boxes docked at the top corners make
+  # room for. Small in battle (the party box's hotkey, or a click on its hint), it shows the gauges
+  # alone, the title and the names sliding away as its height eases down.
+  class StripView
+    # Share of the screen's width the strip's row of gauges takes, at most the strip's width less
+    # MARGIN on each side.
+    GAUGE_SHARE = 0.65
+
+    # Pixels the strip's rows keep from its sides at least.
+    MARGIN = 6
+
+    # Most enemies a boss has, whose gauges the narrowest strip still shows, see min_width.
+    MAX_GAUGES = 3
+
+    # The longest texts a gauge shows how much is left with, which the narrowest strip's gauges
+    # still fit.
+    PERCENT_SAMPLES = ["100.0%", "<0.1%"]
+
+    # What the battle's strip says at the right of its title, with the hotkey that makes it small.
+    BARS_HINT = "%s: bars"
+
+    # Frames the strip's height eases over as it turns small or full.
+    SLIDE_FRAMES = 8
+
+    # @return [Mod_Framework::UI::Box] The strip's box.
+    attr_reader :root
+
+    # @return [BarParts] The strip's title, names and gauges.
+    attr_reader :parts
+
+    # Makes the strip and opens it, hidden until it shows a bar.
+    #
+    # @param battle [Boolean] Whether it is the battle's, else the map's.
+    def initialize(battle)
+      @battle = battle
+      @bar = nil
+      @small = battle && MGQ_MpRaidBar.small?
+      options = { :id => STRIP_BOX, :place_name => STRIP_BOX_NAME, :frame => false, :under_windows => true, :z => battle ? BATTLE_Z : UI::Z[:labels],
+                  :movable => true, :resizable => :width, :min_size => [StripView.min_width, SMALL_STRIP_HEIGHT], :width => Graphics.width,
+                  :height => @small ? SMALL_STRIP_HEIGHT : STRIP_HEIGHT, :mouse => :parts, :tail => true, :gap => 0, :fade => !battle,
+                  :hide_while => lambda { @bar.nil? } }
+      options[battle ? :at : :dock] = battle ? [0, 0] : :top
+      @root = UI::Box.new(options)
+      head = @root.add_column(:gap => 0)
+      title_row = head.add_row(:height => BarParts::STRIP_LOOK.title_height)
+      @parts = BarParts.new(BarParts::STRIP_LOOK, title_row, head, @root, row_width)
+      add_hint(title_row) if battle
+      @root.open
+    end
+
+    # Finds the narrowest the strip gets while it still shows all it has: its title line with the
+    # hint at either side of the longest title, and the gauges of a boss of MAX_GAUGES enemies, each
+    # still showing how much is left; the names shrink and are cut, as on the whole screen.
+    #
+    # @return [Integer] The width, the screen's when measuring fails.
+    def self.min_width
+      hint = UI.font_bitmap(UI::Style::TINY_SIZE).text_size(format(BARS_HINT, MGQ_MpHotkeys.label(:party_box))).width
+      title = UI.font_bitmap(BarParts::STRIP_LOOK.title)
+      titles = MGQ_MpRaidBosses::TITLES.keys + MGQ_MpRaidBosses::TIERS.keys.map { |tier| "Tier #{tier} Raid Boss" }
+      widest = titles.map { |text| title.text_size(text).width }.max.to_i
+      percent = UI.font_bitmap(BarParts::STRIP_LOOK.numbers)
+      gauge = PERCENT_SAMPLES.map { |text| percent.text_size(text).width }.max + 2 * MARGIN
+      [hint * 2 + widest + 2 * MARGIN, gauge * MAX_GAUGES + BarParts::GAUGE_GAP * (MAX_GAUGES - 1) + 2 * MARGIN].max
+    rescue => e
+      MGQ_MpRaidBar.log("measuring the narrowest strip FAILED (#{e.class}: #{e.message}), it keeps the screen's width")
+      Graphics.width
+    end
+
+    # Shows a bar, or hides the strip for none.
+    #
+    # @param bar [Bar, nil] The bar.
+    def show(bar)
+      @bar = bar
+      return unless bar
+
+      @parts.row_width = row_width
+      @parts.show(bar)
+      follow_small if @battle
+    end
+
+    # Shows the battle's bar while the battle fights a boss's pools and the game's top message does
+    # not show, and tells the game's own boss bar where the strip ends. Called by the battle every
+    # frame.
+    def update_battle
+      bar = MGQ_MpRaidBar.top_message? ? nil : MGQ_MpRaidBar.battle_bar
+      MGQ_MpRaidBar.on_battle if bar
+      show(bar)
+      rect = @root.rect
+      MGQ_MpRaidBar.battle_shown = !bar.nil?
+      MGQ_MpRaidBar.battle_bottom = rect && MGQ_MpRaidBar.at_top?(rect) ? rect.y + rect.height : nil
+    rescue => e
+      @bar = nil
+      MGQ_MpRaidBar.battle_shown = false
+      MGQ_MpRaidBar.log_once(:battle, "showing the battle's boss bar failed: #{e.class}: #{e.message}")
+    end
+
+    # Closes the strip, with the scene's sprites.
+    def close
+      @root.close
+    end
+
+    private
+
+    # Tells the width of the strip's rows: GAUGE_SHARE of the screen's width, but never past MARGIN
+    # from a narrower strip's sides.
+    #
+    # @return [Integer] The width.
+    def row_width
+      strip = @root && @root.rect ? @root.rect.width : Graphics.width
+      [(Graphics.width * GAUGE_SHARE).round, strip - 2 * MARGIN].min
+    end
+
+    # Adds the hint that names the hotkey that makes the battle's strip small at the right of the
+    # title's line, which a click on it does too.
+    #
+    # @param title_row [Mod_Framework::UI::Component] The title's line.
+    def add_hint(title_row)
+      hint = title_row.add_button(format(BARS_HINT, MGQ_MpHotkeys.label(:party_box)), :flat => true, :quiet => true, :font_size => :tiny, :color => :dim)
+      hint.on(:click) { MGQ_MpRaidBar.toggle_small }
+    end
+
+    # Eases the strip's height to its gauges alone or back to whole once the player changed it.
+    def follow_small
+      small = MGQ_MpRaidBar.small?
+      return if small == @small
+
+      @small = small
+      @root.animate({ :size => [nil, small ? SMALL_STRIP_HEIGHT : STRIP_HEIGHT] }, :frames => SLIDE_FRAMES)
+    end
+  end
+
+  # The bar above a boss's event or its stand-in on the map: 240 wide, 480 for a boss of several
+  # enemies, following the event or the stand-in's sprite, under its feet where the screen has no
+  # room above.
+  class OverheadView
+    # Width of the bar for a boss of one enemy.
+    WIDTH = 240
+
+    # Width of the bar for a boss of several enemies, so their names still read.
+    WIDE_WIDTH = 480
+
+    # Pixels between the sprite and its bar.
+    GAP = 4
+
+    # @return [Mod_Framework::UI::Box] The bar's box.
+    attr_reader :root
+
+    # @return [BarParts] The bar's title, names and gauges.
+    attr_reader :parts
+
+    # Makes the bar over a boss and opens it.
+    #
+    # The map rebuilds the sprites of its events on a transfer, so the bar follows the event itself,
+    # whose sprite the framework finds anew; a stand-in's sprite is the mod's own and stays.
+    #
+    # @param target [Game_Event, Sprite] The event, or the stand-in's sprite.
+    def initialize(target)
+      @root = UI::Box.new(:frame => false, :follow => target, :side => :above, :follow_gap => GAP, :flip => true, :width => WIDTH, :mouse => false, :gap => 0)
+      @parts = BarParts.new(BarParts::OVERHEAD_LOOK, @root, @root, @root)
+      @root.open
+    end
+
+    # Shows a bar, as wide as its enemies need.
+    #
+    # @param bar [Bar] The bar.
+    def show(bar)
+      width = bar.gauges.size > 1 ? WIDE_WIDTH : WIDTH
+      @root.width = width unless @root.width == width
+      @parts.show(bar)
+    end
+
+    # Closes the bar.
+    def close
+      @root.close
+    end
+  end
+
   # The bars on the map: one above each boss's event that shows, else the strip at the top.
   class MapBars
     # Creates the bars, none shown.
-    #
-    # @param characters [Viewport] The map's viewport of characters.
-    # @param top [Viewport] The map's topmost viewport.
-    def initialize(characters, top)
-      @characters = characters
-      @top = top
+    def initialize
       @overhead = {}
       @strip = nil
     end
 
     # Shows a bar above each boss's event that shows on the map, else the strip with the first
-    # boss's bar, and tells the boxes at the top the room the strip takes while it lies there.
+    # boss's bar.
     #
     # @param sprites [Array<Sprite_Character>] The map's character sprites.
-    def update(sprites)
+    # @param standins [Array<Sprite_Character>] The sprites of the bosses' stand-ins.
+    def update(sprites, standins = [])
       pairs = MGQ_MpRaidBar.boss_events
       shown = pairs.map do |event, troop|
         sprite = sprites.find { |candidate| candidate.character.equal?(event) }
-        MGQ_MpRaidBar.shows?(event, sprite) ? [event, troop, sprite] : nil
+        standin = sprite ? nil : standins.find { |candidate| candidate.character.equal?(event) }
+        MGQ_MpRaidBar.shows?(event, sprite || standin) ? [event, troop, standin || event] : nil
       end.compact
       update_overhead(shown)
-      rect = update_strip(shown.empty? && !pairs.empty? ? pairs.first[1] : nil)
-      MGQ_MpHud.top_room = rect && MGQ_MpRaidBar.at_top?(rect) ? rect.y + STRIP_HEIGHT : 0
+      update_strip(shown.empty? && !pairs.empty? ? pairs.first[1] : nil)
     rescue => e
-      MGQ_MpHud.top_room = 0
-      MGQ_MpRaidBar.log_once(:map, "drawing the boss bars failed: #{e.class}: #{e.message}")
+      MGQ_MpRaidBar.log_once(:map, "showing the boss bars failed: #{e.class}: #{e.message}")
     end
 
-    # Shows a bar above each boss's event that shows, freeing those of events that no longer do.
+    # Hands out the bars above events, for the tests.
     #
-    # @param shown [Array<Array>] Each event with its troop and sprite.
-    def update_overhead(shown)
-      events = shown.map { |event, _troop, _sprite| event }
-      @overhead.keys.reject { |event| events.any? { |kept| kept.equal?(event) } }.each { |event| @overhead.delete(event).dispose }
-      shown.each do |event, troop, sprite|
-        bar = (@overhead[event] ||= Sprite_MpRaidBar.new(@characters, true))
-        bar.show(MGQ_MpRaidBar.map_bar(troop))
-        bar.place_over(sprite)
-      end
+    # @return [Hash{Game_Event => OverheadView}] The bars by event.
+    def overhead
+      @overhead
     end
 
-    # Shows the strip with a troop's bar where the player put it, or hides it.
+    # Hands out the strip, for the tests.
     #
-    # @param troop [Integer, nil] The troop, nil to hide it.
-    # @return [Rect, nil] Where the strip lies, nil while it is hidden.
-    def update_strip(troop)
-      unless troop
-        @strip.visible = false if @strip
-        return nil
-      end
-
-      @strip ||= Sprite_MpRaidBar.new(@top, false)
-      @strip.z = MGQ_MpUi::Z[:labels]
-      rect = @strip.place_strip
-      @strip.show(MGQ_MpRaidBar.map_bar(troop))
-      MGQ_MpUi::Layout.offer(STRIP_BOX, rect.x, rect.y, rect.width, STRIP_HEIGHT, @strip.z)
-      rect
+    # @return [StripView, nil] The strip, nil before the first.
+    def strip
+      @strip
     end
 
-    # Frees every bar.
+    # Closes every bar.
     def dispose
-      @overhead.each_value { |bar| bar.dispose }
+      @overhead.each_value { |bar| bar.close }
       @overhead.clear
-      @strip.dispose if @strip
+      @strip.close if @strip
       @strip = nil
     end
+
+    private
+
+    # Shows a bar above each boss's event that shows, closing those of events that no longer do.
+    #
+    # @param shown [Array<Array>] Each event with its troop and what its bar follows.
+    def update_overhead(shown)
+      events = shown.map { |event, _troop, _target| event }
+      @overhead.keys.reject { |event| events.any? { |kept| kept.equal?(event) } }.each { |event| @overhead.delete(event).close }
+      shown.each do |event, troop, target|
+        bar = MGQ_MpRaidBar.map_bar(troop)
+        (@overhead[event] ||= OverheadView.new(target)).show(bar) if bar
+      end
+    end
+
+    # Shows the strip with a troop's bar, or hides it.
+    #
+    # @param troop [Integer, nil] The troop, nil to hide it.
+    def update_strip(troop)
+      return @strip.show(nil) if troop.nil? && @strip
+      return unless troop
+
+      (@strip ||= StripView.new(false)).show(MGQ_MpRaidBar.map_bar(troop))
+    end
   end
 end
 
-# A raid boss's HP bar: its title and, below it, each enemy's name over a big gauge with the HP
-# inside, a boss of several enemies sharing the gauge's width among them, centered, as the strip
-# across the top of the screen or the smaller bar above its event on the map.
-class Sprite_MpRaidBar < Sprite
-  # The sizes of a bar's parts: the fonts of its title and names, the gauges' height and the font of
-  # the numbers inside the gauges, 0 for gauges without numbers.
-  Layout = Struct.new(:title, :name, :gauge, :numbers)
-
-  # The damage trail of one gauge, see follow_trail.
-  #
-  # @!attribute shown [Float] The share of the max HP the trail reaches now.
-  # @!attribute left [Float] The share left when the gauge was last followed.
-  # @!attribute history [Array<Array>] Each change of the share left, with its frame and the share
-  #   before it.
-  Trail = Struct.new(:shown, :left, :history)
-
-  # The strip's parts, which take MGQ_MpRaidBar::STRIP_HEIGHT.
-  STRIP_LAYOUT = Layout.new(20, 24, 30, 21)
-
-  # The parts of the bar above an event, which take OVERHEAD_HEIGHT: thin gauges without numbers.
-  OVERHEAD_LAYOUT = Layout.new(16, 18, 8, 0)
-
-  # Room above the strip's title.
-  STRIP_TOP = 2
-
-  # Pixels a line of text takes beyond its font's size.
-  LINE_EXTRA = 4
-
-  # Width of the bar above an event, for a boss of one enemy.
-  OVERHEAD_WIDTH = 240
-
-  # Width of the bar above an event for a boss of several enemies, so their names still read.
-  OVERHEAD_WIDE_WIDTH = 480
-
-  # Height of the bar above an event.
-  OVERHEAD_HEIGHT = 52
-
-  # Share of the screen's width the strip's row of gauges takes, at most the strip's width less
-  # STRIP_MARGIN and the gauges' frames on each side, see strip_row_width.
-  STRIP_GAUGE_SHARE = 0.65
-
-  # Pixels the strip's row of gauges keeps from the strip's sides beyond the gauges' frames.
-  STRIP_MARGIN = 4
-
-  # Most enemies a boss has, whose gauges the narrowest strip still shows, see min_strip_width.
-  MAX_GAUGES = 3
-
-  # The longest texts a gauge shows how much is left with, see percent, which the narrowest strip's
-  # gauges still fit.
-  PERCENT_SAMPLES = ["100.0%", "<0.1%"]
-
-  # Pixels between the gauges of a boss of several enemies.
-  GAUGE_GAP = 6
-
-  # Smallest font size the names of a boss of several enemies shrink to, so each fits its gauge.
-  MIN_NAME_SIZE = 14
-
-  # Pixels the gauge's frame takes on each side.
-  FRAME_WIDTH = 2
-
-  # Pixels between the top of an event's sprite and its bar.
-  GAP = 4
-
-  # The thin edge inside the gauge's outer frame, which is the style's outline: the preset's edge.
-  EDGE = MGQ_MpUi::Style::EDGE
-
-  # The gauge's empty part: the preset's well.
-  EMPTY = MGQ_MpUi::Style::WELL
-
-  # The filled part's color at its top, the lightest of its maroon gradient.
-  FILL_TOP = Color.new(156, 32, 50)
-
-  # The filled part's color at its middle.
-  FILL_MIDDLE = Color.new(110, 16, 30)
-
-  # The filled part's color at its bottom, the deepest of its maroon gradient.
-  FILL_BOTTOM = Color.new(70, 8, 18)
-
-  # The damage trail's color at its top. The trail past the filled part shows the HP the enemy had
-  # within the last TRAIL_FRAMES, in a maroon between the filled and the empty part's.
-  TRAIL_TOP = Color.new(96, 28, 40)
-
-  # The damage trail's color at its bottom.
-  TRAIL_BOTTOM = Color.new(50, 12, 18)
-
-  # Frames a loss of HP stays in the damage trail, two seconds.
-  TRAIL_FRAMES = 120
-
-  # Share of the trail's way down to the HP left it drains each frame.
-  TRAIL_EASE = 0.12
-
-  # The least share of the max HP the trail drains each frame.
-  TRAIL_MIN_STEP = 0.002
-
-  # Frames between two drawings while a damage trail drains.
-  TRAIL_REDRAW_FRAMES = 2
-
-  # The title's color: the preset's title.
-  TITLE_COLOR = MGQ_MpUi::Style::TITLE
-
-  # Room the numbers and the names keep from the gauge's ends.
-  NUMBERS_MARGIN = 4
-
-  # What the battle's strip says at the right of its title, with the hotkey that makes it small.
-  BARS_HINT = "%s: bars"
-
-  # Creates the bar, hidden.
-  #
-  # @param viewport [Viewport, nil] Its viewport: the map's characters' for a bar above an event,
-  #   nil in battle.
-  # @param overhead [Boolean] Whether it is the bar above an event, else the strip.
-  def initialize(viewport, overhead)
-    super(viewport)
-    @overhead = overhead
-    width = overhead ? OVERHEAD_WIDTH : Graphics.width
-    self.bitmap = Bitmap.new(width, overhead ? OVERHEAD_HEIGHT : MGQ_MpRaidBar::STRIP_HEIGHT)
-    self.ox = overhead ? width / 2 : 0
-    self.z = overhead ? MGQ_MpUi::Z[:labels] : MGQ_MpRaidBar::BATTLE_Z
-    self.visible = false
-    @drawn = nil
-    @drawn_at = nil
-    @trails = nil
-    @trail_names = nil
-  end
-
-  # Shows a bar, drawing it again when its numbers changed, at most every
-  # MGQ_MpRaidBar::REDRAW_FRAMES.
-  #
-  # @param bar [MGQ_MpRaidBar::Bar, nil] The bar, nil to hide it.
-  def show(bar)
-    self.visible = !bar.nil?
-    return unless bar
-
-    fit(bar) if @overhead
-    now = Graphics.frame_count
-    follow_trails(bar, now)
-    content = [bar.title, bar.gauges.map { |gauge| gauge.to_a }, @trails.map { |trail| trail.shown }, MGQ_MpUi::Theme.serial]
-    return if content == @drawn
-    # Numbers wait a few frames, a draining trail only two, so it moves smoothly.
-    if @drawn && @drawn[1].map { |gauge| gauge[0] } == @trail_names
-      wait = @drawn[2] == content[2] ? MGQ_MpRaidBar::REDRAW_FRAMES : TRAIL_REDRAW_FRAMES
-      return if now - @drawn_at < wait
-    end
-
-    @drawn = content
-    @drawn_at = now
-    @overhead ? draw_bar(bar, OVERHEAD_LAYOUT, 0, bitmap.width - FRAME_WIDTH * 2) : draw_bar(bar, STRIP_LAYOUT, STRIP_TOP, strip_row_width)
-  end
-
-  # Finds the width of the strip's row of gauges: STRIP_GAUGE_SHARE of the screen's width, as the
-  # strip across the whole screen has it, but never past STRIP_MARGIN and the gauges' frames from a
-  # narrower strip's sides.
-  #
-  # @return [Integer] The width, inside the gauges' frames.
-  def strip_row_width
-    [(Graphics.width * STRIP_GAUGE_SHARE).round, bitmap.width - (FRAME_WIDTH + STRIP_MARGIN) * 2].min
-  end
-
-  # Finds the narrowest the strip gets while it still shows all it has: its title line with the
-  # hint at either side of the longest title, and the gauges of a boss of MAX_GAUGES enemies, each
-  # still showing how much is left; the names shrink and are cut, as on the whole screen.
-  #
-  # The hint is measured with the hotkey's name as the script loads.
-  #
-  # @return [Integer] The width, the screen's when measuring fails.
-  def self.min_strip_width
-    bitmap = Bitmap.new(1, 1)
-    style = MGQ_MpUi::Style
-    style.use_font(bitmap, style::TINY_SIZE, style::DIM)
-    hint_room = bitmap.text_size(BARS_HINT % MGQ_MpHotkeys.label(:party_box)).width + NUMBERS_MARGIN
-    style.use_font(bitmap, STRIP_LAYOUT.title, TITLE_COLOR)
-    title = strip_titles.map { |text| bitmap.text_size(text).width }.max
-    style.use_font(bitmap, STRIP_LAYOUT.numbers, style::TEXT)
-    gauge = PERCENT_SAMPLES.map { |text| bitmap.text_size(text).width }.max + NUMBERS_MARGIN * 2
-    row = gauge * MAX_GAUGES + GAUGE_GAP * (MAX_GAUGES - 1) + (FRAME_WIDTH + STRIP_MARGIN) * 2
-    [hint_room * 2 + title + NUMBERS_MARGIN * 2, row].max
-  rescue => e
-    MGQ_MpRaidBar.log("measuring the narrowest strip FAILED (#{e.class}: #{e.message}), it keeps the screen's width")
-    Graphics.width
-  ensure
-    bitmap.dispose if bitmap
-  end
-
-  # Lists the titles a strip shows: those of MGQ_MpRaidBosses::TITLES and one per tier, as
-  # MGQ_MpRaidBosses.title names a boss without one of them.
-  #
-  # @return [Array<String>] The titles.
-  def self.strip_titles
-    MGQ_MpRaidBosses::TITLES.keys + MGQ_MpRaidBosses::TIERS.keys.map { |tier| "Tier #{tier} Raid Boss" }
-  end
-
-  # Puts the strip where the player left it (see MGQ_MpUi::Layout), across the top of the screen
-  # until they move it, remaking its picture once its width changes.
-  #
-  # @return [Rect] Where it lies, MGQ_MpRaidBar::STRIP_HEIGHT high.
-  def place_strip
-    height = MGQ_MpRaidBar::STRIP_HEIGHT
-    rect = MGQ_MpUi::Layout.rect(MGQ_MpRaidBar::STRIP_BOX, Rect.new(0, 0, Graphics.width, height))
-    if bitmap.width != rect.width
-      bitmap.dispose
-      self.bitmap = Bitmap.new(rect.width, height)
-      @drawn = nil
-    end
-    self.x = rect.x
-    self.y = rect.y
-    rect
-  end
-
-  # Gives the bar above an event the width its bar needs, OVERHEAD_WIDE_WIDTH for a boss of several
-  # enemies, remaking its picture when that differs.
-  #
-  # @param bar [MGQ_MpRaidBar::Bar] The bar.
-  def fit(bar)
-    width = bar.gauges.size > 1 ? OVERHEAD_WIDE_WIDTH : OVERHEAD_WIDTH
-    return if bitmap.width == width
-
-    bitmap.dispose
-    self.bitmap = Bitmap.new(width, OVERHEAD_HEIGHT)
-    self.ox = width / 2
-    @drawn = nil
-  end
-
-  # Follows the damage trail of each gauge, see follow_trail. A bar of other names starts every
-  # trail anew.
-  #
-  # @param bar [MGQ_MpRaidBar::Bar] The bar.
-  # @param now [Integer] The frame.
-  def follow_trails(bar, now)
-    names = bar.gauges.map { |gauge| gauge.name }
-    if @trails.nil? || @trail_names != names
-      @trail_names = names
-      @trails = bar.gauges.map { |gauge| Trail.new(share(gauge), share(gauge), []) }
-      return
-    end
-
-    bar.gauges.each_with_index { |gauge, index| follow_trail(@trails[index], share(gauge), now) }
-  end
-
-  # Follows a gauge's damage trail: the most of the max HP the enemy had within the last
-  # TRAIL_FRAMES, which the trail drains down to by TRAIL_EASE a frame, and rises to at once.
-  #
-  # @param trail [Trail] The trail.
-  # @param left [Float] The share of the max HP left now.
-  # @param now [Integer] The frame.
-  def follow_trail(trail, left, now)
-    # Each change notes until when the enemy had the HP before it.
-    trail.history << [now, trail.left] if left != trail.left
-    trail.left = left
-    trail.history.reject! { |frame, _share| now - frame > TRAIL_FRAMES }
-    target = ([left] + trail.history.map { |_frame, share| share }).max
-    return trail.shown = target if target >= trail.shown
-
-    trail.shown = [trail.shown - [(trail.shown - target) * TRAIL_EASE, TRAIL_MIN_STEP].max, target].max
-  end
-
-  # Shows the battle's bar where the player put the strip while the battle fights a boss's pools
-  # and the game's top message does not show.
-  def update_battle
-    bar = MGQ_MpRaidBar.top_message? ? nil : MGQ_MpRaidBar.battle_bar
-    MGQ_MpRaidBar.on_battle if bar
-    rect = place_strip
-    shown_height = crop(MGQ_MpRaidBar.small?)
-    show(bar)
-    MGQ_MpUi::Layout.offer(MGQ_MpRaidBar::STRIP_BOX, rect.x, rect.y, rect.width, shown_height, z) if bar
-    MGQ_MpRaidBar.battle_shown = !bar.nil?
-    MGQ_MpRaidBar.battle_bottom = MGQ_MpRaidBar.at_top?(rect) ? rect.y + shown_height : nil
-  rescue => e
-    self.visible = false
-    MGQ_MpRaidBar.battle_shown = false
-    MGQ_MpRaidBar.log_once(:battle, "drawing the battle's boss bar failed: #{e.class}: #{e.message}")
-  end
-
-  # Crops the battle's strip from its top a step of MGQ_MpUi::Style::SLIDE_FRAMES towards its size:
-  # until only its gauges show, or back to in full. A new strip starts at its size, without
-  # cropping step by step.
-  #
-  # The strip keeps its own crop instead of MGQ_MpUi::Motion, since its showing and hiding follow
-  # the game's top message at once and the game's own boss bar follows its bottom.
-  #
-  # @param small [Boolean] Whether only its gauges show.
-  # @return [Integer] The height of what shows.
-  def crop(small)
-    height = MGQ_MpRaidBar::STRIP_HEIGHT
-    room = height - MGQ_MpRaidBar::SMALL_STRIP_HEIGHT
-    target = small ? room : 0
-    @crop = target.to_f if @crop.nil?
-    @crop = MGQ_MpUi::Motion.step_towards(@crop, target.to_f, room.to_f / MGQ_MpUi::Style::SLIDE_FRAMES)
-    cut = @crop.round
-    src_rect.set(0, cut, bitmap.width, height - cut)
-    height - cut
-  end
-
-  # Puts the bar above an event's sprite, or under its feet when the screen has no room above.
-  #
-  # @param sprite [Sprite_Character] The event's sprite.
-  def place_over(sprite)
-    self.x = sprite.x
-    above = sprite.y - sprite.height - OVERHEAD_HEIGHT - GAP
-    self.y = above < 0 ? sprite.y + 2 : above
-  end
-
-  # Finds the share of a gauge's max HP left.
-  #
-  # @param gauge [MGQ_MpRaidBar::Gauge] The gauge.
-  # @return [Float] The share, 0 to 1.
-  def share(gauge)
-    gauge.max > 0 ? [[gauge.hp.to_f / gauge.max, 0.0].max, 1.0].min : 0.0
-  end
-
-  # Writes a gauge's HP, such as "3,412,880 / 5,000,000", see MGQ_MpRaidBar.short_numbers.
-  #
-  # @param gauge [MGQ_MpRaidBar::Gauge] The gauge.
-  # @return [String] The HP.
-  def numbers(gauge)
-    MGQ_MpRaidBar.short_numbers(gauge.hp, gauge.max)
-  end
-
-  # Writes how much of a gauge's HP is left, never 0% while any is.
-  #
-  # @param gauge [MGQ_MpRaidBar::Gauge] The gauge.
-  # @return [String] Such as "68.3%".
-  def percent(gauge)
-    left = share(gauge) * 100
-    left > 0 && left < 0.1 ? "<0.1%" : format("%.1f%%", left)
-  end
-
-  # Draws a bar: its title centered across the bar and below it the row of gauges, centered, each
-  # with its name centered over it and the HP inside, the row's width shared among them with
-  # GAUGE_GAP between; the strip's title line names the hotkey that makes it small at its right,
-  # and keeps the title out of the hint's room on either side, so it stays centered.
-  #
-  # @param bar [MGQ_MpRaidBar::Bar] The bar.
-  # @param layout [Layout] The sizes of its parts.
-  # @param top [Integer] Room above the title.
-  # @param row_width [Integer] The width of the row of gauges, inside their frames.
-  def draw_bar(bar, layout, top, row_width)
-    style = MGQ_MpUi::Style
-    gauges = bar.gauges
-    count = [gauges.size, 1].max
-    gauge_width = (row_width - GAUGE_GAP * (count - 1)) / count
-    left = (bitmap.width - row_width) / 2
-    name_top = top + layout.title + LINE_EXTRA
-    gauge_top = name_top + layout.name + LINE_EXTRA
-    size = name_size(gauges, layout.name, gauge_width)
-    bitmap.clear
-    hint_room = 0
-    unless @overhead
-      hint = BARS_HINT % MGQ_MpHotkeys.label(:party_box)
-      use_font(style::TINY_SIZE, style::DIM)
-      hint_room = bitmap.text_size(hint).width + NUMBERS_MARGIN
-      draw_outlined(0, top, bitmap.width - NUMBERS_MARGIN, layout.title + LINE_EXTRA, hint, 2)
-    end
-    draw_plate(bar.title.to_s, layout.title, hint_room, bitmap.width - 2 * hint_room, 0, name_top)
-    gauges.each_with_index do |gauge, index|
-      x, width = name_box(count, left, gauge_width, index)
-      draw_plate(gauge.name.to_s, size, x, width, name_top, gauge_top - FRAME_WIDTH - name_top)
-    end
-    draw_line(bar.title.to_s, layout.title, TITLE_COLOR, hint_room, top, bitmap.width - 2 * hint_room)
-    gauges.each_with_index do |gauge, index|
-      x, width = name_box(count, left, gauge_width, index)
-      draw_line(gauge.name.to_s, size, style::TEXT, x, name_top, width, gauge_top - name_top)
-    end
-    gauges.each_with_index do |gauge, index|
-      x = left + (gauge_width + GAUGE_GAP) * index
-      trail = @trails && @trails[index] ? @trails[index].shown : 0.0
-      draw_gauge(x, gauge_top, gauge_width, layout.gauge, share(gauge), [trail, share(gauge)].max)
-      draw_numbers(gauge, layout.numbers, x, gauge_top, gauge_width, layout.gauge) if layout.numbers > 0
-    end
-  end
-
-  # Finds the box a gauge's name and plate are centered in: the whole bar for a boss of one enemy,
-  # as its title, else its gauge.
-  #
-  # @param count [Integer] How many gauges the bar has.
-  # @param left [Integer] The row's left.
-  # @param gauge_width [Integer] Each gauge's width.
-  # @param index [Integer] The gauge's place in the row.
-  # @return [Array(Integer, Integer)] The box's left and width.
-  def name_box(count, left, gauge_width, index)
-    count > 1 ? [left + (gauge_width + GAUGE_GAP) * index, gauge_width] : [0, bitmap.width]
-  end
-
-  # Finds the font size the names of a bar share: the layout's for one gauge, else the largest from
-  # it down to MIN_NAME_SIZE at which every name fits its gauge.
-  #
-  # @param gauges [Array<MGQ_MpRaidBar::Gauge>] The gauges.
-  # @param size [Integer] The layout's font size of a name.
-  # @param gauge_width [Integer] Each gauge's width.
-  # @return [Integer] The size.
-  def name_size(gauges, size, gauge_width)
-    return size if gauges.size <= 1
-
-    room = gauge_width - NUMBERS_MARGIN * 2
-    fitting = (MIN_NAME_SIZE..size).to_a.reverse.find do |candidate|
-      use_font(candidate, MGQ_MpUi::Style::TEXT)
-      gauges.all? { |gauge| bitmap.text_size(gauge.name.to_s).width <= room }
-    end
-    fitting || [MIN_NAME_SIZE, size].min
-  end
-
-  # Draws the plate behind a line of text, centered in its box and as wide as the text, so it never
-  # stands on the busy picture behind the bar; none for an empty line. The plates stack onto each
-  # other and onto the gauge's frame without a gap.
-  #
-  # @param text [String] The line's text.
-  # @param size [Integer] Its font's size.
-  # @param x [Integer] The box's left.
-  # @param box_width [Integer] The box's width, which caps the plate.
-  # @param y [Integer] The plate's top.
-  # @param height [Integer] The plate's height.
-  def draw_plate(text, size, x, box_width, y, height)
-    use_font(size, MGQ_MpUi::Style::TEXT)
-    MGQ_MpUi::Style.draw_plate(bitmap, x, y, box_width, height, text)
-  end
-
-  # Draws a line of text centered in its box, cut to fit.
-  #
-  # @param text [String] The text.
-  # @param size [Integer] Its font's size.
-  # @param color [Color] Its color.
-  # @param x [Integer] The box's left.
-  # @param y [Integer] Its top.
-  # @param width [Integer] The box's width.
-  # @param height [Integer] The box's height, the font's line for one of its own; a shrunken name
-  #   keeps its row's, so it stays centered over its gauge.
-  def draw_line(text, size, color, x, y, width, height = size + LINE_EXTRA)
-    use_font(size, color)
-    draw_outlined(x, y, width, height, MGQ_MpUi.cut(bitmap, text, width - NUMBERS_MARGIN * 2, ""))
-  end
-
-  # Draws a text in a box in the style's solid outline, in the font's color.
-  #
-  # @param x [Integer] The box's left.
-  # @param y [Integer] The box's top.
-  # @param width [Integer] The box's width.
-  # @param height [Integer] The box's height.
-  # @param text [String] The text.
-  # @param align [Integer] 1 for centered, 2 for right, as Bitmap#draw_text takes it.
-  def draw_outlined(x, y, width, height, text, align = 1)
-    MGQ_MpUi::Style.draw_outlined(bitmap, x, y, width, height, text, align)
-  end
-
-  # Sets the font of what is drawn next, in the style's way: never bold, with the solid outline.
-  #
-  # @param size [Integer] Its size.
-  # @param color [Color] Its color.
-  def use_font(size, color)
-    MGQ_MpUi::Style.use_font(bitmap, size, color)
-  end
-
-  # Draws a gauge in its frame, filled by the share left.
-  #
-  # @param x [Integer] Its left, inside the frame.
-  # @param y [Integer] Its top, inside the frame.
-  # @param width [Integer] Its width.
-  # @param height [Integer] Its height.
-  # @param left [Float] The share left.
-  # @param trail [Float] The share the damage trail reaches, at least the share left.
-  def draw_gauge(x, y, width, height, left, trail = left)
-    bitmap.fill_rect(x - FRAME_WIDTH, y - FRAME_WIDTH, width + FRAME_WIDTH * 2, height + FRAME_WIDTH * 2, MGQ_MpUi::Style::OUTLINE)
-    bitmap.fill_rect(x - 1, y - 1, width + 2, height + 2, EDGE)
-    bitmap.fill_rect(x, y, width, height, EMPTY)
-    filled = (width * left).ceil
-    trailing = (width * trail).ceil - filled
-    bitmap.gradient_fill_rect(x + filled, y, trailing, height, TRAIL_TOP, TRAIL_BOTTOM, true) if trailing > 0
-    draw_fill(x, y, filled, height) if filled > 0
-  end
-
-  # Draws a gauge's filled part: its upper half from FILL_TOP to FILL_MIDDLE, its lower half on to
-  # FILL_BOTTOM.
-  #
-  # @param x [Integer] Its left.
-  # @param y [Integer] Its top.
-  # @param width [Integer] Its width.
-  # @param height [Integer] Its height.
-  def draw_fill(x, y, width, height)
-    upper = height / 2
-    bitmap.gradient_fill_rect(x, y, width, upper, FILL_TOP, FILL_MIDDLE, true)
-    bitmap.gradient_fill_rect(x, y + upper, width, height - upper, FILL_MIDDLE, FILL_BOTTOM, true)
-  end
-
-  # Draws the HP inside a gauge, centered: with how much is left, the HP alone when that does not
-  # fit, and how much is left alone when even the HP does not.
-  #
-  # @param gauge [MGQ_MpRaidBar::Gauge] The gauge.
-  # @param size [Integer] The numbers' font size.
-  # @param x [Integer] The gauge's left.
-  # @param y [Integer] The gauge's top.
-  # @param width [Integer] The gauge's width.
-  # @param height [Integer] The gauge's height.
-  def draw_numbers(gauge, size, x, y, width, height)
-    use_font(size, MGQ_MpUi::Style::TEXT)
-    room = width - NUMBERS_MARGIN * 2
-    texts = ["#{numbers(gauge)}  (#{percent(gauge)})", numbers(gauge), percent(gauge)]
-    text = texts.find { |candidate| bitmap.text_size(candidate).width <= room } || texts.last
-    draw_outlined(x, y, width, height, text)
-  end
-
-  # Frees the bar's picture.
-  def dispose
-    bitmap.dispose
-    super
-  end
-end
-
-# The strip's box, and the game hooks, through core_hooks.rbx.
+# Game hooks, through core_hooks.rbx.
 
 begin
-  Mod_Framework::UI::Layout.register(MGQ_MpRaidBar::STRIP_BOX, MGQ_MpRaidBar::STRIP_BOX_NAME, :min_size => [Sprite_MpRaidBar.min_strip_width, MGQ_MpRaidBar::STRIP_HEIGHT],
-                                     :resizable => :width)
-
   # After the battle's sprites, the strip of a battle that fights a boss's pools.
-  MGQ_MpHooks.after(Spriteset_Battle, :update, "ui_raid_bar") { (@mgq_mp_raid_bar ||= Sprite_MpRaidBar.new(nil, false)).update_battle }
+  MGQ_MpHooks.after(Spriteset_Battle, :update, "ui_raid_bar") { (@mgq_mp_raid_bar ||= MGQ_MpRaidBar::StripView.new(true)).update_battle }
 
   MGQ_MpHooks.before(Spriteset_Battle, :dispose, "ui_raid_bar") do
-    @mgq_mp_raid_bar.dispose if @mgq_mp_raid_bar
+    @mgq_mp_raid_bar.close if @mgq_mp_raid_bar
     @mgq_mp_raid_bar = nil
     MGQ_MpRaidBar.battle_shown = false
   end
 
-  # After the map's sprites, the bosses' bars, also above the stand-ins of frozen fights.
+  # After the map's sprites, the bosses' bars, also above the stand-ins of frozen fights, never on
+  # the map behind a menu.
   MGQ_MpHooks.after(Spriteset_Map, :update, "ui_raid_bar") do
     next unless mgq_mp_hud?
 
-    @mgq_mp_raid_bars ||= MGQ_MpRaidBar::MapBars.new(MGQ_MpGame.get(self, :viewport1), MGQ_MpGame.get(self, :viewport3))
+    @mgq_mp_raid_bars ||= MGQ_MpRaidBar::MapBars.new
     standins = defined?(MGQ_MpRaidFreezeUi) ? MGQ_MpRaidFreezeUi.sprites_of(self) : []
-    @mgq_mp_raid_bars.update(MGQ_MpGame.get(self, :character_sprites) + standins)
+    @mgq_mp_raid_bars.update(MGQ_MpGame.get(self, :character_sprites), standins)
   end
 
   MGQ_MpHooks.before(Spriteset_Map, :dispose, "ui_raid_bar") do
     @mgq_mp_raid_bars.dispose if @mgq_mp_raid_bars
     @mgq_mp_raid_bars = nil
-    MGQ_MpHud.top_room = 0
   end
 
   # The game's own HP bar of a boss moves below the battle's strip, as the game draws it.

@@ -2,6 +2,7 @@
 //  SharedSettingsSync.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Dropped the topic that marks settings shared, which no script calls
 //      Paulinchen  2026-10-31: Took the world's settings from the relay, which tells every player, instead of the creator's game telling each
 //      Paulinchen  2026-10-23: Handed the world screen the details line of the shared settings
 //                            - Created
@@ -135,11 +136,6 @@ internal sealed class SharedSettingsSync
     /// Tells whether settings are shared: the settings in; true or false out.
     /// </summary>
     public const string SharedTopic = "settings.shared";
-
-    /// <summary>
-    /// Writes a world's settings shared, the marker first: the settings in; the settings out.
-    /// </summary>
-    public const string MarkedTopic = "settings.marked";
 
     /// <summary>
     /// Says what the details say about a world's settings: <c>settings</c>, <c>creator_id</c>,
@@ -358,7 +354,6 @@ internal sealed class SharedSettingsSync
             return null;
         });
         context.Register(SharedTopic, (_, request) => SharedSettings.IsShared(Text(request)));
-        context.Register(MarkedTopic, (_, request) => SharedSettings.WithMarker(Text(request)));
         context.Register(DetailsTopic, (_, request) => Details(request.AsHash()));
     }
 

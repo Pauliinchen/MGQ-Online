@@ -2,6 +2,8 @@
 #  notices_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Checked the invites, the world's messages, the World overview and the announcement on the Mod Framework's notification box
+#                            - Left the check of the Mod Framework's settings notice to the Mod Framework's tests
 #      Paulinchen  2026-10-31: Read Accept and Decline as the Mod Framework's hotkeys and checked the accept key while a question box is open
 #                            - Checked the notice that the Mod Framework's settings cannot be read
 #                            - Kept the boxes' places in the Mod Framework's settings
@@ -25,44 +27,27 @@
 #
 #----------------------------------------------------------------
 
-# Covers the notification box, ui_notices.rbx: the invites it lists from anywhere in the world while
-# they stand, the messages it shows for a moment, the scenes it shows in, its hotkeys, its fades, the
-# row that says how many more wait, and its place and size in the layout. Pictures measure each
-# character at 7 pixels.
+
+# Covers MGQ Online's part of the notification box, ui_notices.rbx, on the Mod Framework's box: the
+# invites it lists from anywhere in the world while they stand, answered through the DLL, the
+# messages the other scripts post, which go with the world they were posted in, the World overview
+# hiding the box, the relay's announcement and the notice that Player.ini cannot be read. The box's
+# own rules (time, fades, rows, places, hotkeys) are the framework's tests'.
 
 require_relative "world_support"
 
-# Stands in for the game's color, its parts readable.
-class Color
-  attr_reader :red, :green, :blue, :alpha
-  def initialize(red = nil, green = nil, blue = nil, alpha = nil); @red, @green, @blue, @alpha = red, green, blue, alpha; end
-end
-# Stands in for a picture, keeping the texts drawn whole and fading, where each went, and the fills.
+# Stands in for the World overview, open while $overview_open is.
+module MGQ_MpWorldOverview; def self.open?; $overview_open; end; end
+# Stands in for the picture the framework measures texts with, each character 7 pixels wide.
 class Bitmap
   # The picture's font.
-  Font = Struct.new(:outline, :size, :color, :bold, :out_color)
-  attr_reader :texts, :fading, :font, :width, :height, :fills, :places
-  def initialize(width = 1, height = 1); @width = width; @height = height; @texts = []; @fading = []; @fills = []; @places = []; @font = Font.new; end
-  def clear; @texts = []; @fading = []; @fills = []; @places = []; end
-  def fill_rect(x, y, width, height, color); @fills << [x, y, width, height, color]; end
+  Font = Struct.new(:name, :size, :color, :bold, :italic, :outline, :out_color, :shadow)
+  attr_reader :font
+  def initialize(_width = 1, _height = 1); @font = Font.new; end
   def text_size(text); Rect.new(0, 0, text.to_s.size * 7, 16); end
-  def draw_text(x, y, width, _height, text, _align = 0)
-    color = font.color
-    (color.is_a?(Color) && color.alpha && color.alpha < 255 ? @fading : @texts) << text
-    @places << [text, x, y, width]
-  end
   def dispose; @disposed = true; end
   def disposed?; @disposed ? true : false; end
 end
-# Stands in for a sprite.
-class Sprite
-  attr_accessor :bitmap, :x, :y, :z, :visible, :opacity
-  def update; end
-  def disposed?; false; end
-  def dispose; end
-end
-# Stands in for the World overview, open while $overview_open is.
-module MGQ_MpWorldOverview; def self.open?; $overview_open; end; end
 # Stands in for battles_duel.rbx, keeping the answer to a challenge in $duel_answer.
 module MGQ_MpBattlesDuel
   # The color a challenge is listed in.
@@ -89,77 +74,57 @@ module MGQ_MpBattlesDuel
   end
 end
 MGQ_MpActions.offer(MGQ_MpBattlesDuel::Offers)
-# Stands in for the Leader HUD, its room at the top left kept in $leader_hud_room.
-module MGQ_MpLeaderHud; def self.room; $leader_hud_room.to_i; end; end
 
 load_script "ui_notices"
 
 notices = MGQ_MpNotices
-box = lambda { notices.instance_variable_get(:@box) }
-showing = lambda { box.call && box.call.instance_variable_get(:@motion).shown? }
-shown = lambda { showing.call ? box.call.bitmap.texts : [] }
-fading = lambda { showing.call ? box.call.bitmap.fading : [] }
-accept = lambda { $pressed = 0x59; notices.tick(true) }
-decline = lambda { $pressed = 0x4E; notices.tick(true) }
+box = notices::BOX
+# Runs a frame as the game does: the roots follow it, the buttons' hotkeys, the box, then the frame's end.
+frame = lambda { Mod_Framework::UI::Tree.draw_frame; Mod_Framework::UI::ButtonHotkeys.press; box.frame; ui_frame }
+frames = lambda { |count| count.times { frame.call } }
+# Tells what the box shows: the first offer with its answers as the buttons name them, then the
+# other lines.
+shown = lambda do
+  row = box.instance_variable_get(:@offer_row)
+  lines = box.instance_variable_get(:@lines)
+  rest = lines ? lines.lines.map { |line| line[:text] } : []
+  next rest unless row && row.visible?
+
+  buttons = [:@accept, :@decline].map { |name| box.instance_variable_get(name) }.select { |button| button.visible? }
+  [box.instance_variable_get(:@offer_text).text, buttons.map { |button| button.send(:measured_text) }.join("   ")] + rest
+end
+accept = lambda { $pressed = 0x59; frames.call(2) }
+decline = lambda { $pressed = 0x4E; frames.call(2) }
+messages = lambda { |key| box.instance_variable_get(:@messages).select { |message| message[:key] == key } }
 # Plays the DLL telling whose party invites reach the player, outside a party.
 reaching = lambda { |*seats| take_party(nil, [], nil, "inviters" => seats) }
 
 # Nothing to tell.
 $inbox << entry("seat", 0)
 MGQ_MpOverworldSync.tick
-check("with nothing to tell, no box", shown.call, [])
+frames.call(2)
+check("with nothing to tell, the box shows nothing", [box.box, shown.call], [nil, []])
 
 # An invite and a challenge from afar.
 bea = { "id" => "bea", "name" => "Bea", "map" => 9, "x" => 1, "y" => 1, "d" => 2, "scene" => "map", "party" => "bea-p1", "invite" => 1, "invite_to" => "me" }
 cid = { "id" => "cid", "name" => "Cid", "map" => 7, "x" => 1, "y" => 1, "d" => 2, "scene" => "map", "challenge" => 1, "challenge_to" => "me" }
-$inbox << entry("in", 2) << entry("message", 2, told(bea)) << entry("in", 3) << entry("message", 3, told(cid))
+$inbox << entry("in", 3) << entry("message", 3, told(cid)) << entry("in", 2) << entry("message", 2, told(bea))
 reaching.call(2)
 MGQ_MpOverworldSync.tick
-check("an invite and a challenge from afar show, the keys on the first", shown.call,
+frames.call(2)
+check("an invite and a challenge from afar show by the sender's name, the hotkeys on the first", shown.call,
       ["Bea invites you to a party", "Y: Accept   N: Decline", "Cid challenges you to a duel"])
-check("at the top left, fading in", [box.call.x, box.call.y, box.call.visible, box.call.opacity < 255], [8, 8, true, true])
-(MGQ_MpUi::Style::FADE_FRAMES - 1).times { notices.tick(true) }
-4000.times { notices.tick(true) }
-check("they stay as long as they stand", shown.call.first, "Bea invites you to a party")
-
-# A rebound hotkey with a longer name widens the hotkeys' column instead of cutting them.
-MGQ_MpHotkeys.bind(:accept, 0x20)
-MGQ_MpHotkeys.bind(:decline, 0x0D)
-notices.tick(true)
-check("the keys stay whole with a rebound key's longer name, given the room they need", shown.call[1], "key 32: Accept   key 13: Decline")
-Mod_Framework::Settings.forget("key_accept")
-Mod_Framework::Settings.forget("key_decline")
-notices.tick(true)
-check("and read the default keys again once they are back", shown.call[1], "Y: Accept   N: Decline")
-
-# Messages show for a moment, below the invites, and take no hotkey.
-notices.message([:soon, 2], "Bea is in a battle!")
-notices.tick(true)
-check("a message shows below the invites, without a key", shown.call,
-      ["Bea invites you to a party", "Y: Accept   N: Decline", "Cid challenges you to a duel", "Bea is in a battle!"])
-MGQ_MpUi::Style::LINGER_FRAMES.times { notices.tick(true) }
-check("and goes after a moment", shown.call.include?("Bea is in a battle!"), false)
-notices.message(:alone, "A message alone")
-notices.tick(true)
-$inbox << entry("message", 2, told(bea.merge("invite" => 0))) << entry("message", 3, told(cid.merge("challenge" => 0)))
-reaching.call
-MGQ_MpOverworldSync.tick
-$sounds.clear
-accept.call
-check("alone it shows without keys, and the key takes nothing", [shown.call, $sounds], [["A message alone"], []])
-notices.drop(:alone)
 
 # Declining.
-$inbox << entry("message", 2, told(bea)) << entry("message", 3, told(cid))
-reaching.call(2)
-MGQ_MpOverworldSync.tick
+$sounds.clear
 $party_calls.clear
 decline.call
-check("the decline key declines the first invite through the DLL", [$party_calls, $sounds], [[["decline", 2]], ["cancel"]])
-notices.tick(true)
+check("the decline hotkey declines the first invite through the DLL", [$party_calls, $sounds], [[["decline", 2]], ["cancel"]])
+frames.call(Mod_Framework::UI::Style::FADE_FRAMES)
 check("which stays away while it stands", shown.call, ["Cid challenges you to a duel", "Y: Accept   N: Decline"])
 $inbox << entry("message", 2, told(bea.merge("party" => "bea-p2")))
 MGQ_MpOverworldSync.tick
+frames.call(2)
 check("a new invite of the same player shows again", shown.call.first, "Bea invites you to a party")
 
 # Accepting.
@@ -168,16 +133,17 @@ $party_calls.clear
 $party_answer = party_view("bea-p2", [MGQ_MpOverworldSync::Peers.at(2)], 2, "admitted_me" => false)
 accept.call
 $party_answer = nil
-check("the accept key accepts the first invite through the DLL, taking the party it answers", [$party_calls, MGQ_MpCoop::Party.id, $sounds], [[["join", 2]], "bea-p2", ["ok"]])
-check("which fades away below the others, taking no key", [fading.call.uniq, shown.call.first], [["Bea invites you to a party"], "Cid challenges you to a duel"])
-MGQ_MpUi::Style::FADE_FRAMES.times { notices.tick(true) }
-check("and is gone after FADE_FRAMES", fading.call, [])
+check("the accept hotkey accepts the first invite through the DLL, taking the party it answers", [$party_calls, MGQ_MpCoop::Party.id, $sounds],
+      [[["join", 2]], "bea-p2", ["ok"]])
+check("which fades away below the offers that stand", shown.call, ["Cid challenges you to a duel", "Y: Accept   N: Decline", "Bea invites you to a party"])
 $inbox << entry("message", 2, told(bea.merge("party" => "bea-p2", "party_members" => "me", "invite" => 0)))
 MGQ_MpOverworldSync.tick
-check("then the challenge is first", shown.call, ["Cid challenges you to a duel", "Y: Accept   N: Decline"])
+frames.call(Mod_Framework::UI::Style::FADE_FRAMES)
+check("then the challenge is alone", shown.call, ["Cid challenges you to a duel", "Y: Accept   N: Decline"])
 
 # A challenge in a menu.
 SceneManager.scene = Scene_Item.new
+frames.call(2)
 accept.call
 check("in a menu a challenge can only be declined", [shown.call, $duel_answer], [["Cid challenges you to a duel", "N: Decline"], nil])
 decline.call
@@ -185,170 +151,68 @@ check("which tells the challenger", $duel_answer, [:decline, "Cid", "no"])
 SceneManager.scene = Scene_Map.new
 $inbox << entry("message", 3, told(cid.merge("challenge" => 0)))
 MGQ_MpOverworldSync.tick
+frames.call(2)
 $inbox << entry("message", 3, told(cid))
 MGQ_MpOverworldSync.tick
+frames.call(2)
 
-# Where the box hides.
+# Where the hotkeys take nothing.
 $duel_answer = nil
-SceneManager.scene = Scene_Battle.new
-refused = logged_lines { accept.call }
-check("hidden in a battle, where the keys take nothing", [shown.call, $duel_answer], [[], nil])
-check("which the log says under the hotkeys", refused.grep(/ignored/), ["keys: hotkey Y (Accept Notification) ignored: the box is hidden here"])
-notices.message(:unseen, "Posted while hidden")
-(MGQ_MpUi::Style::LINGER_FRAMES * 2).times { notices.tick(true) }
-SceneManager.scene = Scene_Map.new
-notices.tick(true)
-check("a message posted while the box hides counts its time only once the box shows", shown.call.include?("Posted while hidden"), true)
-notices.drop(:unseen)
 $overview_open = true
-notices.tick(true)
-check("hidden on the map while the World overview is open", shown.call, [])
+frames.call(2)
+accept.call
+check("the World overview hides the box, and the hotkeys take nothing there", [notices.shown?, $duel_answer], [false, nil])
 $overview_open = false
+frames.call(2)
+check("closed, the box shows again with the challenge first", [notices.shown?, shown.call.first], [true, "Cid challenges you to a duel"])
 $mgq_text_input = true
-typed = logged_lines { accept.call }
-check("the keys type instead while the player types, the letter left out of the log", [$duel_answer, typed.grep(/ignored/)], [nil, []])
+accept.call
 $mgq_text_input = false
-Mod_Framework::UI::Confirm.ask("Leave the world?") { |_yes| }
+check("the hotkeys type instead while the player types", $duel_answer, nil)
+Mod_Framework::UI::Capture.start(:trade)
+frames.call(2)
 accept.call
-check("with the question box open, the accept key answers the question only", [$duel_answer, Mod_Framework::UI::Confirm.open?], [nil, true])
-StandInConfirm.answer(false)
+Mod_Framework::UI::Capture.stop(:trade)
+frames.call(2)
+check("and take nothing while a screen of the mod holds the game's buttons", $duel_answer, nil)
+
+# An accept the inviter's game turns down.
 accept.call
-check("otherwise the accept key accepts the challenge on the map", $duel_answer, [:accept, "Cid"])
+check("otherwise the accept hotkey accepts the challenge on the map", $duel_answer, [:accept, "Cid"])
 $duel_answer = nil
 accept.call
-check("which then stays away for a moment, so another press accepts nothing", [shown.call.include?("Cid challenges you to a duel"), $duel_answer], [false, nil])
-# The hold started with the accept a tick before the second press.
-(MGQ_MpNotices::ACCEPT_HOLD_FRAMES - 2).times { notices.tick(true) }
-check("for as long as a slow inviter may still show it", shown.call.include?("Cid challenges you to a duel"), false)
-notices.tick(true)
-check("and shows again while it still stands, since the accept did nothing", shown.call.include?("Cid challenges you to a duel"), true)
-$duel_answer = nil
-accept.call
+check("which then stays away, only fading, so another press accepts nothing", [shown.call, $duel_answer], [["Cid challenges you to a duel"], nil])
 notices.release([:duel, 3])
-notices.tick(true)
-check("or at once when the inviter turns the accept down", [shown.call.include?("Cid challenges you to a duel"), $duel_answer], [true, [:accept, "Cid"]])
-$pressed = 0x4E
-notices.tick(true)
-MGQ_MpNotices::ACCEPT_HOLD_FRAMES.times { notices.tick(true) }
-check("a declined invite stays away while it stands", shown.call.include?("Cid challenges you to a duel"), false)
+frames.call(2)
+accept.call
+check("until the inviter turns the accept down, which shows it again at once", $duel_answer, [:accept, "Cid"])
 
-# Leaving the world.
-notices.message(:left, "Gone with the world")
-notices.tick(false)
-notices.tick(true)
-check("outside a world nothing shows, and the messages are gone", notices.notices.map(&:text).include?("Gone with the world"), false)
-
-# A message shown outside a world, such as a Discord invite taken during a game.
+# Messages and the world.
+notices.message(:soon, "Bea is in a battle!", 120)
+check("a message shows for the frames it is given, in the world's group", messages.call(:soon).map { |message| [message[:left], message[:group]] },
+      [[120, :mgq_online_world]])
+notices.drop(:soon, "a test")
+check("and drop takes it away", messages.call(:soon), [])
+notices.message(:in_world, "Gone with the world")
 $open = false
+MGQ_MpOverworldSync.tick
 notices.message(:world_invite, "Discord invite taken")
-notices.tick(false)
-check("shows outside a world too, without the world's invites", shown.call, ["Discord invite taken"])
-MGQ_MpUi::Style::LINGER_FRAMES.times { notices.tick(false) }
-check("and goes after a moment", shown.call, [])
+MGQ_MpOverworldSync.tick
+frames.call(2)
+check("leaving the world takes its invites and its messages, and a message posted outside stays", shown.call, ["Discord invite taken"])
+check("posted outside a world, it has no group", messages.call(:world_invite).map { |message| message[:group] }, [nil])
+notices.drop(:world_invite)
 $open = true
 
-# A message fades over its last frames, then the box fades out, keeping its picture meanwhile.
-$inbox << entry("message", 3, told(cid.merge("challenge" => 0)))
-MGQ_MpOverworldSync.tick
-MGQ_MpUi::Style::FADE_FRAMES.times { notices.tick(true) }
-notices.message(:fading, "Going soon", MGQ_MpUi::Style::FADE_FRAMES + 1)
-notices.tick(true)
-check("a message with time left shows whole", [shown.call, fading.call], [["Going soon"], []])
-notices.tick(true)
-check("and fades over its last frames", [shown.call, fading.call], [[], ["Going soon"]])
-MGQ_MpUi::Style::FADE_FRAMES.times { notices.tick(true) }
-check("until it ran out, after which the box fades out with its picture kept", [showing.call, box.call.visible, box.call.opacity < 255, box.call.bitmap.fading], [false, true, true, ["Going soon"]])
-(MGQ_MpUi::Style::FADE_FRAMES - 1).times { notices.tick(true) }
-check("and is gone after FADE_FRAMES", [box.call.visible, box.call.opacity], [false, 0])
-
-# More notifications than rows: the last row says how many more wait, and a long one is cut.
-(1..7).each { |n| notices.message([:many, n], n == 7 ? "A message that goes on and on and on and on and on far past the box's width" : "Message #{n}") }
-notices.tick(true)
-check("past the box's rows the last row says how many more wait, the newest message first",
-      [shown.call.size, shown.call.last, shown.call[1], shown.call.first.end_with?(MGQ_MpUi::ELLIPSIS)], [5, "+3 more", "Message 6", true])
-check("the long message is cut to its row", box.call.bitmap.text_size(shown.call.first).width <= Sprite_MpNoticeBox::WIDTH - 2 * Sprite_MpNoticeBox::EDGE, true)
-(1..7).each { |n| notices.drop([:many, n]) }
-notices.tick(true)
-check("dropped, they are gone at once", notices.notices, [])
-
-# The relay's announcement breaks into the box's rows, first row on top, and replaces the one before.
+# The relay's announcement.
 notices.announce("The relay restarts in ten minutes for an update. Finish your battles and stay on the map please.")
-notices.tick(true)
-check("the relay's announcement shows whole, in rows that fit the box, the first on top",
-      [shown.call.join(" "), shown.call.size > 1, shown.call.all? { |row| row.size * 7 <= Sprite_MpNoticeBox::WIDTH - 2 * Sprite_MpNoticeBox::EDGE }],
-      ["The relay restarts in ten minutes for an update. Finish your battles and stay on the map please.", true, true])
 notices.announce("Short news.")
-notices.tick(true)
-check("a newer announcement takes the place of every row of the one before", shown.call, ["Short news."])
-(notices::ANNOUNCEMENT_FRAMES + MGQ_MpUi::Style::FADE_FRAMES).times { notices.tick(true) }
-check("and runs out after a while", notices.notices, [])
+check("an announcement is one wrapped message for ten seconds, a newer one in its place",
+      messages.call(notices::ANNOUNCEMENT_KEY).map { |message| [message[:text], message[:wrap], message[:left]] }, [["Short news.", true, 600]])
 
-# Where the box lies: its default, a place the player left it in, its least size and the preset.
-layout = MGQ_MpUi::Layout
-stored = layout.instance_variable_get(:@stored)
-offered = lambda { offer = layout.instance_variable_get(:@offers).find { |each| each.id == :notices }; offer && offer.rect.to_a }
-size = lambda { [box.call.bitmap.width, box.call.bitmap.height] }
-many = lambda { |count| (1..count).each { |n| notices.message([:many, n], "Message #{n}") } }
-drop_many = lambda { (1..12).each { |n| notices.drop([:many, n]) } }
-registered = registered_box(:notices)
-check("the box is movable as Notifications, resizable both ways, never narrower than the keys beside a readable name nor lower than two rows",
-      registered, ["Notifications", Sprite_MpNoticeBox::ACTION_WIDTH + Sprite_MpNoticeBox::MIN_TEXT_WIDTH + 2 * Sprite_MpNoticeBox::EDGE, 2 * Sprite_MpNoticeBox::ROW + 4, :both])
-many.call(2)
-notices.tick(true)
-check("at its default it lies at the top left, WIDTH wide and MAX_ROWS high, offered to the layout where it lies",
-      [box.call.x, box.call.y, size.call, offered.call], [8, 8, [390, 114], [8, 8, 390, 114]])
-MGQ_MpHud.top_room = 30
-notices.tick(true)
-check("a strip at the top moves its default down", [box.call.y, offered.call[1]], [38, 38])
-$leader_hud_room = 100
-notices.tick(true)
-check("and the Leader HUD at the top left moves it below itself", [box.call.y, offered.call[1]], [130, 130])
-hud_margin, hud_below = 8, 4
-hud_bottom = 30 + hud_margin + (100 - hud_margin - hud_below)
-check("its top lies the HUD's gap of 4 pixels below the HUD's bottom", box.call.y - hud_bottom, hud_below)
-$leader_hud_room = 0
-
-Mod_Framework::Settings.store("ui_notices", "100,200,500,160")
-stored.clear
-drop_many.call
-many.call(9)
-notices.tick(true)
-check("a place the player left it in holds whatever the strip, its picture as large", [box.call.x, box.call.y, size.call, offered.call], [100, 200, [500, 160], [100, 200, 500, 160]])
-check("its height decides the rows, seven here, the last saying how many more wait", [shown.call.size, shown.call.first, shown.call.last], [7, "Message 9", "+3 more"])
-wide = "A message too long for the box at its default width, whole when wider"
-notices.message([:many, 10], wide)
-notices.tick(true)
-check("its width gives a long notification more room, whole here though the default would cut it",
-      [box.call.bitmap.places.first[3], shown.call.first, box.call.bitmap.text_size(wide).width > Sprite_MpNoticeBox::WIDTH - 2 * Sprite_MpNoticeBox::EDGE], [500 - 2 * Sprite_MpNoticeBox::EDGE, wide, true])
-
-Mod_Framework::Settings.store("ui_notices", "0,0,10,10")
-stored.clear
-$inbox << entry("message", 3, told(cid))
-MGQ_MpOverworldSync.tick
-places = box.call.bitmap.places
-keys = places.find { |text, _, _, _| text == "Y: Accept   N: Decline" }
-challenge = places.first
-min_width = registered[1]
-check("made smaller than its least, it keeps its least size", [size.call, offered.call], [[min_width, 48], [0, 0, min_width, 48]])
-check("where the keys stay whole at the right and the challenge, cut beside them, still names its sender",
-      [keys.nil?, keys && keys[1] + keys[3], challenge[0].start_with?("Cid "), challenge[0].end_with?(MGQ_MpUi::ELLIPSIS), box.call.bitmap.text_size(challenge[0]).width <= challenge[3],
-       keys && challenge[1] + challenge[3] <= keys[1]], [false, min_width - Sprite_MpNoticeBox::EDGE, true, true, true, true])
-check("and its two rows show the challenge and how many more wait", [shown.call.size, shown.call.last], [3, "+10 more"])
-
-MGQ_MpUi::Theme.apply("Monarch", "a test")
-notices.tick(true)
-check("a preset change draws the box anew, its frame with the preset's rim", box.call.bitmap.fills.size, 9)
-MGQ_MpUi::Theme.apply("Legacy", "a test")
-notices.tick(true)
-check("and back without it", box.call.bitmap.fills.size, 5)
-Mod_Framework::Settings.forget("ui_notices")
-stored.clear
-MGQ_MpHud.top_room = 0
-drop_many.call
-
-# The notice that the Mod Framework's settings, which keep the look, the places and Accept and
-# Decline, cannot be read shows in the box once, as Player.ini's does.
-Mod_Framework::Settings.instance_variable_set(:@refused, true)
-2.times { notices.tick(true) }
-posted = notices.instance_variable_get(:@messages).select { |entry| entry[:key] == MGQ_MpNotices::FRAMEWORK_INI_KEY }
-check("the notice that the Mod Framework's settings cannot be read shows in the box, posted once", posted.map { |entry| entry[:text] }, [Mod_Framework::Settings::NOTICE])
+# The notice that Player.ini cannot be read.
+player_ini = "Player.ini could not be read; close programs that hold it. Settings are not saved until then."
+$player_ini_notice = player_ini
+2.times { MGQ_MpOverworldSync.tick }
+check("the notice that Player.ini cannot be read shows, posted once", messages.call(notices::PLAYER_INI_KEY).map { |message| message[:text] }, [player_ini])
+check("the box failed nowhere", $framework_log.grep(/^notices: .*FAILED/), [])

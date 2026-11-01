@@ -2,10 +2,12 @@
 //  HudTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Asked for the arrows without the strip at the top and the player's sprite
 //      Paulinchen  2026-10-31: Created
 //
 //----------------------------------------------------------------
 
+using MGQOnline.Bridge;
 using MGQOnline.Bridge.Ruby;
 using MGQOnline.Game.Raid;
 using MGQParadox.Multiplayer.Network.World;
@@ -15,7 +17,8 @@ namespace MGQParadox.Multiplayer.Tests.Topics;
 
 /// <summary>
 /// Covers the topics of the map's and the battle's display over a room nobody else is in: a tier's
-/// bar on the map with its numbers and share written, and no arrow without players.
+/// bar on the map with its numbers and share written, no arrow without players, and no topic left
+/// that lays out an arrow, which the Mod Framework's markers do.
 /// </summary>
 public sealed class HudTopicsTests
 {
@@ -58,11 +61,18 @@ public sealed class HudTopicsTests
         {
             { "reason", RubyNil.Value },
             { "screen", new RubyArray([640L, 480L]) },
-            { "top_room", 0L },
-            { "from", new RubyArray([320L, 240L]) },
             { "ghosts", new RubyHash() },
         })!.AsArray();
 
         Assert.Equal(0, arrows.Count);
+    }
+
+    /// <summary>
+    /// Asserts that the arrows' pictures are no topic of the HUD's any more.
+    /// </summary>
+    [Fact]
+    public void ArrowPicture_IsNoTopic()
+    {
+        Assert.Equal(BridgeEnvelope.UnknownTopic, _caller.Refusal("hud.arrow_picture", new RubyArray([0L, 40L])));
     }
 }

@@ -2,6 +2,9 @@
 #  coop_events_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Dropped the stand-in of a lapse after a frame count, which no script asks for any more
+#                            - Kept the screen of choices open as asked, since the framework without its DLL refuses its window
+#                            - Read the screen of choices from MGQ_MpCoopChoices.screen, now a Mod Framework window
 #      Paulinchen  2026-10-31: Dropped the warp ban a call, a teleport and a telling carried
 #                            - Checked that the leader's story sends no gift, recruit, skill or departure message, and that a member behind catches up once with the history before the log, by the frozen rows and derived entries
 #                            - Checked that the leader's runs of the story reach every member who follows it, in the stream of the leader's story
@@ -415,7 +418,6 @@ end
 # The line above the player's head, its lapse given as the seconds left for the checks to read.
 module MGQ_MpActions
   def self.lapse_in(frames); frames / 60.0; end
-  def self.lapse_at(since, frames); lapse_in(since + frames - Graphics.frame_count); end
 end
 load_script "coop_scope"
 load_script "story_state"
@@ -1986,31 +1988,27 @@ module MGQ_MpActions
   Notice = Struct.new(:key, :text, :color, :action, :take, :decline, :mark)
   def self.offer(offers); ($offered ||= []) << offers; end
 end
-# The world screen's form, which the screen of choices draws with, stood in by its fields alone.
-class Window_MpWorldForm; def initialize(*); end; end
 # The base of the game's menu scenes.
 class Scene_MenuBase; end
+# The game's rectangle and font, and a picture that measures texts, with which the screen of
+# choices, a Mod Framework window, measures its parts.
+Rect = Struct.new(:x, :y, :width, :height) unless defined?(Rect)
+Font = Struct.new(:size, :color, :bold, :outline, :out_color, :name, :italic) unless defined?(Font)
+class Bitmap
+  def initialize(width, height); @width, @height, @font = width, height, Font.new(24); end
+  def font; @font; end
+  def text_size(text); Rect.new(0, 0, text.to_s.size * 12, 24); end
+  def disposed?; false; end
+end
 # The scenes called, kept in $scenes.
 module SceneManager; def self.call(scene); ($scenes ||= []) << scene; end; end
-# Stands in for the world screen of world.rbx, its form alone.
-module MGQ_MpWorld
-  # A form of the world screen: its fields and what is filled in.
-  class Form
-    # A field of the form.
-    Field = Struct.new(:key, :kind, :label, :row, :hint, :options) do
-      def choices; options[:choices] || []; end
-      def note_of(form); options[:note] ? options[:note].call(form, form[key].to_i).to_s : ""; end
-    end
-    attr_reader :title, :fields
-    def initialize(title, fields, values); @title = title; @fields = fields; @values = values; end
-    def [](key); @values[key]; end
-    def []=(key, value); @values[key] = value; end
-  end
-end
 # The world's ticks, with which coop_choices.rbx forgets what waits once the world closes.
 module MGQ_MpOverworldSync; def self.on_tick(&block); ($choice_ticks ||= []) << block if block; end; end
 load_script "coop_choices"
 choices = MGQ_MpCoopChoices
+# The screen of choices stays open as asked: its window on the Mod Framework has its own tests
+# (story_choices_test.rb), and the framework here runs without its DLL, which refuses every window.
+MGQ_MpCoopChoices::Screen.define_singleton_method(:open) { |screen| screen }
 { 5 => "Alice", 26 => "Ilias", 163 => "Lily", 167 => "Lucia", 287 => "Succubus", 288 => "Natasha", 540 => "Amira", 153 => "Sphinx", 241 => "Priestess",
   245 => "Miria", 334 => "Spider Princess" }.each { |id, name| $data_actors[id] = Actor.new(name) }
 
@@ -2082,10 +2080,11 @@ SceneManager.scene = Scene_Map.new
 $game_map.interpreter.busy = false
 $game_message.busy = false
 $game_map.update
-check("catching up past Magistea Village asks the member's own outcome, on the screen with one row",
-      [$scenes, choices.instance_variable_get(:@screen) && choices.instance_variable_get(:@screen)[:keys]], [[Scene_MpStoryChoices], [:magistea]])
-screen = choices.take_screen
-screen[:done].call(:magistea => 1)
+check("catching up past Magistea Village asks the member's own outcome, on the screen with one row", choices.screen && choices.screen[:keys], [:magistea])
+screen = choices.screen
+screen[:answers][:magistea] = 1
+screen[:confirmed] = true
+choices.screen_closed(screen, :button)
 check("and keeps it", [$game_switches[2097], $game_party.include_actors.include?(163), choices.instance_variable_get(:@prompts)], [true, true, []])
 MGQ_MpCoopStory.take(leader, { "story" => "delta", "party" => "p1", "s" => "2280:1", "v" => "", "ss" => "" })
 check("a choice the leader resolves after the member followed is left to the replay of its run", choices.instance_variable_get(:@prompts), [])
@@ -2115,9 +2114,10 @@ leader.state["ssoffer"] = "me:1"
 check("the member sees the leader's offer", choices::Offers.notice_of(leader).text, "Leader offers to bring your story up to theirs")
 $scenes = []
 choices.accept(leader)
-screen = choices.take_screen
+screen = choices.screen
 check("accepting shows the choices the catch-up carries them past",
-      [$scenes, screen[:keys], screen[:buttons]], [[Scene_MpStoryChoices], [:navy, :plansect, :succubus, :spider, :sphinx, :decision], ["Bring me there", "Cancel"]])
+      [screen[:keys], screen[:buttons]], [[:navy, :plansect, :succubus, :spider, :sphinx, :decision], ["Bring me there", "Cancel"]])
+choices.screen_closed(screen, :cancel)
 leader.state["ssoffer"] = ""
 check("which closes once the leader takes the offer back", choices.valid_offer?(leader), "Leader took the offer back.")
 $leader = nil

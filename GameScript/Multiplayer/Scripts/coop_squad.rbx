@@ -2,7 +2,8 @@
 #  coop_squad.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-01: Added the followers' row through the Mod Framework's options
+#      Paulinchen  2026-11-01: Named the Mod Framework's interface by its own name
+#                            - Added the followers' row through the Mod Framework's options
 #      Paulinchen  2026-10-31: Took the group of its row from MGQ_Multiplayer::OPTION_PREFIX
 #      Paulinchen  2026-10-30: Read the own share, the followers' mode and whether squads split from the DLL's view of the party once a frame
 #      Paulinchen  2026-10-23: Asked the DLL or the core library for the squad math, the team fit and the default squad rules
@@ -93,7 +94,7 @@ module MGQ_MpCoopSquad
   }
 
   # Color of the line above the first character past a squad in the formation screens.
-  CUT_COLOR = MGQ_MpUi::Style::BAD
+  CUT_COLOR = Mod_Framework::UI::Style::BAD
 
   # Shares of red, green and blue in a color's brightness, which a monochrome picture keeps.
   LUMA = [0.299, 0.587, 0.114]

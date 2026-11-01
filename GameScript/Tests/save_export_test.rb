@@ -3,6 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-01: Checked Copy to my game in the game's menu through the Mod Framework and its message
+#                            - Stopped loading the deleted ui_boxes.rbx
+#                            - Dropped the stand-ins of the name box and letters of the deleted text screen
 #      Paulinchen  2026-10-31: Loaded ui_online.rbx and ui_boxes.rbx in place of the scripts the Mod Framework took over
 #      Paulinchen  2026-10-30: Stopped loading the deleted world_mods_parking.rbx
 #      Paulinchen  2026-10-23: Made the worlds on this PC through the stand-ins of the DLL's topics
@@ -91,10 +93,6 @@ class Window_MenuCommand < Window_Command
   # @return [Boolean] Whether it did.
   def disposed?; @disposed == true; end
 end
-# Stands in for the game's name entry.
-class Window_NameEdit < Window_Base; end
-# Stands in for the game's name entry's letters.
-class Window_NameInput < Window_Selectable; end
 # Stands in for the game's colors.
 class Color; def initialize(*); end; end
 # Stands in for the game's sprites.
@@ -139,7 +137,6 @@ end
 
 load_script "world_save_distribution"
 load_script "ui_online"
-load_script "ui_boxes"
 load_script "world"
 load_script "world_mods"
 load_script "world_screen"

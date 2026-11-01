@@ -2,7 +2,16 @@
 #  world_data_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-01: Dropped the stand-in of the title screen's commands, which no script hooks any more
+#      Paulinchen  2026-11-01: Checked only the mods of a world as the DLL orders them, whose required and essential readers are gone
+#                            - Dropped the checks that read the old screen prototype instead of the scripts
+#                            - Dropped the checks of the form window no screen draws with any more
+#                            - Named the Mod Framework's interface by its own name
+#                            - Dropped the stand-in of the title screen's commands, which no script hooks any more
+#                            - Stopped loading the deleted ui_boxes.rbx
+#                            - Checked a world's players, mods and description and the mod picker in the list box of the Mod Framework's components
+#                            - Dropped the stand-ins of the name box and letters of the deleted text screen
+#                            - Checked the forms, the list box, the mod picker and the text boxes on the world screen built on the Mod Framework's components
+#                            - Left the drawing of the old windows and the left side to world_screen_test.rb, and stopped loading the deleted world_text.rbx
 #      Paulinchen  2026-10-31: Typed through the Mod Framework's text box, reading the typing from $mgq_text_input
 #      Paulinchen  2026-10-30: Checked that the measure once the world's mods loaded leaves the title's fingerprint
 #                            - Expected the forms and the details without the game data's fields and comparison
@@ -67,7 +76,7 @@
 # Checks what a creator tells about a world and which games may enter it (world.rbx,
 # world_screen.rbx): the fingerprint of a game's data, the form's description, mods and rule,
 # the directory's fields for them, a differing game kept out or asked first, what the details
-# say, the text boxes, the mod picker and the left side of the world list.
+# say, the list box, the text boxes and the mod picker.
 
 require "zlib"
 require "fileutils"
@@ -79,7 +88,7 @@ require_relative "rules_support"
 # Stand-ins for the game.
 
 # The game's scene base: returning to the last scene sets $returned.
-class Scene_Base; def return_scene; $returned = true; end; end
+class Scene_Base; def start; end; def update; end; def terminate; end; def scene_changing?; false; end; def return_scene; $returned = true; end; end
 # The game's base of menu scenes.
 class Scene_MenuBase < Scene_Base; end
 # The game's load screen.
@@ -90,10 +99,6 @@ class Window_Base; def initialize(*); end; end
 class Window_Selectable < Window_Base; end
 # The game's command window.
 class Window_Command < Window_Selectable; end
-# The game's name box of its text screen.
-class Window_NameEdit < Window_Base; end
-# The game's letter table of its text screen.
-class Window_NameInput < Window_Selectable; end
 # The game's color, which keeps nothing.
 class Color; def initialize(*); end; end
 # The game's sprite, which draws nothing.
@@ -139,6 +144,8 @@ module MGQ_Multiplayer
   module Ini; def self.read(_path); {}; end; def self.load(_path, _quiet = false); {}; end; end
   # The link to the DLL: records each call in $calls and reads its values from $dll.
   module Link
+    # Answers the player's id.
+    def self.player_id; "me"; end
     # A DLL function: a call is checked against its signature, recorded and answered with 1.
     Function = Struct.new(:name, :signature) do
       # Checks a call's arguments against the signature, records the call in $calls and answers 1.
@@ -162,98 +169,20 @@ module MGQ_Multiplayer
 end
 
 
+require_relative "world_screen_support"
 load_script "world_save_distribution"
 load_script "ui_online"
-load_script "ui_boxes"
 load_script "world"
 load_script "world_mods"
-load_script "world_text"
 load_script "world_screen"
 open_rules_bridge
+open_fake_ui { typed = $typed.to_s; $typed = nil; [typed, typed.size] }
 
-# A small window of the world screen: keeps the commands it opened with and whether it takes input.
-class FakeChoice
-  # The commands it opened with last, nil while closed.
-  attr_reader :choices
-
-  # Opens with commands and takes input.
-  #
-  # @param choices [Array<Array>] The commands.
-  def start(choices); @choices = choices; end
-
-  # Closes.
-  def finish; @choices = nil; end
-
-  # Takes input.
-  def activate; end
-
-  # Takes no input.
-  def deactivate; end
-
-  # The cursor's row.
-  #
-  # @return [Integer] -1, no cursor.
-  def index; -1; end
-
-  # Keeps the world to put the cursor on.
-  #
-  # @param _id [String] The world's directory id.
-  def select_world(_id); end
-
-  # The row picked last with select.
-  attr_reader :selected
-
-  # Picks a row.
-  #
-  # @param index [Integer] The row.
-  def select(index); @selected = index; end
-
-  # Draws nothing.
-  def refresh; end
-end
-
-# The list box of the world screen: keeps what it shows and whether it was hidden.
-class FakeBox
-  # What it shows, nil while hidden.
-  attr_reader :view
-
-  # Shows a list, reading its title as the real box draws it, so a closed list fails here too.
-  #
-  # @param view [Sprite_MpListBox::View] The list.
-  def show(view); view.title; @view = view; end
-
-  # Hides the box.
-  def hide; @view = nil; end
-end
-
-# The lines at the top of the world screen: keeps what they show.
-class FakeInfo
-  # What they show.
-  attr_reader :lines
-
-  # Shows lines.
-  #
-  # @param lines [Array<String, nil>] The lines.
-  def show(lines); @lines = lines; end
-end
-
-# Builds the world screen without its windows.
+# Opens the world screen.
 #
 # @return [Scene_MpWorlds] The screen.
 def new_scene
-  scene = Scene_MpWorlds.allocate
-  [:@actions_window, :@members_window, :@confirm_window, :@start_window, :@list_window, :@form_window].each { |name| scene.instance_variable_set(name, FakeChoice.new) }
-  scene.instance_variable_set(:@info_window, FakeInfo.new)
-  scene.instance_variable_set(:@forms, { :new_world => MGQ_MpWorld::WorldForm.create(:new_world) })
-  scene
-end
-
-# What the lines at the top of the world screen say, the player's name left out.
-#
-# @param scene [Scene_MpWorlds] The world screen.
-# @return [String] The message.
-def said(scene)
-  scene.instance_variable_get(:@info_window).lines[1]
+  world_scene
 end
 
 # An entry of the game's database: its name, its note and the features its file holds.
@@ -407,14 +336,6 @@ check("its Save's row comes off its description, so the form keeps its height",
 form[:type] = 0
 check("a description is tidied", form.check(description, "  A slow run.  "), ["A slow run.", nil])
 check("and may be empty", form.check(description, "  "), ["", nil])
-prepared = []
-asking = new_scene
-asking.define_singleton_method(:form) { form }
-SceneManager.define_singleton_method(:scene) { Object.new.tap { |scene| scene.define_singleton_method(:prepare) { |*args| prepared << args } } }
-asking.ask_field(description, true)
-asking.ask_field(form.fields[0], true)
-check("the text screen breaks the description over several lines and a name not", prepared.map { |args| [args[0], args[3][:area]] }, [[[:field, :description], true], [[:field, :name], false]])
-SceneManager.define_singleton_method(:scene) { Object.new.tap { |scene| def scene.prepare(*); end } }
 $called = nil
 check("while a name may not", form.check(form.fields[0], " ")[1], "The world needs a name.")
 rename = MGQ_MpWorld::WorldForm.rename(:rename, "")
@@ -434,22 +355,24 @@ $player_ini = nil
 # A new world: the DLL builds the request from the form it holds and says what came of it
 # (WorldEnteringTests), the screen hands it the starting save's files.
 scene = new_scene
-strict_form = scene.instance_variable_get(:@forms)[:new_world]
+scene.enter_form(:new_world)
+strict_form = scene.form
 strict_form[:name] = "W"
-scene.instance_variable_set(:@form_symbol, :new_world)
 $screen_steps = [["busy", "create"]]
 scene.create_world
-check("making a world has the DLL make it, with no files without a shared save", [screen_requests("screen.do").last.values_at("do", "start"), scene.instance_variable_get(:@busy)], [["create", []], "create"])
+check("making a world has the DLL make it, with no files without a shared save", [screen_requests("screen.do").last.values_at("do", "start"), scene.busy], [["create", []], "create"])
 shared_field = strict_form.fields.find { |field| field.key == :shared }
 check("Shared Mod Settings has its row to itself, unticked, and says what it does to players, with no checkbox of the game data beside it",
       [shared_field.kind, shared_field.label, shared_field.group, shared_field.side, strict_form.fields.any? { |field| field.key == :mismatch }, MGQ_MpWorld::WorldForm.create(:new_world)[:shared], shared_field.hint],
       [:check, "Shared Mod Settings", "Game data", nil, false, false, "Ticked: every player plays with your mod options here. Unticked: each keeps their own."])
-$screen_steps = [["buzz"], ["say", "The request could not be started. Try again in a moment."], ["resume_form"]]
 scene = new_scene
-scene.instance_variable_set(:@form_symbol, :new_world)
+scene.enter_form(:new_world)
+ui = Mod_Framework::UI
+ui::Tree.focus(form_part(scene, :confirm))
+$screen_steps = [["buzz"], ["say", "The request could not be started. Try again in a moment."], ["resume_form"]]
 scene.create_world
-check("a world the DLL refuses leaves the form open with why", [said(scene), scene.instance_variable_get(:@resume_form), scene.instance_variable_get(:@busy)],
-      ["The request could not be started. Try again in a moment.", true, nil])
+check("a world the DLL refuses leaves the form open at the field it was sent from, with why", [said(scene), scene.form.nil?, $focused.id, scene.busy],
+      ["The request could not be started. Try again in a moment.", false, "form:confirm", nil])
 $dll["mp_dir_list"] = "state=ready\n\n" \
   "world\tw1\t4\t0\tc\t0\tC\tStrict\tnone\t0\t0\t1\t0\t1\t#{plain}\tNo mods\tUnmodded only.\t\t\tclassic\toff\t\t0\t\t0\n" \
   "world\tw2\t4\t0\tc\t0\tC\tLoose\tnone\t0\t0\t1\t0\t0\t#{plain}\tSome Mod\tA slow run through part one of the story with friends.\t\t\tclassic\toff\t\t0\t\t0\n" \
@@ -470,15 +393,11 @@ MGQ_MpWorld::Added.define_singleton_method(:all) { added }
 MGQ_MpWorld::Added.define_singleton_method(:add) { |id| added << id }
 MGQ_MpWorld::Added.define_singleton_method(:remove) { |id| added.delete(id) }
 scene = new_scene
-scene.instance_variable_get(:@forms)[:join_hidden] = MGQ_MpWorld::WorldForm.join(:join_hidden)
-scene.instance_variable_get(:@forms)[:join_hidden][:id] = "ab" * 16
-scene.instance_variable_set(:@form_symbol, :join_hidden)
-form_window = scene.instance_variable_get(:@form_window)
-form_window.define_singleton_method(:unselect) { }
-form_window.define_singleton_method(:select) { |_index| }
+scene.enter_form(:join_hidden)
+scene.form[:id] = "ab" * 16
 $screen_steps = [["busy", "find"]]
 scene.send_form
-check("the form has the DLL look the world up by its id", [screen_requests("screen.do").last["do"], scene.instance_variable_get(:@busy)], ["find", "find"])
+check("the form has the DLL look the world up by its id", [screen_requests("screen.do").last["do"], scene.busy], ["find", "find"])
 scene.play("steps" => [["idle"], ["fresh_form", "join_hidden"], ["close_form"], ["select", "ab" * 16], ["say", "Hidden Base was added to your list. #{MGQ_MpWorldScreen.text("enter_hint")}"], ["back"]])
 check("a world found is added, the form empty again and closed", [said(scene), scene.form, scene.instance_variable_get(:@forms)[:join_hidden][:id]],
       ["Hidden Base was added to your list. #{MGQ_MpWorldScreen.text("enter_hint")}", nil, ""])
@@ -489,125 +408,23 @@ added << "ab" * 16
 hidden_entry = screen_entry(MGQ_MpWorld::Entry.new("ab" * 16, "Hidden Base", listed[0], nil, false, false))
 actions = lambda do |entry|
   screen = new_scene
-  screen.instance_variable_get(:@list_window).define_singleton_method(:current_ext) { entry }
-  screen.on_world
-  [screen, screen.instance_variable_get(:@actions_window).choices.map { |choice| choice[1] }]
+  screen.on_world(entry)
+  offered = MGQ_MpWorldScreen.actions(entry)
+  shown = menu_texts == offered.map { |label, _symbol| label }
+  [screen, offered.map { |_label, symbol| symbol }, shown]
 end
-scene, offered_actions = actions.call(hidden_entry)
-check("an added world never entered may be removed from the list", offered_actions.include?(:forget), true)
-check("another world may not", actions.call(entries[1])[1].include?(:forget), false)
+scene, offered_actions, shown = actions.call(hidden_entry)
+check("an added world never entered may be removed from the list, as its menu shows", [offered_actions.include?(:forget), shown], [true, true])
 $screen_steps = [["say", "Hidden Base was removed from your list."], ["back"]]
-scene.on_forget
+pick_menu(scene, offered_actions.index(:forget))
 check("removing it has the DLL forget its id, and says what the DLL tells", [screen_requests("screen.do").last.values_at("do", "id"), said(scene)], [["forget", "ab" * 16], "Hidden Base was removed from your list."])
+check("another world may not", actions.call(entries[1])[1].include?(:forget), false)
+cancel_menu(scene)
 
-# A details window that draws on nothing and keeps the texts it draws.
-#
-# @param width [Integer] The width of its contents.
-# @param height [Integer] The height of its contents.
-# @return [Array] The window and the texts drawn, which fill as it shows a world.
-def new_detail(width, height)
-  detail = Window_MpWorldDetail.allocate
-  # The details' old methods, such as panels, are the prototype's, which the DLL's model follows.
-  detail.define_singleton_method(:method_missing) { |name, *args| screen_detail.send(name, *args) }
-  texts = []
-  font = Struct.new(:size).new(24)
-  canvas = Struct.new(:font).new(font)
-  canvas.define_singleton_method(:clear) { texts.clear }
-  canvas.define_singleton_method(:fill_rect) { |*| }
-  detail.define_singleton_method(:contents) { canvas }
-  detail.define_singleton_method(:contents_width) { width }
-  detail.define_singleton_method(:contents_height) { height }
-  detail.define_singleton_method(:change_color) { |*| }
-  detail.define_singleton_method(:reset_font_settings) { font.size = 24 }
-  detail.define_singleton_method(:text_size) { |text| Struct.new(:width).new(text.size * font.size / 2) }
-  detail.define_singleton_method(:draw_text) { |*args| texts << args[4] }
-  %w[system_color normal_color power_up_color crisis_color].each { |name| detail.define_singleton_method(name) { name } }
-  [detail, texts]
-end
-
-# Finds a value of the details by its label.
-#
-# @param panels [Array<Window_MpWorldDetail::Panel>] The panels.
-# @param label [String] The label.
-# @return [Window_MpWorldDetail::Cell, nil] The cell.
-def cell_of(panels, label)
-  panels.map { |panel| panel.rows }.flatten.compact.find { |cell| cell.label == label }
-end
-
-# What the details say.
-detail, texts = new_detail(386, 336)
-panels = detail.panels(entries[1], "me")
-check("the details come in panels: the world, its game data, its players", panels.map { |panel| panel.title }, ["World", "Game data", "Players"])
-check("the mods a world needs", cell_of(panels, "Mods").text, "Some Mod")
-check("a game is told that its data is compared with the creator's as it enters, not at the title, which lacks the world's mods",
-      [cell_of(panels, "Your game").text, cell_of(panels, "Your game").color], ["Compared with the creator's as you enter", :normal])
-check("and that a game that differs is only warned", panels[1].note, "differing games are warned")
-panels = detail.panels(entries[2], "me")
-check("whatever the world's old rule for games that differ", [cell_of(panels, "Your game").text, panels[1].note], ["Compared with the creator's as you enter", "differing games are warned"])
-check("a world that names no mod says so", cell_of(panels, "Mods").text, "No mod named")
-panels = detail.panels(entries[3], "me")
-check("a world without shared mod settings says each player keeps their own", [panels[1].rows[1][0].label, panels[1].rows[1][0].text, panels[1].rows[1][0].color], [nil, "Mod settings: each player's own", :normal])
-sharing = MGQ_MpWorld::Entry.new("w2", "Loose", listed[1].dup, nil, false, false)
-sharing.listed.settings = "@shared=o:1;mod_level_cap=i:0"
-sharing.listed.mods = "Some Mod; !Other Mod; Level Cap"
-# This game's Mod Config, whose groups name the mods of a world's options.
-module NWConst; module Config; MOD_CONTENTS = [{ :key => :mod_level_cap, :name => "[Level Cap] Level Cap", :sub => true }]; end; end
-check("one that shares them says what the DLL says of them, in gold", [detail.panels(sharing, "me")[1].rows[1][0].text, detail.panels(sharing, "me")[1].rows[1][0].color, $settings_calls.last[1].values_at("creator_id", "me")],
-      ["Mod settings: shared", :gold, ["c", "me"]])
-sharing.listed.settings = "mod_level_cap=i:0"
-check("settings from before the marker count as shared", detail.panels(sharing, "me")[1].rows[1][0].color, :gold)
-
-# The players.
-member = MGQ_MpWorld::Directory::Member
-crowd = listed[0].dup
-crowd.members = [member.new("me", true, "Me"), member.new("a", true, "Ann"), member.new("b", false, "Bo"), member.new("c", false, "Cy"), member.new("d", false, "Di")]
-players = detail.players_panel(crowd, "me")
-check("the players come two to a row, the player marked, the rest counted", players.rows.map { |row| row.map { |cell| cell && cell.text } }, [["Me (you)", "Ann"], ["Bo", "and 2 more"]])
-check("those online in the color of what is fine", players.rows.flatten.map { |cell| cell.color }, [:good, :good, :normal, :normal])
-check("with how many joined beside the heading", players.note, "5 joined")
-crowd.members = crowd.members.first(3)
-check("an odd one leaves its neighbour's place empty", detail.players_panel(crowd, "me").rows.last, [ScreenPrototype::Model::Cell.new(nil, "Bo", :normal), nil])
-
-# The description.
-detail.show(entries[1], "me")
-start = texts.index("DESCRIPTION")
-check("the description comes last, on as many lines as it needs", texts[start + 1..-1], ["A slow run through part one of the story with", "friends."])
-check("a long one is cut where the panel ends", detail.description_lines("one two three four five six", 80, 2), ["one", "two .."])
-check("a long value is cut at its end", detail.cut("Differs: actors, classes and 9 more", 200), "Differs: acto...")
-
-# Where the form's fields are drawn.
-window = Window_MpWorldForm.allocate
-window.define_singleton_method(:contents_width) { 386 }
-groups = []
-rects = window.places(form.fields) { |group, y, height| groups << [group, y, height] }
-key = lambda { |name| rects[form.fields.index { |field| field.key == name }] }
-check("every field has a place, and the form fits its window", [rects.compact.size, rects.map { |rect| rect.y + rect.height }.max <= 360], [form.fields.size, true])
-check("the panels come in the form's order, one below the other", [groups.map { |group| group[0] }, groups.each_cons(2).all? { |upper, lower| upper[1] + upper[2] < lower[1] }], [["World", "Game data", "Description"], true])
-check("two fields of a row share it without touching", [key.call(:password).y == key.call(:seats).y, key.call(:password).x + key.call(:password).width < key.call(:seats).x], [true, true])
-check("the description takes four lines across its panel", [key.call(:description).height, key.call(:description).width], [4 * 16 + 2, 380])
-check("the button comes below the last panel, across the window", [key.call(:confirm).y > groups.last[1] + groups.last[2], key.call(:confirm).width], [true, 386])
-check("no two fields overlap", rects.combination(2).none? { |a, b| a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height }, true)
-join_rects = window.places(MGQ_MpWorld::WorldForm.join(:join_hidden).fields) { |*| }
-check("the join form places its fields the same way", join_rects.map { |rect| rect.y }, join_rects.map { |rect| rect.y }.sort.uniq)
-fitting = lambda do |fields|
-  placed = window.places(fields) { |*| }
-  [placed.compact.size == fields.size, placed.map { |rect| rect.y + rect.height }.max <= 360,
-   placed.combination(2).none? { |a, b| a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height }]
-end
-raid_form = MGQ_MpWorld::WorldForm.create(:new_world)
-raid_form[:type] = 1
-fit_listed = listed[1].dup
-fit_listed.type = MGQ_MpWorld::RAID
-check("a Raid World's forms fit their window with the squad rules' button and its Save, the new one and the creator's edit form, and so does the rules' form",
-      [fitting.call(raid_form.fields), fitting.call(MGQ_MpWorld::WorldForm.edit(:edit_world, fit_listed, true).fields), fitting.call(raid_form.limits.fields)],
-      [[true, true, true], [true, true, true], [true, true, true]])
-
-# The editor every text box shares.
-$held = []
-$key_down = nil
-$background = true
 # Input past the capture: buttons held in $held, the key in $key_down, the mouse in $mouse, $click
 # and $wheel.
+$held = []
+$key_down = nil
 module MGQ_Multiplayer
   # The capture: a button repeats while in $held and triggers as Input says.
   module Mod_Framework::UI::Capture; def self.repeat?(button); $held.include?(button); end; def self.trigger?(button); Input.trigger?(button); end; end
@@ -616,104 +433,23 @@ module MGQ_Multiplayer
   # The mouse: its position from $mouse, a click from $click taken once, the wheel's notches from
   # $wheel.
   module Mod_Framework::UI::Mouse; def self.position; $mouse; end; def self.clicked?; $click ? ($click = false; true) : false; end; def self.wheel; $wheel.to_i; end; end
-  # Whether the Mod Framework's DLL works, which takes the keyboard, from $background.
-  def Mod_Framework.available?; $background; end
 end
 # Lines that keep each character's place.
 widths = lambda { |part| part.size * 10 }
-check("a text is broken before the word that does not fit, its spaces kept", MGQ_MpUi.wrap_spans("one two  three four", 100, &widths), [[0, 9], [9, 10]])
-check("an empty text is one empty line", MGQ_MpUi.wrap_spans("", 100, &widths), [[0, 0]])
-check("a word longer than a line is broken inside it", MGQ_MpUi.wrap_spans("a verylongwordindeed b", 100, &widths), [[0, 2], [2, 10], [12, 10]])
+check("a text is broken before the word that does not fit, its spaces kept", Mod_Framework::UI.wrap_spans("one two  three four", 100, &widths), [[0, 9], [9, 10]])
+check("an empty text is one empty line", Mod_Framework::UI.wrap_spans("", 100, &widths), [[0, 0]])
+check("a word longer than a line is broken inside it", Mod_Framework::UI.wrap_spans("a verylongwordindeed b", 100, &widths), [[0, 2], [2, 10], [12, 10]])
 # The game's Ruby 1.9 hands String#chars out as an Enumerator, which cannot count itself.
 String.send(:alias_method, :chars_of_ruby_3, :chars)
 String.send(:define_method, :chars) { Object.new }
-spans_on_1_9 = MGQ_MpUi.wrap_spans("a verylongwordindeed b", 100, &widths)
+spans_on_1_9 = Mod_Framework::UI.wrap_spans("a verylongwordindeed b", 100, &widths)
 String.send(:alias_method, :chars, :chars_of_ruby_3)
 check("and is broken without String#chars, as Ruby 1.9 needs", spans_on_1_9, [[0, 2], [2, 10], [12, 10]])
-spans = MGQ_MpUi.wrap_spans("one two three four", 80, &widths)
-check("a place in the text is on the line that starts at or before it", [spans, [0, 7, 8, 13, 18].map { |place| MGQ_MpUi.span_of(spans, place) }], [[[0, 8], [8, 6], [14, 4]], [0, 0, 1, 1, 2]])
+spans = Mod_Framework::UI.wrap_spans("one two three four", 80, &widths)
+check("a place in the text is on the line that starts at or before it", [spans, [0, 7, 8, 13, 18].map { |place| Mod_Framework::UI.span_of(spans, place) }], [[[0, 8], [8, 6], [14, 4]], [0, 0, 1, 1, 2]])
 
-# The description as it is typed: C# breaks it into lines and keeps the cursor (EditModel), and
-# the window draws the lines and the cursor C# says it shows.
-require_relative "bridge_support"
-drawn = []
-cursors = []
-font = Struct.new(:size, :color, :bold, :italic).new(18, "normal_color", false, false)
-canvas = Struct.new(:font).new(font)
-bars = []
-canvas.define_singleton_method(:fill_rect) do |*args|
-  cursors << args[0, 2] if args[2] == MGQ_MpUi::TextBox::CURSOR_WIDTH
-  bars << args[0, 2] if args[2] == MGQ_MpUi::Style::SCROLLBAR_WIDTH
-end
-canvas.define_singleton_method(:text_size) { |text| Struct.new(:width).new(text.size * 9) }
-canvas.define_singleton_method(:draw_text) { |*args| drawn << args[4] }
-window.define_singleton_method(:contents) { canvas }
-window.define_singleton_method(:change_color) { |*| }
-window.define_singleton_method(:normal_color) { "normal_color" }
-window.define_singleton_method(:text_size) { |text| Struct.new(:width).new(text.size * 9) }
-window.define_singleton_method(:draw_text) { |*args| drawn << args[4] }
-window.define_singleton_method(:index) { form.fields.index(description) }
-window.instance_variable_set(:@form, form)
-window.instance_variable_set(:@rects, rects)
-form[:description] = ""
-window.draw_area(key.call(:description), description)
-check("an empty description says what it is for", drawn, ["What the world is about"])
-drawn.clear
-text_fake = FakeBridge.new
-views = []
-shown = nil
-text_fake.answer(MGQ_MpUi::Glyphs::TOPIC) { |_request| nil }
-text_fake.answer(MGQ_MpUi::TextEdit::OPEN) { |_request| 1 }
-text_fake.answer(MGQ_MpUi::TextEdit::VIEW) { |request| views << request; { "id" => 1, "text" => form[:description], "cursor" => 49, "shown" => true, "view" => shown } }
-open_framework(text_fake)
-form[:description] = "A slow run through part one of the story with friends, with every side quest on the way."
-form.editing = :description
-form.edit = MGQ_MpUi::TextEdit.new(form[:description])
-area = key.call(:description)
-shown = { "area" => [[[0, 41], [41, 39], [80, 8]], 1, 1, 72] }
-window.draw_area(area, description)
-check("a typed one tells C# where it is drawn: in the window's font, as wide as inside its box, its lines",
-      views.map { |view| [view["id"], view["font"], view["width"], view["rows"]] }, [[1, 1, area.width - 2 * Window_MpWorldForm::TEXT_INSET, (area.height - 2) / 16]])
-check("and draws the lines C# shows, from the first in sight", drawn.map { |line| line.rstrip }, ["with friends, with every side quest on", "the way."])
-check("with the cursor where C# puts it, on its line", cursors, [[area.x + Window_MpWorldForm::TEXT_INSET + 72, area.y + 1 + 2]])
-drawn.clear
-views.clear
-window.draw_area(area, description)
-check("drawn again where it was, it asks C# nothing", [drawn.size, views], [2, []])
-{ :x => 0, :y => 0, :padding => 12, :ox => 0, :oy => 0 }.each { |name, value| window.define_singleton_method(name) { value } }
-$mouse = [12 + area.x + 5, 12 + area.y + 5]
-$wheel = -2
-check("the wheel turned down over it scrolls it down by its notches", window.wheel_lines, 2 * Window_MpWorldForm::AREA_WHEEL_LINES)
-$mouse = [600, 470]
-check("the wheel scrolls nothing while the mouse points elsewhere", window.wheel_lines, 0)
-$wheel = nil
-$mouse = nil
-form.editing = nil
-form.edit = nil
-form[:description] = (%w[word] * 40).join(" ")
-drawn.clear
-window.draw_area(area, description)
-check("and its first lines, cut, once it is not typed into", [drawn.size, drawn.first[0, 9], drawn.last[-2, 2]], [4, "word word", ".."])
-
-# A text box of one line as it is typed.
-drawn.clear
-cursors.clear
-window.define_singleton_method(:system_color) { "system_color" }
-form[:mods] = "Some Mod; !Another Mod; ?A Third Mod With A Long Name"
-mods_field = form.fields.find { |field| field.key == :mods }
-window.draw_box(key.call(:mods), mods_field, true)
-check("a text too long for its box is cut at its end while nobody types", drawn.last[-2, 2], "..")
-form.editing = :mods
-form.edit = MGQ_MpUi::TextEdit.new(form[:mods])
-shown = { "line" => [20, 33, 297] }
-drawn.clear
-window.draw_box(key.call(:mods), mods_field, true)
-check("while typed into, the box shows the part of the text C# picked around the cursor, and the cursor where it says",
-      [drawn.last, cursors.size, cursors.last[0] - key.call(:mods).x], [form[:mods][20, 33], 1, Window_MpWorldForm::LABEL_WIDTH + Window_MpWorldForm::TEXT_INSET + 297])
-form.editing = nil
-form.edit = nil
 # The text box from here on types what $typed holds.
-open_fake_ui { typed = $typed.to_s; $typed = nil; [typed, 0] }
+open_fake_ui { typed = $typed.to_s; $typed = nil; [typed, typed.size] }
 
 # The hints, which share two lines at the top of the world screen.
 hinted_raid = listed[1].dup
@@ -737,51 +473,47 @@ offered = lambda do |me, admin|
   scene = new_scene
   scene.instance_variable_set(:@me, me)
   scene.instance_variable_set(:@admin, admin)
-  list = scene.instance_variable_get(:@list_window)
   world = screen_entry(entries[1].dup, admin, me)
-  list.define_singleton_method(:current_ext) { world }
-  scene.on_world
-  scene.instance_variable_get(:@actions_window).choices.map { |choice| choice[1] }.include?(:edit_world)
+  scene.on_world(world)
+  edits = MGQ_MpWorldScreen.actions(world).any? { |_label, symbol| symbol == :edit_world }
+  cancel_menu(scene)
+  edits
 end
 check("the creator and an admin are offered to edit a world, another player is not", [offered.call("c", false), offered.call("me", true), offered.call("me", false)], [true, true, false])
 scene = new_scene
 scene.instance_variable_set(:@entry, entries[1])
-form_window = scene.instance_variable_get(:@form_window)
-form_window.define_singleton_method(:form=) { |form| @form = form }
-form_window.define_singleton_method(:select) { |index| @index = index }
-form_window.define_singleton_method(:unselect) { @index = -1 }
 scene.on_edit_world
-check("editing opens the form in place of the details", [scene.form.title, scene.instance_variable_get(:@form_symbol)], ["Edit Loose", :edit_world])
+check("editing opens the form in place of the details, the focus on its first field", [scene.form.title, scene.instance_variable_get(:@form_symbol), $focused.id], ["Edit Loose", :edit_world, "form:seats"])
 scene.form[:seats] = "8"
 $screen_steps = [["busy", "edit"]]
 scene.send_form
-check("sending it has the DLL edit the world, with whether the list is fresh", [screen_requests("screen.do").last.values_at("do", "id", "fresh"), scene.instance_variable_get(:@busy)], [["edit", "w2", false], "edit"])
+check("sending it has the DLL edit the world, with whether the list is fresh", [screen_requests("screen.do").last.values_at("do", "id", "fresh"), scene.busy], [["edit", "w2", true], "edit"])
 scene.play("steps" => [["idle"], ["close_form"], ["say", "Loose was changed. Its players play on VERY HARD now."], ["back"]])
-check("once changed, the form closes and the screen says what the DLL tells", [scene.form, said(scene), scene.instance_variable_get(:@busy)], [nil, "Loose was changed. Its players play on VERY HARD now.", nil])
+check("once changed, the form closes and the screen says what the DLL tells", [scene.form, said(scene), scene.busy], [nil, "Loose was changed. Its players play on VERY HARD now.", nil])
 scene.on_edit_world
 scene.form[:seats] = "99"
 calls = screen_requests("screen.do").size
 scene.send_form
-check("seats out of range are refused before anything is sent", [screen_requests("screen.do").size, said(scene)], [calls, "Max Players must be a number from 2 to 32."])
+check("seats out of range are refused before anything is sent, the focus on them", [screen_requests("screen.do").size, said(scene), $focused.id], [calls, "Max Players must be a number from 2 to 32.", "form:seats"])
 raid_listed = listed[1].dup
 raid_listed.type = MGQ_MpWorld::RAID
 raid_listed.difficulty = nil
 scene.instance_variable_set(:@entry, MGQ_MpWorld::Entry.new("w2", "Loose", raid_listed, nil, false, false))
+scene.leave_form
 scene.on_edit_world
 picked = scene.form.fields.find { |field| field.key == :difficulty }
 check("a Raid World that sets none shows Per player first", [picked.choices.first, picked.choices[scene.form[:difficulty]], scene.form.difficulty], ["Per player", "Per player", nil])
-scene.instance_variable_set(:@field_index, 2)
-scene.open_limits
-check("the button of the formation limits opens their form in place of the world's", [scene.form.title, scene.instance_variable_get(:@form_symbol), form_window.instance_variable_get(:@index)],
-      ["Formation limits", :limits, 0])
-scene.form.turn(scene.form.fields.find { |field| field.key == :formation }, 2)
-scene.form.turn(scene.form.fields.find { |field| field.key == :raid_front }, 1)
-scene.on_form_cancel
-check("cancel goes back to the world's form at the button, keeping what was picked", [scene.form.title, scene.instance_variable_get(:@form_symbol), form_window.instance_variable_get(:@index), scene.form.squad],
-      ["Edit Loose", :edit_world, 2, { :luka => false, :formation => 6, :front => 1, :raid_front => 2 }])
-scene.open_limits
-scene.close_limits
-check("as Done does", [scene.instance_variable_get(:@form_symbol), scene.form.squad[:formation]], [:edit_world, 6])
+form_part(scene, :limits).receive("click")
+check("the button of the formation limits opens them over the world's form", [scene.limits.open?, scene.form.title], [true, "Edit Loose"])
+scene.form.limits.turn(scene.form.limits.fields.find { |field| field.key == :formation }, 2)
+scene.form.limits.turn(scene.form.limits.fields.find { |field| field.key == :raid_front }, 1)
+scene.limits.close(:cancel)
+check("cancel goes back to the world's form at the button, keeping what was picked", [scene.limits, scene.instance_variable_get(:@form_symbol), scene.instance_variable_get(:@field_key), scene.form.squad],
+      [nil, :edit_world, :limits, { :luka => false, :formation => 6, :front => 1, :raid_front => 2 }])
+form_part(scene, :limits).receive("click")
+scene.limits.find("form:done").receive("click")
+check("as Done does", [scene.limits, scene.form.squad[:formation]], [nil, 6])
+scene.leave_form
 
 # The seats a world's code tells follow the directory.
 world = local_world("abcdef012345", "code" => "mgqmp2;abcdefghjkmnpqrs;r1;4")
@@ -789,26 +521,15 @@ world.describe("Loose", "w2", 8)
 check("a world's code takes the seats the directory lists", [world.seats, world.code], [8, "mgqmp2;abcdefghjkmnpqrs;r1;8"])
 
 # The players and the mods of a world, listed from its choices.
-check("a mod written with an exclamation mark is required, one with a question mark essential, both named first without their mark", [MGQ_MpWorld.mods_of("Mod A; ?Mod D; !Mod B;! Mod C; !; ?"), MGQ_MpWorld.required_mods("Mod A; ?Mod D; !Mod B;! Mod C; !"), MGQ_MpWorld.essential_mods("Mod A; ?Mod D; !Mod B")], [["Mod B", "Mod C", "Mod D", "Mod A"], ["Mod B", "Mod C"], ["Mod D"]])
+check("a mod written with an exclamation mark or a question mark is named first without its mark, the required ones before the essential ones", MGQ_MpWorld.mods_of("Mod A; ?Mod D; !Mod B;! Mod C; !; ?"), ["Mod B", "Mod C", "Mod D", "Mod A"])
 MGQ_MpWorld.instance_variable_set(:@installed, [["modb", "Patch/Mod_B.rb", "Mod_B"], ["maskofenvy", "Patch/Mask_of_Envy.rb", "Mask_of_Envy"]])
 check("a mod's script is found by its name, whatever its case, spaces or underscores", ["Mod B", "mod_b.rb", "Mask of Envy", "Mask-Of-Envy", "Mod C"].map { |mod| MGQ_MpWorld.installed_mod?(mod) }, [true, true, true, true, false])
-essential_world = listed[1].dup
-essential_world.mods = "Mod A; ?Mod E; !Mod B; !Mod C"
-essential_entry = MGQ_MpWorld::Entry.new("w2", "Loose", essential_world, nil, false, false)
-essential_cell = cell_of(detail.panels(essential_entry, "me"), "Mods")
-check("the details show required mods first, fine when installed and wrong when missing, then essential ones in gold", [essential_cell.chips, essential_cell.chip_colors], [["Mod B", "Mod C", "Mod E", "Mod A"], { "Mod B" => :good, "Mod C" => :bad, "Mod E" => :gold }])
-matching = listed[2].dup
-matching.mods = "?Mod E; !Mod B"
-matching_entry = MGQ_MpWorld::Entry.new("w3", "Same", matching, nil, false, false)
-check("an essential mod stays gold, since the game data is compared only as the player enters", cell_of(detail.panels(matching_entry, "me"), "Mods").chip_colors, { "Mod B" => :good, "Mod E" => :gold })
-check("the list box says which are installed and which are checked as the player enters", screen_detail.mod_lines("Mod A; ?Mod E; !Mod B; !Mod C"), [[:head, "Mods (4)"], [:item, "Mod B", :good, "required, installed"], [:item, "Mod C", :bad, "required, missing"], [:item, "Mod E", :gold, "essential, checked as you enter"], [:item, "Mod A", :plain, nil]])
 
 # A world the list names without its mods, as the relay lists it for this version.
 unread_world = listed[1].dup
 unread_world.mods = ""
 unread_world.mods_unread = true
 unread_entry = MGQ_MpWorld::Entry.new("w2", "Loose", unread_world, nil, false, false)
-check("its details say its mods are being read", cell_of(detail.panels(unread_entry, "me"), "Mods").text, "Reading . . .")
 scene = new_scene
 scene.instance_variable_set(:@entry, unread_entry)
 listed_before = $dll["mp_dir_list"]
@@ -820,7 +541,6 @@ $screen_steps = [["read"]]
 scene.on_enter
 check("once the DLL read its mods, the read step takes the world anew from the list", unread_entry.listed.mods, "!Mod C")
 $dll["mp_dir_list"] = listed_before
-essential_world.mods = "Mod A; !Mod B; ?Mod E"
 Dir.mktmpdir do |folder|
   FileUtils.mkdir_p(File.join(folder, "Patch", "Sub"))
   File.write(File.join(folder, "Patch", "Mask_of_Envy.rb"), "")
@@ -833,232 +553,35 @@ end
 MGQ_MpWorld.instance_variable_set(:@installed, [["modb", "Patch/Mod_B.rb", "Mod_B"]])
 modded_world = listed[1].dup
 modded_world.mods = "Mod A; Mod B"
+member = MGQ_MpWorld::Directory::Member
 modded_world.members = [member.new("me", true, "Me"), member.new("a", false, "Ann")]
 modded_entry = screen_entry(MGQ_MpWorld::Entry.new("w2", "Loose", modded_world, nil, false, false))
 scene = new_scene
 scene.instance_variable_set(:@me, "me")
-scene.instance_variable_get(:@list_window).define_singleton_method(:current_ext) { modded_entry }
-scene.on_world
-names = scene.instance_variable_get(:@actions_window).choices.map { |choice| choice[0] }
-check("a world's choices leave its players and its mods to the details", names.grep(/Players|Mods/), [])
+scene.on_world(modded_entry)
+check("a world's choices leave its players and its mods to the details", menu_texts.grep(/Players|Mods/), [])
+cancel_menu(scene)
+scene.instance_variable_set(:@entry, modded_entry)
 scene.open_box(:players)
-box = scene.instance_variable_get(:@box)
-check("the players open in the list box, under the world's name", [box.title, box.note], ["Loose", "Players"])
-check("those online first, then the others, each under a heading, the player marked", box.lines, [[:head, "Online (1)"], [:item, "Me (you)", :good, "online"], [:head, "Offline (1)"], [:item, "Ann", :grey, "offline"]])
-check("the first player is picked", box.selected, 1)
+box = scene.list_box
+check("the players open in the list box, under the world's name", [box.children.first.children.map { |label| label.text }], [["Loose", "Players"]])
+check("those online first, then the others, each under a heading, the player marked", MGQ_MpListBox.list(box).rows,
+      [{ :heading => "Online (1)" }, { :text => "Me (you)", :color => :good, :right => "online" }, { :heading => "Offline (1)" }, { :text => "Ann", :color => :dim, :right => "offline" }])
+check("the first player is picked", MGQ_MpListBox.list(box).index, 1)
 scene.open_box(:mods)
-box = scene.instance_variable_get(:@box)
-check("each mod is listed on its own", [box.note, box.lines], ["Mods", [[:head, "Mods (2)"], [:item, "Mod A", :plain, nil], [:item, "Mod B", :plain, nil]]])
-check("the details name them with commas", cell_of(detail.panels(modded_entry, "me"), "Mods").text, "Mod A, Mod B")
-mods_cell = cell_of(detail.panels(modded_entry, "me"), "Mods")
-check("each mod gets a box of its own", mods_cell.chips, ["Mod A", "Mod B"])
-detail.contents.font.size = 18
-check("the boxes sit side by side, as wide as their texts", detail.chips(["Mod A", "Mod B"], 304), [["Mod A", 0, 57], ["Mod B", 61, 57]])
-check("mods that do not fit are counted in a last box", detail.chips(["First Long Mod", "Second Long Mod", "Third Long Mod", "Fourth Long Mod"], 304).map { |chip| chip[0] }, ["First Long Mod", "+3 more"])
-check("as many as fit are named", detail.chips(["A", "B", "C", "A Very Long Mod Name That Fills The Row"], 304).map { |chip| chip[0] }, ["A", "B", "C", "+1 more"])
-tight = detail.chips(["A Very Long Mod Name That Fills The Whole Row", "B"], 304)
-check("a first mod too long for the row is cut beside the count", [tight.map { |chip| chip[0] }, tight.last[1] + tight.last[2] <= 304], [["A Very Long Mod Name...", "+1 more"], true])
-check("a world that names no mod shows the plain text", cell_of(detail.panels(entries[3], "me"), "Mods").chips, nil)
-
-# The list box's pick, on a screen of the game's size.
-module Graphics; def self.width; 640; end; def self.height; 480; end; end
-long = Sprite_MpListBox::View.of("W", "Players", [[:head, "Online (20)"]] + (1..20).map { |n| [:item, "P#{n}", :good, "online"] })
-check("the list box picks its first item and shows from the top", [long.selected, long.scroll, Sprite_MpListBox.list_rows], [1, 0, 14])
-long.move(-1)
-check("it stops at the first item", long.selected, 1)
-16.times { long.move(1) }
-check("moving down past the box scrolls the pick into sight", [long.selected, long.scroll], [17, 4])
-long.move(99)
-check("it stops at the last item", [long.selected, long.scroll], [20, 7])
-20.times { long.move(-1) }
-check("back at the top the heading is in sight again", [long.selected, long.scroll], [1, 0])
-check("a point over a line finds it, outside the list none", [Sprite_MpListBox.line_at(100, 32 + 30 + 24 * 2 + 3, long), Sprite_MpListBox.line_at(100, 40, long), Sprite_MpListBox.line_at(10, 100, long)], [2, nil, nil])
-check("a list without items picks none and does not move", (empty = Sprite_MpListBox::View.of("W", nil, [[:head, "None"]]); empty.move(1); empty.selected), nil)
-check("scrolling takes the pick along onto the first item in sight once it left the top", [long.scroll_by(3, 14), long.scroll, long.selected], [true, 3, 3])
-long.scroll_by(-99, 14)
-check("back up the pick stays where it is in sight", [long.scroll, long.selected], [0, 3])
-check("down it stops at the last page, the pick on the first item in sight", [long.scroll_by(99, 14), long.scroll, long.selected], [true, 7, 7])
-check("and goes no farther", long.scroll_by(1, 14), false)
-$mouse = [100, 100]
-$wheel = 2
-check("the wheel turned up over the box scrolls the list a line a notch", [Sprite_MpListBox.scroll_by_wheel(long), long.scroll], [true, 5])
-$wheel = -1
-check("down by as many lines as asked", [Sprite_MpListBox.scroll_by_wheel(long, 3), long.scroll], [true, 7])
-$mouse = [5, 5]
-$wheel = 2
-check("nothing while the mouse points outside the box", [Sprite_MpListBox.scroll_by_wheel(long), long.scroll], [false, 7])
-$wheel = nil
-$mouse = nil
-
-# What the details open.
-detail, = new_detail(386, 336)
-detail.define_singleton_method(:x) { 230 }
-detail.define_singleton_method(:y) { 96 }
-detail.define_singleton_method(:standard_padding) { 12 }
-detail.show(modded_entry, "me")
-check("the details of a world with mods and a description open its mods, its players and its description", detail.targets, [:mods, :players, :description])
-mods_rect = detail.instance_variable_get(:@targets)[:mods]
-check("a click on the Mods row finds the mods", detail.target_at(230 + 12 + mods_rect.x + 5, 96 + 12 + mods_rect.y + 5), :mods)
-players_rect = detail.instance_variable_get(:@targets)[:players]
-check("one on the Players panel the players, one elsewhere nothing", [detail.target_at(230 + 12 + 5, 96 + 12 + players_rect.y + 5), detail.target_at(5, 5)], [:players, nil])
-detail.show(entries[3], "me")
-check("a world without mods opens only its players", detail.targets, [:players])
-detail.show(gone, "me") if defined?(gone)
+box = scene.list_box
+check("each mod is listed on its own", [note_text(box), MGQ_MpListBox.list(box).rows],
+      ["Mods", [{ :heading => "Mods (2)" }, { :text => "Mod A", :color => nil, :right => nil }, { :text => "Mod B", :color => nil, :right => nil }]])
+box.close
 
 # The description in the list box.
-detail.show(entries[1], "me")
-check("a world with a description opens it too", detail.targets, [:mods, :players, :description])
 scene = new_scene
 scene.instance_variable_set(:@entry, entries[1])
-measure = Struct.new(:font).new(Struct.new(:size).new(18))
-measure.define_singleton_method(:text_size) { |text| Struct.new(:width).new(text.size * 20) }
-scene.instance_variable_set(:@list_box, Struct.new(:bitmap).new(measure))
 scene.open_box(:description)
-box = scene.instance_variable_get(:@box)
-check("the whole description opens in the list box, broken into lines", [box.note, box.lines.map { |line| line[1] }.join(" "), box.lines.size > 1], ["Description", "A slow run through part one of the story with friends.", true])
-kept = MGQ_MpUi::Layout.instance_variable_get(:@stored)
-before = box.lines.size
-box.selected = before - 1
-Mod_Framework::Settings.store("ui_list_box", "0,0,640,300")
-kept.delete(:list_box)
-scene.rewrap_description
-check("a list box the player widened breaks the description anew to its width, the pick kept on a line",
-      [box.lines.map { |line| line[1] }.join(" "), [before, box.lines.size], box.selected], ["A slow run through part one of the story with friends.", [3, 2], 1])
-Mod_Framework::Settings.forget("ui_list_box")
-kept.delete(:list_box)
-
-# The left side: the worlds above the commands.
-
-# A window of the left side: keeps its rows, its cursor and whether it takes input.
-class FakeList
-  # The cursor's row, whether it takes input, whether it is picked as a whole and the pane it lies in.
-  attr_accessor :index, :active, :boxed, :pane
-  # Its rows, each [symbol, ext].
-  attr_reader :rows
-
-  # Creates the window.
-  #
-  # @param rows [Array] Its rows, each [symbol, ext].
-  def initialize(rows); @rows = rows; @index = 0; @active = true; end
-  # The number of rows.
-  def item_max; @rows.size; end
-  # Puts the cursor on a row.
-  def select(index); @index = index; end
-  # Takes the cursor off.
-  def unselect; @index = -1; end
-  # Takes input.
-  def activate; @active = true; end
-  # Takes no input.
-  def deactivate; @active = false; end
-  # The window's width.
-  def width; 230; end
-  # The window's height.
-  def height; 100; end
-  # The symbol of the row the cursor is on, nil without one.
-  def current_symbol; @index >= 0 && @rows[@index] ? @rows[@index][0] : nil; end
-  # The ext of the row the cursor is on, nil without one.
-  def current_ext; @index >= 0 && @rows[@index] ? @rows[@index][1] : nil; end
-  # Puts the cursor on the row of a symbol.
-  def select_symbol(symbol); @index = @rows.index { |row| row[0] == symbol }; end
-  # Lists worlds, keeping the cursor within the rows.
-  def entries=(entries); @rows = entries.map { |entry| [:world, entry] }; @index = [@index, @rows.size - 1].min if @index >= 0; end
-  # Records the symbol of a handler.
-  def set_handler(symbol, _method); (@handlers ||= []) << symbol; end
-  # The symbols handlers were set for.
-  def handlers; @handlers || []; end
-end
-
-worlds = FakeList.new([])
-commands = FakeList.new([[:new_world, nil], [:join_hidden, nil], [:rename, nil], [:back, nil]])
-pane = MpWorldListPane.new(worlds, commands)
-left = 0
-[:world, :new_world, :cancel].each { |symbol| pane.set_handler(symbol, symbol == :cancel ? lambda { left += 1 } : nil) }
-check("each window takes its own choices, cancel backs out of both, and Back leaves the screen", [worlds.handlers, commands.handlers], [[:world, :cancel], [:new_world, :cancel, :back]])
-check("the commands are picked as a whole, before any world arrived", [pane.inside?, pane.active, commands.boxed, worlds.boxed, pane.current_symbol, worlds.active, commands.active, commands.index], [false, true, true, false, nil, false, false, -1])
-check("without worlds the list cannot be picked", [pane.pick(:worlds), commands.boxed], [false, true])
-pane.entries = [:a, :b, :c]
-check("the first worlds to arrive are picked", [worlds.boxed, commands.boxed, pane.current_ext, worlds.index], [true, false, nil, -1])
-$buttons = [:DOWN]
-pane.update
-check("down picks the commands", [commands.boxed, worlds.boxed], [true, false])
-$buttons = [:UP]
-pane.update
-check("up the worlds again", [worlds.boxed, commands.boxed], [true, false])
-$buttons = [:C]
-pane.update
-check("confirm moves into the picked window, onto its first row", [pane.inside?, pane.current_symbol, pane.current_ext, worlds.active, worlds.boxed], [true, :world, :a, true, false])
-worlds.select(2)
-$buttons = [:B, :C, :DOWN]
-pane.update
-check("the pane leaves the keys to the window the cursor is in", [pane.current_ext, $buttons.size, left], [:c, 3, 0])
-$buttons = []
-worlds.deactivate
-pane.back_out
-check("cancel there moves back out, around the window", [pane.inside?, pane.active, worlds.boxed, worlds.index, worlds.active], [false, true, true, -1, false])
-$buttons = [:B]
-pane.update
-check("the press that moved out does not also leave the screen", left, 0)
-pane.settle
-pane.update
-check("the next one does", left, 1)
-$buttons = []
-pane.enter
-$key_down = 0x2D
-pane.update
-$key_down = nil
-check("inside a window the numpad's 0 backs out, also with Num Lock off, which the window does not take as cancel", [pane.inside?, worlds.index, left, $sounds.last], [false, -1, 1, "cancel"])
-pane.settle
-pane.update
-check("and leaves the screen only with a press of its own", left, 1)
-pane.pick(:commands)
-pane.enter
-commands.select(2)
-commands.deactivate
-pane.back_out
-pane.pick(:worlds)
-pane.enter
-check("a window is entered on the row the cursor left in it", pane.current_ext, :c)
-worlds.deactivate
-pane.back_out
-pane.pick(:commands)
-pane.enter
-check("the commands too", pane.current_symbol, :rename)
-pane.deactivate
-check("the pane takes no input while something else does", [pane.active, worlds.active, commands.active], [false, false, false])
-pane.activate
-check("and gives it back to the window with the cursor", [worlds.active, commands.active], [false, true])
-commands.deactivate
-pane.back_out
-pane.pick(:worlds)
-pane.deactivate
-pane.activate
-$buttons = [:C]
-pane.update
-check("a pick that takes the input again waits a frame for its keys", [pane.active, pane.inside?], [true, false])
-$buttons = []
-pane.settle
-pane.enter
-pane.entries = []
-check("the commands are picked when the last world goes", [pane.inside?, commands.boxed, pane.active, pane.enter, pane.current_symbol], [false, true, true, true, :rename])
-pane.entries = [:d]
-check("worlds arriving later leave the cursor where it is", pane.current_symbol, :rename)
-pane.select_symbol(:join_hidden)
-check("a command is picked by its symbol", [pane.current_symbol, pane.inside?, worlds.index], [:join_hidden, true, -1])
-check("the pane is as wide as the worlds and as high as both windows", [pane.width, pane.height], [230, 200])
-# A world of the list, as far as the pane reads it.
-Place = Struct.new(:id)
-worlds = FakeList.new([])
-pane = MpWorldListPane.new(worlds, FakeList.new([[:new_world, nil], [:back, nil]]))
-pane.restore("w2")
-pane.entries = [Place.new("w1"), Place.new("w2")]
-check("the world chosen before the text or save screen gets the cursor back", [pane.inside?, pane.current_ext, worlds.active], [true, Place.new("w2"), true])
-
-# The creator's game makes its data the world's as they enter.
-detail, = new_detail(386, 336)
-check("the creator reads that their game's data becomes the world's as they enter, with nothing to confirm",
-      [cell_of(detail.panels(entries[1], "c"), "Your game").text, cell_of(detail.panels(entries[1], "c"), "Your game").target], ["Becomes the world's as you enter", nil])
-detail.show(screen_entry(entries[1].dup, false, "c"), true)
-check("so the details open the mods, the players and the description", detail.targets, [:mods, :players, :description])
+box = scene.list_box
+check("the whole description opens in the list box, wrapped", [note_text(box), box.find(MGQ_MpListBox::LIST), box.children[1].children.first.text, box.children[1].children.first.wrap],
+      ["Description", nil, "A slow run through part one of the story with friends.", true])
+box.close
 
 # The edit form of a world's creator.
 own_edit = MGQ_MpWorld::WorldForm.edit(:edit_world, listed[1], true)
@@ -1069,27 +592,12 @@ check("another editor's form does not", MGQ_MpWorld::WorldForm.edit(:edit_world,
 scene = new_scene
 scene.instance_variable_set(:@me, "c")
 scene.instance_variable_set(:@entry, entries[1])
-form_window = scene.instance_variable_get(:@form_window)
-form_window.define_singleton_method(:form=) { |form| @form = form }
-form_window.define_singleton_method(:select) { |index| @index = index }
-form_window.define_singleton_method(:field) { @form.fields[@index] }
 scene.on_edit_world
-form_window.select(6)
 $screen_steps = [["busy", "edit"]]
-scene.on_field
+form_part(scene, :confirm).receive("click")
 check("the form's own button has the DLL save the changes, the shared settings with them", screen_requests("screen.do").last["do"], "edit")
 entries[1].listed.settings = ""
-
-# What the screen draws again: the same world only once the list or what its details read changed.
-folder = local_world("abcdef012345", "code" => "c", "name" => "Loose", "world" => "w2")
-loose = screen_entry(MGQ_MpWorld::Entry.new("w2", "Loose", listed[1], folder, false, false))
-detail, texts = new_detail(386, 336)
-detail.show(loose)
-texts.clear
-detail.show(loose)
-check("the details are not drawn again for the same world", texts, [])
-detail.show(loose, true)
-check("but once the list or what they read changed", texts.empty?, false)
+scene.play("steps" => [["idle"], ["close_form"]])
 
 # The mod picker, which the DLL keeps (ModPickTests): the script shows what it answers and hands each
 # change over.
@@ -1114,229 +622,86 @@ Dir.mktmpdir do |folder|
 
   Dir.chdir(folder) do
     MGQ_MpWorld.forget_installed
-    off = [["!", :red, false], ["?", :orange, false]]
+    off = [{ :text => "!", :color => :bad, :on => false }, { :text => "?", :color => :warn, :on => false }]
     scene = new_scene
-    box = FakeBox.new
-    scene.instance_variable_set(:@form_symbol, :new_world)
-    scene.instance_variable_set(:@list_box, box)
+    scene.enter_form(:new_world)
     form = scene.form
     form[:mods] = "?Data Pack"
-    scene.open_mod_pick
-    view = scene.instance_variable_get(:@mod_view)
-    check("the picker lists the row that lists every mod, the installed mods with their two buttons, the added ones and the row that adds one", [view.lines, view.selected, view.note],
-          [[[:item, "List all your mods", :plain, nil], [:head, "Your mods (4)", ["Required", "Essential"]], [:item, "battle_dialogue", :grey, "unlisted", off], [:item, "Level_Cap", :grey, "unlisted", off],
-            [:item, "Party Sheet", :grey, "unlisted", off], [:item, "Zeta", :grey, "unlisted", off], [:head, "Added by name (1)", ["Required", "Essential"]],
-            [:item, "Data Pack", :gold, "essential", [["!", :red, false], ["?", :orange, true]]], [:item, "Add a mod by name . . .", :plain, nil]], 0, nil])
-    scene.act_on_mod(1, 0)
-    check("enter on a mod lists it in the form at once", [form[:mods], view.lines[3]], ["Level_Cap; ?Data Pack", [:item, "Level_Cap", :plain, "listed", off]])
-    scene.act_on_mod(1, 1)
-    check("its red button makes it required, the button lit", [form[:mods], view.lines[3]], ["!Level_Cap; ?Data Pack", [:item, "Level_Cap", :bad, "required", [["!", :red, true], ["?", :orange, false]]]])
-    scene.act_on_mod(1, 2)
-    check("its warning sign makes it essential", [form[:mods], view.lines[3][4]], ["?Level_Cap; ?Data Pack", [["!", :red, false], ["?", :orange, true]]])
-    scene.act_on_mod(1, 0)
-    check("enter unlists it again", form[:mods], "?Data Pack")
-    scene.act_on_mod(:all, 0)
-    check("the first row lists every installed mod, then offers to unlist them", [form[:mods], view.lines[0][1]], ["battle_dialogue; Level_Cap; Party Sheet; Zeta; ?Data Pack", "Unlist all your mods"])
-    scene.act_on_mod(:all, 0)
-    check("and unlists them", [form[:mods], view.lines[0][1]], ["?Data Pack", "List all your mods"])
-    scene.act_on_mod(4, 0)
-    check("enter unlists an added mod, which stays in the list", [form[:mods], view.lines[7]], ["", [:item, "Data Pack", :grey, "unlisted", off]])
-    view.pick(7)
-    scene.update_mod_pick
-    ui_frame
-    scene.update_mod_pick
-    ui_frame
-    check("while it is picked, the hint names Delete", view.hint, Scene_MpWorlds.mod_pick_hint(true))
-    $key_down = 0x2E
-    scene.update_mod_pick
-    ui_frame
-    $key_down = nil
-    check("Delete removes it from the list, and the pick stays on an item", [view.lines.map { |line| line[1] }, view.lines[view.selected][0], view.hint],
-          [["List all your mods", "Your mods (4)", "battle_dialogue", "Level_Cap", "Party Sheet", "Zeta", "Add a mod by name . . ."], :item, Scene_MpWorlds.mod_pick_hint])
-    view.pick(2)
-    $key_down = 0x2E
-    scene.update_mod_pick
-    ui_frame
-    $key_down = nil
-    check("Delete leaves an installed mod in place", view.lines.size, 7)
-    view.pick(3)
-    scene.move_mod_column(1)
-    scene.move_mod_column(1)
-    scene.move_mod_column(1)
-    right = view.column
-    scene.move_mod_column(-1)
-    check("right and left move between a mod's name and its two buttons", [right, view.column], [2, 1])
-    view.pick(0)
-    view.column = 0
-    scene.move_mod_column(1)
-    check("a row without buttons keeps the cursor on itself", view.column, 0)
-    scene.add_mod("Other")
-    check("a mod added by name is listed and picked", [form[:mods], view.lines[view.selected][1]], ["Other", "Other"])
+    form_part(scene, :mods).receive("click")
+    list = MGQ_MpListBox.list(scene.list_box)
+    row = lambda { |name| list.rows.find { |each| each[:text] == name } }
+    check("the picker lists the row that lists every mod, the installed mods with their two toggles, the added ones and the row that adds one",
+          [list.rows.map { |each| each[:text] || each[:heading] }, row.call("Zeta").values_at(:color, :right, :toggles), list.index],
+          [["List all your mods", "Your mods (4)", "battle_dialogue", "Level_Cap", "Party Sheet", "Zeta", "Added by name (1)", "Data Pack", "Add a mod by name . . ."],
+           [:dim, "unlisted", off], 0])
+    at = lambda { |name| list.rows.index(row.call(name)) }
+    list.receive("submit", at.call("Level_Cap"))
+    check("confirm on a mod lists it in the form at once", [form[:mods], row.call("Level_Cap")[:right]], ["Level_Cap; ?Data Pack", "listed"])
+    list.receive("toggle", at.call("Level_Cap"), 0)
+    check("its ! toggle makes it required, the toggle on", [form[:mods], row.call("Level_Cap")[:toggles][0][:on]], ["!Level_Cap; ?Data Pack", true])
+    list.receive("toggle", at.call("Level_Cap"), 1)
+    check("its ? toggle makes it essential", [form[:mods], row.call("Level_Cap")[:toggles].map { |toggle| toggle[:on] }], ["?Level_Cap; ?Data Pack", [false, true]])
+    list.receive("submit", at.call("Level_Cap"))
+    check("confirm unlists it again", form[:mods], "?Data Pack")
+    list.receive("submit", 0)
+    check("the first row lists every installed mod, then offers to unlist them", [form[:mods], list.rows[0][:text]], ["battle_dialogue; Level_Cap; Party Sheet; Zeta; ?Data Pack", "Unlist all your mods"])
+    list.receive("submit", 0)
+    check("and unlists them", [form[:mods], list.rows[0][:text]], ["?Data Pack", "List all your mods"])
+    list.index = at.call("Data Pack")
+    scene.show_remove
+    check("while a mod added by name is picked, the Remove button shows", MGQ_MpListBox.remove_button(scene.list_box).visible, true)
+    MGQ_MpListBox.remove_button(scene.list_box).receive("click")
+    check("Remove takes it out of the list and the form", [list.rows.map { |each| each[:text] || each[:heading] }.include?("Data Pack"), form[:mods]], [false, ""])
+    list.index = at.call("Zeta")
+    scene.show_remove
+    check("an installed mod has no Remove", MGQ_MpListBox.remove_button(scene.list_box).visible, false)
+    $sounds.clear
+    list.receive("submit", list.rows.index { |each| each[:data] == :add })
+    field = MGQ_MpListBox.field(scene.list_box)
+    help = MGQ_MpListBox.key_help(scene.list_box)
+    check("the last row opens the Name field under the list, typing, the box at least as wide as its key line",
+          [field.parent.parent.visible?, $focused.equal?(field), $mgq_text_input, scene.list_box.min_size[0] >= help.measure[0] + 2 * Mod_Framework::UI::Box::ROOM],
+          [true, true, true, true])
+    type_in("New Mod\r")
+    check("Enter adds the mod, picked, and hides the field", [form[:mods], list.rows[list.index][:text], field.parent.parent.visible?, $focused.equal?(list)],
+          ["New Mod", "New Mod", false, true])
+    list.receive("submit", list.rows.size - 1)
+    type_in("Other")
+    cancel_in(field)
+    check("cancel in the field goes back to the list without adding", [form[:mods], field.parent.parent.visible?, $mgq_text_input], ["New Mod", false, false])
+    list.receive("submit", list.rows.size - 1)
+    field.receive("submit")
+    pad = Mod_Framework::UI::Tree.roots.find { |root| root.is_a?(Mod_Framework::UI::LetterPad) }
+    check("a gamepad's letters take the keys from the Name field, which stays open", [pad.nil?, field.parent.parent.visible?], [false, true])
+    "Pad Mod".each_char { |letter| pad.type(letter) } if pad
+    pad.finish if pad
+    check("their OK adds the mod and hides the field", [form[:mods], field.parent.parent.visible?], ["New Mod; Pad Mod", false])
+    pad.close if pad
     $sounds.clear
     scene.add_mod("level cap")
-    check("a name already listed is refused in the title row", [$sounds, view.note], [["buzzer"], "Level_Cap is in the list already."])
-    scene.close_mod_pick
-    check("closing goes back to the form", [scene.instance_variable_get(:@mod_view), scene.instance_variable_get(:@resume_form), box.view], [nil, true, nil])
-    scene.open_mod_pick
-    scene.update_mod_pick
-    ui_frame
-    $buttons = [:B]
-    scene.update_mod_pick
-    ui_frame
-    $buttons = nil
-    check("cancel closes the picker without drawing it again", [scene.instance_variable_get(:@mod_view), box.view], [nil, nil])
-
-    form[:mods] = ""
-    scene.open_mod_pick
-    view = scene.instance_variable_get(:@mod_view)
-    scene.act_on_mod(:add, 0)
-    check("adding a mod by name turns its row into a text box typed on the keyboard", [$mgq_text_input, view.lines.last[1], view.lines.last[5][1], $called], [true, "Name:", "", nil])
-    $typed = "New Mod"
-    scene.update_mod_pick
-    ui_frame
-    scene.update_mod_pick
-    ui_frame
-    check("what is typed shows in the box, from the frame after", view.lines.last[5][1], "New Mod")
-    $typed = "\r"
-    scene.update_mod_pick
-    ui_frame
-    scene.update_mod_pick
-    check("Enter adds the mod, picked, and the keyboard goes back to the game", [form[:mods], view.lines[view.selected][1], $mgq_text_input, view.lines.last[1]], ["New Mod", "New Mod", false, "Add a mod by name . . ."])
-    $held = [:C]
-    scene.update_mod_pick
-    ui_frame
-    check("the Enter that added it does not act on the picker while held", [form[:mods], scene.instance_variable_get(:@mod_pick_hold)], ["New Mod", true])
-    $held = []
-    scene.update_mod_pick
-    ui_frame
-    scene.act_on_mod(:add, 0)
-    $typed = "Other\e"
-    scene.update_mod_pick
-    ui_frame
-    scene.update_mod_pick
-    check("Escape goes back without adding", [form[:mods], $mgq_text_input], ["New Mod", false])
-    scene.act_on_mod(:add, 0)
-    $typed = "0"
-    $key_down = 0x60
-    scene.update_mod_pick
-    ui_frame
-    $key_down = nil
-    check("so does the numpad's 0, typing nothing", [form[:mods], $mgq_text_input, scene.instance_variable_get(:@mod_edit)], ["New Mod", false, nil])
-    scene.close_mod_pick
-
-    form[:mods] = ""
-    scene.open_mod_pick
-    view = scene.instance_variable_get(:@mod_view)
-    scene.update_mod_pick
-    ui_frame
-    view.pick(view.lines.size - 1)
-    $buttons = [:C]
-    scene.update_mod_pick
-    ui_frame
-    $buttons = nil
-    check("the typing hint stays while a mod's name is typed", [view.hint, $mgq_text_input], [Scene_MpWorlds.typing_hint, true])
-    $typed = "\e"
-    scene.update_mod_pick
-    ui_frame
-    scene.update_mod_pick
-    scene.update_mod_pick
-    ui_frame
-    $mouse = [140, 32 + 30 + 24 * 5 + 5]
-    scene.update_mod_pick
-    ui_frame
-    view.pick(2)
-    $click = true
-    scene.update_mod_pick
-    ui_frame
-    $mouse = nil
-    check("a click acts on the mod under the mouse, not on the one the arrows picked since", form[:mods], "Zeta")
-    $background = false
-    $called = nil
-    scene.act_on_mod(:add, 0)
-    check("without the keyboard a mod's name is typed on the text screen", [$called, scene.instance_variable_get(:@mod_edit)], [Scene_MpText, nil])
-    MGQ_MpWorld.text_result = [:mod_name, "Pad Mod"]
-    scene.take_text_result
-    check("which adds it once the world screen is back", form[:mods], "Zeta; Pad Mod")
-    $background = true
-    scene.close_mod_pick
+    check("a name already listed is refused beside the title", [$sounds, note_text(scene.list_box)], [["buzzer"], "Level_Cap is in the list already."])
+    scene.list_box.close(:cancel)
+    check("closing goes back to the form, which shows the mods picked", [scene.list_box, form_part(scene, :mods).text, scene.instance_variable_get(:@field_key)], [nil, "New Mod; Pad Mod", :mods])
   end
 end
 
 # The text boxes of the forms.
-
-# The form window of the world screen: shows a form and keeps the field the cursor is on.
-class FakeForm < FakeChoice
-  # The form shown.
-  attr_accessor :form
-
-  # The cursor's row.
-  #
-  # @return [Integer] The row picked last, the first before any.
-  def index; @selected || 0; end
-
-  # The field the cursor is on.
-  #
-  # @return [MGQ_MpWorld::Form::Field] The field.
-  def field; form.fields[index]; end
-
-  # Takes the cursor off.
-  def unselect; @selected = nil; end
-
-  # Draws nothing.
-  def redraw_current_item; end
-
-  # Scrolls nothing, as a box of one line.
-  #
-  # @return [Integer] 0.
-  def wheel_lines; 0; end
-end
-
-# The link's player id, always me.
-module MGQ_Multiplayer::Link; def self.player_id; "me"; end; end
 named = nil
 MGQ_Multiplayer::Player.define_singleton_method(:name=) { |name| named = name }
 scene = new_scene
-form_window = FakeForm.new
-scene.instance_variable_set(:@form_window, form_window)
-scene.instance_variable_get(:@forms)[:rename] = MGQ_MpWorld::WorldForm.rename(:rename, "")
-scene.instance_variable_set(:@form_symbol, :rename)
-form_window.form = scene.form
-scene.start_typing(scene.form.fields[0])
-$typed = "Bob\r"
 $returned = nil
-scene.update_typing
-ui_frame
-scene.update_typing
+scene.enter_form(:rename)
+type_in("Bob\r")
 check("Enter in the name's text box keeps the name and leaves the form, the screen still open", [named, scene.form, $returned, $mgq_text_input], ["Bob", nil, nil, false])
-scene.instance_variable_get(:@forms)[:rename] = MGQ_MpWorld::WorldForm.rename(:rename, "")
-scene.instance_variable_set(:@form_symbol, :rename)
-MGQ_MpWorld.text_result = [[:field, :name], "Pad Name"]
-scene.take_text_result
-check("a name from the text screen is kept at once", [named, scene.form], ["Pad Name", nil])
-MGQ_Multiplayer::Player.define_singleton_method(:name) { nil }
-scene.instance_variable_set(:@form_symbol, :rename)
-scene.instance_variable_set(:@name_asked, true)
-MGQ_MpWorld.text_result = [[:field, :name], nil]
-scene.take_text_result
-check("leaving the first name prompt without a name leaves the screen, and asks no more", [$returned, scene.instance_variable_get(:@ask_name)], [true, false])
-MGQ_Multiplayer::Player.define_singleton_method(:name) { "Me" }
 
-create = scene.instance_variable_get(:@forms)[:new_world]
-scene.instance_variable_set(:@form_symbol, :new_world)
-form_window.form = create
-seats = create.fields.index { |field| field.key == :seats }
-form_window.select(seats)
-scene.start_typing(create.fields[seats])
-check("a text box of digits leaves the numpad's 0 out of its hint", said(scene), Scene_MpWorlds.typing_hint(true))
-$typed = "0"
-$key_down = 0x60
-scene.update_typing
-ui_frame
-$key_down = nil
-scene.update_typing
-ui_frame
-check("where the numpad's 0 types a 0", [create[:seats], create.editing], ["40", :seats])
-scene.stop_typing
+scene.commands_list.index = 0
+scene.enter_form(:new_world)
+create = scene.form
+ui::Tree.focus(form_part(scene, :seats))
+scene.show_typing_line
+check("a text box of digits leaves the numpad's 0 out of the typing line", scene.instance_variable_get(:@typing_line).text,
+      "Type on the keyboard. Arrows, Home, End move the cursor. Enter keeps it, Esc goes back.")
+cancel_in($focused)
 create[:name] = "  Spaced  "
 create[:seats] = "08"
 check("a form sends its tidied values", [create.problem, create[:name], create[:seats]], [nil, "Spaced", "8"])

@@ -2,6 +2,7 @@
 //  EventTableTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Dropped the checks of troops' members and whether a file exists, whose topics are gone
 //      Paulinchen  2026-10-28: Checked the rules the sites come with
 //                            - Created
 //
@@ -64,20 +65,6 @@ public sealed class EventTableTopicsTests
     }
 
     /// <summary>
-    /// Asserts that troops name their enemies in order, and a troop the game lacks is left out.
-    /// </summary>
-    [Fact]
-    public void Members_NameTheEnemiesOfTroops()
-    {
-        Open(new TinyGame().Troop(5, [7, 8]));
-
-        RubyHash members = Call(EventTableTopics.Members, new RubyHash { { "troops", new RubyArray { 5, 6 } } })["members"].AsHash();
-
-        Assert.Equal([5L], members.Keys.Select(troop => troop.AsLong()));
-        Assert.Equal([7L, 8L], members[5].AsArray().Select(member => member.AsArray()[0].AsLong()));
-    }
-
-    /// <summary>
     /// Asserts that the story's battles against a troop are its sites, those of a page that turns on
     /// the Colosseum's switch and of a common event only such a page calls left out, and that a site in
     /// a common event names the pages that reach it.
@@ -99,20 +86,6 @@ public sealed class EventTableTopicsTests
         Assert.Equal(new RubyHash { { 40, new RubyArray { "map:1:3:1" } } }, answer["callers"]);
         Assert.Equal(new RubyArray { 154, 576 }, answer["excluded_maps"]);
         Assert.Equal(new RubyArray { 132, 133, 283 }, answer["preamble_codes"]);
-    }
-
-    /// <summary>
-    /// Asserts that a file of the game is found without being read, and that a path out of the game
-    /// folder is refused.
-    /// </summary>
-    [Fact]
-    public void Exists_FindsAFileOfTheGameFolderOnly()
-    {
-        Open(new TinyGame());
-
-        Assert.True(_topics!.Call(EventTableTopics.Exists, "Data/CommonEvents.rvdata2")!.AsBool());
-        Assert.False(_topics.Call(EventTableTopics.Exists, "Data/Map999.rvdata2")!.AsBool());
-        Assert.Equal("bad_request", _topics.Refusal(EventTableTopics.Exists, "../Game.ini"));
     }
 
     /// <summary>

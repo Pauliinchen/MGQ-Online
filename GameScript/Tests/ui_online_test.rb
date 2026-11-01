@@ -2,6 +2,7 @@
 #  ui_online_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Left the world status to register as its box of the Mod Framework opens
 #      Paulinchen  2026-10-31: Created
 #
 #----------------------------------------------------------------
@@ -38,9 +39,10 @@ keys = NWConst::Config::MOD_CONTENTS.map { |row| row[:key].to_s }
 check("Options > Mods holds none of MGQ Online's own look or place rows", keys.grep(/\Amp_ui_/), [])
 check("and each of the framework's once", %w[mf_ui_positions mf_ui_preset mf_ui_game_windows].map { |key| keys.count(key) }, [1, 1, 1])
 
-# The map's boxes, under the ids their places were kept by before.
+# The map's boxes drawn on their own, under the ids their places were kept by before; the boxes of
+# the framework's components register as they open.
 check("the map's boxes register with the framework's layout under their old ids",
-      [:chat, :battle_chat, :menu_chat, :world_status].map { |id| $layout_registrations.key?(id) }, [true] * 4)
+      [:chat, :battle_chat, :menu_chat].map { |id| $layout_registrations.key?(id) }, [true] * 3)
 
 # Interface Positions puts a moved box back where it starts.
 layout = Mod_Framework::UI::Layout

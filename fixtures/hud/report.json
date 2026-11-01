@@ -1171,7 +1171,7 @@
       ]
     },
     {
-      "name": "the wheel, its screenshot after the fade and its refusals",
+      "name": "the wheel, its screenshot once the wheel is gone and its refusals",
       "steps": [
         {
           "op": "wheel",
@@ -1204,7 +1204,7 @@
         },
         {
           "op": "frame",
-          "count": 12,
+          "count": 13,
           "answer": {
             "answer": null,
             "logs": [
@@ -1264,7 +1264,7 @@
           }
         },
         {
-          "op": "frame",
+          "op": "wheel_gone",
           "answer": {
             "answer": null,
             "logs": [
@@ -1283,6 +1283,64 @@
 
             ],
             "snaps": 1,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": true,
+            "sending": false
+          }
+        },
+        {
+          "op": "wheel_gone",
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
+            "opened": 0,
+            "drops": 0,
+            "sends": [
+
+            ],
+            "waiting": true,
+            "sending": false
+          }
+        },
+        {
+          "op": "frame",
+          "answer": {
+            "answer": null,
+            "logs": [
+
+            ],
+            "refusals": [
+
+            ],
+            "sounds": [
+
+            ],
+            "chat": [
+
+            ],
+            "notices": [
+
+            ],
+            "snaps": 0,
             "opened": 0,
             "drops": 0,
             "sends": [

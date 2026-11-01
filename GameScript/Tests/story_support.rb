@@ -2,6 +2,7 @@
 #  story_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Dropped the stand-in of the player's telling topic, which no script stages
 #      Paulinchen  2026-10-28: Added the seat whose ended telling the game waits for to the status
 #      Paulinchen  2026-10-23: Created
 #
@@ -39,7 +40,7 @@ def answer_story(fake)
   $story_staged = []
   $takes = []
   $classes = nil
-  %w(story.enter story.close story.writes story.level story.seed story.tell story.watch).each do |topic|
+  %w(story.enter story.close story.writes story.level story.seed story.watch).each do |topic|
     fake.answer(topic) do |payload|
       $story_staged << [topic, payload]
       nil

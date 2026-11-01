@@ -2,6 +2,7 @@
 #  battles_sync_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Read the waiting box from its box of the Mod Framework, its leave offer naming the bound cancel key and taking a click
 #      Paulinchen  2026-10-31: Answered the leave question a frame later, as the Mod Framework collects it at the wait's frame
 #                            - Checked that the numpad's 0 with Num Lock off asks before leaving, the offer naming the keys that cancel
 #      Paulinchen  2026-10-30: Checked the recording's stand-in against its golden steps
@@ -342,7 +343,6 @@ sync.finish
 # The waiting box: what the game waits for, whom it still waits for and for how long, the leave
 # offer, and the battle's windows held meanwhile.
 waiting = sync::Waiting
-$windows = []
 # A battle window that notes whether it is active.
 class Window_Selectable < Window_Base
   attr_reader :active
@@ -360,19 +360,26 @@ $frames = 0
 $leave = false
 $inject = nil
 
-check("a wait answered at once opens no box", [waiting.wait_for(scene, "Now") { :now }, $windows.size], [:now, 1])
+# The waiting box's root of the Mod Framework, nil while none is open.
+waiting_root = lambda { Mod_Framework::UI::Tree.roots.find { |root| root.id == :waiting_box } }
+check("a wait answered at once opens no box", [waiting.wait_for(scene, "Now") { :now }, waiting_root.call], [:now, nil])
 
 turns = 0
 held = nil
+shown = nil
+opened = nil
 answer = waiting.wait_for(scene, "Waiting for the party...") do
   turns += 1
   held = command.active if turns == 2
+  if turns == 3
+    opened = waiting_root.call
+    shown = waiting_lines
+  end
   turns == 3 ? :ready : nil
 end
-box = $windows.last
-check("the box opens centred below the top with the text and the seconds, and closes once answered",
-      [answer, [box.x, box.y, box.width, box.height, box.z], box.contents.lines, $frames, box.disposed?],
-      [:ready, [140, 120, 360, 96, 250], { 0 => "Waiting for the party...", 2 => "0 s" }, 2, true])
+check("the box opens framed, centred below the top, movable and widened only, with the text and the seconds, and closes once answered",
+      [answer, opened.frame, opened.at, opened.size, opened.movable, opened.resizable, shown, $frames, opened.open?],
+      [:ready, true, [140, 120], [360, 96], true, :width, { 0 => "Waiting for the party...", 2 => "0 s" }, 2, false])
 check("the battle's windows are held during the wait and given back after", [held, command.active], [false, true])
 
 names = ["A", "B"]
@@ -380,13 +387,13 @@ turns = 0
 seen = []
 waiting.wait_for(scene, "Waiting for the party's commands...", lambda { names }, "Still choosing: ") do
   turns += 1
-  seen << $windows.last.contents.lines[1] if turns > 1
+  seen << waiting_lines[1] if turns > 1
   names = ["B"] if turns == 2
   names = nil if turns == 3
   turns == 4 ? :done : nil
 end
-check("the names line says whom the wait is for, redrawn as they shrink and cleared once nobody is left",
-      [seen, $windows.last.contents.draws[1]], [["Still choosing: A, B", "Still choosing: B", nil], 2])
+check("the names line says whom the wait is for, set anew as they shrink and cleared once nobody is left",
+      seen, ["Still choosing: A, B", "Still choosing: B", nil])
 
 $frames = 0
 $log.clear
@@ -395,35 +402,41 @@ seen = []
 $asked = []
 $confirm = nil
 offer_turn = waiting::LEAVE_FRAMES + 2
+leave_button = nil
 answer = waiting.wait_for(scene, "Slow") do
   turns += 1
-  seen << $windows.last.contents.lines[2] if [2, 61, 62, 122, offer_turn].include?(turns)
-  # Cancel before the offer, then at the offer answered "Stay", then again answered "Leave"; an
-  # answer reaches the wait at its next frame.
-  $leave = [5, offer_turn, offer_turn + 4].include?(turns)
+  seen << waiting_lines[2] if [2, 61, 62, 122, offer_turn].include?(turns)
+  leave_button ||= waiting_root.call.children[3] if turns == offer_turn
+  # Cancel before the offer, then at the offer answered "Stay", then a click on the offer answered
+  # "Leave"; an answer reaches the wait at its next frame.
+  $leave = [5, offer_turn].include?(turns)
+  leave_button.send(:emit, :click) if turns == offer_turn + 4
   $confirm = { offer_turn + 2 => false, offer_turn + 5 => true }[turns]
   nil
 end
-check("the seconds are drawn once a second until the leave offer takes the line, and only a confirmed leave leaves",
-      [answer, seen, $windows.last.contents.draws[2], $asked],
-      [:left, ["0 s", "0 s", "1 s", "2 s", "X or Numpad 0 leaves the battle."], waiting::LEAVE_FRAMES / MGQ_MpUi::FRAMES_PER_SECOND + 1,
-       [[waiting::LEAVE_QUESTION, waiting::LEAVE_CHOICES]] * 2])
+check("the seconds are set once a second until the leave offer takes the line, naming the cancel key as bound, and only a confirmed leave leaves",
+      [answer, seen, $asked], [:left, ["0 s", "0 s", "1 s", "2 s", "Press X to leave the battle."], [[waiting::LEAVE_QUESTION, waiting::LEAVE_CHOICES]] * 2])
+check("the leave offer is a button, which a click asks as cancel does", [leave_button.class, leave_button.text], [Mod_Framework::UI::Button, "Press X to leave the battle."])
 check("the offer, the question, staying and the leave are logged",
-      [$log.grep(/still waiting after 10 s \(Slow\), Cancel now asks whether to leave the battle/).size, $log.grep(/asked the player whether to leave/).size,
+      [$log.grep(/still waiting after 10 s \(Slow\), cancel now asks whether to leave the battle/).size, $log.grep(/asked the player whether to leave/).size,
        $log.grep(/the player stays in the battle/).size, $log.grep(/the player left the battle during the wait \(Slow\)/).size], [1, 2, 1, 1])
 $leave = false
 $confirm = nil
 
 sync::Channel.receive(2, "forfeit", "")
-check("a battle's ending ends the wait and closes the box", [waiting.wait_for(scene, "Ending") { nil }, $windows.last.disposed?], [:forfeit, true])
+check("a battle's ending ends the wait and closes the box", [waiting.wait_for(scene, "Ending") { nil }, waiting_root.call], [:forfeit, nil])
 
 sync.finish
 sync.join_world(:host, "w2", [2], "the party")
 $log.clear
 turns = 0
-waiting.wait_for(scene, "Odd", lambda { raise "boom" }) { (turns += 1) == 3 ? :ok : nil }
+names_seen = :none
+waiting.wait_for(scene, "Odd", lambda { raise "boom" }) do
+  names_seen = waiting_lines[1] if turns == 1
+  (turns += 1) == 3 ? :ok : nil
+end
 check("a details that fails is logged once and the names line stays empty, the wait going on",
-      [$log.grep(/the waiting box could not name whom it waits for: RuntimeError: boom/).size, $windows.last.contents.lines[1], turns], [1, nil, 3])
+      [$log.grep(/the waiting box could not name whom it waits for: RuntimeError: boom/).size, names_seen, turns], [1, nil, 3])
 sync.finish
 
 # Who the box names by seat.
@@ -436,44 +449,20 @@ peers.define_singleton_method(:at, at)
 # The playback's path: open, leave? and close without a wait.
 box = waiting.open("Waiting for Host...", lambda { ["A"] }, "Still choosing: ")
 waiting.refresh(box, -1)
-check("the three-argument open draws the text and names, and frames below 0 draw no seconds", box.window.contents.lines, { 0 => "Waiting for Host...", 1 => "Still choosing: A" })
+check("the three-argument open sets the text and names, and frames below 0 set no seconds", waiting_lines, { 0 => "Waiting for Host...", 1 => "Still choosing: A" })
 check("leave? before the offer says no", waiting.leave?(box, 5), false)
-check("close disposes the box and returns nil, also for none", [waiting.close(box), box.window.disposed?, waiting.close(nil)], [nil, true, nil])
+check("close closes the box and returns nil, also for none", [waiting.close(box), box.root.open?, waiting.close(nil)], [nil, false, nil])
 
-# The waiting box in the layout: where the player left it, at its width, never narrower than its
-# lines need.
-layout = MGQ_MpUi::Layout
-stored = layout.instance_variable_get(:@stored)
-registered = lambda { registered_box(:waiting_box) }
-offered = lambda { (offer = layout.instance_variable_get(:@offers).find { |o| o.id == :waiting_box }) && offer.rect.to_a }
-place = lambda { |text| text ? Mod_Framework::Settings.store("ui_waiting_box", text) : Mod_Framework::Settings.forget("ui_waiting_box"); stored.delete(:waiting_box) }
-leave_width = waiting.offer(waiting::BACK_TEXT).size * 8 + 2 * waiting::PADDING
+# The waiting box in the layout: never narrower than its lines need.
+leave_width = waiting.offer(waiting::LEAVE_LOSES_TEXT).size * 8 + 2 * waiting::PADDING
 box = waiting.open("Now")
-check("the waiting box is known to the layout by its name, resized in width alone, as wide at least as its leave offer needs",
-      [registered.call, offered.call], [["Waiting box", leave_width, waiting::HEIGHT, :width], [140, 120, 360, 96]])
+check("the waiting box is known to the layout by its name, resized in width alone, as wide at least as its longest leave offer needs",
+      [registered_box(:waiting_box), box.root.min_size], [["Waiting box", leave_width, waiting::HEIGHT, :width], [leave_width, waiting::HEIGHT]])
 waiting.close(box)
-long = "Waiting for the whole party's commands..."
+long = "Waiting for the whole party's commands, all of them, every one..."
 box = waiting.open(long)
-check("and as its text needs, as far as its width where it starts", [registered.call[1], waiting.least_width(box.window.contents, ["x" * 100])], [long.size * 8 + 24, waiting::WIDTH])
+check("and as its text needs, as far as its width where it starts", [box.root.min_size[0], waiting.least_width(["x" * 100])], [waiting::WIDTH, waiting::WIDTH])
 waiting.close(box)
-
-place.call("10,300,500,0")
-box = waiting.open("Waiting for Host...", lambda { ["Player A", "Player B", "Player C"] }, "Still choosing: ")
-waiting.refresh(box, 0)
-window = box.window
-check("a waiting box kept in the framework's settings opens there at its width, draws its lines and offers itself to the layout",
-      [[window.x, window.y, window.width, window.height], window.contents.lines, offered.call],
-      [[10, 300, 500, 96], { 0 => "Waiting for Host...", 1 => "Still choosing: Player A, Player B, Player C", 2 => "0 s" }, [10, 300, 500, 96]])
-place.call("10,300,340,0")
-waiting.refresh(box, 1)
-lines = window.contents.lines
-check("a new width makes new contents with every line drawn anew, the names cut to it",
-      [window.width, window.contents.width, lines[0], lines[1].start_with?("Still choosing: ") && lines[1].end_with?(MGQ_MpUi::ELLIPSIS), lines[2]], [340, 316, "Waiting for Host...", true, "0 s"])
-place.call("10,300,100,0")
-waiting.refresh(box, 2)
-check("never narrower than its text and the leave offer need whole", [window.width, window.contents.lines[2]], [leave_width, "0 s"])
-waiting.close(box)
-place.call(nil)
 
 # A reconnect that deals the world's seats anew keeps the battle: the guest who comes back on the
 # host's old seat is the same guest, the host keeps its own seat in the battle, a guest away is
@@ -556,7 +545,7 @@ $frames = 0
 seen = []
 commands = sync::Wire.line([[]])
 $inject = lambda do |frame|
-  seen << $windows.last.contents.lines[1] if [2, 5].include?(frame)
+  seen << waiting_lines[1] if [2, 5].include?(frame)
   sync::Channel.receive(2, "commands", commands) if frame == 3
   sync::Channel.receive(3, "commands", commands) if frame == 6
 end
@@ -601,6 +590,7 @@ wait_back = lambda do |leave, numpad = false|
   $asked = []
   $frames = 0
   $inject = lambda do |frame|
+    $offer_seen = waiting_lines[2] if frame == waiting::LEAVE_FRAMES + 1
     $leave = !numpad && frame == waiting::LEAVE_FRAMES + 2
     $numpad_off = numpad && frame == waiting::LEAVE_FRAMES + 2
     $confirm = leave if frame == waiting::LEAVE_FRAMES + 4
@@ -610,10 +600,10 @@ wait_back = lambda do |leave, numpad = false|
   $leave = false
   $numpad_off = false
   $confirm = nil
-  [answer, $asked, $windows.last.contents.lines[2]]
+  [answer, $asked, $offer_seen]
 end
-check("past the offer Cancel asks first, and choosing again goes back",
-      wait_back.call(false), [:back, [[waiting::LEAVE_QUESTION, waiting::BACK_CHOICES]], "X or Numpad 0 chooses again or leaves."])
+check("past the offer cancel asks first, and choosing again goes back",
+      wait_back.call(false), [:back, [[waiting::LEAVE_QUESTION, waiting::BACK_CHOICES]], "Press X to choose again or leave."])
 check("while a confirmed leave leaves", wait_back.call(true)[0], :left)
 check("the numpad's 0 with Num Lock off asks as Cancel does", wait_back.call(true, true)[0, 2], [:left, [[waiting::LEAVE_QUESTION, waiting::BACK_CHOICES]]])
 sync.finish
@@ -677,7 +667,7 @@ $leave = false
 seen = nil
 $asked = []
 $inject = lambda do |frame|
-  seen = $windows.last.contents.lines.dup if frame == sync::QUIET_FRAMES + 2
+  seen = waiting_lines if frame == sync::QUIET_FRAMES + 2
   $leave = frame == sync::QUIET_FRAMES + waiting::LEAVE_FRAMES + 2
   $confirm = true if $leave
 end

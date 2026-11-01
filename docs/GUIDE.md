@@ -175,8 +175,8 @@ The creator can change Max Players, Mods, *Shared Mod Settings*, *Turn off other
 | Required | A game needs a script `Name.rb` in its `Patch` folder, in the world's version, to enter. Case, spaces, underscores and hyphens don't matter. Shows first: green when you have the world's version, gold when yours is another, red when you don't have it. |
 | Essential | For mods that are data files without a script. Keeps nobody out; shows in gold. |
 
-- *Add a mod by name* names a mod you don't have yourself, such as a mod of data files: its row becomes a text box, **Enter** adds the name you typed, **Esc** or numpad **0** goes back. Such a mod stays in the list when unlisted; **Del** removes it.
-- The mods take 16,000 characters at most; the top right of the list says when a change would pass that. The cancel key or numpad **0** goes back to the form, which shows them as the world keeps them: `!` in front of a required mod, `?` in front of an essential one.
+- *Add a mod by name* names a mod you don't have yourself, such as a mod of data files: a *Name* field opens under the list, **Enter** adds the name you typed, **Esc** or numpad **0** goes back. Such a mod stays in the list when unlisted; **Del** or the *Remove* button removes it.
+- The mods take 16,000 characters at most; the top right of the list says when a change would pass that. The cancel key, numpad **0** or a click outside the list goes back to the form, which shows them as the world keeps them: `!` in front of a required mod, `?` in front of an essential one.
 
 The details show each mod in a box of its own, as many as fit the row, and count the rest in a last box.
 
@@ -220,11 +220,11 @@ A world with *Turn off other mods* is played with the mods it names and nothing 
 
 ### Where the others are
 
-A small triangle at the edge of the screen points at every party member on your map who is off the screen, in their color, with their name and how many tiles away they are. In a Raid World everyone on your map gets one, the nearest eight at most. The arrows fade out while a wheel, the World overview or the chat is open and while a message shows.
+A small triangle at the edge of the screen points at every party member on your map who is off the screen, in their color, with their name and how many tiles away they are. In a Raid World everyone on your map gets one, the nearest eight at most. The arrows fade out while a wheel, the World overview, the chat or a screen of another mod is open and while a message shows.
 
 ### Action wheel
 
-Press **B** on the map. Its choices sit in a ring around your character. The wheel opens on the middle: the globe over your character, which opens the World overview. Hold an arrow, or two for a diagonal, to point at a choice; it stays picked when you let go, and a direction without a choice goes back to the middle. Confirm takes the choice pointed at, and **B**, cancel or numpad **0** closes the wheel; a hint below the wheel says so. Grey choices can't be taken right now and tell you why. The wheel fades in and out.
+Press **B** on the map. Its choices sit in a ring around your character. The wheel opens on the middle: the globe over your character, which opens the World overview. Hold an arrow, or two for a diagonal, to point at a choice; it stays picked when you let go, and a direction without a choice goes back to the middle. Confirm takes the choice pointed at, and **B**, cancel or numpad **0** closes the wheel; a hint below the wheel says so. With the mouse, point at a box and click it; a click outside the boxes closes the wheel. Grey choices can't be taken right now and tell you why. The wheel fades in and out.
 
 ### Chat
 
@@ -235,9 +235,9 @@ Press **T**, or pick *Chat* in the wheel. The chat works on the map, in battles 
 | Key | What it does |
 |---|---|
 | **Enter** | Send the line |
-| **Esc** or numpad **0** | Close the chat (Num Lock on or off) |
+| **Esc**, numpad **0** or the gamepad's cancel | Close the chat (Num Lock on or off); a cancel key you bound in F1 that types a letter types it instead |
 | **Up** / **Down** | Scroll the log; **Page Up** / **Page Down** a page at a time |
-| **Alt** + **Left** / **Right** | Switch tabs (left Alt) |
+| **Alt** + **Left** / **Right**, or the gamepad's **L** / **R** | Switch tabs (left Alt) |
 | **Alt** + **Up** / **Down** | Bring back the lines you sent, the last 20, until you leave the world |
 | **Alt** + drag | Move the chat, or resize it by an edge or corner (see [Interface](#interface)) |
 | **Ctrl** + **V** | Paste |
@@ -256,11 +256,11 @@ The empty box names the controls, and shows the **Alt** ones while you hold it.
 | **Whisper** | One player, in magenta; the tab shows once you whisper or get a whisper | **/w** and a name, or **/r** |
 
 - A command, or a click on a chat's tab, picks the chat your next lines go to; the box shows which. It stays until you pick another.
-- For **/w**, a list of matching players shows above the box after the first letter of the name: **Up** and **Down** pick one, **Enter** or **Tab** takes it.
+- For **/w**, a list of matching players shows above the box after the first letter of the name: **Up** and **Down** pick one, **Enter**, **Tab** or a click takes it.
 - **/r** whispers back to the last player who whispered to you; it's refused while nobody has, or once they left the world.
 - **/help** opens a help tab at the far right.
-- **Unread lines:** a tab glows yellow at its top right corner until you pick it or **All**, the **Whisper** tab too.
-- **Closed chat:** the log at the bottom left shows the tab you picked last, plus whispers. While a tab has unread lines, the tabs show dimmed above the closed log, so you see the glow; they fade away with the log's last line. A whisper that arrives while the chat is closed plays a short chime (the game's recovery sound). Lines fade away as they go.
+- **Unread lines:** a tab shows a gold dot until you pick it or **All**, the **Whisper** tab too.
+- **Closed chat:** the log at the bottom left shows the tab you picked last, plus whispers. While a tab has unread lines, the tabs show dimmed above the closed log, so you see the dot; they fade away with the log's last line. A whisper that arrives while the chat is closed plays a short chime (the game's recovery sound). Lines fade away as they go.
 - **Too fast:** Global lines are limited to two a second after a burst of ten; a faster one is turned down with "You are sending too fast".
 
 #### Players in the chat
@@ -274,7 +274,7 @@ The empty box names the controls, and shows the **Alt** ones while you hold it.
 
 ![An emote balloon above a player](images/emotes.png)
 
-Press **E** on the map for a ring of eight emotes around your character: a jump, or a balloon such as a heart, a music note or a light bulb. Hold an arrow, or two for a diagonal, to point at one, like a joystick; it stays pointed at when you let go. Confirm plays the emote pointed at, or closes the wheel before you pointed at any; **E**, cancel or numpad **0** closes it too, as the hint below the wheel says. The players on your map see it on your character too.
+Press **E** on the map for a ring of eight emotes around your character: a jump, or a balloon such as a heart, a music note or a light bulb. Hold an arrow, or two for a diagonal, to point at one, like a joystick; it stays pointed at when you let go. Confirm or a click plays the emote pointed at, or closes the wheel before you pointed at any; **E**, cancel, numpad **0** or a click outside closes it too, as the hint below the wheel says. The players on your map see it on your character too.
 
 ### World overview
 
@@ -294,7 +294,7 @@ Press **F11** or pick the middle of the action wheel; **F11**, **B**, cancel, nu
 
 - **The head:** the world's name, its type and difficulty ("Raid | Hard", *Per player* in a Classic world), its players online of its seats ("Players online: 3 / 8") and where the world's story stands.
 - **The list:** the **objective**, what to do next in the story, then in a Raid World every **raid boss** under a heading per part of the story, each with a thin gauge of the HP the world left it. The pane shows a boss's part, its tier and what the tier gives its enemies, a larger gauge and who last hurt it. See [World overview](RAID_WORLDS.md#world-overview) of the Raid World page.
-- While you look at another page, a gold corner on the *Players* tab tells you an invite, challenge or trade offer waits there; **Y** and **N** answer it once you're back on the Players page or have closed the overview.
+- While you look at another page, a gold dot on the *Players* tab tells you an invite, challenge or trade offer waits there; **Y** and **N** answer it once you're back on the Players page or have closed the overview.
 
 **The Quests page** shows the quests under way in your game, in every world:
 

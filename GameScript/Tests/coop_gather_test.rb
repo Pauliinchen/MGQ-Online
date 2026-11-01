@@ -2,6 +2,7 @@
 #  coop_gather_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Dropped the stand-in of a lapse after a frame count, which no script asks for any more
 #      Paulinchen  2026-10-31: Dropped the warp ban a teleport to the story took
 #                            - Expected the plainer texts the player reads
 #      Paulinchen  2026-10-28: Answered the calls, the hold and the offers through the bridge from their golden cases
@@ -75,7 +76,6 @@ module MGQ_MpActions
   Notice = Struct.new(:key, :text, :color, :action, :take, :decline, :mark)
   def self.own_doing_from(&doing); ($doings ||= []) << doing; end
   def self.lapse_in(frames); frames / 60.0; end
-  def self.lapse_at(since, frames); lapse_in(since + frames - Graphics.frame_count); end
   def self.offer(offers); $offers = offers; end
 end
 # Stands in for the world's sync, keeping the tick handler and the notices shown.

@@ -2,6 +2,8 @@
 #  ui_chat_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Checked the chat on the Mod Framework's components against the chat's model
+#                            - Checked the chat box opening over a window that hosts the scene
 #      Paulinchen  2026-10-31: Kept the boxes' places in the Mod Framework's settings
 #                            - Checked the boxes registered with the Mod Framework's layout
 #      Paulinchen  2026-10-30: Dropped the checks of a missing method and of two equal constants
@@ -24,625 +26,291 @@
 #
 #----------------------------------------------------------------
 
-# Covers ui_chat.rbx: the lines sent that Alt with up and down bring back, /r answering the last
-# player who whispered, the sound of a whisper that arrives while the chat box is closed, a paste,
-# which the DLL hands over as typed text, the tabs drawn dimmed above the closed log while one
-# holds unread lines, the Whisper tab shown only once a whisper happened, the chats' commands,
-# tags and colors, and the log's places in the layout and its frame in the preset. The rest of the
-# chat is covered by overworld_test.rb, whose stand-in for the chat log's sprite and canvas the one
-# below mirrors.
+# Covers ui_chat.rbx on the Mod Framework's components against the chat's model on the fake bridge
+# (chat_support.rb) and the component tree (bridge_support.rb): where the log shows and starts, the
+# hotkey and the gates that open the box, the typing, the keys and the clicks handed to the model,
+# the view shown in the tabs, the lines and the box, the player's menu, the bubbles on their
+# players, and the game's own lines. The chat's rules are MGQOnline.Game.Tests'.
+
+# The game's font, as far as the components measure with it.
+class Font
+  attr_accessor :name, :size, :color, :bold, :italic, :outline, :shadow, :out_color
+
+  # Makes a font of 24 pixels.
+  def initialize; @size = 24; end
+end
+
+# The game's picture, as far as the components measure texts on it: half the font's size a
+# character.
+class Bitmap
+  attr_reader :width, :height, :font
+
+  # Makes a picture with a font.
+  def initialize(width = 1, height = 1); @width, @height, @font = width, height, Font.new; end
+  # Measures a text.
+  def text_size(text); Struct.new(:width, :height).new(text.to_s.size * @font.size.to_i / 2, @font.size.to_i); end
+  # Answers that it was never freed.
+  def disposed?; false; end
+end
 
 require_relative "world_support"
 
-# The whisper's sound, which world_support.rb's Sound lacks.
-def Sound.play_recovery; $sounds << "recovery"; end
-# Lets the tests read the lines the player sent, oldest first.
-def MGQ_MpChat.history; @history; end
-
+ui = Mod_Framework::UI
 chat = MGQ_MpChat
+tree = $fake_tree
+model = $fake_chat
 friend = { "id" => "friend", "name" => "Friend", "sprite" => "Actor2", "index" => 3, "map" => 5, "x" => 10, "y" => 10, "d" => 4, "speed" => 4, "hidden" => 0, "scene" => "map" }
-friend_seat = 2
 $inbox << entry("seat", 0)
-$inbox << entry("message", friend_seat, told(friend))
+$inbox << entry("message", 2, told(friend))
 MGQ_MpOverworldSync.tick
+MGQ_MpOverworld.update_ghosts
 
-# Sends a line as typed into the chat box: one frame types it, the next acts on its Enter.
+# Tells a part of the open log's root.
 #
-# @param text [String] The line, commands included.
-def send_line(text)
-  MGQ_MpChat.start_typing
-  $typed = "#{text}\r"
-  2.times { map_frame }
+# @param name [Symbol] :tabs, :lines, :row, :label or :field.
+# @return [Mod_Framework::UI::Component] The part.
+def part(name)
+  MGQ_MpChat.instance_variable_get(:"@#{name}")
 end
 
-# Presses a key while the left Alt is held, in a frame of its own.
+# Posts a view of the chat's model and lets the frame take it.
 #
-# @param key [Integer] Windows' code of the key.
-def alt_press(key)
-  $down = [MGQ_MpChat::ALT_KEY]
-  $pressed = key
-  map_frame
-  $down = []
+# @param changes [Hash] What differs from the view the model holds.
+def view(changes)
+  $fake_chat.post(changes)
+  ui_frame
 end
 
-# The lines sent, brought back with Alt and up or down.
-send_line("first line")
-send_line("second line")
-send_line("second line")
-send_line("/w nobody here")
-check("sent lines are kept as typed, commands and refused ones included, a repeat of the last once", chat.history, ["first line", "second line", "/w nobody here"])
-chat.start_typing
-$typed = "dra"
+# The log on the map, closed and empty.
 map_frame
+root = chat.root
+expected_height = chat::TAB_ROW + chat::ROW * 6 + chat::BOX_ROW
+check("the map shows the log in its own place, at the bottom left above the status line, its box closed",
+      [root.open?, root.id, root.place_name, root.at, root.size, root.frame, root.closable, root.z, root.mouse],
+      [true, :chat, "Chat", [8, 480 - 96 - expected_height], [400, expected_height], false, false, 99, :parts])
+check("with no line to show it hides, so the player arranges it only while it shows lines", root.hide_while.call, true)
+check("the three places are listed for Interface Positions before the log shows there",
+      [:chat, :battle_chat, :menu_chat].map { |id| registered_box(id) && registered_box(id)[0] }, ["Chat", "Battle chat", "Menu chat"])
+$player_ini["chat_size"] = "450x8"
+check("a size kept in chat_size by earlier builds is its default", chat.default_place(:chat),
+      [[8, 480 - 96 - (chat::TAB_ROW + chat::ROW * 8 + chat::BOX_ROW)], [450, chat::TAB_ROW + chat::ROW * 8 + chat::BOX_ROW]])
+$player_ini["chat_size"] = "300x2"
+check("one smaller than the least size starts at the least", chat.default_place(:chat)[1], chat::MIN_SIZE)
+$player_ini.delete("chat_size")
+
+# The closed log's lines.
+closed_lines = [["[Party] ", "Friend: ", "wait at the inn", "member", "party", "friend", nil], ["", "* ", "Friend left the battle.", "system", nil, nil, 6]]
+view("lines" => closed_lines, "unread" => [])
+rows = part(:lines).rows
+check("a line shows its tag in the chat's color, the name in the sender's and the text plain, and no name takes a click while the box is closed",
+      [rows[0].map { |each| [each[:text], each[:color]] }, rows[0].any? { |each| each.key?(:data) }],
+      [[["[Party] ", chat::CHANNEL_COLORS["party"]], ["Friend: ", ui::Style::MEMBER], ["wait at the inn", ui::Style::TEXT]], false])
+check("a game line's mark is dim, and a line in its last frames fades", [rows[1][:parts][0][:color], rows[1][:opacity]], [ui::Style::DIM, 255 * 6 / 12])
+check("the closed log shows, but its tabs only while one holds unread lines", [root.hide_while.call, part(:tabs).visible?], [false, false])
+view("unread" => ["global"])
+check("a tab with unread lines marks its tab and shows the tabs dimmed", [part(:tabs).visible?, part(:tabs).opacity, part(:tabs).tab(1).badge],
+      [true, chat::CLOSED_TABS_OPACITY, true])
+view("lines" => [], "unread" => [])
+
+# The hotkey opens the box, which holds the game's buttons and types.
+$pressed = MGQ_MpHotkeys.code(:chat)
+map_frame
+ui_frame
+field = part(:field)
+check("T opens the box through the chat's model, naming the keys that close it as it types, Esc and Numpad 0, not the X that types an x",
+      model.requests("chat.open"), [{ "key" => true, "scene" => "Scene_Map", "close" => "Esc or Numpad 0" }])
+check("open, the log is framed above everything, takes clicks and holds the game's buttons, its field typing",
+      [root.frame, root.closable, root.captures, root.z, root.mouse, part(:row).visible?, field.editor.nil?, $mgq_text_input ? true : false],
+      [true, true, true, ui::Z[:typing], true, true, false, true])
+check("the others see the player types", MGQ_MpOverworldSync::Me.scene, "typing")
+check("the box names the chat it sends to in its color, and the empty box its hint without a close key",
+      [part(:label).text, part(:label).color, field.placeholder], ["Global:", chat::CHANNEL_COLORS["global"], chat::BOX_HINT])
+check("the tabs, the label and the field draw in the small font", [part(:tabs).font_size, part(:label).font_size, field.font_size], [:small, :small, :small])
+
+# Typing, Enter and the keys with Alt go to the model.
+$typed = "hi"
+map_frame
+check("what is typed goes to the model with the caret", model.requests("chat.typed").last, { "text" => "hi", "cursor" => 2 })
+field.caret = 1
+view("lines" => [["", "* ", "Friend joined.", "system", nil, nil, nil]])
+check("a line that comes keeps the caret where the player moved it", [field.text, field.caret], ["hi", 1])
+view("box" => ["hi", 2, false], "channel" => "party")
+view("box" => ["", 0, false])
+check("a view that took a command out of the box sets the field's text and caret, and the label its chat", [field.text, field.caret, part(:label).text], ["", 0, "Party:"])
+tree.post([[field.node, "key", 0x26 | 0x100], [field.node, "key", 0x27 | 0x100]])
+ui_frame
+check("Alt with Up brings back a line sent and Alt with Right steps the tabs, through the model", model.requests("chat.alt"), [[0, -1], [1, 0]])
+view("tabs" => %w[all global map party whisper], "tab" => "map")
+check("the tabs the view names show, the picked one lit", [(0..5).map { |index| part(:tabs).tab(index).visible? }, part(:tabs).index],
+      [[true, true, true, true, true, false], 2])
+tree.post([[part(:tabs).tab(3).node, "click"]])
+ui_frame
+check("a click on a tab picks it through the model", model.requests("chat.tab"), ["party"])
+
+# The names that fit a whisper.
+view("box" => ["/w F", 4, false], "suggestions" => ["Friend", "Fiona"], "pick" => 0)
+check("the names that fit show over the field", field.completions, ["Friend", "Fiona"])
+tree.post([[field.node, "key", 0x28]])
+ui_frame
+tree.post([[field.node, "key", 0x09]])
+ui_frame
+check("Down moves the pick through the model and Tab takes it", [model.requests("chat.pick"), model.requests("chat.take_pick").size], [[1], 1])
+view("box" => ["/w F", 4, false], "suggestions" => ["Friend", "Fiona"], "pick" => 1)
+check("the pick the model holds lights in the field's list", field.completion_index, 1)
+view("pick" => 0)
+model.calls.clear
+names = ui::Tree.roots.find { |each| each.is_a?(ui::CompletionBox) }
+names.instance_variable_get(:@list).emit(:submit, "Fiona", 1)
+ui_frame
+check("a click on the second name picks it through the model before taking it", model.calls, [["chat.pick", 1], ["chat.take_pick", nil]])
+view("box" => ["", 0, false], "suggestions" => [], "channel" => "whisper", "whisper_to" => "Friend")
+check("the box names whom it whispers to", part(:label).text, "To Friend:")
+
+# The help tab takes no typing.
+view("tab" => "help", "box" => ["", 0, true])
+check("on the help tab the field takes no typing and its hint names the close keys",
+      [field.read_only, part(:label).text, field.placeholder], [true, "Help:", "#{chat::HELP_HINT} #{ui.close_hint}"])
+view("tab" => "all", "box" => ["", 0, false], "channel" => "global", "whisper_to" => nil)
+
+# A player's menu from their name.
+view("lines" => [["", "Friend: ", "hello", "other", "global", "friend", nil], ["", "Me: ", "hi", "me", "global", nil, nil]])
+rows = part(:lines).rows
+check("open, another player's name takes a click, the player's own not", rows.map { |row| row.find { |each| each[:data] } ? true : false }, [true, false])
+$mouse = [120, 300]
+logged = logged_lines { part(:lines).emit(:click, rows[0], rows[0][0]) }
+menu = ui::Menu.current
+choices = menu.instance_variable_get(:@choices).map { |choice| choice[:text] }
+check("a click on it opens their menu at the pointer, above the box, with what the scripts offer and a whisper",
+      [menu.nil?, choices.last, choices.size > 1, menu.z > root.z, logged.grep(/menu of Friend opened from the chat/).size], [false, "Whisper", true, true, 1])
+menu.close(:cancel)
+check("cancel closes the menu alone", [ui::Menu.current, chat.typing?], [nil, true])
+
+# A battle keeps the box open in its own place.
+battle = Scene_Battle.new
+SceneManager.scene = battle
+view("box" => ["on my way", 9, false])
+battle.update_basic
+check("in a battle the log shows in the battle's place, the open box keeping its text",
+      [chat.root.id, chat.root.open?, root.open?, part(:field).text, chat.root.z], [:battle_chat, true, false, "on my way", ui::Z[:typing]])
+logged_lines { part(:lines).emit(:click, part(:lines).rows[0], part(:lines).rows[0][0]) }
+menu = ui::Menu.current
+check("off the map a name's menu offers the whisper alone", menu.instance_variable_get(:@choices).map { |choice| choice[:text] }, ["Whisper"])
+menu.instance_variable_get(:@list).emit(:submit, nil, 0)
+ui_frame
+check("which whispers to that player through the model", model.requests("chat.whisper"), [2])
+
+# Cancel closes the box; the log stays.
 $sounds.clear
-alt_press(MGQ_MpChat::UP_KEY)
-check("Alt and up bring back the last line sent, the cursor at its end", [chat.typed, chat.cursor, $sounds], ["/w nobody here", 14, ["cursor"]])
-alt_press(MGQ_MpChat::UP_KEY)
-alt_press(MGQ_MpChat::UP_KEY)
-check("again the ones before", chat.typed, "first line")
-$sounds.clear
-alt_press(MGQ_MpChat::UP_KEY)
-check("and stay at the oldest, silent", [chat.typed, $sounds], ["first line", []])
-alt_press(MGQ_MpChat::DOWN_KEY)
-check("Alt and down go the other way", chat.typed, "second line")
-alt_press(MGQ_MpChat::DOWN_KEY)
-alt_press(MGQ_MpChat::DOWN_KEY)
-check("and past the newest bring the line being typed back", chat.typed, "dra")
-alt_press(MGQ_MpChat::DOWN_KEY)
-check("where they stay", chat.typed, "dra")
-$pressed = MGQ_MpChat::UP_KEY
-$buttons << :UP
+$down = [ui::ESCAPE_KEY]
+tree.post([[chat.root.node, "cancel"]])
+ui_frame
+$down = []
+check("cancel closes the box through the model once, with one cancel sound, the log staying",
+      [model.requests("chat.close"), $sounds.count("cancel"), chat.typing?, chat.root.open?, chat.root.closable, part(:field).editor],
+      [["cancel (Esc)"], 1, false, true, false, nil])
+check("the closed log's lines and tabs take no clicks, so they reach the game's windows below", [part(:lines).mouse, part(:tabs).mouse], [false, false])
+SceneManager.scene = Scene_Map.new
 map_frame
-check("up without Alt scrolls the log and leaves the box alone", [chat.typed, chat.scroll], ["dra", 1])
-chat.stop_typing
+check("back on the map the log shows in the map's place again", chat.root.id, :chat)
+
+# Enter sends through the model, which closes the box.
 chat.start_typing
-$typed = "/help\r"
-map_frame
-alt_press(MGQ_MpChat::UP_KEY)
-check("the help tab, where nobody types, brings no line back", chat.typed, "")
-chat.select_tab(:all, "in the test")
-chat.stop_typing
-(1..25).each { |n| send_line("line #{n}") }
-check("the last #{MGQ_MpChat::HISTORY_SIZE} lines are kept", [chat.history.size, chat.history.first, chat.history.last], [MGQ_MpChat::HISTORY_SIZE, "line 6", "line 25"])
-chat.start_typing
-alt_press(MGQ_MpChat::UP_KEY)
+ui_frame
 $typed = "\r"
 map_frame
-check("a line brought back and sent again is sent once more and kept once", [chat.log_lines.last, chat.history.last(2)], ["Me: line 25", ["line 24", "line 25"]])
+check("Enter goes to the model, and the closed box gives the keys back at once", [model.requests("chat.enter").size, chat.typing?, $mgq_text_input ? true : false], [1, false, false])
 
-check("the global chat is the one chosen first, and a /w naming nobody shows no Whisper tab", [chat.channel, chat.whisper_tab?, chat.tabs], [:global, false, [:all, :global, :map, :party]])
-chat.start_typing
-$down = [MGQ_MpChat::ALT_KEY]
-$pressed = MGQ_MpChat::LEFT_KEY
-chat.alt_keys
-$down = []
-check("nor do Alt and the arrows reach it", chat.tab, :party)
-chat.select_tab(:all, "in the test")
-chat.choose(:map)
-chat.stop_typing
-
-# /r answers the last player who whispered, whose whisper sounds while the box is closed.
-$sounds.clear
-send_line("/r hello")
-check("/r before any whisper is refused", [MGQ_MpOverworldSync::Status.lines.last, chat.reply_to, $sounds.last], ["Nobody has whispered to you yet.", nil, "buzzer"])
-$sounds.clear
-$inbox << entry("message", friend_seat, "whisper=psst\nname=Friend\n\n")
-MGQ_MpOverworldSync.tick
-check("a whisper that arrives while the box is closed plays the recovery sound once and is whom /r answers",
-      [$sounds, chat.reply_to, chat.log_lines.last], [["recovery"], "Friend", "[Whisper] Friend: psst"])
-check("and shows the Whisper tab, last of the chats' tabs, for the rest of the session", [chat.whisper_tab?, chat.tabs], [true, [:all, :global, :map, :party, :whisper]])
-chat.start_typing
-$sounds.clear
-$inbox << entry("message", friend_seat, "whisper=again\nname=Friend\n\n")
-MGQ_MpOverworldSync.tick
-check("one that arrives while the box is open plays nothing", $sounds, [])
-chat.stop_typing
-chat.choose(:map)
-$chats.clear
-send_line("/r back at you")
-check("/r whispers to them and chooses the whisper chat to them for the lines after it",
-      [$chats.map { |request| request.values_at("channel", "seat", "text") }, chat.channel, chat.whisper_to, chat.log_lines.last],
-      [[["whisper", friend_seat, "back at you"]], :whisper, "Friend", "[To Friend] Me: back at you"])
-chat.choose(:map)
-send_line("/r")
-check("/r alone chooses the whisper chat to them", [chat.channel, chat.whisper_to, chat.typing?], [:whisper, "Friend", false])
-$sounds.clear
-$inbox << entry("message", friend_seat, "whisper=one\nname=Friend\n\n")
-$inbox << entry("message", friend_seat, "whisper=two\nname=Friend\n\n")
-MGQ_MpOverworldSync.tick
-check("whispers that arrive in one frame chime once", [$sounds, chat.log_lines.last(2)], [["recovery"], ["[Whisper] Friend: one", "[Whisper] Friend: two"]])
-chat.choose(:map)
-$inbox << entry("out", friend_seat)
-MGQ_MpOverworldSync.tick
-send_line("/r")
-check("/r alone once they left is refused and leaves the chat as it was", [MGQ_MpOverworldSync::Status.lines.last, chat.channel], ["Friend is not in the world.", :map])
-$chats.clear
-send_line("/r still there?")
-check("/r with a line once they left is refused too, nothing sent", [MGQ_MpOverworldSync::Status.lines.last, $chats, chat.channel], ["Friend is not in the world.", [], :map])
-newcomer_seat = 3
-$inbox << entry("message", newcomer_seat, told(friend.merge("id" => "other")))
-MGQ_MpOverworldSync.tick
-send_line("/r secret")
-check("/r never goes to another player who took the name of the one who whispered", [MGQ_MpOverworldSync::Status.lines.last, $chats, chat.channel],
-      ["Friend is not in the world.", [], :map])
-$inbox << entry("message", friend_seat, told(friend))
-# The DLL numbers a name two players share by their ids.
-MGQ_MpOverworldSync::Peers.take_labels(friend_seat => "Friend", newcomer_seat => "Friend (2)")
-$inbox << entry("message", newcomer_seat, "whisper=from the second\nname=Friend\n\n")
-MGQ_MpOverworldSync.tick
-check("a whisper from the second player of a name is theirs to answer", chat.reply_to, "Friend (2)")
-$inbox << entry("out", friend_seat)
-MGQ_MpOverworldSync::Peers.take_labels(newcomer_seat => "Friend")
-MGQ_MpOverworldSync.tick
-send_line("/r")
-check("/r names them as the whisper list does now, not as the log showed them", [chat.channel, chat.whisper_to], [:whisper, "Friend"])
-$inbox << entry("out", newcomer_seat)
-$inbox << entry("message", friend_seat, told(friend))
-MGQ_MpOverworldSync.tick
-
-# A paste: the DLL hands the clipboard's text over in place of Ctrl+V, as typed text, so the chat
-# box takes it as it takes typing.
-chat.start_typing
-$typed = "pasted from the clipboard"
+# The gates of the map.
+$game_message.busy = true
+$pressed = MGQ_MpHotkeys.code(:chat)
 map_frame
-check("a paste lands in the box whole, the cursor after it", [chat.typed, chat.cursor], ["pasted from the clipboard", 25])
-$sounds.clear
-$typed = "x" * (MGQ_MpChat::MAX_LENGTH + 10)
-2.times { map_frame }
-check("a paste longer than the box takes is cut and buzzes once, as the frame after acts on it", [chat.typed.size, $sounds], [MGQ_MpChat::MAX_LENGTH, ["buzzer"]])
-MGQ_MpOverworldSync.tick
-$sounds.clear
-$typed = "y"
-2.times { map_frame }
-check("the next frame buzzes again", $sounds, ["buzzer"])
+check("an event's message lets the box open", chat.typing?, true)
 chat.stop_typing
-
-# The tabs above the closed log while one holds unread lines.
-
-# The game's sprite, which updates nothing.
-class Sprite; def update; end; end
-font = Struct.new(:color, :size, :outline, :bold).new
-parts = []
-events = []
-canvas = Object.new
-canvas.define_singleton_method(:font) { font }
-canvas.define_singleton_method(:text_size) { |text| Struct.new(:width).new(text.size * 10) }
-canvas.define_singleton_method(:draw_text) { |x, _y, _w, _h, text, *_| parts << [x, text, font.color] }
-canvas.define_singleton_method(:clear) { parts.clear; events.clear }
-canvas.define_singleton_method(:fill_rect) { |*args| events << [:fill, args] }
-canvas.define_singleton_method(:rect) { Rect.new(0, 0, 400, 154) }
-canvas.define_singleton_method(:width) { 400 }
-canvas.define_singleton_method(:height) { Sprite_MpChatLog::TAB_ROW + Sprite_MpChatLog::ROW * 7 }
-canvas.define_singleton_method(:dispose) {}
-# The game's picture, whose new one is always the canvas above.
-Bitmap = Struct.new(:width, :height)
-Bitmap.define_singleton_method(:new) { |*_| canvas }
-depth = Struct.new(:z).new(100)
-log_sprite = Sprite_MpChatLog.allocate
-log_sprite.define_singleton_method(:bitmap) { canvas }
-log_sprite.define_singleton_method(:bitmap=) { |_| }
-log_sprite.define_singleton_method(:viewport) { depth }
-log_sprite.define_singleton_method(:x) { 8 }
-log_sprite.define_singleton_method(:y) { 200 }
-log_sprite.define_singleton_method(:y=) { |_| }
-log_sprite.define_singleton_method(:draw_unread_glow) { |right| events << [:glow, right] }
-{ :@layout_id => :chat, :@wrapped => {}, :@tab_spots => [], :@name_spots => [], :@size => [400, 6], :@width => 400, :@rows => 6, :@bottom_room => 96, :@resting_z => 100,
-  :@menu_sprite => Struct.new(:visible, :bitmap, :x, :y, :z).new(false) }.each { |name, value| log_sprite.instance_variable_set(name, value) }
-# The tab names drawn.
-tab_names = lambda { parts.map { |_, text, _| text } & MGQ_MpChat::TAB_NAMES.values }
-# The fills in the closed log's shade.
-shades = lambda { events.select { |kind, args| kind == :fill && args[4].equal?(Sprite_MpChatLog::CLOSED_SHADE) } }
-
-chat.start_typing
-chat.select_tab(:map, "in the test")
+$pressed = MGQ_MpHotkeys.code(:chat)
+$scene_change_ok = false
+Scene_Map.new.update
+check("also from the map's update while the message stops the map's own", chat.typing?, true)
 chat.stop_typing
-log_sprite.update
-check("the closed log draws no tabs while none holds unread lines", [tab_names.call, shades.call, events.count { |kind, _| kind == :glow }], [[], [], 0])
-$inbox << entry("message", friend_seat, "chat=hello all\nname=Friend\n\n")
-MGQ_MpOverworldSync.tick
-log_sprite.update
-global = log_sprite.instance_variable_get(:@tab_spots).find { |tab, _, _| tab == :global }
-shade = events.index { |kind, args| kind == :fill && args[4].equal?(Sprite_MpChatLog::CLOSED_SHADE) && args[0] == global[1] }
-glow = events.index { |kind, right| kind == :glow && right == global[1] + global[2] }
-check("a global line that came on the Map tab draws the tabs above the closed log, each under the shade, the Global tab glowing over its shade",
-      [tab_names.call, shades.call.size, events.count { |kind, _| kind == :glow }, !shade.nil? && !glow.nil? && shade < glow],
-      [MGQ_MpChat::TABS.map { |tab| MGQ_MpChat::TAB_NAMES[tab] }, MGQ_MpChat::TABS.size, 1, true])
-$inbox << entry("message", friend_seat, "whisper=you there?\nname=Friend\n\n")
-MGQ_MpOverworldSync.tick
-log_sprite.update
-whisper = log_sprite.instance_variable_get(:@tab_spots).find { |tab, _, _| tab == :whisper }
-check("a whisper makes the Whisper tab glow too, although the closed log shows it",
-      [chat.unread_tabs, events.select { |kind, _| kind == :glow }.map(&:last).include?(whisper[1] + whisper[2]), chat.log_lines.last],
-      [[:global, :whisper], true, "[Whisper] Friend: you there?"])
-lasting = chat.instance_variable_get(:@log).map { |line| [line, line.left] }
-lasting.each { |line, _| line.left = 0 }
-log_sprite.update
-check("once the closed log's lines ran out, it draws no tabs, though chats hold unread lines", [chat.unread_tabs, tab_names.call], [[:global, :whisper], []])
-lasting.each { |line, left| line.left = left }
-chat.start_typing
-log_sprite.update
-check("the open box draws the tabs without the shade, the glow still on", [tab_names.call.empty?, shades.call, events.count { |kind, _| kind == :glow }], [false, [], 2])
-chat.select_tab(:all, "in the test")
+$scene_change_ok = true
+$game_message.busy = false
+# An event interpreter whose running is set from outside.
+class Interpreter; attr_writer :running; def running?; @running ? true : false; end; end
+$game_map.interpreter.running = true
+$pressed = MGQ_MpHotkeys.code(:chat)
+map_frame
+check("an event without a message keeps the box shut", chat.typing?, false)
+# Stands in for coop_gather.rbx, waiting for the party's story while $party_waiting is set.
+module MGQ_MpCoopGather; def self.waiting?; $party_waiting; end; end
+$party_waiting = true
+$pressed = MGQ_MpHotkeys.code(:chat)
+map_frame
+check("but it opens while the player waits for the party's story", chat.typing?, true)
+$party_waiting = false
+$game_map.interpreter.running = false
 chat.stop_typing
-MGQ_MpOverworldSync.tick
-log_sprite.update
-check("the All tab takes the lines as seen, after which the closed log draws no tabs", [chat.unread_tabs, tab_names.call], [[], []])
-
-# A line of the closed log fades over its last frames, each part of it at the same alpha; the open
-# log fades nothing.
-
-# The game's color, which keeps its values.
-class Color
-  # Its values, nil where not given.
-  attr_reader :red, :green, :blue, :alpha
-  # Creates a color.
-  def initialize(red = nil, green = nil, blue = nil, alpha = nil); @red, @green, @blue, @alpha = red, green, blue, alpha; end
-end
-going = chat.log_entries.last
-going.left = MGQ_MpUi::Style::FADE_FRAMES / 2
-log_sprite.update
-faded = parts.select { |_, _, color| color.is_a?(Color) && color.alpha }
-check("a line of the closed log fades over its last frames, every part of it at the same alpha",
-      [faded.map { |_, text, _| text }.join, faded.map { |_, _, color| color.alpha }.uniq, parts.size > faded.size], [going.to_s, [127], true])
-going.left = MGQ_MpUi::Style::FADE_FRAMES
-log_sprite.update
-check("with FADE_FRAMES left it is whole again", parts.any? { |_, _, color| color.is_a?(Color) && color.alpha }, false)
-going.left = 1
-chat.start_typing
-log_sprite.update
-check("the open log fades nothing", parts.any? { |_, _, color| color.is_a?(Color) && color.alpha }, false)
-chat.stop_typing
-going.left = MGQ_MpChat::LOG_FRAMES
-
-# The open log scrolled with the mouse wheel, three rows a notch, and its scrollbar.
-(1..12).each { |n| chat.system("wheel line #{n}") }
-chat.start_typing
-log_sprite.update
-# The scrollbar's fills, each x, y, width and height.
-bars = lambda { events.select { |kind, args| kind == :fill && args[2] == MGQ_MpUi::Style::SCROLLBAR_WIDTH }.map { |_, args| args[0, 4] } }
-total = chat.log_entries.size
-thumb = 6 * 19 * 6 / total
-check("the open log draws a scrollbar right of its rows, its thumb at the newest",
-      bars.call, [[400 - 9, Sprite_MpChatLog::TAB_ROW, 4, 6 * 19], [400 - 9, Sprite_MpChatLog::TAB_ROW + 6 * 19 - thumb, 4, thumb]])
-$mouse = [100, 250]
-$wheel = 1
-log_sprite.update
-check("the wheel turned up over it scrolls three rows a notch", [chat.scroll, bars.call.last[1]], [3, Sprite_MpChatLog::TAB_ROW + (6 * 19 - thumb) * (total - 9) / (total - 6)])
-$wheel = -2
-log_sprite.update
-check("turned down it scrolls back no farther than the newest row", chat.scroll, 0)
-$wheel = 1
-$mouse = [620, 20]
-log_sprite.update
-check("nothing while the mouse points elsewhere", chat.scroll, 0)
-$wheel = nil
-$mouse = nil
-chat.stop_typing
-log_sprite.update
-check("the closed log draws no scrollbar", bars.call, [])
-
-# The hints and the help name the new controls.
-check("the empty box's hint points at Alt and fits the row, no longer than the Alt hint",
-      [Sprite_MpChatLog::BOX_HINT.include?("Alt"), Sprite_MpChatLog::BOX_HINT.size <= Sprite_MpChatLog::ALT_HINT.size], [true, true])
-check("the Alt hint names up and down, and that a drag moves or resizes", [Sprite_MpChatLog::ALT_HINT.include?("↑↓: sent"), Sprite_MpChatLog::ALT_HINT.include?("Drag: move, resize")], [true, true])
-check("the help names /r, the sent lines and the paste", [MGQ_MpChat::HELP.any? { |line| line.start_with?("/r") }, MGQ_MpChat::HELP.any? { |line| line.include?("Ctrl+V") }], [true, true])
-check("the help says Alt and a drag move or resize the chat and a double click puts it back",
-      MGQ_MpChat::HELP.any? { |line| line.include?("move or resize the chat") && line.include?("double click put it back") }, true)
-
-# Closing the world forgets the lines sent and whom /r answers.
-$open = false
-MGQ_MpOverworldSync.tick
-check("closing the world forgets the lines sent and whom /r answers", [chat.history, chat.reply_to], [[], nil])
-check("and the Whisper tab with the whisper chat, for the global chat", [chat.whisper_tab?, chat.tabs.include?(:whisper), chat.channel, chat.tab], [false, false, :global, :all])
-$open = true
-$inbox << entry("message", friend_seat, told(friend))
-MGQ_MpOverworldSync.tick
-
-# A chat tab picked goes back to All with the global chat as the world closes, so the next world
-# shows the lines it sends.
-chat.start_typing
-chat.select_tab(:party, "in the test")
-chat.stop_typing
-$open = false
-MGQ_MpOverworldSync.tick
-check("the Party tab goes back to All as the world closes, with the global chat", [chat.tab, chat.channel], [:all, :global])
-$open = true
-$inbox << entry("message", friend_seat, told(friend))
-MGQ_MpOverworldSync.tick
-send_line("hello")
-check("the player's own global line shows in the closed log of the next world", chat.log_lines.include?("Me: hello"), true)
-chat.start_typing
-check("and in the open one", chat.log_lines.include?("Me: hello"), true)
-chat.select_tab(:map, "in the test")
-chat.open_help
-$open = false
-MGQ_MpOverworldSync.tick
-check("the help opened from the Map tab goes back to All too, forgetting the tab it came from",
-      [chat.tab, chat.channel, chat.instance_variable_get(:@before_help)], [:all, :global, nil])
-$open = true
-$inbox << entry("message", friend_seat, told(friend))
-MGQ_MpOverworldSync.tick
-
-# The chats' commands, tags and colors, and the Whisper tab coming back.
-$chats.clear
-chat.choose(:global)
-send_line("/m over here")
-check("/m chooses the map chat, whose line is tagged and goes out for the player's map",
-      [chat.channel, chat.log_lines.last, $chats.last.values_at("channel", "map")], [:map, "[Map] Me: over here", ["map", 5]])
-send_line("/map still here")
-check("as does /map", [chat.channel, chat.log_lines.last], [:map, "[Map] Me: still here"])
-chat.choose(:global)
-$chats.clear
-send_line("/s hi")
-check("/s is no command any more, just text in the chat chosen", [chat.channel, chat.log_lines.last, $chats.last["channel"]], [:global, "Me: /s hi", "global"])
-send_line("/say hi")
-check("nor is /say", [chat.channel, chat.log_lines.last], [:global, "Me: /say hi"])
-$inbox << entry("message", friend_seat, "chat=hello world\nname=Friend\n\n")
-MGQ_MpOverworldSync.tick
-check("a global line has no tag, its tab, text and bubble plain white",
-      [chat.log_lines.last, chat.log_entries.last.tag, Sprite_MpChatLog::CHANNEL_COLORS[:global].equal?(MGQ_MpUi::Style::TEXT), Sprite_MpChatLog::COLORED_TEXT.include?(:global)],
-      ["Friend: hello world", "", true, false])
-$inbox << entry("message", friend_seat, "chat=on your map\nch=say\nmap=5\nname=Friend\n\n")
-MGQ_MpOverworldSync.tick
-check("a line marked say lands in the map chat, its text in the map chat's color",
-      [chat.log_entries.last.channel, chat.log_lines.last, chat.bubble_channel(friend_seat), Sprite_MpChatLog::COLORED_TEXT.include?(:map)], [:map, "[Map] Friend: on your map", :map, true])
-check("the chats take the colors of World of Warcraft", [:map, :party, :whisper].map { |channel| Sprite_MpChatLog::CHANNEL_COLORS[channel].instance_eval { [red, green, blue] } },
-      [[255, 192, 192], [170, 170, 255], [255, 128, 255]])
-check("the help names /m for the map chat and no /s", [MGQ_MpChat::HELP.any? { |line| line.start_with?("/m ") }, MGQ_MpChat::HELP.any? { |line| line.start_with?("/s ") }], [true, false])
-check("no whisper since the world opened again shows no Whisper tab", chat.tabs.include?(:whisper), false)
-chat.choose(:whisper)
-check("choosing the whisper chat shows it and lands on it", [chat.tabs.last, chat.channel], [:whisper, :whisper])
-$open = false
-MGQ_MpOverworldSync.tick
-$open = true
-$inbox << entry("message", friend_seat, told(friend))
-MGQ_MpOverworldSync.tick
-chat.whisper("Friend")
-check("as does a whisper chosen from a player's menu", [chat.tabs.last, chat.channel, chat.whisper_to], [:whisper, :whisper, "Friend"])
-
-# The log's places in the layout and its frame in the preset, drawn on pictures that keep their
-# size and measure as the game's VL Gothic does: half the font's size for an ASCII character, the
-# whole size for any other, such as an arrow.
-layout = MGQ_MpUi::Layout
-style = MGQ_MpUi::Style
-log_class = Sprite_MpChatLog
-# The game's viewport, as far as its depth.
-class Viewport; attr_accessor :z; def dispose; end; end
-# The game's sprite, with its picture, place, depth and viewport.
-class Sprite
-  # Its picture, place, depth and whether it shows.
-  attr_accessor :bitmap, :x, :y, :z, :visible
-  # The viewport it lies in.
-  attr_reader :viewport
-  # Creates a visible sprite at the top left.
-  def initialize(viewport = nil); @viewport = viewport; @x = @y = @z = 0; @visible = true; end
-  # Frees nothing.
-  def dispose; end
-end
-# A picture that keeps its size and records its fills and texts.
-class Picture
-  # The picture's font.
-  Font = Struct.new(:size, :color, :bold, :outline, :out_color)
-  # Its size, its font, and the fills and texts drawn, each with its place and size.
-  attr_reader :width, :height, :font, :fills, :texts
-  # Creates an empty picture in a font of 16.
-  def initialize(width, height); @width, @height = width, height; @font = Font.new(16); @fills = []; @texts = []; end
-  # Measures a text as VL Gothic does: half the size for an ASCII character, the whole size for others.
-  def self.measure(text, size); text.to_s.each_char.inject(0) { |sum, char| sum + (char.ord < 128 ? size / 2 : size) }; end
-  # The picture's whole rectangle.
-  def rect; Rect.new(0, 0, @width, @height); end
-  # Measures a text in the picture's font.
-  def text_size(text); Rect.new(0, 0, Picture.measure(text, font.size), font.size); end
-  # Records a text drawn with its rectangle and font size.
-  def draw_text(x, y, width, height, text, _align = 0); @texts << [x, y, width, height, text.to_s, font.size]; end
-  # Records a fill with its rectangle and color.
-  #
-  # @param args [Array] A rectangle and a color, or x, y, width, height and a color.
-  def fill_rect(*args)
-    x, y, width, height, color = args[0].is_a?(Rect) ? [args[0].x, args[0].y, args[0].width, args[0].height, args[1]] : args
-    @fills << [x, y, width, height, color]
-  end
-  # Forgets the fills and texts.
-  def clear; @fills.clear; @texts.clear; end
-  # Frees nothing.
-  def dispose; end
-end
-Bitmap.define_singleton_method(:new) { |width, height| Picture.new(width, height) }
-# The rectangle the layout offers a box, nil without an offer.
-offered = lambda do |id|
-  offer = layout.instance_variable_get(:@offers).find { |each| each.id == id }
-  offer && offer.rect.to_a
-end
-# Forgets the places kept and offered.
-forget_places = lambda { layout.instance_variable_get(:@stored).clear; layout.instance_variable_set(:@offers, []) }
-# The log's height for a number of rows: the tabs, the rows and the chat box's row.
-high = lambda { |rows| log_class::TAB_ROW + log_class::ROW * (rows + 1) }
-
-check("the map's, the battle's and the menus' log are boxes of their own, resized both ways, no smaller than the tabs, the hints and the list of names need",
-      [:chat, :battle_chat, :menu_chat].map { |id| $layout_registrations[id] },
-      [["Chat", { :min_size => [400, high.call(MGQ_MpChat::SUGGESTIONS)] }], ["Battle chat", { :min_size => [400, high.call(MGQ_MpChat::SUGGESTIONS)] }],
-       ["Menu chat", { :min_size => [400, high.call(MGQ_MpChat::SUGGESTIONS)] }]])
-
-$player_ini.delete("chat_size")
-chat.instance_variable_set(:@size, nil)
-forget_places.call
-map_log = log_class.new(:chat, log_class::STATUS_ROOM, 100)
-chat.start_typing
-map_log.update
-check("the map's log starts where it lay before: at the left, standing on the status line's room, at the default size",
-      [offered.call(:chat), map_log.bitmap.width, map_log.bitmap.height, map_log.x, map_log.y], [[8, 480 - 96 - high.call(6), 400, high.call(6)], 400, high.call(6), 8, 480 - 96 - high.call(6)])
-$player_ini["chat_size"] = "450x8"
-chat.instance_variable_set(:@size, nil)
-map_log.update
-check("a size kept in chat_size by earlier builds is its default", offered.call(:chat), [8, 480 - 96 - high.call(8), 450, high.call(8)])
-$player_ini["chat_size"] = "250x2"
-chat.instance_variable_set(:@size, nil)
-map_log.update
-check("one smaller than the least size starts at the least", offered.call(:chat), [8, 480 - 96 - high.call(5), 400, high.call(5)])
-$player_ini["chat_size"] = "450x8"
-chat.instance_variable_set(:@size, nil)
-
-Mod_Framework::Settings.store("ui_chat", "100,40,520,200")
-forget_places.call
-map_log.update
-check("a place kept as ui_chat is honored, with the whole rows that fit its height, the picture standing on its bottom",
-      [offered.call(:chat), map_log.instance_variable_get(:@rows), map_log.x, map_log.y], [[100, 51, 520, high.call(8)], 8, 100, 51])
-Mod_Framework::Settings.store("ui_chat", "100,40,520,#{high.call(9) - 1}")
-forget_places.call
-map_log.update
-check("a pixel short of another row keeps the rows", map_log.instance_variable_get(:@rows), 8)
-Mod_Framework::Settings.store("ui_chat", "100,40,520,#{high.call(9)}")
-forget_places.call
-map_log.update
-check("a whole row more adds one", [map_log.instance_variable_get(:@rows), offered.call(:chat)], [9, [100, 40, 520, high.call(9)]])
-Mod_Framework::Settings.store("ui_chat", "0,0,50,20")
-forget_places.call
-map_log.update
-check("a kept place smaller than the least is drawn at the least", [offered.call(:chat), map_log.instance_variable_get(:@rows)], [[0, 0, 400, high.call(5)], 5])
-
-# At the least size every tab and hint fits.
-hint_fits = lambda do |hint|
-  row = map_log.bitmap.texts.find { |text| text[4] == hint }
-  row && Picture.measure(hint, row[5]) <= row[2] && row[0] + row[2] <= map_log.bitmap.width ? row[5] : nil
-end
-chat.choose(:global)
-map_log.update
-check("the empty box's hint fits the least width in the small font", hint_fits.call(log_class::BOX_HINT), style::SMALL_SIZE)
-chat.choose(:whisper)
-whisper_to = chat.whisper_to
-chat.instance_variable_set(:@whisper_to, nil)
-$down = [MGQ_MpChat::ALT_KEY]
-map_log.update
-check("the Alt hint fits after the longest chat's label, in the tiny font", [hint_fits.call(log_class::ALT_HINT), map_log.bitmap.texts.any? { |text| text[4] == "Whisper:" }], [style::TINY_SIZE, true])
-check("while Alt is held the open chat's outline is white", map_log.bitmap.fills.any? { |fill| fill[4].equal?(log_class::RESIZE_OUTLINE) }, true)
-$down = []
-chat.instance_variable_set(:@whisper_to, whisper_to)
-chat.open_help
-map_log.update
-spots = map_log.instance_variable_get(:@tab_spots)
-check("the help tab's hint fits too, and every tab, the help tab at the far right, without overlapping",
-      [hint_fits.call("#{log_class::HELP_HINT} #{Mod_Framework::UI.close_hint}"), spots.map(&:first), spots.each_cons(2).all? { |(_, left, width), (_, right, _)| left + width <= right }, spots.last[1] + spots.last[2]],
-      [style::TINY_SIZE, MGQ_MpChat::TABS + [:help], true, 400])
-chat.select_tab(:all, "in the test")
-
-# The open chat in the preset's frame, open under the picked tab, Legacy's one pixel of edge.
-MGQ_MpUi::Theme.apply("Legacy", "in the test")
-map_log.update
-picture = map_log.bitmap
-_, at, width = map_log.instance_variable_get(:@tab_spots).find { |tab, _, _| tab == :all }
-top_edge = picture.fills.index { |fill| fill[0..3] == [0, log_class::TAB_ROW, 400, 1] && fill[4].equal?(style::EDGE) }
-gap = picture.fills.index { |fill| fill[0..3] == [at + 1, log_class::TAB_ROW, width - 2, 1] && fill[4].equal?(style::BACK) }
-check("the open chat is framed in the preset's edge, opened under the picked tab", [!top_edge.nil?, !gap.nil? && gap > top_edge], [true, true])
-picture.clear
-map_log.update
-check("an unchanged log is not drawn again", picture.fills, [])
-MGQ_MpUi::Theme.apply("Monarch", "in the test")
-map_log.update
-gap = picture.fills.index { |fill| fill[0..3] == [at + 2, log_class::TAB_ROW, width - 4, 2] && fill[4].equal?(style::BACK) }
-check("a change of the preset draws it anew, its rim outermost and the gap as deep as the frame",
-      [picture.fills.any? { |fill| fill[4].equal?(style::RIM) }, !gap.nil?], [true, true])
-MGQ_MpUi::Theme.apply("Legacy", "in the test")
-chat.open_menu(MGQ_MpChat::Line.new("Friend", "hi", :other, :global, 0, nil, "friend"), [50, 300])
-map_log.update
-menu = map_log.instance_variable_get(:@menu_sprite).bitmap
-check("a player's menu lies in the preset's box",
-      [menu.fills.first[0..3] == [0, 0, menu.width, menu.height] && menu.fills.first[4].equal?(style::BACK), menu.fills.any? { |fill| fill[4].equal?(style::EDGE) }], [true, true])
-chat.close_menu("in the test")
-
-# The layout alone moves and resizes the log.
-Mod_Framework::Settings.store("ui_chat", "100,40,520,200")
-forget_places.call
-map_log.update
-before = offered.call(:chat)
-$down = [MGQ_MpChat::ALT_KEY]
-$mouse_held = true
-$mouse = [map_log.x + 20, map_log.y + map_log.bitmap.height - 4]
-map_log.update
-$mouse = [map_log.x + 80, map_log.y - 40]
-map_log.update
-$mouse_held = false
-map_log.update
-$down = []
-check("Alt and a drag on the open log leave its size and place to the layout", [$player_ini["chat_size"], offered.call(:chat)], ["450x8", before])
-
-battle_log = log_class.new(:battle_chat, log_class::BATTLE_ROOM, 200)
-battle_log.update
-check("the battle's log starts above the battle's windows at chat_size's size, apart from the map's place",
-      [offered.call(:battle_chat), offered.call(:chat)], [[8, 480 - 200 - high.call(8), 450, high.call(8)], before])
-$player_ini["chat_size"] = "450x14"
-chat.instance_variable_set(:@size, nil)
-battle_log.update
-check("its default draws only the rows that fit above the battle's windows", offered.call(:battle_chat), [8, 480 - 200 - high.call(12), 450, high.call(12)])
-Mod_Framework::Settings.store("ui_battle_chat", "200,10,420,150")
-forget_places.call
-battle_log.update
-map_log.update
-check("a place kept as ui_battle_chat moves the battle's log alone", [offered.call(:battle_chat), offered.call(:chat)], [[200, 10 + 150 - high.call(5), 420, high.call(5)], before])
-
-chat.stop_typing
-$inbox << entry("message", friend_seat, "chat=still here\nname=Friend\n\n")
-MGQ_MpOverworldSync.tick
-layout.instance_variable_set(:@offers, [])
-map_log.update
-check("the closed log is offered while it shows lines, so it moves without opening the box", offered.call(:chat), before)
-$open = false
-MGQ_MpOverworldSync.tick
-layout.instance_variable_set(:@offers, [])
-map_log.update
-check("and not once it shows nothing", offered.call(:chat), nil)
-
-# The relay's notice, such as a new release's, which reaches the chat as an admin's line named
-# MGQ_MpChat::NOTICE_NAME, and the notification box, which stands in here.
-module MGQ_MpNotices; def self.announce(text); ($announced ||= []) << text; end; end
-chat.take_line(nil, "MGQ Online 0.6.5 is out.", MGQ_MpChat::NOTICE_NAME, :global, true)
-check("the relay's notice goes to the notification box too", $announced, ["MGQ Online 0.6.5 is out."])
-notice = chat.instance_variable_get(:@log).last
-check("the relay's notice shows red between slashes, without a name or tag",
-      [notice.to_s, notice.who, map_log.text_color(notice)], ["// MGQ Online 0.6.5 is out. //", :notice, log_class::NOTICE_COLOR])
-check("in every tab", MGQ_MpChat::TABS.all? { |tab| notice.shown_in?(tab) }, true)
-chat.take_line(nil, "hello", MGQ_MpChat::NOTICE_NAME, :global, false)
-check("a player of that name says a plain line", [chat.instance_variable_get(:@log).last.who, map_log.text_color(chat.instance_variable_get(:@log).last)], [:other, MGQ_MpUi::Style::TEXT])
-chat.take_line(nil, "hi", "Global", :global, true)
-check("and an admin's line of another name stays an admin's", chat.instance_variable_get(:@log).last.to_s, "[Admin] Global: hi")
-
-# A scene of menus the chat follows, such as a shop: the chat box opens with its key after each
-# frame, takes typing there and shows its log, and goes once another scene shows.
+MGQ_MpActions.wheel.instance_variable_set(:@open, true)
+$pressed = MGQ_MpHotkeys.code(:chat)
+map_frame
+check("the action wheel keeps T from opening the box", chat.typing?, false)
+MGQ_MpActions.wheel.instance_variable_set(:@open, false)
+# A scene of menus the chat follows, such as a shop: a question of a mod holds the buttons there,
+# while a window that hosts the scene, such as the trade screen's, holds none over it.
 class Scene_TestShop < Scene_Base; end
-$open = true
-chat.stop_typing
 chat.follow_scene(Scene_TestShop)
 shop = Scene_TestShop.new
 SceneManager.scene = shop
+ui::Capture.start(:confirm)
 $pressed = MGQ_MpHotkeys.code(:chat)
 shop.update_basic
-check("the chat key opens the chat box in a shop, which shows the menus' log", [chat.typing?, shop.instance_variable_get(:@mgq_mp_chat_log).class], [true, Sprite_MpChatLog])
-chat.tick(true)
-check("and the box stays open while the shop shows", chat.typing?, true)
-SceneManager.scene = Object.new
-chat.tick(true)
-check("another scene closes it", chat.typing?, false)
-SceneManager.scene = shop
-Mod_Framework::UI::Capture.start(:confirm)
+check("while a question of a mod holds the buttons in a shop, the chat key waits", chat.typing?, false)
+ui::Capture.stop(:confirm)
+host = ui::Window.new(:title => "Trade", :size => :screen, :hosts_scene => true).open
 $pressed = MGQ_MpHotkeys.code(:chat)
 shop.update_basic
-check("while a question of the mod holds the buttons there, the chat key waits", chat.typing?, false)
-Mod_Framework::UI::Capture.stop(:confirm)
-# A mod loaded later, such as Party Sheet, wraps every scene's basics for its hotkey.
-class Scene_Base; alias test_later_update_basic update_basic; def update_basic(*args); $later_mod = true; test_later_update_basic(*args); end; end
-$later_mod = false
-shop.update_basic
-check("a mod loaded later that wraps every scene's basics still runs in a shop", $later_mod, true)
-shop.terminate
-check("the log goes with the shop", shop.instance_variable_get(:@mgq_mp_chat_log), nil)
+check("a window that hosts the scene, such as the trade screen's, holds the buttons but none over the scene: the chat key opens the box over it",
+      [ui::Capture.on?, chat.typing?], [true, true])
+chat.stop_typing
+host.close
+SceneManager.scene = Scene_Map.new
 
-# The map's sprites show the chat log, and the live map behind a menu shows none, so a shop shows
-# only its own log (issue 56). The other scripts' sprites need more of the game than these stand-ins
-# give, so their failing hooks stay out of the output.
-class Spriteset_Map; attr_writer :hud; def mgq_mp_hud?; @hud != false; end; end
-map = Spriteset_Map.new
-map.instance_variable_set(:@viewport3, Viewport.new.tap { |viewport| viewport.z = 200 })
-live_map = Spriteset_Map.new
-live_map.hud = false
-logged_lines { [map, live_map].each { |spriteset| spriteset.update } }
-check("the map shows the chat log, the live map behind a menu does not",
-      [map.instance_variable_get(:@mgq_mp_chat_log).class, live_map.instance_variable_get(:@mgq_mp_chat_log)], [Sprite_MpChatLog, nil])
+# The bubbles.
+view("bubbles" => { 2 => ["hello", "party"], chat::OWN_SEAT => ["hi", "global"] })
+friend_bubble = chat.bubbles[2]
+own_bubble = chat.bubbles[chat::OWN_SEAT]
+check("a bubble follows its sender's ghost just over their name, in their line's chat's color, the player's own over their ping",
+      [friend_bubble.open?, friend_bubble.follow.equal?(MGQ_MpOverworldSync::Peers.at(2).ghost), friend_bubble.lift, friend_bubble.color, friend_bubble.text,
+       own_bubble.follow.equal?($game_player), own_bubble.lift],
+      [true, true, chat::GHOST_LIFT, chat::CHANNEL_COLORS["party"], "hello", true, chat::OWN_LIFT])
+$inbox << entry("message", 2, told(friend.merge("party" => "theirs", "invite" => 1)))
+MGQ_MpOverworldSync.tick
+chat.place_bubbles
+check("a line over the name lifts the bubble above it", friend_bubble.lift, chat::GHOST_LIFT + chat::LINE_LIFT)
+MGQ_MpActions.wheel.instance_variable_set(:@open, true)
+hidden = own_bubble.hide_while.call
+MGQ_MpActions.wheel.instance_variable_set(:@open, false)
+check("the player's own bubble hides while the action wheel is open", [hidden, own_bubble.hide_while.call], [true, false])
+view("bubbles" => { 2 => ["hello", "party"] })
+check("a bubble the view no longer has closes", [own_bubble.open?, chat.bubbles.keys], [false, [2]])
+
+# Bubbles of players this map does not show.
+$inbox << entry("message", 3, told(friend.merge("id" => "far", "name" => "Far", "map" => 9)))
+MGQ_MpOverworldSync.tick
+MGQ_MpOverworld.update_ghosts
+view("bubbles" => { 2 => ["hello", "party"], 3 => ["far away", "global"] })
+far_bubble = chat.bubbles[3]
+check("a Global line from a player on another map makes a bubble that follows no one and stays hidden, while the bubble of a player here shows",
+      [far_bubble.open?, far_bubble.follow, far_bubble.hide_while.call, friend_bubble.hide_while.call], [true, nil, true, false])
+$inbox << entry("message", 2, told(friend.merge("map" => 9)))
+MGQ_MpOverworldSync.tick
+MGQ_MpOverworld.update_ghosts
+chat.place_bubbles
+check("a sender who leaves the map while their bubble shows hides it instead of leaving it where they stood",
+      [friend_bubble.open?, friend_bubble.follow, friend_bubble.hide_while.call], [true, nil, true])
+
+# The game's own lines, and the world closing.
+chat.system("Friend left the battle.")
+check("a game line goes to the model", model.requests("chat.game_line"), ["Friend left the battle."])
+$open = false
+MGQ_MpOverworldSync.tick
+check("closing the world closes the log and the bubbles", [chat.root, friend_bubble.open?, chat.bubbles], [nil, false, {}])
+$open = true
