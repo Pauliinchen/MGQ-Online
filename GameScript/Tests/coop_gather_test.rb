@@ -2,7 +2,8 @@
 #  coop_gather_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Answered the calls, the hold and the offers with fixed values and checked what goes to the DLL and what the player gets of its answers
+#      Paulinchen  2026-11-05: Checked that forgetting a call logs no false entry for a story it did not hold
+#                            - Answered the calls, the hold and the offers with fixed values and checked what goes to the DLL and what the player gets of its answers
 #                            - Told whether a telling moves the world's story on as true or false
 #                            - Told the telling of the story as true or false
 #                            - Expected the ids a map message names as a list
@@ -162,7 +163,8 @@ calls.call("coming" => true)
 gather.called($leader, place)
 $tells.set("gather.forget", "held" => false, "call" => "Leader")
 lines = logged_lines { DataManager.extract_save_contents({}) }
-check("a loaded save has the DLL forget the call, logged, and reads it no more", [gather.coming?, $tells.asked("gather.forget").size, lines.grep(/forgot .*Leader's call/).size], [false, 1, 1])
+check("a loaded save has the DLL forget the call, logged without what it did not hold, and reads it no more",
+      [gather.coming?, $tells.asked("gather.forget").size, lines.map { |line| line[/forgot .*/] }.compact], [false, 1, ["forgot Leader's call"]])
 gather.called($leader, place)
 $tick.call(true)
 check("an open world keeps it", gather.coming?, true)

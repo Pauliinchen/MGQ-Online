@@ -2,7 +2,8 @@
 #  coop_gather.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Told and read whether a telling moves the world's story on as true or false, which the DLL writes as 1 or 0
+#      Paulinchen  2026-11-05: Logged only what a forget dropped, never a false entry
+#                            - Told and read whether a telling moves the world's story on as true or false, which the DLL writes as 1 or 0
 #                            - Asked the DLL's one decision whether a telling moves the world's story on, which decides whom it takes along
 #                            - Left what a call, follow or teleport leaves of the player's scene and place to the one guard of the game's flow, the followers a map left hidden among it
 #                            - Counted its moments by the bridge's frame
@@ -185,7 +186,10 @@ module MGQ_MpCoopGather
     refresh
     return unless forgotten && (forgotten["held"] || forgotten["call"])
 
-    log("forgot #{[forgotten['held'] && 'the held story', forgotten['call'] && "#{forgotten['call']}'s call"].compact.join(', ')}")
+    dropped = []
+    dropped << "the held story" if forgotten["held"]
+    dropped << "#{forgotten['call']}'s call" if forgotten["call"]
+    log("forgot #{dropped.join(', ')}")
   end
 
   # Forgets where the story was last told, whom it took along and the offers to follow its tellers,
