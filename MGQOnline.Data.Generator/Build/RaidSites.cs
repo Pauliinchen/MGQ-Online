@@ -2,6 +2,7 @@
 //  RaidSites.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Read the side switches from StoryIds
 //      Paulinchen  2026-10-28: Read the folder rule of transfers from the game data paths
 //                            - Created
 //
@@ -28,7 +29,7 @@ internal sealed class RaidSites
     /// <summary>
     /// The side switches, Alice's (4) and Ilias's (5).
     /// </summary>
-    private static readonly IReadOnlySet<long> SideSwitches = ClassicStoryTable.SideSwitches.Select(side => (long)side).ToHashSet();
+    private static readonly IReadOnlySet<long> SideSwitches = StoryIds.SideSwitches.Select(side => (long)side).ToHashSet();
 
     /// <summary>
     /// The game.

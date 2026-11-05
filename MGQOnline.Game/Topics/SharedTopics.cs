@@ -2,6 +2,7 @@
 //  SharedTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Registered the topic of the story's ids
 //      Paulinchen  2026-10-31: Registered the freeze journal topics, which the scripts call on the battle server too
 //      Paulinchen  2026-10-30: Registered the topics of a served battle's setup
 //                            - Handed the raid pools' topics the host's way to the pools, an outbox of the context's own by default
@@ -19,10 +20,13 @@
 //----------------------------------------------------------------
 
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using MGQOnline.Bridge;
 using MGQOnline.Bridge.Ruby;
 using MGQOnline.Game.Ids;
 using MGQOnline.Game.Raid;
+using MGQOnline.Game.Story;
 
 namespace MGQOnline.Game.Topics;
 
@@ -37,6 +41,12 @@ public static class SharedTopics
     /// the id out.
     /// </summary>
     public const string RandomIdTopic = "id.random";
+
+    /// <summary>
+    /// Hands out the story's ids, see <see cref="StoryIds.Entries"/>: nothing in; each entry by its
+    /// name out.
+    /// </summary>
+    public const string StoryIdsTopic = "story.ids";
 
     /// <summary>
     /// The base an id is written in when the request names none.
@@ -60,6 +70,7 @@ public static class SharedTopics
         ArgumentNullException.ThrowIfNull(context);
         Random random = new();
         context.Register(RandomIdTopic, (_, request) => MakeId(random, request.AsHash()));
+        context.Register(StoryIdsTopic, (_, _) => StoryIdsOf());
         SquadTopics.Register(context);
         ChoiceTopics.Register(context);
         GatherTopics.Register(context);
@@ -69,6 +80,27 @@ public static class SharedTopics
         PoolTopics.Register(context, pools);
         SetupTopics.Register(context);
         JournalTopics.Register(context);
+    }
+
+    /// <summary>
+    /// Answers <see cref="StoryIdsTopic"/>.
+    /// </summary>
+    /// <returns>The story's ids by their names.</returns>
+    private static RubyHash StoryIdsOf()
+    {
+        var ids = new RubyHash();
+        foreach ((string name, object value) in StoryIds.Entries)
+        {
+            ids.Add(name, value switch
+            {
+                int number => number,
+                IEnumerable<int> numbers => new RubyArray(numbers.Select(number => (RubyValue)number)),
+                IEnumerable<string> names => new RubyArray(names.Select(text => (RubyValue)text)),
+                _ => throw new InvalidOperationException($"The story's id {name} is neither a number nor a list."),
+            });
+        }
+
+        return ids;
     }
 
     /// <summary>

@@ -2,7 +2,8 @@
 //  StoryChoices.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Left the self switches of the Navy's and the Pirates' lines to the reviewed key list
+//      Paulinchen  2026-11-05: Read the story's ids from StoryIds
+//                            - Left the self switches of the Navy's and the Pirates' lines to the reviewed key list
 //      Paulinchen  2026-11-01: Took Succubus Village's outcomes and notes from the walk of the game's data
 //      Paulinchen  2026-10-31: Left every choice a stream hands the run of to the replay
 //      Paulinchen  2026-10-28: Created
@@ -105,7 +106,7 @@ public static class StoryChoices
         ChoiceTable.Succubus => ChoiceTable.SuccubusOutcomes.Values.Any(outcome => Holds(outcome.Sign, values)),
         "spider" => values.Switch(2280) || values.Switch(2281),
         "sphinx" => values.Switch(2090) || values.Roster.Contains(ChoiceTable.Sphinx),
-        ChoiceTable.Decision => values.Variable(ChoiceTable.Progress) >= ChoiceTable.GreatDecision,
+        ChoiceTable.Decision => values.Variable(StoryIds.MainProgress) >= StoryIds.GreatDecision,
         _ => false,
     };
 
@@ -259,7 +260,7 @@ public static class StoryChoices
     /// <param name="key">The choice.</param>
     /// <param name="index">The outcome, its place among the labels offered.</param>
     /// <param name="answers">The answers given so far, by choice.</param>
-    /// <param name="leaderRoute">The leader's route, its place in <see cref="ChoiceTable.Routes"/>, <see langword="null"/> before the Great Decision.</param>
+    /// <param name="leaderRoute">The leader's route, its place in <see cref="StoryIds.Routes"/>, <see langword="null"/> before the Great Decision.</param>
     /// <param name="leaderName">The leader's name.</param>
     /// <param name="context">The game.</param>
     /// <returns>The line.</returns>
@@ -303,7 +304,7 @@ public static class StoryChoices
             return new ChoiceWrites(branch.Title, Offered(key, context).Labels[index], [], [], [], [], [], [], null);
         }
 
-        int playthrough = context.Values.Variable(ChoiceTable.Playthrough);
+        int playthrough = context.Values.Variable(StoryIds.Playthrough);
         if (key == ChoiceTable.Succubus)
         {
             ChoiceOutcome taken = SuccubusOutcome(index, answers, context.Values);
@@ -468,7 +469,7 @@ public static class StoryChoices
     /// <param name="values">The player's story.</param>
     /// <returns>The route, then the companions, empty when none change.</returns>
     private static string[] DecisionTexts(int index, ChoiceValues values) =>
-        [ChoiceTable.RouteNames[index] + ".", values.Variable(ChoiceTable.Playthrough) > 0 ? string.Empty : ChoiceTable.RouteParties[index]];
+        [ChoiceTable.RouteNames[index] + ".", values.Variable(StoryIds.Playthrough) > 0 ? string.Empty : ChoiceTable.RouteParties[index]];
 
     /// <summary>
     /// Joins the parts of a line, leaving the empty ones out.

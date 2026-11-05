@@ -2,6 +2,7 @@
 //  IdFlags.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Read the story's band of switches from StoryIds
 //      Paulinchen  2026-10-28: Created
 //
 //----------------------------------------------------------------
@@ -25,12 +26,12 @@ internal static partial class IdFlags
     /// The first switch of the story's band, which brings companions and is never scratch, as
     /// EventSorter keeps it.
     /// </summary>
-    public const int FirstStorySwitch = 1001;
+    public const int FirstStorySwitch = StoryIds.FirstStorySwitch;
 
     /// <summary>
     /// See <see cref="FirstStorySwitch"/>.
     /// </summary>
-    public const int LastStorySwitch = 2000;
+    public const int LastStorySwitch = StoryIds.LastStorySwitch;
 
     /// <summary>
     /// The item type of key items.

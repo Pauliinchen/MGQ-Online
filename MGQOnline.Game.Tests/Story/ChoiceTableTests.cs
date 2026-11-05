@@ -2,13 +2,15 @@
 //  ChoiceTableTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Added the case of the Spider Princess's point
+//      Paulinchen  2026-11-05: Read the playthrough's variable from StoryIds
+//                            - Added the case of the Spider Princess's point
 //      Paulinchen  2026-11-01: Created
 //
 //----------------------------------------------------------------
 
 using System.Collections.Generic;
 using System.Linq;
+using MGQOnline.Game.Story;
 using MGQOnline.Game.Story.Choices;
 
 namespace MGQOnline.Game.Tests.Story;
@@ -70,7 +72,7 @@ public sealed class ChoiceTableTests
     [Fact]
     public void Spider_SendsMiriaAndAntineAnnAwayOnAFirstPlaythrough()
     {
-        var later = new ChoiceValues(new HashSet<int>(), new Dictionary<int, int> { [ChoiceTable.Playthrough] = 1 }, new HashSet<int>());
+        var later = new ChoiceValues(new HashSet<int>(), new Dictionary<int, int> { [StoryIds.Playthrough] = 1 }, new HashSet<int>());
 
         ChoiceWrites first = StoryChoices.Outcome("spider", 0, new Dictionary<string, int>(), Fresh);
         ChoiceWrites again = StoryChoices.Outcome("spider", 0, new Dictionary<string, int>(), Fresh with { Values = later });

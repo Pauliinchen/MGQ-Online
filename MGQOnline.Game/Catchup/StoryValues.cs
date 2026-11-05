@@ -2,6 +2,7 @@
 //  StoryValues.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Read the story's ids from StoryIds
 //      Paulinchen  2026-10-28: Changed the values as the catch-up's actions change the game's, and kept the self switches in their order
 //                            - Created
 //
@@ -21,31 +22,6 @@ namespace MGQOnline.Game.Catchup;
 /// </summary>
 public sealed class StoryValues
 {
-    /// <summary>
-    /// The main story's progress, variable 1001.
-    /// </summary>
-    public const int MainProgress = 1001;
-
-    /// <summary>
-    /// The switch of Alice's side, on once the player took her along.
-    /// </summary>
-    public const int AliceChosen = 4;
-
-    /// <summary>
-    /// The switch of Ilias's side.
-    /// </summary>
-    public const int IliasChosen = 5;
-
-    /// <summary>
-    /// The variables of the routes, in the order of <see cref="StoryParts.Routes"/>.
-    /// </summary>
-    public static readonly IReadOnlyList<int> RouteVariables = [1141, 1142, 1143];
-
-    /// <summary>
-    /// The switches that tell a route was cleared, in the order of <see cref="StoryParts.Routes"/>.
-    /// </summary>
-    public static readonly IReadOnlyList<int> ClearSwitches = [7096, 7097, 7039];
-
     /// <summary>
     /// The switches on.
     /// </summary>
@@ -94,7 +70,7 @@ public sealed class StoryValues
     /// <summary>
     /// Gets the part the story is in, as the relay counts it.
     /// </summary>
-    public string Part => StoryParts.Of(Math.Max(Variable(MainProgress) ?? 0, 0), [Variable(RouteVariables[0]) ?? 0, Variable(RouteVariables[1]) ?? 0, Variable(RouteVariables[2]) ?? 0]);
+    public string Part => StoryParts.Of(Math.Max(Variable(StoryIds.MainProgress) ?? 0, 0), [.. StoryIds.RouteVariables.Select(route => Variable(route) ?? 0)]);
 
     /// <summary>
     /// Gets the self switches on, in the order they came.
@@ -105,7 +81,7 @@ public sealed class StoryValues
     /// Gets the side the story took along: <c>alice</c>, <c>ilias</c> or <see langword="null"/> for
     /// none yet.
     /// </summary>
-    public string? Side => Switch(AliceChosen) ? "alice" : Switch(IliasChosen) ? "ilias" : null;
+    public string? Side => Switch(StoryIds.SideSwitches[0]) ? "alice" : Switch(StoryIds.SideSwitches[1]) ? "ilias" : null;
 
     /// <summary>
     /// Reports whether a switch is on.
@@ -189,7 +165,7 @@ public sealed class StoryValues
         {
             if (StoryParts.Routes[index] == route)
             {
-                return Switch(ClearSwitches[index]);
+                return Switch(StoryIds.ClearSwitches[index]);
             }
         }
 

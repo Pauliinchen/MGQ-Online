@@ -2,6 +2,7 @@
 //  raid_admin.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Named the routes' counters by the story's ids
 //      Paulinchen  2026-11-01: Refused pins of keys the story mapping does not share on a world whose story runs on tracks
 //      Paulinchen  2026-10-31: Left the sealed story out, which the relay keeps no more
 //                            - Showed, set and pinned the world's track of a world whose story runs on tracks, with its part and routes
@@ -24,7 +25,7 @@ import { WORLD_TYPE } from "./directory.js";
 import { badRequest, notFound, withJson } from "./http.js";
 import { isId } from "./ids.js";
 import { VERSION } from "./relay.js";
-import { STORY_LIMITS, STORY_REFUSAL, listsOf, noRaidWorld, pinsView, readAdminKeys, readPins } from "./story.js";
+import { STORY_LIMITS, STORY_REFUSAL, listsOf, noRaidWorld, pinsView, readAdminKeys, readPins, routeCounters } from "./story.js";
 import { TRACK_CODE } from "./story_tracks.js";
 
 /**
@@ -54,7 +55,7 @@ export function raidAdminRouteOf(url) {
 function trackStateOf(view, keyed) {
   const { counters, keys, ...summary } = view;
   const state = {
-    rev: summary.rev, wrev: summary.rev, p: counters.p, r1141: counters.r1141, r1142: counters.r1142, r1143: counters.r1143, clear: counters.clear, part: summary.part,
+    rev: summary.rev, wrev: summary.rev, p: counters.p, ...routeCounters(counters), clear: counters.clear, part: summary.part,
     route: summary.route, done: summary.done, end: keyed.end, comps: keyed.comps, caps: keyed.caps, checkpoints: summary.checkpoints, at: summary.at, tracks: true,
   };
   return keys ? { ...state, keyed: true, keys } : state;

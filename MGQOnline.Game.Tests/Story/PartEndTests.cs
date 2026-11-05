@@ -2,6 +2,7 @@
 //  PartEndTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Read the main story's variable from StoryIds
 //      Paulinchen  2026-10-28: Covered a script write read from the events database
 //                            - Followed the chains over an event source alone
 //                            - Covered a chain that transfers inside the folder of its map
@@ -183,7 +184,7 @@ public sealed class PartEndTests
         public bool Switch(long id) => false;
 
         /// <inheritdoc />
-        public long? Variable(long id) => id == PartEnd.MainProgress ? progress : 0;
+        public long? Variable(long id) => id == StoryIds.MainProgress ? progress : 0;
 
         /// <inheritdoc />
         public bool PersonalSwitch(long id) => false;

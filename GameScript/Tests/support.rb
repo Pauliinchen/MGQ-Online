@@ -2,6 +2,7 @@
 #  support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Loaded the story's ids with the table the DLL hands
 #      Paulinchen  2026-11-01: Stood in for a wheel of the Mod Framework
 #      Paulinchen  2026-10-31: Loaded the Mod Framework's scripts before the mod's, as the game does
 #      Paulinchen  2026-10-28: Stood in for the game's sizes and chest flags the DLL reads from its events database
@@ -141,7 +142,7 @@ end
 
 # Loads one of the mod's scripts as Multiplayer.rb does, from GameScript/Multiplayer/Scripts, after
 # core_log.rbx, core_hooks.rbx and core_game_access.rbx, which every script builds on, and with the
-# bridge, closed.
+# bridge, closed, and the story's ids (see load_story_ids).
 #
 # @param name [String] The script's name without its extension, such as "coop".
 def load_script(name)
@@ -149,8 +150,20 @@ def load_script(name)
   load File.join(SCRIPTS_DIR, "core_log.rbx") unless defined?(MGQ_MpLog)
   load File.join(SCRIPTS_DIR, "core_hooks.rbx") unless defined?(MGQ_MpHooks) || name == "core_log"
   load File.join(SCRIPTS_DIR, "core_game_access.rbx") unless defined?(MGQ_MpGame) || name == "core_log"
+  load_story_ids unless defined?(MGQ_MpStoryIds) || name.start_with?("core_")
   load File.join(SCRIPTS_DIR, "#{name}.rbx")
   load_story_keys if name == "story_state"
+end
+
+# The story's ids as the DLL hands them (topic story.ids): the relay's copy, which the generator
+# writes from MGQOnline.Game's StoryIds and MGQOnline.Game.Tests holds to it.
+STORY_IDS_FILE = File.expand_path("../../Relay/core/story_ids.json", __dir__)
+
+# Loads story_ids.rbx with the table the DLL would hand, so no test needs the DLL for the story's ids.
+def load_story_ids
+  require "json"
+  load File.join(SCRIPTS_DIR, "story_ids.rbx")
+  MGQ_MpStoryIds.instance_variable_set(:@table, JSON.parse(File.read(STORY_IDS_FILE)).freeze)
 end
 
 # Folder of the story's golden cases, which MGQOnline.Game.Tests checks too.

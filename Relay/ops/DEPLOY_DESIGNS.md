@@ -32,12 +32,14 @@ The server runs whatever was deployed last, which may differ from any branch (on
 
 ```sh
 # On the server: the live runtime files' hashes.
-cd /opt/mgq-online/Relay && sha256sum core/*.js node/*.js package.json package-lock.json | sort -k2 > /tmp/live.sha256
+cd /opt/mgq-online/Relay && sha256sum core/*.js core/*.json node/*.js package.json package-lock.json | sort -k2 > /tmp/live.sha256
 
 # Locally: the same list of a candidate commit, then compare (the server's copies may have CRLF line endings
 # when they came from a Windows checkout; hash both sides with the same line endings).
-git archive <commit> Relay | tar -x -C <scratch> && (cd <scratch>/Relay && sha256sum core/*.js node/*.js package.json package-lock.json | sort -k2)
+git archive <commit> Relay | tar -x -C <scratch> && (cd <scratch>/Relay && sha256sum core/*.js core/*.json node/*.js package.json package-lock.json | sort -k2)
 ```
+
+`core/story.js`, and through it `core/story_tracks.js`, needs `core/story_ids.json` beside it, so the hashes and the copy take `core/*.json` too.
 
 A file that differs from every candidate is a hot fix that lives only on the server: copy it off and fold it into the deploy branch, or stop and ask. Then:
 

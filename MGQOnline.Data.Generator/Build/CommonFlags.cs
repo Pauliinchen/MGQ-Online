@@ -2,7 +2,8 @@
 //  CommonFlags.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Found the battlefuck events by the multiplayer's own walk of the callers
+//      Paulinchen  2026-11-05: Read the routes' variables from StoryIds
+//                            - Found the battlefuck events by the multiplayer's own walk of the callers
 //      Paulinchen  2026-10-28: Created
 //
 //----------------------------------------------------------------
@@ -13,6 +14,7 @@ using System.Text.RegularExpressions;
 using MGQOnline.Data.Events;
 using MGQOnline.Game.Events;
 using MGQOnline.Game.Events.Data;
+using MGQOnline.Game.Story;
 
 namespace MGQOnline.Data.Generator.Build;
 
@@ -36,7 +38,7 @@ internal static partial class CommonFlags
     /// The variables of the routes after the Great Decision; a list that branches on one plays in
     /// the Final Chapter.
     /// </summary>
-    private static readonly long[] RouteVariables = [1141, 1142, 1143];
+    private static readonly long[] RouteVariables = [.. StoryIds.RouteVariables.Select(id => (long)id)];
 
     /// <summary>
     /// Finds the battlefuck events: those that count a battlefuck's win or loss, those that call one

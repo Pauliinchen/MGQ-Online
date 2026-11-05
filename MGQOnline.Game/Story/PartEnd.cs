@@ -2,6 +2,7 @@
 //  PartEnd.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Read the story's ids from StoryIds
 //      Paulinchen  2026-10-28: Created
 //
 //----------------------------------------------------------------
@@ -9,6 +10,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using MGQOnline.Game.Events;
 
 namespace MGQOnline.Game.Story;
@@ -36,8 +38,9 @@ public sealed record PartLeave(long Variable, long? Value, string? Part)
 /// <summary>
 /// Tells whether an event would move a player behind the world's story past the end of their part
 /// (issue #48), which the relay refuses on their own track with the code "held"
-/// (Relay/core/story_tracks.js <c>heldRefusal</c>): a write of a variable the part follows (1001
-/// and the routes' 1141 to 1143) that puts the story in another part. Every other write runs.
+/// (Relay/core/story_tracks.js <c>heldRefusal</c>): a write of a variable the part follows (the
+/// story markers, <see cref="StoryIds.Markers"/>) that puts the story in another part. Every other
+/// write runs.
 /// </summary>
 /// <remarks>
 /// Every branch counts, so an event that may end the part on one branch is held on all of them.
@@ -45,19 +48,14 @@ public sealed record PartLeave(long Variable, long? Value, string? Part)
 public static class PartEnd
 {
     /// <summary>
-    /// The main story's progress, variable 1001.
+    /// Every variable the part follows: the story markers.
     /// </summary>
-    public const long MainProgress = 1001;
+    private static readonly long[] PartVariables = [.. StoryIds.Markers.Select(id => (long)id)];
 
     /// <summary>
     /// The routes' variables in the order of <see cref="StoryParts.Routes"/>.
     /// </summary>
-    public static readonly IReadOnlyList<long> RouteVariables = [1141, 1142, 1143];
-
-    /// <summary>
-    /// Every variable the part follows.
-    /// </summary>
-    private static readonly long[] PartVariables = [MainProgress, .. RouteVariables];
+    private static readonly long[] RouteVariables = [.. StoryIds.RouteVariables.Select(id => (long)id)];
 
     /// <summary>
     /// Finds the first write of an event that moves a story out of its part.

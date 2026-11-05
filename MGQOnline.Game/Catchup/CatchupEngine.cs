@@ -2,6 +2,7 @@
 //  CatchupEngine.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Read the story's ids from StoryIds
 //      Paulinchen  2026-11-01: Left out a join of a companion of the Alice and Ilias choice the player has no right to, and noted the side the player answered they take along
 //      Paulinchen  2026-10-31: Left the warp ban out of what a snapshot reads
 //                            - Left the chest flags out of what a snapshot reads
@@ -32,13 +33,13 @@ public sealed class CatchupEngine
     /// The switches the engine reads besides the rows' marks: the sides and the routes' clear
     /// switches.
     /// </summary>
-    private static readonly int[] EngineSwitches = [StoryValues.AliceChosen, StoryValues.IliasChosen, .. StoryValues.ClearSwitches];
+    private static readonly int[] EngineSwitches = [.. StoryIds.SideSwitches, .. StoryIds.ClearSwitches];
 
     /// <summary>
     /// The variables the engine reads besides the rows' marks: the main story, the playthrough and the
     /// routes.
     /// </summary>
-    private static readonly int[] EngineVariables = [StoryValues.MainProgress, CatchupLook.Playthrough, .. StoryValues.RouteVariables];
+    private static readonly int[] EngineVariables = [StoryIds.MainProgress, StoryIds.Playthrough, .. StoryIds.RouteVariables];
 
     /// <summary>
     /// Gets or sets the save's notes, as the scripts handed them or the engine wrote them; nil before

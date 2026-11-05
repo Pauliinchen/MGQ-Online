@@ -2,7 +2,8 @@
 //  EventSorter.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Read the battlefuck events from the game's data
+//      Paulinchen  2026-11-05: Read the story's band of switches, which are never scratch, from StoryIds
+//                            - Read the battlefuck events from the game's data
 //      Paulinchen  2026-10-28: Read scripts and jumps by their classified kinds and places
 //                            - Read the common events and scratch flags from an event source
 //                            - Opened the list of the player's own common events
@@ -14,6 +15,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using MGQOnline.Game.Events.Data;
+using MGQOnline.Game.Story;
 
 namespace MGQOnline.Game.Events;
 
@@ -43,16 +45,6 @@ public sealed class EventSorter(IEventSource source)
     /// The highest trigger an exit starts by: the action button, the player's or the event's touch.
     /// </summary>
     private const int MostExitTrigger = 2;
-
-    /// <summary>
-    /// The switches that are never scratch, whatever their names: the story's.
-    /// </summary>
-    private const long FirstStorySwitch = 1001;
-
-    /// <summary>
-    /// See <see cref="FirstStorySwitch"/>.
-    /// </summary>
-    private const long LastStorySwitch = 2000;
 
     /// <summary>
     /// Event commands that move the story on wherever they appear: party changes, vehicles, name
@@ -280,7 +272,7 @@ public sealed class EventSorter(IEventSource source)
     /// <param name="state">The live values.</param>
     /// <returns>Whether it is.</returns>
     private bool TemporarySwitch(long id, IEventState state) =>
-        id is < FirstStorySwitch or > LastStorySwitch && (source.IsScratchSwitch(id) || state.PersonalSwitch(id));
+        id is < StoryIds.FirstStorySwitch or > StoryIds.LastStorySwitch && (source.IsScratchSwitch(id) || state.PersonalSwitch(id));
 
     /// <summary>
     /// Reports whether a variable is only scratch, or the player's own, such as affection.

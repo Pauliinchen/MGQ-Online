@@ -2,7 +2,9 @@
 //  story_tracks.js
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Kept a run that gave or used up a found item, and changed no key, on the world's track and on every player's own track
+//      Paulinchen  2026-11-05: Kept every variable the game uses as a place each player's own, whatever its row says
+//                            - Read the story's ids from the table story.js hands on, the routes' counters too
+//                            - Kept a run that gave or used up a found item, and changed no key, on the world's track and on every player's own track
 //      Paulinchen  2026-11-01: Refused an admin's pins of keys the story mapping does not share
 //                            - Kept the found items' marks for the whole world, whatever the mapping's row of them says
 //                            - Kept the marks of the items used up for the whole world too
@@ -29,7 +31,7 @@
 // world's track only.
 
 import {
-  CLEAR_SWITCHES, FIRST_COUNTERS, FREEZE, FREEZE_ENDED, GREAT_DECISION, ROUTE, ROUTE_COUNTERS, VALUE as STORY_VALUE, activeRoute, compareKeys, countersOf, everyRouteDone, listsOf,
+  CLEAR_SWITCHES, FIRST_COUNTERS, FREEZE, FREEZE_ENDED, GREAT_DECISION, MAIN_PROGRESS, ROUTE, ROUTE_COUNTERS, STORY_IDS, VALUE as STORY_VALUE, activeRoute, compareKeys, countersOf, everyRouteDone, listsOf,
   partOf, storyKey,
 } from "./story.js";
 
@@ -146,14 +148,20 @@ const SITE = /^(?:map:[1-9]\d{0,3}:[1-9]\d{0,4}:[1-9]\d{0,2}|ce:[1-9]\d{0,3}|gam
 const TELLING = /^[A-Za-z0-9_-]{1,32}$/;
 
 /**
- * The site of the route return (common event 154), which clears keys that only go up otherwise.
+ * The site of the route return (the game's own reset of the Final Chapter), which clears keys that
+ * only go up otherwise.
  */
-const ROUTE_RETURN_SITE = "ce:154";
+const ROUTE_RETURN_SITE = `ce:${STORY_IDS.final_reset_event}`;
 
 /**
- * The variables the story's part follows: 1001 and the routes' 1141, 1142 and 1143.
+ * The key of the main story's progress.
  */
-const PART_KEYS = Object.freeze(["v1001", ...Object.values(ROUTE_COUNTERS).map((counter) => `v${counter.slice(1)}`)]);
+const MAIN_KEY = `v${MAIN_PROGRESS}`;
+
+/**
+ * The variables the story's part follows: the main story's progress and the routes'.
+ */
+const PART_KEYS = Object.freeze([MAIN_KEY, ...Object.values(ROUTE_COUNTERS).map((counter) => `v${counter.slice(1)}`)]);
 
 /**
  * Each route by the variable that carries how far it is.
@@ -251,6 +259,10 @@ export class TrackRules {
     /** The rows of story_events by key. */
     this.events = new Map((view.tables.events ?? []).map((row) => [row.key, row]));
     FOUND_MARKS.forEach((row) => this.events.set(row.key, row));
+    // A variable the game uses as a place stays each player's own whatever its row says, as the
+    // games read the mapping (MGQOnline.Game StoryMapping.Read).
+    STORY_IDS.place_variables.map((id) => this.keys.get(`v${id}`)).filter((row) => row && row.kind !== KIND.personal)
+      .forEach((row) => this.keys.set(row.key, { key: row.key, kind: KIND.personal, ...(row.defeatWrite ? { defeatWrite: true } : {}) }));
     /** The map events whose self switches the derived index shares, as "map.event". */
     this.index = new Set((view.index?.events ?? []).map(([map, event]) => `${map}.${event}`));
     /** The count keys with the switches each counts. */
@@ -327,7 +339,7 @@ const PLACE_MARKERS = 4;
  */
 function markersOf(keys) {
   const counters = countersOf(keys, FIRST_COUNTERS);
-  return [counters.p, counters.r1141, counters.r1142, counters.r1143];
+  return [counters.p, ...Object.values(ROUTE_COUNTERS).map((name) => counters[name])];
 }
 
 /**
@@ -1116,7 +1128,7 @@ export class StoryTracks {
     if (started && (wholeOf(value) ?? 0n) > 0n) {
       const running = activeRoute(countersOf(draft, FIRST_COUNTERS));
 
-      if ((wholeOf(draft.get("v1001")) ?? 0n) < BigInt(GREAT_DECISION) || (running !== ROUTE.none && running !== started)) {
+      if ((wholeOf(draft.get(MAIN_KEY)) ?? 0n) < BigInt(GREAT_DECISION) || (running !== ROUTE.none && running !== started)) {
         return TRACK_CODE.route;
       }
 
@@ -1775,7 +1787,7 @@ export class StoryTracks {
         && typeof write[2] === "string" && SITE.test(write[2]);
 
       if (!fits) {
-        return { error: "each write is [key, value, site]: a key such as s12, v1001, ss7.39.A or f868, a value that fits it, and a site such as map:7:60:1, ce:154 or game", index };
+        return { error: "each write is [key, value, site]: a key such as s12, v1201, ss7.39.A or f868, a value that fits it, and a site such as map:7:60:1, ce:129 or game", index };
       }
     }
 
@@ -1821,7 +1833,7 @@ export class StoryTracks {
 
     for (const [key, value] of Object.entries(seed)) {
       if (!KEY.test(key) || !valueFits(key, value, this.limits)) {
-        return { error: `the seed names a key such as s12, v1001, ss7.39.A or f868 with a value that fits it: ${key.slice(0, 40)}` };
+        return { error: `the seed names a key such as s12, v1201, ss7.39.A or f868 with a value that fits it: ${key.slice(0, 40)}` };
       }
 
       const { kind } = this.rules.kindOf(key);
@@ -1980,7 +1992,7 @@ function stepOf(row, value, draft, world) {
 
   const scene = row.battleScene;
 
-  if (scene?.steps.includes(step) && wholeOf(draft.get("v1001")) === BigInt(scene.mainStep) && !scene.troops.some((troop) => world.get(`f${troop}`) !== undefined)) {
+  if (scene?.steps.includes(step) && wholeOf(draft.get(MAIN_KEY)) === BigInt(scene.mainStep) && !scene.troops.some((troop) => world.get(`f${troop}`) !== undefined)) {
     return `n${scene.start}`;
   }
 

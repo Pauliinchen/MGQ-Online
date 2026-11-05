@@ -2,7 +2,8 @@
 #  coop_choices.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Left the self switches of the Navy's and the Pirates' lines to the reviewed key list
+#      Paulinchen  2026-11-05: Read the story's ids from story_ids.rbx
+#                            - Left the self switches of the Navy's and the Pirates' lines to the reviewed key list
 #      Paulinchen  2026-11-01: Kept a screen the Mod Framework refused or lost waiting, telling the player only an offer gone
 #                            - Built the screens of the choices and of a replay's question on the Mod Framework's windows
 #                            - Put off a number, a choice without cancel and a choice of the player's own on cancel
@@ -66,8 +67,7 @@ module MGQ_MpCoopChoices
   ROUTE_NAMES = ["Angelic Dominion", "Monster Realm", "Chaos"]
 
   # The table while the DLL has not handed it: no choices, nothing read.
-  NO_TABLE = { "branches" => [], "reads" => { "s" => [], "v" => [], "roster" => [] }, "great_decision" => 40, "routes" => [1141, 1142, 1143],
-               "chaos_start" => [437, 12, 12, 0], "decision" => [], "offer_frames" => 3600 }
+  NO_TABLE = { "branches" => [], "reads" => { "s" => [], "v" => [], "roster" => [] }, "decision" => [], "offer_frames" => 3600 }
 
   # What the screen offers while the DLL does not answer: nothing.
   NO_OFFER = { "labels" => [], "outcomes" => [] }
@@ -469,7 +469,7 @@ module MGQ_MpCoopChoices
     keys = passed(own[0], theirs[0], MGQ_MpStoryState.data_of($game_switches), MGQ_MpStoryState.data_of($game_variables), MGQ_MpStoryState.roster_ids)
     log("accepted #{MGQ_MpOverworldSync.who(peer)}'s offer: own #{MGQ_MpCoopStory.markers_text(own)}, theirs #{MGQ_MpCoopStory.markers_text(theirs)}; " \
         "choices to make: #{keys.empty? ? 'none' : keys.join(', ')}")
-    route = theirs[0] >= table["great_decision"] ? MGQ_MpCoopStory.route_of(theirs) : nil
+    route = theirs[0] >= MGQ_MpStoryIds.great_decision ? MGQ_MpCoopStory.route_of(theirs) : nil
     show_screen("Sync story with #{peer.state['name']}", keys, ["Bring me there", "Cancel"], peer, route,
                 lambda { |answers| confirm_offer(peer, theirs, route, answers) }, lambda { valid_offer?(peer) })
   end
@@ -544,7 +544,9 @@ module MGQ_MpCoopChoices
   def self.start_route(index, peer)
     variables = MGQ_MpStoryState.data_of($game_variables)
     # The kept story must not tell the leader's route, or the player would follow it again at once.
-    ([1001] + (1140..1143).to_a).each { |id| variables[id] = id == 1001 ? table["great_decision"] - 1 : 0 }
+    ids = MGQ_MpStoryIds
+    variables[ids.main_progress] = ids.before_decision
+    ([ids.decision_progress] + ids.route_variables).each { |id| variables[id] = 0 }
     MGQ_MpCoopStory.keep_and_leave("the player starts the #{ROUTE_NAMES[index]} route, not #{peer.state['name']}'s")
     @queued = decision_commands(index)
     log("the Great Decision's outcome \"#{labels(DECISION)[index]}\" waits to play once the player is free: #{@queued.size} commands")
@@ -552,27 +554,28 @@ module MGQ_MpCoopChoices
   end
 
   # Builds the commands that play the Great Decision's outcome: the Final Chapter put back as the
-  # game's own reset does (common event 154), the outcome's part of common event 380, which changes
+  # game's own reset does, the outcome's part of the Great Decision's common event, which changes
   # the party and takes the player to its map, with the side and the route set on the way.
   #
   # @param index [Integer] The outcome: 0 the Dark Goddess, 1 the Goddess Ilias, 2 the third way.
   # @return [Array<RPG::EventCommand>] The commands.
   def self.decision_commands(index)
-    commands = [RPG::EventCommand.new(117, 0, [154]), RPG::EventCommand.new(122, 0, [1140, 1140, 0, 0, 0])]
+    ids = MGQ_MpStoryIds
+    commands = [RPG::EventCommand.new(117, 0, [ids.final_reset_event]), RPG::EventCommand.new(122, 0, [ids.decision_progress, ids.decision_progress, 0, 0, 0])]
     outcome = table["decision"][index] || {}
-    routes = table["routes"]
+    routes = ids.route_variables
     if index == 2
       [7091, 7092, 92].each { |id| commands << RPG::EventCommand.new(121, 0, [id, id, 0]) }
-      commands << RPG::EventCommand.new(122, 0, [1001, 1001, 0, 0, table["great_decision"]])
+      commands << RPG::EventCommand.new(122, 0, [ids.main_progress, ids.main_progress, 0, 0, ids.great_decision])
       commands << RPG::EventCommand.new(122, 0, [routes[2], routes[2], 0, 0, 1])
-      commands << RPG::EventCommand.new(201, 0, [0] + table["chaos_start"] + [2])
+      commands << RPG::EventCommand.new(201, 0, [0] + ids.chaos_start + [2])
       return commands << RPG::EventCommand.new(0, 0, [])
     end
 
     part = decision_part(outcome)
     transfer = part.pop || RPG::EventCommand.new(201, 0, [0, outcome["map"], 25, 19, 8, 2])
     commands.concat(part)
-    [4, 5].each { |id| commands << RPG::EventCommand.new(121, 0, [id, id, id == outcome["side"] ? 0 : 1]) }
+    ids.side_switches.each { |id| commands << RPG::EventCommand.new(121, 0, [id, id, id == outcome["side"] ? 0 : 1]) }
     commands << RPG::EventCommand.new(122, 0, [routes[index], routes[index], 0, 0, 1])
     commands << transfer
     commands << RPG::EventCommand.new(0, 0, [])
@@ -592,25 +595,27 @@ module MGQ_MpCoopChoices
 
     commands = decision_part(outcome)
     commands.pop if commands.last && commands.last.code == 201
-    [4, 5].each { |id| commands << RPG::EventCommand.new(121, 0, [id, id, id == outcome["side"] ? 0 : 1]) }
+    MGQ_MpStoryIds.side_switches.each { |id| commands << RPG::EventCommand.new(121, 0, [id, id, id == outcome["side"] ? 0 : 1]) }
     commands << RPG::EventCommand.new(222, 0, [])
     commands << RPG::EventCommand.new(0, 0, [])
   end
 
-  # Copies the part of common event 380 that plays an outcome of the Great Decision: from where it
-  # notes where a game over returns the player to the transfer to the outcome's map, moved to the
-  # left so it runs on its own.
+  # Copies the part of the Great Decision's common event that plays an outcome: from where it notes
+  # where a game over returns the player to the transfer to the outcome's map, moved to the left so
+  # it runs on its own.
   #
   # @param outcome [Hash] The outcome: "return" and "map".
   # @return [Array<RPG::EventCommand>] The commands, the transfer last; none when the game's event
   #   differs.
   def self.decision_part(outcome)
-    list = ($data_common_events[380] && $data_common_events[380].list) || []
-    first = list.index { |command| command.code == 122 && command.parameters[0, 5] == [1002, 1002, 0, 0, outcome["return"]] }
+    event = $data_common_events[MGQ_MpStoryIds.decision_event]
+    list = (event && event.list) || []
+    back = MGQ_MpStoryIds.game_over_return
+    first = list.index { |command| command.code == 122 && command.parameters[0, 5] == [back, back, 0, 0, outcome["return"]] }
     last = first && (first...list.size).find { |at| list[at].code == 201 && list[at].parameters[1] == outcome["map"] }
     unless first && last
       log("the Great Decision's event differs from the one known, so its outcome plays without its party changes")
-      return [RPG::EventCommand.new(122, 0, [1002, 1002, 0, 0, outcome["return"].to_i])]
+      return [RPG::EventCommand.new(122, 0, [back, back, 0, 0, outcome["return"].to_i])]
     end
 
     base = list[first].indent
@@ -637,7 +642,7 @@ module MGQ_MpCoopChoices
     return if keys.empty?
 
     @prompts.concat(keys)
-    log("the #{raid? ? 'world' : 'leader'}'s story passed #{keys.join(', ')} (1001 #{from} -> #{to}), whose own outcome the player picks once free")
+    log("the #{raid? ? 'world' : 'leader'}'s story passed #{keys.join(', ')} (main story #{from} -> #{to}), whose own outcome the player picks once free")
   end
 
   # Asks the player the choices a later build added that a Raid World's story is past while their

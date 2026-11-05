@@ -2,7 +2,8 @@
 //  ChoiceTable.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Left the self switches of the Navy's and the Pirates' lines to the reviewed key list
+//      Paulinchen  2026-11-05: Read the story's ids from StoryIds
+//                            - Left the self switches of the Navy's and the Pirates' lines to the reviewed key list
 //                            - Put the Spider Princess's choice at point 31, where the game offers her join
 //      Paulinchen  2026-11-01: Took the outcomes of the branch events from the walk of the game's data
 //      Paulinchen  2026-10-28: Created
@@ -34,7 +35,7 @@ public readonly record struct ShipPlace(int Map, int X, int Y);
 /// What an outcome of the Great Decision names: its route, the side's switch, where a game over
 /// returns the player and the route's first map, the last three only for the two first routes.
 /// </summary>
-/// <param name="Route">The route, its place in <see cref="ChoiceTable.Routes"/>.</param>
+/// <param name="Route">The route, its place in <see cref="StoryIds.Routes"/>.</param>
 /// <param name="Side">The switch of the side the route takes, <see langword="null"/> for the third way.</param>
 /// <param name="Return">Where a game over returns the player, <see langword="null"/> for the third way.</param>
 /// <param name="Map">The route's first map, <see langword="null"/> for the third way.</param>
@@ -146,24 +147,9 @@ public static partial class ChoiceTable
     public const string Decision = "decision";
 
     /// <summary>
-    /// The main story's progress the Great Decision sets.
-    /// </summary>
-    public const int GreatDecision = 40;
-
-    /// <summary>
     /// Frames an offer of the leader stands, a minute.
     /// </summary>
     public const int OfferFrames = 3600;
-
-    /// <summary>
-    /// The variable of the first playthrough, 0 while it is one.
-    /// </summary>
-    public const int Playthrough = 912;
-
-    /// <summary>
-    /// The variable of the main story's progress.
-    /// </summary>
-    public const int Progress = 1001;
 
     /// <summary>
     /// The companions Magistea Village's outcomes bring: Lily and Lucia.
@@ -177,20 +163,10 @@ public static partial class ChoiceTable
     public const int Sphinx = 153;
 
     /// <summary>
-    /// The routes' progress variables, by the Great Decision's outcome.
-    /// </summary>
-    public static readonly IReadOnlyList<int> Routes = [1141, 1142, 1143];
-
-    /// <summary>
-    /// Where the Great Decision's third way takes the player: map, x, y and direction.
-    /// </summary>
-    public static readonly IReadOnlyList<int> ChaosStart = [437, 12, 12, 0];
-
-    /// <summary>
     /// The switches that tell the world cleared the two first routes, which open the third way in a
     /// Raid World.
     /// </summary>
-    public static readonly IReadOnlyList<int> RouteClears = [7096, 7097];
+    public static readonly IReadOnlyList<int> RouteClears = [.. StoryIds.ClearSwitches.Take(2)];
 
     /// <summary>
     /// The switches each side of the Navy or the Pirates turns on as the player takes it in their own
@@ -242,8 +218,8 @@ public static partial class ChoiceTable
     /// The switches, variables and companions the rules read of a story, in the order a request
     /// names them.
     /// </summary>
-    public static readonly IReadOnlyList<int> ReadSwitches = [4, 5, 2090, 2096, 2097, 2148, 2149, 2210, 2211, 2212, 2213, 2280, 2281, 7096, 7097];
-    public static readonly IReadOnlyList<int> ReadVariables = [912, 1001, 1050, 1051, 1061];
+    public static readonly IReadOnlyList<int> ReadSwitches = [.. StoryIds.SideSwitches, 2090, 2096, 2097, 2148, 2149, 2210, 2211, 2212, 2213, 2280, 2281, .. RouteClears];
+    public static readonly IReadOnlyList<int> ReadVariables = [StoryIds.Playthrough, StoryIds.MainProgress, 1050, 1051, 1061];
     public static readonly IReadOnlyList<int> ReadRoster = [153, 163, 167];
 
     /// <summary>
@@ -253,8 +229,8 @@ public static partial class ChoiceTable
     [
         new(Side, "Alice or Ilias", 7, "Iliasville: whom Luka takes along on his journey, his side until the Great Decision.",
         [
-            Outcome("Take Alice along", "Alice joins.", [On(4), Off(5)], joins: [5]),
-            Outcome("Take Ilias along", "Ilias joins.", [Off(4), On(5)], joins: [26]),
+            Outcome("Take Alice along", "Alice joins.", [On(StoryIds.SideSwitches[0]), Off(StoryIds.SideSwitches[1])], joins: [5]),
+            Outcome("Take Ilias along", "Ilias joins.", [Off(StoryIds.SideSwitches[0]), On(StoryIds.SideSwitches[1])], joins: [26]),
         ]),
         new(Magistea, "Magistea Village", 17, "Magistea Village: whom Luka defeats, Lily or Lucia. The other joins.",
         [
@@ -286,10 +262,10 @@ public static partial class ChoiceTable
         [
             Walked("sphinx", "s2090", "Challenge her", "The Sphinx is defeated and joins."),
         ]),
-        new(Decision, "The Great Decision", GreatDecision, "The Monster Lord's Castle: whose side Luka takes, which decides the route of the Final Chapter.",
+        new(Decision, "The Great Decision", StoryIds.GreatDecision, "The Monster Lord's Castle: whose side Luka takes, which decides the route of the Final Chapter.",
         [
-            Outcome("Side with the Dark Goddess (World Breaker)", string.Empty, [], decision: new DecisionRoute(0, 4, 111, 430)),
-            Outcome("Side with the Goddess Ilias (Judgement)", string.Empty, [], decision: new DecisionRoute(1, 5, 112, 431)),
+            Outcome("Side with the Dark Goddess (World Breaker)", string.Empty, [], decision: new DecisionRoute(0, StoryIds.SideSwitches[0], StoryIds.ReturnPoints[0], StoryIds.DecisionMaps[0])),
+            Outcome("Side with the Goddess Ilias (Judgement)", string.Empty, [], decision: new DecisionRoute(1, StoryIds.SideSwitches[1], StoryIds.ReturnPoints[1], StoryIds.DecisionMaps[1])),
             Outcome("Search for a third way (Chaos)", string.Empty, [], decision: new DecisionRoute(2, null, null, null)),
         ]),
     ];

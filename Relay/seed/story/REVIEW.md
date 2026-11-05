@@ -21,6 +21,9 @@ left for the user to decide.
   `fixtures/catchup/generated`, which `make_seed.rb` writes from the Ruby constants, since their
   recorded cases were decided over those tables. The reviewed rows reach only the relay.
 - The review scripts are kept outside the repository, in `MGQ-Online-wt/rows-scratch`.
+- Since 2026-11-05 the C# tests hold every row to the shipped events database
+  (`MGQOnline.Game.Tests` `MappingCheckTests`): a row that names a key, event, page or common event
+  the game does not have, or a class the game data contradicts, fails the build.
 - The `index` of `joins` and `removals` was reviewed as the command's place in the TEST install's
   lists; since 2026-10-28 it holds the command's `ord` in the events database, which
   `MGQOnline.Data.Generator ordinals` wrote from those places with every join and removal of one
@@ -45,7 +48,7 @@ left for the user to decide.
 | World | [makina](#makina) | 29 |
 | World | [prize_switches](#prize_switches) | 5 |
 | World | [side_events](#side_events) | 19 |
-| Keys | [keys](#keys) | 3,754 |
+| Keys | [keys](#keys) | 3,755 |
 | Keys | [events](#events) | 251 |
 
 The user decided the review's open questions on 2026-10-28 ("MGQ Online row decisions.md" in the
@@ -1855,7 +1858,10 @@ In bulk:
   autorun page at v1075 ≥ 14. It sets 15, fights troop 868 (ソニアマズダ), sets 16 and fights
   troop 869 (ソニアマンユ). Their defeat events (3368-3370) set 12, map 138 event 32 sets 13 and
   map 727 event 5 sets 14. The main story is at 33 (map 390 event 7 sets it, maps 750 and 751
-  set 34).
+  set 34). Added on 2026-11-05 by the mapping check (issue #71): the page moves the player to the
+  cutscene maps 746 and 747, whose autorun events go on to maps 728 and 749, and both fight Sonya
+  Chaos (troop 870) there, so the row holds 870 too. A relay seeded before keeps the old row until
+  an admin changes it.
 - **v1062 and v1339** (`defeatReturns`): derived again by `raid_data.rb`'s rule. Map 33 event 50
   sets v1062 to 4 before Gnosis (troops 672, 673), and her defeat events 3223 and 3224 set 3.
   Common event 9046 sets v1339 to 2 before troop 2157, and defeat event 3954 sets 1. v1140 came
@@ -1969,11 +1975,18 @@ Every row stays as written; the user confirmed each recommendation:
    personal (the [chest_flags](#chest_flags) and [party_chests](#party_chests) sections).
 6. **s31-39** stay personal, not `scene`.
 
+### Decided by the user (2026-11-07)
+
+The generator's proposals of work keys are all approved: s11-20, s23, s28, s31-39, s73, s508,
+s2042, s2524, v6, v7, v8, v10-18, v702, v908 and v1106 are `personal` with `work`, beside v57.
+s2042, s2524 and v1106 were shared before; v8 had no row. A relay seeded before keeps its rows
+until an admin applies these edits.
+
 ### Notes
 
 - The rows come from the review scripts outside the repository (`rows-scratch/keys/build.rb`).
   They read the reviewed chest tables, so they must run again if those tables change.
-- An admin applies the file in two slices of at most 2,000 edits: 0-1,999 and 2,000-3,753.
+- An admin applies the file in two slices of at most 2,000 edits: 0-1,999 and 2,000-3,754.
 - Once the relay is seeded, the battle server derives the self-switch index from these rows. A
   rough estimate of it (the index's rule in Ruby) shares the self switches of about 18,100 of the
   69,922 map events and about 2,580 common events.

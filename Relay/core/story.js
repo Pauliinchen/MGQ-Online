@@ -2,6 +2,8 @@
 //  story.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Read the story's ids from story_ids.json, which the generator writes from MGQOnline.Game's StoryIds
+//                            - Named the routes' counters by the story's ids everywhere
 //      Paulinchen  2026-10-31: Handed a keyed story's keys to the story tracks that start from it
 //                            - Dropped the sealed story and turned away every game that keeps no keys
 //                            - Kept the pins of a world whose story runs on tracks without keys of its own
@@ -39,6 +41,7 @@
 import { badRequest, notFound, withJson } from "./http.js";
 import { isId } from "./ids.js";
 import { RateLimiter, VERSION } from "./relay.js";
+import STORY_IDS from "./story_ids.json" with { type: "json" };
 
 /**
  * The limits a world's story keeps.
@@ -353,10 +356,31 @@ export function pinnedKey(rules, key) {
 export const ROUTE = Object.freeze({ none: "none", ad: "ad", mr: "mr", chaos: "chaos" });
 
 /**
- * Which counter carries how far each route is: variables 1141 (Angelic Dominion), 1142 (Monster
- * Realm) and 1143 (Chaos).
+ * The story's ids as MGQOnline.Game's StoryIds holds them, from story_ids.json, which its
+ * generator writes.
  */
-export const ROUTE_COUNTERS = Object.freeze({ ad: "r1141", mr: "r1142", chaos: "r1143" });
+export { STORY_IDS };
+
+/**
+ * The variable of the main story's progress.
+ */
+export const MAIN_PROGRESS = STORY_IDS.main_progress;
+
+/**
+ * Which counter carries how far each route is: `r` and the route's variable.
+ */
+export const ROUTE_COUNTERS = Object.freeze(Object.fromEntries(STORY_IDS.routes.map((route, index) => [route, `r${STORY_IDS.route_variables[index]}`])));
+
+/**
+ * Takes the routes' counters of counters, in the routes' order.
+ *
+ * @param {object} counters The counters.
+ * @param {(name: string) => number} [valueOf] What each counter holds, its value in the counters unless given.
+ * @returns {object} Each route's counter by its name, such as `r1141`.
+ */
+export function routeCounters(counters, valueOf = (name) => counters[name]) {
+  return Object.fromEntries(Object.values(ROUTE_COUNTERS).map((name) => [name, valueOf(name)]));
+}
 
 /**
  * The parts of the story, in their order: Part 1 and Part 2 by variable 1001, Part 3 up to the
@@ -365,15 +389,16 @@ export const ROUTE_COUNTERS = Object.freeze({ ad: "r1141", mr: "r1142", chaos: "
 export const PART = Object.freeze({ one: "1", two: "2", three: "3", ad: "ad", mr: "mr", chaos: "chaos" });
 
 /**
- * The value of variable 1001 each part ends at: Tartarus Escape sets 19, the Middle Chapter's
- * epilogue 34.
+ * The value of the main story's progress each part ends at: Tartarus Escape starts Part 2, the
+ * Middle Chapter's epilogue Part 3.
  */
-export const PART_ENDS = Object.freeze({ one: 19, two: 34 });
+export const PART_ENDS = Object.freeze({ one: STORY_IDS.part_two, two: STORY_IDS.part_three });
 
 /**
- * The value of variable 1001 the Great Decision sets, which every event that takes a route sets too.
+ * The value of the main story's progress the Great Decision sets, which every event that takes a
+ * route sets too.
  */
-export const GREAT_DECISION = 40;
+export const GREAT_DECISION = STORY_IDS.great_decision;
 
 /**
  * The word the text frame starts with that tells every game of a world its story changed, as
@@ -437,7 +462,7 @@ export function outOfOrder(counters) {
  * @returns {{p: number, r1141: number, r1142: number, r1143: number, clear: string[]}} The counters, the same object when in order.
  */
 export function inOrder(counters) {
-  return outOfOrder(counters) ? { ...counters, r1141: 0, r1142: 0, r1143: 0 } : counters;
+  return outOfOrder(counters) ? { ...counters, ...routeCounters(counters, () => 0) } : counters;
 }
 
 /**
@@ -533,8 +558,10 @@ export function readCounters(counters, limits = STORY_LIMITS) {
 
   const counter = (value) => Number.isInteger(value) && value >= 0 && value <= limits.maxCounter;
 
-  if (!["p", "r1141", "r1142", "r1143"].every((name) => counter(counters[name]))) {
-    return { error: `p, r1141, r1142 and r1143 must be whole numbers of 0 to ${limits.maxCounter}` };
+  const names = ["p", ...Object.values(ROUTE_COUNTERS)];
+
+  if (!names.every((name) => counter(counters[name]))) {
+    return { error: `${names.slice(0, -1).join(", ")} and ${names.at(-1)} must be whole numbers of 0 to ${limits.maxCounter}` };
   }
 
   const routes = Object.keys(ROUTE_COUNTERS);
@@ -561,7 +588,7 @@ export function readCounters(counters, limits = STORY_LIMITS) {
   }
 
   // Kept in the routes' own order, so the same finished routes always read the same.
-  return { counters: { p: counters.p, r1141: counters.r1141, r1142: counters.r1142, r1143: counters.r1143, clear: routes.filter((route) => clear.includes(route)) }, end, caps };
+  return { counters: { p: counters.p, ...routeCounters(counters), clear: routes.filter((route) => clear.includes(route)) }, end, caps };
 }
 
 /**
@@ -599,12 +626,12 @@ function readEnd(end, limits) {
 /**
  * The counters of a world whose story nobody wrote yet.
  */
-export const FIRST_COUNTERS = Object.freeze({ p: 0, r1141: 0, r1142: 0, r1143: 0, clear: Object.freeze([]) });
+export const FIRST_COUNTERS = Object.freeze({ p: 0, ...routeCounters({}, () => 0), clear: Object.freeze([]) });
 
 /**
- * The switch each route's finish turns on: 7096 Angelic Dominion, 7097 Monster Realm, 7039 Chaos.
+ * The switch each route's finish turns on.
  */
-export const CLEAR_SWITCHES = Object.freeze({ ad: 7096, mr: 7097, chaos: 7039 });
+export const CLEAR_SWITCHES = Object.freeze(Object.fromEntries(STORY_IDS.routes.map((route, index) => [route, STORY_IDS.clear_switches[index]])));
 
 /**
  * Reads a keyed story's lists into its keys: `s<id>` and `ss<map>.<event>.<letter>` to "1" or "0",
@@ -731,7 +758,8 @@ export function countersOf(keys, fallback) {
     const value = keys.get(`s${CLEAR_SWITCHES[route]}`);
     return value === undefined ? fallback.clear.includes(route) : value === "1";
   });
-  return { p: whole(1001, fallback.p), r1141: whole(1141, fallback.r1141), r1142: whole(1142, fallback.r1142), r1143: whole(1143, fallback.r1143), clear };
+  const routes = Object.values(ROUTE_COUNTERS).map((counter) => [counter, whole(counter.slice(1), fallback[counter])]);
+  return { p: whole(MAIN_PROGRESS, fallback.p), ...Object.fromEntries(routes), clear };
 }
 
 /**
@@ -1421,9 +1449,7 @@ export function stateOf(story, withKeys) {
     rev: story?.rev ?? 0,
     wrev: story?.wrev ?? 0,
     p: counters.p,
-    r1141: counters.r1141,
-    r1142: counters.r1142,
-    r1143: counters.r1143,
+    ...routeCounters(counters),
     clear: [...counters.clear],
     part: story?.part ?? PART.one,
     route: story?.route ?? ROUTE.none,

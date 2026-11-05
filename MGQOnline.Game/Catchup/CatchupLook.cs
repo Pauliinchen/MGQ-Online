@@ -2,7 +2,8 @@
 //  CatchupLook.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Gave a prize from its row only as history before the world's log, but the Medal King's free gift
+//      Paulinchen  2026-11-05: Read the story's ids from StoryIds
+//                            - Gave a prize from its row only as history before the world's log, but the Medal King's free gift
 //                            - Played the orbs' event only as history before the world's log
 //                            - Never gave back in the repair an item an event of the game takes away
 //                            - Left found key items and their uses to the story replay, and kept the found marks for the Makina alone
@@ -61,17 +62,6 @@ internal sealed class CatchupLook
     /// </summary>
     public const int Hero = 1;
 
-    /// <summary>
-    /// The variable that counts the playthroughs, at 0 on the first, which alone loses companions for
-    /// good.
-    /// </summary>
-    public const int Playthrough = 912;
-
-
-    /// <summary>
-    /// The main story's step right before the Great Decision.
-    /// </summary>
-    private const long BeforeDecision = 39;
 
     /// <summary>
     /// What the notes keep for a companion the world shares once it joined or never will.
@@ -806,8 +796,8 @@ internal sealed class CatchupLook
             return false;
         }
 
-        long progress = _own.Variable(StoryValues.MainProgress) ?? 0;
-        return StoryParts.Routes.Contains(_own.Part) || (Array.IndexOf(SidedParts, _own.Part) >= 0 && progress >= step && progress <= BeforeDecision);
+        long progress = _own.Variable(StoryIds.MainProgress) ?? 0;
+        return StoryParts.Routes.Contains(_own.Part) || (Array.IndexOf(SidedParts, _own.Part) >= 0 && progress >= step && progress <= StoryIds.BeforeDecision);
     }
 
     /// <summary>
@@ -1533,8 +1523,8 @@ internal sealed class CatchupLook
     private bool OrbsDue()
     {
         CatchupRules rules = _tables.Rules;
-        if (rules.Orbs.Count == 0 || rules.OrbsGathered is not { } gathered || rules.OrbEvent is null || (_own.Variable(StoryValues.MainProgress) ?? 0) >= gathered
-            || (_log is not null && (_log.Variable(StoryValues.MainProgress) ?? 0) < gathered))
+        if (rules.Orbs.Count == 0 || rules.OrbsGathered is not { } gathered || rules.OrbEvent is null || (_own.Variable(StoryIds.MainProgress) ?? 0) >= gathered
+            || (_log is not null && (_log.Variable(StoryIds.MainProgress) ?? 0) < gathered))
         {
             return false;
         }
@@ -1652,7 +1642,7 @@ internal sealed class CatchupLook
     /// <param name="fresh">The joins passed in the same look.</param>
     private void TakeAway(Dictionary<int, List<CatchupRemoval>> removed, List<int> order, List<CatchupJoin> fresh)
     {
-        if ((_own.Variable(Playthrough) ?? 0) != 0)
+        if ((_own.Variable(StoryIds.Playthrough) ?? 0) != 0)
         {
             return;
         }
@@ -1882,7 +1872,7 @@ internal sealed class CatchupLook
     /// <returns>The companions.</returns>
     private HashSet<long> TakenForGood(RubyHash done)
     {
-        if ((_own.Variable(Playthrough) ?? 0) != 0)
+        if ((_own.Variable(StoryIds.Playthrough) ?? 0) != 0)
         {
             return [];
         }

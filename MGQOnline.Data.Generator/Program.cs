@@ -2,6 +2,7 @@
 //  Program.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Added the story-ids command, which writes the relay's copy of the story's ids
 //      Paulinchen  2026-10-31: Printed the game data's proposals of work keys after a build
 //      Paulinchen  2026-10-28: Added the ordinals command, which rewrites the relay's join and removal indexes into ords
 //                            - Added the sort, names and export commands of the tools
@@ -29,7 +30,8 @@ namespace MGQOnline.Data.Generator;
 /// The generator's commands: build the events database from a game folder, check a file against
 /// one, print a game's fingerprint, and compare another copy of the game with a file; for the
 /// tools, sort every page of a file, write the names of the story's keys and export a table; and
-/// for the relay, rewrite the command indexes of its join and removal rows into ords.
+/// for the relay, rewrite the command indexes of its join and removal rows into ords and write its
+/// copy of the story's ids.
 /// </summary>
 internal static class Program
 {
@@ -61,6 +63,7 @@ internal static class Program
           names <translated game folder> <out.json>
           export <events.db> <table> <out.json>
           ordinals <events.db> <game folder the indexes were read from> <rows.json> <out.json>
+          story-ids <out.json>
         """;
 
     /// <summary>
@@ -84,6 +87,7 @@ internal static class Program
                 ["names", string game, string output] => WriteNames(game, output),
                 ["export", string file, string table, string output] => Export(file, table, output),
                 ["ordinals", string file, string game, string rows, string output] => Ordinals(file, game, rows, output),
+                ["story-ids", string output] => WriteStoryIds(output),
                 _ => Fail(UsageText),
             };
         }
@@ -308,6 +312,18 @@ internal static class Program
         unresolved.ForEach(Console.Error.WriteLine);
         Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"wrote {Path.GetFullPath(output)}; {unresolved.Count} row(s) not found"));
         return unresolved.Count == 0 ? Done : Differs;
+    }
+
+    /// <summary>
+    /// Writes the relay's copy of the story's ids, see <see cref="StoryIdsFile"/>.
+    /// </summary>
+    /// <param name="output">The file to write, Relay/core/story_ids.json in the repository.</param>
+    /// <returns>The exit code.</returns>
+    private static int WriteStoryIds(string output)
+    {
+        File.WriteAllText(output, StoryIdsFile.Text());
+        Console.WriteLine($"wrote {Path.GetFullPath(output)}");
+        return Done;
     }
 
     /// <summary>

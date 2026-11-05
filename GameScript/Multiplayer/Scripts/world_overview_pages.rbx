@@ -2,6 +2,7 @@
 #  world_overview_pages.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Read the Chaos route's variable from story_ids.rbx
 #      Paulinchen  2026-11-01: Showed the pages in the Mod Framework's page views
 #                            - Drew the portraits itself from the faces and figures the Mod Framework finds
 #                            - Laid the World, Quests and Unlocks pages out and kept their folds in the DLL
@@ -445,7 +446,7 @@ module MGQ_MpWorldOverview
   #
   # @return [Array<Quest>] The quests.
   def self.side_quests
-    id = SIDE_EVENTS[$game_variables[CHAOS_ROUTE].to_i >= CHAOS_SIDE_STEP ? 1 : 0]
+    id = SIDE_EVENTS[$game_variables[MGQ_MpStoryIds.route_variables[2].to_i].to_i >= CHAOS_SIDE_STEP ? 1 : 0]
     event = $data_common_events && $data_common_events[id]
     event ? quests_of(event.list || [], :side) : []
   end

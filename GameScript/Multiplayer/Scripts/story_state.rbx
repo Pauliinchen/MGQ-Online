@@ -2,7 +2,8 @@
 #  story_state.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Left the self switches of the Navy's and the Pirates' lines to the reviewed key list
+#      Paulinchen  2026-11-05: Read the story's ids from story_ids.rbx
+#                            - Left the self switches of the Navy's and the Pirates' lines to the reviewed key list
 #      Paulinchen  2026-11-01: Noted in the save the side the player took along in Iliasville, which the route's side switches no longer tell
 #                            - Noted that a save came from another player's starting save, whose side is not the player's
 #      Paulinchen  2026-10-31: Kept the warp ban from stopping a player in a world
@@ -54,16 +55,6 @@ module MGQ_MpStoryState
   # The bans of the place a player stands in.
   PLACE_BANS = [ESCAPE_BAN]
 
-  # The switch that tells the player took Alice along.
-  ALICE_CHOSEN = 4
-
-  # The switch that tells the player took Ilias along.
-  ILIAS_CHOSEN = 5
-
-  # The switches of the side the player chose, their own until the Great Decision, which sets the
-  # side anew with the route the party takes.
-  SIDE_SWITCHES = [ALICE_CHOSEN, ILIAS_CHOSEN]
-
   # The switch of the second accessory slot, which Fallen Micaela's blessing turns on for good. The
   # game's setter of the switch gives every character the slot.
   EXTRA_ACCESSORY_SLOT = defined?(NWConst::Sw::EXTRA_ACCESSORY_SLOT) ? NWConst::Sw::EXTRA_ACCESSORY_SLOT : 445
@@ -74,9 +65,6 @@ module MGQ_MpStoryState
 
   # First variable that holds a companion's affection, one per companion.
   AFFECTION_VARIABLES = 3000
-
-  # Variables of the routes after the Great Decision, where the sides no longer differ in rewards.
-  ROUTE_MARKERS = [1141, 1142, 1143]
 
   # The character whose story skills count, Luka.
   HERO = 1
@@ -436,7 +424,7 @@ module MGQ_MpStoryState
   # @return [Boolean] Whether they do.
   def self.sides_differ?(variables = nil)
     variables ||= $game_variables ? data_of($game_variables) : []
-    ROUTE_MARKERS.all? { |id| variables[id].to_i == 0 }
+    MGQ_MpStoryIds.route_variables.all? { |id| variables[id].to_i == 0 }
   end
 
   # The side some switches tell.
@@ -444,8 +432,8 @@ module MGQ_MpStoryState
   # @param switches [Array] The switches.
   # @return [Symbol, nil] :alice, :ilias, or nil for none.
   def self.side_of(switches)
-    return :alice if switches[ALICE_CHOSEN]
-    return :ilias if switches[ILIAS_CHOSEN]
+    return :alice if switches[MGQ_MpStoryIds.alice_chosen]
+    return :ilias if switches[MGQ_MpStoryIds.ilias_chosen]
 
     nil
   end
@@ -949,9 +937,9 @@ module MGQ_MpStoryState
   # Says how far a story is for the log: the main story and the three routes' progress.
   #
   # @param variables [Array] The story's variables.
-  # @return [String] Such as "1001=12, routes 0/0/0".
+  # @return [String] Such as "main story 12, routes 0/0/0".
   def self.progress_text(variables)
-    "1001=#{variables[1001].to_i}, routes #{ROUTE_MARKERS.map { |id| variables[id].to_i }.join('/')}"
+    "main story #{variables[MGQ_MpStoryIds.main_progress].to_i}, routes #{MGQ_MpStoryIds.route_variables.map { |id| variables[id].to_i }.join('/')}"
   rescue
     "unknown progress"
   end

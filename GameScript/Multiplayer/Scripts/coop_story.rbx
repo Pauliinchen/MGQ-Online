@@ -2,7 +2,8 @@
 #  coop_story.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Caught a member behind the leader up by the frozen rows and the leader's chests as the DLL finds them, instead of a copy of what the leader holds
+#      Paulinchen  2026-11-05: Read the story's ids from story_ids.rbx
+#                            - Caught a member behind the leader up by the frozen rows and the leader's chests as the DLL finds them, instead of a copy of what the leader holds
 #                            - Told a member only the leader's side, no longer the leader's skills, companions and items
 #                            - Dropped the self switches of a choice's lines, which the reviewed key list keeps
 #                            - Gave a party member the Medal King's prize another player bought, as the DLL finds it
@@ -113,21 +114,11 @@ module MGQ_MpCoopStory
   # Frames between two looks for the Medal King's prizes, a second at 60 frames per second.
   GIFT_FRAMES = 60
 
-  # The routes as the DLL names them, each with its variable and the switch that tells it cleared.
-  SCOPE_ROUTES = { "ad" => [1141, 7096], "mr" => [1142, 7097], "chaos" => [1143, 7039] }
-
   # Frames between two messages of the leader, a quarter of a second at 60 frames per second.
   SEND_FRAMES = 15
 
   # Frames between two requests for the leader's story, two seconds, until it came.
   ASK_FRAMES = 120
-
-  # Variables that tell how far along a story is: the main story (1001) and the three routes'
-  # progress (1141-1143).
-  STORY_MARKERS = [1001, 1141, 1142, 1143]
-
-  # The main story's progress the Great Decision sets, which no later event raises.
-  GREAT_DECISION = 40
 
   # How far apart in the main story two players may be before the Great Decision to play one story.
   SYNC_STEPS = 2
@@ -275,12 +266,13 @@ module MGQ_MpCoopStory
     item.name
   end
 
-  # Reads how far a story is: the main story's progress and the three routes', see STORY_MARKERS.
+  # Reads how far a story is: the main story's progress and the three routes', see
+  # MGQ_MpStoryIds.markers.
   #
   # @param variables [Array] The story's variables.
   # @return [Array<Integer>] The values.
   def self.markers_of(variables)
-    STORY_MARKERS.map { |id| variables[id].to_i }
+    MGQ_MpStoryIds.markers.map { |id| variables[id].to_i }
   end
 
   # How far the player's own story is: the one they play, but their own while they borrow the story
@@ -306,14 +298,14 @@ module MGQ_MpCoopStory
   # @return [Array<Integer>, nil] The values, nil when their game tells none.
   def self.read_markers(text)
     values = text.to_s.split(",")
-    values.size == STORY_MARKERS.size ? values.map(&:to_i) : nil
+    values.size == MGQ_MpStoryIds.markers.size ? values.map(&:to_i) : nil
   end
 
   # Finds the route a story plays past the Great Decision: the first route whose progress is above
   # zero, the Chaos route's last, since the Great Decision itself starts it.
   #
   # @param markers [Array<Integer>] The story's values, see markers_of.
-  # @return [Integer, nil] The route's place among MGQ_MpStoryState::ROUTE_MARKERS, nil before any.
+  # @return [Integer, nil] The route's place among MGQ_MpStoryIds.route_variables, nil before any.
   def self.route_of(markers)
     markers[1..-1].index { |value| value > 0 }
   end
@@ -327,8 +319,8 @@ module MGQ_MpCoopStory
   # @return [Symbol] :synced, or why not: :apart (too far apart), :decision (one is past the Great
   #   Decision, the other before it) or :route (different routes).
   def self.sync_state(own, other)
-    past = own[0] >= GREAT_DECISION
-    return :decision unless past == (other[0] >= GREAT_DECISION)
+    past = own[0] >= MGQ_MpStoryIds.great_decision
+    return :decision unless past == (other[0] >= MGQ_MpStoryIds.great_decision)
     return (own[0] - other[0]).abs <= SYNC_STEPS ? :synced : :apart unless past
 
     route = route_of(own)
@@ -350,9 +342,9 @@ module MGQ_MpCoopStory
   # Says for the log how far a story is, see markers_of.
   #
   # @param markers [Array<Integer>, nil] The values.
-  # @return [String] Such as "1001=12, routes 0/0/0".
+  # @return [String] Such as "main story 12, routes 0/0/0".
   def self.markers_text(markers)
-    markers ? "1001=#{markers[0]}, routes #{markers[1..-1].join('/')}" : "unknown progress"
+    markers ? "main story #{markers[0]}, routes #{markers[1..-1].join('/')}" : "unknown progress"
   end
 
   # Tells a player why they and another play their own stories.
@@ -878,7 +870,7 @@ module MGQ_MpCoopStory
     return "keep, as far along as the leader, so they keep what they play together" if @same
     return "catch up, behind the leader, so they keep the leader's story and get what it gave" if @keeps
 
-    ahead = STORY_MARKERS.select { |id| @own[1][id].to_i > MGQ_MpStoryState.data_of($game_variables)[id].to_i }
+    ahead = MGQ_MpStoryIds.markers.select { |id| @own[1][id].to_i > MGQ_MpStoryState.data_of($game_variables)[id].to_i }
     "borrow, ahead of the leader (#{ahead.map { |id| "#{id}: #{@own[1][id].to_i} > #{MGQ_MpStoryState.data_of($game_variables)[id].to_i}" }.join(', ')}), so they get their own story back unchanged"
   rescue
     "borrow"
@@ -900,7 +892,7 @@ module MGQ_MpCoopStory
   # @param other [Array] The leader's.
   # @return [Boolean] Whether they are.
   def self.same_story?(own, other)
-    STORY_MARKERS.all? { |id| own[1][id].to_i == other[1][id].to_i }
+    MGQ_MpStoryIds.markers.all? { |id| own[1][id].to_i == other[1][id].to_i }
   end
 
   # Reports whether the player's story is behind the leader's or as far along: no progress beyond
@@ -910,7 +902,7 @@ module MGQ_MpCoopStory
   # @param other [Array] The leader's.
   # @return [Boolean] Whether it is.
   def self.behind?(own, other)
-    STORY_MARKERS.all? { |id| own[1][id].to_i <= other[1][id].to_i }
+    MGQ_MpStoryIds.markers.all? { |id| own[1][id].to_i <= other[1][id].to_i }
   end
 
   # Takes what of the leader's story changed, and keeps it for the player's own story when they
@@ -919,7 +911,7 @@ module MGQ_MpCoopStory
   # @param changes [Array] The changed switches, variables and self switches, each by key.
   def self.apply(changes)
     story = MGQ_MpStoryState.raw_state
-    before = story[1][1001].to_i
+    before = story[1][MGQ_MpStoryIds.main_progress].to_i
     # The variables come first, since a route's progress decides whether the side switches that
     # come with it are the player's own.
     changes[1].each do |id, value|
@@ -949,7 +941,7 @@ module MGQ_MpCoopStory
     return unless @keeps && defined?(MGQ_MpCoopChoices)
 
     changed = changes[0].map { |id, _| id } + changes[1].map { |id, _| id }
-    MGQ_MpCoopChoices.story_passed(before, story[1][1001].to_i, changed)
+    MGQ_MpCoopChoices.story_passed(before, story[1][MGQ_MpStoryIds.main_progress].to_i, changed)
   end
 
   # Takes the side of the leader's route once the story played is past the Great Decision, which
@@ -959,10 +951,10 @@ module MGQ_MpCoopStory
     return if side.nil? || MGQ_MpStoryState.sides_differ?
 
     data = MGQ_MpStoryState.data_of($game_switches)
-    return if data[MGQ_MpStoryState::ALICE_CHOSEN] == (side == :alice) && data[MGQ_MpStoryState::ILIAS_CHOSEN] == (side == :ilias)
+    return if data[MGQ_MpStoryIds.alice_chosen] == (side == :alice) && data[MGQ_MpStoryIds.ilias_chosen] == (side == :ilias)
 
-    data[MGQ_MpStoryState::ALICE_CHOSEN] = side == :alice
-    data[MGQ_MpStoryState::ILIAS_CHOSEN] = side == :ilias
+    data[MGQ_MpStoryIds.alice_chosen] = side == :alice
+    data[MGQ_MpStoryIds.ilias_chosen] = side == :ilias
     $game_map.need_refresh = true if $game_map
     log("past the Great Decision, the player plays the side of the leader's route: #{side_name(side)}")
   end
@@ -1283,7 +1275,8 @@ module MGQ_MpCoopStory
   def self.choices_borrowed(leader, first)
     return unless defined?(MGQ_MpCoopChoices)
 
-    MGQ_MpCoopChoices.story_passed(@own[1][1001].to_i, MGQ_MpStoryState.data_of($game_variables)[1001].to_i) if first && @keeps
+    progress = MGQ_MpStoryIds.main_progress
+    MGQ_MpCoopChoices.story_passed(@own[1][progress].to_i, MGQ_MpStoryState.data_of($game_variables)[progress].to_i) if first && @keeps
     MGQ_MpCoopChoices.borrowed(leader)
   end
 
@@ -1342,9 +1335,10 @@ module MGQ_MpCoopStory
   # @return [Array<String>] The routes.
   def self.scope_routes
     played = MGQ_MpStoryState.data_of($game_variables)
-    SCOPE_ROUTES.select do |_, (variable, cleared)|
+    routes = MGQ_MpStoryIds.routes.zip(MGQ_MpStoryIds.route_variables, MGQ_MpStoryIds.clear_switches)
+    routes.select do |_, variable, cleared|
       played[variable].to_i > 0 || (@own && (@own[1][variable].to_i > 0 || @own[0][cleared]))
-    end.keys
+    end.map(&:first)
   end
 
   # The events where the player takes a side along, a named exception of the story replay: the
@@ -1406,7 +1400,7 @@ module MGQ_MpCoopStory
     return true if guest? && @leader_held && @leader_held[:side]
 
     point = defined?(MGQ_MpCoopChoices) ? MGQ_MpCoopChoices.point_of(:side) : 0
-    point > 0 && MGQ_MpStoryState.data_of($game_variables)[1001].to_i >= point
+    point > 0 && MGQ_MpStoryState.data_of($game_variables)[MGQ_MpStoryIds.main_progress].to_i >= point
   end
 
   # Names a side by the one the player takes along.
@@ -1434,8 +1428,8 @@ module MGQ_MpCoopStory
     end
 
     log("the player took #{side_name(side)} along, as their own side#{guest? ? ', kept for their own story too' : ''}")
-    MGQ_MpStoryState::SIDE_SWITCHES.each do |id|
-      $game_switches[id] = id == (side == :alice ? MGQ_MpStoryState::ALICE_CHOSEN : MGQ_MpStoryState::ILIAS_CHOSEN)
+    MGQ_MpStoryIds.side_switches.each do |id|
+      $game_switches[id] = id == (side == :alice ? MGQ_MpStoryIds.alice_chosen : MGQ_MpStoryIds.ilias_chosen)
       @own[0][id] = $game_switches[id] if guest?
     end
     pick_groups.each do |group|
@@ -1618,7 +1612,7 @@ module MGQ_MpCoopStory
   # @return [Array] The switches, variables and self switches.
   def self.own_with_values
     story = MGQ_MpStoryState.mix(own_story, MGQ_MpStoryState.raw_state)
-    MGQ_MpStoryState::SIDE_SWITCHES.each { |id| story[0][id] = @own[0][id] } unless @keeps
+    MGQ_MpStoryIds.side_switches.each { |id| story[0][id] = @own[0][id] } unless @keeps
     story
   end
 

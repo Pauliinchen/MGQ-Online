@@ -2,6 +2,7 @@
 //  ClassicStoryTable.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Read the story's ids from StoryIds
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -30,18 +31,13 @@ public static class ClassicStoryTable
     public const int EscapeBan = 94;
 
     /// <summary>
-    /// The switches of the side the player chose, each player's own until the Great Decision.
-    /// </summary>
-    public static readonly IReadOnlyList<int> SideSwitches = [4, 5];
-
-    /// <summary>
     /// Switches each player keeps: 0, which no switch is, the flags the game toggles around its
     /// fights (22, 73 "Chaos Enemy Pause", 97 "Hades Rematch"), configuration mirrored in switches
     /// (95, 445-447, 502), the warp and escape bans, the companions in the party (1001-2000) and
     /// their awakening (6000-6999).
     /// </summary>
     public static readonly IReadOnlyList<(int From, int To)> PersonalSwitches =
-        [(0, 0), (22, 22), (73, 73), (EscapeBan, EscapeBan), (95, 95), (97, 97), (WarpBan, WarpBan), (445, 447), (502, 502), (1001, 2000), (6000, 6999)];
+        [(0, 0), (22, 22), (73, 73), (EscapeBan, EscapeBan), (95, 95), (97, 97), (WarpBan, WarpBan), (445, 447), (502, 502), (StoryIds.FirstStorySwitch, StoryIds.LastStorySwitch), (6000, 6999)];
 
     /// <summary>
     /// Variables each player keeps: 0, which no variable is, the last choice's answer (9), where the
@@ -52,7 +48,7 @@ public static class ClassicStoryTable
     /// friendliness (2000-2999).
     /// </summary>
     public static readonly IReadOnlyList<(int From, int To)> PersonalVariables =
-        [(0, 0), (9, 9), (21, 23), (46, 48), (55, 57), (59, 59), (129, 129), (150, 150), (200, 201), (1002, 1002), (2000, 2999)];
+        [(0, 0), (9, 9), (21, 23), (46, 48), (55, 57), (59, 59), (129, 129), (150, 150), (200, 201), (StoryIds.GameOverReturn, StoryIds.GameOverReturn), (2000, 2999)];
 
     /// <summary>
     /// The variable before the first companion's affection; companion n's is AffectionBase + n.
@@ -83,7 +79,7 @@ public static class ClassicStoryTable
             }
         }
 
-        foreach (int side in SideSwitches)
+        foreach (int side in StoryIds.SideSwitches)
         {
             if (side < switchClasses.Length)
             {

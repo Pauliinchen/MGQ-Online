@@ -2,7 +2,8 @@
 #  story_keys.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Noted the found items a run gave or used up, but none a story reset takes, so a run that changed no shared key is handed over too
+#      Paulinchen  2026-11-05: Read the story markers from story_ids.rbx
+#                            - Noted the found items a run gave or used up, but none a story reset takes, so a run that changed no shared key is handed over too
 #                            - Dropped the names of the commands running, which only the found items' rule read
 #                            - Handed the found items a battle's drops gave to the DLL, and their entry on like a run's
 #      Paulinchen  2026-11-01: Noted a run's checks of what the party holds and of the event's own self switches as inputs, which a replay follows
@@ -94,9 +95,6 @@ module MGQ_MpStoryKeys
 
   # The scopes whose keys a replay reads at the run's start values: the work's and the world's.
   VIEWED = [SCOPE_WORK, SCOPE_WORLD, SCOPE_WHOLE_WORLD]
-
-  # The story markers, whose values at a run's start are its place (coop_story.rbx STORY_MARKERS).
-  PLACE_MARKERS = [1001, 1141, 1142, 1143]
 
   # Frames between two asks for the scopes while the DLL has none, and between two tries of a run's
   # end the DLL could not log yet: half a second and a second.
@@ -717,7 +715,7 @@ module MGQ_MpStoryKeys
     site = site_of(interpreter)
     return unless site.start_with?("map:") || site.start_with?("ce:")
 
-    place = PLACE_MARKERS.map { |id| $game_variables[id].to_i }
+    place = MGQ_MpStoryIds.markers.map { |id| $game_variables[id].to_i }
     @runs[interpreter.object_id] = Run.new(site, place, {}, {}, [], Hash.new(0), {}, [], $game_self_switches, Hash.new(0))
   rescue => e
     log_once([:run_set_up, e.class], "opening a run failed: #{e.class}: #{e.message}")

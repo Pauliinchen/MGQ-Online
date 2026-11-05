@@ -2,6 +2,7 @@
 //  ListBuild.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Read the side switches from StoryIds
 //      Paulinchen  2026-11-01: Handed on each list's extended choices
 //      Paulinchen  2026-10-31: Handed each list's script roots on
 //                            - Handed on what each list's scripts do to self switches
@@ -38,7 +39,7 @@ internal static class ListBuild
     /// <summary>
     /// The side switches, as the branches around battles and transfers name them.
     /// </summary>
-    private static readonly IReadOnlySet<long> SideSwitches = ClassicStoryTable.SideSwitches.Select(side => (long)side).ToHashSet();
+    private static readonly IReadOnlySet<long> SideSwitches = StoryIds.SideSwitches.Select(side => (long)side).ToHashSet();
 
     /// <summary>
     /// Finds the shape of a list, see <see cref="ListShape"/>.

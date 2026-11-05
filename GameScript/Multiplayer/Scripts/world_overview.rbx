@@ -2,6 +2,7 @@
 #  world_overview.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Read the story's ids from story_ids.rbx
 #      Paulinchen  2026-11-01: Named the Mod Framework's interface by its own name
 #                            - Built the overview on the Mod Framework's window, tabs, list, page views and menus
 #                            - Closed with the action wheel's hotkey itself and asked the Mod Framework's wheels whether one is open
@@ -111,15 +112,9 @@ module MGQ_MpWorldOverview
   # The lists while the DLL told none.
   NO_LISTS = { "players" => [], "lines" => [], "party" => [], "raid_party" => [], "map" => [] }
 
-  # The story's progress variable ("Overall Events Progress").
-  PROGRESS = 1001
-
-  # The side chosen, by the switch that records the choice ("Ilias Chosen", "Alice Chosen").
-  SIDES = { "ilias" => 5, "alice" => 4 }
-
-  # Route of the final chapter, by the variable that counts its progress; the route not being
-  # played holds 0.
-  ROUTES = { "chaos" => 1143, "destroyer" => 1141, "judgment" => 1142 }
+  # The routes of the final chapter as the DLL's overview names them, in the order of
+  # MGQ_MpStoryIds.route_variables, whose counters the route not being played holds at 0.
+  ROUTES = %w(destroyer judgment chaos)
 
   # The topic that writes what the title and the World page say of the world's type and difficulty.
   TITLE_TOPIC = "overview.title"
@@ -176,9 +171,6 @@ module MGQ_MpWorldOverview
   # Amira's lists of side quests, which her event calls after the objective: the first until the
   # Chaos route's step CHAOS_SIDE_STEP, the second from it.
   SIDE_EVENTS = [131, 135]
-
-  # The Chaos route's variable.
-  CHAOS_ROUTE = 1143
 
   # The Chaos route's step from which Amira tells the second list of SIDE_EVENTS.
   CHAOS_SIDE_STEP = 21
@@ -578,13 +570,13 @@ module MGQ_MpWorldOverview
   # Reads what the DLL finds the player's place in the story from: the progress, the routes'
   # variables and the sides' switches.
   #
-  # @return [Hash] "p", "routes" and "sides", see ROUTES and SIDES.
+  # @return [Hash] "p", "routes" and "sides", see ROUTES.
   def self.story_request
+    ids = MGQ_MpStoryIds
     routes = {}
-    ROUTES.each { |key, id| routes[key] = $game_variables[id].to_i }
-    sides = {}
-    SIDES.each { |key, id| sides[key] = $game_switches[id] == true }
-    { "p" => $game_variables[PROGRESS].to_i, "routes" => routes, "sides" => sides }
+    ROUTES.each_with_index { |key, index| routes[key] = $game_variables[ids.route_variables[index].to_i].to_i }
+    sides = { "alice" => $game_switches[ids.alice_chosen] == true, "ilias" => $game_switches[ids.ilias_chosen] == true }
+    { "p" => $game_variables[ids.main_progress].to_i, "routes" => routes, "sides" => sides }
   end
 
   # The lists of players as the DLL last built them, which it hands over only once they changed

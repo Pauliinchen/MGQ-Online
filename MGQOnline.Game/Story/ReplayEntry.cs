@@ -2,7 +2,8 @@
 //  ReplayEntry.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Noted whether a run gave or used up a found item
+//      Paulinchen  2026-11-05: Read the story markers from StoryIds
+//                            - Noted whether a run gave or used up a found item
 //                            - Named a battle's drops as a site, and carried the found items they gave
 //      Paulinchen  2026-10-31: Kept the number its track keeps an entry under
 //                            - Wrote inputs apart from their entry
@@ -113,7 +114,7 @@ public sealed record RunPlace(IReadOnlyList<long> Markers)
     /// <summary>
     /// The variables of the story markers.
     /// </summary>
-    public static readonly IReadOnlyList<int> MarkerVariables = [1001, 1141, 1142, 1143];
+    public static readonly IReadOnlyList<int> MarkerVariables = StoryIds.Markers;
 
     /// <summary>
     /// Tells whether the place lies behind another: none of its markers higher, one lower, as

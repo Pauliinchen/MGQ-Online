@@ -2,7 +2,8 @@
 //  StoryMapping.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Kept the found marks of the Makina alone, and no marks of used up items, which the story replay hands over
+//      Paulinchen  2026-11-05: Kept every variable the game uses as a place each player's own, whatever its row says
+//                            - Kept the found marks of the Makina alone, and no marks of used up items, which the story replay hands over
 //      Paulinchen  2026-11-01: Read the whole world's option of a shared self switch's row
 //                            - Kept the found items' marks for the whole world, whatever the mapping's row of them says
 //                            - Kept the marks of the items used up for the whole world too
@@ -14,6 +15,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using MGQOnline.Game.Catchup;
 using static MGQOnline.Game.Story.JsonFields;
@@ -61,7 +63,8 @@ public static class StoryMapping
 
     /// <summary>
     /// Reads the mapping into its table. A row this version cannot read is left out, so its key
-    /// stays each player's own.
+    /// stays each player's own, and so does a variable the game uses as a place
+    /// (<see cref="StoryIds.PlaceVariables"/>), whatever its row says.
     /// </summary>
     /// <param name="root">The answer: <c>rev</c>, <c>tables</c> (<c>keys</c>, <c>events</c>, <c>parts</c> and the catch-up's) and <c>index</c>.</param>
     /// <returns>The table.</returns>
@@ -96,6 +99,11 @@ public static class StoryMapping
             {
                 localSteps.Add(local);
             }
+        }
+
+        foreach (int place in StoryIds.PlaceVariables.Where(place => place < variables.Count))
+        {
+            variables[place] &= (byte)StoryClass.DefeatWrite;
         }
 
         foreach (JsonElement row in RowsOf(tables, "events"))

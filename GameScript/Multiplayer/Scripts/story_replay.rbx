@@ -2,7 +2,8 @@
 #  story_replay.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Took a found item a replay uses up from the receiver, but none a story reset takes, and dropped the copy got as found, which the story replay replaces
+#      Paulinchen  2026-11-05: Read the story markers from story_ids.rbx
+#                            - Took a found item a replay uses up from the receiver, but none a story reset takes, and dropped the copy got as found, which the story replay replaces
 #                            - Told whether a replay goes the receiver's own way, whose companion joins as their own
 #                            - Gave the player the found items another player's battle drops gave, with their notice
 #      Paulinchen  2026-11-01: Handed the question screen what a choice's cancel answers
@@ -736,7 +737,7 @@ module MGQ_MpStoryReplay
     @waiting = []
     return unless MGQ_Multiplayer::Bridge.open? && (!placed || $game_variables)
 
-    place = placed ? MGQ_MpStoryKeys::PLACE_MARKERS.map { |id| $game_variables[id].to_i } : nil
+    place = placed ? MGQ_MpStoryIds.markers.map { |id| $game_variables[id].to_i } : nil
     answer = MGQ_Multiplayer::Bridge.call(LOG_TOPIC, "log" => saved, "place" => place)
     @waiting = answer if answer.is_a?(Array)
     log("#{@waiting.size} runs handed to the player wait in the save's log") unless @waiting.empty?

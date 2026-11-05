@@ -2,7 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Dropped story_found.rbx, whose items the story replay hands over
+#      Paulinchen  2026-11-05: Loaded story_ids.rbx after core_async.rbx
+#                            - Dropped story_found.rbx, whose items the story replay hands over
 #      Paulinchen  2026-11-01: Stopped loading ui_boxes.rbx, whose boxes the Mod Framework's components replaced
 #                            - Dropped the bug report exports, which the bridge's report topics replace
 #                            - Stopped loading world_text.rbx, whose text screen the Mod Framework's text fields replace
@@ -198,7 +199,7 @@ module MGQ_Multiplayer
   # hooks once the game runs, the last loaded first, so their order decides how those hooks wrap
   # each other.
   SCRIPTS = %w[
-    core_log core_hooks core_game_access core_hotkeys ui_online core_actors core_async overworld_sync ui_actions ui_chat ui_emotes overworld
+    core_log core_hooks core_game_access core_hotkeys ui_online core_actors core_async story_ids overworld_sync ui_actions ui_chat ui_emotes overworld
     coop coop_scope coop_squad coop_events coop_gather coop_teleport coop_scene coop_npcs story_state story_keys story_replay coop_story coop_castle
     world world_mods world_story world_catchup world_catchup_exp world_opening world_difficulty world_gates world_save_distribution world_screen world_save_export coop_choices
     battles battles_raid_bosses battles_coop battles_coop_hotjoin battles_coop_join battles_raid_pool battles_raid_freeze world_freeze battles_raid_tiers battles_coop_level_sync

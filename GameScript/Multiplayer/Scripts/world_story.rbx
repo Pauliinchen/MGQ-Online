@@ -2,6 +2,8 @@
 #  world_story.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Read the story's ids of the route rules from story_ids.rbx
+#                            - Named the routes' counters in the log by the story's ids
 #      Paulinchen  2026-10-31: Offered at the Great Decision the routes the relay grants, in place of a copy of its route rules
 #                            - Told the catch-up whether a lost raid boss battle holds the story
 #                            - Dropped the lift of the refusal of recruits that older worlds' story handed over
@@ -147,58 +149,14 @@ module MGQ_MpWorldStory
   # What the notices call each route.
   ROUTE_NAMES = ["Angelic Dominion", "Monster Realm", "Chaos"]
 
-  # The main story's progress.
-  MAIN_PROGRESS = 1001
-
-  # The routes' progress, by route.
-  ROUTE_VARIABLES = [1141, 1142, 1143]
-
-  # The switches that tell a route was cleared, by route.
-  CLEAR_SWITCHES = [7096, 7097, 7039]
-
-  # Variables whose change moves the story on: the main story, the routes, the Great Decision's
-  # progress and the areas' progress the parts are ordered by.
-  PROGRESS_VARIABLES = [MAIN_PROGRESS] + ROUTE_VARIABLES + [1140, 1003, 1011, 1019, 1021, 1032, 1052, 1063, 1075, 1076, 1136, 1137, 1138, 1139]
-
-  # Switches whose change moves the story on: the bosses of the Monster Lord's Castle and the route
-  # clears.
-  PROGRESS_SWITCHES = [2485, 2486, 2487] + CLEAR_SWITCHES
-
   # How many common events deep progress_ahead? follows the calls of the commands it reads.
   PROGRESS_CALL_DEPTH = 3
 
   # The topic that finds the part a story is in.
   PART_TOPIC = "story.part"
 
-  # The main story's progress the Great Decision sets.
-  GREAT_DECISION = 40
-
   # The part the Great Decision lies in, as part_of names it.
   DECISION_PART = "3"
-
-  # The main story's progress a return to the Great Decision sets.
-  BEFORE_DECISION = 39
-
-  # The common event of the Great Decision, whose choice of the routes the world filters.
-  DECISION_EVENT = 380
-
-  # The Reaper's reset menu after a route's credits, which drops companions, never run in a Raid World.
-  RESET_EVENT = 265
-
-  # The Reaper's offer in Hades to reset time, which calls RESET_EVENT.
-  REAPER_EVENT = 149
-
-  # The game's own reset of the Final Chapter, the global half of a return to the Great Decision.
-  FINAL_RESET_EVENT = 154
-
-  # The game's returns to the Great Decision, with Alice's side and with Ilias's.
-  RETURN_EVENTS = [267, 268]
-
-  # Where a game over returns the player after each return, by side.
-  RETURN_POINTS = [111, 112]
-
-  # The variable where a game over returns the player.
-  GAME_OVER_RETURN = 1002
 
   # The variable a transfer to TRANSFER_RELAY_MAP goes on from, as the game's own returns use it.
   TRANSFER_MAP = 57
@@ -232,15 +190,12 @@ module MGQ_MpWorldStory
   # Where a cleared collab returns the player: the Pocket Castle below its start, facing down.
   COLLAB_RETURN = [228, 24, 27, 2]
 
-  # Where a return to the Great Decision takes the player: the map, x and y.
-  DECISION_PLACE = [407, 25, 25]
-
   # Event commands that run a script, which the returns use to add companions.
   SCRIPT_CODES = [355, 655]
 
   # The game's own endings of the two first routes, which its system switches keep per install and
-  # the world's clear switches stand for in a Raid World.
-  SYSTEM_ENDINGS = { :ed1 => 7096, :ed2 => 7097 }
+  # the world's clear switches stand for in a Raid World, by their place among the clear switches.
+  SYSTEM_ENDINGS = { :ed1 => 0, :ed2 => 1 }
 
   extend MGQ_MpLog
 
@@ -429,7 +384,7 @@ module MGQ_MpWorldStory
   def self.refused(refusals)
     refusals.each do |key, code, value|
       log_once([:refused, key, code], "the relay did not keep #{key} as written (#{code})#{value ? ", it keeps #{value}" : ''}")
-      @route_refused = true if ROUTE_CODES.include?(code) && ROUTE_VARIABLES.any? { |id| key == "v#{id}" }
+      @route_refused = true if ROUTE_CODES.include?(code) && MGQ_MpStoryIds.route_variables.any? { |id| key == "v#{id}" }
     end
   rescue => e
     log("taking the relay's refusals failed: #{e.class}: #{e.message}")
@@ -594,7 +549,7 @@ module MGQ_MpWorldStory
 
     state = @waiting["state"]
     if state && defined?(MGQ_MpWorldOpening)
-      return if MGQ_MpWorldOpening.before_take("p" => MGQ_MpStoryState.decode_value(state["keys"]["v#{MAIN_PROGRESS}"] || "n0").to_i) == :wait
+      return if MGQ_MpWorldOpening.before_take("p" => MGQ_MpStoryState.decode_value(state["keys"]["v#{MGQ_MpStoryIds.main_progress}"] || "n0").to_i) == :wait
     end
 
     waiting = @waiting
@@ -975,7 +930,7 @@ module MGQ_MpWorldStory
     MGQ_MpCoopChoices.missed(after["p"]) if first
     MGQ_MpCoopChoices.story_passed(before["p"], after["p"]) if after["p"] > before["p"]
     route = route_index(after)
-    MGQ_MpCoopChoices.raid_decision(route) if route && route_index(before) != route && after["p"] >= GREAT_DECISION
+    MGQ_MpCoopChoices.raid_decision(route) if route && route_index(before) != route && after["p"] >= MGQ_MpStoryIds.great_decision
   end
 
   # Gives the player the personal half of the world's return to the Great Decision, which the game
@@ -985,9 +940,11 @@ module MGQ_MpWorldStory
   #
   # @param before [Hash] The player's counters before.
   def self.returned(before)
-    side = MGQ_MpStoryState.data_of($game_switches)[MGQ_MpStoryState::ILIAS_CHOSEN] ? 1 : 0
-    @queued = [command(117, [FINAL_RESET_EVENT]), command(122, [GAME_OVER_RETURN, GAME_OVER_RETURN, 0, 0, RETURN_POINTS[side]]),
-               command(122, [TRANSFER_MAP, TRANSFER_MAP, 0, 0, DECISION_PLACE[0]]), command(201, [0, TRANSFER_RELAY_MAP, DECISION_PLACE[1], DECISION_PLACE[2], 8, 2]), command(0, [])]
+    ids = MGQ_MpStoryIds
+    side = MGQ_MpStoryState.data_of($game_switches)[ids.ilias_chosen] ? 1 : 0
+    place = ids.decision_place
+    @queued = [command(117, [ids.final_reset_event]), command(122, [ids.game_over_return, ids.game_over_return, 0, 0, ids.return_points[side]]),
+               command(122, [TRANSFER_MAP, TRANSFER_MAP, 0, 0, place[0]]), command(201, [0, TRANSFER_RELAY_MAP, place[1], place[2], 8, 2]), command(0, [])]
     log("the world went back to the Great Decision from the #{ROUTE_NAMES[route_index(before)]} route: the Final Chapter's reset waits to play once the player is free")
     MGQ_MpOverworldSync.notice("The world's story went back to the Great Decision.")
   end
@@ -1180,10 +1137,10 @@ module MGQ_MpWorldStory
   # @return [Hash] "p", "r1141", "r1142", "r1143" and "clear".
   def self.local_counters(story)
     variables = story[1]
-    counters = { "p" => [variables[MAIN_PROGRESS].to_i, 0].max }
-    route = ROUTE_VARIABLES.index { |id| variables[id].to_i > 0 }
-    ROUTE_VARIABLES.each_with_index { |id, index| counters["r#{id}"] = index == route ? variables[id].to_i : 0 }
-    counters["clear"] = ROUTES.select { |name| story[0][CLEAR_SWITCHES[ROUTES.index(name)]] }
+    counters = { "p" => [variables[MGQ_MpStoryIds.main_progress].to_i, 0].max }
+    route = MGQ_MpStoryIds.route_variables.index { |id| variables[id].to_i > 0 }
+    MGQ_MpStoryIds.route_variables.each_with_index { |id, index| counters["r#{id}"] = index == route ? variables[id].to_i : 0 }
+    counters["clear"] = ROUTES.select { |name| story[0][MGQ_MpStoryIds.clear_switches[ROUTES.index(name)]] }
     counters
   end
 
@@ -1192,7 +1149,8 @@ module MGQ_MpWorldStory
   # @param counters [Hash] The counters, see local_counters.
   # @return [String] Such as "p=40;r1141=12;r1142=0;r1143=0;clear=mr".
   def self.counters_text(counters)
-    "p=#{counters['p']};r1141=#{counters['r1141']};r1142=#{counters['r1142']};r1143=#{counters['r1143']};clear=#{counters['clear'].join(',')}"
+    routes = MGQ_MpStoryIds.route_variables.map { |id| "r#{id}=#{counters["r#{id}"]};" }.join
+    "p=#{counters['p']};#{routes}clear=#{counters['clear'].join(',')}"
   end
 
   # Finds the route under way.
@@ -1200,7 +1158,7 @@ module MGQ_MpWorldStory
   # @param counters [Hash] The counters.
   # @return [Integer, nil] Its place in ROUTES, nil before the Great Decision or back at it.
   def self.route_index(counters)
-    ROUTE_VARIABLES.index { |id| counters["r#{id}"].to_i > 0 }
+    MGQ_MpStoryIds.route_variables.index { |id| counters["r#{id}"].to_i > 0 }
   end
 
   # Finds the part a story is in, as the DLL and the relay count it (StoryParts in MGQOnline.Game):
@@ -1210,7 +1168,7 @@ module MGQ_MpWorldStory
   # @param counters [Hash] The counters; those of the routes may be left out.
   # @return [String] "1", "2", "3", "ad", "mr" or "chaos"; empty when the DLL did not answer.
   def self.part_of(counters)
-    request = { "p" => counters["p"].to_i, "routes" => ROUTE_VARIABLES.map { |id| counters["r#{id}"].to_i } }
+    request = { "p" => counters["p"].to_i, "routes" => MGQ_MpStoryIds.route_variables.map { |id| counters["r#{id}"].to_i } }
     key = [request["p"]] + request["routes"]
     @parts ||= {}
     @parts[key] ||= MGQ_Multiplayer::Bridge.call(PART_TOPIC, request)
@@ -1239,17 +1197,33 @@ module MGQ_MpWorldStory
     !MGQ_MpStoryKeys.shared?(kind, key)
   end
 
+  # Lists the variables whose change moves the story on: the story markers, the Great Decision's
+  # progress and the areas' progress the parts are ordered by.
+  #
+  # @return [Array<Integer>] The variables.
+  def self.progress_variables
+    MGQ_MpStoryIds.markers + [MGQ_MpStoryIds.decision_progress] + MGQ_MpStoryIds.area_progress
+  end
+
+  # Lists the switches whose change moves the story on: the bosses of the Monster Lord's Castle and
+  # the route clears.
+  #
+  # @return [Array<Integer>] The switches.
+  def self.progress_switches
+    MGQ_MpStoryIds.castle_bosses + MGQ_MpStoryIds.clear_switches
+  end
+
   # Reports whether a switch or variable moves the world's story on as it changes: one that tells
-  # how far the story is (PROGRESS_SWITCHES, PROGRESS_VARIABLES) or a variable the story mapping
+  # how far the story is (progress_switches, progress_variables) or a variable the story mapping
   # keeps going only up, as a boss beaten or a quest's step.
   #
   # @param kind [Integer] 0 for a switch, 1 for a variable.
   # @param id [Integer] Its id.
   # @return [Boolean] Whether it does.
   def self.moves_on?(kind, id)
-    return PROGRESS_SWITCHES.include?(id) if kind == 0
+    return progress_switches.include?(id) if kind == 0
 
-    PROGRESS_VARIABLES.include?(id) || MGQ_MpStoryKeys.bit?(1, id, MGQ_MpStoryKeys::ONE_WAY)
+    progress_variables.include?(id) || MGQ_MpStoryKeys.bit?(1, id, MGQ_MpStoryKeys::ONE_WAY)
   end
 
   # Reads the values of the switches and variables that move the world's story on, see moves_on?.
@@ -1260,7 +1234,7 @@ module MGQ_MpWorldStory
     switches = MGQ_MpStoryState.data_of($game_switches)
     table = MGQ_MpStoryKeys.raid_table
     one_way = table ? table.kept_variables.select { |id| MGQ_MpStoryKeys.class_of(1, id, nil, table) & MGQ_MpStoryKeys::ONE_WAY != 0 } : []
-    (PROGRESS_VARIABLES | one_way).map { |id| variables[id].to_i } + PROGRESS_SWITCHES.map { |id| switches[id] ? true : false }
+    (progress_variables | one_way).map { |id| variables[id].to_i } + progress_switches.map { |id| switches[id] ? true : false }
   end
 
   # Reports whether event commands from a place on may move the world's story on: they set a
@@ -1307,7 +1281,7 @@ module MGQ_MpWorldStory
     return unless command && (command.code == 117 || command.code == 102)
     return unless MGQ_MpCoop::Scope.raid?
 
-    changed = if command.code == 117 && command.parameters[0] == RESET_EVENT
+    changed = if command.code == 117 && command.parameters[0] == MGQ_MpStoryIds.reset_event
                 reset_list(list, index)
               elsif decision_choice?(list, command)
                 decision_list(list, index)
@@ -1323,7 +1297,7 @@ module MGQ_MpWorldStory
   # @param command [RPG::EventCommand] The command.
   # @return [Boolean] Whether it is.
   def self.decision_choice?(list, command)
-    event = $data_common_events[DECISION_EVENT]
+    event = $data_common_events[MGQ_MpStoryIds.decision_event]
     command.code == 102 && command.parameters[0].is_a?(Array) && command.parameters[0].size == ROUTES.size && event && list.equal?(event.list) ? true : false
   end
 
@@ -1393,7 +1367,7 @@ module MGQ_MpWorldStory
 
     log("the Reaper's reset menu was called away from a route's credits: left out, the world's story goes on")
     MGQ_MpOverworldSync.notice("Time cannot be reset in a Raid World.")
-    reaper = $data_common_events[REAPER_EVENT]
+    reaper = $data_common_events[MGQ_MpStoryIds.reaper_event]
     call = list[index]
     return list[0...index] + [command(222, [], call.indent)] + list[(index + 1)..-1] if reaper && list.equal?(reaper.list)
 
@@ -1430,17 +1404,19 @@ module MGQ_MpWorldStory
   #
   # @return [Array<RPG::EventCommand>] The commands.
   def self.return_commands
-    side = MGQ_MpStoryState.data_of($game_switches)[MGQ_MpStoryState::ILIAS_CHOSEN] ? 1 : 0
-    event = $data_common_events[RETURN_EVENTS[side]]
+    ids = MGQ_MpStoryIds
+    side = MGQ_MpStoryState.data_of($game_switches)[ids.ilias_chosen] ? 1 : 0
+    event = $data_common_events[ids.return_events[side]]
     list = event && event.list
-    if list && list.any? { |entry| entry.code == 117 && entry.parameters[0] == FINAL_RESET_EVENT } && list.any? { |entry| entry.code == 201 }
+    if list && list.any? { |entry| entry.code == 117 && entry.parameters[0] == ids.final_reset_event } && list.any? { |entry| entry.code == 201 }
       return list.reject { |entry| SCRIPT_CODES.include?(entry.code) }
     end
 
     log("the game's return to the Great Decision differs from the one known, so the world goes back without its scene")
-    [command(117, [FINAL_RESET_EVENT]), command(122, [GAME_OVER_RETURN, GAME_OVER_RETURN, 0, 0, RETURN_POINTS[side]]),
-     command(122, [MAIN_PROGRESS, MAIN_PROGRESS, 0, 0, BEFORE_DECISION]), command(122, [TRANSFER_MAP, TRANSFER_MAP, 0, 0, DECISION_PLACE[0]]),
-     command(201, [0, TRANSFER_RELAY_MAP, DECISION_PLACE[1], DECISION_PLACE[2], 8, 2])]
+    place = ids.decision_place
+    [command(117, [ids.final_reset_event]), command(122, [ids.game_over_return, ids.game_over_return, 0, 0, ids.return_points[side]]),
+     command(122, [ids.main_progress, ids.main_progress, 0, 0, ids.before_decision]), command(122, [TRANSFER_MAP, TRANSFER_MAP, 0, 0, place[0]]),
+     command(201, [0, TRANSFER_RELAY_MAP, place[1], place[2], 8, 2])]
   end
 
   # Reads a system switch of the game's endings in a Raid World: the world's clear switch of that
@@ -1449,7 +1425,7 @@ module MGQ_MpWorldStory
   # @param key [Symbol] The system switch, such as :ed1.
   # @return [Boolean, nil] Whether the world cleared that route, nil for another switch or world.
   def self.world_ending(key)
-    id = SYSTEM_ENDINGS[key]
+    id = SYSTEM_ENDINGS[key] && MGQ_MpStoryIds.clear_switches[SYSTEM_ENDINGS[key]]
     return nil unless id && MGQ_MpCoop::Scope.raid? && $game_switches
 
     MGQ_MpStoryState.data_of($game_switches)[id] ? true : false

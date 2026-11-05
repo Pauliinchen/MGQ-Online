@@ -2,6 +2,7 @@
 //  RaidBars.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Named the bias of a double's exponent
 //      Paulinchen  2026-10-31: Created
 //
 //----------------------------------------------------------------
@@ -212,6 +213,11 @@ public static class RaidBars
     private static long Thousands(int power) => (long)BigInteger.Pow(1000, power);
 
     /// <summary>
+    /// The bias of a double's exponent.
+    /// </summary>
+    private const int DoubleBias = 1023;
+
+    /// <summary>
     /// Writes a non-negative number with one decimal as C's <c>%.1f</c> does: from its exact binary
     /// value, a tie going to the even tenth.
     /// </summary>
@@ -231,8 +237,8 @@ public static class RaidBars
             mantissa |= 1L << 52;
         }
 
-        // The value is mantissa * 2^(exponent - 1075); times ten as a fraction of whole numbers.
-        int shift = exponent - 1075;
+        // The value is mantissa * 2^(exponent - bias - 52); times ten as a fraction of whole numbers.
+        int shift = exponent - DoubleBias - 52;
         BigInteger numerator = (BigInteger)mantissa * 10;
         BigInteger denominator = BigInteger.One;
         if (shift >= 0)

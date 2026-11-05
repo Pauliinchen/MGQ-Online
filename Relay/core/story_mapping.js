@@ -2,6 +2,7 @@
 //  story_mapping.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Named a key outside the story's ids in the example of a refused key
 //      Paulinchen  2026-11-01: Let shared self switches be the whole world's, players behind included
 //      Paulinchen  2026-10-31: Let a personal key be one of the game's working values
 //      Paulinchen  2026-10-28: Filled each table that holds no rows from seed rows, once
@@ -401,7 +402,7 @@ const DEFEAT_RETURNS = Object.freeze({
  * The fields of story_keys: its key, its kind and the options of its kind.
  */
 const KEY_FIELDS = Object.freeze({
-  key: matching(STORY_KEY, "a switch or variable such as s2029 or v1001 (ids of 1 to 99999)"),
+  key: matching(STORY_KEY, "a switch or variable such as s2029 or v1201 (ids of 1 to 99999)"),
   kind: oneOf(Object.keys(KEY_KINDS)),
   // The game's post-defeat processing (common event 3000) writes it, and a frozen fight's undo
   // leaves it as the defeat set it (battles_raid_freeze_data.rbx DEFEAT_WRITES).

@@ -2,6 +2,7 @@
 #  battles_raid_pool.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Named the story's ids in the milestones' markers by the story's table
 #      Paulinchen  2026-10-30: Handed a served fight's pools to the battle server and took them there through C#
 #                            - Reported and synced a fight's turns in C#, keeping the slots' time compares
 #                            - Read the pools from the ledger the DLL and the battle server keep in C#, which counts the own reports and the pushes
@@ -144,29 +145,31 @@ module MGQ_MpRaidPool
   }
 
   # What tells each milestone beaten, by milestone and cap: alternatives split by "|", each a list
-  # of conditions split by "&", a switch on ("s2261") or a variable at least a value ("v1003>=8").
-  # These are the story's own markers, written after the milestone's last fight.
+  # of conditions split by "&", a switch on ("s2261") or a variable at least a value ("v1023>=2").
+  # An id of the story's table goes by its reader in MGQ_MpStoryIds, with its place in a list:
+  # "v{main_progress}>=17" or "s{clear_switches.0}". These are the story's own markers, written
+  # after the milestone's last fight.
   BEATEN = {
-    ["Four bandits", 10] => "v1003>=8",
-    ["Queen Harpy", 15] => "v1011>=4",
-    ["Morrigan", 18] => "v1019>=6",
+    ["Four bandits", 10] => "v{area_progress.0}>=8",
+    ["Queen Harpy", 15] => "v{area_progress.1}>=4",
+    ["Morrigan", 18] => "v{area_progress.2}>=6",
     ["Chrome and Frederica", 20] => "v1023>=2",
-    ["Sylph", 20] => "v1001>=17",
+    ["Sylph", 20] => "v{main_progress}>=17",
     ["Sphinx", 20] => "s2090",
     ["Sara", 20] => "v1028>=6",
     ["Astaroth", 20] => "v1028>=7",
-    ["Gnome", 20] => "v1001>=18",
-    ["Adramelech", 25] => "v1032>=7",
+    ["Gnome", 20] => "v{main_progress}>=18",
+    ["Adramelech", 25] => "v{area_progress.4}>=7",
     ["Bonnie and Ashel", 25] => "s7001",
-    ["Alma Elma, then Granberia", 30] => "v1052>=6",
+    ["Alma Elma, then Granberia", 30] => "v{area_progress.5}>=6",
     ["Mephisto", 30] => "s2268",
     ["Tezcatlipoca", 30] => "v1056>=4",
     ["Gnosis", 30] => "s7005",
     ["Zion", 30] => "s7006",
-    ["Undine", 30] => "v1001>=25",
+    ["Undine", 30] => "v{main_progress}>=25",
     ["Queen Ant", 30] => "s7011",
-    ["Lilith", 35] => "v1063>=13",
-    ["Salamander", 40] => "v1001>=28",
+    ["Lilith", 35] => "v{area_progress.6}>=13",
+    ["Salamander", 40] => "v{main_progress}>=28",
     ["Queen Fairy", 40] => "s2161",
     ["Queen Elf", 43] => "v1070>=3",
     ["Queen Alraune, then Aži Dahāka", 43] => "v1074>=2",
@@ -181,42 +184,42 @@ module MGQ_MpRaidPool
     ["Eden", 55] => "s7015",
     ["Sonya Mazda", 55] => "s7009",
     ["Sonya Mainyu", 55] => "s7010",
-    ["Sonya Chaos", 55] => "v1001>=34",
-    ["Garuda", 60] => "v1001>=37",
-    ["Erubetie", 60] => "v1136>=3",
+    ["Sonya Chaos", 55] => "v{main_progress}>=34",
+    ["Garuda", 60] => "v{main_progress}>=37",
+    ["Erubetie", 60] => "v{area_progress.9}>=3",
     ["Black Dahlia, Black Mamba and Black Rose", 60] => "s2435",
-    ["Tamamo", 61] => "s2485",
-    ["Erubetie", 62] => "s2486",
-    ["Granberia", 63] => "s2487",
-    ["Great Decision", 65] => "v1141>=1|v1142>=1",
-    ["Heaven's Gate", 67] => "v1141>=4",
-    ["Gabriela", 70] => "v1141>=18",
-    ["Uriela, Sabiriel and Fernandez", 75] => "v1141>=30",
-    ["Sariela", 78] => "v1141>=30",
-    ["Laplace", 80] => "v1141>=38",
-    ["Metatronne and Sandalphone", 83] => "v1141>=43",
+    ["Tamamo", 61] => "s{castle_bosses.0}",
+    ["Erubetie", 62] => "s{castle_bosses.1}",
+    ["Granberia", 63] => "s{castle_bosses.2}",
+    ["Great Decision", 65] => "v{route_variables.0}>=1|v{route_variables.1}>=1",
+    ["Heaven's Gate", 67] => "v{route_variables.0}>=4",
+    ["Gabriela", 70] => "v{route_variables.0}>=18",
+    ["Uriela, Sabiriel and Fernandez", 75] => "v{route_variables.0}>=30",
+    ["Sariela", 78] => "v{route_variables.0}>=30",
+    ["Laplace", 80] => "v{route_variables.0}>=38",
+    ["Metatronne and Sandalphone", 83] => "v{route_variables.0}>=43",
     ["Zion (three fights)", 85] => "v1173>=8",
     ["Cosmos", 90] => "v1151>=6",
-    ["Aži Dahāka", 95] => "v1141>=58",
-    ["Marcellus and Black Alice", 95] => "v1141>=62",
-    ["Doppel Lukas and Lucifina", 100] => "v1141>=67|v1142>=71",
-    ["Micaela", 105] => "v1141>=73",
-    ["Ilias", 115] => "s7096",
-    ["Chaos Ilias", 120] => "s7096",
-    ["Queen Eva", 67] => "v1142>=8",
-    ["Malboro Girl, then Kanon", 70] => "s2594&v1142>=25",
-    ["Kanade", 75] => "v1142>=33",
-    ["Tamamo", 80] => "v1142>=34",
-    ["Tamamo", 83] => "v1142>=36",
+    ["Aži Dahāka", 95] => "v{route_variables.0}>=58",
+    ["Marcellus and Black Alice", 95] => "v{route_variables.0}>=62",
+    ["Doppel Lukas and Lucifina", 100] => "v{route_variables.0}>=67|v{route_variables.1}>=71",
+    ["Micaela", 105] => "v{route_variables.0}>=73",
+    ["Ilias", 115] => "s{clear_switches.0}",
+    ["Chaos Ilias", 120] => "s{clear_switches.0}",
+    ["Queen Eva", 67] => "v{route_variables.1}>=8",
+    ["Malboro Girl, then Kanon", 70] => "s2594&v{route_variables.1}>=25",
+    ["Kanade", 75] => "v{route_variables.1}>=33",
+    ["Tamamo", 80] => "v{route_variables.1}>=34",
+    ["Tamamo", 83] => "v{route_variables.1}>=36",
     ["Minagi and Alipheese the 10th", 85] => "v1169>=23",
-    ["Kagetsumugi and her dolls", 90] => "v1142>=47",
-    ["Hiruko", 95] => "v1142>=60",
-    ["Kagetsumugi and Magatsu-Karura, then Black Alice", 95] => "v1142>=63",
-    ["Saja", 105] => "v1142>=81",
-    ["Alipheese", 115] => "s7097",
-    ["Chaos Alipheese", 120] => "s7097",
-    ["Kagetsumugi and her dolls", 125] => "v1143>=4",
-    ["Angolmois", 130] => "v1143>=18",
+    ["Kagetsumugi and her dolls", 90] => "v{route_variables.1}>=47",
+    ["Hiruko", 95] => "v{route_variables.1}>=60",
+    ["Kagetsumugi and Magatsu-Karura, then Black Alice", 95] => "v{route_variables.1}>=63",
+    ["Saja", 105] => "v{route_variables.1}>=81",
+    ["Alipheese", 115] => "s{clear_switches.1}",
+    ["Chaos Alipheese", 120] => "s{clear_switches.1}",
+    ["Kagetsumugi and her dolls", 125] => "v{route_variables.2}>=4",
+    ["Angolmois", 130] => "v{route_variables.2}>=18",
     ["Greedy Papi, Gob, Teeny and Vanilla", 135] => "v1319>=7",
     ["Gabriela and Kanon", 135] => "v1301>=8",
     ["Uriela", 135] => "v1302>=5",
@@ -250,9 +253,12 @@ module MGQ_MpRaidPool
     ["Koron", 260] => "v1345>=5",
     ["Goddess, Demon and Fiend", 275] => "s3079&s3078&s3077",
     ["World Breaker and Judgement", 285] => "s3080&s3081",
-    ["Deus Ex Machina", 300] => "s7039",
-    ["Chaos", nil] => "s7039",
+    ["Deus Ex Machina", 300] => "s{clear_switches.2}",
+    ["Chaos", nil] => "s{clear_switches.2}",
   }
+
+  # A story id a condition of BEATEN names by its reader in MGQ_MpStoryIds, see BEATEN.
+  STORY_ID = /\{(\w+)(?:\.(\d+))?\}/
 
   # Frames counted by tick.
   @clock = 0
@@ -701,15 +707,29 @@ module MGQ_MpRaidPool
 
   # Reports whether the game's values, or a story's, meet one condition of a test of BEATEN.
   #
-  # @param condition [String] Such as "s2261" or "v1003>=8".
+  # @param condition [String] Such as "s2261", "v1023>=2" or "v{main_progress}>=17".
   # @param story [Array, nil] The story's switches and variables; nil for the game's.
   # @return [Boolean] Whether they do; false for a condition that is none.
   def self.condition_met?(condition, story = nil)
     switches, variables = story || [$game_switches, $game_variables]
-    case condition
+    case with_story_ids(condition)
     when /\As(\d+)\z/ then switches[$1.to_i] ? true : false
     when /\Av(\d+)>=(-?\d+)\z/ then variables[$1.to_i].to_i >= $2.to_i
     else false
+    end
+  end
+
+  # Puts the story's ids in for the readers of MGQ_MpStoryIds a condition of BEATEN names them by.
+  #
+  # @param condition [String] Such as "v{route_variables.0}>=18".
+  # @return [String] The condition with the ids; an id of 0 while the DLL does not answer, which
+  #   no condition meets.
+  def self.with_story_ids(condition)
+    condition.gsub(STORY_ID) do
+      name, place = $1, $2
+      id = MGQ_MpStoryIds::NUMBERS.include?(name) || MGQ_MpStoryIds::LISTS.include?(name) ? MGQ_MpStoryIds.send(name) : 0
+      id = id[place.to_i] if place && id.is_a?(Array)
+      id.to_i.to_s
     end
   end
 

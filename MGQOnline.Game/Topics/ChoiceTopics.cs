@@ -2,7 +2,8 @@
 //  ChoiceTopics.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Answered a choice's own keys without the Navy's self switches, which the reviewed key list keeps
+//      Paulinchen  2026-11-05: Read the story's ids from StoryIds
+//                            - Answered a choice's own keys without the Navy's self switches, which the reviewed key list keeps
 //      Paulinchen  2026-11-01: Dropped the steps on a question, which the framework's list and number field take
 //                            - Handed a question's key line as entries
 //                            - Told the scripts the companions an outcome sends away
@@ -336,9 +337,9 @@ public static class ChoiceTopics
         {
             { "branches", branches },
             { "reads", new RubyHash { { "s", Ints(ChoiceTable.ReadSwitches) }, { "v", Ints(ChoiceTable.ReadVariables) }, { "roster", Ints(ChoiceTable.ReadRoster) } } },
-            { "great_decision", ChoiceTable.GreatDecision },
-            { "routes", Ints(ChoiceTable.Routes) },
-            { "chaos_start", Ints(ChoiceTable.ChaosStart) },
+            { "great_decision", StoryIds.GreatDecision },
+            { "routes", Ints(StoryIds.RouteVariables) },
+            { "chaos_start", Ints(StoryIds.ChaosStart) },
             { "decision", decision },
             { "offer_frames", ChoiceTable.OfferFrames },
         };

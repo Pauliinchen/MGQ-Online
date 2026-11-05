@@ -2,7 +2,9 @@
 #  world_catchup.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Left found key items and their uses to the story replay, and noted only a Makina as found for the world, which Makina by level reads
+#      Paulinchen  2026-11-05: Read the story's ids from story_ids.rbx
+#                            - Settled a variable the game uses as a place only on the map of the event that sets it, by the one place rule
+#                            - Left found key items and their uses to the story replay, and noted only a Makina as found for the world, which Makina by level reads
 #                            - Told the DLL whether a replay hands out a companion, with the world's companion sharing and the companion's start level
 #                            - Held a companion of a replay that went the player's own way back for the join's gate, as an own event's
 #      Paulinchen  2026-11-01: Noted every key item the player gains as found for the world too, and handed the DLL the items the save held
@@ -150,9 +152,6 @@ module MGQ_MpWorldCatchup
 
   # Luka, who never joins nor leaves.
   HERO = 1
-
-  # The variable that counts the playthroughs, at 0 on the first.
-  PLAYTHROUGH = 912
 
   # The kinds of what the catch-up hands out by level, in the order the World overview lists them
   # within a level.
@@ -801,17 +800,18 @@ module MGQ_MpWorldCatchup
   end
 
   # Reports whether a setting may apply where the player stands: the random encounters anywhere, a
-  # variable of the player's own only on the map of the event that sets it.
+  # variable the game uses as a place (MGQ_MpStoryIds.place?) only on the map of the event that
+  # sets it.
   #
-  # Such a variable tells a place, as where a game over returns the player, so a value the world's
-  # story set elsewhere could send them into another player's scene with no way out.
+  # A place the world's story set elsewhere, as where a game over returns the player, could send
+  # them into another player's scene with no way out.
   #
   # @param kind [String] "encounters", "v" or "s".
   # @param id [Integer] The variable.
   # @param site [String] The event that sets it.
   # @return [Boolean] Whether it may.
   def self.at_site?(kind, id, site)
-    return true unless kind == "v" && MGQ_MpStoryState.personal_variable?(id)
+    return true unless kind == "v" && MGQ_MpStoryIds.place?(id)
 
     site.to_s =~ /\Amap:(\d+):/ && $1.to_i == $game_map.map_id ? true : false
   end
@@ -913,7 +913,7 @@ module MGQ_MpWorldCatchup
   # @return [nil] Nothing to tell among the gifts.
   def self.change_actors(actor_id, site, calls)
     interpreter = Game_Interpreter.new
-    first = $game_variables[PLAYTHROUGH].to_i == 0
+    first = $game_variables[MGQ_MpStoryIds.playthrough].to_i == 0
     ran = calls.map do |name, ids, once|
       name = name.to_sym
       next if once && !first
@@ -1181,9 +1181,9 @@ module MGQ_MpWorldCatchup
     MGQ_MpStoryState.note_pick(side)
     note("side" => side.to_s)
     @audit_due = true
-    return log("the player's story is on a route, whose side switches stay") if MGQ_MpStoryState::ROUTE_MARKERS.any? { |id| $game_variables[id].to_i > 0 }
+    return log("the player's story is on a route, whose side switches stay") if MGQ_MpStoryIds.route_variables.any? { |id| $game_variables[id].to_i > 0 }
 
-    MGQ_MpStoryState::SIDE_SWITCHES.each { |id| $game_switches[id] = id == (side == :alice ? MGQ_MpStoryState::ALICE_CHOSEN : MGQ_MpStoryState::ILIAS_CHOSEN) }
+    MGQ_MpStoryIds.side_switches.each { |id| $game_switches[id] = id == (side == :alice ? MGQ_MpStoryIds.alice_chosen : MGQ_MpStoryIds.ilias_chosen) }
     companion = keys && (keys["side_companions"] || {})[side.to_s]
     bring_in(companion, nil, "you took #{name} along") if companion
   rescue => e
@@ -1200,7 +1200,7 @@ module MGQ_MpWorldCatchup
     return if @orbs_due || @orbs_played || !@orbs_now
 
     @orbs_due = true
-    log("the player holds every orb of Part 2 at #{$game_variables[MGQ_MpWorldStory::MAIN_PROGRESS]}: common event #{keys['orb_event']} waits to play once the player is free")
+    log("the player holds every orb of Part 2 at #{$game_variables[MGQ_MpStoryIds.main_progress]}: common event #{keys['orb_event']} waits to play once the player is free")
   end
 
   # Plays the orbs' event once the player is free on the map, unless the story moved on meanwhile.

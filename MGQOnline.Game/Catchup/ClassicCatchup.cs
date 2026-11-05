@@ -2,7 +2,8 @@
 //  ClassicCatchup.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Created
+//      Paulinchen  2026-11-05: Read the story's ids from StoryIds
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -109,7 +110,7 @@ public static class ClassicCatchup
         }
 
         int route = part is null ? -1 : StoryParts.Routes.ToList().IndexOf(part);
-        return new StoryMark(StoryKey.Variable(route < 0 ? StoryValues.MainProgress : StoryValues.RouteVariables[route]), at);
+        return new StoryMark(StoryKey.Variable(route < 0 ? StoryIds.MainProgress : StoryIds.RouteVariables[route]), at);
     }
 
     /// <summary>

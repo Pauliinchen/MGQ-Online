@@ -26,6 +26,7 @@ core/story_catchup.js  the catch-up's tables beside the story mapping, in the sa
 core/story_catchup.test.js tests of the catch-up's tables
 core/story_tracks.js   a Raid World's story as the relay's own on tracks: requests by the mapping's kinds, pushes, telling locks, players behind
 core/story_tracks.test.js tests of the story tracks
+core/story_ids.json    the story's ids, which the generator writes from MGQOnline.Game's StoryIds (`dotnet run --project MGQOnline.Data.Generator -- story-ids Relay/core/story_ids.json`); story.js and story_tracks.js need it beside them
 core/releases.js       the mod's own releases: the update notice and the release control the admins set
 core/releases.test.js  tests of the update notice and the release control
 core/migration.js      everything a relay keeps, handed to its admins for another relay to take over
@@ -473,7 +474,7 @@ Up to 0.6.6.1 relay r1 ran on the free Workers plan at `relay.mgqmp.workers.dev`
 ## Moving to a rented server
 
 1. On the server, install Node.js 24 or later (the SQLite database needs `node:sqlite`) and [Caddy](https://caddyserver.com), and point a domain at the server.
-2. Copy `core/`, `node/`, `seed/`, `package.json` and `package-lock.json`, then run `npm install --omit=dev`.
+2. Copy `core/` (with `core/story_ids.json`, which `core/story.js` and `core/story_tracks.js` need beside them), `node/`, `seed/`, `package.json` and `package-lock.json`, then run `npm install --omit=dev`.
 3. Start `node node/server.js` as a systemd service, with these environment variables:
    - `MGQ_RELAY_DB=/var/lib/mgq-relay/relay.sqlite`: the SQLite database the worlds, their starting saves, the mod catalog, its uploaded zips, the trades, the Raid Worlds' stories, their story tracks and their boss pools, the release control, the story mapping and the Raid designs are kept in, made on the first start (with its `-wal` and `-shm` files beside it, and `relay.design-seq`, the highest Raid design seq it handed out, which tells it a restored backup apart). Without it everything stays in memory and is gone with the process. Back the file up with `sqlite3 relay.sqlite ".backup copy.sqlite"`, never by copying it while the relay runs; `ops/backup-relay.sh` with its systemd timer does so every night and keeps 14 copies, see [ops/DEPLOY_DESIGNS.md](ops/DEPLOY_DESIGNS.md).
    - `ADMINS`: the admins' player ids, as above.
