@@ -2,7 +2,8 @@
 #  world_overview_pages.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Read the Chaos route's variable from story_ids.rbx
+#      Paulinchen  2026-11-05: Read the raid bosses' tiers and the troop of a pool's boss from the DLL's table
+#                            - Read the Chaos route's variable from story_ids.rbx
 #                            - Counted the pages' reads by the bridge's frame
 #      Paulinchen  2026-11-01: Showed the pages in the Mod Framework's page views
 #                            - Drew the portraits itself from the faces and figures the Mod Framework finds
@@ -142,7 +143,7 @@ module MGQ_MpWorldOverview
     bosses = {}
     (sections.map { |_, names| names }.flatten + pooled).uniq.each { |name| bosses[name] = [section_of(name), tier_of(name)] }
     tiers = {}
-    MGQ_MpRaidBosses::TIERS.each { |tier, stats| tiers[tier] = stats.map { |stat, factor| [stat.to_s, factor.to_s] } }
+    MGQ_MpRaidBosses.tiers.each { |tier, stats| tiers[tier] = stats.map { |stat, factor| [stat.to_s, factor.to_s] } }
     request = { "seats" => world ? world.seats.to_i : 0, "story" => story, "main" => quest_text(main_quest), "sections" => sections, "bosses" => bosses, "tiers" => tiers }
     data = model_of(MGQ_Multiplayer::Bridge.call(WORLD_TOPIC, request))
     data.head.title = world_name
@@ -568,7 +569,7 @@ module MGQ_MpWorldOverview
   # @param name [String] The pool's boss, see MGQ_MpRaidPool.boss_key.
   # @return [String, nil] The section, nil for a boss the tables lack.
   def self.section_of(name)
-    MGQ_MpRaidBosses.section(name) || MGQ_MpRaidBosses.section(MGQ_MpRaidPool.troop_of_key(name))
+    MGQ_MpRaidBosses.section(name) || MGQ_MpRaidBosses.section(MGQ_MpRaidBosses.troop_of_key(name))
   end
 
   # Finds the tier of a raid boss by its name, as section_of finds its section.
@@ -576,7 +577,7 @@ module MGQ_MpWorldOverview
   # @param name [String] The boss's name.
   # @return [Integer, nil] Its tier, nil for a name the tables lack.
   def self.tier_of(name)
-    MGQ_MpRaidBosses.key_tier(name) || MGQ_MpRaidBosses.tier(MGQ_MpRaidPool.troop_of_key(name))
+    MGQ_MpRaidBosses.key_tier(name) || MGQ_MpRaidBosses.tier(MGQ_MpRaidBosses.troop_of_key(name))
   end
 
   # Makes the page view of an own page, Amira's Library picture faintly behind the Quests page.

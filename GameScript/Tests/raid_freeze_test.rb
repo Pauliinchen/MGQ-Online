@@ -2,7 +2,9 @@
 #  raid_freeze_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Checked that a value written over that the bridge cannot carry stays with the scripts
+#      Paulinchen  2026-11-05: Asked the stand-in of the world's list why a fight is over, and answered a defeat's refusal and undo with fixed values per case
+#                            - Asked the stand-in of the pools whether a troop's milestone is beaten
+#                            - Checked that a value written over that the bridge cannot carry stays with the scripts
 #                            - Handed and expected sites as plain values, and checked that the DLL reads the sites of an earlier release's save once
 #                            - Read the scripts' clock from $frame
 #      Paulinchen  2026-10-28: Answered the freeze's tables as the DLL's events database does
@@ -573,8 +575,8 @@ module MGQ_MpRaidPool
   def self.fight; $fight; end
   # Answers a boss's key.
   def self.key_of(troop); { 868 => "Sonya Mazda", 807 => "Spider Princess", 870 => "Sonya Chaos" }[troop.to_i] || "Boss #{troop}"; end
-  # Answers whether a milestone is beaten.
-  def self.beaten?(boss); $beaten.include?(boss.milestone); end
+  # Answers whether a troop's milestone is beaten.
+  def self.beaten?(troop, _story = nil); $beaten.include?(MGQ_MpRaidBosses.at(troop).milestone); end
   # Answers whether a Hades rematch runs: $hades.
   def self.hades?; $hades; end
   # Answers a boss's name.
@@ -613,7 +615,8 @@ module FreezeTables
   DEFEAT_VARIABLES = [11]
 end
 # Stands in for the world's entries of frozen fights: $entries by troop, notes kept in $noted, the
-# troops whose fight ended for the world in $final.
+# troops whose fight ended for the world in $final, those whose milestone $beaten names over too,
+# and the battles won in $won.
 module MGQ_MpWorldFreeze
   # Answers the world's entry of a troop.
   def self.entry(troop); $entries[troop.to_i]; end
@@ -621,6 +624,17 @@ module MGQ_MpWorldFreeze
   def self.note(entry); $noted << entry; true; end
   # Answers whether a troop's fight ended for the world.
   def self.final?(troop); ($final || []).include?(troop.to_i); end
+  # Answers why fights are over, as the DLL's one decision would for these stand-ins.
+  def self.over(troops)
+    found = {}
+    troops.each do |troop|
+      found[troop.to_i] = "the fight ended for the world before, for good" if final?(troop)
+      found[troop.to_i] ||= "the player's story beat it" if MGQ_MpRaidPool.beaten?(troop)
+    end
+    found
+  end
+  # Notes a battle won.
+  def self.won(troop); ($won ||= []) << troop.to_i; end
 end
 # Stands in for the world's story of world $world: switch 22 and the self switch "chest" are the
 # player's own.
@@ -743,6 +757,11 @@ $data_common_events[347] = RPG::CommonEvent.new(347, [
 # other music and the transfer to Hades.
 CHAIN = [c(121, 0, 22, 22, 1), c(121, 0, 31, 31, 1), c(122, 0, 11, 11, 0, 0, 3), c(901, 0), c(201, 0, 0, 154, 5, 5, 2), c(0, 0)]
 
+# What the DLL answers of the keys the defeats below change: the values the event set before the
+# battle go back to their start values, the others to their values at the defeat, a self switch
+# named by no id; the player's own and those the post-defeat processing writes itself it leaves out.
+UNDO = { [1, 1001] => "start", [1, 1075] => "start", [1, 1020] => "start", [0, 2307] => "was", [2, 0] => "was" }
+
 # Starts the game's objects anew, on map 138 at 32,9 facing up, in world w1's story.
 def reset
   $game_switches = Game_Switches.new
@@ -772,6 +791,8 @@ def reset
   $bgm_pos = 0
   [$entries = {}, $noted = [], $notices = [], $ran = [], $executed = [], $played = [], $beaten = [], $walls = []]
   $log.clear
+  $raid_answers.clear
+  $raid_answers.undo = UNDO
   MGQ_MpRaidFreeze.forget
   $game_map.setup(138)
   $game_player.moveto(32, 9)
@@ -1018,9 +1039,11 @@ $game_switches[4] = true
 $game_variables[1075] = 14
 fight_event(13)
 $memory = true
+$raid_answers.defeat = "a replay of the Library"
 BattleManager.process_defeat
-check("a lost replay of the Library puts nothing back and its record goes",
-      [freeze.holding_writes?, freeze.record_for(868), $log.grep(/puts nothing back: a replay of the Library; its record goes/).size], [false, nil, 1])
+check("a lost replay of the Library tells the DLL so, puts nothing back as it answers, and its record goes",
+      [$raid_answers.asked("freeze.defeat").last["library"], freeze.holding_writes?, freeze.record_for(868), $log.grep(/puts nothing back: a replay of the Library; its record goes/).size],
+      [true, false, nil, 1])
 
 # A fight inside a choice, a common event's branch and another's loop: frames by depth, the
 # resume hands each common event its place.
@@ -1089,8 +1112,9 @@ DataManager.extract_save_contents(DataManager.make_save_contents)
 frames(3)
 check("nor one whose event's start values are unknown, as after a load", [freeze.record_for(868), $log.grep(/the story's values at its event's start are unknown/).size], [nil, 1])
 $game_variables[1075] = 16
+$raid_answers.defeat = "the story's values at its event's start are unknown"
 lose(SONYA_DEFEAT)
-check("whose defeat then puts nothing back, as the game's own", [$game_variables[1075], $log.grep(/puts nothing back: the story's values at its event's start are unknown/).size], [12, 1])
+check("whose defeat then puts nothing back, as the DLL answers once told the start is unknown", [$game_variables[1075], $log.grep(/puts nothing back: the story's values at its event's start are unknown/).size], [12, 1])
 
 # The game's retry drops the undo; the retried battle's loss undoes with the first battle's values.
 reset
@@ -1144,6 +1168,7 @@ check("an earlier phase's defeat goes back to the event's start, with no record 
   $kind = kind
   $fight = fight
   $game_variables[1075] = 14
+  $raid_answers.undo = UNDO.merge([1, 1075] => "was")
   BattleManager.setup(868, false, false)
   $scene = Scene_Battle.new
   lose(SONYA_DEFEAT)
@@ -1298,7 +1323,7 @@ $beaten << "Sonya Mazda"
 check("a record of a boss the story beat is no record to show, though it stays until the next look", [freeze.records, freeze.record_for(868)["state"]], [[], "frozen"])
 $frame += MGQ_MpRaidFreeze::CHECK_FRAMES
 frames(1)
-check("which drops it", [freeze.record_for(868), $log.grep(/dropped the record of troop 868: the player's story beat its boss/).size], [nil, 1])
+check("which drops it", [freeze.record_for(868), $log.grep(/dropped the record of troop 868: the player's story beat it/).size], [nil, 1])
 $beaten.clear
 $game_map.setup(138)
 fight_event(13)
@@ -1307,17 +1332,15 @@ $world = "w2"
 check("another world's story reads no records", [freeze.records, freeze.record_for(868)], [[], nil])
 check("and starts the field anew for itself", $game_system.instance_variable_get(MGQ_MpRaidFreeze::FIELD)["world"], "w2")
 
-# A won battle against a troop's pools ends the world's frozen fight against it at once, until the
-# title.
+# A won battle against a troop's pools tells the world's list, which ends its frozen fight at once.
 reset
+$won = []
 $game_switches[4] = true
 $game_variables[1075] = 14
 fight_event(13)
-check("a fight not yet won ends nothing", freeze.won?(868), false)
+check("a fight not yet won tells nothing", $won, [])
 win
-check("a won battle against the pools is noted", [freeze.won?(868), $log.grep(/won the battle against troop 868: the world's frozen fight against it ends/).size], [true, 1])
-freeze.forget
-check("and forgotten at the title", freeze.won?(868), false)
+check("a won battle against the pools is told to the world's list", [$won, $log.grep(/won the battle against troop 868: the world's frozen fight against it ends/).size], [[868], 1])
 
 # A frozen fight the save keeps is told to the world once after the title, unless its list holds it.
 reset

@@ -2,7 +2,11 @@
 #  battles_raid_pool.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Told the boss battle a side battle fights and the invite's pool as values, the DLL writing them
+#      Paulinchen  2026-11-05: Left the Hades rematch's check to the DLL's rules, which a lost battle's defeat asks too
+#                            - Left the share a pool gained back to the DLL's ledger, which alone counts it
+#                            - Asked the DLL which battles fight a pool and why not, whether a story beat a boss, which pools a troop has and whether they are empty, in place of deciding here
+#                            - Told the world plainly when a refight of a boss it beat already is won at once
+#                            - Told the boss battle a side battle fights and the invite's pool as values, the DLL writing them
 #                            - Handed a fight's enemies to C# as values and fetched the pools through a topic
 #                            - Took the pools' HP once the game's own events before the battle ran
 #                            - Checked the troop's pages once more right after the pools' HP, so a phase the pools' HP meets begins before anyone acts
@@ -52,7 +56,7 @@
 #----------------------------------------------------------------
 
 # The raid bosses of a Raid World: each story boss is one fight the whole world shares, its enemies'
-# stats raised by the factors of its tier (MGQ_MpRaidBosses::TIERS). Its pool at the relay
+# stats raised by the factors of its tier (MGQ_MpRaidBosses.tiers). Its pool at the relay
 # (Relay/core/bosses.js) keeps how much of its HP is left, as a share of its max, and refills by
 # the share a minute the relay names. Every battle against the boss fights the same HP: as its
 # actions end, at most every two seconds, and at each command phase the battle reports what it
@@ -65,8 +69,9 @@
 # battle server's core with what the relay tells the server.
 #
 # A battle fights a pool when the player plays the story of a Raid World, the event of the map
-# started it with its battle command, and its troop is the last phase of a boss fight of
-# MGQ_MpRaidBosses whose milestone the story has not beaten; a guest of such a battle fights it with
+# started it with its battle command, and its troop is the last phase of a boss fight whose
+# milestone the story has not beaten, as the DLL's rules decide (MGQOnline.Game's BossRules, topic
+# KIND_TOPIC, with the story values MGQ_MpRaidBosses.facts hands); a guest of such a battle fights it with
 # its host (see note_invite) and reports once it takes the battle over. A player near a boss battle
 # that takes nobody in may fight the same pool in a side battle of their own (start_side). Classic
 # worlds are never touched.
@@ -98,15 +103,17 @@ module MGQ_MpRaidPool
   # The topic that takes what the starter wrote on the battle server.
   FIGHT_IMPORT_TOPIC = "raid.fight.import"
 
+  # The topic that decides how a battle fights a pool, see ask.
+  KIND_TOPIC = "raid.kind"
+
+  # The topic that tells what the rules say of troops, see troop_facts.
+  TROOPS_TOPIC = "raid.troops"
+
+  # The topic that lists the level caps of the milestones a story beat, see beaten_caps.
+  CAPS_TOPIC = "raid.caps"
+
   # Frames before the pools' fetch is tried again after the DLL did not start it.
   FETCH_RETRY_FRAMES = 120
-
-  # The switch the Hades rematches turn on around their battles.
-  HADES_SWITCH = 97
-
-  # The map of the Hades rematch hall, whose events start the rematches before they turn
-  # HADES_SWITCH on.
-  HADES_MAP = 576
 
   # The switch the Colosseum's battles turn on.
   COLOSSEUM_SWITCH = 87
@@ -119,10 +126,6 @@ module MGQ_MpRaidPool
   # boss whose rewards the player got already answers no to.
   REWARD_CHECKS = [:enable_get_exp?, :enable_get_gold?, :enable_get_drop?]
 
-  # Longest key of a boss, which leaves room for the enemy's number the relay's key of one enemy of
-  # several adds.
-  MAX_KEY_LENGTH = 60
-
   # The field this script adds to the state the player's game tells the others: the troop and enemy
   # rates of the boss battle the player hosts, which a side battle fights (see state_fields).
   STATE_FIELD = "rpb"
@@ -133,146 +136,11 @@ module MGQ_MpRaidPool
   # Frames a message of this script shows, five seconds.
   NOTICE_FRAMES = 300
 
-  # Names of the fights a milestone lets the player take in any order, by troop: each has a pool of
-  # its own, while the milestone is beaten only once all are.
-  FIGHTS = {
-    2016 => "Sisel", 2017 => "EX-Kyubi", 2018 => "Frere", 2019 => "Bloody Dragon",
-    2095 => "Envious Lily", 2096 => "Wrathful Cow Demon Queen", 2097 => "Gluttonous Cassandra",
-    2099 => "Lustful Witch", 2102 => "Prideful Fatima",
-    2211 => "Fiend", 2212 => "Goddess", 2213 => "Demon",
-  }
-
-  # Last phases that never count, by troop, with why: their events set the route for the whole
-  # world.
-  UNPOOLED = {
-    1507 => "the Great Decision sets the world's route",
-    1509 => "the Great Decision sets the world's route",
-  }
-
-  # What tells each milestone beaten, by milestone and cap: alternatives split by "|", each a list
-  # of conditions split by "&", a switch on ("s2261") or a variable at least a value ("v1023>=2").
-  # An id of the story's table goes by its reader in MGQ_MpStoryIds, with its place in a list:
-  # "v{main_progress}>=17" or "s{clear_switches.0}". These are the story's own markers, written
-  # after the milestone's last fight.
-  BEATEN = {
-    ["Four bandits", 10] => "v{area_progress.0}>=8",
-    ["Queen Harpy", 15] => "v{area_progress.1}>=4",
-    ["Morrigan", 18] => "v{area_progress.2}>=6",
-    ["Chrome and Frederica", 20] => "v1023>=2",
-    ["Sylph", 20] => "v{main_progress}>=17",
-    ["Sphinx", 20] => "s2090",
-    ["Sara", 20] => "v1028>=6",
-    ["Astaroth", 20] => "v1028>=7",
-    ["Gnome", 20] => "v{main_progress}>=18",
-    ["Adramelech", 25] => "v{area_progress.4}>=7",
-    ["Bonnie and Ashel", 25] => "s7001",
-    ["Alma Elma, then Granberia", 30] => "v{area_progress.5}>=6",
-    ["Mephisto", 30] => "s2268",
-    ["Tezcatlipoca", 30] => "v1056>=4",
-    ["Gnosis", 30] => "s7005",
-    ["Zion", 30] => "s7006",
-    ["Undine", 30] => "v{main_progress}>=25",
-    ["Queen Ant", 30] => "s7011",
-    ["Lilith", 35] => "v{area_progress.6}>=13",
-    ["Salamander", 40] => "v{main_progress}>=28",
-    ["Queen Fairy", 40] => "s2161",
-    ["Queen Elf", 43] => "v1070>=3",
-    ["Queen Alraune, then Aži Dahāka", 43] => "v1074>=2",
-    ["Queen Mermaid", 45] => "v1071>=3",
-    ["Spider Princess", 47] => "v1072>=3",
-    ["Carmilla", 47] => "s2252",
-    ["Elizabeth", 47] => "s2253",
-    ["Queen Vampire", 50] => "v1073>=3",
-    ["La Croix's zombies", 50] => "s2266",
-    ["Black Dahlia, Black Mamba and Black Rose", 55] => "v1069>=9",
-    ["Black Alice", 65] => "s2261",
-    ["Eden", 55] => "s7015",
-    ["Sonya Mazda", 55] => "s7009",
-    ["Sonya Mainyu", 55] => "s7010",
-    ["Sonya Chaos", 55] => "v{main_progress}>=34",
-    ["Garuda", 60] => "v{main_progress}>=37",
-    ["Erubetie", 60] => "v{area_progress.9}>=3",
-    ["Black Dahlia, Black Mamba and Black Rose", 60] => "s2435",
-    ["Tamamo", 61] => "s{castle_bosses.0}",
-    ["Erubetie", 62] => "s{castle_bosses.1}",
-    ["Granberia", 63] => "s{castle_bosses.2}",
-    ["Great Decision", 65] => "v{route_variables.0}>=1|v{route_variables.1}>=1",
-    ["Heaven's Gate", 67] => "v{route_variables.0}>=4",
-    ["Gabriela", 70] => "v{route_variables.0}>=18",
-    ["Uriela, Sabiriel and Fernandez", 75] => "v{route_variables.0}>=30",
-    ["Sariela", 78] => "v{route_variables.0}>=30",
-    ["Laplace", 80] => "v{route_variables.0}>=38",
-    ["Metatronne and Sandalphone", 83] => "v{route_variables.0}>=43",
-    ["Zion (three fights)", 85] => "v1173>=8",
-    ["Cosmos", 90] => "v1151>=6",
-    ["Aži Dahāka", 95] => "v{route_variables.0}>=58",
-    ["Marcellus and Black Alice", 95] => "v{route_variables.0}>=62",
-    ["Doppel Lukas and Lucifina", 100] => "v{route_variables.0}>=67|v{route_variables.1}>=71",
-    ["Micaela", 105] => "v{route_variables.0}>=73",
-    ["Ilias", 115] => "s{clear_switches.0}",
-    ["Chaos Ilias", 120] => "s{clear_switches.0}",
-    ["Queen Eva", 67] => "v{route_variables.1}>=8",
-    ["Malboro Girl, then Kanon", 70] => "s2594&v{route_variables.1}>=25",
-    ["Kanade", 75] => "v{route_variables.1}>=33",
-    ["Tamamo", 80] => "v{route_variables.1}>=34",
-    ["Tamamo", 83] => "v{route_variables.1}>=36",
-    ["Minagi and Alipheese the 10th", 85] => "v1169>=23",
-    ["Kagetsumugi and her dolls", 90] => "v{route_variables.1}>=47",
-    ["Hiruko", 95] => "v{route_variables.1}>=60",
-    ["Kagetsumugi and Magatsu-Karura, then Black Alice", 95] => "v{route_variables.1}>=63",
-    ["Saja", 105] => "v{route_variables.1}>=81",
-    ["Alipheese", 115] => "s{clear_switches.1}",
-    ["Chaos Alipheese", 120] => "s{clear_switches.1}",
-    ["Kagetsumugi and her dolls", 125] => "v{route_variables.2}>=4",
-    ["Angolmois", 130] => "v{route_variables.2}>=18",
-    ["Greedy Papi, Gob, Teeny and Vanilla", 135] => "v1319>=7",
-    ["Gabriela and Kanon", 135] => "v1301>=8",
-    ["Uriela", 135] => "v1302>=5",
-    ["Kanade", 140] => "v1302>=7",
-    ["Hiruko", 140] => "v1304>=5",
-    ["Magatsu-Omikami", 145] => "v1307>=3",
-    ["Apiro Lagos", 147] => "v1305>=6",
-    ["Zion and Laplace", 151] => "v1308>=8",
-    ["Sigrdrifa", 153] => "v1308>=11",
-    ["Metatronne and Sandalphone, then Singularity", 155] => "v1308>=13",
-    ["Sisel, EX-Kyubi, Frere and Bloody Dragon", 160] => "s3030&s3031&s3032&s3033",
-    ["Saja", 168] => "v1312>=3",
-    ["World Drown", 175] => "v1313>=5",
-    ["Cosmos", 180] => "v1315>=6",
-    ["No Life King", 185] => "v1316>=11",
-    ["Angolmois", 190] => "v1314>=3",
-    ["Hiruko, Kanon and Kanade", 195] => "v1317>=3",
-    ["Baal Zebub", 203] => "v1318>=10",
-    ["Seven Deadly Sins vessels", 210] => "v1328>=6&v1331>=5&v1329>=4&v1332>=5&v1326>=4",
-    ["Greedy, Envious and Slothful Eva", 213] => "v1325>=11",
-    ["Seven Deadly Sins", 215] => "v1325>=12",
-    ["The All-Knowing", 220] => "v1334>=4",
-    ["Agaliarept", 225] => "v1373>=13",
-    ["Echidna Queen", 228] => "v1335>=5",
-    ["Cthulhu", 230] => "v1336>=5",
-    ["Dimensional Eroder", 235] => "v1338>=4",
-    ["Star Eater", 240] => "v1339>=5",
-    ["Black Alice", 245] => "v1342>=5",
-    ["Idea Lukas", 250] => "v1342>=5",
-    ["EX Sonya", 255] => "v1343>=3",
-    ["Koron", 260] => "v1345>=5",
-    ["Goddess, Demon and Fiend", 275] => "s3079&s3078&s3077",
-    ["World Breaker and Judgement", 285] => "s3080&s3081",
-    ["Deus Ex Machina", 300] => "s{clear_switches.2}",
-    ["Chaos", nil] => "s{clear_switches.2}",
-  }
-
-  # A story id a condition of BEATEN names by its reader in MGQ_MpStoryIds, see BEATEN.
-  STORY_ID = /\{(\w+)(?:\.(\d+))?\}/
-
   # The bridge's frame the pools were last read from the DLL at.
   @read_at = 0
 
   # The world's pools by their key, as the ledger told them at the last read.
   @pools = {}
-
-  # The share of a pool's max every pool gains back a minute, as the ledger told it.
-  @regen = 0.0
 
   # The bosses already told defeated for the whole world, by their key.
   @announced = {}
@@ -303,14 +171,13 @@ module MGQ_MpRaidPool
 
   # A pool as the player's game knows it.
   #
-  # @!attribute left [Float] The share of its max HP left at :at, 0 to 1.
+  # @!attribute left [Float] The share of its max HP left as the ledger last told it, 0 to 1.
   # @!attribute max [Integer] Its max HP as the relay shows it, 0 while unknown.
   # @!attribute defeated [Boolean] Whether a battle emptied it, which lasts until an admin resets it.
   # @!attribute by [String, nil] Who emptied it.
-  # @!attribute at [Time] When :left held.
-  Pool = Struct.new(:left, :max, :defeated, :by, :at)
+  Pool = Struct.new(:left, :max, :defeated, :by)
 
-  # The stats a boss's tier raises (MGQ_MpRaidBosses::TIERS) of the battle's own enemies, for the
+  # The stats a boss's tier raises (MGQ_MpRaidBosses.tiers) of the battle's own enemies, for the
   # pools and for the tiers outside Raid Worlds (battles_raid_tiers.rbx) alike: one wrap of each
   # stat of Game_Enemy, with the tier's factors kept for the battle.
   #
@@ -356,7 +223,7 @@ module MGQ_MpRaidPool
       return if @tier && tier == @tier
 
       @tier = tier
-      @factors = MGQ_MpRaidBosses::TIERS.fetch(tier, {}).reject { |_stat, factor| factor == 1 }
+      @factors = MGQ_MpRaidBosses.tiers.fetch(tier, {}).reject { |_stat, factor| factor == 1 }
     end
 
     # Reports whether an enemy has its tier's stats.
@@ -410,7 +277,6 @@ module MGQ_MpRaidPool
     @tried_at = 0
     @world = nil
     @pools = {}
-    @regen = 0.0
     Stats.forget
     @announced = {}
     MGQ_Multiplayer::Bridge.call(FIGHT_CLOSE_TOPIC)
@@ -446,17 +312,6 @@ module MGQ_MpRaidPool
   # @return [Hash{String => Pool}] The pools by their key, see Pool.
   def self.pools
     @pools.dup
-  end
-
-  # Finds the share of a pool's max HP left now, with what it gained back since the ledger told it.
-  #
-  # @param pool [Pool] The pool.
-  # @param now [Time] The moment.
-  # @return [Float] The share, 0 to 1.
-  def self.left_now(pool, now = Time.now)
-    return 0.0 if pool.defeated
-
-    [pool.left.to_f + @regen * [now - pool.at, 0].max / 60.0, 1.0].min
   end
 
   # Finds an enemy's HP for a share of its max HP: at least 1 while any is left.
@@ -515,28 +370,33 @@ module MGQ_MpRaidPool
     @retrying = false
   end
 
-  # Tells how a battle about to be set up, or just set up, fights a pool, without forgetting why.
+  # Asks the DLL how a battle about to be set up, or just set up, fights a pool, without forgetting
+  # why (BossRules.Kind, topic KIND_TOPIC).
+  #
+  # @param troop_id [Integer, String] The battle's troop.
+  # @param own [Integer, nil] How many enemies the troop's setup made, nil before it.
+  # @return [Hash] "kind" ("side", "guest", "event" or nil; the lost battle's kind for the game's
+  #   retry of it), "why" an event's story boss battle fights none, "won" whether it refights a boss
+  #   the story beat already, "keys" its own enemies' pools, "defeated" whether those are all empty
+  #   and "milestone"; empty while the DLL does not answer.
+  def self.ask(troop_id, own = nil)
+    troop = troop_id.to_i
+    answer = MGQ_Multiplayer::Bridge.call(KIND_TOPIC, "troop" => troop, "mode" => "pools", "facts" => MGQ_MpRaidBosses.facts, "active" => active?,
+                                          "raid" => true, "at_command" => @at_command ? true : false, "in_map" => @in_map ? true : false,
+                                          "event" => @at_command && @in_map && $game_map.interpreter.event_id > 0 ? true : false, "side" => @side,
+                                          "invited" => @invited ? [@invited[0], @invited[2]] : nil, "retry" => retry_of?(troop) ? [@lost.troop, @lost.side ? true : false] : nil,
+                                          "own" => own)
+    answer.is_a?(Hash) ? answer : {}
+  end
+
+  # Tells how a battle about to be set up, or just set up, fights a pool, see ask.
   #
   # @param troop_id [Integer, String] The battle's troop.
   # @return [Symbol, nil] :side for a side battle, :guest for one a host's invite marked, :event for
   #   an event's story boss battle, nil for none; the lost battle's kind for the game's retry of it.
   def self.kind_of(troop_id)
-    troop = troop_id.to_i
-    return (@lost.side ? :side : :event) if retry_of?(troop)
-    return :side if @side == troop
-    return :guest if @invited && @invited[0] == troop
-    return nil unless story_battle?(troop)
-
-    refusal(troop) ? nil : :event
-  end
-
-  # Reports whether a battle about to be set up, or just set up, is a story boss battle an event's
-  # battle command starts on the map of a player who plays the world's story.
-  #
-  # @param troop [Integer] The battle's troop.
-  # @return [Boolean] Whether it is.
-  def self.story_battle?(troop)
-    @at_command && @in_map && active? && MGQ_MpRaidBosses.boss?(troop) && $game_map.interpreter.event_id > 0 ? true : false
+    kind = ask(troop_id)["kind"]
+    kind ? kind.to_sym : nil
   end
 
   # Reports whether a story boss battle about to be set up, or just set up, refights a boss the
@@ -545,8 +405,7 @@ module MGQ_MpRaidPool
   # @param troop_id [Integer, String] The battle's troop.
   # @return [Boolean] Whether it does.
   def self.story_won?(troop_id)
-    troop = troop_id.to_i
-    story_battle?(troop) && beaten?(MGQ_MpRaidBosses.at(troop)) && pool_refusal(troop).nil?
+    ask(troop_id)["won"] ? true : false
   end
 
   # Reports whether a battle about to be set up is the game's retry of the lost battle that fought a
@@ -566,10 +425,9 @@ module MGQ_MpRaidPool
     @set_up_kind = nil
     return retried if @retrying
 
-    kind = kind_of(troop_id)
-    won = !kind && story_won?(troop_id)
+    answer = ask(troop_id)
+    kind = answer["kind"] ? answer["kind"].to_sym : nil
     invited = @invited
-    explain = @at_command && @in_map && MGQ_MpRaidBosses.boss?(troop_id) && active?
     @story_won = nil
     @at_command = false
     @invited = nil
@@ -577,12 +435,8 @@ module MGQ_MpRaidPool
     @fight = nil
     @lost = nil
     Stats.forget
-    return win_at_once(troop_id.to_i) if won
-
-    unless kind
-      reason = explain ? refusal(troop_id.to_i) || ($game_map.interpreter.event_id > 0 ? nil : "a common event of its own started it") : nil
-      return reason ? log("troop #{troop_id} fights no pool: #{reason}") : nil
-    end
+    return win_at_once(troop_id.to_i, answer["milestone"]) if answer["won"]
+    return answer["why"] ? log("troop #{troop_id} fights no pool: #{answer['why']}") : nil unless kind
 
     own = kind == :guest ? invited[1] : own_count(troop_id)
     start(troop_id.to_i, own, kind, kind == :side || (kind == :guest && invited[2]) ? true : false)
@@ -600,14 +454,16 @@ module MGQ_MpRaidPool
   # @param side [Boolean] Whether it is a side battle, the player's own or a host's they join.
   def self.start(troop, own, kind, side)
     key = key_of(troop)
-    return log("troop #{troop} fights no pool: its key is none the relay takes") unless key
+    answer = key ? ask(troop, own) : {}
+    return log("troop #{troop} fights no pool: its key is none the relay takes") unless key && answer["keys"].is_a?(Array)
 
-    members = member_keys(key, own).each_with_index.map { |member_key, index| Member.new(member_key, index) }
+    members = answer["keys"].each_with_index.map { |member_key, index| Member.new(member_key, index) }
     @fight = Fight.new(key, troop_name(own), troop, new_battle_id, own, members, side, kind == :guest || !reporter? ? true : false)
     open_fight(@fight)
     take_on(@fight)
     log("battle #{@fight.battle} (#{kind}) against #{@fight.name} (troop #{troop}, tier #{MGQ_MpRaidBosses.tier(troop)}) fights the pool(s) #{members.map(&:key).join(', ')}: " \
         "#{members.map { |member| enemy_text(member) }.join(', ')}")
+    tell_won(troop) if answer["defeated"]
   end
 
   # Takes a retry of a lost battle that fought a pool as one that fights it again, with an id of
@@ -627,47 +483,47 @@ module MGQ_MpRaidPool
     log("the retry of the battle against #{@fight.name} fights its pools as battle #{@fight.battle}")
   end
 
-  # Finds why a story boss battle fights no pool.
-  #
-  # @param troop_id [Integer] The troop.
-  # @return [String, nil] Why, nil when it fights one.
-  def self.refusal(troop_id)
-    reason = pool_refusal(troop_id)
-    return reason if reason
-
-    boss = MGQ_MpRaidBosses.at(troop_id)
-    beaten?(boss) ? "the story beat #{boss.milestone} already" : nil
-  end
-
-  # Finds why a story boss battle fights no pool whether or not the story beat its boss.
-  #
-  # @param troop_id [Integer] The troop.
-  # @return [String, nil] Why, nil when it would fight one.
-  def self.pool_refusal(troop_id)
-    return "an earlier phase of its fight" unless MGQ_MpRaidBosses.last_phase?(troop_id)
-    return UNPOOLED[troop_id] if UNPOOLED[troop_id]
-    return "a Hades rematch" if hades?
-    return "a Colosseum battle" if $game_switches[COLOSSEUM_SWITCH]
-
-    key_of(troop_id) ? nil : "its key is none the relay takes"
-  end
-
   # Fights a refight of a boss the world's story beat already as won at once, see story_won?: the
   # troop's own enemies start dead as against empty pools, and its first command phase wins it.
   #
   # @param troop [Integer] The troop.
-  def self.win_at_once(troop)
+  # @param milestone [String, nil] The boss's milestone, for the log.
+  def self.win_at_once(troop, milestone)
     @story_won = troop
     own_enemies(own_count(troop)).each { |enemy| enemy.hp = 0 }
-    log("troop #{troop} fights no pool: the story beat #{MGQ_MpRaidBosses.at(troop).milestone} already, so it is won at once")
+    log("troop #{troop} fights no pool: the story beat #{milestone} already, so it is won at once")
+    tell_won(troop)
   end
 
-  # Reports whether the player is at a Hades rematch: its switch is on, or the player stands in the
-  # rematch hall, whose events start the rematches before they turn the switch on.
+  # Tells the player plainly that the battle just set up is won at once, its boss beaten by the
+  # world already, with its full rewards.
   #
-  # @return [Boolean] Whether they are.
-  def self.hades?
-    $game_switches[HADES_SWITCH] || ($game_map && $game_map.map_id == HADES_MAP) ? true : false
+  # @param troop [Integer] The troop.
+  def self.tell_won(troop)
+    text = "The world already beat #{troop_label(troop)}. This battle is won at once."
+    MGQ_MpNotices.message(NOTICE_KEY, text, NOTICE_FRAMES) if defined?(MGQ_MpNotices)
+    log("told the player: #{text}")
+  end
+
+  # Asks the DLL what its rules say of troops (BossRules, topic TROOPS_TOPIC), with the game's story
+  # values or a story's.
+  #
+  # @param troops [Array<Integer>] The troops.
+  # @param mode [String] "pools" for a Raid World's rules, "tiers" for those outside one.
+  # @param active [Boolean] Whether raid bosses are on outside a Raid World.
+  # @param story [Array, nil] A story's switches and variables, as MGQ_MpStoryState.raw_state; nil
+  #   for the game's.
+  # @return [Hash{Integer => Hash}] By troop: "pooled", "defeated" (its pools all empty), "shown"
+  #   (its battle shows a bar), "beaten" and "keys" (its own enemies' pools); empty while the DLL
+  #   does not answer.
+  def self.troop_facts(troops, mode = "pools", active = false, story = nil)
+    return {} if troops.empty?
+
+    answer = MGQ_Multiplayer::Bridge.call(TROOPS_TOPIC, "facts" => MGQ_MpRaidBosses.facts(story), "mode" => mode, "active" => active ? true : false,
+                                          "troops" => troops.map { |troop| troop.to_i })
+    found = {}
+    Array(answer).each { |row| found[row["troop"]] = row if row.is_a?(Hash) }
+    found
   end
 
   # Reports whether a troop's boss has pools the player may fight: the last phase of a story boss
@@ -676,86 +532,33 @@ module MGQ_MpRaidPool
   # @param troop_id [Integer, String] The troop.
   # @return [Boolean] Whether it has.
   def self.pooled_troop?(troop_id)
-    troop = troop_id.to_i
-    boss = MGQ_MpRaidBosses.at(troop)
-    !boss.nil? && MGQ_MpRaidBosses.last_phase?(troop) && !UNPOOLED[troop] && !beaten?(boss) && !key_of(troop).nil?
+    troop_facts([troop_id]).fetch(troop_id.to_i, {})["pooled"] ? true : false
   end
 
-  # Reports whether the story beat a milestone, by its markers in BEATEN.
+  # Reports whether the player's story, or another, beat a troop's milestone.
   #
-  # @param boss [MGQ_MpRaidBosses::Boss] The troop's milestone.
-  # @return [Boolean] Whether it did; false for a milestone without markers.
-  def self.beaten?(boss)
-    test = BEATEN[[boss.milestone, boss.cap]]
-    test ? met?(test) : false
+  # @param troop_id [Integer, String] The troop.
+  # @param story [Array, nil] A story's switches and variables; nil for the game's.
+  # @return [Boolean] Whether it did; false for a troop that is no boss.
+  def self.beaten?(troop_id, story = nil)
+    troop_facts([troop_id], "pools", false, story).fetch(troop_id.to_i, {})["beaten"] ? true : false
   end
 
   # Lists the level caps of the milestones a story beat, which a story write names for the world's
   # catch-up experience (see world_catchup_exp.rbx).
   #
   # @param story [Array] The story's switches and variables, as MGQ_MpStoryState.raw_state.
-  # @return [Array<Integer>] Each cap once, lowest first.
+  # @return [Array<Integer>] Each cap once, lowest first; none while the DLL does not answer.
   def self.beaten_caps(story)
-    BEATEN.select { |_, test| met?(test, story) }.map { |(_, cap), _| cap }.uniq.sort
+    Array(MGQ_Multiplayer::Bridge.call(CAPS_TOPIC, "facts" => MGQ_MpRaidBosses.facts(story)))
   end
 
-  # Reports whether the game's values, or a story's, meet a test of BEATEN.
-  #
-  # @param test [String] The test.
-  # @param story [Array, nil] The story's switches and variables; nil for the game's.
-  # @return [Boolean] Whether they do.
-  def self.met?(test, story = nil)
-    test.split("|").any? { |all| all.split("&").all? { |condition| condition_met?(condition, story) } }
-  end
-
-  # Reports whether the game's values, or a story's, meet one condition of a test of BEATEN.
-  #
-  # @param condition [String] Such as "s2261", "v1023>=2" or "v{main_progress}>=17".
-  # @param story [Array, nil] The story's switches and variables; nil for the game's.
-  # @return [Boolean] Whether they do; false for a condition that is none.
-  def self.condition_met?(condition, story = nil)
-    switches, variables = story || [$game_switches, $game_variables]
-    case with_story_ids(condition)
-    when /\As(\d+)\z/ then switches[$1.to_i] ? true : false
-    when /\Av(\d+)>=(-?\d+)\z/ then variables[$1.to_i].to_i >= $2.to_i
-    else false
-    end
-  end
-
-  # Puts the story's ids in for the readers of MGQ_MpStoryIds a condition of BEATEN names them by.
-  #
-  # @param condition [String] Such as "v{route_variables.0}>=18".
-  # @return [String] The condition with the ids; an id of 0 while the DLL does not answer, which
-  #   no condition meets.
-  def self.with_story_ids(condition)
-    condition.gsub(STORY_ID) do
-      name, place = $1, $2
-      id = MGQ_MpStoryIds::NUMBERS.include?(name) || MGQ_MpStoryIds::LISTS.include?(name) ? MGQ_MpStoryIds.send(name) : 0
-      id = id[place.to_i] if place && id.is_a?(Array)
-      id.to_i.to_s
-    end
-  end
-
-  # Finds a troop's boss key: the fight's own name for a fight of FIGHTS, else its milestone, with
-  # its cap where several milestones share the name.
+  # Finds a troop's boss key, see MGQ_MpRaidBosses.key.
   #
   # @param troop_id [Integer, String] The troop.
   # @return [String, nil] The key, nil for a troop that is no story boss or a key the relay refuses.
   def self.key_of(troop_id)
-    key = FIGHTS[troop_id.to_i] || MGQ_MpRaidBosses.milestone_key(troop_id)
-    return nil unless key
-
-    key.strip == key && !key.empty? && !key.include?("#") && key.length <= MAX_KEY_LENGTH ? key : nil
-  end
-
-  # Finds the pools' keys of a boss's own enemies: the boss's key for one enemy, else one per enemy,
-  # the key with its place in the troop, such as "Metatronne and Sandalphone#1".
-  #
-  # @param key [String] The boss's key, see key_of.
-  # @param own [Integer] How many enemies the troop's setup makes.
-  # @return [Array<String>] The keys.
-  def self.member_keys(key, own)
-    own.to_i <= 1 ? [key] : (0...own.to_i).map { |index| "#{key}##{index}" }
+    MGQ_MpRaidBosses.key(troop_id)
   end
 
   # Finds the pools' keys of a troop's own enemies, as its setup makes them.
@@ -763,8 +566,7 @@ module MGQ_MpRaidPool
   # @param troop_id [Integer, String] The troop.
   # @return [Array<String>] The keys, none for a troop without a key.
   def self.troop_keys(troop_id)
-    key = key_of(troop_id)
-    key ? member_keys(key, data_own(troop_id)) : []
+    Array(troop_facts([troop_id]).fetch(troop_id.to_i, {})["keys"])
   end
 
   # Counts the enemies the setup of the troop just set up made, which come first in the troop.
@@ -1094,13 +896,12 @@ module MGQ_MpRaidPool
     enemy ? "#{enemy.name} #{enemy.hp}/#{enemy.mhp}" : "#{member.key} missing"
   end
 
-  # Reports whether every pool of a troop's own enemies is empty, as the player's game knows them.
+  # Reports whether every pool of a troop's own enemies is empty now, as the DLL's ledger knows them.
   #
   # @param troop_id [Integer, String] The troop.
   # @return [Boolean] Whether it is; false for a troop without pools or one the relay told nothing of.
   def self.defeated?(troop_id)
-    keys = troop_keys(troop_id)
-    !keys.empty? && keys.all? { |key| (pool = @pools[key]) && left_now(pool) <= 0 }
+    troop_facts([troop_id]).fetch(troop_id.to_i, {})["defeated"] ? true : false
   end
 
   # Writes the fields an invite to the player's battle adds when it fights a pool: "pool", how many
@@ -1134,7 +935,8 @@ module MGQ_MpRaidPool
   # @param troop_id [Integer] The troop.
   # @return [Boolean] Whether it does.
   def self.won_already?(troop_id)
-    (kind_of(troop_id) ? defeated?(troop_id) : story_won?(troop_id)) ? true : false
+    answer = ask(troop_id)
+    (answer["kind"] ? answer["defeated"] : answer["won"]) ? true : false
   rescue
     false
   end
@@ -1219,7 +1021,10 @@ module MGQ_MpRaidPool
   # @param troop_id [Integer] The troop.
   # @return [Boolean] Whether they may.
   def self.side_troop?(troop_id)
-    active? && pooled_troop?(troop_id) && !defeated?(troop_id)
+    return false unless active?
+
+    found = troop_facts([troop_id]).fetch(troop_id.to_i, {})
+    found["pooled"] && !found["defeated"] ? true : false
   end
 
   # Starts a side battle: the same troop as a boss battle near the player, with its host's enemy
@@ -1365,7 +1170,7 @@ module MGQ_MpRaidPool
     boss = boss_key(key)
     return if @announced[boss]
 
-    troop = troop_of_key(boss)
+    troop = MGQ_MpRaidBosses.troop_of_key(boss)
     keys = troop ? troop_keys(troop) : [key]
     keys = [key] if keys.empty?
     return unless keys.all? { |member| (pool = @pools[member]) && pool.defeated }
@@ -1389,19 +1194,6 @@ module MGQ_MpRaidPool
   # @return [String] The boss's key.
   def self.boss_key(key)
     key.sub(/#\d+\z/, "")
-  end
-
-  # Finds the troop of a boss's key: its last phase.
-  #
-  # @param boss [String] The boss's key, see key_of.
-  # @return [Integer, nil] The troop, nil for none.
-  def self.troop_of_key(boss)
-    bosses = MGQ_MpRaidBosses
-    @troops_by_key ||= (bosses::TROOPS.keys + bosses::OPTIONAL.keys).select { |troop| bosses.at(troop).last }.each_with_object({}) do |troop, out|
-      key = key_of(troop)
-      out[key] ||= troop if key
-    end
-    @troops_by_key[boss]
   end
 
   # Follows the pools for one frame: fetches them as the player enters the world or a map, and reads
@@ -1445,11 +1237,9 @@ module MGQ_MpRaidPool
     state = MGQ_Multiplayer::Bridge.call(POOLS_TOPIC)
     return unless state.is_a?(Hash) && state["world"].to_s == MGQ_MpWorldStory.world_id.to_s
 
-    now = Time.now
-    @regen = state["regen"].to_s.to_f
     pools = {}
     Array(state["pools"]).each do |key, left, max, defeated, by|
-      pools[key] = Pool.new(left.to_s.to_f, max.to_i, defeated == true, by.to_s.empty? ? nil : by.to_s, now) if key.is_a?(String)
+      pools[key] = Pool.new(left.to_s.to_f, max.to_i, defeated == true, by.to_s.empty? ? nil : by.to_s) if key.is_a?(String)
     end
     @pools = pools
   end

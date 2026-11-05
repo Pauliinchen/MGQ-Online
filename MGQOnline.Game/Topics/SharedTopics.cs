@@ -2,7 +2,9 @@
 //  SharedTopics.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Registered the topics that write and read characters' builds and equipped items
+//      Paulinchen  2026-11-05: Took a roster of the troops' sizes a host shares with its other topics
+//                            - Registered the topics of the raid bosses' rules
+//                            - Registered the topics that write and read characters' builds and equipped items
 //                            - Registered the topics that write and read a live battle's lines
 //                            - Registered the topics that write and read the messages games send each other, and the one that writes the game data's fingerprint
 //                            - Registered the topic of the battlers the scripts build
@@ -72,7 +74,8 @@ public static class SharedTopics
     /// </summary>
     /// <param name="context">The context the handshake opened.</param>
     /// <param name="pools">The host's way to the raid pools.</param>
-    public static void Register(BridgeContext context, IRaidRelay pools)
+    /// <param name="roster">The troops' sizes the raid bosses' rules read, null for one of the context's own.</param>
+    public static void Register(BridgeContext context, IRaidRelay pools, RaidRoster? roster = null)
     {
         ArgumentNullException.ThrowIfNull(context);
         Random random = new();
@@ -87,6 +90,7 @@ public static class SharedTopics
         PageTopics.Register(context, random);
         CoopTopics.Register(context, LiveTopics.Register(context));
         PoolTopics.Register(context, pools);
+        RaidTopics.Register(context, pools, roster ?? new RaidRoster());
         SetupTopics.Register(context);
         JournalTopics.Register(context);
         PresenceTopics.Register(context);

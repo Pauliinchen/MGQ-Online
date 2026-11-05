@@ -2,7 +2,8 @@
 #  loader_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Checked that no script builds or reads a format of C#, the network or a store C# reads, naming what stays with why
+#      Paulinchen  2026-11-05: Dropped the raid pools' beaten markers from the formats kept, which the DLL reads now
+#                            - Checked that no script builds or reads a format of C#, the network or a store C# reads, naming what stays with why
 #                            - Checked that only the bridge loads exports of the DLL and that no script calls an old export or writes or reads a message's key=value lines
 #      Paulinchen  2026-11-01: Checked that no script or test names the old interface the screens reached the Mod Framework by
 #                            - Checked that none of the HUD's pictures the Mod Framework's components replaced comes back
@@ -200,7 +201,6 @@ kept_formats = [
   ["Multiplayer.rb", "Marshal.", "the bridge itself, which hands its plain values across as Marshal"],
   ["battles_pvp.rbx", "Marshal.", "a snapshot of the game's own objects before a PvP battle, put back after it"],
   ["battles_raid_freeze.rbx", "Marshal.", "the party and the screen at a frozen fight, game objects the save field keeps for this script alone"],
-  ["battles_raid_pool.rbx", "test.split(\"|\")", "BEATEN, a table of this script's own conditions"],
   ["battles_sync.rbx", "class.name.split('::')", "the name of a Ruby class, for the log"],
   ["battles_sync_playback.rbx", "kind.split(\".\", 2)", "a recorded call's name, the game's object and method, which no C# reads"],
   ["coop_scene.rbx", "call.split(\"_\")", "an Audio call's name, the game's method, which no C# reads"],

@@ -2,7 +2,8 @@
 #  world_story.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Took the relay's keys and values from the DLL as [kind, key] and values, and handed it the player's the same way, their sites as plain values
+#      Paulinchen  2026-11-05: Handed the frozen fights the world's story it writes while the player plays it
+#                            - Took the relay's keys and values from the DLL as [kind, key] and values, and handed it the player's the same way, their sites as plain values
 #                            - Fetched and read the world's shared companions through topics
 #                            - Left whether a telling moves the world's story on to the DLL's one decision
 #                            - Read the story's ids of the route rules from story_ids.rbx
@@ -601,6 +602,7 @@ module MGQ_MpWorldStory
     # is still the one they came from, as a move at a level cap holds that story's rewards back.
     MGQ_MpWorldCatchup.moved(state["move"], world) if state && state["move"] && defined?(MGQ_MpWorldCatchup)
     follow_catchup(before, written > 0 || state, state ? mode_of(state) : @mode)
+    follow_freeze(written > 0 || state, state ? mode_of(state) : @mode)
     took_state(state) if state
     unjournaled { end_left_scenes }
     followed(own, after, first && state ? true : false, state && state["move"] ? true : false)
@@ -797,6 +799,17 @@ module MGQ_MpWorldStory
 
     MGQ_MpWorldCatchup.world_told(mode == :world ? MGQ_MpStoryState.raw_state : nil)
     MGQ_MpWorldCatchup.carried(before)
+  end
+
+  # Hands the frozen fights the world's story written into the player's while they play it, which
+  # ends a fight whose boss it is past (see MGQ_MpWorldFreeze.world_told).
+  #
+  # @param changed [Boolean] Whether the player's story changed.
+  # @param mode [Symbol, nil] How the player plays the story now, see mode.
+  def self.follow_freeze(changed, mode)
+    return unless defined?(MGQ_MpWorldFreeze) && changed && mode == :world
+
+    MGQ_MpWorldFreeze.world_told(MGQ_MpStoryState.raw_state)
   end
 
   # Turns off the scene switches still on while no scene runs, as a story written mid-scene may

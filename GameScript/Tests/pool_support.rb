@@ -248,7 +248,7 @@ class PoolLedgerStandIn
   #
   # @return [Hash] The world, the share a minute and the pools.
   def describe
-    { "world" => @world.to_s, "regen" => @regen.to_s,
+    { "world" => @world.to_s,
       "pools" => pools.map { |key, left, max, defeated, by| [key, left.to_s, max.round, defeated, by] } }
   end
 

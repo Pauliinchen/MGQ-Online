@@ -69,7 +69,7 @@ public sealed class PoolTopicsTests
 
         RubyHash pools = _context.Ask(PoolTopics.Pools)!.AsHash();
 
-        Assert.Equal(("w1", "0.03"), (pools["world"].AsText(), pools["regen"].AsText()));
+        Assert.Equal("w1", pools["world"].AsText());
         Assert.Equal(["Ilias|0|4000|True|Hero", "Sara|1E-09|901|False|"], Rows(pools["pools"].AsArray()));
     }
 

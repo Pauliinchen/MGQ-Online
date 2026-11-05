@@ -2,7 +2,8 @@
 //  PoolTopics.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Took a fight's enemies as values, no longer as a text
+//      Paulinchen  2026-11-05: Dropped the share a minute from the pools handed out, since no script adds the regeneration any more
+//                            - Took a fight's enemies as values, no longer as a text
 //      Paulinchen  2026-10-30: Handed a fight's pools to the battle server and took them there
 //                            - Ran the fights' moments and handed out the battle server's outbox, in place of counting its own reports
 //                            - Created
@@ -29,9 +30,8 @@ namespace MGQOnline.Game.Topics;
 public static class PoolTopics
 {
     /// <summary>
-    /// Hands out the pools as they stand now: nothing in; <c>world</c> (empty before the first),
-    /// <c>regen</c> (the share a minute as text) and <c>pools</c> ([key, share left now as text, max,
-    /// defeated, who defeated it] each, by key) out.
+    /// Hands out the pools as they stand now: nothing in; <c>world</c> (empty before the first) and
+    /// <c>pools</c> ([key, share left now as text, max, defeated, who defeated it] each, by key) out.
     /// </summary>
     public const string Pools = "raid.pools";
 
@@ -206,7 +206,6 @@ public static class PoolTopics
     private static RubyHash Describe(PoolLedger ledger) => new()
     {
         { "world", ledger.World ?? string.Empty },
-        { "regen", ShareText(ledger.RegenPerMinute) },
         {
             "pools", new RubyArray(ledger.Pools().Select(pool => (RubyValue)new RubyArray(
             [

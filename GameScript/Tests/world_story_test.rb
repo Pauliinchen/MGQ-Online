@@ -2,7 +2,8 @@
 #  world_story_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Handed and expected sites as plain values
+#      Paulinchen  2026-11-05: Checked that the frozen fights hear of the world's story a take wrote
+#                            - Handed and expected sites as plain values
 #                            - Handed and expected the story's keys and values as [kind, key] with values
 #                            - Stood in for the shared companions through the DLL's topics
 #                            - Left whether commands move the world's story on to the DLL's one decision, checked there
@@ -427,6 +428,17 @@ check("the player's story the relay asks for holds what the mapping keeps or a c
 frames(1)
 check("once", staged("story.seed").size, 1)
 
+# Stands in for the world's frozen fights, which hold no key; the world's stories told to them are
+# kept in $freeze_told.
+module MGQ_MpWorldFreeze
+  # Holds no key.
+  def self.held_value(_kind, _key); nil; end
+  # Takes no fight of the world's story.
+  def self.take_keys(_keys); end
+  # Keeps the world's story told.
+  def self.world_told(told); ($freeze_told ||= []) << told; end
+end
+
 # The relay's track is written straight into the player's story.
 $game_variables[1062] = 3
 $game_switches[600] = true
@@ -442,6 +454,7 @@ check("each player's own keys and those the player's own unanswered requests wro
 check("the player plays the world's story now, told so, and their story events no longer wait",
       [story.mode, $notices, story.awaits_world?], [:world, ["You play the world's story."], false])
 check("none of it goes to the relay as the player's", staged("story.writes"), [])
+check("the frozen fights hear of the world's story it wrote, so a fight whose boss it is past ends", $freeze_told.map { |told| told[1][1001] }, [9])
 
 # The player's own writes go to the relay; what the relay hands waits while an event of theirs runs.
 $game_map.interpreter.busy = true

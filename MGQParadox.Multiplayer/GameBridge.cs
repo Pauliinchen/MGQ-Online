@@ -2,7 +2,8 @@
 //  GameBridge.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Started the DLL as the scripts first shake hands, in place of mp_start, a refused handshake too
+//      Paulinchen  2026-11-05: Registered the topics of the frozen fights and of a lost raid boss battle's defeat, sharing the troops' sizes with the raid bosses' rules
+//                            - Started the DLL as the scripts first shake hands, in place of mp_start, a refused handshake too
 //                            - Registered the topics of the world directory, the update check, the memory, a Raid World's shared companions and its boss pools
 //                            - Handed a Classic member's catch-up what the story's topics know of the party
 //      Paulinchen  2026-10-31: Opened the registration of the topics to the tests
@@ -55,6 +56,7 @@ using MGQOnline.Bridge;
 using MGQOnline.Bridge.Native;
 using MGQOnline.Bridge.Ruby;
 using MGQOnline.Data.Sqlite;
+using MGQOnline.Game.Raid;
 using MGQOnline.Game.Topics;
 using MGQOnline.Game.Ui;
 using MGQParadox.Multiplayer.Mods;
@@ -148,7 +150,9 @@ internal static unsafe class GameBridge
         RaidRelayTopics.Register(context, RaidStory.Current, RaidBosses.Current);
         SettingsTopics.Register(context, services.Player);
         RuleTopics.Register(context);
-        SharedTopics.Register(context, RaidBosses.Current);
+        var roster = new RaidRoster();
+        SharedTopics.Register(context, RaidBosses.Current, roster);
+        FreezeTopics.Register(context, () => RaidBosses.Current.Ledger, roster, () => GameEvents.Current);
         ModTopics.Register(context, services.Scripts, services.Directory);
         EventTopics.Register(context, () => GameEvents.Current);
         EventTableTopics.Register(context, () => GameEvents.Current);

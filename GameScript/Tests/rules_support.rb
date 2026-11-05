@@ -2,7 +2,8 @@
 #  rules_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Answered the world entered with the values of its settings a test sets
+#      Paulinchen  2026-11-05: Answered the raid bosses' rules from their stand-in
+#                            - Answered the world entered with the values of its settings a test sets
 #                            - Read the fields of a request a served battle's starter passed on by their kinds
 #                            - Stood in for the DLL's topics of the world room, the directory's list and the development build, noting each call in $calls
 #                            - Stood in for the one decision of the player's own common events, a resumed raid fight and whether a telling moves the world's story on, and named the castle's maps
@@ -886,6 +887,7 @@ def open_rules_bridge
   answer_pages(fake)
   answer_journal(fake)
   answer_party_rewards(fake)
+  answer_raid_rules(fake)
   MGQ_Multiplayer::Bridge.open(fake)
   fake
 end
@@ -895,3 +897,4 @@ require_relative "gather_support"
 require_relative "scene_support"
 require_relative "flow_support"
 require_relative "pages_support"
+require_relative "raid_support"

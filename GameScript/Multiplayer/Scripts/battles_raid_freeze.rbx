@@ -2,7 +2,11 @@
 #  battles_raid_freeze.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Handed the journal the values written over as the bridge carries them, keeping copies of other values here, instead of Marshal dumps
+#      Paulinchen  2026-11-05: Asked the DLL whether a frozen fight is over, the one decision every caller asks, and dropped the player's own record once it is
+#                            - Asked the DLL whether a lost battle's defeat goes back and which value each key it changed goes back to
+#                            - Put nothing back of an event's lost battle whose fight froze no record
+#                            - Asked the DLL whether the player's story beat a boss and read the raid bosses' troops from its table
+#                            - Handed the journal the values written over as the bridge carries them, keeping copies of other values here, instead of Marshal dumps
 #                            - Named sites as plain values, and had the DLL read the sites of an earlier release's records once
 #                            - Opened the player's own scene as a resume begins, so what it puts back counts as the scene's
 #                            - Counted its timers by the bridge's frame, which never goes back as a save loads
@@ -42,8 +46,11 @@ module MGQ_MpRaidFreeze
   # Frames between two looks at whether the bosses of the player's records are beaten.
   CHECK_FRAMES = 60
 
-  # The story's switch that tells a Colosseum battle, see MGQ_MpRaidPool::COLOSSEUM_SWITCH.
-  COLOSSEUM_SWITCH = 87
+  # The DLL's topic that tells why a lost battle's defeat puts nothing back, see FreezeTopics.
+  DEFEAT_TOPIC = "freeze.defeat"
+
+  # The DLL's topic that tells which value each key a defeat changed goes back to.
+  UNDO_TOPIC = "freeze.undo"
 
   # The event command that calls a common event.
   CALL_CODE = 117
@@ -152,31 +159,20 @@ module MGQ_MpRaidFreeze
     @retrying = false
     @own_setup = false
     @checked_at = nil
-    @won = {}
     @shared = {}
   end
 
-  # Reports whether the player won a battle against a troop's pools since the title, which ends the
-  # world's frozen fight against it at once (see MGQ_MpWorldFreeze.ended?).
-  #
-  # The relay tells the emptied pool only later, and meanwhile the world's story would put the keys
-  # the fight holds back over the story past the battle.
-  #
-  # @param troop [Integer, String] The troop.
-  # @return [Boolean] Whether they did.
-  def self.won?(troop)
-    @won && @won[troop.to_i] ? true : false
-  end
-
-  # Lists the player's own frozen fights of the open world whose boss the player's story has not
-  # beaten.
+  # Lists the player's own frozen fights of the open world whose fight is not over, as the DLL's one
+  # decision tells (MGQ_MpWorldFreeze.over).
   #
   # @return [Array<Hash>] The records, each with at least the keys of a world entry (see entry_of).
   def self.records
     notes = field
     return [] unless notes
 
-    notes["records"].values.select { |record| record["state"] == "frozen" && !beaten?(record["troop"]) }
+    frozen = notes["records"].values.select { |record| record["state"] == "frozen" }
+    over = defined?(MGQ_MpWorldFreeze) ? MGQ_MpWorldFreeze.over(frozen.map { |record| record["troop"] }) : {}
+    frozen.reject { |record| over.key?(record["troop"].to_i) }
   rescue => e
     log_once(:records, "listing the frozen fights failed: #{e.class}: #{e.message}")
     []
@@ -1008,21 +1004,21 @@ module MGQ_MpRaidFreeze
     log("taking the story at the defeat failed: #{e.class}: #{e.message}")
   end
 
-  # Finds why a lost raid boss battle's defeat changes nothing back.
+  # Asks the DLL why a lost raid boss battle's defeat changes nothing back (FreezeRules.DefeatRefusal):
+  # the player left the Raid World's story, another troop fights, the event goes on after a defeat,
+  # a replay of the Library, a Hades rematch, a Colosseum battle, a Hades hall, the story at the
+  # event's start unknown, or an event's battle whose fight froze no record though it is not over.
   #
   # @param battle [Hash] The battle, see battle_set_up.
   # @return [String, nil] Why, nil when it changes back.
   def self.defeat_refusal(battle)
-    return "the player no longer plays a Raid World's story" unless active?
-    return "another troop fights" unless MGQ_MpGame.get($game_troop, :troop_id).to_i == battle[:troop]
-    return "the event goes on after a defeat" if MGQ_MpGame.get(BattleManager, :can_lose)
-    return "a replay of the Library" if BattleManager.respond_to?(:memory_battle?) && BattleManager.memory_battle?
-    return "a Hades rematch" if MGQ_MpRaidPool.respond_to?(:hades?) && MGQ_MpRaidPool.hades?
-    return "a Colosseum battle" if $game_switches[COLOSSEUM_SWITCH]
-    return "map #{$game_map.map_id} is a Hades hall" if data(:EXCLUDED_MAPS, []).include?($game_map.map_id)
-    return "the story's values at its event's start are unknown" unless battle[:undo]
-
-    nil
+    MGQ_Multiplayer::Bridge.call(DEFEAT_TOPIC, "troop" => battle[:troop], "troop_now" => MGQ_MpGame.get($game_troop, :troop_id).to_i, "active" => active?,
+                                               "can_lose" => MGQ_MpGame.get(BattleManager, :can_lose) ? true : false,
+                                               "library" => BattleManager.respond_to?(:memory_battle?) && BattleManager.memory_battle? ? true : false,
+                                               "known" => battle[:undo] ? true : false, "kind" => battle[:kind] && battle[:kind].to_s,
+                                               "record" => battle[:record] ? true : false,
+                                               "over" => defined?(MGQ_MpWorldFreeze) && MGQ_MpWorldFreeze.final?(battle[:troop]) ? true : false,
+                                               "facts" => MGQ_MpRaidBosses.facts)
   end
 
   # Counts the player's items, weapons and armors.
@@ -1066,7 +1062,7 @@ module MGQ_MpRaidFreeze
     @battle = nil
     troop = battle[:troop]
     if result == 0 && battle[:kind]
-      (@won ||= {})[troop] = true
+      MGQ_MpWorldFreeze.won(troop) if defined?(MGQ_MpWorldFreeze)
       log("won the battle against troop #{troop}: the world's frozen fight against it ends")
     end
     record = record_for(troop)
@@ -1693,10 +1689,10 @@ module MGQ_MpRaidFreeze
     undo(pending)
   end
 
-  # Puts back what a defeat changed of the story: each value that changed since the defeat started,
-  # except the post-defeat processing's own (the freeze's DEFEAT_WRITES) and the player's
-  # own, at its value at the event's start when the event changed it before the battle, else at the
-  # defeat's start; and the items. A fight with a record then waits.
+  # Puts back what a defeat changed of the story: each value that changed since the defeat started
+  # goes back to the value the DLL names (FreezeRules.Undo: none for the post-defeat processing's
+  # own and the player's own, the event's start for a key the event changed before the battle, else
+  # the defeat's start); and the items. A fight with a record then waits.
   #
   # @param pending [Hash] The defeat's snapshot.
   def self.undo(pending)
@@ -1705,12 +1701,15 @@ module MGQ_MpRaidFreeze
 
     starts = {}
     Array(pending[:start]).each { |kind, key, value| starts[[kind, key]] = value }
+    asked = rows.map { |kind, key, _was, _now| [kind, kind == 2 ? 0 : key, personal?(kind, key), starts.key?([kind, key])] }
+    choices = Array(MGQ_Multiplayer::Bridge.call(UNDO_TOPIC, "rows" => asked))
     undone = []
     texts = []
-    rows.each do |kind, key, was, now|
-      next if defeat_write?(kind, key) || personal?(kind, key)
+    rows.each_with_index do |(kind, key, was, now), index|
+      choice = choices[index]
+      next unless choice
 
-      value = starts.key?([kind, key]) ? starts[[kind, key]] : was
+      value = choice == "start" ? starts[[kind, key]] : was
       write_value(kind, key, value)
       undone << [kind, key, value] if core?(key) && core?(value)
       texts << "#{value_name(kind, key)} #{value_text(now)} -> #{value_text(value)}"
@@ -1785,8 +1784,8 @@ module MGQ_MpRaidFreeze
     log("brought the player onto the starter's spot of troop #{teleport[:troop]}: #{spot[1]},#{spot[2]}")
   end
 
-  # Forgets the records of bosses the player's story beat, and tells the world of frozen fights it
-  # lacks, every CHECK_FRAMES.
+  # Forgets the records of fights that are over, as the DLL's one decision tells, and tells the world
+  # of frozen fights it lacks, every CHECK_FRAMES.
   def self.drop_beaten
     now = MGQ_Multiplayer::Bridge.frame_number
     return if @checked_at && now - @checked_at < CHECK_FRAMES
@@ -1795,11 +1794,11 @@ module MGQ_MpRaidFreeze
     notes = field
     return unless notes
 
-    notes["records"].keys.each do |troop|
-      next unless beaten?(troop)
+    over = defined?(MGQ_MpWorldFreeze) ? MGQ_MpWorldFreeze.over(notes["records"].keys) : {}
+    over.each do |troop, reason|
+      next unless notes["records"].delete(troop)
 
-      notes["records"].delete(troop)
-      log("dropped the record of troop #{troop}: the player's story beat its boss")
+      log("dropped the record of troop #{troop}: #{reason}")
     end
     share_records
   end
@@ -2222,19 +2221,6 @@ module MGQ_MpRaidFreeze
         "#{texts.empty? ? '' : ", #{texts.join(', ')}"}#{record && record['state'] == 'lost' ? '; its record goes' : ''}")
   end
 
-  # Reports whether the post-defeat processing writes a switch or variable itself, which its undo
-  # leaves as the defeat set it.
-  #
-  # @param kind [Integer] 0 for a switch, 1 for a variable, 2 for a self switch.
-  # @param key [Integer, Array] Its id or key.
-  # @return [Boolean] Whether it does.
-  def self.defeat_write?(kind, key)
-    return false if kind == 2
-
-    writes = data(:DEFEAT_WRITES, {})[kind == 0 ? :switches : :variables] || []
-    writes.any? { |range| range === key }
-  end
-
   # Reports whether a story value is the player's own, see MGQ_MpWorldStory.personal?.
   #
   # @param kind [Integer] 0 for a switch, 1 for a variable, 2 for a self switch.
@@ -2357,7 +2343,7 @@ module MGQ_MpRaidFreeze
   def self.raid_troops
     return [] unless defined?(MGQ_MpRaidBosses)
 
-    (MGQ_MpRaidBosses::TROOPS.keys | MGQ_MpRaidBosses::OPTIONAL.keys).sort
+    MGQ_MpRaidBosses.troops.sort
   end
 
   # Reads the freeze's tables from the DLL's answer, see tables.
@@ -2391,15 +2377,6 @@ module MGQ_MpRaidFreeze
     MGQ_MpRaidPool.active? ? true : false
   rescue
     false
-  end
-
-  # Reports whether the boss of a troop is beaten in the player's story.
-  #
-  # @param troop [Integer] The troop.
-  # @return [Boolean] Whether it is.
-  def self.beaten?(troop)
-    boss = MGQ_MpRaidBosses.at(troop)
-    boss ? MGQ_MpRaidPool.beaten?(boss) : false
   end
 
   # Reports whether the player is free on the map, see MGQ_MpOverworldSync.map_free?.

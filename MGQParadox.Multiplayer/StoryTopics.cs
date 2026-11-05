@@ -2,7 +2,8 @@
 //  StoryTopics.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Took and handed the story's keys and values as plain values, see StoryPlain
+//      Paulinchen  2026-11-05: Left reading a frozen fight back to the frozen fights' own topics, which read every fight they take
+//                            - Took and handed the story's keys and values as plain values, see StoryPlain
 //                            - Answered a frozen fight as another game reads it back, see FrozenFightText
 //                            - Took and handed sites as plain values, and read the sites of an earlier release's save once
 //                            - Wrote a Classic leader's whole story and what of it changed as message fields, by ClassicStoryLists
@@ -128,13 +129,6 @@ internal sealed partial class StoryTopics : IStoryTrackHost
     /// <see cref="ClassicStoryLists.Delta"/>: the writes' rows in; the message's fields out.
     /// </summary>
     public const string ClassicDeltaTopic = "story.classic_delta";
-
-    /// <summary>
-    /// The topic that answers a frozen fight as another game reads it back from the relay's track,
-    /// see <see cref="FrozenFightText"/>: the fight with its "troop" in; nil out for a fight that is
-    /// none or longer than the relay keeps.
-    /// </summary>
-    public const string FreezeEntryTopic = "story.freeze_entry";
 
     /// <summary>
     /// The topic that reads the sites a save of an earlier release keeps as texts, such as
@@ -442,7 +436,6 @@ internal sealed partial class StoryTopics : IStoryTrackHost
         context.Register(ClassicFollowTopic, (_, request) => topics.ClassicFollowOf(request.AsHash()));
         context.Register(ClassicFullTopic, (_, request) => ClassicStoryLists.Full(request.AsHash()));
         context.Register(ClassicDeltaTopic, (_, request) => ClassicStoryLists.Delta(request.AsArray()));
-        context.Register(FreezeEntryTopic, (_, request) => FrozenEntry(request.AsHash()));
         context.Register(SitesTopic, (_, request) => new RubyArray(request.AsArray().Select(text => StoryPlain.SiteOf(text.AsText()))));
         context.Register(TellingStartTopic, (_, request) => topics.TellingStart(request.AsHash()));
         context.Register(TellingCommandTopic, (_, _) => topics.TellingCommandOf());
@@ -739,14 +732,6 @@ internal sealed partial class StoryTopics : IStoryTrackHost
 
         return follows;
     }
-
-    /// <summary>
-    /// Answers <see cref="FreezeEntryTopic"/>.
-    /// </summary>
-    /// <param name="entry">The fight.</param>
-    /// <returns>The fight as another game reads it, nil for none.</returns>
-    private static RubyValue FrozenEntry(RubyHash entry) =>
-        entry["troop"] is RubyInteger troop && FrozenFightText.Write(entry) is { } text && FrozenFightText.Read(troop.AsInt(), text) is { } read ? read : RubyNil.Value;
 
     /// <summary>
     /// Builds a Classic party's table, see <see cref="ClassicOf"/>.

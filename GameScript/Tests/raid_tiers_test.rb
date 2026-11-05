@@ -2,7 +2,8 @@
 #  raid_tiers_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Kept the single player switch and pushed the raid bosses as true or false, as the DLL hands them
+#      Paulinchen  2026-11-05: Answered the raid bosses' rules with fixed values per case on a bridge and dropped the checks of the refusals, which the DLL keeps
+#                            - Kept the single player switch and pushed the raid bosses as true or false, as the DLL hands them
 #                            - Expected the invite's tier as true
 #                            - Dropped the stand-in of the DLL's exports, which the tiers never call
 #      Paulinchen  2026-10-31: Stood in for the Mod Framework's rows
@@ -13,10 +14,11 @@
 #----------------------------------------------------------------
 
 # Covers battles_raid_tiers.rbx with battles_raid_bosses.rbx and battles_raid_pool.rbx: when the
-# story bosses fight as raid bosses outside Raid Worlds, which battles fight at their tier and with
-# what stats, the game's retry, the invites of co-op battles, the relay's push of a Classic world's
-# setting and the setting of single player, whose Mod Config row ui_single_player.rbx adds. Events
-# run in fibers as the game's interpreter runs them.
+# story bosses fight as raid bosses outside Raid Worlds, what the DLL's rules hear of a battle and
+# how the kind they answer fights at its tier with what stats, the game's retry, the invites of
+# co-op battles, the relay's push of a Classic world's setting and the setting of single player,
+# whose Mod Config row ui_single_player.rbx adds. The rules answer fixed values per case
+# (raid_support.rb); events run in fibers as the game's interpreter runs them.
 
 require_relative "support"
 
@@ -282,6 +284,10 @@ end
 load_script "battles_raid_bosses"
 load_script "battles_raid_pool"
 load_script "battles_raid_tiers"
+require_relative "raid_support"
+$raid_bridge = FakeBridge.new
+answer_raid_rules($raid_bridge)
+MGQ_Multiplayer::Bridge.open($raid_bridge)
 SceneManager.run
 
 tiers = MGQ_MpRaidTiers
@@ -305,6 +311,7 @@ def reset
   $raid = false
   $in_world = false
   $raid_bosses = false
+  $raid_answers.clear
 end
 
 # Runs frames of the map, as Scene_Map does.
@@ -335,6 +342,13 @@ end
 def tiered
   fight = MGQ_MpRaidTiers.fight
   fight ? fight.to_a : nil
+end
+
+# Finds what the tiers asked the DLL's rules last of a battle.
+#
+# @return [Hash, nil] The request, nil while they asked nothing.
+def tier_ask
+  $raid_answers.asked("raid.kind").select { |request| request["mode"] == "tiers" }.last
 end
 
 # Asks for the invite's fields of a battle about to be set up by an event's battle command.
@@ -384,88 +398,75 @@ $raid_bosses = false
 tiers.choose(true)
 check("and one without them keeps them off, whatever single player says", tiers.active?, false)
 
-# A story boss's last phase fights at its tier.
+# A battle the rules answer an event's fights its boss at its tier.
 reset
 tiers.choose(true)
+$raid_answers.tier_kinds[71] = { "kind" => "event" }
 start([[:battle, 71], [:mark, :after]])
-check("an event's battle of a story boss's last phase fights at its tier, its own enemies counted", tiered, [71, 1, 9])
+check("an event's battle the rules answer so fights at its tier, its own enemies counted", tiered, [71, 1, 9])
 check("its enemy has the tier's factor of its max HP, all of it", [enemy.mhp, enemy.hp], [4000, 4000])
 check("and fights no pool", pool.fight, nil)
 enemy.hp = 1000
 BattleManager.battle_end(0)
 frames
 check("a won battle is over, and the event goes on", [tiers.fight, $ran, $branch], [nil, [:after], 0])
+
+# The rules hear of the battle, whether the raid bosses are on and whether a Raid World plays; a
+# battle they give no kind keeps its boss, the log saying why.
 reset
 $in_world = true
 $raid_bosses = true
 start([[:battle, 71]])
-check("a Classic world with raid bosses fights them too", tiered, [71, 1, 9])
-
-# Battles that keep the boss as the game has it.
-{
-  "with the raid bosses off" => proc { tiers.choose(false) },
-  "a Hades rematch" => proc { $game_switches[MGQ_MpRaidPool::HADES_SWITCH] = true },
-  "an event of the Hades rematch hall" => proc { $game_map.map_id = MGQ_MpRaidPool::HADES_MAP },
-  "a Colosseum battle" => proc { $game_switches[MGQ_MpRaidPool::COLOSSEUM_SWITCH] = true },
-  "a boss the story beat" => proc { $game_variables[1011] = 4 },
-  "a Raid World's battle" => proc { $raid = true; $in_world = true; $raid_bosses = true },
-}.each do |label, set|
-  reset
-  tiers.choose(true)
-  set.call
-  start([[:battle, 71]])
-  check("#{label} keeps the boss as the game has it", tiered, nil)
-end
-check("which fights the pool instead", pool.fight && pool.fight.key, "Queen Harpy")
+asked = tier_ask
+check("the rules hear of an event's battle in a Classic world with raid bosses on",
+      asked.values_at("troop", "active", "raid", "at_command", "in_map", "event"), [71, true, false, true, true, true])
+check("a battle they give no kind keeps the boss as the game has it", tiered, nil)
 reset
-tiers.choose(true)
-lines = logged_lines { start([[:battle, 1507]]) }
-check("the Great Decision keeps its boss, and the log says why",
-      [tiered, lines.any? { |line| line.include?("troop 1507 keeps its boss as the game has it: a fight raid bosses leave out") }], [nil, true])
+tiers.choose(false)
+$raid = true
+$raid_answers.tier_kinds[71] = { "why" => "the rules refuse it" }
+lines = logged_lines { start([[:battle, 71]]) }
+check("with the raid bosses off in a Raid World they hear so, and the log says why the boss keeps its stats",
+      [tier_ask.values_at("active", "raid"),
+       lines.include?("raid tiers: troop 71 keeps its boss as the game has it: the rules refuse it")], [[false, true], true])
 reset
 tiers.choose(true)
 start([[:battle, 71]], 0)
-check("so does a common event of its own", tiered, nil)
+own = tier_ask.values_at("at_command", "event")
 reset
 tiers.choose(true)
 BattleManager.setup(71)
-check("and a battle no event command started", tiered, nil)
+check("a common event of its own, and a battle no event command started, are told as such",
+      [own, tier_ask.values_at("at_command", "event")], [[true, false], [false, false]])
 reset
 tiers.choose(true)
-start([[:battle, 31]])
-check("a troop that is no story boss keeps its enemies", [tiered, enemy.mhp], [nil, 100])
-
-# A fight of several phases fights at its tier on its last; one in a common event the event calls too.
-reset
-tiers.choose(true)
-start([[:battle, 609], [:battle, 610]])
-check("an earlier phase keeps its boss", [tiered, enemy.mhp], [nil, 1000])
-BattleManager.battle_end(0)
-frames
-check("the last phase fights at its tier", [tiered, enemy.mhp], [[610, 1, 7], 15000])
-reset
-tiers.choose(true)
+$raid_answers.tier_kinds[71] = { "kind" => "event" }
 start([[:call, [[:battle, 71]]]])
-check("a boss battle in a common event the event calls fights at its tier", tiered, [71, 1, 9])
+check("a boss battle in a common event the event calls is the event's", [tier_ask["event"], tiered], [true, [71, 1, 9]])
 
 # The game's retry of a lost battle fights at the tier again.
 reset
 tiers.choose(true)
+$raid_answers.tier_kinds[71] = { "kind" => "event" }
 start([[:battle, 71]])
 enemy.hp = 100
 $game_map.interpreter.clear
 BattleManager.battle_end(2)
 check("a lost battle is over", tiered, nil)
-check("its retry's invite says it fights at its tier", tiers.retrying { tiers.invite_fields(71) }, { "tiers" => true })
+$raid_answers.tier_kinds[71] = { "kind" => "retry" }
+check("its retry's invite says it fights at its tier, the rules told of the lost battle",
+      [tiers.retrying { tiers.invite_fields(71) }, tier_ask["retry"]], [{ "tiers" => true }, [71, false]])
 BattleManager.retry_battle
 check("the retry fights at its tier again, the boss at full HP", [tiered, enemy.mhp, enemy.hp], [[71, 1, 9], 4000, 4000])
 BattleManager.battle_end(1)
+$raid_answers.tier_kinds[71] = {}
 BattleManager.retry_battle
-check("but not the retry of a battle escaped from", tiered, nil)
+check("but the retry of a battle escaped from tells the rules of none", [tiered, tier_ask["retry"]], [nil, nil])
 
 # Stats: the tier's factors apply to the battle's own enemies alone.
 reset
 tiers.choose(true)
+$raid_answers.tier_kinds[2219] = { "kind" => "event" }
 start([[:battle, 2219]])
 chaos = enemy
 check("a tier 0 boss gets 50 times its max HP and 5 times both defenses", [tiered, chaos.mhp, chaos.hp, chaos.def, chaos.mdf], [[2219, 1, 0], 50000, 50000, 500, 500])
@@ -473,32 +474,32 @@ other = Game_Enemy.new(0, 9)
 check("an enemy outside the battle keeps its own", [other.mhp, other.def, MGQ_MpRaidPool::Stats.stat(other, :def, 100)], [1000, 100, 100])
 reset
 tiers.choose(true)
+$raid_answers.tier_kinds[71] = { "kind" => "event" }
 start([[:battle, 71]])
 check("a tier that names no defense leaves it", [enemy.def, enemy.mdf, MGQ_MpRaidPool::Stats.stat(enemy, :def, 40)], [40, 40, 40])
 
 # Co-op battles: the invite says whether the boss fights at its tier, and a guest follows it.
 reset
 tiers.choose(true)
-check("the invite of an event's battle of a boss at its tier says so", event_invite(71), { "tiers" => true })
-check("one of an earlier phase, a troop that is no boss or a battle no event started says nothing",
-      [event_invite(609), event_invite(31), tiers.invite_fields(71)], [{}, {}, {}])
-tiers.choose(false)
-check("nor while the raid bosses are off", event_invite(71), {})
-tiers.choose(true)
-$raid = true
-check("nor in a Raid World", event_invite(71), {})
+$raid_answers.tier_kinds[71] = { "kind" => "event" }
+check("the invite of an event's battle the rules answer so says so", event_invite(71), { "tiers" => true })
+check("one of a battle they give no kind says nothing", event_invite(609), {})
 reset
+$raid_answers.tier_kinds[71] = { "kind" => "invited" }
 tiers.note_invite("troop" => "71", "tiers" => true)
-check("the leader of a battle a member's request marked invites the others with it too", tiers.invite_fields(71), { "tiers" => true })
+check("the leader of a battle a member's request marked invites the others with it too, the rules told of it",
+      [tiers.invite_fields(71), tier_ask["invited"]], [{ "tiers" => true }, [71, false]])
 BattleManager.setup(71)
-check("a guest of an invite that says so fights at the tier, even with the raid bosses off itself", [tiered, enemy.mhp, enemy.hp], [[71, 1, 9], 4000, 4000])
+check("a guest of an invite that says so fights at the tier", [tiered, enemy.mhp, enemy.hp], [[71, 1, 9], 4000, 4000])
 reset
 tiers.note_invite("troop" => "71")
 BattleManager.setup(71)
-check("an invite that says nothing keeps the boss", tiered, nil)
+check("an invite that says nothing tells the rules of none", tier_ask["invited"], nil)
 reset
 tiers.choose(true)
+$raid_answers.tier_kinds[71] = { "kind" => "event" }
 start([[:battle, 71]])
+$raid_answers.tier_kinds[71] = {}
 check("a fight left over on the map, as a refused lead leaves it, labels no later battle of its troop", tiers.invite_fields(71), {})
 battle_scene = Scene_Battle.new
 SceneManager.define_singleton_method(:scene) { battle_scene }
@@ -506,18 +507,15 @@ check("a member who hosts its battle at its start, once the leader would not lea
       [tiers.invite_fields(71), tiers.invite_fields(72)], [{ "tiers" => true }, {}])
 SceneManager.define_singleton_method(:scene) { nil }
 reset
-tiers.note_invite("troop" => "71", "tiers" => true)
-BattleManager.setup(610)
-check("so does one of another troop", tiered, nil)
-reset
 $raid = true
 tiers.note_invite("troop" => "71", "tiers" => true)
 $raid = false
 BattleManager.setup(71)
-check("an invite noted in a Raid World is ignored", tiered, nil)
+check("an invite noted in a Raid World is ignored", tier_ask["invited"], nil)
 
 # A guest's troop built anew from its host's gets the tier's max HP at once.
 reset
+$raid_answers.tier_kinds[71] = { "kind" => "invited" }
 tiers.note_invite("troop" => "71", "tiers" => true)
 BattleManager.setup(71)
 rebuilt = [Game_Enemy.new(0, 1)]
@@ -532,12 +530,13 @@ check("and nothing happens outside such a battle", enemy.mhp, 800)
 # The title screen forgets every battle.
 reset
 tiers.choose(true)
+$raid_answers.tier_kinds[71] = { "kind" => "event" }
 start([[:battle, 71]])
 $game_map.interpreter.clear
 BattleManager.battle_end(2)
 Scene_Title.new.start
 BattleManager.retry_battle
-check("the title screen forgets the lost battle", tiered, nil)
+check("the title screen forgets the lost battle, so its retry tells the rules of none", tier_ask["retry"], nil)
 
 # The relay's push of a Classic world's raid bosses.
 reset

@@ -2,28 +2,21 @@
 #  world_freeze_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Handed and expected sites as plain values
-#                            - Stood in for the DLL that writes and reads a frozen fight's text, and handed the fights' keys as the values it reads
-#                            - Read the scripts' clock from $frame
-#      Paulinchen  2026-10-28: Stood in for the freeze's tables the DLL's events database answers
-#      Paulinchen  2026-10-23: Checked each frozen fight as a key of the relay's story tracks instead of a list beside the whole story
-#      Paulinchen  2026-10-17: Created
+#      Paulinchen  2026-11-05: Created
 #
 #----------------------------------------------------------------
 
-# Covers world_freeze.rbx with battles_raid_bosses.rbx and a stand-in of the freeze's tables: the
-# union by troop, the held keys' index, the fight's key asked of the relay as the DLL takes it (its
-# text is the DLL's, see FrozenFightTextTests), and the end of a frozen fight by its defeated
-# pools or its BEATEN marker in the player's or the world's story, or by the end of the fight the
-# other side plays in its stead, and the end written as the fight's key and read from it, final for
-# the world: no note, take or merge brings a fight back that ended, nor the fight the other side
-# plays in its stead.
+# Covers world_freeze.rbx with story_state.rbx, story_keys.rbx and battles_raid_bosses.rbx against
+# fixed answers of the DLL's frozen fights (FreezeTopics), whose rules the C# tests cover: a fight
+# noted and its held keys handed as plain values, the list taken back as the game's values and read
+# by kind of key, an answer of an unchanged list, and the world's story told for the end rule.
 
 require_relative "support"
-require_relative "bridge_support"
+require_relative "raid_support"
 
-# Stands in for the mod's log: prints each line.
-module MGQ_Multiplayer; module Log; def self.write(m); puts "  log: #{m}"; end; end; end
+# Stands in for the mod's log: records each line in $log.
+module MGQ_Multiplayer; module Log; def self.write(m); $log << m; end; end; end
+$log = []
 
 # The scripts' clock, which the checks move with $frame.
 clock_from { $frame }
@@ -37,246 +30,69 @@ class Game_Switches; def initialize; @data = []; end; def [](id); @data[id] || f
 # Stands in for the game's variables, 0 unless set.
 class Game_Variables; def initialize; @data = []; end; def [](id); @data[id] || 0; end; def []=(id, value); @data[id] = value; end; end
 
-# Stands in for story_keys.rbx: turns values into what the DLL takes and back, as it does.
-module MGQ_MpStoryKeys
-  # Turns a value into what the DLL takes.
-  def self.plain_of(kind, value)
-    return value ? true : false unless kind == 1
-    return { "float" => value.to_s } if value.is_a?(Float)
-
-    [Integer, String, TrueClass, FalseClass].any? { |carried| value.is_a?(carried) } ? value : nil
-  end
-
-  # Turns a value the DLL handed back into the game's.
-  def self.game_value(kind, value)
-    return value == true unless kind == 1
-
-    value.is_a?(Hash) ? value["float"].to_f : value
-  end
-end
-
-# Stands in for the DLL's reading back of a fight it writes (StoryTopics.FrozenEntry): its fields
-# alone, none for a site that is no map page or common event.
-site = lambda { |found| found.is_a?(Array) && ((found[0] == "map" && found.size == 4) || (found[0] == "ce" && found.size == 2)) }
-fake = FakeBridge.new
-MGQ_Multiplayer::Bridge.open(fake)
-fake.answer("story.freeze_entry") { |entry| site.call(entry["site"]) && site.call(entry["outer"]) ? entry : nil }
-
-# Stands in for the world's story: the open world's id and the fights' keys asked of the relay, each
-# troop and value in $written.
+# Stands in for the world's story: the open world's id, and the fights' keys asked of the relay kept
+# in $written.
 module MGQ_MpWorldStory
-  class << self
-    attr_accessor :world_id
-  end
-
-  # Notes a fight's key asked of the relay.
-  #
-  # @param troop [Integer] The troop.
-  # @param entry [Hash, false] The fight as the DLL takes it, false once it ended.
-  # @return [Boolean] Whether it goes to the relay, always.
-  def self.write_freeze(troop, entry)
-    $written << [troop, entry]
-    true
-  end
+  # Answers the open world's id.
+  def self.world_id; "w1"; end
+  # Keeps a fight's key asked of the relay.
+  def self.write_freeze(troop, entry); $written << [troop, entry]; true; end
 end
-MGQ_MpWorldStory.world_id = "w1"
 $written = []
 
-# Stands in for the raid pools: each troop's pool keys from $keys, the pools from $pools, and the
-# BEATEN markers of the Sonya fights read as battles_raid_pool.rbx reads them.
-module MGQ_MpRaidPool
-  # A pool as the relay told it.
-  Pool = Struct.new(:left, :max, :defeated)
-
-  # The markers that tell a milestone beaten.
-  BEATEN = { ["Sonya Mazda", 55] => "s7009", ["Sonya Mainyu", 55] => "s7010", ["Sonya Chaos", 55] => "v1075>=20" }
-
-  # Lists a troop's pool keys.
-  def self.troop_keys(troop); $keys[troop] || []; end
-
-  # Finds a pool the relay told.
-  def self.pool(key); $pools[key]; end
-
-  # Reports whether the player's story beat a milestone.
-  def self.beaten?(boss); test = BEATEN[[boss.milestone, boss.cap]]; test ? met?(test) : false; end
-
-  # Reports whether the game's values, or a story's, meet a test of BEATEN.
-  def self.met?(test, story = nil)
-    switches, variables = story || [$game_switches, $game_variables]
-    test.split("|").any? do |all|
-      all.split("&").all? do |condition|
-        case condition
-        when /\As(\d+)\z/ then switches[$1.to_i] ? true : false
-        when /\Av(\d+)>=(-?\d+)\z/ then variables[$1.to_i].to_i >= $2.to_i
-        else false
-        end
-      end
-    end
-  end
-end
-$keys = { 868 => ["Sonya Mazda"], 870 => ["Sonya Chaos"] }
-$pools = {}
 $game_switches = Game_Switches.new
 $game_variables = Game_Variables.new
-
+load_script "story_state"
 load_script "battles_raid_bosses"
-# Stands in for battles_raid_freeze.rbx's tables, which the DLL's events database answers: the
-# fights each side plays in the other's stead, Sonya Mazda (868) and Mainyu (869) among them.
-module MGQ_MpRaidFreeze
-  # Reads a table.
-  def self.data(name, default); name == :ALTERNATIVES ? { 672 => [673], 673 => [672], 868 => [869], 869 => [868] } : default; end
-end
 load_script "world_freeze"
+
+fake = FakeBridge.new
+answer_raid_rules(fake)
+MGQ_Multiplayer::Bridge.open(fake)
 freeze = MGQ_MpWorldFreeze
 
-# Makes a frozen fight's entry as battles_raid_freeze.rbx builds it.
-#
-# @param troop [Integer] The troop.
-# @param held [Array<Array>] The held keys.
-# @param name [String] The boss sprite's character name.
-# @return [Hash] The entry.
-def entry_of(troop, held, name = "$Sonya")
-  { "troop" => troop, "site" => ["map", 138, 13, 1], "outer" => ["map", 138, 13, 1], "scene" => false,
-    "tableau" => [138, [[13, 32, 8, 2, 1, name, 0, 0, 255, 0, 1, 1, 1], [14, 30, 8, 6, 0, "Luka", 2, 0, 255, 0, 1, 0, 1]], [13]],
-    "spot" => [138, 30, 10, 8], "held" => held }
-end
+# Sonya Mazda's frozen fight as the DLL hands it back: the switch, the variable, the self switch and
+# the float it holds, as plain values.
+FIGHT = { "troop" => 868, "site" => ["map", 138, 13, 1], "outer" => ["map", 138, 13, 1], "scene" => false, "tableau" => [138, [], [13]], "spot" => [138, 32, 9, 8],
+          "held" => [[0, 31, true], [1, 1075, 14], [2, [138, 13, "A"], false], [1, 1077, { "float" => "1.5" }]] }
+$state = { "version" => 1, "entries" => [FIGHT], "held" => FIGHT["held"], "writes" => [] }
+fake.answer("freeze.fights.note") { |_request| { "held" => true, "writes" => [[868, FIGHT]] } }
+fake.answer("freeze.fights.state") { |_request| $state }
+fake.answer("freeze.fights.told") { |_request| { "writes" => [[868, false]] } }
 
-# Writes a fight's key as the DLL reads it from the relay's track.
-#
-# @param entry [Hash] The entry.
-# @return [Hash] The value.
-def key_of(entry)
-  MGQ_MpWorldFreeze.plain_entry(entry)
-end
+# A fight noted: its held keys go as plain values, a list the story cannot carry left out and
+# logged once, and the fight's key goes to the relay as the DLL asks.
+held = [[0, 31, true], [1, 1075, 14], [2, [138, 13, "A"], false], [1, 1077, 1.5], [1, 1078, [1, 2]]]
+noted = freeze.note(FIGHT.merge("held" => held))
+check("a noted fight hands its held keys as plain values, a float as its text, a list left out and logged",
+      [noted, fake.calls.select { |topic, _| topic == "freeze.fights.note" }.map { |_, bytes| Marshal.load(bytes)["entry"]["held"] }.last,
+       $log.grep(/left the held v1078 out: its value is no kind the story carries/).size],
+      [true, [[0, 31, true], [1, 1075, 14], [2, [138, 13, "A"], false], [1, 1077, { "float" => "1.5" }]], 1])
+freeze.note(FIGHT.merge("held" => held))
+check("the list's refusal is logged once", $log.grep(/left the held v1078 out/).size, 1)
+check("and the fight's key goes to the relay", $written.first, [868, FIGHT])
 
-# The player's own frozen fight: noted, indexed, and its key asked of the relay.
-noted = freeze.note(entry_of(868, [[1, 1075, 14], [0, 31, false], [2, [138, 13, "A"], false], [1, 2004, [1, 2]]]).merge("state" => "frozen", "frames" => []))
-check("noting the player's frozen fight asks the relay to keep its key for the world",
-      [noted, $written], [true, [[868, key_of(entry_of(868, [[1, 1075, 14], [0, 31, false], [2, [138, 13, "A"], false]]))]]])
-check("whose entry leaves the record's own fields and a list value the story cannot carry out",
-      [freeze.entry(868).keys.sort, freeze.held.map { |kind, key, _| [kind, key] }], [%w(held outer scene site spot tableau troop), [[1, 1075], [0, 31], [2, [138, 13, "A"]]]])
-check("its held keys are indexed by kind and key",
-      [freeze.held_value(1, 1075), freeze.held_value(0, 31), freeze.held_value(2, [138, 13, "A"]), freeze.held_value(1, 1076), freeze.held_value(0, 1075)],
-      [[true, 14], [true, false], [true, false], nil, nil])
-$written.clear
-check("a note that is no entry is refused without a key", [freeze.note("map:1"), freeze.note(entry_of(868, []).merge("site" => "x")), $written], [false, false, []])
+# The list taken back: each kind of key reads as the game's value.
+check("the list holds the fight", freeze.entries.map { |entry| entry["troop"] }, [868])
+check("a switch, a variable, a self switch and a float read as the game's values, a key no fight holds as none",
+      [freeze.held_value(0, 31), freeze.held_value(1, 1075), freeze.held_value(2, [138, 13, "A"]), freeze.held_value(1, 1077), freeze.held_value(1, 1076)],
+      [[true, true], [true, 14], [true, false], [true, 1.5], nil])
 
-# Union by troop: a known fight keeps its fields and gains the keys it lacks, its own value winning.
-world = entry_of(868, [[1, 1075, 16], [1, 1076, 3]])
-world["spot"] = [138, 1, 1, 2]
-other = entry_of(870, [[1, 1075, 18], [0, 33, true]])
-other["site"] = ["map", 728, 12, 1]
-freeze.take_keys(868 => key_of(world), 870 => key_of(other), 999 => nil)
-check("the world's key of a known fight adds its new keys, the known value winning",
-      [freeze.held_value(1, 1075), freeze.held_value(1, 1076), freeze.entry(868)["spot"]], [[true, 14], [true, 3], [138, 30, 10, 8]])
-check("a fight the player did not know joins the list after the known ones, one this game cannot read is dropped", freeze.entries.map { |entry| entry["troop"] }, [868, 870])
-check("the oldest fight's value wins a key two fights hold", [freeze.held_value(1, 1075), freeze.held_value(0, 33)], [[true, 14], [true, true]])
+# An answer of an unchanged list keeps the list read before.
+$state = $state.merge("held" => [[1, 1075, 20]])
+$frame += MGQ_MpWorldFreeze::CHECK_FRAMES
+check("an answer whose version did not change keeps the held values read before", freeze.held_value(1, 1075), [true, 14])
+$state = $state.merge("version" => 2)
+$frame += MGQ_MpWorldFreeze::CHECK_FRAMES
+check("a new version's are read", freeze.held_value(1, 1075), [true, 20])
 
-# The end of a frozen fight: its pools defeated, its marker met in the player's story or the world's.
-$pools["Sonya Mazda"] = MGQ_MpRaidPool::Pool.new(0.0, 100, false)
-$frame = 100
-check("a pool not yet defeated keeps the fight", freeze.entries.map { |entry| entry["troop"] }, [868, 870])
-$pools["Sonya Mazda"] = MGQ_MpRaidPool::Pool.new(0.0, 100, true)
-$frame = 130
-check("its defeat is looked at once a second", freeze.entries.size, 2)
-$frame = 161
-$written.clear
-check("then ends the fight", [freeze.entries.map { |entry| entry["troop"] }, freeze.ended?(entry_of(868, []))], [[870], true])
-check("whose keys the next fight takes over or lets go", [freeze.held_value(1, 1075), freeze.held_value(1, 1076), freeze.held_value(0, 31)], [[true, 18], nil, nil])
-check("and whose end goes to the relay for the world, with the end of the other side's fight", $written, [[868, false], [869, false]])
-freeze.take_keys(868 => key_of(entry_of(868, [[1, 1075, 14]])))
-check("nor taken again from a world's story that still carries it", freeze.entries.map { |entry| entry["troop"] }, [870])
-check("nor noted again", [freeze.note(entry_of(868, [[1, 1075, 14]])), freeze.entries.size], [false, 1])
-$pools.clear
-freeze.world_told([[], [nil] * 1075 + [20], {}])
-check("the world's told story meeting the marker ends a fight at once", freeze.entries, [])
-freeze.world_told([[], [], {}])
-check("a fight the world's story beat stays ended for good, though its story no longer meets the marker",
-      [freeze.note(entry_of(870, [[1, 1075, 18]])), freeze.entries, freeze.final?(870)], [false, [], true])
-Scene_Title.new.start
-freeze.note(entry_of(870, [[1, 1075, 18]]))
-$game_variables[1075] = 20
-$frame = 300
-check("the player's own story meeting the marker ends it too", [freeze.entries, freeze.held], [[], []])
-$game_variables[1075] = 0
-$keys[868] = ["Sonya Mazda#0", "Sonya Mazda#1"]
-$pools["Sonya Mazda#0"] = MGQ_MpRaidPool::Pool.new(0.0, 100, true)
-freeze.note(entry_of(868, [[1, 1075, 14]]))
-check("a boss with a pool the relay has not told is not ended by its other defeated pool", freeze.entries.map { |entry| entry["troop"] }, [868])
-
-# Another world, and the title.
-MGQ_MpWorldStory.world_id = "w2"
-check("another world forgets the frozen fights of the last", [freeze.entries, freeze.held_value(1, 1075)], [[], nil])
-freeze.note(entry_of(868, [[1, 1075, 14]]))
-Scene_Title.new.start
-check("the title forgets them", [freeze.entries, freeze.held_value(1, 1075)], [[], nil])
-
-# A battle the player won against the troop's pools ends its frozen fight at once, its keys let go
-# before they are put into a story.
-# Stands in for battles_raid_freeze.rbx: the troops the player won a battle against, in $won.
-module MGQ_MpRaidFreeze; def self.won?(troop); $won.include?(troop.to_i); end; end
-$won = []
-$pools.clear
-$keys.clear
-freeze.note(entry_of(868, [[1, 1075, 14]]))
-check("a fight not won holds its keys", freeze.held, [[1, 1075, 14]])
-$won << 868
-check("a won one lets them go at once", [freeze.held, freeze.entries, freeze.ended?(entry_of(868, []))], [[], [], true])
-
-# The end of a fight travels as its key's false, which the relay keeps in place of the fight, so it
-# reaches every game, also those that only read.
-$won.clear
-Scene_Title.new.start
-$written.clear
-freeze.take_keys(870 => key_of(entry_of(870, [[1, 1075, 16]])))
-check("a game that only reads takes the world's fight", freeze.entries.map { |entry| entry["troop"] }, [870])
-freeze.take_keys(870 => false, 868 => key_of(entry_of(868, [[1, 1076, 2]])))
-check("and drops it once the world's story carries its end, taking the other fights", freeze.entries.map { |entry| entry["troop"] }, [868])
-check("without asking the relay, since the world's story ends it already", $written, [])
-check("the player's own fight against a troop the world ended is refused, for good",
-      [freeze.note(entry_of(870, [[1, 1075, 18]])), freeze.final?(870), freeze.entries.map { |entry| entry["troop"] }, $written], [false, true, [868], []])
-freeze.take_keys(870 => key_of(entry_of(870, [[1, 1075, 18]])), 868 => key_of(entry_of(868, [[1, 1076, 2]])))
-check("as is the world's key of it, which a racing write brought back", freeze.entries.map { |entry| entry["troop"] }, [868])
-freeze.world_told([[nil] * 7009 + [true], [], {}])
-check("an end this game saw goes to the relay with the other side's", [freeze.entries, $written], [[], [[868, false], [869, false]]])
-freeze.world_told([[], [], {}])
-freeze.take_keys(868 => key_of(entry_of(868, [[1, 1076, 2]])))
-check("one whose marker the world's story no longer meets stays ended for good",
-      [freeze.entries, freeze.final?(868), freeze.final?(869)], [[], true, true])
-
-# The player's own fight ends with the end the world's story carries, and a world's end of one side's
-# fight ends the other side's too.
-Scene_Title.new.start
-freeze.note(entry_of(870, [[1, 1075, 18]]))
-freeze.take_keys(870 => false)
-check("the player's own fight ends with the world's end of it",
-      [freeze.entries, freeze.held, freeze.note(entry_of(870, [[1, 1075, 18]]))], [[], [], false])
-check("a fight not ended is no final one", [freeze.final?(868), freeze.final?(869)], [false, false])
-$written.clear
-freeze.take_keys(868 => false)
-check("the world's end of Sonya Mazda ends Mainyu too, without asking the relay", [freeze.final?(869), freeze.note(entry_of(869, [[1, 1075, 15]])), freeze.entries, $written], [true, false, [], []])
-
-# A fight only one side plays also ends with the fight the other side plays in its stead, so a player
-# of the other side past it is never held back: Sonya Mazda (868) on Alice's, Mainyu (869) on Ilias's.
-check("Sonya Mazda and Mainyu are each other's other side, Sonya Chaos has none",
-      [freeze.alternatives(868), freeze.alternatives(869), freeze.alternatives(870)], [[869], [868], []])
-Scene_Title.new.start
-freeze.note(entry_of(868, [[1, 1075, 14], [0, 2307, true]]))
-check("a fight whose other side's fight has not ended holds its keys", freeze.held, [[1, 1075, 14], [0, 2307, true]])
-$won << 869
-$written.clear
-check("an Ilias-side win over Mainyu ends the frozen fight against Mazda at once, both ends going to the relay",
-      [freeze.held, freeze.entries, freeze.ended?(entry_of(868, [])), $written], [[], [], true, [[868, false], [869, false]]])
-check("nor is Mazda noted again", freeze.note(entry_of(868, [[1, 1075, 14]])), false)
-$won.clear
-Scene_Title.new.start
-freeze.note(entry_of(868, [[1, 1075, 14]]))
-freeze.world_told([[nil] * 7010 + [true], [], {}])
-check("the world's story meeting Mainyu's marker ends it too", freeze.entries, [])
-freeze.world_told([[], [], {}])
-check("for good, Mainyu's fight with it", [freeze.note(entry_of(869, [[1, 1075, 15]])), freeze.entries], [false, []])
-Scene_Title.new.start
-freeze.note(entry_of(869, [[1, 1075, 15]]))
-$game_switches[7009] = true
-check("and the other way round, the player's story past Mazda ends a frozen fight against Mainyu", [freeze.held, freeze.entries], [[], []])
-$game_switches[7009] = false
+# The world's story told for the end rule: its values as the rules read them, the end the DLL asks
+# of the relay sent.
+switches = []
+switches[97] = true
+variables = []
+variables[1001] = 34
+freeze.world_told([switches, variables, {}])
+told = Marshal.load(fake.calls.select { |topic, _| topic == "freeze.fights.told" }.last[1])
+check("the world's story goes to the DLL as the values the rules read, and the end it asks goes to the relay",
+      [told["told"], $written.last], [{ "map" => 0, "s" => [false, true], "v" => [34, 0] }, [868, false]])

@@ -2,7 +2,9 @@
 #  world_freeze.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Left writing and reading a frozen fight's text to the DLL, handing it the fight as values
+#      Paulinchen  2026-11-05: Left the world's list of frozen fights and when a fight is over to the DLL, which keeps both, and sent the story keys it asks for
+#                            - Asked the DLL whether the player's story or the world's beat a frozen fight's boss
+#                            - Left writing and reading a frozen fight's text to the DLL, handing it the fight as values
 #                            - Read the bridge's frame as its clock
 #      Paulinchen  2026-10-28: Read the fights each side plays in the other's stead from the freeze's tables
 #      Paulinchen  2026-10-23: Sent and took each frozen fight as a key of the relay's story tracks instead of a list beside the whole story
@@ -12,33 +14,43 @@
 
 # A Raid World's frozen boss fights: a player who lost a raid boss's story battle keeps the story at
 # that battle (see battles_raid_freeze.rbx), and the world's story keeps it there for every player
-# until the boss's pools are defeated or its BEATEN marker is met, its own or that of the fight the
-# other side plays in its stead. Each frozen fight is one key of the relay's story tracks by its
-# troop (f<troop>), whose text the DLL writes and reads (FrozenFightText), which the whole world
-# keeps, players behind included, merged here as a union by troop; a fight that ended is ENDED,
-# which replaces it for every game. An end is final for the world: the boss dies once, so no game
-# freezes that troop or the one the other side fights in its stead again. An entry's held keys are
-# the switches, variables and self switches the world's story shares at their value from before the
-# fight's event ran (see MGQ_MpWorldStory.held_value), so nobody's story moves past the fight while
-# it is frozen.
+# until the fight is over. The list and the one decision whether a fight is over are the DLL's
+# (MGQOnline.Game's FrozenFights, the topics of MGQParadox.Multiplayer's FreezeTopics): a fight ends
+# once the player won its battle, its pools are defeated, or the player's or the world's story beat
+# its boss or the fight the other side plays in its stead, and that is final for the world. Each
+# frozen fight is one key of the relay's story tracks by its troop (f<troop>), which this script
+# sends as the DLL asks (writes); ENDED replaces a fight that ended for every game. An entry's held
+# keys are the switches, variables and self switches the world's story holds at their value from
+# before the fight's event ran (see MGQ_MpWorldStory.held_value), kept here as the game's values.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpWorldFreeze
-  # Frozen fights the list holds at most.
-  MAX_ENTRIES = 32
-
-  # Held keys one frozen fight has at most.
-  MAX_HELD = 512
-
   # What a fight's key holds once the fight ended, which the relay keeps in place of the fight.
   ENDED = false
 
-  # The topic that answers a fight as another game reads it back, see StoryTopics.FrozenEntry in the
-  # DLL.
-  ENTRY_TOPIC = "story.freeze_entry"
-
-  # Frames between two looks whether a frozen fight ended, a second.
+  # Frames between two looks at the list, a second.
   CHECK_FRAMES = 60
+
+  # The DLL's topic that hands out the list, see FreezeTopics.
+  STATE_TOPIC = "freeze.fights.state"
+
+  # The DLL's topic that notes the player's own frozen fight.
+  NOTE_TOPIC = "freeze.fights.note"
+
+  # The DLL's topic that takes the fights of the world's story.
+  TAKE_TOPIC = "freeze.fights.take"
+
+  # The DLL's topic that takes the world's story for the end rule.
+  TOLD_TOPIC = "freeze.fights.told"
+
+  # The DLL's topic that notes a battle won against a troop's pools.
+  WON_TOPIC = "freeze.fights.won"
+
+  # The DLL's topic that tells why fights are over.
+  OVER_TOPIC = "freeze.fights.over"
+
+  # The DLL's topic that forgets the fights and the battles won.
+  FORGET_TOPIC = "freeze.fights.forget"
 
   # The letters the log names the held keys' kinds by: a switch, a variable, a self switch.
   KIND_LETTERS = ["s", "v", "ss"]
@@ -48,34 +60,24 @@ module MGQ_MpWorldFreeze
   # What starts this script's lines in the log.
   LOG_TAG = "world freeze"
 
-  # The id of the world whose frozen fights are kept.
-  @world_id = nil
-
-  # Forgets the frozen fights, as at the title or once another world opened.
-  #
-  # @param reason [String] Why, for the log.
-  def self.forget(reason = "at the title")
-    log("forgot #{@entries.size} frozen fight(s) #{reason}") if @entries && !@entries.empty?
-    @entries = []
-    @index = [{}, {}, {}]
-    @held = []
-    @told = nil
-    @checked_at = nil
-    @ended = {}
+  # Forgets the frozen fights and the battles won, as at the title.
+  def self.forget
+    MGQ_Multiplayer::Bridge.call(FORGET_TOPIC) if MGQ_Multiplayer::Bridge.open?
+    clear
   rescue => e
     log("forgetting the frozen fights failed: #{e.class}: #{e.message}")
   end
 
-  forget
-
-  # Forgets the frozen fights once another world opened than the one they are of.
-  def self.note_world
-    id = world_id
-    return if id == @world_id
-
-    forget("of the last world, as another one is open")
-    @world_id = id
+  # Forgets the list kept here.
+  def self.clear
+    @entries = []
+    @index = [{}, {}, {}]
+    @held = []
+    @version = nil
+    @checked_at = nil
   end
+
+  clear
 
   # The open world's id.
   #
@@ -86,28 +88,53 @@ module MGQ_MpWorldFreeze
     ""
   end
 
-  # Looks at most every CHECK_FRAMES whether the world changed or a frozen fight ended.
-  def self.check
-    now = frame
-    return if @checked_at && (now - @checked_at).abs < CHECK_FRAMES
-
-    @checked_at = now
-    note_world
-    drop_ended
+  # What every request names: the open world and the player's story values.
+  #
+  # @return [Hash] "world" and "facts".
+  def self.base
+    { "world" => world_id, "facts" => MGQ_MpRaidBosses.facts }
   end
 
-  # Tells the bridge's frame, the clock of every timer, which never goes back as a save loads.
+  # Asks the DLL for the list at most every CHECK_FRAMES, or now.
   #
-  # @return [Integer] The frame, 0 before the bridge counts any.
-  def self.frame
-    MGQ_Multiplayer::Bridge.frame_number
+  # @param now [Boolean] Whether to ask now.
+  def self.check(now = false)
+    frame = MGQ_Multiplayer::Bridge.frame_number
+    return if !now && @checked_at && (frame - @checked_at).abs < CHECK_FRAMES
+
+    @checked_at = frame
+    answer = MGQ_Multiplayer::Bridge.call(STATE_TOPIC, base)
+    return unless answer.is_a?(Hash)
+
+    send_writes(answer["writes"])
+    take_state(answer) unless answer["version"] == @version
+  end
+
+  # Takes the list the DLL handed, its held values made the game's.
+  #
+  # @param answer [Hash] "version", "entries" and "held".
+  def self.take_state(answer)
+    @version = answer["version"]
+    @entries = Array(answer["entries"]).map { |entry| game_entry(entry) }
+    @held = Array(answer["held"]).map { |kind, key, value| [kind, key, MGQ_MpStoryKeys.game_value(kind, value)] }
+    @index = [{}, {}, {}]
+    @held.each { |kind, key, value| @index[kind][key] = value if @index[kind] }
+  end
+
+  # Sends the story keys the DLL asks the relay to keep: each fight, or ENDED.
+  #
+  # @param writes [Array, nil] [troop, fight or false] each.
+  def self.send_writes(writes)
+    Array(writes).each do |troop, value|
+      asked = defined?(MGQ_MpWorldStory) && MGQ_MpWorldStory.write_freeze(troop, value)
+      log("the frozen fight against troop #{troop} #{value == ENDED ? 'ends for the world' : 'goes to the world'}#{asked ? '' : ', in this game alone: no Raid World story takes it'}")
+    end
   end
 
   # Lists the open world's frozen fights that have not ended, oldest first.
   #
   # @return [Array<Hash>] The entries, see battles_raid_freeze.rbx; the caller changes none.
   def self.entries
-    note_world
     check
     @entries.dup
   rescue => e
@@ -141,305 +168,96 @@ module MGQ_MpWorldFreeze
     nil
   end
 
-  # Lists every held key of the frozen fights, the oldest fight's value for a key two hold.
-  #
-  # The fights that ended are dropped first, not every CHECK_FRAMES, since the caller puts these
-  # values into a story.
+  # Lists every held key of the frozen fights, the oldest fight's value for a key two hold, asked
+  # anew, since the caller puts these values into a story.
   #
   # @return [Array<Array>] Each key as kind, key and value.
   def self.held
     return [] if @entries.empty?
 
-    note_world
-    drop_ended
+    check(true)
     @held.dup
   rescue
     []
   end
 
-  # Notes the player's own frozen fight and asks the relay to keep it for the world. Called by
-  # battles_raid_freeze.rbx once a lost fight's undo ran.
+  # Notes the player's own frozen fight and has the DLL ask the relay to keep it for the world.
+  # Called by battles_raid_freeze.rbx once a lost fight's undo ran.
   #
   # @param entry [Hash] The entry, see battles_raid_freeze.rbx.
   # @return [Boolean] Whether the list holds the fight now.
   def self.note(entry)
-    note_world
-    clean = clean(entry)
-    unless clean
-      log("refused to note a frozen fight that is no entry: #{MGQ_MpLog.short(entry.inspect, 200)}")
-      return false
-    end
+    answer = MGQ_Multiplayer::Bridge.call(NOTE_TOPIC, base.merge("entry" => plain_entry(entry)))
+    return false unless answer.is_a?(Hash)
 
-    reason = end_reason(clean)
-    if reason
-      log("refused to note the frozen fight against troop #{clean['troop']}: #{reason}")
-      note_ended(clean, reason)
-      return false
-    end
-
-    merged = merge(clean, "the player's")
-    rebuild if merged
-    return true unless merged
-
-    asked = defined?(MGQ_MpWorldStory) && MGQ_MpWorldStory.write_freeze(clean["troop"], plain_entry(clean))
-    log("the frozen fight against troop #{clean['troop']} #{asked ? 'goes to the world' : 'stays this game\'s own: no Raid World story takes it'}")
-    true
+    send_writes(answer["writes"])
+    check(true)
+    answer["held"] ? true : false
   rescue => e
     log("noting a frozen fight failed: #{e.class}: #{e.message}")
     false
   end
 
-  # Reports whether the fight against a troop ended for the open world, which is final: no game
-  # freezes it again, see end_reason. Called by battles_raid_freeze.rbx as a battle is set up.
+  # Tells why troops' fights are over, the one decision every caller asks.
+  #
+  # @param troops [Array<Integer>] The troops.
+  # @return [Hash{Integer => String}] Why, by the troop of each fight that is over.
+  def self.over(troops)
+    return {} if troops.empty?
+
+    answer = MGQ_Multiplayer::Bridge.call(OVER_TOPIC, base.merge("troops" => troops.map { |troop| troop.to_i }))
+    found = {}
+    Array(answer).each { |troop, reason| found[troop] = reason if reason }
+    found
+  end
+
+  # Reports whether the fight against a troop is over for the open world, which is final: no game
+  # freezes it again. Called by battles_raid_freeze.rbx as a battle is set up.
   #
   # @param troop [Integer, String] The troop.
-  # @return [Boolean] Whether it did.
+  # @return [Boolean] Whether it is.
   def self.final?(troop)
-    note_world
-    end_reason("troop" => troop.to_i) ? true : false
+    over([troop]).key?(troop.to_i)
   rescue => e
     log_once(:final, "looking whether a fight ended for the world failed: #{e.class}: #{e.message}")
     false
   end
 
-  # Takes the frozen fights of the world's story the relay handed: each fight's key by its troop,
-  # merged into the list, and the ends, for good, whatever the player's part.
+  # Notes that the player won a battle against a troop's pools, which ends its frozen fight at once.
+  #
+  # @param troop [Integer] The troop.
+  def self.won(troop)
+    MGQ_Multiplayer::Bridge.call(WON_TOPIC, "troop" => troop.to_i)
+  rescue => e
+    log("noting a won battle failed: #{e.class}: #{e.message}")
+  end
+
+  # Takes the frozen fights of the world's story the relay handed.
   #
   # @param keys [Hash{Integer => Object}] Each fight's key by troop: the fight as the DLL reads it
   #   (FrozenFightText), ENDED, or nil for a fight it cannot read.
   def self.take_keys(keys)
-    note_world
-    ended = keys.select { |_troop, value| value == ENDED }.keys
-    changed = take_ended(ended)
-    keys.each do |troop, value|
-      next if value == ENDED
-
-      entry = value.is_a?(Hash) && boss?(troop) ? game_entry(value) : nil
-      next log_once([:unread, troop], "dropped the world's frozen fight against troop #{troop}: this game cannot read it") unless entry
-
-      reason = end_reason(entry)
-      next note_ended(entry, reason) if reason
-
-      changed = true if merge(entry, "the world's")
-    end
-    rebuild if changed
+    answer = MGQ_Multiplayer::Bridge.call(TAKE_TOPIC, base.merge("keys" => keys.map { |troop, value| [troop.to_i, value] }))
+    send_writes(answer["writes"]) if answer.is_a?(Hash)
+    check(true)
   rescue => e
     log_once(:take_keys, "taking the world's frozen fights failed: #{e.class}: #{e.message}")
   end
 
-  # Notes the fights a world's story carries as ended, with the fights the other side plays in their
-  # stead, and drops their frozen fights, the player's own too.
-  #
-  # @param troops [Array<Integer>] The troops of the fights the world's story carries as ended.
-  # @return [Boolean] Whether the list changed.
-  def self.take_ended(troops)
-    troops.each do |troop|
-      added = mark_ended(troop)
-      log("the world's story ended the fight against troop #{added.join(' and ')} for good") unless added.empty?
-    end
-    kept = @entries.reject { |entry| @ended[entry["troop"]] }
-    return false if kept.size == @entries.size
-
-    (@entries - kept).each { |entry| log("dropped the frozen fight against troop #{entry['troop']}: the world's story ended it") }
-    @entries = kept
-    true
-  end
-
-  # Marks the fight against a troop ended for the world, with the fights the other side plays in its
-  # stead, so the end of one ends them all.
-  #
-  # @param troop [Integer] The troop.
-  # @return [Array<Integer>] The troops marked now, none for those marked before.
-  def self.mark_ended(troop)
-    added = ([troop] + alternatives(troop)).reject { |other| @ended[other] }
-    added.each { |other| @ended[other] = true }
-    added
-  end
-
-  # Keeps the world's story laid over the player's last, for the end rule, and ends the fights it
-  # beat. Called by world_story.rbx before its held keys are put.
+  # Hands the DLL the world's story laid over the player's last, for the end rule. Called by
+  # world_story.rbx once it wrote the relay's story while the player plays the world's.
   #
   # @param told [Array] The world's story: switches, variables and self switches.
   def self.world_told(told)
-    note_world
-    @told = told
-    drop_ended
+    answer = MGQ_Multiplayer::Bridge.call(TOLD_TOPIC, base.merge("told" => MGQ_MpRaidBosses.facts(told)))
+    send_writes(answer["writes"]) if answer.is_a?(Hash)
+    check(true)
   rescue => e
     log_once(:world_told, "following the world's story for the frozen fights failed: #{e.class}: #{e.message}")
   end
 
-  # Reports whether a frozen fight ended, see end_reason.
-  #
-  # @param entry [Hash] The entry.
-  # @return [Boolean] Whether it did.
-  def self.ended?(entry)
-    end_reason(entry) ? true : false
-  end
-
-  # Finds why a frozen fight ended: the world ended it before, which is final (see mark_ended), its
-  # troop's fight ended (see fight_end), or the fight the other side plays in its stead did (see
-  # alternatives).
-  #
-  # A player of the other side is past the fight without ever meeting its own end, and the world's
-  # furthest story wins.
-  #
-  # @param entry [Hash] The entry.
-  # @return [String, nil] Why, nil while it holds.
-  def self.end_reason(entry)
-    troop = entry["troop"]
-    return "the fight ended for the world before, for good" if @ended[troop]
-    return nil unless defined?(MGQ_MpRaidPool) && defined?(MGQ_MpRaidBosses)
-
-    reason = fight_end(troop)
-    return reason if reason
-
-    alternatives(troop).each do |other|
-      reason = fight_end(other)
-      return "the other side's fight against troop #{other} ended: #{reason}" if reason
-    end
-    nil
-  rescue => e
-    log_once([:end_reason, e.class], "looking whether a frozen fight ended failed: #{e.class}: #{e.message}")
-    nil
-  end
-
-  # Lists the troops the other side fights in a troop's stead, see
-  # the freeze's ALTERNATIVES (MGQ_MpRaidFreeze.tables).
-  #
-  # @param troop [Integer] The troop.
-  # @return [Array<Integer>] The troops, none for a fight both sides play.
-  def self.alternatives(troop)
-    return [] unless defined?(MGQ_MpRaidFreeze)
-
-    MGQ_MpRaidFreeze.data(:ALTERNATIVES, {})[troop] || []
-  end
-
-  # Finds why a troop's fight ended: the player won a battle against its pools (see
-  # MGQ_MpRaidFreeze.won?), every pool of its boss is known and defeated, or the boss's BEATEN
-  # marker is met by the player's story or the world's last told one.
-  #
-  # @param troop [Integer] The troop.
-  # @return [String, nil] Why, nil while it holds.
-  def self.fight_end(troop)
-    return "the player won its battle" if defined?(MGQ_MpRaidFreeze) && MGQ_MpRaidFreeze.respond_to?(:won?) && MGQ_MpRaidFreeze.won?(troop)
-
-    keys = MGQ_MpRaidPool.troop_keys(troop)
-    return "its pools are defeated" if !keys.empty? && keys.all? { |key| (pool = MGQ_MpRaidPool.pool(key)) && pool.defeated }
-
-    boss = MGQ_MpRaidBosses.at(troop)
-    return nil unless boss
-    return "the player's story beat it" if MGQ_MpRaidPool.beaten?(boss)
-
-    test = MGQ_MpRaidPool::BEATEN[[boss.milestone, boss.cap]]
-    test && @told && MGQ_MpRaidPool.met?(test, @told) ? "the world's story beat it" : nil
-  end
-
-  # Drops the frozen fights that ended, see end_reason.
-  def self.drop_ended
-    return if @entries.empty?
-
-    kept = @entries.reject do |entry|
-      reason = end_reason(entry)
-      note_ended(entry, reason) if reason
-      reason
-    end
-    return if kept.size == @entries.size
-
-    @entries = kept
-    rebuild
-  end
-
-  # Notes that a frozen fight ended, for good: it is never written again but as ENDED, with the
-  # fights the other side plays in its stead, which the relay is asked to end for every game of the
-  # world.
-  #
-  # @param entry [Hash] The entry.
-  # @param reason [String] Why it ended.
-  def self.note_ended(entry, reason)
-    troop = entry["troop"]
-    log_once([:ended, @world_id, troop, reason], "the frozen fight against troop #{troop} ended: #{reason}")
-    added = mark_ended(troop)
-    return if added.empty?
-
-    asked = defined?(MGQ_MpWorldStory) && added.map { |each| MGQ_MpWorldStory.write_freeze(each, ENDED) }.all?
-    log("the world's story ends the fight against troop #{added.join(' and ')} for good#{asked ? '' : ', in this game alone'}")
-  end
-
-  # Merges a frozen fight into the list: a fight already known keeps its fields and gains the held
-  # keys it lacks, its own value winning a key both hold; a fight that ended for the world is refused.
-  #
-  # @param entry [Hash] The entry, see clean.
-  # @param source [String] Whose it is, for the log.
-  # @return [Boolean] Whether the list changed.
-  def self.merge(entry, source)
-    if @ended[entry["troop"]]
-      log_once([:final, @world_id, entry["troop"], source], "refused #{source} frozen fight against troop #{entry['troop']}: the fight ended for the world, for good")
-      return false
-    end
-
-    known = @entries.find { |other| other["troop"] == entry["troop"] }
-    unless known
-      if @entries.size >= MAX_ENTRIES
-        log_once([:full, entry["troop"]], "dropped #{source} frozen fight against troop #{entry['troop']}: the list holds #{MAX_ENTRIES} already")
-        return false
-      end
-
-      @entries << entry
-      log("took #{source} frozen fight against troop #{entry['troop']} at #{entry['site']}, holding #{held_text(entry['held'])}")
-      return true
-    end
-
-    have = {}
-    known["held"].each { |kind, key, _| have[[kind, key]] = true }
-    added = entry["held"].reject { |kind, key, _| have[[kind, key]] }.first([MAX_HELD - known["held"].size, 0].max)
-    return false if added.empty?
-
-    known["held"] = known["held"] + added
-    log("#{source} frozen fight against troop #{entry['troop']} also holds #{held_text(added)}")
-    true
-  end
-
-  # Rebuilds the index of the held keys, the oldest fight's value winning a key two hold.
-  def self.rebuild
-    index = [{}, {}, {}]
-    held = []
-    @entries.each do |entry|
-      entry["held"].each do |kind, key, value|
-        next if index[kind].key?(key)
-
-        index[kind][key] = value
-        held << [kind, key, value]
-      end
-    end
-    @index = index
-    @held = held
-  end
-
-  # Names held keys for the log.
-  #
-  # @param held [Array<Array>] Each key as kind, key and value.
-  # @return [String] Such as "v1075 14, s31 false", at most ten.
-  def self.held_text(held)
-    return "nothing" if held.empty?
-
-    names = held.first(10).map { |kind, key, value| "#{KIND_LETTERS[kind]}#{key.is_a?(Array) ? key.join('.') : key} #{value.inspect}" }
-    names.join(", ") + (held.size > 10 ? ", ..." : "")
-  end
-
-  # Reads an entry as another game reads it back from the relay's track, the fields of the player's
-  # own record and what the track cannot carry left out (the DLL's FrozenFightText).
-  #
-  # @param entry [Hash] The entry.
-  # @return [Hash, nil] The entry, nil for one that is none or longer than the relay keeps.
-  def self.clean(entry)
-    return nil unless entry.is_a?(Hash)
-
-    read = MGQ_Multiplayer::Bridge.call(ENTRY_TOPIC, plain_entry(entry))
-    read.is_a?(Hash) ? game_entry(read) : nil
-  end
-
   # Turns an entry into what the DLL takes: its fields alone, each held value as the DLL takes it
-  # (MGQ_MpStoryKeys.plain_of), a variable whose value no story carries left out.
+  # (MGQ_MpStoryKeys.plain_of), a value no story carries left out.
   #
   # @param entry [Hash] The entry.
   # @return [Hash] The entry.
@@ -460,14 +278,6 @@ module MGQ_MpWorldFreeze
   # @return [Hash] The entry.
   def self.game_entry(entry)
     entry.merge("held" => Array(entry["held"]).map { |kind, key, value| [kind, key, MGQ_MpStoryKeys.game_value(kind, value)] })
-  end
-
-  # Reports whether a troop is a raid boss's, the only fights the list takes.
-  #
-  # @param troop [Integer] The troop.
-  # @return [Boolean] Whether it is.
-  def self.boss?(troop)
-    troop.is_a?(Integer) && troop > 0 && defined?(MGQ_MpRaidBosses) && MGQ_MpRaidBosses.boss?(troop) ? true : false
   end
 end
 

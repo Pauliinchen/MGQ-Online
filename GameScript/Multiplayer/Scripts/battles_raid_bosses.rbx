@@ -2,6 +2,7 @@
 #  battles_raid_bosses.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Read the bosses' table from the DLL, which keeps it and decides by it, and handed it the story values its rules read
 #      Paulinchen  2026-10-11: Counted 22 more story bosses as raid bosses
 #                            - Moved Adramelech to tier 5 and Sonya Chaos to tier 4
 #                            - Moved Adramelech from tier 8 to tier 6 and Morrigan to tier 7
@@ -14,361 +15,187 @@
 #
 #----------------------------------------------------------------
 
-# The story's boss battles, by troop: the story milestone each belongs to, the highest base level
-# the milestone allows once beaten (its cap), and whether the troop is the fight's last phase; and
-# the raid bosses' tiers, sections and HP bar titles. A Raid World never lets a battle join a boss
-# battle (battles_coop_hotjoin.rbx); the raid bosses' pools count a fight on its last phase.
-#
-# The game keeps no list of its own, only BOSS_SWITCH, so the table holds every phase of a fight
-# with several and the bosses a milestone's quest fights before it; a boss outside the Level Cap
-# mod's milestones is a milestone of its own, with the cap the milestone before it set.
+# The story's boss battles and the raid bosses as the DLL's table names them (MGQOnline.Game's
+# BossTable, topic TOPIC): each boss troop's milestone, its name, tier, bar title, section and pool
+# key, the tiers' stat factors and the story's sections. The rules that decide by the table are the
+# DLL's too (MGQOnline.Game's BossRules): the scripts hand them the story values they read (facts)
+# with each question, see battles_raid_pool.rbx and battles_raid_tiers.rbx.
 module MGQ_MpRaidBosses
   # The switch the game's events turn on right before every story boss battle and off right after
   # it, the one the game's ero offer in boss battles reads, which also covers the bosses outside the
   # table.
   BOSS_SWITCH = 22
 
-  # A story boss troop.
+  # The DLL's topic of the table.
+  TOPIC = "raid.bosses"
+
+  # Frames between two asks for the table while the DLL gives none, a second.
+  RETRY_FRAMES = 60
+
+  # A boss troop as the table names it.
   #
-  # @!attribute milestone [String] The story milestone the troop belongs to.
-  # @!attribute cap [Integer, nil] The highest base level once the milestone is beaten, nil after
-  #   the last.
-  # @!attribute last [Boolean, Integer] Whether the troop is the fight's last phase; a switch's id
-  #   when it is the last only while that switch is on.
-  Boss = Struct.new(:milestone, :cap, :last)
+  # @!attribute troop [Integer] The troop.
+  # @!attribute milestone [String] The story milestone it belongs to.
+  # @!attribute name [String] Its milestone's name, with its cap where several share the name.
+  # @!attribute tier [Integer, nil] Its tier.
+  # @!attribute title [String] The title above its name on its HP bar.
+  # @!attribute section [String, nil] The story's section it belongs to.
+  # @!attribute key [String, nil] Its pool's key, nil for one the relay refuses.
+  Boss = Struct.new(:troop, :milestone, :name, :tier, :title, :section, :key)
 
-  # The story's boss troops, by troop id: each one's milestone, cap and last phase, see Boss.
-  # Salamander's fight ends with troop 751 on Luka's side (switch 4) and goes on to Granberia (752)
-  # on Alice's. Troop 1675 (Doppel Lukas and Lucifina) ends both the Angelic Dominion and the
-  # Monster Realm milestone of that name. The page-trailing fights without a boss (789 Walraune,
-  # 1546 Giriel, 2680 Mind Ant) are left out.
-  TROOPS = {
-    # Part 1. The Sphinx may be challenged from Sabasa's quest on.
-    26 => ["Four bandits", 10, false],
-    27 => ["Four bandits", 10, false],
-    28 => ["Four bandits", 10, false],
-    29 => ["Four bandits", 10, true],
-    71 => ["Queen Harpy", 15, true],
-    126 => ["Morrigan", 18, true],
-    196 => ["Chrome and Frederica", 20, true],
-    212 => ["Sylph", 20, true],
-    247 => ["Sphinx", 20, true],
-    248 => ["Sara", 20, true],
-    249 => ["Astaroth", 20, true],
-    299 => ["Gnome", 20, true],
-    327 => ["Adramelech", 25, true],
+  extend MGQ_MpLog
 
-    # Part 2. Gnosis and Zion are one choice, Sonya Mazda and Sonya Mainyu one fight per side.
-    588 => ["Bonnie and Ashel", 25, true],
-    607 => ["Alma Elma, then Granberia", 30, false],
-    608 => ["Alma Elma, then Granberia", 30, false],
-    609 => ["Alma Elma, then Granberia", 30, false],
-    610 => ["Alma Elma, then Granberia", 30, true],
-    655 => ["Mephisto", 30, true],
-    670 => ["Tezcatlipoca", 30, true],
-    672 => ["Gnosis", 30, true],
-    673 => ["Zion", 30, true],
-    678 => ["Undine", 30, true],
-    705 => ["Lilith", 35, false],
-    718 => ["Queen Ant", 30, true],
-    874 => ["Lilith", 35, false],
-    719 => ["Lilith", 35, true],
-    751 => ["Salamander", 40, 4],
-    752 => ["Salamander", 40, true],
-    784 => ["Queen Fairy", 40, true],
-    785 => ["Queen Elf", 43, true],
-    793 => ["Queen Alraune, then Aži Dahāka", 43, false],
-    794 => ["Queen Alraune, then Aži Dahāka", 43, true],
-    801 => ["Queen Mermaid", 45, false],
-    802 => ["Queen Mermaid", 45, true],
-    807 => ["Spider Princess", 47, true],
-    812 => ["Carmilla", 47, true],
-    813 => ["Elizabeth", 47, true],
-    814 => ["Queen Vampire", 50, true],
-    871 => ["La Croix's zombies", 50, false],
-    872 => ["La Croix's zombies", 50, true],
-    836 => ["Black Dahlia, Black Mamba and Black Rose", 55, true],
-    837 => ["Black Alice", 65, false],
-    838 => ["Black Alice", 65, false],
-    839 => ["Black Alice", 65, true],
-    854 => ["Eden", 55, true],
-    868 => ["Sonya Mazda", 55, true],
-    869 => ["Sonya Mainyu", 55, true],
-    870 => ["Sonya Chaos", 55, true],
+  # What starts this script's lines in the log.
+  LOG_TAG = "raid bosses"
 
-    # Part 3 before the Great Decision, and the Great Decision on either route.
-    1451 => ["Garuda", 60, true],
-    1461 => ["Erubetie", 60, true],
-    1501 => ["Black Dahlia, Black Mamba and Black Rose", 60, true],
-    1502 => ["Tamamo", 61, true],
-    1503 => ["Erubetie", 62, true],
-    1504 => ["Granberia", 63, true],
-    1505 => ["Great Decision", 65, false],
-    1506 => ["Great Decision", 65, false],
-    1507 => ["Great Decision", 65, true],
-    1508 => ["Great Decision", 65, false],
-    1509 => ["Great Decision", 65, true],
+  # The table, nil until the DLL handed it.
+  @table = nil
 
-    # The Angelic Dominion route.
-    1517 => ["Heaven's Gate", 67, true],
-    1544 => ["Gabriela", 70, true],
-    1554 => ["Uriela, Sabiriel and Fernandez", 75, false],
-    1557 => ["Uriela, Sabiriel and Fernandez", 75, false],
-    1558 => ["Uriela, Sabiriel and Fernandez", 75, true],
-    1564 => ["Sariela", 78, true],
-    1590 => ["Laplace", 80, true],
-    1592 => ["Metatronne and Sandalphone", 83, false],
-    1599 => ["Metatronne and Sandalphone", 83, true],
-    1610 => ["Zion (three fights)", 85, false],
-    1611 => ["Zion (three fights)", 85, false],
-    1612 => ["Zion (three fights)", 85, true],
-    1634 => ["Cosmos", 90, false],
-    1635 => ["Cosmos", 90, true],
-    1642 => ["Aži Dahāka", 95, true],
-    1659 => ["Marcellus and Black Alice", 95, false],
-    1660 => ["Marcellus and Black Alice", 95, true],
-    1674 => ["Doppel Lukas and Lucifina", 100, false],
-    1675 => ["Doppel Lukas and Lucifina", 100, true],
-    1722 => ["Micaela", 105, true],
-    1723 => ["Ilias", 115, true],
-    1724 => ["Chaos Ilias", 120, false],
-    1725 => ["Chaos Ilias", 120, true],
-
-    # The Monster Realm route.
-    1745 => ["Queen Eva", 67, true],
-    1763 => ["Malboro Girl, then Kanon", 70, false],
-    1769 => ["Malboro Girl, then Kanon", 70, true],
-    1784 => ["Kanade", 75, true],
-    1807 => ["Tamamo", 80, true],
-    1814 => ["Tamamo", 83, true],
-    1847 => ["Minagi and Alipheese the 10th", 85, false],
-    1848 => ["Minagi and Alipheese the 10th", 85, true],
-    1869 => ["Kagetsumugi and her dolls", 90, true],
-    1891 => ["Hiruko", 95, true],
-    1902 => ["Kagetsumugi and Magatsu-Karura, then Black Alice", 95, false],
-    1903 => ["Kagetsumugi and Magatsu-Karura, then Black Alice", 95, true],
-    1943 => ["Saja", 105, true],
-    1944 => ["Alipheese", 115, true],
-    1945 => ["Chaos Alipheese", 120, false],
-    1946 => ["Chaos Alipheese", 120, true],
-
-    # The Chaos route. Fights a milestone lets the player take in any order each end on their own.
-    1959 => ["Kagetsumugi and her dolls", 125, true],
-    1975 => ["Angolmois", 130, true],
-    2042 => ["Greedy Papi, Gob, Teeny and Vanilla", 135, false],
-    2091 => ["Greedy Papi, Gob, Teeny and Vanilla", 135, false],
-    2092 => ["Greedy Papi, Gob, Teeny and Vanilla", 135, true],
-    1983 => ["Gabriela and Kanon", 135, false],
-    1984 => ["Gabriela and Kanon", 135, true],
-    1987 => ["Uriela", 135, true],
-    1989 => ["Kanade", 140, true],
-    1995 => ["Hiruko", 140, false],
-    1996 => ["Hiruko", 140, true],
-    2001 => ["Magatsu-Omikami", 145, true],
-    1999 => ["Apiro Lagos", 147, true],
-    2003 => ["Zion and Laplace", 151, false],
-    2004 => ["Zion and Laplace", 151, true],
-    2005 => ["Sigrdrifa", 153, true],
-    2006 => ["Metatronne and Sandalphone, then Singularity", 155, false],
-    2010 => ["Metatronne and Sandalphone, then Singularity", 155, true],
-    2016 => ["Sisel, EX-Kyubi, Frere and Bloody Dragon", 160, true],
-    2017 => ["Sisel, EX-Kyubi, Frere and Bloody Dragon", 160, true],
-    2018 => ["Sisel, EX-Kyubi, Frere and Bloody Dragon", 160, true],
-    2019 => ["Sisel, EX-Kyubi, Frere and Bloody Dragon", 160, true],
-    2029 => ["Saja", 168, true],
-    2047 => ["World Drown", 175, true],
-    2053 => ["Cosmos", 180, true],
-    2054 => ["No Life King", 185, false],
-    2061 => ["No Life King", 185, true],
-    2062 => ["Angolmois", 190, true],
-    2221 => ["Hiruko, Kanon and Kanade", 195, true],
-    2090 => ["Baal Zebub", 203, true],
-    2095 => ["Seven Deadly Sins vessels", 210, true],
-    2096 => ["Seven Deadly Sins vessels", 210, true],
-    2097 => ["Seven Deadly Sins vessels", 210, true],
-    2098 => ["Seven Deadly Sins vessels", 210, false],
-    2099 => ["Seven Deadly Sins vessels", 210, true],
-    2102 => ["Seven Deadly Sins vessels", 210, true],
-    2107 => ["Greedy, Envious and Slothful Eva", 213, false],
-    2108 => ["Greedy, Envious and Slothful Eva", 213, false],
-    2109 => ["Greedy, Envious and Slothful Eva", 213, true],
-    2110 => ["Seven Deadly Sins", 215, true],
-    2133 => ["The All-Knowing", 220, true],
-    2224 => ["Agaliarept", 225, false],
-    2225 => ["Agaliarept", 225, false],
-    2226 => ["Agaliarept", 225, false],
-    2227 => ["Agaliarept", 225, false],
-    2228 => ["Agaliarept", 225, true],
-    2137 => ["Echidna Queen", 228, true],
-    2144 => ["Cthulhu", 230, true],
-    2154 => ["Dimensional Eroder", 235, true],
-    2157 => ["Star Eater", 240, false],
-    2158 => ["Star Eater", 240, true],
-    2176 => ["Black Alice", 245, true],
-    2222 => ["Idea Lukas", 250, true],
-    2185 => ["EX Sonya", 255, true],
-    2187 => ["Koron", 260, false],
-    2188 => ["Koron", 260, true],
-    2211 => ["Goddess, Demon and Fiend", 275, true],
-    2212 => ["Goddess, Demon and Fiend", 275, true],
-    2213 => ["Goddess, Demon and Fiend", 275, true],
-    2214 => ["World Breaker and Judgement", 285, false],
-    2215 => ["World Breaker and Judgement", 285, true],
-    2216 => ["Deus Ex Machina", 300, true],
-    2217 => ["Chaos", nil, false],
-    2218 => ["Chaos", nil, false],
-    2219 => ["Chaos", nil, true],
-  }
-
-  # Maps where the story fights a boss troop before the fight that defeats it, by troop: Carmilla
-  # and Elizabeth withdraw from the Sabasa Attack. There the troop counts as an earlier phase, since
-  # a pool emptied once stays empty and the Vampire Castle's fights would be won at once.
-  SKIRMISHES = { 812 => 723, 813 => 723 }
-
-  # The one-time bosses outside the story that count as raid bosses too, by troop: each its own
-  # fight of one phase under its name, without a cap, and its tier (see TIERS).
+  # Reads the table once the DLL hands it, handing it how many enemies each troop's setup makes;
+  # while the DLL gives none, it is asked again every RETRY_FRAMES.
   #
-  # The Megid Pandoras guarding several Chaos Domain maps share one troop, so they stay out.
-  OPTIONAL = {
-    2549 => ["Fourth Law", 1], 3338 => ["Null Lilith", 1], 2923 => ["Fifth Law - Nirvana", 1],
-    3127 => ["Void Image of Paradise", 1], 2410 => ["Chaos Maria", 1], 2922 => ["Fifth Law - Fallen Angel", 1],
-  }
+  # @return [Hash] :troops (Boss by troop), :order (the troops in story order), :tiers ({stat =>
+  #   factor} by tier), :stats, :titles, :sections, :reads ([switches, variables]) and :key_troops
+  #   (the last phase of each pool key's boss); empty while the DLL does not answer.
+  def self.table
+    return @table if @table && (@sized || $data_troops.nil?)
+    return {} if @failed_at && MGQ_Multiplayer::Bridge.frame_number - @failed_at < RETRY_FRAMES
 
-  # What each tier of raid bosses changes, tier 0 the strongest: per stat of the game's (:mhp, :mmp,
-  # :atk, :def, :mat, :mdf, :agi, :luk) the factor its enemies have, applied after the game's own
-  # difficulty. A stat a tier leaves out stays as the game has it.
-  TIERS = {
-    0 => { :mhp => 50, :def => 5.0, :mdf => 5.0 },
-    1 => { :mhp => 45, :def => 4.33, :mdf => 4.33 },
-    2 => { :mhp => 40, :def => 3.67, :mdf => 3.67 },
-    3 => { :mhp => 35, :def => 3.0, :mdf => 3.0 },
-    4 => { :mhp => 30, :def => 2.33, :mdf => 2.33 },
-    5 => { :mhp => 25, :def => 1.67, :mdf => 1.67 },
-    6 => { :mhp => 20 },
-    7 => { :mhp => 15 },
-    8 => { :mhp => 10 },
-    9 => { :mhp => 5 },
-  }
+    answer = MGQ_Multiplayer::Bridge.open? ? MGQ_Multiplayer::Bridge.call(TOPIC, "sizes" => sizes) : nil
+    unless answer.is_a?(Hash) && answer["troops"].is_a?(Array)
+      @failed_at = MGQ_Multiplayer::Bridge.frame_number
+      log_once(:none, "the DLL hands no table of the raid bosses yet")
+      return {}
+    end
 
-  # The story's sections in story order, each with the troop of TROOPS it starts at in TROOPS' order,
-  # running to the next one's start; the troops' ids interleave on the Chaos route, so the order
-  # counts, not the ids. The bosses of OPTIONAL make a section of their own, OPTIONAL_SECTION.
-  SECTIONS = [["Part 1", 26], ["Part 2", 588],["Part 3", 1451], ["Angelic Dominion", 1517], ["Monster Realm", 1745], ["Chaos route", 1959]]
+    @sized = !$data_troops.nil?
+    @table = table_of(answer)
+  rescue => e
+    @failed_at = MGQ_Multiplayer::Bridge.frame_number
+    log_once(:table, "reading the raid bosses' table failed: #{e.class}: #{e.message}")
+    {}
+  end
 
-  # The section of the one-time bosses of OPTIONAL, after the story's.
-  OPTIONAL_SECTION = "Chaos Domain"
+  # Reads the table the DLL handed, see table.
+  #
+  # @param answer [Hash] The answer of TOPIC.
+  # @return [Hash] The table.
+  def self.table_of(answer)
+    troops = {}
+    key_troops = {}
+    answer["troops"].each do |troop, milestone, name, tier, title, section, key|
+      troops[troop] = Boss.new(troop, milestone, name, tier, title, section, key)
+    end
+    Array(answer["key_troops"]).each { |key, troop| key_troops[key] = troop }
+    tiers = {}
+    Array(answer["tiers"]).each { |tier, stats| tiers[tier] = Hash[stats.map { |stat, factor| [stat.to_sym, factor.to_f] }] }
+    reads = answer["reads"] || {}
+    { :troops => troops, :order => answer["troops"].map(&:first), :tiers => tiers, :stats => Array(answer["stats"]).map(&:to_sym),
+      :titles => Array(answer["titles"]), :sections => Array(answer["sections"]), :reads => [Array(reads["switches"]), Array(reads["variables"])],
+      :key_troops => key_troops }
+  end
 
-  # The story's bosses of each tier, by their milestone's name (see milestone_key), in the order the
-  # story meets them. The bosses of OPTIONAL carry their tier themselves.
-  TIER_BOSSES = {
-    0 => ["Chaos"],
-    1 => ["Cosmos (cap 180)", "No Life King", "Angolmois (cap 190)", "Hiruko, Kanon and Kanade", "Baal Zebub",
-          "Seven Deadly Sins vessels", "Greedy, Envious and Slothful Eva", "Seven Deadly Sins", "The All-Knowing", "Agaliarept",
-          "Echidna Queen", "Cthulhu", "Dimensional Eroder", "Star Eater", "Black Alice (cap 245)", "Idea Lukas", "EX Sonya",
-          "Koron", "Goddess, Demon and Fiend", "World Breaker and Judgement", "Deus Ex Machina"],
-    2 => ["Kagetsumugi and her dolls (cap 125)", "Angolmois (cap 130)", "Greedy Papi, Gob, Teeny and Vanilla", "Gabriela and Kanon",
-          "Uriela", "Kanade (cap 140)", "Hiruko (cap 140)", "Magatsu-Omikami", "Apiro Lagos", "Zion and Laplace", "Sigrdrifa",
-          "Metatronne and Sandalphone, then Singularity", "Sisel, EX-Kyubi, Frere and Bloody Dragon", "Saja (cap 168)", "World Drown"],
-    3 => ["Ilias", "Chaos Ilias", "Alipheese", "Chaos Alipheese"],
-    4 => ["Sonya Chaos", "Heaven's Gate", "Gabriela", "Uriela, Sabiriel and Fernandez", "Sariela", "Laplace", "Metatronne and Sandalphone",
-          "Zion (three fights)", "Cosmos (cap 90)", "Aži Dahāka", "Marcellus and Black Alice", "Doppel Lukas and Lucifina", "Micaela",
-          "Queen Eva", "Malboro Girl, then Kanon", "Kanade (cap 75)", "Tamamo (cap 80)", "Tamamo (cap 83)", "Minagi and Alipheese the 10th",
-          "Kagetsumugi and her dolls (cap 90)", "Hiruko (cap 95)", "Kagetsumugi and Magatsu-Karura, then Black Alice", "Saja (cap 105)"],
-    5 => ["Sphinx", "Adramelech", "Black Dahlia, Black Mamba and Black Rose (cap 55)", "Black Alice (cap 65)", "Eden", "Sonya Mazda", "Sonya Mainyu", "Garuda",
-          "Erubetie (cap 60)", "Black Dahlia, Black Mamba and Black Rose (cap 60)", "Tamamo (cap 61)", "Erubetie (cap 62)", "Granberia",
-          "Great Decision"],
-    6 => ["Gnosis", "Zion", "Queen Fairy", "Queen Elf", "Queen Mermaid", "Spider Princess", "Queen Vampire"],
-    7 => ["Morrigan", "Sylph", "Astaroth", "Gnome", "Alma Elma, then Granberia", "Tezcatlipoca", "Undine", "Queen Ant", "Lilith", "Salamander",
-          "Queen Alraune, then Aži Dahāka", "Carmilla", "Elizabeth"],
-    8 => ["Chrome and Frederica", "Sara", "Mephisto", "La Croix's zombies"],
-    9 => ["Four bandits", "Queen Harpy", "Bonnie and Ashel"],
-  }
+  # Counts the enemies the game's setup of every troop makes, where that is not one: its members
+  # whose enemy the database has.
+  #
+  # @return [Array<Array(Integer, Integer)>] Each troop with its count.
+  def self.sizes
+    return [] unless $data_troops && $data_enemies
 
-  # The title above a raid boss's name on its HP bar, by the group the game's enemy library names it
-  # in: each title with its bosses' milestone names (see milestone_key) or OPTIONAL names. A boss
-  # outside them reads as a raid boss of its tier.
-  TITLES = {
-    "Heavenly Knight" => ["Alma Elma, then Granberia", "Tamamo (cap 61)", "Erubetie (cap 62)", "Granberia"],
-    "Archangel" => ["Gabriela", "Uriela, Sabiriel and Fernandez", "Sariela", "Metatronne and Sandalphone", "Zion (three fights)"],
-    "Six Ancestors" => ["Malboro Girl, then Kanon", "Kanade (cap 75)", "Tamamo (cap 80)", "Tamamo (cap 83)", "Minagi and Alipheese the 10th",
-                        "Hiruko (cap 95)", "Saja (cap 105)", "Hiruko, Kanon and Kanade"],
-    "Apostle of Chaos" => ["Apiro Lagos", "Idea Lukas", "EX Sonya"],
-    "Phenomenon of Ruin" => ["Angolmois (cap 130)", "Magatsu-Omikami", "Metatronne and Sandalphone, then Singularity", "World Drown",
-                             "Angolmois (cap 190)", "Baal Zebub", "Seven Deadly Sins", "Dimensional Eroder"],
-    "Chaos' Phantom" => ["Fourth Law", "Null Lilith", "Fifth Law - Nirvana", "Void Image of Paradise", "Chaos Maria", "Fifth Law - Fallen Angel"],
-  }
+    $data_troops.each_with_index.map do |troop, id|
+      count = troop ? troop.members.count { |member| $data_enemies[member.enemy_id] } : 1
+      count == 1 ? nil : [id, count]
+    end.compact
+  end
 
-  # Finds the title above a boss's name on its HP bar, see TITLES.
+  # Writes the story values the DLL's rules read, of the game or of a story: the map and the
+  # switches and variables the table names.
+  #
+  # @param story [Array, nil] A story's switches and variables, as MGQ_MpStoryState.raw_state;
+  #   nil for the game's.
+  # @return [Hash] "map", "s" and "v".
+  def self.facts(story = nil)
+    switches, variables = story || [$game_switches, $game_variables]
+    read_switches, read_variables = table[:reads] || [[], []]
+    { "map" => story.nil? && $game_map ? $game_map.map_id : 0, "s" => read_switches.map { |id| switches && switches[id] ? true : false },
+      "v" => read_variables.map { |id| (value = variables && variables[id]).is_a?(Integer) ? value : 0 } }
+  end
+
+  # Finds a boss troop of the story or a one-time boss.
+  #
+  # @param troop_id [Integer, String] The troop.
+  # @return [Boss, nil] The boss, nil for a troop that is none.
+  def self.at(troop_id)
+    (table[:troops] || {})[troop_id.to_i]
+  end
+
+  # Lists every boss troop, in story order.
+  #
+  # @return [Array<Integer>] The troops.
+  def self.troops
+    table[:order] || []
+  end
+
+  # Finds the troop of a boss's pool key: its last phase.
+  #
+  # @param key [String] The boss's key, see key.
+  # @return [Integer, nil] The troop, nil for none.
+  def self.troop_of_key(key)
+    (table[:key_troops] || {})[key]
+  end
+
+  # Finds the tier of a boss troop.
+  #
+  # @param troop_id [Integer, String, nil] The troop.
+  # @return [Integer, nil] The tier, nil for a troop that is no boss.
+  def self.tier(troop_id)
+    boss = troop_id && at(troop_id)
+    boss && boss.tier
+  end
+
+  # Finds the tier of a boss by its name.
+  #
+  # @param key [String, nil] Its milestone's name (see milestone_key), or a one-time boss's own.
+  # @return [Integer, nil] The tier, nil for a name the table lacks.
+  def self.key_tier(key)
+    boss = (table[:troops] || {}).values.find { |each| each.name == key }
+    boss && boss.tier
+  end
+
+  # Finds the title above a boss's name on its HP bar.
   #
   # @param troop_id [Integer, String] The troop.
   # @return [String, nil] The title, such as "Archangel" or "Tier 6 Raid Boss"; nil for a troop
   #   that is no boss.
   def self.title(troop_id)
-    key = milestone_key(troop_id)
-    return nil unless key
-
-    @titles ||= TITLES.each_with_object({}) { |(title, names), titles| names.each { |name| titles[name] = title } }
-    @titles[key] || "Tier #{tier(troop_id)} Raid Boss"
+    boss = at(troop_id)
+    boss && boss.title
   end
 
-  # Finds a boss troop of the story or of OPTIONAL.
+  # Lists the titles a raid boss's bar may carry besides its tier's.
   #
-  # @param troop_id [Integer, String] The troop.
-  # @return [Boss, nil] The troop's milestone, cap and last phase, nil for a troop that is no boss.
-  def self.at(troop_id)
-    row = TROOPS[troop_id.to_i]
-    return Boss.new(*row) if row
-
-    optional = OPTIONAL[troop_id.to_i]
-    optional && Boss.new(optional[0], nil, true)
+  # @return [Array<String>] The titles.
+  def self.titles
+    table[:titles] || []
   end
 
-  # Finds the tier of a boss troop, see TIERS.
-  #
-  # @param troop_id [Integer, String] The troop.
-  # @return [Integer, nil] The tier, nil for a troop that is no boss.
-  def self.tier(troop_id)
-    optional = OPTIONAL[troop_id.to_i]
-    return optional[1] if optional
-
-    key_tier(milestone_key(troop_id))
-  end
-
-  # Finds the tier of a boss by its name: its milestone's (see milestone_key) or its own in OPTIONAL.
-  #
-  # @param key [String, nil] The name.
-  # @return [Integer, nil] The tier, nil for a name the tables lack.
-  def self.key_tier(key)
-    @tiers ||= TIER_BOSSES.each_with_object({}) { |(tier, names), tiers| names.each { |name| tiers[name] = tier } }
-    @optional_tiers ||= Hash[OPTIONAL.values]
-    @tiers[key] || @optional_tiers[key]
-  end
-
-  # Lists the story's sections in story order with their bosses' milestone names (see
-  # milestone_key), each once, in the order the story meets them; the bosses of OPTIONAL last under
-  # OPTIONAL_SECTION. Walks TROOPS once and keeps what it found.
+  # Lists the story's sections in story order with their bosses' names, the one-time bosses last.
   #
   # @return [Array<Array(String, Array<String>)>] Each section's name with its bosses' names.
   def self.sections
-    @sections ||= begin
-      starts = Hash[SECTIONS.map { |name, troop| [troop, name] }]
-      found = TROOPS.keys.each_with_object([]) do |troop_id, list|
-        list << [starts[troop_id], []] if starts.key?(troop_id)
-        key = milestone_key(troop_id)
-        list.last[1] << key unless list.last[1].include?(key)
-      end
-      found << [OPTIONAL_SECTION, OPTIONAL.values.map(&:first)]
-    end
+    table[:sections] || []
   end
 
-  # Finds the section a boss belongs to, see sections.
+  # Finds the section a boss belongs to.
   #
-  # @param boss [Integer, String, nil] Its troop, or its milestone's name (see milestone_key) or its
-  #   own in OPTIONAL.
-  # @return [String, nil] The section's name, nil for a boss the tables lack.
+  # @param boss [Integer, String, nil] Its name (see milestone_key), or its troop.
+  # @return [String, nil] The section's name, nil for a boss the table lacks.
   def self.section(boss)
-    @section_of ||= sections.each_with_object({}) { |(name, keys), found| keys.each { |key| found[key] = name } }
-    @section_of[boss.to_s] || @section_of[milestone_key(boss).to_s]
+    [boss.to_s, milestone_key(boss).to_s].each do |name|
+      found = sections.find { |_section, names| names.include?(name) }
+      return found[0] if found
+    end
+    nil
   end
 
   # Finds the name of a boss troop's milestone, with its cap where several milestones share the
@@ -378,10 +205,23 @@ module MGQ_MpRaidBosses
   # @return [String, nil] The name, nil for a troop that is no boss.
   def self.milestone_key(troop_id)
     boss = at(troop_id)
-    return nil unless boss
+    boss && boss.name
+  end
 
-    @caps ||= TROOPS.values.each_with_object({}) { |row, caps| (caps[row[0]] ||= []) << row[1] }
-    @caps.fetch(boss.milestone, []).uniq.size > 1 ? "#{boss.milestone} (cap #{boss.cap})" : boss.milestone
+  # Finds a troop's pool key.
+  #
+  # @param troop_id [Integer, String] The troop.
+  # @return [String, nil] The key, nil for a troop that is no boss or a key the relay refuses.
+  def self.key(troop_id)
+    boss = at(troop_id)
+    boss && boss.key
+  end
+
+  # Lists the tiers with the factors each gives the stats it changes.
+  #
+  # @return [Hash{Integer => Hash{Symbol => Float}}] The factors by stat, by tier.
+  def self.tiers
+    table[:tiers] || {}
   end
 
   # Finds the factor a boss troop's tier gives one of its enemies' stats.
@@ -391,36 +231,22 @@ module MGQ_MpRaidBosses
   # @return [Numeric] The factor, 1 for a stat the tier leaves as it is or a troop that is no boss.
   def self.factor(troop_id, stat)
     tier = tier(troop_id)
-    tier ? TIERS.fetch(tier, {}).fetch(stat, 1) : 1
+    tier ? tiers.fetch(tier, {}).fetch(stat, 1) : 1
   end
 
   # Lists the stats any tier changes besides max HP, whose methods the raid pool then wraps.
   #
   # @return [Array<Symbol>] The stats.
   def self.tier_stats
-    TIERS.values.map(&:keys).flatten.uniq - [:mhp]
+    table[:stats] || []
   end
 
-  # Reports whether a troop is one of the story's bosses or of OPTIONAL.
+  # Reports whether a troop is one of the story's bosses or a one-time boss.
   #
   # @param troop_id [Integer, String] The troop.
   # @return [Boolean] Whether it is.
   def self.boss?(troop_id)
-    TROOPS.key?(troop_id.to_i) || OPTIONAL.key?(troop_id.to_i)
-  end
-
-  # Reports whether a troop is the last phase of its boss fight, reading the side's switch where
-  # that decides it, and never on a map of SKIRMISHES.
-  #
-  # @param troop_id [Integer, String] The troop.
-  # @return [Boolean] Whether it is, false for a troop that is no story boss.
-  def self.last_phase?(troop_id)
-    boss = at(troop_id)
-    return false unless boss
-    return false if $game_map && SKIRMISHES[troop_id.to_i] == $game_map.map_id
-    return boss.last if boss.last == true || boss.last == false
-
-    $game_switches[boss.last] ? true : false
+    at(troop_id) ? true : false
   end
 
   # Reports whether the battle running is a boss battle: its troop is one of the story's bosses, or

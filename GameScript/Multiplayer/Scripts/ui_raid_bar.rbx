@@ -2,7 +2,8 @@
 #  ui_raid_bar.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Kept and read its switches in Player.ini as true or false, which the DLL writes as 1 or 0
+#      Paulinchen  2026-11-05: Asked the DLL in one call per scan which troops' battles show a bar, and read the titles and tiers from its table
+#                            - Kept and read its switches in Player.ini as true or false, which the DLL writes as 1 or 0
 #                            - Counted its scans and redraws by the bridge's frame
 #      Paulinchen  2026-11-01: Built the bars on the Mod Framework's components and took them from the DLL's bars
 #                            - Docked the map's strip at the top and made the battle's small by a click on its hint too
@@ -293,7 +294,7 @@ module MGQ_MpRaidBar
   # The map.
 
   # Lists the events of the map whose page starts a raid boss's battle that shows a bar (see
-  # shown_troop?), looking anew every SCAN_FRAMES and on another map, and the stand-ins of the
+  # shown_troops), looking anew every SCAN_FRAMES and on another map, and the stand-ins of the
   # bosses of frozen fights (see ui_raid_freeze.rbx).
   #
   # @return [Array<Array>] Each event or stand-in with its troop.
@@ -309,7 +310,9 @@ module MGQ_MpRaidBar
   def self.freeze_targets
     return [] unless defined?(MGQ_MpRaidFreezeUi)
 
-    MGQ_MpRaidFreezeUi.bar_targets.select { |_standin, troop| shown_troop?(troop) }
+    targets = MGQ_MpRaidFreezeUi.bar_targets
+    shown = shown_troops(targets.map { |_standin, troop| troop })
+    targets.select { |_standin, troop| shown.include?(troop) }
   end
 
   # Lists the events of the map whose page starts a raid boss's battle that shows a bar, see
@@ -324,8 +327,9 @@ module MGQ_MpRaidBar
 
     events = $game_map.events.values
     look_up_troops(events)
+    shown = shown_troops(events.map { |event| troops_of(event) }.flatten.uniq)
     found = events.map do |event|
-      troop = troops_of(event).find { |id| shown_troop?(id) }
+      troop = troops_of(event).find { |id| shown.include?(id) }
       troop ? [event, troop] : nil
     end.compact
     @scanned = [stamp, found]
@@ -358,22 +362,20 @@ module MGQ_MpRaidBar
     kept && event.list && kept[0].equal?(event.list) ? kept[1] : []
   end
 
-  # Reports whether a troop's battle shows a bar: the last phase of a raid boss with pools whose
-  # relay keeps a pool of it, or whose milestone the story has not beaten, outside the Hades
-  # rematches, which fight no pool; outside a Raid World as MGQ_MpRaidTiers.shown_troop? says.
+  # Lists the troops whose battles show a bar, as the DLL's rules tell in one call: in a Raid World
+  # the last phase of a raid boss with pools the relay keeps, or whose milestone the story has not
+  # beaten, outside the Hades rematches; outside one those that fight at their tier while raid
+  # bosses are on.
   #
-  # @param troop [Integer] The troop.
-  # @return [Boolean] Whether it does.
-  def self.shown_troop?(troop)
-    pool = MGQ_MpRaidPool
-    return MGQ_MpRaidTiers.shown_troop?(troop) unless pool.active?
+  # @param troops [Array<Integer>] The troops.
+  # @return [Array<Integer>] Those that show one.
+  def self.shown_troops(troops)
+    return [] if troops.empty?
 
-    return false unless MGQ_MpRaidBosses.last_phase?(troop) && !pool::UNPOOLED[troop] && !pool.hades?
-
-    keys = pool.troop_keys(troop)
-    return false if keys.empty?
-
-    pool.pooled_troop?(troop) || keys.any? { |key| pool.pool(key) }
+    raid = MGQ_MpRaidPool.active?
+    active = !raid && defined?(MGQ_MpRaidTiers) && MGQ_MpRaidTiers.active?
+    found = MGQ_MpRaidPool.troop_facts(troops, raid ? "pools" : "tiers", active)
+    troops.select { |troop| found.fetch(troop.to_i, {})["shown"] }
   end
 
   # Finds a troop's bar on the map, as the DLL works it out: in a Raid World a gauge per pool of the
@@ -611,7 +613,7 @@ module MGQ_MpRaidBar
     def self.min_width
       hint = UI.font_bitmap(UI::Style::TINY_SIZE).text_size(format(BARS_HINT, MGQ_MpHotkeys.label(:party_box))).width
       title = UI.font_bitmap(BarParts::STRIP_LOOK.title)
-      titles = MGQ_MpRaidBosses::TITLES.keys + MGQ_MpRaidBosses::TIERS.keys.map { |tier| "Tier #{tier} Raid Boss" }
+      titles = MGQ_MpRaidBosses.titles + MGQ_MpRaidBosses.tiers.keys.map { |tier| "Tier #{tier} Raid Boss" }
       widest = titles.map { |text| title.text_size(text).width }.max.to_i
       percent = UI.font_bitmap(BarParts::STRIP_LOOK.numbers)
       gauge = PERCENT_SAMPLES.map { |text| percent.text_size(text).width }.max + 2 * MARGIN

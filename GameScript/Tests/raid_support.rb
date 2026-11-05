@@ -1,0 +1,135 @@
+#----------------------------------------------------------------
+#  raid_support.rb
+#
+#  Changelog:
+#      Paulinchen  2026-11-05: Answered a lost battle's defeat and its undo with the values each test sets
+#                            - Created
+#
+#----------------------------------------------------------------
+
+# Answers the topics of the raid bosses' rules (MGQOnline.Game's RaidTopics) and of a lost raid boss
+# battle's defeat (MGQParadox.Multiplayer's FreezeTopics) on a FakeBridge with the fixed values each
+# test sets for its case. The scripts only forward the rules' answers; the C# tests cover the rules.
+
+require_relative "bridge_support"
+
+# Stands in for the DLL's answers of the raid bosses' rules and of a lost battle's defeat.
+class RaidAnswers
+  # The table raid.bosses hands: the bosses the script tests fight, with the story's sections cut
+  # down to them.
+  TABLE = {
+    "troops" => [
+      [29, "Four bandits", "Four bandits", 9, "Tier 9 Raid Boss", "Part 1", "Four bandits"],
+      [71, "Queen Harpy", "Queen Harpy", 9, "Tier 9 Raid Boss", "Part 1", "Queen Harpy"],
+      [126, "Morrigan", "Morrigan", 7, "Tier 7 Raid Boss", "Part 1", "Morrigan"],
+      [607, "Alma Elma, then Granberia", "Alma Elma, then Granberia", 7, "Heavenly Knight", "Part 2", "Alma Elma, then Granberia"],
+      [609, "Alma Elma, then Granberia", "Alma Elma, then Granberia", 7, "Heavenly Knight", "Part 2", "Alma Elma, then Granberia"],
+      [610, "Alma Elma, then Granberia", "Alma Elma, then Granberia", 7, "Heavenly Knight", "Part 2", "Alma Elma, then Granberia"],
+      [807, "Spider Princess", "Spider Princess", 6, "Tier 6 Raid Boss", "Part 2", "Spider Princess"],
+      [836, "Black Dahlia, Black Mamba and Black Rose", "Black Dahlia, Black Mamba and Black Rose (cap 55)", 5, "Tier 5 Raid Boss", "Part 2",
+       "Black Dahlia, Black Mamba and Black Rose (cap 55)"],
+      [838, "Black Alice", "Black Alice (cap 65)", 5, "Tier 5 Raid Boss", "Part 2", "Black Alice (cap 65)"],
+      [868, "Sonya Mazda", "Sonya Mazda", 5, "Tier 5 Raid Boss", "Part 2", "Sonya Mazda"],
+      [870, "Sonya Chaos", "Sonya Chaos", 4, "Tier 4 Raid Boss", "Part 2", "Sonya Chaos"],
+      [1507, "Great Decision", "Great Decision", 5, "Tier 5 Raid Boss", "Part 3", "Great Decision"],
+      [1509, "Great Decision", "Great Decision", 5, "Tier 5 Raid Boss", "Part 3", "Great Decision"],
+      [1599, "Metatronne and Sandalphone", "Metatronne and Sandalphone", 4, "Archangel", "Angelic Dominion", "Metatronne and Sandalphone"],
+      [1814, "Tamamo", "Tamamo (cap 83)", 4, "Six Ancestors", "Monster Realm", "Tamamo (cap 83)"],
+      [2016, "Sisel, EX-Kyubi, Frere and Bloody Dragon", "Sisel, EX-Kyubi, Frere and Bloody Dragon", 2, "Tier 2 Raid Boss", "Chaos route", "Sisel"],
+      [2017, "Sisel, EX-Kyubi, Frere and Bloody Dragon", "Sisel, EX-Kyubi, Frere and Bloody Dragon", 2, "Tier 2 Raid Boss", "Chaos route", "EX-Kyubi"],
+      [2133, "The All-Knowing", "The All-Knowing", 1, "Tier 1 Raid Boss", "Chaos route", "The All-Knowing"],
+      [2221, "Hiruko, Kanon and Kanade", "Hiruko, Kanon and Kanade", 1, "Six Ancestors", "Chaos route", "Hiruko, Kanon and Kanade"],
+      [2219, "Chaos", "Chaos", 0, "Tier 0 Raid Boss", "Chaos route", "Chaos"],
+      [2549, "Fourth Law", "Fourth Law", 1, "Chaos' Phantom", "Chaos Domain", "Fourth Law"],
+      [3127, "Void Image of Paradise", "Void Image of Paradise", 1, "Chaos' Phantom", "Chaos Domain", "Void Image of Paradise"],
+      [2410, "Chaos Maria", "Chaos Maria", 1, "Chaos' Phantom", "Chaos Domain", "Chaos Maria"],
+    ],
+    "tiers" => [[0, [["mhp", "50"], ["def", "5"], ["mdf", "5"]]], [1, [["mhp", "45"], ["def", "4.33"], ["mdf", "4.33"]]],
+                [2, [["mhp", "40"], ["def", "3.67"], ["mdf", "3.67"]]], [3, [["mhp", "35"], ["def", "3"], ["mdf", "3"]]],
+                [4, [["mhp", "30"], ["def", "2.33"], ["mdf", "2.33"]]], [5, [["mhp", "25"], ["def", "1.67"], ["mdf", "1.67"]]],
+                [6, [["mhp", "20"]]], [7, [["mhp", "15"]]], [8, [["mhp", "10"]]], [9, [["mhp", "5"]]]],
+    "key_troops" => [["Four bandits", 29], ["Queen Harpy", 71], ["Morrigan", 126], ["Alma Elma, then Granberia", 610], ["Spider Princess", 807],
+                     ["Black Dahlia, Black Mamba and Black Rose (cap 55)", 836], ["Black Alice (cap 65)", 838], ["Sonya Mazda", 868], ["Sonya Chaos", 870],
+                     ["Metatronne and Sandalphone", 1599], ["Tamamo (cap 83)", 1814], ["Sisel", 2016], ["EX-Kyubi", 2017], ["The All-Knowing", 2133], ["Hiruko, Kanon and Kanade", 2221],
+                     ["Chaos", 2219], ["Fourth Law", 2549], ["Void Image of Paradise", 3127], ["Chaos Maria", 2410]],
+    "stats" => ["def", "mdf"],
+    "titles" => ["Heavenly Knight", "Archangel", "Six Ancestors", "Apostle of Chaos", "Phenomenon of Ruin", "Chaos' Phantom"],
+    "sections" => [["Part 1", ["Four bandits", "Queen Harpy", "Morrigan"]],
+                   ["Part 2", ["Alma Elma, then Granberia", "Spider Princess", "Black Dahlia, Black Mamba and Black Rose (cap 55)", "Black Alice (cap 65)",
+                               "Sonya Mazda", "Sonya Chaos"]],
+                   ["Part 3", ["Great Decision"]],
+                   ["Angelic Dominion", ["Metatronne and Sandalphone"]],
+                   ["Monster Realm", ["Tamamo (cap 83)"]],
+                   ["Chaos route", ["Sisel, EX-Kyubi, Frere and Bloody Dragon", "The All-Knowing", "Hiruko, Kanon and Kanade", "Chaos"]],
+                   ["Chaos Domain", ["Fourth Law", "Void Image of Paradise", "Chaos Maria"]]],
+    "reads" => { "switches" => [87, 97], "variables" => [1001, 1011] },
+  }
+
+  # @return [Hash{Integer => Hash}] What raid.kind answers in a Raid World ("pools"), by troop.
+  attr_accessor :pool_kinds
+
+  # @return [Hash{Integer => Hash}] What raid.kind answers outside a Raid World ("tiers"), by troop.
+  attr_accessor :tier_kinds
+
+  # @return [Hash{Integer => Hash}] What raid.troops answers of each troop, by troop.
+  attr_accessor :troops
+
+  # @return [String, nil] What freeze.defeat answers: why the defeat puts nothing back, nil when it does.
+  attr_accessor :defeat
+
+  # @return [Hash{Array => String}] What freeze.undo answers of each changed key, by kind and key:
+  #   "start" or "was"; a key it lacks keeps the value the defeat left.
+  attr_accessor :undo
+
+  # Answers the topics on a bridge.
+  #
+  # @param fake [FakeBridge] The bridge.
+  def initialize(fake)
+    @asked = []
+    clear
+    fake.answer("raid.bosses") { |request| note("raid.bosses", request) && TABLE }
+    fake.answer("raid.kind") { |request| note("raid.kind", request) && (request["mode"] == "tiers" ? @tier_kinds : @pool_kinds).fetch(request["troop"], {}) }
+    fake.answer("raid.troops") { |request| note("raid.troops", request) && Array(request["troops"]).map { |troop| { "troop" => troop }.merge(@troops.fetch(troop, {})) } }
+    fake.answer("raid.caps") { |request| note("raid.caps", request) && [] }
+    fake.answer("freeze.defeat") { |request| note("freeze.defeat", request) && @defeat }
+    fake.answer("freeze.undo") { |request| note("freeze.undo", request) && Array(request["rows"]).map { |kind, key, _personal, _before| @undo[[kind, key]] } }
+  end
+
+  # Forgets every answer and request, so each topic answers that the rules give nothing.
+  def clear
+    @pool_kinds = {}
+    @tier_kinds = {}
+    @troops = {}
+    @defeat = nil
+    @undo = {}
+    @asked.clear
+  end
+
+  # Lists the requests of a topic since the answers were last cleared.
+  #
+  # @param topic [String] The topic.
+  # @return [Array<Hash>] The requests, oldest first.
+  def asked(topic)
+    @asked.select { |name, _request| name == topic }.map { |_name, request| request }
+  end
+
+  private
+
+  # Keeps a request.
+  #
+  # @param topic [String] The topic.
+  # @param request [Object] The request.
+  # @return [Boolean] True.
+  def note(topic, request)
+    @asked << [topic, request]
+    true
+  end
+end
+
+# Answers the raid bosses' rules and a lost battle's defeat on a bridge, kept in $raid_answers.
+#
+# @param fake [FakeBridge] The bridge.
+# @return [RaidAnswers] The answers.
+def answer_raid_rules(fake)
+  $raid_answers = RaidAnswers.new(fake)
+end

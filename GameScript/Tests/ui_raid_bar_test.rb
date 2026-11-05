@@ -2,7 +2,8 @@
 #  ui_raid_bar_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Kept the bars' switches in the stand-in of Player.ini as true or false, as the DLL hands them back
+#      Paulinchen  2026-11-05: Answered the raid bosses' rules with fixed values per case and asked which troops show a bar in one call
+#                            - Kept the bars' switches in the stand-in of Player.ini as true or false, as the DLL hands them back
 #                            - Noted invites with their pool as a number and their tier as true
 #                            - Read the scripts' clock from $frame
 #      Paulinchen  2026-11-01: Read the bars from the Mod Framework's components they build, the DLL's bars answered by a stand-in
@@ -240,8 +241,6 @@ load_script "ui_online"
 load_script "battles_raid_bosses"
 load_script "battles_raid_pool"
 load_script "battles_raid_tiers"
-# The battles below count on 8 times the max HP in every tier.
-MGQ_MpRaidBosses::TIERS.keys.each { |tier| MGQ_MpRaidBosses::TIERS[tier] = { :mhp => 8 } }
 # Stands in for the DLL's command index of the map's pages: the troops each page fights, through
 # the common events of $data_common_events it calls, each once; the asks noted in $troops_asked.
 module MGQ_MpCoopEvents
@@ -266,7 +265,11 @@ load_script "ui_raid_bar"
 
 # The bridge to the fake models of the interface, which place the boxes in the layout.
 require_relative "pool_support"
+require_relative "raid_support"
 open_fake_ui { ["", 0] }
+answer_raid_rules($world_bridge)
+# The battles below count on 8 times the max HP in every tier.
+MGQ_MpRaidBosses.tiers.keys.each { |tier| MGQ_MpRaidBosses.tiers[tier] = { :mhp => 8 } }
 $pools = PoolLedgerStandIn.new($world_bridge) { (Time.now.to_f * 1000).round }
 SceneManager.run
 
@@ -305,9 +308,9 @@ module BarStandIn
     own = request["enemies"].map { |_name, hp| hp * request["factor"] }
     keys = request["keys"]
     gauges = (keys || names).each_with_index.map do |key, index|
-      known = keys && MGQ_MpRaidPool.pool(key)
-      max = known && known.max.to_i > 0 ? known.max.to_i : own[index].to_i
-      gauge(names[index].to_s, known ? MGQ_MpRaidPool.hp_of(MGQ_MpRaidPool.left_now(known), max) : max, max)
+      known = keys && $pools.pool(key)
+      max = known && known[1].to_i > 0 ? known[1].round : own[index].to_i
+      gauge(names[index].to_s, known ? MGQ_MpRaidPool.hp_of(known[0], max) : max, max)
     end
     [request["title"], gauges]
   end
@@ -331,6 +334,18 @@ def reset
   MGQ_MpRaidPool.forget
   $pools.reset
   $bar_requests = []
+  answer_bars
+end
+
+# Answers what the rules say of the bosses below: an invite fights Queen Harpy's or the Three
+# Nobles of Black's pools, and Queen Harpy and Metatronne and Sandalphone show bars.
+def answer_bars
+  nobles = "Black Dahlia, Black Mamba and Black Rose (cap 55)"
+  $raid_answers.clear
+  $raid_answers.pool_kinds[71] = { "kind" => "guest", "keys" => ["Queen Harpy"], "tier" => 9 }
+  $raid_answers.pool_kinds[836] = { "kind" => "guest", "keys" => (0..2).map { |index| "#{nobles}##{index}" }, "tier" => 5 }
+  $raid_answers.troops[71] = { "shown" => true, "keys" => ["Queen Harpy"] }
+  $raid_answers.troops[1599] = { "shown" => true, "keys" => ["Metatronne and Sandalphone#0", "Metatronne and Sandalphone#1"] }
 end
 
 # Has the relay push a pool, which the pools read at once.
@@ -452,25 +467,22 @@ spriteset.dispose
 reset
 $data_common_events[20] = CommonEvent.new([Command.new(117, [21]), battle(1599)])
 $data_common_events[21] = CommonEvent.new([Command.new(117, [20]), battle(126)])
-$game_variables[1019] = 6
 harpy = Game_Event.new([battle(31), battle(71)], "$Harpy", 0, false, 255, 10, 10)
 gate = Game_Event.new([Command.new(117, [20])], "", 0, false, 255, 30, 4)
 $game_map.events = { 1 => harpy, 2 => gate, 3 => Game_Event.new(nil, "$Erased", 0, false, 255, 0, 0) }
-check("the events whose page starts a boss battle, through common events too, a beaten boss left out",
+check("the events whose page starts a battle the rules show a bar for, through common events too",
       bar.boss_events.map { |event, troop| [event.x, troop] }, [[10, 71], [30, 1599]])
 check("the DLL is asked once for the pages of the map's events, the Colosseum's common events left out", $troops_asked, [[[10, 30], 87]])
 $frame += MGQ_MpRaidBar::SCAN_FRAMES
 bar.boss_events
 check("and not again while their pages stay", $troops_asked.size, 1)
 check("the steps to a boss's event", [bar.distance_to_boss(71, 12, 13), bar.distance_to_boss(2016, 0, 0)], [3, MGQ_MpRaidBar::FAR])
-$game_map.map_id = MGQ_MpRaidPool::HADES_MAP
+check("a Raid World asks the rules once for every troop of the map's events, by the pools' rules",
+      $raid_answers.asked("raid.troops").first.values_at("mode", "active", "troops"), ["pools", false, [31, 71, 126, 1599]])
+$raid_answers.troops.delete(71)
 $frame += MGQ_MpRaidBar::SCAN_FRAMES
-check("the Hades rematch hall's events show no bars, their rematches fight no pool", [bar.boss_events, bar.shown_troop?(71)], [[], false])
-$game_map.map_id = 5
-$game_switches[MGQ_MpRaidPool::HADES_SWITCH] = true
-$frame += MGQ_MpRaidBar::SCAN_FRAMES
-check("nor any while a Hades rematch's switch is on", bar.boss_events, [])
-$game_switches[MGQ_MpRaidPool::HADES_SWITCH] = false
+check("an event whose battles the rules show no bar for gets none", bar.boss_events.map { |_event, troop| troop }, [1599])
+$raid_answers.troops[71] = { "shown" => true, "keys" => ["Queen Harpy"] }
 $frame += MGQ_MpRaidBar::SCAN_FRAMES
 $game_variables[41] = 150
 bar.map_bar(1599)
@@ -524,6 +536,8 @@ tiers = MGQ_MpRaidTiers
 reset
 $raid = false
 tiers.choose(true)
+$raid_answers.pool_kinds.clear
+$raid_answers.tier_kinds[71] = { "kind" => "invited" }
 tiers.note_invite("troop" => "71", "tiers" => true)
 BattleManager.setup(71)
 $game_troop.members[0].hp = 4500
@@ -533,15 +547,12 @@ bar.show_bar(:battle, false)
 check("none once the player turned the battle's bar off, kept in Player.ini", [bar.battle_bar, $settings["raid_bar_battle"]], [nil, false])
 bar.show_bar(:battle, true)
 BattleManager.setup(126)
-check("nor in a battle no event, retry or invite started", bar.battle_bar, nil)
+check("nor in a battle the rules give no kind", bar.battle_bar, nil)
 $game_map.events = { 1 => Game_Event.new([battle(71)], "$Harpy", 0, false, 255, 10, 10) }
 check("on the map the boss's events show, with a bar of its full HP at its tier, nothing keeping it between battles",
-      [bar.tier_map?, bar.boss_events.map { |_event, troop| troop }, bar.shown_troop?(71), flat(bar.map_bar(71)), $bar_requests.last[1]["keys"]],
+      [bar.tier_map?, bar.boss_events.map { |_event, troop| troop }, bar.shown_troops([71]).include?(71), flat(bar.map_bar(71)), $bar_requests.last[1]["keys"]],
       [true, [71], true, ["Tier 9 Raid Boss", [["Queen Harpy", 6000, 6000]]], nil])
-$game_variables[1011] = 4
-$frame += MGQ_MpRaidBar::SCAN_FRAMES
-check("a boss the story beat shows none", [bar.shown_troop?(71), bar.boss_events], [false, []])
-$game_variables[1011] = 0
+check("asking the rules by the tiers' rules, with the raid bosses on", $raid_answers.asked("raid.troops").last.values_at("mode", "active"), ["tiers", true])
 bar.show_bar(:map, false)
 $frame += MGQ_MpRaidBar::SCAN_FRAMES
 check("nor any once the player turned the map's bar off, kept in Player.ini", [bar.tier_map?, bar.boss_events, $settings["raid_bar_map"]], [false, [], false])
@@ -567,7 +578,7 @@ push("Queen Harpy", "0.5", "6000")
 check("a Raid World's battle bar goes by its pool, the rows outside Raid Worlds off", flat(bar.battle_bar), ["Tier 9 Raid Boss", [["Queen Harpy", 4500, 6000]]])
 $game_map.events = { 1 => Game_Event.new([battle(71)], "$Harpy", 0, false, 255, 10, 10) }
 check("and its map's bars too, with the HP the relay told, which no tier bar knows",
-      [bar.tier_map?, bar.boss_events.map { |_event, troop| troop }, bar.shown_troop?(71), flat(bar.map_bar(71))],
+      [bar.tier_map?, bar.boss_events.map { |_event, troop| troop }, bar.shown_troops([71]).include?(71), flat(bar.map_bar(71))],
       [false, [71], true, ["Tier 9 Raid Boss", [["Queen Harpy", 3000, 6000]]]])
 bar.show_bar(:battle, true)
 bar.show_bar(:map, true)

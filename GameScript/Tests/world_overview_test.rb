@@ -2,7 +2,8 @@
 #  world_overview_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Expected the box's switch kept as true or false
+#      Paulinchen  2026-11-05: Dropped the check of the sections' order, which the DLL's table of the raid bosses keeps
+#                            - Expected the box's switch kept as true or false
 #                            - Read the scripts' clock from $frame
 #      Paulinchen  2026-11-01: Named the Mod Framework's interface by its own name
 #                            - Checked the overview built of the Mod Framework's window, list, page views and menus through its tree
@@ -707,10 +708,6 @@ check("at Part 2 only Part 1 and Part 2 follow, each boss once in the order the 
 check("a boss's row tells its share left over a gauge, its pane its section, its tier with what it changes and its gauge",
       [world.rows[1][1].row.to_a, overview.pane_of(world.rows[1][1]).to_a],
       [[nil, "Four bandits", "100%", false, 1.0], ["Four bandits", nil, [[:text, "Part 1"], [:text, "Tier 9: enemies have HP x5."], [:gauge, 1.0, "100%"]]]])
-check("the sections run in story order, the Chaos route's by the order of the troops, the one-time bosses last",
-      [sections.map(&:first), sections[1][1].first, sections[1][1].last(3), sections[2][1].last, sections[5][1].first, sections[5][1].last, sections[6][1].size],
-      [["Part 1", "Part 2", "Part 3", "Angelic Dominion", "Monster Realm", "Chaos route", "Chaos Domain"], "Bonnie and Ashel",
-       ["Sonya Mazda", "Sonya Mainyu", "Sonya Chaos"], "Great Decision", "Kagetsumugi and her dolls (cap 125)", "Chaos", 6])
 check("a boss's section is found by its troop or its name",
       [MGQ_MpRaidBosses.section(838), MGQ_MpRaidBosses.section("1509"), MGQ_MpRaidBosses.section("Tamamo (cap 83)"), MGQ_MpRaidBosses.section(2221), MGQ_MpRaidBosses.section("Chaos Maria"), MGQ_MpRaidBosses.section("Nobody")],
       ["Part 2", "Part 3", "Monster Realm", "Chaos route", "Chaos Domain", nil])

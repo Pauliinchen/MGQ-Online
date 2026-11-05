@@ -2,7 +2,8 @@
 #  battles_hotjoin_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Noted invites with their flags as true, as the DLL hands them
+#      Paulinchen  2026-11-05: Dropped the checks of the boss table, whose rules the DLL keeps
+#                            - Noted invites with their flags as true, as the DLL hands them
 #                            - Wrote and read the battle lines through the codec's stand-in
 #                            - Told every host's battle state in rbs beside its players in rbn
 #                            - Checked that a guest enters its own troop in the Library as its battle starts
@@ -156,19 +157,12 @@ def own_troop
   $game_troop.members[0].screen_y = 300
 end
 
-# The story's boss troops.
+# The game's events mark a boss battle the table lacks.
 bosses = MGQ_MpRaidBosses
-check("a boss troop names its milestone and cap", bosses.at(1507).to_a, ["Great Decision", 65, true])
-check("an earlier phase is no last phase", bosses.last_phase?(1506), false)
-$game_switches[4] = true
-check("Salamander ends on Luka's side with her own troop", bosses.last_phase?(751), true)
-$game_switches[4] = false
-check("and goes on to Granberia on Alice's", [bosses.last_phase?(751), bosses.last_phase?(752)], [false, true])
 check("a random troop is no boss", [bosses.boss?(31), bosses.battle?(31)], [false, false])
 $game_switches[22] = true
 check("but its battle is one while the game's events say so", bosses.battle?(31), true)
 $game_switches[22] = false
-check("every milestone's cap rises with the story", bosses::TROOPS.values.map { |row| row[1] }.compact.max, 300)
 
 $my_seat = 0
 $my_since = 200

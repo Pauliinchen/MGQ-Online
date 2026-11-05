@@ -2,7 +2,8 @@
 #  battles_raid_tiers.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Kept and read its switch in Player.ini as true or false, which the DLL writes as 1 or 0
+#      Paulinchen  2026-11-05: Asked the DLL which battles fight at their tier, why not and whether a bar shows, in place of deciding here
+#                            - Kept and read its switch in Player.ini as true or false, which the DLL writes as 1 or 0
 #                            - Took the relay's raid bosses as the flag the DLL reads
 #                            - Told and read the invite's tier as true or false
 #      Paulinchen  2026-10-30: Raised the stats through the pools' wrap with the factors kept per battle
@@ -12,16 +13,16 @@
 
 # The raid bosses outside Raid Worlds: in a Classic world whose creator ticked Raid Bosses, and in
 # single player while the player turned Raid Bosses on in the Mod Config (MGQ Online SP), each story
-# boss fights with the stat factors of its tier (MGQ_MpRaidBosses::TIERS), in every battle anew:
-# no relay keeps its HP and nothing regenerates. The same fights count as in a Raid World (see
-# MGQ_MpRaidPool.refusal): the last phase of a boss the player's story has not beaten, started by
-# its map event, never a Hades rematch, a Colosseum battle or a Great Decision fight. ui_raid_bar.rbx
-# draws its bars.
+# boss fights with the stat factors of its tier (MGQ_MpRaidBosses.tiers), in every battle anew: no
+# relay keeps its HP and nothing regenerates. The same fights count as in a Raid World, by the one
+# refusal chain of the DLL's rules (MGQOnline.Game's BossRules, topic raid.kind): the last phase of
+# a boss the player's story has not beaten, started by its map event, never a Hades rematch, a
+# Colosseum battle or a Great Decision fight. ui_raid_bar.rbx draws its bars.
 #
 # In a co-op battle the host decides and its invite carries INVITE_FIELD, so every guest raises the
 # same enemies. A Raid World never reaches this script's battles: active? and kind_of refuse there.
 #
-# It must work without any connection, so it asks the DLL nothing at all.
+# It must work without any connection: the DLL answers in single player too.
 module MGQ_MpRaidTiers
   # The setting in Player.ini that turns the raid bosses on in single player with 1.
   SETTING = "sp_raid_bosses"
@@ -45,7 +46,7 @@ module MGQ_MpRaidTiers
   #
   # @!attribute troop [Integer] The troop.
   # @!attribute own [Integer] How many enemies the troop's setup made, which come first in the troop.
-  # @!attribute tier [Integer] The boss's tier, see MGQ_MpRaidBosses::TIERS.
+  # @!attribute tier [Integer] The boss's tier, see MGQ_MpRaidBosses.tiers.
   Fight = Struct.new(:troop, :own, :tier)
 
   extend MGQ_MpLog
@@ -134,6 +135,20 @@ module MGQ_MpRaidTiers
     @retrying = false
   end
 
+  # Asks the DLL how a battle about to be set up, or just set up, fights its boss at its tier.
+  #
+  # @param troop_id [Integer, String] The battle's troop.
+  # @return [Hash] "kind" ("retry", "invited", "event" or nil, always nil in a Raid World) and "why"
+  #   an event's story boss battle keeps its boss as the game has it; empty while the DLL does not answer.
+  def self.ask(troop_id)
+    troop = troop_id.to_i
+    answer = MGQ_Multiplayer::Bridge.call(MGQ_MpRaidPool::KIND_TOPIC, "troop" => troop, "mode" => "tiers", "facts" => MGQ_MpRaidBosses.facts,
+                                          "active" => active?, "raid" => MGQ_MpCoop::Scope.raid? ? true : false, "at_command" => @at_command ? true : false,
+                                          "in_map" => @in_map ? true : false, "event" => @at_command && @in_map && $game_map.interpreter.event_id > 0 ? true : false,
+                                          "invited" => @invited ? [@invited, false] : nil, "retry" => @retrying && @lost ? [@lost.troop, false] : nil)
+    answer.is_a?(Hash) ? answer : {}
+  end
+
   # Tells how a battle about to be set up, or just set up, fights its boss at its tier.
   #
   # @param troop_id [Integer, String] The battle's troop.
@@ -141,41 +156,8 @@ module MGQ_MpRaidTiers
   #   one a host's invite or a member's request marked, :event for a story boss's battle its map
   #   event started; nil for none, always in a Raid World.
   def self.kind_of(troop_id)
-    troop = troop_id.to_i
-    return nil if MGQ_MpCoop::Scope.raid?
-    return :retry if @retrying && @lost && @lost.troop == troop
-    return :invited if @invited == troop
-    return nil unless @at_command && @in_map && active? && MGQ_MpRaidBosses.boss?(troop)
-    return nil unless $game_map.interpreter.event_id > 0
-
-    refusal(troop) ? nil : :event
-  end
-
-  # Finds why a story boss battle keeps the boss as the game has it, by the rules of a Raid World's
-  # pools.
-  #
-  # @param troop [Integer] The troop.
-  # @return [String, nil] Why, nil when the boss fights at its tier.
-  def self.refusal(troop)
-    pool = MGQ_MpRaidPool
-    boss = MGQ_MpRaidBosses.at(troop)
-    return "it is no raid boss" unless boss
-    return "an earlier phase of its fight" unless MGQ_MpRaidBosses.last_phase?(troop)
-    return "a fight raid bosses leave out: #{pool::UNPOOLED[troop]}" if pool::UNPOOLED.key?(troop)
-    return "a Hades rematch" if pool.hades?
-    return "a Colosseum battle" if $game_switches[pool::COLOSSEUM_SWITCH]
-    return "the story beat #{boss.milestone} already" if pool.beaten?(boss)
-
-    MGQ_MpRaidBosses.tier(troop) ? nil : "it has no tier"
-  end
-
-  # Reports whether a troop's battle shows a bar on the map: raid bosses are on, and it is the last
-  # phase of a boss the player's story has not beaten, outside the Hades rematches and the Colosseum.
-  #
-  # @param troop [Integer] The troop.
-  # @return [Boolean] Whether it does.
-  def self.shown_troop?(troop)
-    active? && refusal(troop.to_i).nil?
+    kind = ask(troop_id)["kind"]
+    kind ? kind.to_sym : nil
   end
 
   # Decides whether the battle just set up fights its boss at its tier, and raises its enemies.
@@ -184,17 +166,14 @@ module MGQ_MpRaidTiers
   # @param troop_id [Integer] The battle's troop.
   def self.set_up(troop_id)
     troop = troop_id.to_i
-    kind = kind_of(troop)
-    explain = kind.nil? && @at_command && @in_map && MGQ_MpRaidBosses.boss?(troop) && active?
+    answer = ask(troop)
+    kind = answer["kind"] ? answer["kind"].to_sym : nil
     lost = @lost
     @at_command = false
     @invited = nil
     @fight = nil
     @lost = nil
-    unless kind
-      reason = explain ? refusal(troop) || ($game_map.interpreter.event_id > 0 ? nil : "a common event of its own started it") : nil
-      return reason ? log("troop #{troop} keeps its boss as the game has it: #{reason}") : nil
-    end
+    return answer["why"] ? log("troop #{troop} keeps its boss as the game has it: #{answer['why']}") : nil unless kind
 
     own = kind == :retry ? lost.own : MGQ_MpRaidPool.own_count(troop)
     @fight = Fight.new(troop, own, MGQ_MpRaidBosses.tier(troop))

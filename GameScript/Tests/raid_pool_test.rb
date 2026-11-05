@@ -2,7 +2,8 @@
 #  raid_pool_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Told the boss battle, the rates and the invite's pool as values
+#      Paulinchen  2026-11-05: Answered the raid bosses' rules with fixed values per case and dropped the checks of the tables, markers and refusals, which the DLL keeps
+#                            - Told the boss battle, the rates and the invite's pool as values
 #                            - Stood in for the DLL's fetch of the pools through its topic
 #                            - Checked that a boss takes its pool's HP once the game's own events before the battle ran
 #                            - Started a battle's events and start skills as the game's battle scene does
@@ -41,11 +42,12 @@
 #
 #----------------------------------------------------------------
 
-# Covers battles_raid_pool.rbx with battles_raid_bosses.rbx: which battles fight a raid boss's pools
-# and with what max HP, the reports a battle sends and the pools' HP it takes, the kills by the
-# relay, bosses of several enemies, guests and takeovers, the game's retry, the side battles, the
-# invite's and the state's fields, the pushes and fetching the pools. Events run in fibers as the
-# game's interpreter runs them.
+# Covers battles_raid_pool.rbx with battles_raid_bosses.rbx: what the DLL's rules hear of a battle
+# and how the kind they answer fights a raid boss's pools and with what max HP, the reports a battle
+# sends and the pools' HP it takes, the kills by the relay, bosses of several enemies, guests and
+# takeovers, the game's retry, the side battles, the invite's and the state's fields, the pushes and
+# fetching the pools. The rules answer fixed values per case (raid_support.rb); events run in
+# fibers as the game's interpreter runs them.
 
 require_relative "pool_support"
 
@@ -350,16 +352,21 @@ end
 
 load_script "battles_raid_bosses"
 load_script "battles_raid_pool"
-# The real tiers, kept aside while the battles below count on 7.5 times the max HP in every tier.
-REAL_TIERS = MGQ_MpRaidBosses::TIERS.dup
-MGQ_MpRaidBosses::TIERS.replace(REAL_TIERS.keys.each_with_object({}) { |tier, tiers| tiers[tier] = { :mhp => 7.5 } })
+require_relative "raid_support"
+
+# The DLL's raid bosses' rules and pools' ledger behind the bridge, on the clock in milliseconds.
+$fake = FakeBridge.new
+answer_raid_rules($fake)
+MGQ_Multiplayer::Bridge.open($fake)
+# What the rules answer of a Queen Harpy battle that fights her pool, an event's unless a case
+# answers otherwise.
+HARPY = { "kind" => "event", "keys" => ["Queen Harpy"], "tier" => 9, "defeated" => false, "milestone" => "Queen Harpy" }
+# The battles below count on 7.5 times the max HP in every tier.
+MGQ_MpRaidBosses.tiers.keys.each { |tier| MGQ_MpRaidBosses.tiers[tier] = { :mhp => 7.5 } }
 
 pool = MGQ_MpRaidPool
 SceneManager.run
 
-# The DLL's pools' ledger behind the bridge, on the clock in milliseconds.
-$fake = FakeBridge.new
-MGQ_Multiplayer::Bridge.open($fake)
 $pools = PoolLedgerStandIn.new($fake) { (Time.now.to_f * 1000).round }
 $pools.reporter = lambda do |world, key, battle, text|
   $calls << ["mp_raid_boss_report", [world, key, battle, text]]
@@ -395,6 +402,16 @@ def reset
   $mode = :world
   $role = nil
   $turn_end = nil
+  $raid_answers.clear
+  harpy({})
+  $raid_answers.troops[71] = { "pooled" => true, "keys" => ["Queen Harpy"] }
+end
+
+# Sets what the rules answer of a Queen Harpy battle, HARPY's fields kept unless named.
+#
+# @param fields [Hash] The fields that differ.
+def harpy(fields)
+  $raid_answers.pool_kinds[71] = HARPY.merge(fields)
 end
 
 # Runs frames of the map, as Scene_Map does.
@@ -484,39 +501,9 @@ def ticks(count = MGQ_MpRaidPool::STATE_FRAMES)
   end
 end
 
-# The boss tables and the pools' keys hold together.
-rows = MGQ_MpRaidBosses::TROOPS.values.map { |row| [row[0], row[1]] }.uniq
-check("every milestone has the markers that tell it beaten", rows - pool::BEATEN.keys, [])
-check("and no markers name a milestone the boss table lacks", pool::BEATEN.keys - rows, [])
-story_switches = []
-story_variables = []
-story_variables[1003] = 8
-story_variables[1011] = 4
-check("the caps of the milestones a story beat come from its own values, each once and lowest first",
-      [pool.beaten_caps([story_switches, story_variables]), pool.beaten_caps([[], []])], [[10, 15], []])
-check("every fight of its own and every troop left out is a last phase",
-      (pool::FIGHTS.keys + pool::UNPOOLED.keys).reject { |troop| MGQ_MpRaidBosses.at(troop).last }, [])
-keys = MGQ_MpRaidBosses::TROOPS.keys.select { |troop| MGQ_MpRaidBosses.at(troop).last }.map { |troop| [pool.key_of(troop), MGQ_MpRaidBosses.at(troop).milestone, MGQ_MpRaidBosses.at(troop).cap] }
-check("every last phase has a key the relay takes, with room for an enemy's place", keys.select { |key, _, _| key.nil? }, [])
-shared = keys.group_by { |key, _, _| key }.select { |_, list| list.map { |_, milestone, cap| [milestone, cap] }.uniq.size > 1 }.keys
-check("no two milestones share a pool", shared, [])
-check("a name several milestones share carries the cap", [pool.key_of(1502), pool.key_of(1807), pool.key_of(71), pool.key_of(836), pool.key_of(1501)],
-      ["Tamamo (cap 61)", "Tamamo (cap 80)", "Queen Harpy", "Black Dahlia, Black Mamba and Black Rose (cap 55)", "Black Dahlia, Black Mamba and Black Rose (cap 60)"])
-check("a fight of a free order has a pool of its own", [pool.key_of(2017), pool.key_of(2099)], ["EX-Kyubi", "Lustful Witch"])
-check("a boss of several enemies has a pool per enemy", pool.troop_keys(1599), ["Metatronne and Sandalphone#0", "Metatronne and Sandalphone#1"])
-check("a boss of one enemy has one pool under its key", pool.troop_keys(71), ["Queen Harpy"])
-reset
-$game_switches[2594] = true
-check("all conditions of an alternative must hold", pool.met?("s2594&v1142>=25"), false)
-$game_variables[1142] = 25
-check("then the test holds", pool.met?("s2594&v1142>=25"), true)
-check("any alternative may hold", [pool.met?("v1141>=1|v1142>=1"), pool.met?("v1141>=1|v1143>=1")], [true, false])
-
 # A one-time boss outside the story fights a pool of its own under its name.
 reset
-check("a one-time Chaos Domain boss is a boss of one phase without a cap", [MGQ_MpRaidBosses.boss?(3127), MGQ_MpRaidBosses.last_phase?(3127), MGQ_MpRaidBosses.at(3127).cap], [true, true, nil])
-check("its pool goes by its name", [pool.key_of(3127), pool.pooled_troop?(3127), pool.troop_of_key("Void Image of Paradise")], ["Void Image of Paradise", true, 3127])
-check("and no name of the story table or of another boss", (MGQ_MpRaidBosses::OPTIONAL.values.map(&:first) & (MGQ_MpRaidBosses::TROOPS.values.map(&:first) + pool::FIGHTS.values)), [])
+$raid_answers.pool_kinds[3127] = { "kind" => "event", "keys" => ["Void Image of Paradise"], "tier" => 1 }
 start([[:battle, 3127], [:mark, :after]])
 check("its event battle fights that pool with 7.5 times the max HP", [pool.fight && pool.fight.key, enemy.mhp], ["Void Image of Paradise", 7500])
 
@@ -527,51 +514,16 @@ fight = pool.fight
 check("a story boss's last phase fights its pool, even after the event moved the story", [$game_party.in_battle, fight && fight.key, fight && fight.own], [true, "Queen Harpy", 1])
 check("its enemy has 7.5 times its max HP, all of it", [enemy.mhp, enemy.hp], [6000, 6000])
 
-# Which troops are bosses, and their tiers, titles and stat factors.
+# A tier's stat factors are the battle's.
 bosses = MGQ_MpRaidBosses
-check("each boss has the tier its list names, tier 0 the strongest",
-      [bosses.tier(71), bosses.tier(752), bosses.tier(1725), bosses.tier(1807), bosses.tier(2188), bosses.tier(2219), bosses.tier(3127), bosses.tier(31)],
-      [9, 7, 3, 4, 1, 0, 1, nil])
-check("a shared name tells the milestones apart by their cap", [bosses.milestone_key(1502), bosses.milestone_key(71), bosses.milestone_key(3127)],
-      ["Tamamo (cap 61)", "Queen Harpy", "Void Image of Paradise"])
-check("a boss outside the Level Cap milestones is one of its own with its tier",
-      [bosses.milestone_key(212), bosses.tier(212), bosses.milestone_key(1461), bosses.tier(1461), bosses.tier(868), bosses.tier(327)],
-      ["Sylph", 7, "Erubetie (cap 60)", 5, 5, 5])
-$game_map.map_id = 723
-check("Carmilla and Elizabeth withdraw from the Sabasa Attack as from an earlier phase", [bosses.last_phase?(812), bosses.last_phase?(813), pool.pooled_troop?(812)],
-      [false, false, false])
-$game_map.map_id = 295
-check("and are fought for their pools in the Vampire Castle", [bosses.last_phase?(812), pool.pooled_troop?(812)], [true, true])
-$game_map.map_id = 5
-check("a boss's title is the group the game names it in, else its tier",
-      [bosses.title(1599), bosses.title(3127), bosses.title(2219), bosses.title(71), bosses.title(31)],
-      ["Archangel", "Chaos' Phantom", "Tier 0 Raid Boss", "Tier 9 Raid Boss", nil])
-titled = bosses::TITLES.values.flatten
-check("the titles name each boss once and none the tables lack",
-      [titled.size - titled.uniq.size, titled - (bosses::TROOPS.keys + bosses::OPTIONAL.keys).map { |troop| bosses.milestone_key(troop) }], [0, []])
-check("every boss has a tier the table holds", (bosses::TROOPS.keys + bosses::OPTIONAL.keys).reject { |troop| bosses::TIERS.key?(bosses.tier(troop)) }, [])
-names = bosses::TIER_BOSSES.values.flatten
-check("the tier lists name each milestone once and none the table lacks",
-      [names.size - names.uniq.size, names - bosses::TROOPS.keys.map { |troop| bosses.milestone_key(troop) }], [0, []])
-check("tiers name only stats the game has", bosses::TIERS.values.map(&:keys).flatten.uniq - [:mhp, :mmp, :atk, :def, :mat, :mdf, :agi, :luk], [])
-check("a tier gives max HP its factor and leaves the stats it does not name", [bosses.factor(71, :mhp), bosses.factor(71, :atk), bosses.factor(31, :mhp)], [7.5, 1, 1])
-kept = bosses::TIERS[9]
-bosses::TIERS[9] = kept.merge(:atk => 2)
+kept = bosses.tiers[9]
+bosses.tiers[9] = kept.merge(:atk => 2)
 check("the factors are the battle's: a tier changed meanwhile counts from the next battle on", pool::Stats.stat(enemy, :atk, 101), 101)
 pool::Stats.forget
 pool.scale_enemies(fight)
 check("another stat a tier names takes its factor after the game computed it", [pool::Stats.stat(enemy, :atk, 101), pool::Stats.stat(Game_Enemy.new(0, 6), :atk, 101)], [202, 101])
 check("and the max HP its own", pool::Stats.stat(enemy, :mhp, 800), 6000)
-bosses::TIERS[9] = kept
-bosses::TIERS.replace(REAL_TIERS)
-check("the real tiers: 50 times the max HP at tier 0, 5 less each tier down to 5 times at tier 9",
-      (0..9).map { |tier| bosses::TIERS[tier][:mhp] }, [50, 45, 40, 35, 30, 25, 20, 15, 10, 5])
-check("and 5 times the defense and magic defense at tier 0, falling evenly to the game's own from tier 6 on",
-      [:def, :mdf].map { |stat| (0..9).map { |tier| bosses::TIERS[tier].fetch(stat, 1) } }, [[5.0, 4.33, 3.67, 3.0, 2.33, 1.67, 1, 1, 1, 1]] * 2)
-check("so Chaos, Chaos Ilias and Queen Harpy get these", [[2219, 1725, 71].map { |troop| bosses.factor(troop, :mhp) }, [2219, 1725, 71].map { |troop| bosses.factor(troop, :def) }],
-      [[50, 35, 5], [5.0, 3.0, 1]])
-check("which wraps both defenses of the game's enemies too", bosses.tier_stats, [:def, :mdf])
-bosses::TIERS.replace(REAL_TIERS.keys.each_with_object({}) { |tier, tiers| tiers[tier] = { :mhp => 7.5 } })
+bosses.tiers[9] = kept
 
 # The story boss's battle has an id the relay takes and keeps its HP without word from the relay.
 check("its battle id is one the relay takes", fight.battle =~ /\A[a-z0-9]{3,64}\z/ ? true : false, true)
@@ -640,42 +592,50 @@ BattleManager.battle_end(0)
 check("the battle's last blow reports the kill", reports.last, ["Queen Harpy", battle, "1\t1.0000000000\t6000\t1"])
 frames
 check("the event runs on at once", $ran, [:after])
-check("the pool is empty as the player's game knows it", pool.defeated?(71), true)
 
 # A battle against a pool that is empty already wins at once.
 start([[:battle, 71], [:mark, :after_again]])
 check("its boss starts dead", [enemy.dead?, enemy.hp], [true, 0])
-check("which invites nobody", pool.won_already?(71), false)
 reset
-push("Queen Harpy", "0", "6000", true)
+harpy("defeated" => true)
 $game_map.interpreter.instance_variable_set(:@event_id, 7)
-pool.in_map { pool.at_command { check("a battle about to fight an empty pool is won already", pool.won_already?(71), true) } }
+pool.in_map { pool.at_command { check("a battle about to fight pools the rules call empty is won already", pool.won_already?(71), true) } }
 
-# Battles that fight no pool.
+# The rules hear of the battle and the story values they read, and a battle they give no kind
+# fights no pool, the log saying why.
 reset
-$raid = false
-start([[:battle, 71], [:mark, :after]])
-check("a Classic world's battle fights no pool, its enemy keeps its max HP", [pool.fight, enemy.mhp], [nil, 800])
+$mode = :own
+$game_map.map_id = 576
+$game_switches[97] = true
+$game_variables[1011] = 4
+harpy("kind" => nil, "why" => "the rules refuse it")
+lines = logged_lines { start([[:battle, 71], [:mark, :after]]) }
+asked = $raid_answers.asked("raid.kind").first
+check("the rules hear of an event's battle, the player's place in the world's story and the values they read",
+      asked.values_at("troop", "mode", "active", "at_command", "in_map", "event", "facts"),
+      [71, "pools", false, true, true, true, { "map" => 576, "s" => [false, true], "v" => [0, 4] }])
+check("a battle the rules give no kind fights no pool, its enemy keeps its max HP, and the log says why",
+      [pool.fight, enemy.mhp, lines.include?("raid pool: troop 71 fights no pool: the rules refuse it")], [nil, 800, true])
 $scene.turn_end
 BattleManager.battle_end(0)
 frames
 check("and reports nothing", [reports, $ran], [[], [:after]])
-{
-  "a player whose story is in an earlier part" => proc { $mode = :own },
-  "a Hades rematch" => proc { $game_switches[97] = true },
-  "an event of the Hades rematch hall, before it turns the rematch's switch on" => proc { $game_map.map_id = 576 },
-  "a Colosseum battle" => proc { $game_switches[87] = true },
-}.each do |label, set|
-  reset
-  set.call
-  start([[:battle, 71], [:mark, :after]])
-  check("#{label} fights no pool", pool.fight, nil)
-end
+reset
+start([[:battle, 71], [:mark, :after]], 0)
+common = $raid_answers.asked("raid.kind").first.values_at("at_command", "in_map", "event")
+reset
+BattleManager.setup(71)
+check("a common event of its own, and a battle no event command started, are told as such",
+      [common, $raid_answers.asked("raid.kind").first.values_at("at_command", "in_map", "event")], [[true, true, false], [false, false, false]])
+reset
+start([[:call, [[:battle, 71]]], [:mark, :after]])
+check("a boss battle in a common event the event calls is the event's",
+      [$raid_answers.asked("raid.kind").first["event"], pool.fight && pool.fight.key], [true, "Queen Harpy"])
 
 # A refight of a boss the world's story beat already fights no pool and is won at once, as against
 # empty pools (issue #57).
 reset
-$game_variables[1011] = 4
+harpy("kind" => nil, "won" => true)
 $game_map.interpreter.instance_variable_set(:@event_id, 7)
 pool.in_map { pool.at_command { check("a refight of a boss the story beat is won already, so it invites nobody", pool.won_already?(71), true) } }
 start([[:battle, 71], [:mark, :after]])
@@ -684,38 +644,11 @@ $scene.start_party_command_selection
 check("and its first command phase wins it", $won, [71])
 frames
 check("the event goes on", $ran, [:after])
-reset
-$game_variables[1011] = 4
-$game_switches[87] = true
-start([[:battle, 71], [:mark, :after]])
-$scene.start_party_command_selection
-check("a Colosseum battle of the boss is fought as the game fights it", [enemy.dead?, $won], [false, []])
-reset
-start([[:battle, 1507], [:mark, :after]])
-check("the Great Decision fights no pool", pool.fight, nil)
-reset
-start([[:battle, 71], [:mark, :after]], 0)
-check("a common event of its own fights no pool", pool.fight, nil)
-reset
-BattleManager.setup(71)
-check("a battle no event command started fights no pool", pool.fight, nil)
-reset
-start([[:battle, 31], [:mark, :after]])
-check("a troop that is no story boss fights no pool", pool.fight, nil)
-
-# A fight of several phases fights the pool on its last; one in a common event the event calls too.
-reset
-start([[:battle, 609], [:battle, 610], [:mark, :after]])
-check("an earlier phase fights no pool", pool.fight, nil)
-BattleManager.battle_end(0)
-frames
-check("the last phase does", pool.fight.key, "Alma Elma, then Granberia")
-reset
-start([[:call, [[:battle, 71]]], [:mark, :after]])
-check("a boss battle in a common event the event calls fights the pool", pool.fight && pool.fight.key, "Queen Harpy")
 
 # A boss of several enemies has a pool per enemy, and falls once every one is empty.
 reset
+$raid_answers.pool_kinds[1599] = { "kind" => "event", "keys" => ["Metatronne and Sandalphone#0", "Metatronne and Sandalphone#1"], "tier" => 4 }
+$raid_answers.troops[1599] = { "keys" => ["Metatronne and Sandalphone#0", "Metatronne and Sandalphone#1"] }
 start([[:battle, 1599], [:mark, :after]])
 fight = pool.fight
 check("a pool per own enemy of the troop", fight.members.map(&:key), ["Metatronne and Sandalphone#0", "Metatronne and Sandalphone#1"])
@@ -738,10 +671,12 @@ check("an admin's reset lets the boss be defeated again", $chat.size, 2)
 # A guest fights the pools the invite names, and reports once it takes the battle over.
 reset
 check("an invite's pool is none outside a battle that fights one", pool.invite_fields(31), {})
+harpy("kind" => "guest")
 pool.note_invite("troop" => "71", "pool" => 1, "boss" => true)
 $role = :guest
 BattleManager.setup(71)
-check("the guest's battle fights the invite's pool", [pool.fight && pool.fight.key, enemy.mhp], ["Queen Harpy", 6000])
+check("the guest's battle tells the rules of the invite and fights its pool",
+      [$raid_answers.asked("raid.kind").find { |asked| asked["troop"] == 71 }["invited"], pool.fight && pool.fight.key, enemy.mhp], [[71, false], "Queen Harpy", 6000])
 $scene.start_party_command_selection
 # The host's action dealt half the boss's HP, which the host reported as it ended.
 enemy.hp = 3000
@@ -756,6 +691,7 @@ enemy.hp = 2400
 next_turn
 check("its first report carries only what it dealt since it took the battle over", reports.map { |_key, _battle, text| text }, ["1\t0.1000000000\t6000\t0"])
 reset
+harpy("kind" => "guest")
 pool.note_invite("troop" => "71", "pool" => 1)
 $role = :guest
 BattleManager.setup(71)
@@ -768,6 +704,7 @@ enemy.hp = 4200
 $scene.start_party_command_selection
 check("only what came after", reports.map { |_key, _battle, text| text }, ["1\t0.1000000000\t6000\t0"])
 reset
+harpy("kind" => "guest")
 pool.note_invite("troop" => "71", "pool" => 1)
 $role = :guest
 BattleManager.setup(71)
@@ -781,6 +718,7 @@ reset
 pool.taken_over
 check("a takeover outside a pooled battle does nothing", [pool.fight, reports], [nil, []])
 reset
+harpy("kind" => "guest")
 push("Queen Harpy", "0", "6000", true)
 pool.note_invite("troop" => "71", "pool" => 1)
 $role = :guest
@@ -795,7 +733,7 @@ BattleManager.instance_variable_set(:@phase, nil)
 reset
 pool.note_invite("troop" => "71")
 BattleManager.setup(71)
-check("an invite without pools brings none", [pool.fight, pool.set_up_kind], [nil, nil])
+check("an invite without pools tells the rules of none", $raid_answers.asked("raid.kind").first["invited"], nil)
 
 # The game's retry of a lost battle fights the pool again, with the pool's HP.
 reset
@@ -827,7 +765,8 @@ reset
 Host = Struct.new(:state)
 check("a host's boss battle offers a side battle", pool.side_of(Host.new({ "rpb" => [71, [90, 100, 0]] })), [71, [90, 100, 0]])
 check("one without a boss battle none", [pool.side_of(Host.new({ "rpb" => nil })), pool.side_of(Host.new({}))], [nil, nil])
-check("nor one whose boss is no pooled last phase", [pool.side_of(Host.new({ "rpb" => [609, [1, 2]] })), pool.side_of(Host.new({ "rpb" => [1507, [1, 2]] }))], [nil, nil])
+check("nor one whose boss the rules give no pools", [pool.side_of(Host.new({ "rpb" => [609, [1, 2]] })), pool.side_of(Host.new({ "rpb" => [1507, [1, 2]] }))], [nil, nil])
+harpy("kind" => "side")
 check("the side battle starts", pool.start_side(71, [90, 100, 0]), true)
 check("with the host's rates, the same troop, no escape, and the game's defeat", [$borrowed, $setups.last, $called], [[[90, 100, 0]], [71, false, false], [Scene_Battle]])
 check("it fights the same pool, marked a side battle", [pool.fight.key, pool.fight.side, enemy.mhp], ["Queen Harpy", true, 6000])
@@ -835,8 +774,8 @@ enemy.hp = 5400
 next_turn
 check("and reports like any other", reports.last[0..2].values_at(0, 2), ["Queen Harpy", "1\t0.1000000000\t6000\t0"])
 reset
-push("Queen Harpy", "0", "6000", true)
-check("a side battle never starts against an empty pool", [pool.side_of(Host.new({ "rpb" => [71, [1, 2]] })), pool.start_side(71, [1, 2]), $setups], [nil, false, []])
+$raid_answers.troops[71] = { "pooled" => true, "defeated" => true }
+check("a side battle never starts against pools the rules call empty", [pool.side_of(Host.new({ "rpb" => [71, [1, 2]] })), pool.start_side(71, [1, 2]), $setups], [nil, false, []])
 reset
 $mode = :own
 check("nor for a player behind the world's story", pool.start_side(71, "1,2"), false)
@@ -925,7 +864,8 @@ $game_map.interpreter.clear
 BattleManager.battle_end(2)
 check("the retry's invite names the pool", pool.retrying { pool.invite_fields(71) }, { "pool" => 1 })
 push("Queen Harpy", "0", "6000", true)
-check("and is won already once the pool is empty", pool.retrying { pool.won_already?(71) }, true)
+harpy("defeated" => true)
+check("and is won already once the rules call the pool empty", pool.retrying { pool.won_already?(71) }, true)
 
 # A guest's troop built anew from its host's gets the raised max HP at once.
 reset
@@ -1107,6 +1047,7 @@ enemy.hp = 0
 BattleManager.battle_end(0)
 reset
 $side_at_setup = []
+harpy("kind" => "side")
 pool.start_side(71, "100,100,0")
 check("a side battle is one while it is set up and while it runs, of its troop alone",
       [$side_at_setup, pool.side_battle?(71), pool.side_battle?("71"), pool.side_battle?(609), pool.set_up_kind], [[true], true, true, false, :side])
@@ -1127,6 +1068,7 @@ BattleManager.battle_end(2)
 BattleManager.retry_battle
 check("nor does its retry, which is a side battle too", [pool.side_battle?(71), BattleManager.enable_get_exp?], [true, false])
 BattleManager.battle_end(1)
+harpy({})
 start([[:battle, 71], [:mark, :after]])
 check("the boss's event battle still gives them", [BattleManager.enable_get_exp?, pool.set_up_kind], [true, :event])
 # Stands in for battles_raid_freeze.rbx, resuming the frozen fight of troop $resuming.
@@ -1138,11 +1080,13 @@ check("while another boss's fight resumes it still does", BattleManager.enable_g
 $resuming = nil
 BattleManager.battle_end(1)
 $game_system.instance_variable_set(:@mgq_mp_raid_rewards, { "world" => "w2", "keys" => { "Queen Harpy" => true } })
+harpy("kind" => "side")
 pool.start_side(71, "100,100,0")
 check("the notes of another world count for nothing", BattleManager.enable_get_exp?, true)
 check("a side battle's invite tells it is one", pool.invite_fields, { "pool" => 1, "side" => true })
 BattleManager.battle_end(1)
 pool.note_rewarded("Queen Harpy")
+harpy("kind" => "guest")
 pool.note_invite("troop" => "71", "pool" => 1, "side" => true)
 $role = :guest
 $pages_run.clear
@@ -1162,8 +1106,8 @@ pools = pool.pools
 check("pools lists what the relay told, by key", [pools.keys, pools["Queen Harpy"].left, pools["Queen Harpy"].max], [["Queen Harpy"], 0.4, 6000])
 pools["Other"] = :nothing
 check("as a copy, so a reader changes nothing", pool.pools.keys, ["Queen Harpy"])
-check("the share left now, a troop's label and a pool's boss key stay readable from outside",
-      [pool.left_now(pools["Queen Harpy"]), pool.troop_label(71), pool.boss_key("Metatronne and Sandalphone#1")], [0.4, "Queen Harpy", "Metatronne and Sandalphone"])
+check("the share left, a troop's label and a pool's boss key stay readable from outside",
+      [pools["Queen Harpy"].left, pool.troop_label(71), pool.boss_key("Metatronne and Sandalphone#1")], [0.4, "Queen Harpy", "Metatronne and Sandalphone"])
 
 # The battle server: the starter hands it the battle's fight and pools, and it fights them as host.
 reset
@@ -1175,8 +1119,8 @@ check("the starter hands the battle server how many enemies fight, whether it is
 BattleManager.battle_end(1)
 check("a battle that fights no pool hands it nothing", pool.served_fields, nil)
 reset
+harpy("kind" => nil)
 BattleManager.setup(71)
-check("on the server, a battle no event started fights no pool by itself", pool.fight, nil)
 pool.serve_fight(71, fields)
 BattleManager.start_battle
 check("the server fights the starter's pools as host, its enemy at the pool's HP once its battle started",
@@ -1187,6 +1131,7 @@ next_turn
 check("and reports what the battle dealt", reports.map { |key, _battle, text| [key, text] }, [["Queen Harpy", "1\t0.1000000000\t6000\t0"]])
 BattleManager.battle_end(1)
 reset
+harpy("kind" => nil)
 BattleManager.setup(71)
 pool.serve_fight(71, ["1", 0, []])
 check("a count that is no number fights no pool", pool.fight, nil)
