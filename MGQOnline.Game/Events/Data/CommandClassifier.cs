@@ -2,6 +2,7 @@
 //  CommandClassifier.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Read a talk's script that shows the game's extended choices as a choice
 //      Paulinchen  2026-10-28: Created
 //
 //----------------------------------------------------------------
@@ -45,14 +46,15 @@ public static partial class CommandClassifier
     /// Reads a list's commands.
     /// </summary>
     /// <param name="list">The commands as read.</param>
+    /// <param name="exChoiceResult">The variable the game's extended choices (<c>ex_choice_show</c>) write their answer into, as the game's scripts name it; <see langword="null"/> while unknown, which reads them as talk.</param>
     /// <returns>The commands as the rules read them, in the same places.</returns>
-    public static EventCommand[] Classify(IReadOnlyList<RawCommand> list)
+    public static EventCommand[] Classify(IReadOnlyList<RawCommand> list, long? exChoiceResult = null)
     {
         Dictionary<string, (int Place, int Number)> labels = LabelsOf(list);
         var commands = new EventCommand[list.Count];
         for (int place = 0; place < list.Count; place++)
         {
-            commands[place] = Classify(list, place, labels);
+            commands[place] = Classify(list, place, labels, exChoiceResult);
         }
 
         return commands;
@@ -100,8 +102,9 @@ public static partial class CommandClassifier
     /// <param name="list">The commands as read.</param>
     /// <param name="place">The command's place.</param>
     /// <param name="labels">The list's labels, see <see cref="LabelsOf"/>.</param>
+    /// <param name="exChoiceResult">The variable of the extended choices' answers, see <see cref="Classify(IReadOnlyList{RawCommand}, long?)"/>.</param>
     /// <returns>The command.</returns>
-    private static EventCommand Classify(IReadOnlyList<RawCommand> list, int place, Dictionary<string, (int Place, int Number)> labels)
+    private static EventCommand Classify(IReadOnlyList<RawCommand> list, int place, Dictionary<string, (int Place, int Number)> labels, long? exChoiceResult)
     {
         RawCommand raw = list[place];
         long[] numbers = NumbersOf(raw.Parameters);
@@ -120,7 +123,7 @@ public static partial class CommandClassifier
                 break;
             case EventCodes.Script:
                 script = raw.Text(0);
-                kind = ScriptKindOf(script, JoinedScript(list, place), out long variable);
+                kind = ScriptKindOf(script, JoinedScript(list, place), exChoiceResult, out long variable);
                 numbers = kind == TextKind.Choice ? WithFirst(numbers, variable) : numbers;
                 break;
             case EventCodes.ScriptLine:
@@ -223,9 +226,10 @@ public static partial class CommandClassifier
     /// </summary>
     /// <param name="first">The script command's own line.</param>
     /// <param name="script">The whole script, see <see cref="JoinedScript"/>.</param>
+    /// <param name="exChoiceResult">The variable of the extended choices' answers, <see langword="null"/> while unknown.</param>
     /// <param name="variable">The variable a choice writes, 0 for another kind.</param>
     /// <returns>The kind.</returns>
-    private static TextKind ScriptKindOf(string first, string script, out long variable)
+    private static TextKind ScriptKindOf(string first, string script, long? exChoiceResult, out long variable)
     {
         variable = 0;
         if (TravelScript().IsMatch(script))
@@ -235,9 +239,18 @@ public static partial class CommandClassifier
 
         if (TalkScript().IsMatch(script))
         {
-            return ChoiceScript().Match(first) is { Success: true } match && long.TryParse(match.Groups[1].ValueSpan, NumberStyles.None, CultureInfo.InvariantCulture, out variable)
-                ? TextKind.Choice
-                : TextKind.Talk;
+            if (ChoiceScript().Match(first) is { Success: true } match && long.TryParse(match.Groups[1].ValueSpan, NumberStyles.None, CultureInfo.InvariantCulture, out variable))
+            {
+                return TextKind.Choice;
+            }
+
+            if (exChoiceResult is { } result && ExChoiceShow().IsMatch(script))
+            {
+                variable = result;
+                return TextKind.Choice;
+            }
+
+            return TextKind.Talk;
         }
 
         return NovelScene().IsMatch(first) ? TextKind.Novel : TextKind.Other;
@@ -290,6 +303,14 @@ public static partial class CommandClassifier
     /// <returns>The pattern, the variable's id its first group.</returns>
     [GeneratedRegex(@"\A[ \t\r\n\f\v]*unlimited_choices\([ \t\r\n\f\v]*([0-9]+)", RegexOptions.CultureInvariant)]
     private static partial Regex ChoiceScript();
+
+    /// <summary>
+    /// A script that shows the game's extended choices, which write the answer into the variable
+    /// the game's scripts name.
+    /// </summary>
+    /// <returns>The pattern.</returns>
+    [GeneratedRegex(@"\bex_choice_show\b", RegexOptions.CultureInvariant)]
+    private static partial Regex ExChoiceShow();
 
     /// <summary>
     /// A script that plays a novel scene.

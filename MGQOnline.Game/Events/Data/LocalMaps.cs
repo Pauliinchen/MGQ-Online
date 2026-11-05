@@ -2,7 +2,8 @@
 //  LocalMaps.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Created
+//      Paulinchen  2026-11-05: Read the extended choices of a changed map as the events database reads them
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -64,7 +65,7 @@ public sealed class LocalMaps
         _store = store;
         _files = files;
         _log = log;
-        Source = new GameDataSource(new GameData(files));
+        Source = new GameDataSource(new GameData(files, store.Meta?.Build.ExChoiceResult));
     }
 
     /// <summary>

@@ -2,6 +2,7 @@
 //  ChoiceAsks.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Named the variable of the extended choices' answers for the whole build
 //      Paulinchen  2026-11-01: Found the branches of each extended choice too, by the answers it adds and the branches on its result after it
 //      Paulinchen  2026-10-31: Created
 //
@@ -76,6 +77,13 @@ internal static partial class ChoiceAsks
     private const string ExChoiceResult = "EX_CHOICE_RESULT";
 
     /// <summary>
+    /// Finds the variable the extended choices write their answer into.
+    /// </summary>
+    /// <param name="scripts">The game's scripts, each as one text.</param>
+    /// <returns>The variable, <see langword="null"/> while the scripts name none.</returns>
+    public static long? ResultVariable(IReadOnlyList<string> scripts) => SwitchUses.ConstantOf(scripts, ExChoiceResult);
+
+    /// <summary>
     /// Finds the branches.
     /// </summary>
     /// <param name="game">The game read.</param>
@@ -83,7 +91,7 @@ internal static partial class ChoiceAsks
     /// <returns>The branches by list, choice and answer.</returns>
     public static IReadOnlyList<ChoiceBranchRow> Of(BuiltGame game, IReadOnlyList<string> scripts)
     {
-        long? exChoiceResult = SwitchUses.ConstantOf(scripts, ExChoiceResult);
+        long? exChoiceResult = ResultVariable(scripts);
         IReadOnlySet<long> touching = Gives.TouchingCommons(game);
         var rows = new List<ChoiceBranchRow>();
         foreach (BuiltList list in Gives.Replayable(game))

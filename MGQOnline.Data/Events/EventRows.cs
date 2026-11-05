@@ -2,6 +2,7 @@
 //  EventRows.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Kept the variable of the extended choices' answers with the build
 //      Paulinchen  2026-10-31: Added the pairs the one-time repair of stuck saves completes
 //                            - Added the lists that give and the branches of each choice
 //      Paulinchen  2026-10-28: Let the build info be set after the rows
@@ -22,7 +23,8 @@ namespace MGQOnline.Data.Events;
 /// <param name="Source">Which copy of the game it was read from, such as "untranslated".</param>
 /// <param name="Fingerprint">The game data's fingerprint, as the game writes it to GameData.ini.</param>
 /// <param name="InputHashes">The files read, one line each: path, sha256 and size.</param>
-public sealed record EventBuildInfo(int GeneratorVersion, string GameVersion, string Source, string Fingerprint, string InputHashes);
+/// <param name="ExChoiceResult">The variable the game's extended choices write their answer into, as its scripts name it; <see langword="null"/> for none named.</param>
+public sealed record EventBuildInfo(int GeneratorVersion, string GameVersion, string Source, string Fingerprint, string InputHashes, long? ExChoiceResult = null);
 
 /// <summary>
 /// Every row of one events database, as <see cref="EventDatabaseWriter"/> takes them in any order.

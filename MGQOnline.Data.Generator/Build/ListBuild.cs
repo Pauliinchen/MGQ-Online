@@ -4,6 +4,7 @@
 //  Changelog:
 //      Paulinchen  2026-11-05: Read the side switches from StoryIds
 //                            - Took the lists' shape from RawListShape, which the DLL shares
+//                            - Read the game's extended choices as choices
 //      Paulinchen  2026-11-01: Handed on each list's extended choices
 //      Paulinchen  2026-10-31: Handed each list's script roots on
 //                            - Handed on what each list's scripts do to self switches
@@ -50,10 +51,11 @@ internal static class ListBuild
     /// <param name="list">The commands as the game runs them.</param>
     /// <param name="condition">The conditions of the list's page, which it reads too: a map page's, or a troop page's switch; <see langword="null"/> for none.</param>
     /// <param name="triggerSwitch">The switch that starts a common event by itself, <see langword="null"/> for none.</param>
+    /// <param name="exChoiceResult">The variable of the extended choices' answers, <see langword="null"/> while the scripts name none.</param>
     /// <returns>The list as the derived rows read it.</returns>
-    public static BuiltList Add(EventRows rows, ListRow site, IReadOnlyList<RawCommand> list, PageCondition? condition, int? triggerSwitch)
+    public static BuiltList Add(EventRows rows, ListRow site, IReadOnlyList<RawCommand> list, PageCondition? condition, int? triggerSwitch, long? exChoiceResult)
     {
-        EventCommand[] commands = CommandClassifier.Classify(list);
+        EventCommand[] commands = CommandClassifier.Classify(list, exChoiceResult);
         int[] ords = OrdsOf(list);
         int[] owners = OwnersOf(list);
         int listId = site.ListId;

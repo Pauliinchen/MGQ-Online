@@ -2,6 +2,7 @@
 //  EventBuilder.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Read the game's extended choices as choices, by the variable the game's scripts name for their answers, as version 5
 //      Paulinchen  2026-10-31: Failed the build on a command or script root the story replay does not class
 //                            - Wrote the pairs the one-time repair of stuck saves completes, as version 3
 //                            - Wrote the lists that give and the branches of each choice, as version 4
@@ -50,7 +51,7 @@ internal static class EventBuilder
     /// <summary>
     /// The generator's version, which grows with each change of what it writes.
     /// </summary>
-    public const int Version = 4;
+    public const int Version = 5;
 
     /// <summary>
     /// The command that marks a common event, which the game puts first in every common event's list.
@@ -81,13 +82,15 @@ internal static class EventBuilder
     public static (EventRows Rows, BuiltGame Game) Read(IGameDataFiles files, BuildOptions options)
     {
         var source = new GameSource(files);
-        var rows = new EventRows(new EventBuildInfo(Version, options.GameVersion, options.Source, string.Empty, string.Empty));
+        IReadOnlyList<string> scripts = source.ReadScripts();
+        long? exChoiceResult = ChoiceAsks.ResultVariable(scripts);
+        var rows = new EventRows(new EventBuildInfo(Version, options.GameVersion, options.Source, string.Empty, string.Empty, exChoiceResult));
         var lists = new List<BuiltList>();
 
         IReadOnlyList<SourceMapInfo> maps = source.ReadMapInfos();
         foreach (SourceMapInfo info in maps)
         {
-            AddMap(rows, lists, info, source.ReadMap(info.Id));
+            AddMap(rows, lists, info, source.ReadMap(info.Id), exChoiceResult);
         }
 
         IReadOnlyList<SourceCommon?> commons = source.ReadCommonEvents();
@@ -96,18 +99,18 @@ internal static class EventBuilder
         {
             normalised[common.Id] = Normalise(common, out int leadingMarks);
             var site = new ListRow(lists.Count + 1, ListKind.Common, null, null, null, common.Id, null, null, 0, 0, 0);
-            lists.Add(ListBuild.Add(rows, site, normalised[common.Id]!, null, common.Trigger != 0 ? common.SwitchId : null));
+            lists.Add(ListBuild.Add(rows, site, normalised[common.Id]!, null, common.Trigger != 0 ? common.SwitchId : null, exChoiceResult));
             rows.CommonEvents.Add(new CommonEventRow(common.Id, site.ListId, common.Trigger, common.SwitchId, false, leadingMarks, false, false, false));
         }
 
         IReadOnlyList<SourceTroop?> troops = source.ReadTroops();
         foreach (SourceTroop troop in troops.OfType<SourceTroop>())
         {
-            AddTroop(rows, lists, troop);
+            AddTroop(rows, lists, troop, exChoiceResult);
         }
 
         rows.FingerprintParts.AddRange(GameFingerprint.Parts(PartIds(source, troops, normalised, maps, out int actors)));
-        BuiltGame game = DerivedBuild.Derive(rows, lists, source, commons, actors);
+        BuiltGame game = DerivedBuild.Derive(rows, lists, source, scripts, commons, actors);
         if (ReplayChannels.Unclassed(game) is { Count: > 0 } unclassed)
         {
             throw new InvalidDataException("The story replay classes no channel of: " + string.Join("; ", unclassed));
@@ -198,7 +201,8 @@ internal static class EventBuilder
     /// <param name="lists">The lists read so far, which the pages' lists are added to.</param>
     /// <param name="info">The map as the map lists name it.</param>
     /// <param name="map">Its file, <see langword="null"/> for a map without one.</param>
-    private static void AddMap(EventRows rows, List<BuiltList> lists, SourceMapInfo info, SourceMap? map)
+    /// <param name="exChoiceResult">The variable of the extended choices' answers, <see langword="null"/> while the scripts name none.</param>
+    private static void AddMap(EventRows rows, List<BuiltList> lists, SourceMapInfo info, SourceMap? map, long? exChoiceResult)
     {
         rows.Maps.Add(new MapRow(info.Id, info.Folder, info.Number, info.ParentId, map?.TilesetId ?? 0, map is not null, SceneRoots.Contains(info.RootName)));
         if (map is null)
@@ -219,7 +223,7 @@ internal static class EventBuilder
                 SourcePage page = mapEvent.Pages[pageNo];
                 SourceCondition condition = page.Condition;
                 var site = new ListRow(lists.Count + 1, ListKind.Page, info.Id, eventId, pageNo, null, null, null, 0, 0, 0);
-                lists.Add(ListBuild.Add(rows, site, page.List, condition.ForRules, null));
+                lists.Add(ListBuild.Add(rows, site, page.List, condition.ForRules, null, exChoiceResult));
                 rows.Pages.Add(new PageRow(
                     site.ListId,
                     info.Id,
@@ -250,7 +254,8 @@ internal static class EventBuilder
     /// <param name="rows">The rows.</param>
     /// <param name="lists">The lists read so far, which the pages' lists are added to.</param>
     /// <param name="troop">The troop.</param>
-    private static void AddTroop(EventRows rows, List<BuiltList> lists, SourceTroop troop)
+    /// <param name="exChoiceResult">The variable of the extended choices' answers, <see langword="null"/> while the scripts name none.</param>
+    private static void AddTroop(EventRows rows, List<BuiltList> lists, SourceTroop troop, long? exChoiceResult)
     {
         rows.Troops.Add(new TroopRow(troop.Id, troop.Members.Count, troop.Pages.Count));
         for (int position = 0; position < troop.Members.Count; position++)
@@ -265,7 +270,7 @@ internal static class EventBuilder
             SourceTroopCondition condition = page.Condition;
             var site = new ListRow(lists.Count + 1, ListKind.TroopPage, null, null, null, null, troop.Id, pageNo, 0, 0, 0);
             PageCondition? reads = condition.SwitchValid ? new PageCondition(condition.SwitchId, null, null, 0, null) : null;
-            lists.Add(ListBuild.Add(rows, site, page.List, reads, null));
+            lists.Add(ListBuild.Add(rows, site, page.List, reads, null, exChoiceResult));
             rows.TroopPages.Add(new TroopPageRow(
                 site.ListId,
                 troop.Id,

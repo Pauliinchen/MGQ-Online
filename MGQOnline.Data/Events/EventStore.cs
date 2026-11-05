@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-11-05: Listed the items, weapons and armors an event takes away
+//                            - Read the variable of the extended choices' answers from the meta table
 //                            - Listed the battlefuck events once per store
 //      Paulinchen  2026-11-01: Read the branches of an extended choice too
 //      Paulinchen  2026-10-31: Added the pairs the one-time repair of stuck saves completes
@@ -749,7 +750,8 @@ public sealed class EventStore : IDisposable
 
         string Value(string key) => values.GetValueOrDefault(key) ?? string.Empty;
         _ = int.TryParse(Value(MetaKeys.GeneratorVersion), NumberStyles.None, CultureInfo.InvariantCulture, out int generator);
-        var build = new EventBuildInfo(generator, Value(MetaKeys.GameVersion), Value(MetaKeys.Source), Value(MetaKeys.Fingerprint), Value(MetaKeys.InputHashes));
+        long? exChoiceResult = long.TryParse(Value(MetaKeys.ExChoiceResult), NumberStyles.None, CultureInfo.InvariantCulture, out long result) ? result : null;
+        var build = new EventBuildInfo(generator, Value(MetaKeys.GameVersion), Value(MetaKeys.Source), Value(MetaKeys.Fingerprint), Value(MetaKeys.InputHashes), exChoiceResult);
         return new EventStoreMeta(EventSchema.Version, Value(MetaKeys.SqliteVersion), build, Rows(connection, EventTables.FingerprintParts, "ORDER BY part_no", []), counts);
     }
 

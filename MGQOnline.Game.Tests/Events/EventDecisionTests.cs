@@ -2,7 +2,8 @@
 //  EventDecisionTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Created
+//      Paulinchen  2026-11-05: Covered a page that asks by the game's extended choices
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -123,6 +124,22 @@ public sealed class EventDecisionTests : IDisposable
         Assert.False(progress.Ahead(_source, breaker.List, 0));
         Assert.True(progress.Ahead(_source, route.List, 0));
         Assert.False(progress.Ahead(_source, route.List, write + 1));
+    }
+
+    /// <summary>
+    /// Asserts that a page that asks by the game's extended choices (77:13, whose script command
+    /// shows them and whose first answer takes the player to another map) counts that window as a
+    /// choice, as it does a Show Choices: the branches on its answer are the choice's, so the transfer
+    /// behind one makes the page travel in a new game too, whose answer variable holds no answer.
+    /// </summary>
+    [Fact]
+    public void ExtendedChoices_AreChoices()
+    {
+        EventPage page = Page(77, 13, 0);
+        EventCommand shows = page.List.Single(command => command.Code == EventCodes.Script && command.TextKind == TextKind.Choice);
+
+        Assert.Equal(9, shows.Number(0));
+        Assert.Equal(EventKind.Travel, _sorter.Decide(page.List, Site(77, page), new NewGame()).Kind);
     }
 
     /// <inheritdoc />

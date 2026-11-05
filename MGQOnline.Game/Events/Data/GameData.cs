@@ -2,6 +2,7 @@
 //  GameData.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Read the game's extended choices as choices by the variable of their answers
 //      Paulinchen  2026-10-23: Read each file once when threads ask for it together
 //                            - Created
 //
@@ -29,6 +30,11 @@ public sealed class GameData
     /// Where the files come from.
     /// </summary>
     private readonly IGameDataFiles _files;
+
+    /// <summary>
+    /// Reads the files' objects into the event types.
+    /// </summary>
+    private readonly GameDataPruner _pruner;
 
     /// <summary>
     /// The switch and variable names.
@@ -59,9 +65,11 @@ public sealed class GameData
     /// Initializes the data of some files, each read on first use.
     /// </summary>
     /// <param name="files">Where the files come from.</param>
-    public GameData(IGameDataFiles files)
+    /// <param name="exChoiceResult">The variable the game's extended choices write their answer into, <see langword="null"/> while unknown, which reads them as talk.</param>
+    public GameData(IGameDataFiles files, long? exChoiceResult = null)
     {
         _files = files;
+        _pruner = exChoiceResult is null ? GameDataPruner.Instance : new GameDataPruner(exChoiceResult);
         _system = new(ReadSystem);
         _commonEvents = new(() => ReadList<CommonEvent>(GameDataPaths.CommonEvents));
         _troops = new(() => ReadList<Troop>(GameDataPaths.Troops));
@@ -142,7 +150,7 @@ public sealed class GameData
     /// </summary>
     /// <param name="path">The file.</param>
     /// <returns>Its value, nil for a file that is not there.</returns>
-    private RubyValue Read(string path) => _files.Exists(path) ? RubyMarshal.Read(_files.Read(path), GameDataPruner.Instance) : RubyNil.Value;
+    private RubyValue Read(string path) => _files.Exists(path) ? RubyMarshal.Read(_files.Read(path), _pruner) : RubyNil.Value;
 
     /// <summary>
     /// Reads a data file that lists objects by id, its first entry empty.

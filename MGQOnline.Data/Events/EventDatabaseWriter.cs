@@ -2,6 +2,7 @@
 //  EventDatabaseWriter.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Wrote the variable of the extended choices' answers into the meta table
 //      Paulinchen  2026-10-31: Added the pairs the one-time repair of stuck saves completes
 //                            - Added the lists that give and the branches of each choice
 //      Paulinchen  2026-10-28: Created
@@ -119,6 +120,10 @@ public static class EventDatabaseWriter
             [MetaKeys.KeptCodes] = string.Join(",", EventSchema.KeptCodes),
             [MetaKeys.TextCodes] = string.Join(",", EventSchema.TextCodes),
         };
+        if (build.ExChoiceResult is { } exChoiceResult)
+        {
+            meta[MetaKeys.ExChoiceResult] = exChoiceResult.ToString(CultureInfo.InvariantCulture);
+        }
         foreach ((string key, string value) in meta)
         {
             using SqliteStatement insert = connection.Prepare("INSERT INTO meta(key, value) VALUES(?, ?)");
@@ -185,4 +190,7 @@ internal static class MetaKeys
 
     /// <summary>The command codes of text, which the rows leave out.</summary>
     public const string TextCodes = "text_codes";
+
+    /// <summary>The variable the game's extended choices write their answer into.</summary>
+    public const string ExChoiceResult = "ex_choice_result";
 }

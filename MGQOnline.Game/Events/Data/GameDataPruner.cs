@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-11-05: Shared the reading of a page's conditions with the check of the player's maps
+//                            - Read the game's extended choices as choices by the variable of their answers
 //      Paulinchen  2026-10-28: Classified each list of commands as it finished
 //      Paulinchen  2026-10-23: Created
 //
@@ -21,9 +22,23 @@ namespace MGQOnline.Game.Events.Data;
 internal sealed class GameDataPruner : MarshalPruner
 {
     /// <summary>
-    /// The one pruner; it keeps no state.
+    /// The pruner that reads the game's extended choices as talk; it keeps no state.
     /// </summary>
-    public static readonly GameDataPruner Instance = new();
+    public static readonly GameDataPruner Instance = new(null);
+
+    /// <summary>
+    /// The variable the game's extended choices write their answer into, <see langword="null"/> while unknown.
+    /// </summary>
+    private readonly long? _exChoiceResult;
+
+    /// <summary>
+    /// Initializes a pruner.
+    /// </summary>
+    /// <param name="exChoiceResult">The variable the game's extended choices write their answer into, <see langword="null"/> while unknown, which reads them as talk.</param>
+    public GameDataPruner(long? exChoiceResult)
+    {
+        _exChoiceResult = exChoiceResult;
+    }
 
     /// <summary>
     /// The fields kept of each class the rules read; a class not named keeps every field.
@@ -82,7 +97,7 @@ internal sealed class GameDataPruner : MarshalPruner
     /// </summary>
     /// <param name="value">The list as read: an Array of boxed commands, nil for none.</param>
     /// <returns>The commands.</returns>
-    internal static IReadOnlyList<EventCommand> ListOf(RubyValue value) => CommandClassifier.Classify(ItemsOf<RawCommand>(value));
+    internal IReadOnlyList<EventCommand> ListOf(RubyValue value) => CommandClassifier.Classify(ItemsOf<RawCommand>(value), _exChoiceResult);
 
     /// <summary>
     /// Reads an Array of boxed values.

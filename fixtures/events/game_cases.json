@@ -2431,11 +2431,13 @@
       },
       "answer": {
         "list_kind": "story",
-        "may_tell": false,
+        "may_tell": true,
         "scene": true,
         "marks": [
+          "choice_story",
           "says",
-          "sets"
+          "sets",
+          "travel"
         ],
         "kind": "story"
       },
@@ -12382,11 +12384,13 @@
       },
       "answer": {
         "list_kind": "story",
-        "may_tell": false,
+        "may_tell": true,
         "scene": true,
         "marks": [
+          "choice_story",
           "says",
-          "sets"
+          "sets",
+          "travel"
         ],
         "kind": "story"
       },

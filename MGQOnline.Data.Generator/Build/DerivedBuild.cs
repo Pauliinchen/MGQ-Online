@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-11-05: Flagged the battlefuck events the sorter reads
+//                            - Took the game's scripts as the build read them
 //      Paulinchen  2026-11-01: Derived the branches of each extended choice too
 //      Paulinchen  2026-10-31: Derived the pairs the one-time repair of stuck saves completes
 //                            - Derived the lists that give and the branches of each choice
@@ -44,10 +45,11 @@ internal static class DerivedBuild
     /// <param name="rows">The rows read so far.</param>
     /// <param name="lists">Every list read, in the order of their ids.</param>
     /// <param name="source">The game's data, whose names, descriptions and notes the flags are read from.</param>
+    /// <param name="scripts">The game's scripts, each as one text.</param>
     /// <param name="commons">The common events as read, by id.</param>
     /// <param name="actors">How many entries the actors' list holds, its empty first one included.</param>
     /// <returns>The game as the derived rows read it.</returns>
-    public static BuiltGame Derive(EventRows rows, IReadOnlyList<BuiltList> lists, GameSource source, IReadOnlyList<SourceCommon?> commons, int actors)
+    public static BuiltGame Derive(EventRows rows, IReadOnlyList<BuiltList> lists, GameSource source, IReadOnlyList<string> scripts, IReadOnlyList<SourceCommon?> commons, int actors)
     {
         var game = new BuiltGame(rows, lists);
         (IReadOnlyList<string> switchNames, IReadOnlyList<string> variableNames) = source.ReadSystemNames();
@@ -88,7 +90,6 @@ internal static class DerivedBuild
         rows.SiteAlternatives.AddRange(raid.Alternatives());
         rows.SceneEntries.AddRange(raid.SceneEntries());
 
-        IReadOnlyList<string> scripts = source.ReadScripts();
         SwitchUses uses = SwitchUses.Of(scripts, source.ReadInUse(GameSource.NamedParts[0].Path), GameSource.NamedParts.SelectMany(part => source.ReadEntries(part.Path)));
         rows.RepairPairs.AddRange(RepairPairs.Of(game, uses));
         rows.Gives.AddRange(Gives.Of(game));

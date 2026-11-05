@@ -2,6 +2,7 @@
 #  make_fixtures.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Gave the cases whose lists show an extended choice the answer the extended choices now get
 #      Paulinchen  2026-10-23: Created
 #
 #----------------------------------------------------------------
@@ -19,12 +20,22 @@
 #   (their codes and indents, and those of the common events they follow) and the switch and
 #   variable names the sorter looked at the folder holds too, by a hash of them.
 #
+# Since 2026-11-05 the game's extended choice windows (ex_choice_show) count as choices, which the
+# old sorter read as talk (user decision), so the cases whose lists show one take the answer of
+# EXTENDED_CHOICES in place of the recorded one.
+#
 # It runs on the scripts of the commit that added it, on Ruby 3.3, with the reference game's Data:
 #
 #   ruby fixtures/events/make_fixtures.rb "<MGQ Paradox Translated>\Data"
 
 require "json"
 require "digest"
+
+# The answers of the cases whose lists show an extended choice, by site: what the branches on its
+# answer do counts as the choice's, here a transfer and story behind it.
+EXTENDED_CHOICES = {
+  "map:1946:37:1" => { "marks" => %w(choice_story says sets travel), "may_tell" => true },
+}
 
 # The folders this script reads.
 ROOT = File.expand_path("../..", __dir__)
@@ -432,7 +443,9 @@ STATES.each do |state, set_up|
   set_up.call
   chosen.each do |site, map_id, trigger, rows, _kind|
     $game_map.map_id = map_id
-    cases << game_case(site, trigger, rows, state)
+    found = game_case(site, trigger, rows, state)
+    found["answer"] = found["answer"].merge(EXTENDED_CHOICES[site]) if EXTENDED_CHOICES[site]
+    cases << found
   end
 end
 File.write(File.join(__dir__, "game_cases.json"), JSON.pretty_generate({ "source" => "coop_events.rbx over #{File.basename(File.dirname(data))}, Ruby #{RUBY_VERSION}", "cases" => cases }) + "\n")
