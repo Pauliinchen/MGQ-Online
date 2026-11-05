@@ -2,6 +2,7 @@
 #  ui_bug_report.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Told an untranslated game in the report by its own name of the story's progress variable
 #      Paulinchen  2026-11-01: Built the form on the Mod Framework's components
 #                            - Left when the report opens, its refusals, sending and the outcome to the DLL
 #                            - Took the wheel's screenshot once the action wheel is gone and waited while any mod's screen holds the game
@@ -102,6 +103,7 @@ module MGQ_MpBugReport
   # The translation's and the untranslated game's name of the story's progress variable, which tells
   # them apart.
   TRANSLATED_VARIABLE = "Overall Events Progress"
+  UNTRANSLATED_VARIABLE = "総合イベント進行度"
 
   # The DLL's topic of a frame, see ReportTopics.TickTopic: whether to take the screenshot now.
   TICK_TOPIC = "report.tick"
@@ -375,8 +377,7 @@ module MGQ_MpBugReport
     names = $data_system.variables
     return "translated" if names.include?(TRANSLATED_VARIABLE)
 
-    untranslated = defined?(MGQ_MpWorldOverview::PROGRESS) ? MGQ_MpWorldOverview::PROGRESS - [TRANSLATED_VARIABLE] : []
-    untranslated.any? { |name| names.include?(name) } ? "untranslated" : "translation unknown"
+    names.include?(UNTRANSLATED_VARIABLE) ? "untranslated" : "translation unknown"
   end
 
   # Names the open world's type, and its name when the world is public.

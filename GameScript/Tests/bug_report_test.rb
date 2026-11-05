@@ -2,6 +2,7 @@
 #  bug_report_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Dropped the stand-in of the World overview, which hid the untranslated game's name
 #      Paulinchen  2026-11-01: Drew the form through the Mod Framework's window and answered the request from the DLL's topics
 #                            - Covered a form open at F12
 #                            - Dropped the stand-in of the title screen's commands, which no script hooks any more
@@ -194,8 +195,6 @@ module MGQ_MpNotices
 end
 # Stands in for the chat, keeping each system line in $chat.
 module MGQ_MpChat; def self.system(text); $chat << text; end; end
-# Stands in for the World overview, with the progress variable's English and Japanese names.
-module MGQ_MpWorldOverview; PROGRESS = ["Overall Events Progress", "総合イベント進行度"]; end
 # Stands in for the keyboard of the hotkeys: the bug report's hotkey goes down once while $hotkey.
 def MGQ_MpHotkeys.pressed?(name)
   pressed = name == :bug_report && $hotkey
