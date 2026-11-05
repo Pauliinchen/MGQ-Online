@@ -27,6 +27,11 @@
     <ProjectReference Include="..\MGQOnline.Data.Generator\MGQOnline.Data.Generator.csproj" />
   </ItemGroup>
 
+  <!-- The replayer's lists the gate is checked against, which story_replay_test.rb checks the script against. -->
+  <ItemGroup>
+    <None Include="..\fixtures\replay\channels.json" LinkBase="fixtures\replay" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <!-- The game rules' tiny game, written as the game's RPG objects in Marshal. -->
   <ItemGroup>
     <Compile Include="..\MGQOnline.Game.Tests\Events\TinyGame.cs" Link="Events\TinyGame.cs" />

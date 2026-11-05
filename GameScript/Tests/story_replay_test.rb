@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-11-05: Checked that a replay takes a key item it uses up, and dropped the copy got as found
 #                            - Checked that a member ahead keeps the route's key items when the leader returns to the Great Decision
+#                            - Checked the replayer's lists against the fixture the generator's gate is checked against, instead of reading C# source
 #                            - Checked that another player's battle drop gives its item with its notice
 #      Paulinchen  2026-11-01: Checked that a choice the record lacks is asked with what its cancel answers
 #                            - Covered a replay that costs nothing and follows the opener through the checks of what the party holds
@@ -25,6 +26,7 @@
 # nothing until it finished and reached its step, the codes and functions the replay leaves out
 # are those the generator's gate closes, and another player's battle drop gives its item.
 
+require "json"
 require_relative "support"
 
 $log = []
@@ -488,15 +490,11 @@ check("a plain interpreter still runs the mod's hooks", lambda {
 }.call, [:command, :run])
 
 # The replay leaves out exactly the codes and the interpreter's functions the generator's gate
-# classes as the presentation or the opener's play alone; the lines a command reads after it have no
-# command of their own, and a few functions the replay's interpreter answers itself.
-gate = File.read(File.expand_path("../../MGQOnline.Data.Generator/Build/ReplayChannels.cs", __dir__))
-closed = lambda { |channels| channels !~ /State|Input/ }
-codes = gate.scan(/^\s*\[(\d+)\] = (ReplayChannel\.[\w |.]+),$/).select { |_code, channels| closed.call(channels) }.map { |code, _| code.to_i }
-functions = gate.scan(/^\s*\["([a-z_]\w*[?!]?)"\] = (ReplayChannel\.[\w |.]+),$/).select { |_name, channels| closed.call(channels) }.map { |name, _| name.to_sym }
-check("the codes the replay leaves out are those the gate closes, but the lines the commands before them read", MGQ_MpStoryReplay::CLOSED_CODES.sort, (codes - [401, 405, 605]).sort)
-check("the functions the replay leaves out are those the gate closes, but the screen, waits and the closed command a script calls",
-      MGQ_MpStoryReplay::CLOSED_FUNCTIONS.sort, (functions - [:screen, :wait, :command_203]).sort)
+# classes as the presentation or the opener's play alone, as fixtures/replay/channels.json holds
+# them, which MGQOnline.Data.Generator.Tests checks against the gate itself.
+CHANNELS = JSON.parse(File.read(File.expand_path("../../fixtures/replay/channels.json", __dir__)))
+check("the codes the replay leaves out are those the gate closes", MGQ_MpStoryReplay::CLOSED_CODES.sort, CHANNELS["closed_codes"].sort)
+check("the functions the replay leaves out are those the gate closes", MGQ_MpStoryReplay::CLOSED_FUNCTIONS.map { |name| name.to_s }.sort, CHANNELS["closed_functions"].sort)
 
 # The runs of the player's own game and the runs handed to them, over a stand-in of the DLL's topics:
 # a Classic world's party, where 2045 and the chest's A are the party's, v1001 the world's and
@@ -896,9 +894,7 @@ check("a run's take names the shapes of the player's lists of its choices",
       shapes.last, { "map:217:5:1" => MGQ_MpStoryReplay.list_shape($maps[217].events[5].pages[0].list) })
 
 # An input's place counts the commands the events database keeps, by the same codes.
-schema = File.read(File.expand_path("../../MGQOnline.Data/Events/EventSchema.cs", __dir__))
-check("the codes an input's place counts are those the events database keeps",
-      MGQ_MpStoryReplay::KEPT_CODES, schema[/KeptCodes =\s*\[([^\]]*)\]/m, 1].scan(/\d+/).map(&:to_i))
+check("the codes an input's place counts are those the events database keeps", MGQ_MpStoryReplay::KEPT_CODES, CHANNELS["kept_codes"])
 
 # Another player's battle drop of a key item gives the receiver the item, with no event to replay,
 # and the DLL tells the notice from what they held before and after (user decision 2026-11-05).
