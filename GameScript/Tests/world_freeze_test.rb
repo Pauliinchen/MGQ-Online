@@ -2,6 +2,7 @@
 #  world_freeze_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Read the scripts' clock from $frame
 #      Paulinchen  2026-10-28: Stood in for the freeze's tables the DLL's events database answers
 #      Paulinchen  2026-10-23: Checked each frozen fight as a key of the relay's story tracks instead of a list beside the whole story
 #      Paulinchen  2026-10-17: Created
@@ -21,8 +22,8 @@ require_relative "support"
 # Stands in for the mod's log: prints each line.
 module MGQ_Multiplayer; module Log; def self.write(m); puts "  log: #{m}"; end; end; end
 
-# Stands in for the frame counter, which the checks move with $frame.
-module Graphics; def self.frame_count; $frame; end; end
+# The scripts' clock, which the checks move with $frame.
+clock_from { $frame }
 $frame = 0
 
 # Stands in for the title scene, whose start forgets the frozen fights.

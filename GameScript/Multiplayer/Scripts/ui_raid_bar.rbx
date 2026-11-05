@@ -2,6 +2,7 @@
 #  ui_raid_bar.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Counted its scans and redraws by the bridge's frame
 #      Paulinchen  2026-11-01: Built the bars on the Mod Framework's components and took them from the DLL's bars
 #                            - Docked the map's strip at the top and made the battle's small by a click on its hint too
 #      Paulinchen  2026-10-31: Placed its strip through the Mod Framework's layout
@@ -315,7 +316,7 @@ module MGQ_MpRaidBar
   #
   # @return [Array<Array>] Each event with its troop.
   def self.scanned_events
-    stamp = [$game_map.map_id, Graphics.frame_count / SCAN_FRAMES]
+    stamp = [$game_map.map_id, MGQ_Multiplayer::Bridge.frame_number / SCAN_FRAMES]
     return @scanned[1] if @scanned && @scanned[0] == stamp
 
     @event_troops = {} unless @scanned && @scanned[0][0] == stamp[0]
@@ -499,7 +500,7 @@ module MGQ_MpRaidBar
       content = [bar.title, bar.gauges.map { |gauge| [gauge.hp, gauge.max, gauge.numbers, gauge.percent] }]
       return if content == @set
 
-      now = Graphics.frame_count
+      now = MGQ_Multiplayer::Bridge.frame_number
       return if @set && @set[0] == bar.title && @set_at && now - @set_at < REDRAW_FRAMES
 
       @set = content

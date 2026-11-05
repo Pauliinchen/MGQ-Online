@@ -3,8 +3,11 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-05: Checked that other players' characters, the host's troop and a guest's start go through the game's own battle start
+#                            - Checked that a Classic battle invites a party member busy in a menu too, who keeps the invite until free (issue 76)
+#                            - Checked that an invite waits while the player types in the chat box
 #                            - Checked that a guest taking a battle over goes on from the battlers its start made whole, each started once
 #                            - Checked that a guest following its host to another battle starts that battle's troop once
+#                            - Checked that the screens the mod opens on its own wait while an invite is open (issue 79)
 #      Paulinchen  2026-11-01: Named the Mod Framework's interface by its own name
 #      Paulinchen  2026-10-31: Took a player's color from MGQ_MpPlayerColor
 #      Paulinchen  2026-10-30: Handed invites, requests and stand-stills over through the matchmaking's routes
@@ -109,7 +112,8 @@ $scene_now = scene
 # The host invites.
 BattleManager.setup(40, true, false)
 invite = $sent.map { |seat, text| [seat, fields_of(text)] }.find { |_, f| f["coop"] == "invite" }
-check("a battle invites the party members playing on the map", invite && [invite[0], invite[1]["troop"], invite[1]["seats"], invite[1]["escape"], invite[1]["lose"]], [-1, "40", "2", "1", "0"])
+check("a battle invites the party members on the map, one busy in a menu too, who keeps the invite until free (issue 76)",
+      invite && [invite[0], invite[1]["troop"], invite[1]["seats"], invite[1]["escape"], invite[1]["lose"]], [-1, "40", "2,3", "1", "0"])
 check("and becomes a live co-op battle as host", [MGQ_MpBattlesSync.role, MGQ_MpBattlesSync.coop?, MGQ_MpBattlesSync.live?, MGQ_MpBattles.kind], [:host, true, true, :coop])
 check("with the multiplayer rules", BattleManager.can_giveup?, false)
 
@@ -422,14 +426,18 @@ friend.state["scene"] = "away"
 BattleManager.setup(41)
 check("a player whose window is in the background is invited too", MGQ_MpBattlesSync.seats.include?(2), true)
 MGQ_MpBattlesCoop.ended
-friend.state["scene"] = "menu"
-busy.state["scene"] = "menu"
+friend.state["scene"] = "battle"
+busy.state["scene"] = "battle"
 host.state["scene"] = "battle"
 $log.clear
 $game_map.map_id = 5
 $my_seat = 0
 BattleManager.setup(41)
-check("nobody to invite says why", $log.last.to_s.start_with?("co-op battle: nobody to invite on map 5: Friend on map 5 (menu), Busy on map 5 (menu)"), true)
+check("nobody to invite says why", $log.any? { |line| line.start_with?("co-op battle: nobody to invite on map 5: Friend on map 5 (battle), Busy on map 5 (battle)") }, true)
+check("and the battle stays the leader's own, which a member who missed it joins late (issue 76)", MGQ_MpBattlesHotjoin.state_fields["rb"].to_s.empty?, false)
+MGQ_MpBattlesCoop.ended
+friend.state["scene"] = "menu"
+busy.state["scene"] = "menu"
 
 # Shares.
 check("of three players the leader brings two and two of the Backline, the others one each", [0, 1, 2].map { |at| MGQ_MpCoopSquad.share(at, 3, 8) }, [[2, 2], [1, 1], [1, 1]])
@@ -840,6 +848,15 @@ $coop_match.age_waits(60)
 MGQ_MpBattlesCoop.on_map
 check("an invite that waited past three seconds is turned down, not joined", [$sent.map { |_, text| fields_of(text)["battle"] }, MGQ_MpBattlesSync.role], [["decline"], nil])
 check("and the log says why", $log.grep(/declined Friend \(seat 2\)'s invite to battle i2: the player stayed busy for 3 s/).size, 1)
+$typing = true
+$sent.clear
+coop_deliver(mate, invite_of.call("t1"))
+MGQ_MpBattlesCoop.on_map
+check("an invite while the player types in the chat box waits for them", [$sent.map { |_, text| fields_of(text)["battle"] }, MGQ_MpBattlesSync.role], [[], nil])
+$typing = false
+MGQ_MpBattlesCoop.on_map
+check("and is joined once the chat box closes", [MGQ_MpBattlesSync.role, MGQ_MpBattlesSync.battle_id], [:guest, "t1"])
+MGQ_MpBattlesCoop.ended
 
 # Invites while the leader's story calls the player over.
 $sent.clear
@@ -885,7 +902,9 @@ mate.state["scene"] = "menu"
 $encounter_troop = 72
 $game_player.encounter
 MatchStandIn::HOLD_FRAMES.times { MGQ_MpBattlesCoop.on_map }
-check("after three seconds it starts without a member who stayed busy", [MGQ_MpBattlesCoop.holding?, $called, MGQ_MpBattlesSync.role], [false, Scene_Battle, nil])
+check("after three seconds it starts and invites the member who stayed busy, who keeps the invite until free",
+      [MGQ_MpBattlesCoop.holding?, $called, MGQ_MpBattlesSync.role], [false, Scene_Battle, :host])
+MGQ_MpBattlesCoop.ended
 
 $encounter_troop = 73
 $game_player.encounter
@@ -915,9 +934,11 @@ MGQ_Multiplayer::Bridge.frame
 check("a member's encounter on the player's map holds them", $game_player.movable?, false)
 check("with a notice as long as they stand still", $notice_posts, [[[:soon, 2], "Enemies! Friend is in a battle.", MatchStandIn::FREEZE_SECONDS * 60]])
 coop_deliver(mate, invite_of.call("i3"))
+check("a screen the mod opens on its own waits while the invite is open, so it never lapses behind one (issue 79)", MGQ_MpCoop.screens_wait?, true)
 MGQ_MpBattlesCoop.decline_waiting("the player turns it down")
 MGQ_Multiplayer::Bridge.frame
 check("until they turn its invite down, which takes the notice away", [$game_player.movable?, $notice_drops], [true, [[[:soon, 2], "the invite was turned down"]]])
+check("and lets the screens open", MGQ_MpCoop.screens_wait?, false)
 $notice_drops.clear
 coop_deliver(mate, { "coop" => "freeze", "map" => "5" })
 $coop_match.age_freeze(MatchStandIn::FREEZE_SECONDS)

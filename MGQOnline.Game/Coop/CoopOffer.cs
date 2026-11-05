@@ -60,8 +60,9 @@ public sealed record CoopOffer(
 /// What the scripts do after the matchmaking decided: a step only the game can take.
 /// </summary>
 /// <param name="Kind">What: "join" (the battle becomes live with <see cref="Role"/>, <see cref="BattleId"/>,
-/// <see cref="Seats"/> and <see cref="Label"/>, the multiplayer rules on), "fight_alone" (a Raid World's
-/// battle nobody joined goes on as the player's own), "ask_hot" (ask a running battle to take the
+/// <see cref="Seats"/> and <see cref="Label"/>, the multiplayer rules on), "fight_alone" (a battle nobody
+/// joined goes on as the player's own: a Raid World's, or a Classic one a party member on the map
+/// may join late), "ask_hot" (ask a running battle to take the
 /// encounter in), "start_held" (start the held encounter of <see cref="Troop"/>), "held", "accept" (join
 /// the invite in <see cref="Fields"/> of the host at <see cref="Seat"/>, <see cref="Label"/> "story" for
 /// the battle of the story that calls the player), "lead" (lead the request in <see cref="Fields"/>),

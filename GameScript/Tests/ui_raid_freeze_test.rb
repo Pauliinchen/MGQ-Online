@@ -2,6 +2,7 @@
 #  ui_raid_freeze_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Read the scripts' clock from $frame
 #      Paulinchen  2026-10-28: Stood in for the DLL's command index and the freeze's tables
 #      Paulinchen  2026-10-17: Created
 #
@@ -28,8 +29,8 @@ $log = []
 # The mod's log, kept in $log and printed with the checks.
 module MGQ_Multiplayer; module Log; def self.write(m); $log << m; puts "  log: #{m}"; end; end; end
 $frame = 0
-# The game's frame count, at $frame.
-module Graphics; def self.frame_count; $frame; end; end
+# The scripts' clock, at $frame.
+clock_from { $frame }
 
 # Stand-ins for the game's characters, map and sprites.
 

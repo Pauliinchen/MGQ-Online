@@ -2,6 +2,7 @@
 //  MatchHarness.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Told a player away as the room does
 //      Paulinchen  2026-10-30: Replayed the invites, the requests to lead and the rivals as the scripts take them
 //                            - Created
 //
@@ -285,7 +286,7 @@ internal sealed class MatchHarness : ICoopWorld, ICoopHost
             peers.Add(new Peer(entry.GetProperty("seat").GetInt32(), FieldsOf(entry.GetProperty("state")))
             {
                 Member = entry.GetProperty("member").GetBoolean(),
-                AwayLeft = entry.GetProperty("away").GetBoolean() ? 1 : null,
+                Away = entry.GetProperty("away").GetBoolean(),
             });
         }
 

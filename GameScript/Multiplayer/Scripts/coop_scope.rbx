@@ -2,6 +2,8 @@
 #  coop_scope.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Counted the scope's times by the bridge's frame
+#                            - Told whether the screens the mod opens on its own wait, while the followed teller tells or a battle's invite is open
 #      Paulinchen  2026-10-28: Took a Raid World's tellers from the tellings the relay told of on the player's track, and its viewers from their tracks
 #      Paulinchen  2026-10-24: Let a teller's telling hold the player no longer once nothing of it came for thirty seconds
 #      Paulinchen  2026-10-23: Left the map's message gate to the DLL
@@ -80,6 +82,18 @@ module MGQ_MpCoop
     MGQ_MpOverworldSync.tell(-1, message.merge(TO_FIELD => peers.map { |peer| peer.state["id"].to_s }.join(",")))
   end
 
+  # Reports whether a screen the mod opens on its own, such as a replayed event's message or a
+  # question of the catch-up, waits: while the teller whose story the player follows tells it, or
+  # while a battle's invite is open for the player.
+  #
+  # A screen that opened between the teller's pages kept the player busy until the battle's
+  # invite lapsed (issue 79).
+  #
+  # @return [Boolean] Whether it waits.
+  def self.screens_wait?
+    Scope.teller_tells? || (defined?(MGQ_MpBattlesCoop) && MGQ_MpBattlesCoop.invite_open?) ? true : false
+  end
+
   # Whom the player shares the map and the story with, by the type of the open world: Classic
   # shares within the party, Raid with everyone on the map. Each question goes to Classic or Raid.
   module Scope
@@ -107,7 +121,7 @@ module MGQ_MpCoop
     #
     # @param peer [MGQ_MpOverworldSync::Peers::Peer] The teller.
     def self.heard_from(peer)
-      @heard = { :teller => peer.state["id"].to_s, :frame => Graphics.frame_count, :asked => Graphics.frame_count }
+      @heard = { :teller => peer.state["id"].to_s, :frame => MGQ_Multiplayer::Bridge.frame_number, :asked => MGQ_Multiplayer::Bridge.frame_number }
     end
 
     # Reports whether a teller's telling that holds the player sent nothing of it for
@@ -117,10 +131,10 @@ module MGQ_MpCoop
     # @param peer [MGQ_MpOverworldSync::Peers::Peer] The teller.
     # @return [Boolean] Whether it did.
     def self.silent?(peer)
-      now = Graphics.frame_count
+      now = MGQ_Multiplayer::Bridge.frame_number
       id = peer.state["id"].to_s
       heard = @heard
-      @heard = heard = { :teller => id, :frame => now } unless heard && heard[:teller] == id && (0..HOLD_GAP_FRAMES).include?(now - heard[:asked].to_i)
+      @heard = heard = { :teller => id, :frame => now } unless heard && heard[:teller] == id && now - heard[:asked].to_i <= HOLD_GAP_FRAMES
       heard[:asked] = now
       return false if now - heard[:frame] < SILENT_FRAMES
 
@@ -202,6 +216,14 @@ module MGQ_MpCoop
     # @return [Boolean] Whether they do.
     def self.telling?(peer)
       current.telling?(peer)
+    end
+
+    # Reports whether the teller whose story the player follows tells it now.
+    #
+    # @return [Boolean] Whether they do.
+    def self.teller_tells?
+      teller = self.teller
+      follows_teller? && teller.is_a?(MGQ_MpOverworldSync::Peers::Peer) && telling?(teller) ? true : false
     end
 
     # Reports whether another player tells the story the player shares, so the player's own story

@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-05: Loaded the story's ids with the table the DLL hands
+#                            - Let a test move the scripts' clock, the bridge's frame, by hand
 #      Paulinchen  2026-11-01: Stood in for a wheel of the Mod Framework
 #      Paulinchen  2026-10-31: Loaded the Mod Framework's scripts before the mod's, as the game does
 #      Paulinchen  2026-10-28: Stood in for the game's sizes and chest flags the DLL reads from its events database
@@ -138,6 +139,15 @@ end
 def load_bridge
   source = File.read(File.expand_path("../Multiplayer.rb", __dir__), :encoding => "UTF-8")
   MGQ_Multiplayer.module_eval(source[/  module Bridge\n.*?\n  end\n/m])
+end
+
+# Makes the scripts' clock, the bridge's frame, read a test's own count, for a test that moves
+# time by hand.
+#
+# @yieldreturn [Integer] The frame.
+def clock_from(&count)
+  load_bridge unless defined?(MGQ_Multiplayer::Bridge)
+  MGQ_Multiplayer::Bridge.define_singleton_method(:frame_number) { count.call.to_i }
 end
 
 # Loads one of the mod's scripts as Multiplayer.rb does, from GameScript/Multiplayer/Scripts, after

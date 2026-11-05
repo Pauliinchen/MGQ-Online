@@ -2,6 +2,7 @@
 #  world_overview_mods.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Kept the mods' tabs for one bridge frame
 #      Paulinchen  2026-11-01: Showed the pages of other mods in the Mod Framework's page views
 #      Paulinchen  2026-10-31: Read the game's buttons past the capture through the Mod Framework
 #      Paulinchen  2026-10-24: Created
@@ -43,7 +44,7 @@ module MGQ_MpWorldOverview
   #
   # @return [Array<Array>] Each page's key and its tab's title.
   def self.mod_tabs
-    return @mod_tabs if @mod_tabs && @mod_tabs_at == Graphics.frame_count
+    return @mod_tabs if @mod_tabs && @mod_tabs_at == MGQ_Multiplayer::Bridge.frame_number
 
     tabs = []
     ModPages.all.each_with_index do |page, index|
@@ -57,7 +58,7 @@ module MGQ_MpWorldOverview
       end
       tabs << [:"#{MOD_PAGE}#{index}", page.title.to_s] if shown
     end
-    @mod_tabs_at = Graphics.frame_count
+    @mod_tabs_at = MGQ_Multiplayer::Bridge.frame_number
     @mod_tabs = tabs
   end
 

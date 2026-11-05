@@ -2,6 +2,7 @@
 #  emotes_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Read the scripts' clock from $frame_count and dropped the check of a cooldown a loaded save ended, since the clock never goes back
 #      Paulinchen  2026-11-01: Checked the emote wheel as a Mod Framework wheel, its drawing left to the framework's tests
 #      Paulinchen  2026-10-31: Expected the game's cancel key in the wheel's hint and read the Mod Framework's capture
 #      Paulinchen  2026-10-30: Dropped the fade checks
@@ -30,8 +31,8 @@ require_relative "world_support"
     def jump(x, y); @jumps = (@jumps || 0) + 1; end
   end
 end
-# Stands in for the screen's frame count, kept in $frame_count.
-module Graphics; def self.frame_count; $frame_count; end; end
+# The scripts' clock reads $frame_count.
+clock_from { $frame_count }
 $frame_count = 0
 
 load_script "ui_emotes"
@@ -100,9 +101,6 @@ check("a second emote right after buzzes and plays nothing", [$sent, $sounds.las
 $frame_count += MGQ_MpEmotes::COOLDOWN_FRAMES
 play_emote.call([:UP])
 check("the jump plays once a moment passed", [$game_player.jumps, $sent.size], [1, 1])
-$frame_count = 5
-play_emote.call([:UP])
-check("a save loaded with fewer frames played ends the moment too", [$game_player.jumps, $sent.size], [2, 2])
 open_wheel.call
 $pressed = MGQ_MpHotkeys.code(:emotes)
 emote_frame.call

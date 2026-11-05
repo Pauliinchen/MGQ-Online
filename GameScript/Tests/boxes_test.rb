@@ -2,6 +2,7 @@
 #  boxes_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Read the scripts' clock from $frame
 #      Paulinchen  2026-11-01: Dropped the checks of the list windows' mouse wheel and scrollbar, which no screen uses any more
 #                            - Renamed from ui_boxes_test.rb and covered the list box and the info strip on the Mod Framework's components
 #      Paulinchen  2026-10-31: Created
@@ -121,7 +122,8 @@ class Bitmap
   def disposed?; @disposed ? true : false; end
 end
 # The game's screen of 640 by 480 pixels, at frame $frame.
-module Graphics; def self.width; 640; end; def self.height; 480; end; def self.frame_count; $frame; end; def self.update; end; end
+module Graphics; def self.width; 640; end; def self.height; 480; end; def self.update; end; end
+clock_from { $frame }
 # The game's system sounds: each one played is added to $sounds.
 module Sound; %w[cursor ok cancel buzzer].each { |s| define_singleton_method("play_#{s}") { $sounds << s } }; end
 # The game's scene manager, whose scene is $scene.

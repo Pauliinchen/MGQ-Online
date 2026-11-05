@@ -2,6 +2,7 @@
 #  pages_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Answered at the bridge's frame, the scripts' clock
 #      Paulinchen  2026-10-28: Told how long a page that holds holds by time alone
 #                            - Created
 #
@@ -288,13 +289,13 @@ class PagesStandIn
 end
 
 # Answers the topics of a story's pages on a FakeBridge with a PagesStandIn, $pages_stand_in, at the
-# frame the tests count, Graphics.frame_count.
+# frame the tests count, the bridge's.
 #
 # @param fake [FakeBridge] The bridge.
 def answer_pages(fake)
   $pages_stand_in = PagesStandIn.new
   %w(show passed flush telling_starts hear done forget next over ended).each do |name|
-    fake.answer("pages.#{name}") { |request| $pages_stand_in.answer("pages.#{name}", request, defined?(Graphics) ? Graphics.frame_count : 0) }
+    fake.answer("pages.#{name}") { |request| $pages_stand_in.answer("pages.#{name}", request, MGQ_Multiplayer::Bridge.frame_number) }
   end
 end
 

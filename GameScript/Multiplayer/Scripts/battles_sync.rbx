@@ -2,6 +2,7 @@
 #  battles_sync.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Held a player's missing messages for the grace the DLL's Sessions counts, by the bridge's frame
 #      Paulinchen  2026-11-01: Named the Mod Framework's interface by its own name
 #                            - Built the waiting box on the Mod Framework's components, its leave offer naming the bound cancel key and taking a click
 #      Paulinchen  2026-10-31: Took the question box, the look and the places from the Mod Framework
@@ -1307,7 +1308,7 @@ module MGQ_MpBattlesSync
       end
       if last && number > last + 1
         (@held[seat] ||= {})[number] = [kind, body]
-        @held_since[seat] ||= Graphics.frame_count
+        @held_since[seat] ||= MGQ_Multiplayer::Bridge.frame_number
         return MGQ_MpBattlesSync.log_once([:held, seat, last, MGQ_MpBattlesSync.battle_id], "holds #{kind[0, 40]} from #{MGQ_MpBattlesSync.who(seat)} until those after #{last} came")
       end
 
@@ -1333,10 +1334,10 @@ module MGQ_MpBattlesSync
     # Hands on the held messages of a player whose missing ones never came within the world's
     # grace, so the battle goes on without them.
     def self.let_gaps_go
-      return unless @held_since
+      return unless @held_since && (grace = MGQ_MpOverworldSync.grace_frames)
 
       @held_since.keys.each do |seat|
-        next if Graphics.frame_count - @held_since[seat] < MGQ_MpOverworldSync::REJOIN_FRAMES
+        next if MGQ_Multiplayer::Bridge.frame_number - @held_since[seat] < grace
 
         first = @held[seat].keys.min
         MGQ_MpBattlesSync.log("messages #{@taken[seat] + 1} to #{first - 1} from #{MGQ_MpBattlesSync.who(seat)} never came, going on without them")

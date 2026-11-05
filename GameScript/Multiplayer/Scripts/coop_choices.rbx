@@ -6,6 +6,7 @@
 #                            - Asked the DLL the route of the leader's story an offer brings the player to
 #                            - Read the story's ids from story_ids.rbx
 #                            - Left the self switches of the Navy's and the Pirates' lines to the reviewed key list
+#                            - Counted the offers' times by the bridge's frame
 #      Paulinchen  2026-11-01: Kept a screen the Mod Framework refused or lost waiting, telling the player only an offer gone
 #                            - Built the screens of the choices and of a replay's question on the Mod Framework's windows
 #                            - Put off a number, a choice without cancel and a choice of the player's own on cancel
@@ -405,7 +406,7 @@ module MGQ_MpCoopChoices
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The member.
   def self.offer(peer)
     @nonce += 1
-    @offers[peer.state["id"].to_s] = { :nonce => @nonce, :since => Graphics.frame_count, :name => peer.state["name"].to_s }
+    @offers[peer.state["id"].to_s] = { :nonce => @nonce, :since => MGQ_Multiplayer::Bridge.frame_number, :name => peer.state["name"].to_s }
     log("offered #{MGQ_MpOverworldSync.who(peer)} to bring their story (#{MGQ_MpCoopStory.markers_text(MGQ_MpCoopStory.read_markers(peer.state['sm']))}) " \
         "up to the player's (#{MGQ_MpCoopStory.markers_text(MGQ_MpCoopStory.own_markers)}), offer #{@nonce}")
     MGQ_MpOverworldSync.notice("You offered #{peer.state['name']} to sync their story with yours.")
@@ -438,7 +439,7 @@ module MGQ_MpCoopChoices
     return if @offers.empty?
 
     members = MGQ_MpCoop::Party.members
-    lapsed = Array(MGQ_Multiplayer::Bridge.call(LAPSED_TOPIC, "now" => Graphics.frame_count, "since" => @offers.map { |id, offer| [id, offer[:since]] }))
+    lapsed = Array(MGQ_Multiplayer::Bridge.call(LAPSED_TOPIC, "now" => MGQ_Multiplayer::Bridge.frame_number, "since" => @offers.map { |id, offer| [id, offer[:since]] }))
     @offers.keys.each do |id|
       member = members.find { |peer| peer.state["id"].to_s == id }
       next drop_offer(id, "they left the party") unless member

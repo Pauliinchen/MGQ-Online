@@ -5,6 +5,7 @@
 #      Paulinchen  2026-11-05: Checked that a replay takes a key item it uses up, and dropped the copy got as found
 #                            - Checked that a member ahead keeps the route's key items when the leader returns to the Great Decision
 #                            - Checked the replayer's lists against the fixture the generator's gate is checked against, instead of reading C# source
+#                            - Dropped the stand-in of the game's frame counter, which no script reads
 #                            - Checked that another player's battle drop gives its item with its notice
 #      Paulinchen  2026-11-01: Checked that a choice the record lacks is asked with what its cancel answers
 #                            - Covered a replay that costs nothing and follows the opener through the checks of what the party holds
@@ -56,7 +57,7 @@ module SceneManager; def self.call(scene); $scenes << scene; end; def self.scene
 # A scene the events open.
 class Scene_JobChange; end
 # Stands in for the frame counter.
-module Graphics; def self.update; end; def self.frame_count; 0; end; end
+module Graphics; def self.update; end; end
 # Stands in for the keyboard: no key pressed.
 module Input; def self.press?(_key); false; end; end
 # The maps' files by id, as DataManager names them.

@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-05: Checked that a move kept back goes to the one guard of the game's flow
+#                            - Read the scripts' clock from $frame_count
 #      Paulinchen  2026-10-24: Created
 #
 #----------------------------------------------------------------
@@ -17,8 +18,8 @@ module RPG
   # An event command.
   EventCommand = Struct.new(:code, :indent, :parameters)
 end
-# Stands in for RGSS graphics, whose frame count is $frame_count.
-module Graphics; def self.frame_count; $frame_count; end; end
+# The scripts' clock reads $frame_count.
+clock_from { $frame_count }
 $frame_count = 1000
 # Stands in for the map, on $map_id.
 class Game_Map; def map_id; $map_id; end; end

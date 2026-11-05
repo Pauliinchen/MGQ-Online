@@ -2,6 +2,7 @@
 #  overworld_sync.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Kept the battle server's players away for the grace the DLL's Sessions counts
 #      Paulinchen  2026-10-31: Told the game behind other windows by the Mod Framework
 #                            - Named the field of the relay's push of a world's mod settings
 #      Paulinchen  2026-10-23: Left the other players, the inbox, the player's state, ping and status to the DLL, keeping a mirror of the players
@@ -67,9 +68,12 @@ module MGQ_MpOverworldSync
   # Frames a notice stays at the bottom left, four seconds at 60 frames per second.
   NOTICE_FRAMES = 240
 
-  # Frames a player whose connection dropped is kept, fifteen seconds, as the DLL keeps them
-  # (WorldRoom.RejoinFrames); trade.rbx waits for a partner as long.
-  REJOIN_FRAMES = 900
+  # The topics of the grace of players away on the battle server, which the DLL's Sessions counts.
+  AWAY_TOPIC = "presence.away"
+  BACK_TOPIC = "presence.back"
+  TICK_TOPIC = "presence.tick"
+  FORGET_TOPIC = "presence.forget"
+  GRACE_TOPIC = "presence.grace"
 
   # The field that marks a message as a player's state, which no route may be named like.
   STATE_FIELD = "state"
@@ -138,6 +142,14 @@ module MGQ_MpOverworldSync
     "#{peer.state['name']} (seat #{peer.seat})"
   rescue
     "?"
+  end
+
+  # Tells the grace a player whose connection dropped is kept for, as the DLL's Sessions counts it
+  # (topic presence.grace).
+  #
+  # @return [Integer, nil] The frames, nil while the DLL does not answer.
+  def self.grace_frames
+    @grace_frames ||= MGQ_Multiplayer::Bridge.call(GRACE_TOPIC)
   end
 
   # Reports whether a world is open.
@@ -260,7 +272,7 @@ module MGQ_MpOverworldSync
   end
 
   # Tells a script each change of another player's presence: their connection dropped and they
-  # are kept for REJOIN_FRAMES (:away), it came back (:back), they tell from another seat (:moved),
+  # are kept for the grace (:away), it came back (:back), they tell from another seat (:moved),
   # or they left the world or stayed away too long (:gone, also told through on_leave).
   #
   # @yieldparam peer [Peers::Peer] The player, on their current seat.
@@ -546,9 +558,8 @@ module MGQ_MpOverworldSync
     #   "d", "speed", "hidden", "scene".
     # @!attribute ghost [Game_MpGhost, nil] Their ghost, while they are on this map.
     # @!attribute member [Boolean] Whether they were in the player's party at their last message.
-    # @!attribute away [Boolean, Integer, nil] True while their connection is down and the DLL keeps
-    #   them, nil while it stands; on the battle server, which sits in no world's room, the frames
-    #   left of the grace the battle channel's players are kept for, see wait_for.
+    # @!attribute away [Boolean, nil] True while their connection is down and the DLL keeps them for
+    #   the grace, nil while it stands.
     Peer = Struct.new(:seat, :state, :ghost, :member, :away)
 
     # The other games, by seat.
@@ -615,16 +626,18 @@ module MGQ_MpOverworldSync
       @displaced << peer
     end
 
-    # Keeps a game whose connection dropped for REJOIN_FRAMES, in which it may come back. Called on
-    # the battle server, where the battle channel tells the players' presence.
+    # Keeps a game whose connection dropped for the grace the DLL counts (topic presence.away), in
+    # which it may come back. Called on the battle server, where the battle channel tells the
+    # players' presence.
     #
     # @param seat [Integer] Its seat.
     def self.wait_for(seat)
       peer = @peers[seat]
       return unless peer && peer.away.nil?
 
-      peer.away = REJOIN_FRAMES
-      MGQ_MpOverworldSync.log("#{MGQ_MpOverworldSync.who(peer)} is away, kept for #{REJOIN_FRAMES / 60} s")
+      peer.away = true
+      MGQ_Multiplayer::Bridge.call(AWAY_TOPIC, key(peer))
+      MGQ_MpOverworldSync.log("#{MGQ_MpOverworldSync.who(peer)} is away, kept for #{MGQ_MpOverworldSync.grace_frames.to_i / 60} s")
       changed_presence(peer, :away)
     end
 
@@ -636,21 +649,31 @@ module MGQ_MpOverworldSync
       peer = @peers[seat]
       return unless peer && peer.away
 
-      after = peer.away.is_a?(Integer) ? ", after #{(REJOIN_FRAMES - peer.away) / 60} s away" : ""
-      MGQ_MpOverworldSync.log("#{MGQ_MpOverworldSync.who(peer)} is back#{after}")
+      frames = MGQ_Multiplayer::Bridge.call(BACK_TOPIC, key(peer))
+      MGQ_MpOverworldSync.log("#{MGQ_MpOverworldSync.who(peer)} is back#{frames ? ", after #{frames / 60} s away" : ''}")
       peer.away = nil
       changed_presence(peer, :back)
     end
 
-    # Forgets the games that stayed away past the grace wait_for gave them. Called every frame on
-    # the battle server; the DLL counts the grace in a world.
+    # Counts a frame of the grace wait_for gave the games away (topic presence.tick) and forgets
+    # those who stayed away for all of it. Called every frame on the battle server; in a world the
+    # DLL's room counts the grace itself.
     def self.tick
-      @peers.values.each do |peer|
-        next unless peer.away.is_a?(Integer)
+      return if @peers.values.none?(&:away)
 
-        peer.away -= 1
-        remove(peer.seat, "away for #{REJOIN_FRAMES / 60} s") if peer.away <= 0
+      lapsed = Array(MGQ_Multiplayer::Bridge.call(TICK_TOPIC))
+      @peers.values.select { |peer| peer.away && lapsed.include?(key(peer)) }.each do |peer|
+        remove(peer.seat, "away for #{MGQ_MpOverworldSync.grace_frames.to_i / 60} s")
       end
+    end
+
+    # Names a player for the grace as the DLL does: their id, or their seat before they told one.
+    #
+    # @param peer [Peer] The player.
+    # @return [String] The key.
+    def self.key(peer)
+      id = peer.state["id"].to_s
+      id.empty? ? "seat #{peer.seat}" : id
     end
 
     # Tells the scripts that follow presence of a player's change, see MGQ_MpOverworldSync.on_presence.
@@ -695,6 +718,7 @@ module MGQ_MpOverworldSync
       return unless peer
 
       @displaced.delete(peer)
+      MGQ_Multiplayer::Bridge.call(FORGET_TOPIC, key(peer)) if peer.away
       MGQ_MpOverworldSync.log("forgot #{MGQ_MpOverworldSync.who(peer)}: #{reason}")
       MGQ_MpOverworldSync.ask(:leave, peer)
       changed_presence(peer, :gone)

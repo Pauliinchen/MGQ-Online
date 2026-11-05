@@ -5,6 +5,8 @@
 #      Paulinchen  2026-11-05: Read the story markers from story_ids.rbx
 #                            - Took a found item a replay uses up from the receiver, but none a story reset takes, and dropped the copy got as found, which the story replay replaces
 #                            - Told whether a replay goes the receiver's own way, whose companion joins as their own
+#                            - Took the runs handed to the player only while no screen waits, see MGQ_MpCoop.screens_wait?
+#                            - Counted its asks by the bridge's frame
 #                            - Gave the player the found items another player's battle drops gave, with their notice
 #      Paulinchen  2026-11-01: Handed the question screen what a choice's cancel answers
 #                            - Let a replay cost the receiver nothing, taking back of the gold and the items only what it gave
@@ -371,7 +373,7 @@ module MGQ_MpStoryReplay
   def self.update
     return unless free?
 
-    due if Graphics.frame_count - @due_at >= DUE_FRAMES || Graphics.frame_count < @due_at
+    due if MGQ_Multiplayer::Bridge.frame_number - @due_at >= DUE_FRAMES
     until @waiting.empty? || @asking
       break unless take(@waiting.first)
 
@@ -382,11 +384,13 @@ module MGQ_MpStoryReplay
   end
 
   # Reports whether the player stands free on the map, outside their own events, a battle, a
-  # transfer and a PvP battle, so a run handed to them may be taken.
+  # transfer and a PvP battle, and no screen waits (MGQ_MpCoop.screens_wait?), so a run handed to
+  # them may be taken.
   #
   # @return [Boolean] Whether they do.
   def self.free?
     return false unless MGQ_Multiplayer::Bridge.open? && defined?(MGQ_MpOverworldSync) && MGQ_MpOverworldSync.map_free?
+    return false if defined?(MGQ_MpCoop) && MGQ_MpCoop.respond_to?(:screens_wait?) && MGQ_MpCoop.screens_wait?
 
     !(defined?(MGQ_MpBattlesPvp) && MGQ_MpBattlesPvp::Battle.running?)
   end
@@ -575,7 +579,7 @@ module MGQ_MpStoryReplay
 
   # Asks the DLL which waiting runs one of whose reads changed are due again, and takes them first.
   def self.due
-    @due_at = Graphics.frame_count
+    @due_at = MGQ_Multiplayer::Bridge.frame_number
     answer = ask_with_values(DUE_TOPIC, {})
     return unless answer.is_a?(Array) && !answer.empty?
 

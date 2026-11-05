@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-05: Put a viewer's screen back through the one guard of the game's flow in coop_flow.rbx, which follows the player's own scenes now
+#                            - Counted its timers by the bridge's frame
 #      Paulinchen  2026-10-28: Put a Raid World viewer's screen back with the relay's word that the telling ended, and dropped the places a viewer kept of the values taken
 #                            - Kept the teller's changes waiting and checked another game's changes in the DLL
 #      Paulinchen  2026-10-24: Gave the viewers the warp and escape bans the teller's scene sets
@@ -301,21 +302,19 @@ module MGQ_MpCoopScene
     return if now == @camera || (@camera && !past_frames?(@camera_at, CAMERA_FRAMES))
 
     @camera = now
-    @camera_at = Graphics.frame_count
+    @camera_at = MGQ_Multiplayer::Bridge.frame_number
     send_change("map.camera", now, false)
   rescue => e
     log_once(:camera, "telling the map's camera failed: #{e.class}: #{e.message}")
   end
 
-  # Reports whether some frames passed since a frame; a loaded save sets the count back, which
-  # counts as passed.
+  # Reports whether some frames passed since a frame of the bridge.
   #
   # @param since [Integer] The frame.
   # @param frames [Integer] The frames.
   # @return [Boolean] Whether they did.
   def self.past_frames?(since, frames)
-    elapsed = Graphics.frame_count - since.to_i
-    elapsed < 0 || elapsed >= frames
+    MGQ_Multiplayer::Bridge.frame_number - since.to_i >= frames
   end
 
   # As teller, tells the viewers a sound the story plays, stops or fades: its music (BGM), its
@@ -564,7 +563,7 @@ module MGQ_MpCoopScene
   # @param args [Array] Its arguments.
   # @param map [Integer] The teller's map it happened on.
   def self.apply(kind, args, map = $game_map.map_id)
-    @changed_at = Graphics.frame_count
+    @changed_at = MGQ_Multiplayer::Bridge.frame_number
     target, method = kind.split(".", 2)
     @before ||= MGQ_MpFlowGuard.state_now if SCREEN_TARGETS.include?(target)
     case target
@@ -961,8 +960,7 @@ module MGQ_MpCoopScene
   #
   # @return [Boolean] Whether it did.
   def self.just_changed?
-    elapsed = Graphics.frame_count - @changed_at.to_i
-    elapsed >= 0 && elapsed < STATE_GRACE_FRAMES
+    MGQ_Multiplayer::Bridge.frame_number - @changed_at.to_i < STATE_GRACE_FRAMES
   end
 
   # Tells why the player no longer sees the leader's story scene, for the log.

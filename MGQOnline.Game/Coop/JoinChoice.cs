@@ -2,6 +2,8 @@
 //  JoinChoice.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Asked Sessions whether a battle near takes the player in, offered a side battle only beside a full one and told the player why a battle near takes nobody in
+//                            - Offered a party member's battle in a Classic world too, which a member who missed it joins late
 //      Paulinchen  2026-10-30: Created
 //
 //----------------------------------------------------------------
@@ -15,10 +17,11 @@ using MGQOnline.Game.World;
 namespace MGQOnline.Game.Coop;
 
 /// <summary>
-/// The joining side of joining a battle by choice in a Raid World, as <c>MGQ_MpBattlesJoin</c>
-/// joined: what the prompt below the player's character offers (a battle near that takes players
-/// in, else a side battle beside a full boss battle, else a frozen fight), and the request to the
-/// battle's host, which the player waits for until its invite or refusal comes.
+/// The joining side of joining a battle by choice, as <c>MGQ_MpBattlesJoin</c> joined: what the
+/// prompt below the player's character offers (a battle near that takes players in, else a side
+/// battle beside a full boss battle, else a frozen fight), and the request to the battle's host,
+/// which the player waits for until its invite or refusal comes. In a Classic world only a party
+/// member's battle is offered, which a member who missed it joins late.
 /// </summary>
 public sealed class JoinChoice
 {
@@ -125,7 +128,7 @@ public sealed class JoinChoice
 
         string? busy = BusyReason(frame.Busy);
         (Peer Host, string BattleId)? target = frame.Changing || busy is not null ? null : Target();
-        JoinSide? side = frame.Changing || target is not null || busy is not null ? null : SideTarget(frame.Sides);
+        JoinSide? side = frame.Changing || target is not null || busy is not null || !world.Raid ? null : SideTarget(frame.Sides);
         JoinFreeze? freeze = frame.Changing || target is not null || side is not null || busy is not null ? null : frame.Freeze;
         if (frame.Pressed && !frame.Changing && target is { } found)
         {
@@ -133,7 +136,8 @@ public sealed class JoinChoice
             return new JoinPrompt(null, null, null, busy, true);
         }
 
-        return new JoinPrompt(target, side, freeze, busy, false);
+        string? notTaken = frame.Pressed && !frame.Changing && busy is null && target is null && side is null && freeze is null ? NotTaken() : null;
+        return new JoinPrompt(target, side, freeze, busy, false, notTaken);
     }
 
     /// <summary>
@@ -150,23 +154,15 @@ public sealed class JoinChoice
 
     /// <summary>
     /// Finds the host of the battle another player fights and whether it takes players in, as
-    /// <c>open_battle</c> did: its host on the player's map telling the same battle, with fewer than
-    /// <see cref="CoopMatchmaking.RaidPlayers"/> players in it.
+    /// <see cref="Sessions.Battle"/> reads it: its host on the player's map telling the same battle,
+    /// which takes players in.
     /// </summary>
     /// <param name="peer">The player who fights it.</param>
     /// <returns>The battle's host and its id, <see langword="null"/> when it takes nobody in.</returns>
     public (Peer Host, string BattleId)? OpenBattle(Peer peer)
     {
         ArgumentNullException.ThrowIfNull(peer);
-        string bid = peer.State.Text("rb");
-        // The host keeps a guest who left among the battle's seats, so it refuses them.
-        if (bid == (match.Facts.BattleId ?? string.Empty) || CoopAsking.BattleHost(world, peer, match.Facts.Map) is not { } battleHost || !CoopMatchmaking.Fights(battleHost))
-        {
-            return null;
-        }
-
-        long count = WorldFields.ToI(battleHost.State["rbn"]);
-        return count >= 1 && count <= CoopMatchmaking.RaidPlayers - 1 ? (battleHost, bid) : null;
+        return HostOf(peer) is { } battleHost && Sessions.Battle(battleHost).Open ? (battleHost, peer.State.Text("rb")) : null;
     }
 
     /// <summary>
@@ -276,7 +272,7 @@ public sealed class JoinChoice
     {
         CoopFacts facts = match.Facts;
         return OnMap()
-            .Where(peer => CoopMatchmaking.Fights(peer) && CoopMatchmaking.Distance(peer, facts.X, facts.Y) <= JoinDistance)
+            .Where(peer => Sessions.Fights(peer) && CoopMatchmaking.Distance(peer, facts.X, facts.Y) <= JoinDistance)
             .OrderBy(peer => CoopMatchmaking.Distance(peer, facts.X, facts.Y))
             .ThenBy(peer => peer.Id, StringComparer.Ordinal)
             .Select(OpenBattle)
@@ -285,9 +281,13 @@ public sealed class JoinChoice
 
     /// <summary>
     /// Finds the raid boss battle near the player that the prompt offers a side battle against, as
-    /// <c>side_target</c> did: of the boss battles on the map whose host the scripts named a side
-    /// battle for, the nearest with a player in it, or its boss, within <see cref="JoinDistance"/>.
+    /// <c>side_target</c> did: of the full boss battles on the map whose host the scripts named a
+    /// side battle for, the nearest with a player in it, or its boss, within <see cref="JoinDistance"/>.
     /// </summary>
+    /// <remarks>
+    /// A boss battle that takes nobody in for another reason, such as one that ends, offers no side
+    /// battle, which the player would fight alone (issue 74).
+    /// </remarks>
     /// <param name="sides">The side battles by their hosts, as the scripts tell them; <see langword="null"/> without raid boss pools.</param>
     /// <returns>The side battle, <see langword="null"/> for none.</returns>
     private JoinSide? SideTarget(IReadOnlyList<JoinSide>? sides)
@@ -301,7 +301,7 @@ public sealed class JoinChoice
         var near = new List<(long Steps, string Id, JoinSide Side)>();
         foreach (Peer peer in OnMap())
         {
-            if (!CoopMatchmaking.Fights(peer) || CoopAsking.BattleHost(world, peer, facts.Map) is not { } battleHost
+            if (!Sessions.Fights(peer) || CoopAsking.BattleHost(world, peer, facts.Map) is not { } battleHost || !Sessions.Battle(battleHost).Full
                 || sides.FirstOrDefault(side => side.Host == battleHost.Seat) is not { } found)
             {
                 continue;
@@ -315,10 +315,49 @@ public sealed class JoinChoice
     }
 
     /// <summary>
-    /// Lists the other players on the player's map whose connection stands.
+    /// Tells the player why the battle of the nearest player within <see cref="JoinDistance"/> who
+    /// fights one does not take them in, once they pressed the hotkey with nothing to join.
+    /// </summary>
+    /// <returns>The message shown, <see langword="null"/> while nobody near fights a battle.</returns>
+    private string? NotTaken()
+    {
+        CoopFacts facts = match.Facts;
+        Peer? battleHost = OnMap()
+            .Where(peer => Sessions.Fights(peer) && CoopMatchmaking.Distance(peer, facts.X, facts.Y) <= JoinDistance)
+            .OrderBy(peer => CoopMatchmaking.Distance(peer, facts.X, facts.Y))
+            .ThenBy(peer => peer.Id, StringComparer.Ordinal)
+            .Select(HostOf)
+            .FirstOrDefault(found => found is not null);
+        if (battleHost is null)
+        {
+            return null;
+        }
+
+        BattleSession battle = Sessions.Battle(battleHost);
+        string text = Sessions.NotTakenText(battleHost.Name, battle.State);
+        Notice(text);
+        Log($"{CoopMatchmaking.Who(battleHost)}'s battle {battle.Bid} takes nobody in ({battle.State}): told the player");
+        return text;
+    }
+
+    /// <summary>
+    /// Finds the host of the battle another player fights, unless it is the player's own battle,
+    /// whose host keeps a guest who left among its seats and refuses them.
+    /// </summary>
+    /// <param name="peer">The player who fights it.</param>
+    /// <returns>The host fighting it, <see langword="null"/> for none.</returns>
+    private Peer? HostOf(Peer peer)
+    {
+        string bid = peer.State.Text("rb");
+        return bid != (match.Facts.BattleId ?? string.Empty) && CoopAsking.BattleHost(world, peer, match.Facts.Map) is { } battleHost && Sessions.Fights(battleHost) ? battleHost : null;
+    }
+
+    /// <summary>
+    /// Lists the other players on the player's map whose connection stands; in a Classic world only
+    /// the party members, whose battles the player may join late.
     /// </summary>
     /// <returns>The players.</returns>
-    private IEnumerable<Peer> OnMap() => world.Peers.Where(peer => peer.Present && WorldFields.ToI(peer.State["map"]) == match.Facts.Map);
+    private IEnumerable<Peer> OnMap() => world.Peers.Where(peer => peer.Present && (world.Raid || peer.Member) && WorldFields.ToI(peer.State["map"]) == match.Facts.Map);
 
     /// <summary>
     /// Reports whether the request's answer time passed.
@@ -401,7 +440,8 @@ public sealed record JoinFrame(bool Reads, bool Pressed, bool Changing, JoinBusy
 /// <param name="Freeze">The frozen fight near, while neither is there.</param>
 /// <param name="Busy">Why the player may not join a battle now.</param>
 /// <param name="Asked">Whether the hotkey asked the battle's host just now.</param>
-public sealed record JoinPrompt((Peer Host, string BattleId)? Target, JoinSide? Side, JoinFreeze? Freeze, string? Busy, bool Asked)
+/// <param name="NotTaken">What the player was just told of a battle near that takes nobody in, <see langword="null"/> for nothing.</param>
+public sealed record JoinPrompt((Peer Host, string BattleId)? Target, JoinSide? Side, JoinFreeze? Freeze, string? Busy, bool Asked, string? NotTaken = null)
 {
     /// <summary>
     /// Gets the prompt of a frame that reads no hotkey: nothing offered.

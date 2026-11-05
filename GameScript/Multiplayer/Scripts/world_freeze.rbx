@@ -2,6 +2,7 @@
 #  world_freeze.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Read the bridge's frame as its clock
 #      Paulinchen  2026-10-28: Read the fights each side plays in the other's stead from the freeze's tables
 #      Paulinchen  2026-10-23: Sent and took each frozen fight as a key of the relay's story tracks instead of a list beside the whole story
 #      Paulinchen  2026-10-17: Created
@@ -123,13 +124,11 @@ module MGQ_MpWorldFreeze
     drop_ended
   end
 
-  # The game's frame counter.
+  # Tells the bridge's frame, the clock of every timer, which never goes back as a save loads.
   #
-  # @return [Integer] The frame, 0 before the game counts any.
+  # @return [Integer] The frame, 0 before the bridge counts any.
   def self.frame
-    defined?(Graphics) ? Graphics.frame_count.to_i : 0
-  rescue
-    0
+    MGQ_Multiplayer::Bridge.frame_number
   end
 
   # Lists the open world's frozen fights that have not ended, oldest first.

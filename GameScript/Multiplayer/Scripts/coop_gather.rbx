@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-11-05: Asked the DLL's one decision whether a telling moves the world's story on, which decides whom it takes along
 #                            - Left what a call, follow or teleport leaves of the player's scene and place to the one guard of the game's flow, the followers a map left hidden among it
+#                            - Counted its moments by the bridge's frame
 #      Paulinchen  2026-10-31: Stopped carrying the warp ban along with a call, a follow or a teleport
 #      Paulinchen  2026-10-28: Kept the calls, the hold and the follow offers with their frames in the DLL
 #                            - Read a Raid World's tellers from the tellings the relay told of
@@ -116,25 +117,20 @@ module MGQ_MpCoopGather
 
   # Counts the frames left until some frames after a moment have passed, for coop_teleport.rbx.
   #
-  # @param since [Integer] The moment's Graphics.frame_count.
+  # @param since [Integer] The moment, a frame of the bridge.
   # @param frames [Integer] The frames.
-  # @return [Integer] The frames left, 0 or less once they passed, more than frames for a moment
-  #   that lies ahead.
+  # @return [Integer] The frames left, 0 or less once they passed.
   def self.frames_left(since, frames)
-    since + frames - Graphics.frame_count
+    since + frames - MGQ_Multiplayer::Bridge.frame_number
   end
 
   # Reports whether a moment lies less than some frames back, for coop_teleport.rbx.
   #
-  # Loading a save sets the frame count back to the save's, so a moment noted before the load counts
-  # as long past.
-  #
-  # @param since [Integer] The moment's Graphics.frame_count.
+  # @param since [Integer] The moment, a frame of the bridge.
   # @param frames [Integer] The frames.
   # @return [Boolean] Whether it does.
   def self.within?(since, frames)
-    left = frames_left(since, frames)
-    left > 0 && left <= frames
+    frames_left(since, frames) > 0
   end
 
   # Reads how the calls stand, once per frame: the call the player has yet to answer, where they
@@ -149,7 +145,7 @@ module MGQ_MpCoopGather
   def self.state
     return NO_STATE unless @active
 
-    frame = Graphics.frame_count
+    frame = MGQ_Multiplayer::Bridge.frame_number
     return @state[1] if @state && @state[0] == frame
 
     missing = @hold && MGQ_MpCoop.party_leading? ? self.missing : []
@@ -488,7 +484,7 @@ module MGQ_MpCoopGather
     answer = MGQ_Multiplayer::Bridge.call(CALLED_TOPIC, "name" => peer.state["name"].to_s, "id" => peer.state["id"].to_s, "place" => place, "near" => near, "pvp" => pvp)
     wake
     return log("stays: the player stands near #{peer.state['name']} already") if near
-    return log_once([:duel_call, Graphics.frame_count / 1800], "a call came during a PvP battle, which keeps it out") if pvp
+    return log_once([:duel_call, MGQ_Multiplayer::Bridge.frame_number / 1800], "a call came during a PvP battle, which keeps it out") if pvp
 
     MGQ_MpOverworldSync.notice(answer["notice"]) if answer && answer["notice"]
     log("called by #{peer.state['name']} to map #{place[0]} #{place[1]},#{place[2]}")
@@ -961,7 +957,7 @@ begin
   MGQ_MpHooks.before(Game_Player, :perform_transfer, "coop_gather") { MGQ_MpCoopGather.before_transfer(self) }
   MGQ_MpHooks.after(Game_Player, :perform_transfer, "coop_gather") { MGQ_MpCoopGather.after_transfer }
 
-  # A loaded save starts the frame count anew, so the calls and the hold of before it go.
+  # A loaded save puts the player where the save stood, so the calls and the hold of before it go.
   MGQ_MpHooks.after(DataManager.singleton_class, :extract_save_contents, "coop_gather") { |_contents| MGQ_MpCoopGather.forget }
 rescue => e
   MGQ_MpCoopGather.log("hooks FAILED: #{e.class}: #{e.message}")

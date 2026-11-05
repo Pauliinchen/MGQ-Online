@@ -2,6 +2,7 @@
 //  TradeMachine.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Waited for a player away as long as the grace of Sessions
 //      Paulinchen  2026-10-31: Took the not confirmed state of a player who never confirmed as no change
 //      Paulinchen  2026-10-30: Created
 //
@@ -39,9 +40,9 @@ public sealed class TradeMachine
     public const int AnswerFrames = 360;
 
     /// <summary>
-    /// Frames a trade waits for the other player once their connection dropped, the world's rejoin time.
+    /// Frames a trade waits for the other player once their connection dropped, the world's grace.
     /// </summary>
-    public const int AwayFrames = WorldRoom.RejoinFrames;
+    public const int AwayFrames = Sessions.GraceFrames;
 
     /// <summary>
     /// Frames between two tries to send the player's offer and confirmation state again.

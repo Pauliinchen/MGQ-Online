@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-05: Read the Chaos route's variable from story_ids.rbx
+#                            - Counted the pages' reads by the bridge's frame
 #      Paulinchen  2026-11-01: Showed the pages in the Mod Framework's page views
 #                            - Drew the portraits itself from the faces and figures the Mod Framework finds
 #                            - Laid the World, Quests and Unlocks pages out and kept their folds in the DLL
@@ -105,9 +106,9 @@ module MGQ_MpWorldOverview
     @models ||= {}
     @models_at ||= {}
     at = @models_at[page]
-    return @models[page] if @models[page] && at && Graphics.frame_count - at < READ_FRAMES && Graphics.frame_count >= at
+    return @models[page] if @models[page] && at && MGQ_Multiplayer::Bridge.frame_number - at < READ_FRAMES
 
-    @models_at[page] = Graphics.frame_count
+    @models_at[page] = MGQ_Multiplayer::Bridge.frame_number
     built = case page
             when :world then world_model
             when :quests then quest_model

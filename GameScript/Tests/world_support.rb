@@ -2,6 +2,7 @@
 #  world_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Dropped the stand-in of the game's frame counter, which no script reads; the bridge's frame counts
 #      Paulinchen  2026-11-01: Fired the Mod Framework's hotkeys after each map frame and gave the message and the player what the free map asks
 #                            - Stopped loading the deleted ui_boxes.rbx
 #                            - Stood in for the DLL's chat model
@@ -48,8 +49,8 @@ require_relative "rules_support"
 class Sprite; def initialize(*); end; end
 # Stands in for the game's character sprite.
 class Sprite_Character < Sprite; end
-# Stands in for the screen: 640 by 480, its frame count read from $frame.
-module Graphics; def self.update; end; def self.width; 640; end; def self.height; 480; end; def self.frame_count; $frame.to_i; end; end
+# Stands in for the screen: 640 by 480.
+module Graphics; def self.update; end; def self.width; 640; end; def self.height; 480; end; end
 # Stands in for the map's spriteset, which shows the HUD.
 class Spriteset_Map; def update; end; def dispose; end; def mgq_mp_hud?; true; end; end
 # Stands in for the scenes' base.

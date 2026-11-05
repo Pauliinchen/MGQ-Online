@@ -2,6 +2,8 @@
 //  CoopMatchmaking.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Asked Sessions who is free, busy or fights a battle
+//                            - Invited a busy party member too in a Classic world, who keeps the invite until free, and kept a battle nobody joined open for a member who missed it
 //      Paulinchen  2026-10-30: Told the facts it read last
 //                            - Left the invites, the requests to lead and the rivals to its invites part
 //                            - Created
@@ -73,20 +75,6 @@ public sealed partial class CoopMatchmaking
     /// </summary>
     private const string Tag = "co-op battle: ";
 
-    /// <summary>
-    /// What another player does, by their state's scene, while they may be invited.
-    /// </summary>
-    private static readonly string[] FreeScenes = ["map", "event", "away"];
-
-    /// <summary>
-    /// What another player in a Raid World does, by their state's scene, while they may be invited.
-    /// </summary>
-    private static readonly string[] RaidFreeScenes = ["map", "away"];
-
-    /// <summary>
-    /// What another player in a Raid World does, by their state's scene, while they fight a battle.
-    /// </summary>
-    private static readonly string[] RaidBattleScenes = ["battle", "away"];
 
     /// <summary>
     /// The open world.
@@ -251,6 +239,11 @@ public sealed partial class CoopMatchmaking
 
             Log($"hosts the battle against troop {offer.Troop}: {HostReason(leader)}");
             actions.AddRange(Host(offer, leading?.BattleId));
+            if (!actions.Exists(action => action.Kind == "join") && world.Members.Any(OnMap))
+            {
+                Log($"keeps the battle against troop {offer.Troop} open as the player's own: a party member on the map who missed it may join it late");
+                actions.Add(new CoopAction("fight_alone"));
+            }
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
@@ -521,10 +514,10 @@ public sealed partial class CoopMatchmaking
     }
 
     /// <summary>
-    /// Lists the party members who may join: on the player's map, playing on it.
+    /// Lists the party members who may join at once: on the player's map, playing on it.
     /// </summary>
     /// <returns>The members.</returns>
-    public List<Peer> Candidates() => [.. world.Members.Where(peer => OnMap(peer) && FreeScenes.Contains(peer.State["scene"]))];
+    public List<Peer> Candidates() => [.. world.Members.Where(peer => OnMap(peer) && Sessions.Free(peer))];
 
     /// <summary>
     /// Lists the players a battle in a Raid World invites, as <c>raid_candidates</c> did: of those on
@@ -543,7 +536,7 @@ public sealed partial class CoopMatchmaking
         var members = new HashSet<Peer>(world.Members, ReferenceEqualityComparer.Instance);
         (long x, long y) = RaidCenter();
         return [.. PeersOnMap()
-            .Where(peer => (RaidFree(peer) && Near(peer)) || Watching(peer, viewers))
+            .Where(peer => (Sessions.RaidFree(peer) && Near(peer)) || Watching(peer, viewers))
             .Where(peer => !staysOut.Contains(peer.Seat))
             .OrderBy(peer => members.Contains(peer) ? 0 : 1)
             .ThenBy(peer => Distance(peer, x, y))
@@ -551,28 +544,6 @@ public sealed partial class CoopMatchmaking
             .Take(RaidPlayers - 1)];
     }
 
-    /// <summary>
-    /// Reports whether another player in a Raid World may be invited: walking the map, or on it with
-    /// their window in the background, and neither fighting a battle, trading nor about to teleport.
-    /// </summary>
-    /// <param name="peer">The player.</param>
-    /// <returns>Whether they may.</returns>
-    public static bool RaidFree(Peer peer)
-    {
-        ArgumentNullException.ThrowIfNull(peer);
-        return RaidFreeScenes.Contains(peer.State["scene"]) && peer.State["busy"] != "1" && !Fights(peer);
-    }
-
-    /// <summary>
-    /// Reports whether another player in a Raid World fights a battle, as their state says.
-    /// </summary>
-    /// <param name="peer">The player.</param>
-    /// <returns>Whether they do.</returns>
-    public static bool Fights(Peer peer)
-    {
-        ArgumentNullException.ThrowIfNull(peer);
-        return !string.IsNullOrEmpty(peer.State["rb"]) && RaidBattleScenes.Contains(peer.State["scene"]);
-    }
 
     /// <summary>
     /// Counts the steps between another player and a tile, diagonal steps counted as one.
@@ -776,15 +747,20 @@ public sealed partial class CoopMatchmaking
 
     /// <summary>
     /// Lists the players a battle the player hosts invites: <see cref="RaidCandidates"/> in a Raid
-    /// World, those watching the story too for a boss battle, else <see cref="Candidates"/>.
+    /// World, those watching the story too for a boss battle; else the party members on the map
+    /// whom <see cref="Sessions.Invited"/> names, a busy one too, who keeps the invite until free.
     /// </summary>
+    /// <remarks>
+    /// An event's battle never waits as an encounter does, so a member busy in a menu when it starts
+    /// would miss it (issue 76).
+    /// </remarks>
     /// <param name="offer">The battle.</param>
     /// <returns>The players.</returns>
     private List<Peer> Invitees(CoopOffer offer)
     {
         if (!world.Raid)
         {
-            return Candidates();
+            return [.. world.Members.Where(peer => OnMap(peer) && Sessions.Invited(peer))];
         }
 
         return offer.PoolsWon ? [] : RaidCandidates(offer.Boss ? offer.Viewers : [], offer.StaysOut);
@@ -852,8 +828,7 @@ public sealed partial class CoopMatchmaking
     /// or on a vehicle, but not in a battle of their own.
     /// </summary>
     /// <returns>The members.</returns>
-    private IEnumerable<Peer> BusyMembers() =>
-        world.Members.Where(peer => OnMap(peer) && !FreeScenes.Contains(peer.State["scene"]) && peer.State["scene"] != "battle");
+    private IEnumerable<Peer> BusyMembers() => world.Members.Where(peer => OnMap(peer) && Sessions.Busy(peer));
 
     /// <summary>
     /// Counts the players who fight the player's next random encounter together, the player

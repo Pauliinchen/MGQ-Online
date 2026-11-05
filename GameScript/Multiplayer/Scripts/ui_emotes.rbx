@@ -2,6 +2,7 @@
 #  ui_emotes.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Counted the emote's cooldown by the bridge's frame
 #      Paulinchen  2026-11-01: Built the emote wheel as a Mod Framework wheel that follows the player
 #      Paulinchen  2026-10-31: Defined and steered its wheel through the Mod Framework
 #      Paulinchen  2026-10-23: Left the emote wheel's rules to C#, playing the emote in the frame after confirm
@@ -69,7 +70,7 @@ module MGQ_MpEmotes
   # The emote the wheel took and the frame it did in, nil while none waits.
   @take = nil
 
-  # The frame count of the player's last emote, nil before the first.
+  # The bridge's frame of the player's last emote, nil before the first.
   @last = nil
 
   extend MGQ_MpLog
@@ -144,14 +145,13 @@ module MGQ_MpEmotes
   #
   # @param index [Integer] The emote's place in EMOTES.
   def self.play_own(index)
-    # A loaded save or a new game sets the frame count back, which ends the cooldown too.
-    elapsed = @last && Graphics.frame_count - @last
-    if elapsed && elapsed >= 0 && elapsed < COOLDOWN_FRAMES
+    elapsed = @last && MGQ_Multiplayer::Bridge.frame_number - @last
+    if elapsed && elapsed < COOLDOWN_FRAMES
       log("refused #{EMOTES[index].name}: only #{elapsed} of #{COOLDOWN_FRAMES} frames since the last emote")
       return Sound.play_buzzer
     end
 
-    @last = Graphics.frame_count
+    @last = MGQ_Multiplayer::Bridge.frame_number
     play(EMOTES[index], $game_player)
     sent = MGQ_MpOverworldSync.tell(-1, "emote" => index, "map" => $game_map.map_id)
     log("played #{EMOTES[index].name} on map #{$game_map.map_id}, #{sent ? 'told everyone' : 'could not tell the others'}")

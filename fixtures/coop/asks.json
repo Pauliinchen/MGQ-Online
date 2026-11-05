@@ -9858,13 +9858,19 @@
 
             ],
             "box": [
-
+              [
+                "message",
+                "join_battle",
+                null,
+                "P5's battle is full.",
+                240
+              ]
             ],
             "actions": [
 
             ],
             "logs": [
-
+              "join battle: P5 (seat 5)'s battle hb1 takes nobody in (full): told the player"
             ],
             "result": {
               "text": null,

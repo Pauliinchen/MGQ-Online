@@ -2,6 +2,10 @@
 //  CoopRoomTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Timed the matchmaking by the bridge's frame
+//                            - Turned down an invite the player stayed busy for every frame, in any scene
+//                            - Read whether the player types in the chat box
+//                            - Took a party member's request to join a battle late, its answers and its late invite past the map's gate in a Classic world too
 //      Paulinchen  2026-10-30: Answered asking a running battle, the party's offers and joining by choice, and took their messages
 //                            - Took the co-op messages through the room's routes and answered the invites' topics, the status as an event
 //                            - Created
@@ -273,7 +277,7 @@ internal sealed class CoopRoomTopics : ICoopHost
         _room = room;
         Random random = new();
         var world = new RoomCoopWorld(room);
-        Func<long> clock = () => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        Func<long> clock = () => GameClock.Milliseconds(context.Frame);
         _match = new CoopMatchmaking(world, this, clock, random.NextDouble, length => RandomId.Of(random, length, BattleIdRadix));
         _asking = new CoopAsking(world, _match, clock);
         _join = new JoinChoice(world, this, _match, _asking, clock);
@@ -365,6 +369,13 @@ internal sealed class CoopRoomTopics : ICoopHost
             topics._join.Drop();
             return topics.StatusOf([]);
         });
+        context.EveryFrame(_ =>
+        {
+            if (match.Lapse())
+            {
+                topics.PostChanged();
+            }
+        });
         topics.RegisterAsking(context);
         room.Take("coop", RouteGate.Party, (peer, message) => topics.Route(peer, message, message.Text("coop")));
         room.Take(WorldRoom.MapPrefix + "coop", RouteGate.Map, (peer, message) => topics.RouteMap(peer, message));
@@ -385,7 +396,7 @@ internal sealed class CoopRoomTopics : ICoopHost
     /// <param name="facts">{"map", "x", "y", "role", "bid", "seats", "coop", "running", "kind", "pvp",
     /// "memory", "battle_scene", "interpreter", "trading", "coming", "transfer", "moving", "active",
     /// "late", "own_troop", "hot_ask" ([seat, bid] or nil), "gave_up" ([seat, bid] or nil), "story",
-    /// "in_battle"}.</param>
+    /// "in_battle", "typing"}.</param>
     /// <returns>The facts.</returns>
     internal static CoopFacts FactsOf(RubyHash facts) => new(
         facts["map"].AsLong(),
@@ -412,7 +423,8 @@ internal sealed class CoopRoomTopics : ICoopHost
         BattleOf(facts["gave_up"]),
         false,
         IsTrue(facts["story"]),
-        IsTrue(facts["in_battle"]));
+        IsTrue(facts["in_battle"]),
+        IsTrue(facts["typing"]));
 
     /// <summary>
     /// Reads a battle the scripts hand over.
@@ -548,15 +560,16 @@ internal sealed class CoopRoomTopics : ICoopHost
     }
 
     /// <summary>
-    /// Takes a co-op message past the map's gate, which only a Raid World's battles use, its kind
-    /// under "coop" too.
+    /// Takes a co-op message past the map's gate, its kind under "coop" too: any player's in a Raid
+    /// World; in a Classic world only a party member's of a late join by choice, see
+    /// <see cref="LateJoin"/>.
     /// </summary>
     /// <param name="peer">Who sent it.</param>
     /// <param name="message">Its fields.</param>
     private void RouteMap(Peer peer, WorldFields message)
     {
         string kind = message.Text(WorldRoom.MapPrefix + "coop");
-        if (!_room.Raid)
+        if (!_room.Raid && !(peer.Member && LateJoin(kind, message)))
         {
             _match.DropMapMessage(peer, kind);
             return;
@@ -571,6 +584,17 @@ internal sealed class CoopRoomTopics : ICoopHost
         merged.Set("coop", kind);
         Route(peer, merged, kind);
     }
+
+    /// <summary>
+    /// Reports whether a co-op message belongs to a party member's late join by choice in a Classic
+    /// world: the request (<c>pick</c>), its refusal (<c>pick_no</c>), its end (<c>off</c>) and the
+    /// late invite (<c>invite</c> with <c>hot=1</c>).
+    /// </summary>
+    /// <param name="kind">The message's kind.</param>
+    /// <param name="message">Its fields.</param>
+    /// <returns>Whether it does.</returns>
+    private static bool LateJoin(string kind, WorldFields message) =>
+        kind is "pick" or "pick_no" or "off" || (kind == "invite" && message.Text("hot") == "1");
 
     /// <summary>
     /// Takes the facts a request carries, runs a step of the matchmaking and answers its status.
@@ -706,6 +730,7 @@ internal sealed class CoopRoomTopics : ICoopHost
             answer.Add("freeze", prompt.Freeze is { } freeze ? new RubyArray { freeze.Troop, freeze.Name } : RubyNil.Value);
             answer.Add("busy_reason", prompt.Busy);
             answer.Add("asked", prompt.Asked);
+            answer.Add("not_taken", prompt.NotTaken);
             return answer;
         });
     }

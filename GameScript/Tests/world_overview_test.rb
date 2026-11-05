@@ -2,6 +2,7 @@
 #  world_overview_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Read the scripts' clock from $frame
 #      Paulinchen  2026-11-01: Named the Mod Framework's interface by its own name
 #                            - Checked the overview built of the Mod Framework's window, list, page views and menus through its tree
 #                            - Read the party box from the Mod Framework's components it builds
@@ -207,6 +208,8 @@ load_script "world_overview_mods"
 module MGQ_MpEmotes; def self.wheel; StandInWheel.new(lambda { $emotes_open }); end; end
 load_script "ui_party_box"
 rules_bridge = open_rules_bridge
+# The scripts' clock, which the checks move with $frame.
+clock_from { $frame }
 require_relative "overview_support"
 answer_overview_models(rules_bridge)
 require_relative "party_support"

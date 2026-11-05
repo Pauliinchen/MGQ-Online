@@ -2,6 +2,7 @@
 //  WorldRoom.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Kept the players away for the grace of Sessions, the one owner of presence
 //      Paulinchen  2026-10-31: Took the party's own messages through the routes of the rules in C#
 //                            - Handed the world's mod settings the relay pushes to the scripts
 //      Paulinchen  2026-10-30: Let a rule in C# take a message without a sender, with its body
@@ -30,12 +31,6 @@ namespace MGQOnline.Game.World;
 /// </remarks>
 public sealed class WorldRoom
 {
-    /// <summary>
-    /// Frames a player whose connection dropped is kept, fifteen seconds, since the relay ends every
-    /// connection after a while and the games connect again at once.
-    /// </summary>
-    public const int RejoinFrames = 900;
-
     /// <summary>
     /// Frames after entering a world in which a game that tells its first state is one already
     /// there, as every game tells a newcomer at once, and joins without a notice.
@@ -130,9 +125,14 @@ public sealed class WorldRoom
 
     /// <summary>
     /// The players away whose seat another player took, kept until they come back on another seat or
-    /// stay away for <see cref="RejoinFrames"/>.
+    /// stay away for <see cref="Sessions.GraceFrames"/>.
     /// </summary>
     private readonly List<Peer> displaced = [];
+
+    /// <summary>
+    /// The grace of the players away, by their key, see <see cref="Key"/>.
+    /// </summary>
+    private readonly Sessions presence = new();
 
     /// <summary>
     /// The scripts' routes in the order they registered them.
@@ -537,6 +537,8 @@ public sealed class WorldRoom
             displaced.Clear();
         }
 
+        presence.Clear();
+
         framesInWorld = 0;
         Seat = null;
         ResetSince();
@@ -626,7 +628,7 @@ public sealed class WorldRoom
         Peer? peer = At(seat);
 
         // Another player took the seat of one who is away, as when the relay deals the seats anew.
-        if (peer is { AwayLeft: not null } && peer.Id != state.Text("id"))
+        if (peer is { Away: true } && peer.Id != state.Text("id"))
         {
             Displace(peer, state);
         }
@@ -634,9 +636,9 @@ public sealed class WorldRoom
         peer = At(seat) ?? Moved(seat, state);
         if (peer is not null)
         {
-            if (peer.AwayLeft is { } left)
+            if (presence.Back(Key(peer)) is { } frames)
             {
-                LogSync($"{peer} is back, after {(RejoinFrames - left) / 60} s away");
+                LogSync($"{peer} is back, after {Sessions.Seconds(frames)} s away");
             }
 
             string changed = Changes(peer.State, state);
@@ -646,7 +648,7 @@ public sealed class WorldRoom
             }
 
             peer.State = state;
-            peer.AwayLeft = null;
+            peer.Away = false;
         }
         else
         {
@@ -686,7 +688,7 @@ public sealed class WorldRoom
         }
 
         int from = peer.Seat;
-        LogSync($"{peer.Name} moved from seat {from} to seat {seat}{(peer.AwayLeft is null ? ", the old seat still standing" : string.Empty)}");
+        LogSync($"{peer.Name} moved from seat {from} to seat {seat}{(peer.Away ? string.Empty : ", the old seat still standing")}");
         peers.Remove(peer);
         displaced.Remove(peer);
         peer.Seat = seat;
@@ -710,18 +712,18 @@ public sealed class WorldRoom
     }
 
     /// <summary>
-    /// Keeps a game whose connection dropped for <see cref="RejoinFrames"/>, in which it may come back.
+    /// Keeps a game whose connection dropped for <see cref="Sessions.GraceFrames"/>, in which it may come back.
     /// </summary>
     /// <param name="seat">Its seat.</param>
     private void WaitFor(int seat)
     {
-        if (At(seat) is not { AwayLeft: null } peer)
+        if (At(seat) is not { Away: false } peer || !presence.Away(Key(peer)))
         {
             return;
         }
 
-        peer.AwayLeft = RejoinFrames;
-        LogSync($"{peer} is away, kept for {RejoinFrames / 60} s");
+        peer.Away = true;
+        LogSync($"{peer} is away, kept for {Sessions.Seconds(Sessions.GraceFrames)} s");
         host.PeerAway(peer);
     }
 
@@ -731,18 +733,15 @@ public sealed class WorldRoom
     private void TickPeers()
     {
         framesInWorld++;
-        foreach (Peer peer in peers.Concat(displaced).ToList())
+        if (presence.NobodyAway)
         {
-            if (peer.AwayLeft is not { } left)
-            {
-                continue;
-            }
+            return;
+        }
 
-            peer.AwayLeft = left - 1;
-            if (left - 1 <= 0)
-            {
-                Forget(peer, $"away for {RejoinFrames / 60} s");
-            }
+        var lapsed = new HashSet<string>(presence.Tick(), StringComparer.Ordinal);
+        foreach (Peer peer in peers.Concat(displaced).Where(peer => lapsed.Contains(Key(peer))).ToList())
+        {
+            Forget(peer, $"away for {Sessions.Seconds(Sessions.GraceFrames)} s");
         }
     }
 
@@ -766,6 +765,7 @@ public sealed class WorldRoom
     /// <param name="reason">Why, for the log.</param>
     private void Forget(Peer peer, string reason)
     {
+        presence.Forget(Key(peer));
         peers.Remove(peer);
         displaced.Remove(peer);
         LogSync($"{peer} left the world: {reason}");
@@ -773,6 +773,13 @@ public sealed class WorldRoom
         Party.ObserveLeaving(peer);
         host.PeerLeft(peer);
     }
+
+    /// <summary>
+    /// Names a player for the grace: their id, or their seat before they told one.
+    /// </summary>
+    /// <param name="peer">The player.</param>
+    /// <returns>The key.</returns>
+    private static string Key(Peer peer) => peer.Id.Length > 0 ? peer.Id : "seat " + peer.Seat.ToString(CultureInfo.InvariantCulture);
 
     /// <summary>
     /// Builds what the others need to know about the player: the scripts' state with the player's id

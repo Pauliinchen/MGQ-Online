@@ -2,6 +2,7 @@
 #  world_mods.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Read the catalog at most once a second by the bridge's frame
 #      Paulinchen  2026-11-01: Dropped the download check of a mod row, which nothing calls
 #                            - Added the row of Shared Mod Settings once as the script loads, through the Mod Framework's options, shown only in a world
 #      Paulinchen  2026-10-31: Took the group of its row from MGQ_Multiplayer::OPTION_PREFIX
@@ -92,8 +93,8 @@ module MGQ_MpWorldMods
   # The topic that hands out the relay's mod catalog.
   CATALOG_TOPIC = "mods.catalog"
 
-  # Seconds between two readings of the catalog.
-  CATALOG_SECONDS = 1.0
+  # Frames between two readings of the catalog, a second.
+  CATALOG_FRAMES = 60
 
   # The topic that checks a world's required mods.
   CHECK_TOPIC = "mods.check"
@@ -220,9 +221,9 @@ module MGQ_MpWorldMods
   # @return [Array<String>, nil] The keys of the personal mods and of their names, as
   #   MGQ_MpWorld.mod_key makes them; nil while the catalog is unknown.
   def self.personal_keys
-    return @personal if @catalog_read && Time.now - @catalog_read < CATALOG_SECONDS
+    return @personal if @catalog_read && MGQ_Multiplayer::Bridge.frame_number - @catalog_read < CATALOG_FRAMES
 
-    @catalog_read = Time.now
+    @catalog_read = MGQ_Multiplayer::Bridge.frame_number
     told = MGQ_Multiplayer::Bridge.call(CATALOG_TOPIC)
     state = told ? told["state"] : "failed"
     # The DLL hands out the catalog it had while it fetches the list again.

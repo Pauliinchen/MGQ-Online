@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-05: Handed a frozen fight's event kept from starting to the one guard of the game's flow
+#                            - Counted its scans and refusals by the bridge's frame
 #      Paulinchen  2026-10-28: Read what a page writes from the DLL's command index and the post-defeat processing's writes from the freeze's tables
 #      Paulinchen  2026-10-17: Created
 #
@@ -116,7 +117,7 @@ module MGQ_MpRaidFreezeUi
   #
   # @return [Array<Tableau>] The tableaux.
   def self.tableaux
-    now = Graphics.frame_count
+    now = MGQ_Multiplayer::Bridge.frame_number
     return @shown[1] if @shown && @shown[0] == now
 
     found = blocking
@@ -139,7 +140,7 @@ module MGQ_MpRaidFreezeUi
   # @param fresh [Boolean] Whether to look at the sources afresh rather than every SCAN_FRAMES.
   # @return [Array<Tableau>] The tableaux.
   def self.blocking(fresh = false)
-    now = Graphics.frame_count
+    now = MGQ_Multiplayer::Bridge.frame_number
     if fresh && @fresh_at != now
       @fresh_at = now
       @checked = nil
@@ -211,7 +212,7 @@ module MGQ_MpRaidFreezeUi
   # @return [Array<Tableau>] The tableaux.
   def self.built
     map_id = $game_map.map_id
-    step = Graphics.frame_count / SCAN_FRAMES
+    step = MGQ_Multiplayer::Bridge.frame_number / SCAN_FRAMES
     same_map = @built && @built[0] == map_id
     return @built[2] if same_map && @checked == step
 
@@ -528,7 +529,7 @@ module MGQ_MpRaidFreezeUi
   # @return [Boolean] Whether it must not start.
   def self.refuse_start?(event)
     return false unless $game_map && event.is_a?(Game_Event)
-    return after_resume(event) if @resumed_at == Graphics.frame_count
+    return after_resume(event) if @resumed_at == MGQ_Multiplayer::Bridge.frame_number
 
     shown = blocking(true)
     return false if shown.empty?
@@ -569,9 +570,9 @@ module MGQ_MpRaidFreezeUi
   def self.lead_in(event, tableau)
     map_id = $game_map.map_id
     key = [map_id, event.id]
-    now = Graphics.frame_count
+    now = MGQ_Multiplayer::Bridge.frame_number
     first, last = @contact[key]
-    held = last && (0..1).include?(now - last)
+    held = last && now - last <= 1
     @contact[key] = [held ? first : now, now]
     if held
       log_once([:contact, map_id, event.id, first], "kept event #{event.id} on map #{map_id} from starting: the player keeps touching it")
@@ -659,8 +660,8 @@ module MGQ_MpRaidFreezeUi
     return log_once([:refused, map_id, event.id, tableau.troop], text) if event.trigger == AUTORUN_TRIGGER
 
     key = [map_id, event.id]
-    now = Graphics.frame_count
-    return if @refused[key] && (now - @refused[key]).abs < REFUSE_FRAMES
+    now = MGQ_Multiplayer::Bridge.frame_number
+    return if @refused[key] && now - @refused[key] < REFUSE_FRAMES
 
     @refused[key] = now
     log(text)

@@ -2,6 +2,7 @@
 //  WorldRoomPresenceTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Ran the frames of the grace of Sessions
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -63,7 +64,7 @@ public sealed class WorldRoomPresenceTests
         host.Events.Clear();
         host.Inbox.Enqueue(Seat(0));
         host.Inbox.Enqueue(Told(4, Other, "Other"));
-        host.Run(WorldRoom.RejoinFrames);
+        host.Run(Sessions.GraceFrames);
 
         Assert.Equal(["away 2", "away 4", "displaced 4", "moved 4 from 2", "told 4 zz-other", "left 4 friend"], host.Events);
         Assert.Equal([Other], room.Peers.Select(peer => peer.Id));

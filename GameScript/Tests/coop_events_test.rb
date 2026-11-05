@@ -15,6 +15,7 @@
 #                            - Checked that a world chest the leader's story opened plays in the member's game unless their own story is past its step
 #                            - Caught a member behind the leader up by the frozen rows the DLL answers, and checked that the leader tells only their side
 #                            - Checked that a party member gets the Noble Orb the leader bought from the Medal King, once
+#                            - Read the scripts' clock from $frame_count and dropped the check of a refusal from before a loaded save, since the clock never goes back
 #      Paulinchen  2026-11-01: Dropped the stand-in of a lapse after a frame count, which no script asks for any more
 #                            - Kept the screen of choices open as asked, since the framework without its DLL refuses its window
 #                            - Read the screen of choices from MGQ_MpCoopChoices.screen, now a Mod Framework window
@@ -281,8 +282,9 @@ class Game_Party
   # Counts a party of two as full.
   def party_member_full?; @actors.size >= 2; end
 end
-# Stands in for the screen: the frame count from $frame_count, the brightness from $brightness.
-module Graphics; def self.frame_count; $frame_count; end; def self.brightness; $brightness || 255; end; end
+# Stands in for the screen: the brightness from $brightness; the scripts' clock reads $frame_count.
+module Graphics; def self.brightness; $brightness || 255; end; end
+clock_from { $frame_count }
 # The buttons: confirm pressed while $confirm is set, the skip held while $skipping is.
 module Input; def self.trigger?(button); button == :C && $confirm ? true : false; end; def self.press?(button); button == :X && $skipping ? true : false; end; end
 $frame_count = 0
@@ -1076,11 +1078,6 @@ MGQ_MpCoopEvents.instance_variable_set(:@refused, nil)
 $game_map.events[11].start
 $game_map.setup_starting_map_event
 check("with the leader elsewhere, the member is told to bring them", [$sent.size, $notices.last], [0, "Only Leader can move the story on. Bring them here to go on."])
-MGQ_MpCoopEvents.instance_variable_set(:@refused_at, $frame_count + 1000)
-$notices.clear
-$game_map.events[11].start
-$game_map.setup_starting_map_event
-check("a refusal from before a loaded save, whose frame count is lower, is long past", $notices.size, 1)
 leader.state["map"] = "7"
 
 # A common event, which runs by itself once it has a switch.

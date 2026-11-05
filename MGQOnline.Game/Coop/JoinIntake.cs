@@ -2,6 +2,7 @@
 //  JoinIntake.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Told whether the battle takes players in, is full, ends or is closed, for Sessions
 //      Paulinchen  2026-10-30: Created
 //
 //----------------------------------------------------------------
@@ -130,12 +131,17 @@ public static class JoinIntake
     }
 
     /// <summary>
-    /// Tells the players the battle has room for, which its state tells as "rbn": its players
-    /// while it takes players in, else 0.
+    /// Tells the battle as its state tells it: "rbn", its players while it takes players in, else 0,
+    /// and "rbs", whether it takes players in or why not, which <see cref="Sessions.Battle"/> reads.
     /// </summary>
+    /// <remarks>
+    /// Released games read "rbn" alone and take any count from 1 to 3 as a battle that takes players
+    /// in, so a battle that takes nobody in must tell 0 there whatever its players.
+    /// </remarks>
     /// <param name="facts">The battle's facts.</param>
-    /// <returns>The count.</returns>
-    public static int Told(IntakeFacts facts) => Closed(facts) is null ? PlayersIn(facts) : 0;
+    /// <returns>The "rbn" and the "rbs", <see cref="Sessions.Open"/> or a refusal's code.</returns>
+    public static (int Rbn, string Rbs) Told(IntakeFacts facts) =>
+        Closed(facts) is { } closed ? (0, closed.Code) : (PlayersIn(facts), Sessions.Open);
 
     /// <summary>
     /// Keeps of the players a request with an encounter brings the asking player and as many of

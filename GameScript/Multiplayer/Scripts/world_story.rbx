@@ -7,6 +7,7 @@
 #                            - Took the player out of their own scene through the one guard of the game's flow
 #                            - Handed a refused start of the collab scenario to that guard
 #                            - Named the routes' counters in the log by the story's ids
+#                            - Counted its waits by the bridge's frame
 #      Paulinchen  2026-10-31: Offered at the Great Decision the routes the relay grants, in place of a copy of its route rules
 #                            - Told the catch-up whether a lost raid boss battle holds the story
 #                            - Dropped the lift of the refusal of recruits that older worlds' story handed over
@@ -219,10 +220,9 @@ module MGQ_MpWorldStory
     @world = nil
     @log_story = nil
     @caps = nil
-    @clock ||= 0
-    @awaited_since = reason ? @clock : nil
+    @awaited_since = reason ? MGQ_Multiplayer::Bridge.frame_number : nil
     @awaited_telling = nil
-    @checked = @clock
+    @checked = MGQ_Multiplayer::Bridge.frame_number
   end
 
   forget
@@ -269,7 +269,7 @@ module MGQ_MpWorldStory
   # @return [Boolean] Whether they wait.
   def self.awaits_world?
     return false unless @awaited_since && @mode.nil? && active?
-    return true if @clock - @awaited_since < AWAIT_WORLD_FRAMES
+    return true if MGQ_Multiplayer::Bridge.frame_number - @awaited_since < AWAIT_WORLD_FRAMES
 
     log("the world's story did not come within #{AWAIT_WORLD_FRAMES / 60} s: the player's story events start without it")
     @awaited_since = nil
@@ -423,7 +423,6 @@ module MGQ_MpWorldStory
   # the player watches and their level, and what the relay handed back once the player is free.
   # Called after the map's update.
   def self.tick
-    @clock += 1
     follow_classic
     return close unless active?
 
@@ -435,8 +434,8 @@ module MGQ_MpWorldStory
     take_pending if quiet?
     play_queued
     walk_stream
-    if @clock - @checked >= CHECK_FRAMES
-      @checked = @clock
+    if MGQ_Multiplayer::Bridge.frame_number - @checked >= CHECK_FRAMES
+      @checked = MGQ_Multiplayer::Bridge.frame_number
       send_level
       restore if quiet?
     end
@@ -492,12 +491,12 @@ module MGQ_MpWorldStory
   # and every chest flag, at its value, those never set left out.
   def self.send_seed
     return unless @status && @status["need_seed"]
-    return if @seeded_at && @clock - @seeded_at < SEED_FRAMES
+    return if @seeded_at && MGQ_Multiplayer::Bridge.frame_number - @seeded_at < SEED_FRAMES
 
     seed = seed_of(MGQ_MpStoryKeys.raid_table)
     return unless seed
 
-    @seeded_at = @clock
+    @seeded_at = MGQ_Multiplayer::Bridge.frame_number
     MGQ_Multiplayer::Bridge.stage(SEED_TOPIC, seed)
     log("handed the relay the player's story to place them by: #{seed.size} key(s)")
   end
@@ -1043,7 +1042,7 @@ module MGQ_MpWorldStory
   def self.awaits_teller?
     awaited = @awaited_telling
     return false unless awaited && active?
-    return true if @clock - awaited[:since] < AWAIT_TELLER_FRAMES
+    return true if MGQ_Multiplayer::Bridge.frame_number - awaited[:since] < AWAIT_TELLER_FRAMES
     return false if awaited[:lapsed]
 
     log("the world's story of the telling seat #{awaited[:telling][0]} ended did not come within #{AWAIT_TELLER_FRAMES / 60} s: the player's story events start without it")
@@ -1059,7 +1058,7 @@ module MGQ_MpWorldStory
 
     told = @status["told"]
     telling = [seat, told ? told[seat] : nil]
-    @awaited_telling = { :telling => telling, :since => @clock } unless @awaited_telling && @awaited_telling[:telling] == telling
+    @awaited_telling = { :telling => telling, :since => MGQ_Multiplayer::Bridge.frame_number } unless @awaited_telling && @awaited_telling[:telling] == telling
   end
 
   # Names the player whose telling ended, whose world's story the player's story events wait for,
@@ -1109,9 +1108,9 @@ module MGQ_MpWorldStory
   # relay's push; and takes them once a fetch ended.
   def self.follow_comps
     if @busy
-      return unless @clock - @busy >= STATE_FRAMES
+      return unless MGQ_Multiplayer::Bridge.frame_number - @busy >= STATE_FRAMES
 
-      @busy = @clock
+      @busy = MGQ_Multiplayer::Bridge.frame_number
       state = Relay.headers
       return if state["fetch"].nil? || state["fetch"] == "busy"
 
@@ -1122,12 +1121,12 @@ module MGQ_MpWorldStory
       @world = nil
       return
     end
-    @fetch_due = true if @polled.nil? || @clock - @polled >= POLL_FRAMES
+    @fetch_due = true if @polled.nil? || MGQ_Multiplayer::Bridge.frame_number - @polled >= POLL_FRAMES
     return unless @fetch_due
 
     @fetch_due = false
-    @polled = @clock
-    @busy = @clock if Relay.fetch(world_id)
+    @polled = MGQ_Multiplayer::Bridge.frame_number
+    @busy = MGQ_Multiplayer::Bridge.frame_number if Relay.fetch(world_id)
   end
 
   # Reads the counters of a story: the main story, the route under way alone (the first whose

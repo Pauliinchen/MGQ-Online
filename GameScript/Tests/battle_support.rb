@@ -4,6 +4,8 @@
 #  Changelog:
 #      Paulinchen  2026-11-05: Answered the plans of the battlers the scripts build and loaded their factory
 #                            - Stood in for the game's start of a battler, of the party, of the troop and of the battle, and for a state's counts
+#                            - Read the scripts' clock from $frames and stood in for the grace the DLL's Sessions tells
+#                            - Stood in for the chat box being open by $typing
 #      Paulinchen  2026-11-01: Gave the pictures a font, which the Mod Framework measures texts in
 #                            - Read the waiting box's lines from its box of the Mod Framework
 #                            - Stopped loading the deleted ui_boxes.rbx
@@ -75,8 +77,8 @@ module MGQ_MpOverworld; def self.graphic?(_folder, name); name != "MissingFace";
 # Stands in for the world room: its players, the own state and the link, keeping what is sent in
 # $sent.
 module MGQ_MpOverworldSync
-  # The grace a player away is kept for, as overworld_sync.rbx has it.
-  REJOIN_FRAMES = 900
+  # The grace a player away is kept for, as the DLL's Sessions tells it.
+  def self.grace_frames; 900; end
   def self.in_world?; true; end
   def self.notice(text); Status.notice(text); end
   def self.tell(seat, fields, body = ""); Link.send_to(seat, Me.encode(fields) + body); end
@@ -121,8 +123,13 @@ module MGQ_MpCoopLevelSync
   def self.sync(actor); ($synced ||= []) << actor; end
   def self.finish; $sync_finished = true; end
 end
-# Stands in for the chat, keeping its system lines in $chat.
-module MGQ_MpChat; def self.system(text); ($chat ||= []) << text; end; end unless defined?(MGQ_MpChat)
+# Stands in for the chat, keeping its system lines in $chat, its box open while $typing is set.
+unless defined?(MGQ_MpChat)
+  module MGQ_MpChat
+    def self.system(text); ($chat ||= []) << text; end
+    def self.typing?; $typing ? true : false; end
+  end
+end
 # Stands in for coop.rbx: the party of the players marked member, led by $leader.
 module MGQ_MpCoop
   module Party
@@ -410,7 +417,8 @@ class Scene_Base; def update; end; def start; end; end
 # Frames a wait may last in a test before it fails.
 WAIT_LIMIT = 10_000
 # Stands in for the screen, its frame count kept in $frames.
-module Graphics; def self.width; 640; end; def self.height; 480; end; def self.frame_count; $frames.to_i; end; def self.update; end; end
+module Graphics; def self.width; 640; end; def self.height; 480; end; def self.update; end; end
+clock_from { $frames }
 # Stands in for the game's rectangle.
 Rect = Struct.new(:x, :y, :width, :height)
 # Stands in for the game's sprite.

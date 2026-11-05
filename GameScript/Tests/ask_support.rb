@@ -2,6 +2,8 @@
 #  ask_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Read a running battle as Sessions does, offered a side battle only beside a full one and told why a battle near takes nobody in
+#                            - Offered a party member's battle in a Classic world too
 #      Paulinchen  2026-10-30: Created
 #
 #----------------------------------------------------------------
@@ -222,14 +224,25 @@ class AskStandIn
     !peer.state["rb"].to_s.empty? && MatchStandIn::RAID_BATTLE_SCENES.include?(peer.state["scene"])
   end
 
-  # Counts the players a running battle still takes in, as CoopAsking.RoomIn does.
+  # Counts the players a running battle still takes in, as Sessions.Battle tells it.
   #
   # @param host [Object] The battle's host.
   # @return [Integer] The players it takes.
   def room_in(host)
-    most = MatchStandIn::RAID_PLAYERS
+    count, state = battle_of(host)
+    state == "open" && count.between?(1, MatchStandIn::RAID_PLAYERS - 1) ? MatchStandIn::RAID_PLAYERS - count : 0
+  end
+
+  # Reads the battle a host tells, as Sessions.Battle does: its players and its state, which a
+  # state without "rbs" tells by its count alone.
+  #
+  # @param host [Object] The battle's host.
+  # @return [Array(Integer, String)] The players and the state.
+  def battle_of(host)
     count = host.state.key?("rbn") ? host.state["rbn"].to_i : 1
-    count.between?(1, most - 1) ? most - count : 0
+    state = host.state["rbs"].to_s
+    state = count >= MatchStandIn::RAID_PLAYERS ? "full" : count >= 1 ? "open" : "closed" if state.empty?
+    [count, state]
   end
 
   # Lists the party members near and free, as CoopAsking.PartyNear does.
@@ -590,14 +603,35 @@ class AskStandIn
     busy = busy_reason(told["busy"])
     changing = told["changing"]
     target = changing || busy ? nil : join_target
-    side = changing || target || busy ? nil : side_target(told["sides"])
+    side = changing || target || busy || !world.raid? ? nil : side_target(told["sides"])
     freeze = changing || target || side || busy ? nil : told["freeze"]
     if told["pressed"] && !changing && target
       request(target[0], target[1], true)
       return @match.status([]).merge(reply.merge("busy_reason" => busy, "asked" => true))
     end
 
-    @match.status([]).merge("target" => target && [target[0].seat, target[1]], "side" => side, "freeze" => freeze, "busy_reason" => busy, "asked" => false)
+    not_taken = told["pressed"] && !changing && !busy && !target && !side && !freeze ? not_taken_text : nil
+    @match.status([]).merge("target" => target && [target[0].seat, target[1]], "side" => side, "freeze" => freeze, "busy_reason" => busy, "asked" => false,
+                            "not_taken" => not_taken)
+  end
+
+  # Tells the player why the battle of the nearest player near who fights one takes nobody in, as
+  # JoinChoice.NotTaken does.
+  #
+  # @return [String, nil] The message shown, nil while nobody near fights a battle.
+  def not_taken_text
+    near = on_map.select { |peer| fights?(peer) && @match.distance(peer, facts["x"], facts["y"]) <= JOIN_DISTANCE }
+    near = near.sort_by { |peer| [@match.distance(peer, facts["x"], facts["y"]), peer.state["id"].to_s] }
+    host = near.map { |peer| host_of(peer) }.compact.first
+    return nil unless host
+
+    state = battle_of(host)[1]
+    name = host.state["name"]
+    text = { "full" => "#{name}'s battle is full.", "ending" => "#{name}'s battle is ending.",
+             "gathering" => "#{name}'s battle is still gathering its players." }[state] || "#{name}'s battle takes nobody in now."
+    notice(text)
+    join_log("#{@match.who(host)}'s battle #{host.state['rb']} takes nobody in (#{state}): told the player")
+    text
   end
 
   # Finds the battle near that takes the player in.
@@ -614,14 +648,21 @@ class AskStandIn
   # @param peer [Object] The player who fights it.
   # @return [Array, nil] The host and battle id.
   def open_battle(peer)
+    host = host_of(peer)
+    host && room_in(host) > 0 ? [host, peer.state["rb"].to_s] : nil
+  end
+
+  # Finds the host fighting the battle another player fights, unless it is the player's own.
+  #
+  # @param peer [Object] The player who fights it.
+  # @return [Object, nil] The host.
+  def host_of(peer)
     bid = peer.state["rb"].to_s
     return nil unless peer.state["rbh"].to_s =~ /\A\d+\z/
     return nil if bid == facts["bid"].to_s
 
     host = world.at(peer.state["rbh"].to_i)
-    return nil unless host && host.state["map"].to_i == facts["map"] && fights?(host) && host.state["rb"].to_s == bid
-
-    host.state["rbn"].to_i.between?(1, MatchStandIn::RAID_PLAYERS - 1) ? [host, bid] : nil
+    host && host.state["map"].to_i == facts["map"] && fights?(host) && host.state["rb"].to_s == bid ? host : nil
   end
 
   # Finds the side battle near.
@@ -636,7 +677,7 @@ class AskStandIn
       next if !fights?(peer) || peer.state["rbh"].to_s !~ /\A\d+\z/
 
       host = world.at(peer.state["rbh"].to_i)
-      next unless host && host.state["map"].to_i == facts["map"] && host.state["rb"].to_s == bid
+      next unless host && host.state["map"].to_i == facts["map"] && host.state["rb"].to_s == bid && battle_of(host)[1] == "full"
 
       side = sides.find { |entry| entry[0] == host.seat }
       next unless side
@@ -653,7 +694,7 @@ class AskStandIn
   #
   # @return [Array] The players.
   def on_map
-    world.peers.select { |peer| peer.away.nil? && peer.state["map"].to_i == facts["map"] }
+    world.peers.select { |peer| peer.away.nil? && (world.raid? || peer.member) && peer.state["map"].to_i == facts["map"] }
   end
 
   # Asks a battle's host to take the player in.

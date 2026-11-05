@@ -16,6 +16,7 @@
 #                            - Told a member only the leader's side, no longer the leader's skills, companions and items
 #                            - Dropped the self switches of a choice's lines, which the reviewed key list keeps
 #                            - Gave a party member the Medal King's prize another player bought, as the DLL finds it
+#                            - Counted the side question's retries by the bridge's frame
 #      Paulinchen  2026-11-01: Told how many copies of a key item the leader lent the player, which the player never counts as found
 #                            - Gave a member a companion of the Alice and Ilias choice only by the side they took along or a route they played, as the DLL finds it
 #                            - Read the side a member took along from their switches only before the Great Decision, past it from the save's note
@@ -1291,8 +1292,8 @@ module MGQ_MpCoopStory
     fields["leader"] = @leader_held[:side].to_s if guest? && @leader_held
     stories = side_stories
     asked = [fields, MGQ_MpStoryState.pick_note, stories]
-    now = Graphics.frame_count
-    if @side_question && @side_question[0] == asked && (@side_question[2].nil? || (now - @side_question[2]).between?(0, SIDE_RETRY_FRAMES - 1))
+    now = MGQ_Multiplayer::Bridge.frame_number
+    if @side_question && @side_question[0] == asked && (@side_question[2].nil? || now - @side_question[2] < SIDE_RETRY_FRAMES)
       return @side_question[1]
     end
 

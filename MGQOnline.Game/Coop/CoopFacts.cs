@@ -2,6 +2,7 @@
 //  CoopFacts.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Told whether the player types in the chat box, which keeps an invite waiting
 //      Paulinchen  2026-10-30: Told whether the player is in a battle, also under a screen its party command called
 //                            - Told the player's step, the co-op party, a late join and the running battles the player asked to join or gave up on
 //                            - Created
@@ -41,6 +42,7 @@ namespace MGQOnline.Game.Coop;
 /// <param name="Fronting">Whether the player started a battle the battle server hosts and passes requests to join it on.</param>
 /// <param name="Story">Whether the invite that waits for the player belongs to the story that calls them over.</param>
 /// <param name="InBattle">Whether the player is in a battle: in its scene, or in a screen its party command called.</param>
+/// <param name="Typing">Whether the player types in the chat box.</param>
 public sealed record CoopFacts(
     long Map,
     long X,
@@ -66,7 +68,8 @@ public sealed record CoopFacts(
     (int Seat, string BattleId)? GaveUp = null,
     bool Fronting = false,
     bool Story = false,
-    bool InBattle = false)
+    bool InBattle = false,
+    bool Typing = false)
 {
     /// <summary>
     /// Gets the facts of a player on no map, in no battle.
@@ -75,7 +78,7 @@ public sealed record CoopFacts(
 
     /// <summary>
     /// Gets a value indicating whether the player is free on the map to join a battle: no event of
-    /// theirs runs, they neither move to another place nor walk a step.
+    /// theirs runs, they neither move to another place nor walk a step, nor type in the chat box.
     /// </summary>
-    public bool Free => !Interpreter && !Transfer && !Moving;
+    public bool Free => !Interpreter && !Transfer && !Moving && !Typing;
 }

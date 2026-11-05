@@ -2,6 +2,7 @@
 #  gather_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Answered at the bridge's frame, the scripts' clock
 #      Paulinchen  2026-10-31: Took calls, follows and offers without a warp ban
 #      Paulinchen  2026-10-28: Created
 #
@@ -341,12 +342,12 @@ end
 GATHER_CASES["scenarios"].each { |scenario| check_gather_scenario(scenario) }
 
 # Answers the topics of a story's calls on a FakeBridge with a GatherStandIn, $gather_stand_in, at
-# the frame the tests count, Graphics.frame_count.
+# the frame the tests count, the bridge's.
 #
 # @param fake [FakeBridge] The bridge.
 def answer_gather(fake)
   $gather_stand_in = GatherStandIn.new
   %w(called come_to followed ban frame take calling_battle drop_call hold drop_hold holding offer follow_offer accept decline forget forget_offers).each do |name|
-    fake.answer("gather.#{name}") { |request| $gather_stand_in.answer("gather.#{name}", request, Graphics.frame_count) }
+    fake.answer("gather.#{name}") { |request| $gather_stand_in.answer("gather.#{name}", request, MGQ_Multiplayer::Bridge.frame_number) }
   end
 end

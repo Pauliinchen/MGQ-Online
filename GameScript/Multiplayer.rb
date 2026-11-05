@@ -6,6 +6,7 @@
 #                            - Loaded coop_flow.rbx after coop_scene.rbx
 #                            - Loaded story_ids.rbx after core_async.rbx
 #                            - Dropped story_found.rbx, whose items the story replay hands over
+#                            - Made the bridge's frame the clock of every timer and named the frames of a second
 #      Paulinchen  2026-11-01: Stopped loading ui_boxes.rbx, whose boxes the Mod Framework's components replaced
 #                            - Dropped the bug report exports, which the bridge's report topics replace
 #                            - Stopped loading world_text.rbx, whose text screen the Mod Framework's text fields replace
@@ -1144,6 +1145,10 @@ module MGQ_Multiplayer
     # The topic the DLL runs a frame's staged entries through, in order.
     BATCH = "batch"
 
+    # The frames the game runs a second, which turns the milliseconds C# names into the bridge's
+    # frames.
+    FRAMES_PER_SECOND = 60
+
     # The largest frame the drain passes, the most a Win32API long holds; the count starts again
     # from 0 past it.
     MAX_FRAME = 0x7fff_ffff
@@ -1368,7 +1373,7 @@ module MGQ_Multiplayer
     # Sends what was staged and takes the DLL's events, once a frame after Graphics.update.
     #
     # The bridge counts its own frames, which never go back as Graphics.frame_count does when a
-    # save loads, since C#'s timers run on them.
+    # save loads, since every timer runs on them, the scripts' and C#'s.
     def self.frame
       return unless @context
 
@@ -1377,7 +1382,8 @@ module MGQ_Multiplayer
       drain
     end
 
-    # Tells the bridge's frame, the one the last drain passed, which C#'s timers count by.
+    # Tells the bridge's frame, the one the last drain passed: the clock every timer counts by, the
+    # scripts' and C#'s.
     #
     # @return [Integer] The frame, 0 before the first.
     def self.frame_number

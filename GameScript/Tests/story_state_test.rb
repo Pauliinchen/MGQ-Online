@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-11-05: Answered the side the player took along by the DLL's rule as engine.rb stands in for it
 #                            - Answered what a Classic member takes of a joined story by the DLL's rule
+#                            - Dropped the stand-in of the game's frame counter, which no script reads
 #      Paulinchen  2026-11-01: Covered the side the save notes the player took along in Iliasville
 #      Paulinchen  2026-10-31: Covered a Classic party's join of stories by the reviewed list's scopes
 #                            - Covered the one-time repair of a save the 0.6.9.2 chest path left stuck
@@ -170,8 +171,6 @@ check("a story that turns the second accessory slot on refits every character on
 # Stands in for the replay's asking of the DLL: each ask in $repair_asks, the answer $repair_answer.
 module MGQ_MpStoryReplay; def self.ask_with_values(topic, request); $repair_asks << [topic, request]; $repair_answer; end; end
 class Game_Switches; def []=(id, value); @data[id] = value; end; end
-# Stands in for the frame counter.
-module Graphics; def self.frame_count; 0; end; end
 $repair_asks = []
 $game_system = Object.new
 $repair_answer = { "switches" => [2045] }

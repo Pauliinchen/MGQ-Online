@@ -6,6 +6,7 @@
 #                            - Asked the DLL's rule which keys of the leader's story a Classic party member takes as stories are joined
 #                            - Read the story's ids from story_ids.rbx
 #                            - Left the self switches of the Navy's and the Pirates' lines to the reviewed key list
+#                            - Counted its asks by the bridge's frame
 #      Paulinchen  2026-11-01: Noted in the save the side the player took along in Iliasville, which the route's side switches no longer tell
 #                            - Noted that a save came from another player's starting save, whose side is not the player's
 #      Paulinchen  2026-10-31: Kept the warp ban from stopping a player in a world
@@ -370,9 +371,8 @@ module MGQ_MpStoryState
   #
   # @return [Rewards, nil] The rewards; nil before the story mapping came.
   def self.rewards
-    now = Graphics.frame_count
-    # A loaded save moves the frame count back.
-    return @rewards if @rewards_at && now >= @rewards_at && now - @rewards_at < (@rewards ? REWARDS_FRAMES : MISSING_FRAMES)
+    now = MGQ_Multiplayer::Bridge.frame_number
+    return @rewards if @rewards_at && now - @rewards_at < (@rewards ? REWARDS_FRAMES : MISSING_FRAMES)
 
     @rewards_at = now
     answer = MGQ_Multiplayer::Bridge.call(REWARDS_TOPIC, @rewards ? @rewards.rev : nil)
@@ -947,9 +947,9 @@ module MGQ_MpStoryState
   # made holds none. Tried after the map's update until the DLL could decide it.
   def self.repair
     return unless @repair_due && $game_system && MGQ_Multiplayer::Bridge.open? && defined?(MGQ_MpStoryReplay)
-    return if @repair_at && Graphics.frame_count >= @repair_at && Graphics.frame_count - @repair_at < REPAIR_FRAMES
+    return if @repair_at && MGQ_Multiplayer::Bridge.frame_number - @repair_at < REPAIR_FRAMES
 
-    @repair_at = Graphics.frame_count
+    @repair_at = MGQ_Multiplayer::Bridge.frame_number
     raid = defined?(MGQ_MpCoop::Scope) && MGQ_MpCoop::Scope.raid? ? true : false
     world = raid || (defined?(MGQ_MpOverworldSync) && MGQ_MpOverworldSync.in_world?) ? true : false
     answer = MGQ_MpStoryReplay.ask_with_values(REPAIR_TOPIC, "world" => world, "raid" => raid)

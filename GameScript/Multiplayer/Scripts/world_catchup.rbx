@@ -3,6 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-05: Took the side switches and the companion of the side the player answered from the DLL's one rule of the side
+#                            - Counted its waits by the bridge's frame
+#                            - Waited with its looks while a screen waits, see MGQ_MpCoop.screens_wait?
 #                            - Read the story's ids from story_ids.rbx
 #                            - Settled a variable the game uses as a place only on the map of the event that sets it, by the one place rule
 #                            - Left found key items and their uses to the story replay, and noted only a Makina as found for the world, which Makina by level reads
@@ -235,9 +237,8 @@ module MGQ_MpWorldCatchup
     @watched = nil
     @visiting = []
     @ledger_sent = false
-    @clock ||= 0
-    @checked = @clock
-    @state_read = @clock
+    @checked = MGQ_Multiplayer::Bridge.frame_number
+    @state_read = MGQ_Multiplayer::Bridge.frame_number
   end
 
   forget
@@ -270,6 +271,13 @@ module MGQ_MpWorldCatchup
   # @return [Boolean] Whether it does.
   def self.active?
     MGQ_MpWorldStory.active?
+  end
+
+  # Reports whether the screens the catch-up may open wait, see MGQ_MpCoop.screens_wait?.
+  #
+  # @return [Boolean] Whether they do.
+  def self.screens_wait?
+    defined?(MGQ_MpCoop) && MGQ_MpCoop.respond_to?(:screens_wait?) && MGQ_MpCoop.screens_wait? ? true : false
   end
 
   # Reports whether the player's story is held to their part: their story is behind the world's, or
@@ -317,16 +325,15 @@ module MGQ_MpWorldCatchup
   # defeat runs, which takes items its undo gives back: a restock meanwhile would give them twice
   # (see MGQ_MpWorldStory.holding?).
   def self.tick
-    @clock += 1
     return close unless active?
     return if MGQ_MpWorldStory.holding?
 
     note_world
-    read_shared if @adding && @clock - @state_read >= STATE_FRAMES
+    read_shared if @adding && MGQ_Multiplayer::Bridge.frame_number - @state_read >= STATE_FRAMES
     play_orb_event if @orbs_due
-    return if @clock - @checked < CHECK_FRAMES || !MGQ_MpWorldStory.quiet?
+    return if MGQ_Multiplayer::Bridge.frame_number - @checked < CHECK_FRAMES || !MGQ_MpWorldStory.quiet? || screens_wait?
 
-    @checked = @clock
+    @checked = MGQ_Multiplayer::Bridge.frame_number
     return if MGQ_MpWorldStory.mode.nil?
     return log_once(:keys, "the catch-up waits for the story mapping") if keys.nil?
 
@@ -1395,17 +1402,17 @@ module MGQ_MpWorldCatchup
 
   # Writes the companions noted to the world's shared list, a few together.
   def self.send_shared
-    return if @share_queue.empty? || @adding || @clock < @share_at
+    return if @share_queue.empty? || @adding || MGQ_Multiplayer::Bridge.frame_number < @share_at
 
     ids = @share_queue.first(SHARE_BATCH)
     unless Relay.add(MGQ_MpWorldStory.world_id, ids.join(","))
-      @share_at = @clock + START_FRAMES
+      @share_at = MGQ_Multiplayer::Bridge.frame_number + START_FRAMES
       return log_once([:share_start, ids.size], "the DLL did not start adding #{ids.size} shared companions, trying again")
     end
 
     @adding = ids
     @share_queue -= ids
-    @share_at = @clock + SHARE_FRAMES
+    @share_at = MGQ_Multiplayer::Bridge.frame_number + SHARE_FRAMES
     log("sharing #{ids.size} companions with the world: #{ids.join(', ')}")
   end
 
@@ -1419,7 +1426,7 @@ module MGQ_MpWorldCatchup
     return if outcome == "done"
 
     @share_queue = (ids + @share_queue).uniq
-    @share_at = @clock + RETRY_FRAMES
+    @share_at = MGQ_Multiplayer::Bridge.frame_number + RETRY_FRAMES
     log("sharing companions with the world failed (#{outcome}): trying again later")
   end
 

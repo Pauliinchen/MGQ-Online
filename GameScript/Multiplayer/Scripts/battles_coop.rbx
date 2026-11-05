@@ -5,6 +5,9 @@
 #      Paulinchen  2026-11-05: Built other players' characters and the host's troop through MGQ_MpBattlers
 #                            - Started a rival's troop taken after the battle's start through MGQ_MpBattlers
 #                            - Let a guest that takes a battle over go on from the battlers its start made whole, started once
+#                            - Told whether a battle's invite is open for the player, which the screens the mod opens on its own wait for
+#                            - Dropped the copies of the free and fighting rules, which the DLL's Sessions decides
+#                            - Told whether the player types in the chat box, so a waiting invite waits for them
 #      Paulinchen  2026-11-01: Named the Mod Framework's interface by its own name
 #      Paulinchen  2026-10-31: Took a player's color from MGQ_MpPlayerColor
 #                            - Checked a rebuilt character before its battle start states, as its owner's game measured it
@@ -175,14 +178,6 @@ module MGQ_MpBattlesCoop
   # places, each player's first character on it.
   RAID_PLAYERS = 4
 
-  # What another player in a Raid World does, by their state's scene, while they may be invited:
-  # walking the map, or on it with their window in the background, which keeps running.
-  RAID_FREE_SCENES = %w(map away)
-
-  # What another player in a Raid World does, by their state's scene, while they fight a battle:
-  # the battle, or a screen its party command called with their window in the background.
-  RAID_BATTLE_SCENES = %w(battle away)
-
   # What starts the waiting box's names line of a player who joins a running battle at its next
   # turn, which names no player: how long the wait may last.
   UP_TO_PREFIX = "Up to "
@@ -202,10 +197,6 @@ module MGQ_MpBattlesCoop
 
   # The endings of a guest's wait for the roster after which the player never got the battle.
   MISSED_ENDINGS = [:gone, :broken, :forfeit]
-
-  # Tiles within which another player on the map counts as near: a running battle whose host stands
-  # this near takes the player's encounter in (see battles_coop_hotjoin.rbx).
-  NEARBY_TILES = 20
 
   # Players the characters a player sends are counted for: two, the fewest who share a battle,
   # whose squads are the largest, so a party that loses a player can bring more.
@@ -563,8 +554,9 @@ module MGQ_MpBattlesCoop
   # Tells what only the game knows of the player for the matchmaking: their map and tile, the live
   # battle, the multiplayer battle's rules, a PvP battle, a Library replay, the scene, the map's
   # event, a trade, the leader's call, a transfer or step under way, the co-op party, a late join and
-  # its own troop, whether the story that calls the player over is the waiting invite's, and whether
-  # the player is in a battle, also under a screen its party command called.
+  # its own troop, whether the story that calls the player over is the waiting invite's, whether
+  # the player is in a battle, also under a screen its party command called, and whether they type
+  # in the chat box.
   #
   # @return [Hash] The facts, see CoopRoomTopics.FactsOf.
   def self.facts
@@ -577,7 +569,7 @@ module MGQ_MpBattlesCoop
       "battle_scene" => SceneManager.scene.is_a?(Scene_Battle), "interpreter" => $game_map.interpreter.running? ? true : false, "trading" => trading?,
       "coming" => defined?(MGQ_MpCoopGather) && MGQ_MpCoopGather.coming? ? true : false, "transfer" => $game_player.transfer? ? true : false,
       "moving" => $game_player.moving? ? true : false, "active" => active?, "late" => hotjoin.late? ? true : false, "own_troop" => hotjoin.own_troop? ? true : false,
-      "story" => story_invite?, "in_battle" => in_battle_scene? }
+      "story" => story_invite?, "in_battle" => in_battle_scene?, "typing" => defined?(MGQ_MpChat) && MGQ_MpChat.typing? ? true : false }
   end
 
   # Reports whether the invite that waits for the player belongs to the battle of the story that
@@ -706,6 +698,15 @@ module MGQ_MpBattlesCoop
     @join_waits ? true : false
   end
 
+  # Reports whether a battle's invite is open for the player, as the DLL's matchmaking last told:
+  # an invite that waits for them, their request to join a battle, or their encounter asking a
+  # running battle.
+  #
+  # @return [Boolean] Whether one is.
+  def self.invite_open?
+    !@waiting.nil? || @join_waits || @asking_hot ? true : false
+  end
+
   # Forgets the matchmaking's status, as a reset or a closed bridge leaves none.
   def self.forget_status
     @holding = @frozen = @busy = @rival_kept = @asking_leader = @requested = @asking_hot = @asking_party = @join_waits = false
@@ -796,46 +797,6 @@ module MGQ_MpBattlesCoop
     viewers = boss ? MGQ_MpCoop::Scope.viewers.map(&:seat) : []
     seats = MGQ_Multiplayer::Bridge.call(CANDIDATES_TOPIC, "facts" => facts, "viewers" => viewers, "stays_out" => MGQ_MpBattlesHotjoin.stays_out_seats)
     Array(seats).map { |seat| MGQ_MpOverworldSync::Peers.at(seat) }.compact
-  end
-
-  # Reports whether another player in a Raid World may be invited: walking the map, or on it with
-  # their window in the background, and neither fighting a battle (see fights?), trading nor about
-  # to teleport, as their state says (see state_fields).
-  #
-  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
-  # @return [Boolean] Whether they may.
-  def self.raid_free?(peer)
-    RAID_FREE_SCENES.include?(peer.state["scene"]) && peer.state["busy"] != "1" && !fights?(peer)
-  end
-
-  # Reports whether another player in a Raid World fights a battle, as their state says: it names
-  # the battle (MGQ_MpBattlesHotjoin.state_fields) and its scene is a battle's.
-  #
-  # A battle waiting under the Library or Config tells "away", not "battle", while its game window
-  # is in the background, as MGQ_MpOverworldSync::Me.scene checks that first.
-  #
-  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
-  # @return [Boolean] Whether they do.
-  def self.fights?(peer)
-    !peer.state["rb"].to_s.empty? && RAID_BATTLE_SCENES.include?(peer.state["scene"])
-  end
-
-  # Reports whether another player stands within NEARBY_TILES of the player, as their state tells.
-  #
-  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
-  # @return [Boolean] Whether they do.
-  def self.near?(peer)
-    peer.state["map"].to_i == $game_map.map_id && distance(peer, $game_player.x, $game_player.y) <= NEARBY_TILES
-  end
-
-  # Counts the steps between another player and a tile, diagonal steps counted as one.
-  #
-  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
-  # @param x [Integer] The tile's x.
-  # @param y [Integer] The tile's y.
-  # @return [Integer] The steps.
-  def self.distance(peer, x, y)
-    [(peer.state["x"].to_i - x).abs, (peer.state["y"].to_i - y).abs].max
   end
 
   # The fields the co-op battle adds to the state the player's game tells the others: in a Raid

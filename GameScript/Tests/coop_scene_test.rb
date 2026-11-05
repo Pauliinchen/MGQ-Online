@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-05: Put the viewer's screen back through the one guard of the game's flow, answered by its stand-in, and moved the checks of the player's own scene to flow_guard_test.rb
+#                            - Read the scripts' clock from $frame_count
 #      Paulinchen  2026-10-31: Checked the escape spell's ban as the one ban of the place a viewer takes
 #      Paulinchen  2026-10-28: Answered the queue and checks of the scene from the stand-in of the DLL
 #      Paulinchen  2026-10-24: Checked that a viewer takes the warp and escape bans of the teller's scene
@@ -211,8 +212,8 @@ end
 # Stands in for coop_story.rbx, the members who follow the leader's story kept in $followers.
 module MGQ_MpCoopStory; def self.synced_members; $followers; end; end
 $followers = [MGQ_MpOverworldSync::Peers::Peer.new(4, { "name" => "Friend" })]
-# Stands in for the game's frames, counted in $frame_count.
-module Graphics; def self.frame_count; $frame_count; end; end
+# The scripts' clock reads $frame_count.
+clock_from { $frame_count }
 
 # Stands in for coop_gather.rbx: the story's map is this one or the one in $following, and nobody
 # is taken along.

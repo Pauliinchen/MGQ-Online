@@ -2,6 +2,7 @@
 #  coop_teleport_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Read the scripts' clock from $frame_count
 #      Paulinchen  2026-11-01: Dropped the stand-in of a lapse after a frame count, which no script asks for any more
 #      Paulinchen  2026-10-31: Expected places and teleports without a warp ban
 #      Paulinchen  2026-10-30: Checked the script's wiring to the DLL's requests on the stand-in bridge
@@ -23,8 +24,9 @@ require_relative "party_support"
 
 # Stands in for the mod's log, printing each line.
 module MGQ_Multiplayer; module Log; def self.write(m); puts "  log: #{m}"; end; end; end
-# Stands in for RGSS graphics, whose frame count is $frame_count.
-module Graphics; def self.frame_count; $frame_count; end; def self.brightness; 255; end; end
+# Stands in for RGSS graphics; the scripts' clock reads $frame_count.
+module Graphics; def self.brightness; 255; end; end
+clock_from { $frame_count }
 # Stands in for the game's event interpreter.
 class Game_Interpreter; def execute_command; end; end
 # Stands in for the game's map.

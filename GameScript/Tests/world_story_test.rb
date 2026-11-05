@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-11-05: Left whether commands move the world's story on to the DLL's one decision, checked there
 #                            - Took the player out of their own scene through the stand-in of the one guard of the game's flow
+#                            - Dropped the stand-in of the game's frame counter, which no script reads
 #      Paulinchen  2026-11-01: Dropped the stand-in of the form window no script draws with any more
 #      Paulinchen  2026-10-31: Checked that the Great Decision offers the routes the relay grants
 #                            - Checked that a run goes to the relay after its writes and that the track's runs reach the replay one at a time while the player is free
@@ -254,7 +255,6 @@ module SceneManager
 end
 
 # Stands in for the frame counter, which stays at 0.
-module Graphics; def self.frame_count; 0; end; end
 
 # Stands in for the game's data classes.
 module RPG

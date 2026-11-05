@@ -2,6 +2,10 @@
 #  battles_coop_join.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Told whether the battle takes players in, is full, ends or is closed, as the rules in C# tell it
+#                            - Read the Join Battle hotkey in a Classic world too, for a party member's battle the player missed
+#                            - Took a party member's request to join in a Classic world
+#                            - Left a press near a battle that takes nobody in to the DLL, which tells the player why
 #      Paulinchen  2026-11-01: Showed the prompt as a button of the Mod Framework below the player, which a click presses as the hotkey does
 #                            - Asked the wheels of the Mod Framework whether one is open
 #      Paulinchen  2026-10-31: Compared the Join Battle key with every hotkey through MGQ_MpHotkeys.names
@@ -23,16 +27,17 @@
 #
 #----------------------------------------------------------------
 
-# Joining a battle by choice in a Raid World: while the player is free on the map and another player
-# within three steps fights a battle whose host's state says it takes players in (state_fields), a
-# prompt below the player's character names the hotkey that joins it (Prompt), which a click on the
-# prompt presses too. Its press asks the battle's host (the DLL's JoinChoice), who takes the player in as a late guest
-# without enemies (MGQ_MpBattlesHotjoin.take_in_player), so an event's battle and a boss battle take
-# them too, or refuses, which the player reads in the notification box. Near a raid boss battle that
-# takes the player in no more, such as a full one, the prompt offers a side battle against the same
-# boss instead (sides), which the player fights as their own (MGQ_MpRaidPool.start_side). Near none
-# of these, a raid boss's frozen fight near the player is offered (freeze_candidate), which the
-# press resumes (MGQ_MpRaidFreezeUi.join).
+# Joining a battle by choice: while the player is free on the map and another player within three
+# steps fights a battle whose host's state says it takes players in (state_fields), a prompt below
+# the player's character names the hotkey that joins it (Prompt), which a click on the prompt
+# presses too. In a Classic world only a party member's battle is offered, which a member who
+# missed it joins late. Its press asks the battle's host (the DLL's JoinChoice), who takes the
+# player in as a late guest without enemies (MGQ_MpBattlesHotjoin.take_in_player), so an event's
+# battle and a boss battle take them too, or refuses, which the player reads in the notification
+# box. Near a full raid boss battle in a Raid World the prompt offers a side battle against the
+# same boss instead (sides), which the player fights as their own (MGQ_MpRaidPool.start_side). Near
+# none of these, a raid boss's frozen fight near the player is offered (freeze_candidate), which
+# the press resumes (MGQ_MpRaidFreezeUi.join). A press near a battle that takes nobody in tells why.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpBattlesJoin
@@ -51,7 +56,7 @@ module MGQ_MpBattlesJoin
   # What starts this script's lines in the log.
   LOG_TAG = "join battle"
 
-  # Reports whether a Raid World is open, whose battles players may join by choice.
+  # Reports whether a Raid World is open, whose battles any player may join by choice.
   #
   # @return [Boolean] Whether one is.
   def self.raid?
@@ -60,34 +65,40 @@ module MGQ_MpBattlesJoin
 
   # The host's side.
 
-  # The topic that tells the players of the running battle while it takes players in.
+  # The topic that tells the players of the running battle and whether it takes players in.
   ROOM_TOPIC = "coop.room"
 
-  # The field this script adds to the state the player's game tells the others: in a Raid World
-  # "rbn", the players of the battle the player hosts or fights alone, those taken in counted, while
-  # it takes players in, else 0, as the rules in C# tell it (topic coop.room).
-  #
-  # @return [Hash] The field, none in a Classic world.
-  def self.state_fields
-    return {} unless raid?
+  # What the state tells of a battle while the rules in C# do not answer.
+  CLOSED = { "rbn" => 0, "rbs" => "closed" }
 
-    front = defined?(MGQ_MpBattlesServed) && MGQ_MpBattlesServed.front_fields(%w(rbn))
+  # The fields this script adds to the state the player's game tells the others, as the rules in
+  # C# tell them (topic coop.room): "rbn", the players of the battle the player hosts or fights
+  # alone, those taken in counted, while it takes players in, else 0, and "rbs", whether it takes
+  # players in ("open") or why not ("full", "ending", "gathering", "pvp" or "closed"), which the
+  # others' Sessions read.
+  #
+  # @return [Hash] The fields.
+  def self.state_fields
+    front = defined?(MGQ_MpBattlesServed) && MGQ_MpBattlesServed.front_fields(%w(rbn rbs))
     return front if front
 
-    { "rbn" => MGQ_Multiplayer::Bridge.call(ROOM_TOPIC, MGQ_MpBattlesHotjoin.intake_facts).to_i }
+    told = MGQ_Multiplayer::Bridge.call(ROOM_TOPIC, MGQ_MpBattlesHotjoin.intake_facts)
+    told.is_a?(Hash) ? { "rbn" => told["rbn"].to_i, "rbs" => told["rbs"].to_s } : CLOSED
   rescue => e
     log_once(:state_fields, "telling whether the battle takes players in failed: #{e.class}: #{e.message}")
-    { "rbn" => 0 }
+    CLOSED
   end
 
-  # Takes another player's request to join the battle the player hosts or fights alone: takes them
-  # in when the rules allow it (topic coop.intake), else refuses them with the reason they read
-  # (see the DLL's JoinChoice).
+  # Takes another player's request to join the battle the player hosts or fights alone, in a
+  # Classic world only a party member's: takes them in when the rules allow it (topic coop.intake),
+  # else refuses them with the reason they read (see the DLL's JoinChoice).
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] Who asks.
   # @param message [Hash] The request: the battle's id and the map.
   def self.take_request(peer, message)
-    return log_once([:classic_request, peer && peer.seat], "ignored a request to join from #{who(peer)}: not a Raid World") unless raid?
+    unless raid? || (peer && peer.member)
+      return log_once([:classic_request, peer && peer.seat], "ignored a request to join from #{who(peer)}: not a Raid World, and not a party member")
+    end
 
     answer = MGQ_Multiplayer::Bridge.call(MGQ_MpBattlesHotjoin::INTAKE_TOPIC, "kind" => "choice", "facts" => MGQ_MpBattlesHotjoin.intake_facts,
                                                                               "seat" => peer.seat, "bid" => message["bid"], "map" => message["map"])
@@ -123,7 +134,6 @@ module MGQ_MpBattlesJoin
   # @return [Array<String, nil>] The reason before and the reason after, each nil when none holds.
   def self.busy_reasons
     before = if !MGQ_MpOverworldSync.in_world? then "no world is open"
-             elsif !raid? then "not a Raid World"
              elsif !MGQ_MpOverworldSync.map_free? then "the map is not free: an event, a message or a transfer"
              elsif MGQ_MpBattlesSync.role || MGQ_MpBattles.running? then "the player is in a multiplayer battle"
              end
@@ -163,7 +173,7 @@ module MGQ_MpBattlesJoin
     @target = answer["target"]
     @side = answer["side"]
     @freeze = answer["freeze"]
-    return if !pressed || changing || answer["asked"]
+    return if !pressed || changing || answer["asked"] || answer["not_taken"]
     return fight_alongside(*@side) if @side
     return MGQ_MpRaidFreezeUi.join(@freeze[0]) if @freeze
 
@@ -203,12 +213,12 @@ module MGQ_MpBattlesJoin
     defined?(MGQ_MpRaidFreezeUi) ? MGQ_MpRaidFreezeUi.join_target($game_player.x, $game_player.y, JOIN_DISTANCE) : nil
   end
 
-  # Reports whether the Join Battle hotkey is read: only in a Raid World, and only while no other
-  # hotkey shares its key.
+  # Reports whether the Join Battle hotkey is read: only in a world, and only while no other hotkey
+  # shares its key.
   #
   # @return [Boolean] Whether it is.
   def self.reads_hotkey?
-    return false unless MGQ_MpOverworldSync.in_world? && raid?
+    return false unless MGQ_MpOverworldSync.in_world?
 
     code = MGQ_MpHotkeys.code(:join_battle)
     # A key's press goes to the first who reads it in a frame, which would take it from the other.

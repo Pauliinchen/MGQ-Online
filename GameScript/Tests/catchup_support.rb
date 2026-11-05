@@ -5,6 +5,7 @@
 #      Paulinchen  2026-11-05: Answered the side a player takes along by engine.rb's rule of the side
 #                            - Let a test put the Medal King's switches and the items an event takes away in place
 #                            - Stopped loading story_found.rbx, whose items the story replay hands over
+#                            - Dropped the stand-in of the game's frame counter, which no script reads
 #      Paulinchen  2026-11-01: Dropped the stand-in of the form window no script draws with any more
 #                            - Made the herb no key item and loaded story_found.rbx
 #                            - Answered that the player plays in no party
@@ -215,7 +216,6 @@ module SceneManager
   def self.call(scene); ($scenes ||= []) << scene; end
 end
 # Stands in for the graphics: the frame count stays 0.
-module Graphics; def self.frame_count; 0; end; end
 # Stands in for RPG's database classes.
 module RPG
   # Stands in for an event command.

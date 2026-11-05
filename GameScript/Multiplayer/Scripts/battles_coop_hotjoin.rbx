@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-05: Built the enemies added to the troop through MGQ_MpBattlers
+#                            - Told the battle the player fights and kept a battle nobody joined their own in a Classic world too, so a party member who missed it joins it late
 #      Paulinchen  2026-10-31: Left the battle server out of the count of its battle's players
 #      Paulinchen  2026-10-30: Kept the widths of a served battle's troop its starter measured for the placements on the battle server
 #                            - Placed an encounter's enemies and checked requests to join through the rules in C#
@@ -165,14 +166,12 @@ module MGQ_MpBattlesHotjoin
     MGQ_MpCoop::Scope.raid?
   end
 
-  # The fields this script adds to the state the player's game tells the others: in a Raid World
-  # "rb", the id of the battle the player fights, and "rbh", the seat of its host, both empty
-  # outside a battle.
+  # The fields this script adds to the state the player's game tells the others: "rb", the id of
+  # the battle the player fights, and "rbh", the seat of its host, both empty outside a battle, so
+  # the others find it to join it, in a Classic world a party member who missed it.
   #
-  # @return [Hash] The fields, none in a Classic world.
+  # @return [Hash] The fields.
   def self.state_fields
-    return {} unless raid?
-
     front = defined?(MGQ_MpBattlesServed) && MGQ_MpBattlesServed.front_fields(%w(rb rbh))
     return front if front
 
@@ -180,8 +179,8 @@ module MGQ_MpBattlesHotjoin
     { "rb" => bid.to_s, "rbh" => host.to_s }
   end
 
-  # Tells the battle the player fights in a Raid World: a co-op battle as its host or a guest, or a
-  # battle of their own (see fight_alone), also while its party command called the Library or
+  # Tells the battle the player fights: a co-op battle as its host or a guest, or a battle of their
+  # own (see fight_alone), also while its party command called the Library or
   # Config (see MGQ_MpBattlesCoop.in_battle_scene?).
   #
   # @return [Array, nil] The battle's id and the seat of its host, nil outside a battle.
@@ -204,25 +203,24 @@ module MGQ_MpBattlesHotjoin
     host && (MGQ_MpBattlesSync.world_seat_of(host) || host)
   end
 
-  # Tells the scene the player's state names while a battle in a Raid World waits on SceneManager's
-  # stack under the Library or Config: still the battle, so the others find it to join.
+  # Tells the scene the player's state names while a battle waits on SceneManager's stack under the
+  # Library or Config: still the battle, so the others find it to join.
   #
   # @return [String, nil] "battle", nil outside such a screen.
   def self.busy_scene
-    return nil unless raid? && !SceneManager.scene.is_a?(Scene_Battle)
+    return nil if SceneManager.scene.is_a?(Scene_Battle)
 
     MGQ_MpBattlesCoop.in_battle_scene? ? "battle" : nil
   end
 
-  # Notes that the player's battle in a Raid World goes on as their own, without other players,
-  # which another player's encounter may then join.
+  # Notes that the player's battle goes on as their own, without other players, which another
+  # player may then join: in a Raid World with an encounter or by choice, in a Classic world a
+  # party member who missed it, by choice.
   #
   # @param bid [String, nil] The battle's id, nil for a new one.
   def self.fight_alone(bid = nil)
-    return unless raid?
-
     @own_bid = bid || MGQ_MpBattlesCoop.new_battle_id
-    log("the player's battle #{@own_bid} goes on as their own, which other players' encounters may join")
+    log("the player's battle #{@own_bid} goes on as their own, which other players may join")
   end
 
   # Names a player for the log.

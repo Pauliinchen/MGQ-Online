@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-11-05: Asked the DLL's one decision whether a list is the player's own, a Pocket Castle resident's or a resumed raid fight's, and whether a telling moves the world's story on
 #                            - Left what an event ended early or kept from starting leaves to the one guard of the game's flow, in place of the fade-ins of a dark screen on frame timers
+#                            - Counted its timers by the bridge's frame
 #      Paulinchen  2026-11-01: Hashed a list's shape through story_replay.rbx, which names the places of the kept commands by the same codes
 #      Paulinchen  2026-10-31: Stopped telling whether warping is banned where the story plays
 #                            - Stopped telling the party the items and gold the leader's story gives, which the leader's runs bring by replay
@@ -1197,7 +1198,7 @@ module MGQ_MpCoopEvents
 
       log_once([:autorun, $game_map.map_id, event.id, lead.state["id"].to_s],
                "kept event #{event.id} on map #{$game_map.map_id} that runs by itself from starting: it is story, which #{MGQ_MpOverworldSync.who(lead)}'s game runs")
-      @kept_autorun = { :teller => lead.state["id"].to_s, :map => $game_map.map_id, :frame => Graphics.frame_count }
+      @kept_autorun = { :teller => lead.state["id"].to_s, :map => $game_map.map_id, :frame => MGQ_Multiplayer::Bridge.frame_number }
       return true
     end
 
@@ -1218,8 +1219,7 @@ module MGQ_MpCoopEvents
     kept = @kept_autorun
     return false unless kept && $game_map && kept[:map] == $game_map.map_id && kept[:teller] == peer.state["id"].to_s
 
-    elapsed = Graphics.frame_count - kept[:frame]
-    elapsed >= 0 && elapsed <= KEPT_AUTORUN_FRAMES
+    MGQ_Multiplayer::Bridge.frame_number - kept[:frame] <= KEPT_AUTORUN_FRAMES
   end
 
   # Reports whether the player's story is behind a Raid World's, which keeps their story events that
@@ -1389,20 +1389,17 @@ module MGQ_MpCoopEvents
     return true if @refused == key && !past?(@refused_at, REFUSE_FRAMES)
 
     @refused = key
-    @refused_at = Graphics.frame_count
+    @refused_at = MGQ_Multiplayer::Bridge.frame_number
     false
   end
 
   # Reports whether some frames have passed since a frame.
   #
-  # A loaded save sets the frame count back, so a frame ahead of it is long past.
-  #
   # @param since [Integer] The frame.
   # @param frames [Integer] How many frames.
   # @return [Boolean] Whether they have.
   def self.past?(since, frames)
-    elapsed = Graphics.frame_count - since.to_i
-    elapsed < 0 || elapsed >= frames
+    MGQ_Multiplayer::Bridge.frame_number - since.to_i >= frames
   end
 
   # Reports whether a common event that runs by itself is left to the teller's game, or held while
@@ -1597,15 +1594,14 @@ module MGQ_MpCoopEvents
     log("the page of the leader's story the window shows is over: #{answer['reason']}") if answer["reason"]
     return true if answer["over"]
 
-    now = Graphics.frame_count
+    now = MGQ_Multiplayer::Bridge.frame_number
     @page_asked = { :asked => asked, :at => now, :until => answer["wait"] ? now + answer["wait"].to_i : nil }
     false
   end
 
   # Reports whether the DLL's last answer that the page the window holds is not over still stands:
   # it was asked with the same teller, telling, raid, wait and input, no page was heard, passed or
-  # shown since, and the frames after which time alone may end the page have not passed. A loaded
-  # save sets the frame count back, which asks anew.
+  # shown since, and the frames after which time alone may end the page have not passed.
   #
   # @param asked [Array] What page_done? hands the DLL now.
   # @return [Boolean] Whether it stands.
@@ -1613,8 +1609,8 @@ module MGQ_MpCoopEvents
     kept = @page_asked
     return false unless kept && kept[:asked] == asked
 
-    now = Graphics.frame_count
-    now >= kept[:at] && (kept[:until].nil? || now < kept[:until])
+    now = MGQ_Multiplayer::Bridge.frame_number
+    kept[:until].nil? || now < kept[:until]
   end
 
   # Finds who told the pages the player follows: the party's leader, or in a Raid World the player

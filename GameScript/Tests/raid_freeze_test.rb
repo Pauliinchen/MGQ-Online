@@ -2,6 +2,7 @@
 #  raid_freeze_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Read the scripts' clock from $frame
 #      Paulinchen  2026-10-28: Answered the freeze's tables as the DLL's events database does
 #                            - Checked writes the DLL refuses, writes the journal looks away from and a defeat whose start the journal lost
 #      Paulinchen  2026-10-23: Ran on the shared stand-in bridge, whose journal keeps the story's writes, and replayed the journal's golden cases
@@ -529,7 +530,7 @@ end
 # Reads a map's data from $map_files.
 def load_data(name); $map_files.fetch(name); end
 # Counts the frames in $frame.
-module Graphics; def self.frame_count; $frame; end; end
+clock_from { $frame }
 # The scenes, the running one in $scene.
 module SceneManager
   # Answers the running scene.

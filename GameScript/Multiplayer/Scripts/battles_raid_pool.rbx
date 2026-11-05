@@ -5,6 +5,7 @@
 #      Paulinchen  2026-11-05: Took the pools' HP once the game's own events before the battle ran
 #                            - Checked the troop's pages once more right after the pools' HP, so a phase the pools' HP meets begins before anyone acts
 #                            - Named the story's ids in the milestones' markers by the story's table
+#                            - Counted its reads, retries and reports by the bridge's frame
 #      Paulinchen  2026-10-30: Handed a served fight's pools to the battle server and took them there through C#
 #                            - Reported and synced a fight's turns in C#, keeping the slots' time compares
 #                            - Read the pools from the ledger the DLL and the battle server keep in C#, which counts the own reports and the pushes
@@ -262,10 +263,7 @@ module MGQ_MpRaidPool
   # A story id a condition of BEATEN names by its reader in MGQ_MpStoryIds, see BEATEN.
   STORY_ID = /\{(\w+)(?:\.(\d+))?\}/
 
-  # Frames counted by tick.
-  @clock = 0
-
-  # The frame the pools were last read from the DLL.
+  # The bridge's frame the pools were last read from the DLL at.
   @read_at = 0
 
   # The world's pools by their key, as the ledger told them at the last read.
@@ -951,8 +949,8 @@ module MGQ_MpRaidPool
     end
     fight.guest = reply["guest"] ? true : false
     log("battle #{fight.battle} is the player's to report from here: #{fight.members.map { |member| enemy_text(member) }.join(', ')}") if reply["took_over"]
-    @report_due = reply["report_in"] ? Time.now + reply["report_in"] / 1000.0 : nil
-    @sync_due = reply["sync_in"] ? Time.now + reply["sync_in"] / 1000.0 : nil
+    @report_due = due_in(reply["report_in"])
+    @sync_due = due_in(reply["sync_in"])
     read_state if reply["reported"]
     reply
   end
@@ -1018,13 +1016,21 @@ module MGQ_MpRaidPool
 
     turn(fight, "role") if reporter? == fight.guest
     return if fight.guest || MGQ_MpGame.get(BattleManager, :phase) != :input
-    return if @sync_due && Time.now < @sync_due
+    return if @sync_due && MGQ_Multiplayer::Bridge.frame_number < @sync_due
     return unless turn(fight, "wait")["killed"] && $game_troop.all_dead?
     return log("every enemy fell while the live battle waits for commands: the wait wins the battle") if waiting?
 
     BattleManager.judge_win_loss
   rescue => e
     log_once(:waiting_for_commands, "taking the pools' HP while waiting for commands failed: #{e.class}: #{e.message}")
+  end
+
+  # Tells the bridge's frame at which some milliseconds the ledger named have passed.
+  #
+  # @param milliseconds [Integer, nil] The milliseconds, nil for none.
+  # @return [Integer, nil] The frame, nil for none.
+  def self.due_in(milliseconds)
+    milliseconds ? MGQ_Multiplayer::Bridge.frame_number + milliseconds.to_i * MGQ_Multiplayer::Bridge::FRAMES_PER_SECOND / 1000 : nil
   end
 
   # Reports whether a live battle's wait for its players is open, see
@@ -1041,7 +1047,7 @@ module MGQ_MpRaidPool
   def self.action_done
     fight = @fight
     return unless fight
-    return if @report_due && Time.now < @report_due
+    return if @report_due && MGQ_Multiplayer::Bridge.frame_number < @report_due
 
     turn(fight, "action")
   rescue => e
@@ -1401,11 +1407,10 @@ module MGQ_MpRaidPool
   #
   # @param in_world [Boolean] Whether a world is open.
   def self.tick(in_world)
-    @clock += 1
     return unless in_world && MGQ_MpCoop::Scope.raid?
 
     fetch_on_move
-    read_state if @clock - @read_at >= STATE_FRAMES
+    read_state if MGQ_Multiplayer::Bridge.frame_number - @read_at >= STATE_FRAMES
   rescue => e
     log_once(:tick, "following the pools failed: #{e.class}: #{e.message}")
   end
@@ -1424,17 +1429,17 @@ module MGQ_MpRaidPool
       @pools = {}
       @announced = {}
     end
-    return if place == @tried && @clock - @tried_at < FETCH_RETRY_FRAMES
+    return if place == @tried && MGQ_Multiplayer::Bridge.frame_number - @tried_at < FETCH_RETRY_FRAMES
 
     @tried = place
-    @tried_at = @clock
+    @tried_at = MGQ_Multiplayer::Bridge.frame_number
     @fetched = place if Relay.fetch(place[0])
   end
 
   # Reads the pools the ledger knows of the player's world as they stand now, in place of those
   # read before.
   def self.read_state
-    @read_at = @clock
+    @read_at = MGQ_Multiplayer::Bridge.frame_number
     state = MGQ_Multiplayer::Bridge.call(POOLS_TOPIC)
     return unless state.is_a?(Hash) && state["world"].to_s == MGQ_MpWorldStory.world_id.to_s
 

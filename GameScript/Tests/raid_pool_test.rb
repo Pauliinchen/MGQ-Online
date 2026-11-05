@@ -5,6 +5,7 @@
 #      Paulinchen  2026-11-05: Checked that a boss takes its pool's HP once the game's own events before the battle ran
 #                            - Started a battle's events and start skills as the game's battle scene does
 #                            - Checked that a boss whose pool is below a phase's share switches phase before anyone acts
+#                            - Moved the scripts' clock with the world's frames and the seconds a test lets pass
 #      Paulinchen  2026-10-30: Ran the fights' turns through the stand-in of the fight in C#
 #                            - Told the pools through the stand-in of the pools' ledger in C#, which counts the own reports
 #                            - Checked that the stats' factors are kept per battle
@@ -68,6 +69,10 @@ $now = Time.at(1_000_000)
 # Stands in for the clock: answers $now, which stands still unless a test moves it, so the pools
 # regain nothing meanwhile.
 def Time.now; $now; end
+# The scripts' clock, the bridge's frame: the frames the world ran (see ticks) and the seconds the
+# test let pass.
+$ticked = 0
+clock_from { $ticked + (($now - Time.at(1_000_000)) * MGQ_Multiplayer::Bridge::FRAMES_PER_SECOND).round }
 
 # The DLL: each call is noted, and a fetch it takes reaches the pools' ledger ($pools) as the DLL's
 # does; the fight's reports go through $pools' reporter, which notes them as calls too.
@@ -489,7 +494,10 @@ end
 #
 # @param count [Integer] How many.
 def ticks(count = MGQ_MpRaidPool::STATE_FRAMES)
-  count.times { $ticks.each { |tick| tick.call(true) } }
+  count.times do
+    $ticked += 1
+    $ticks.each { |tick| tick.call(true) }
+  end
 end
 
 # The boss tables and the pools' keys hold together.

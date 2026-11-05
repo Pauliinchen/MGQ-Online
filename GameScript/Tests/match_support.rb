@@ -2,6 +2,9 @@
 #  match_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Invited a busy party member too in a Classic world, as Sessions in C# names them
+#                            - Kept a Classic battle nobody joined open for a party member on the map who missed it
+#                            - Kept an invite waiting while the player types in the chat box
 #      Paulinchen  2026-10-30: Shared the world, the facts and the status with the asking and joining sides
 #                            - Stood in for the invites, the requests to lead and the rivals, and for the routes of their messages
 #                            - Created
@@ -212,6 +215,10 @@ class MatchStandIn
 
     log("hosts the battle against troop #{offer['troop']}: #{host_reason(leader)}")
     actions.concat(host(offer, leading && leading[1]))
+    return actions if actions.any? { |step| step["kind"] == "join" } || @world.members.none? { |peer| on_map?(peer) }
+
+    log("keeps the battle against troop #{offer['troop']} open as the player's own: a party member on the map who missed it may join it late")
+    actions << action("fight_alone")
   end
 
   # Hosts a battle, as CoopMatchmaking.Host does.
@@ -457,7 +464,7 @@ class MatchStandIn
   # @param map [Boolean] Whether it came through the map's gate.
   # @return [Boolean] Whether the matchmaking took it, so the scripts do not.
   def route(peer, message, map = false)
-    if map && !@world.raid?
+    if map && !@world.raid? && !(peer.member && late_join?(message))
       drop_map(peer, (message["map_coop"] || message["coop"]).to_s)
       return true
     end
@@ -465,6 +472,16 @@ class MatchStandIn
 
     take_message(peer, message)
     true
+  end
+
+  # Reports whether a co-op message belongs to a party member's late join by choice in a Classic
+  # world, as CoopRoomTopics.LateJoin does.
+  #
+  # @param message [Hash] The message.
+  # @return [Boolean] Whether it does.
+  def late_join?(message)
+    kind = (message["map_coop"] || message["coop"]).to_s
+    %w(pick pick_no off).include?(kind) || (kind == "invite" && message["hot"].to_s == "1")
   end
 
   # Takes a co-op message the matchmaking handles, as CoopMatchmaking.TakeMessage does.
@@ -650,7 +667,7 @@ class MatchStandIn
   #
   # @return [Boolean] Whether they may.
   def free?
-    !@facts["interpreter"] && !@facts["transfer"] && !@facts["moving"]
+    !@facts["interpreter"] && !@facts["transfer"] && !@facts["moving"] && !@facts["typing"]
   end
 
   # Reports whether a battle hosts first, see CoopMatchmaking.HostsFirst.
@@ -1024,7 +1041,7 @@ class MatchStandIn
   # @param offer [Hash] The battle.
   # @return [Array] The players.
   def invitees(offer)
-    return candidates unless @world.raid?
+    return @world.members.select { |peer| on_map?(peer) && peer.state["scene"] != "battle" } unless @world.raid?
     return [] if offer["pools_won"]
 
     raid_candidates(offer["boss"] ? Array(offer["viewers"]) : [], Array(offer["stays_out"]))

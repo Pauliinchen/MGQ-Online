@@ -2,6 +2,7 @@
 #  telling_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Answered at the bridge's frame, the scripts' clock
 #      Paulinchen  2026-10-28: Created
 #
 #----------------------------------------------------------------
@@ -238,11 +239,11 @@ $lock = nil
 def answer_telling(fake)
   $telling_machine = TellingStandIn.new(lambda { MGQ_MpCoop::Scope.raid? }, lambda { $lock })
   fake.answer("telling.start") do |request|
-    $telling_machine.start(request["telling"], request["by_itself"], request["map"], request["site"], Graphics.frame_count)
+    $telling_machine.start(request["telling"], request["by_itself"], request["map"], request["site"], MGQ_Multiplayer::Bridge.frame_number)
   end
-  fake.answer("telling.command") { $telling_machine.command(Graphics.frame_count) }
+  fake.answer("telling.command") { $telling_machine.command(MGQ_Multiplayer::Bridge.frame_number) }
   fake.answer("telling.end") { $telling_machine.end_event; nil }
-  fake.answer("telling.moving") { |request| $telling_machine.moving(request["map"], Graphics.frame_count); nil }
+  fake.answer("telling.moving") { |request| $telling_machine.moving(request["map"], MGQ_Multiplayer::Bridge.frame_number); nil }
   fake.answer("telling.arrived") { |request| $telling_machine.arrived(request["map"]); nil }
-  MGQ_MpHooks.after(Game_Map, :update, "telling_support") { $telling_machine.step(Graphics.frame_count) } if defined?(MGQ_MpHooks) && defined?(Game_Map)
+  MGQ_MpHooks.after(Game_Map, :update, "telling_support") { $telling_machine.step(MGQ_Multiplayer::Bridge.frame_number) } if defined?(MGQ_MpHooks) && defined?(Game_Map)
 end

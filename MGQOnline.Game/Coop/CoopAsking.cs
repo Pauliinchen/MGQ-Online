@@ -2,6 +2,7 @@
 //  CoopAsking.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Asked Sessions whether a running battle takes players in and who is free
 //      Paulinchen  2026-10-30: Created
 //
 //----------------------------------------------------------------
@@ -127,7 +128,7 @@ public sealed class CoopAsking
         }
 
         (Peer host, string bid) = target;
-        int room = RoomIn(host);
+        int room = Sessions.Battle(host).Room;
         List<int> party = [.. PartyNear(host).Select(peer => peer.Seat)];
         AskMode mode = party.Count == 0 ? AskMode.Alone : room > party.Count ? AskMode.Join : AskMode.Start;
         List<int> free = [.. match.RaidCandidates([], encounter.StaysOut).Where(peer => string.IsNullOrEmpty(peer.State["rb"])).Select(peer => peer.Seat).Except(party)];
@@ -486,7 +487,7 @@ public sealed class CoopAsking
             return;
         }
 
-        int room = RoomIn(host);
+        int room = Sessions.Battle(host).Room;
         if (room <= party.Count)
         {
             Log($"asked no party member along to {CoopMatchmaking.Who(host)}'s battle {bid}: it takes {Text(room)} more players, not {Text(party.Count + 1)}");
@@ -496,19 +497,6 @@ public sealed class CoopAsking
         OfferParty([.. party.Select(peer => peer.Seat)], "join", host, bid);
     }
 
-    /// <summary>
-    /// Counts the players a running battle still takes in, by its host's state, which says 0 while
-    /// it takes nobody in; a host whose state names no count fights alone.
-    /// </summary>
-    /// <param name="host">The battle's host.</param>
-    /// <returns>The players it takes.</returns>
-    public static int RoomIn(Peer host)
-    {
-        ArgumentNullException.ThrowIfNull(host);
-        int most = CoopMatchmaking.RaidPlayers;
-        long count = host.State.Has("rbn") ? WorldFields.ToI(host.State["rbn"]) : 1;
-        return count >= 1 && count <= most - 1 ? most - (int)count : 0;
-    }
 
     /// <summary>
     /// Forgets the request and the offers, as a reset does.
@@ -531,7 +519,7 @@ public sealed class CoopAsking
         var battles = new List<(Peer Host, string BattleId)>();
         foreach (Peer peer in world.Peers.Where(peer => peer.Present && WorldFields.ToI(peer.State["map"]) == map))
         {
-            if (CoopMatchmaking.Fights(peer) && BattleHost(world, peer, map) is { } host && match.Near(host) && RoomIn(host) > 0)
+            if (Sessions.Fights(peer) && BattleHost(world, peer, map) is { } host && match.Near(host) && Sessions.Battle(host).Open)
             {
                 battles.Add((host, peer.State.Text("rb")));
             }
@@ -555,7 +543,7 @@ public sealed class CoopAsking
             return [];
         }
 
-        return [.. members.Where(peer => CoopMatchmaking.RaidFree(peer) && match.Near(peer))];
+        return [.. members.Where(peer => Sessions.RaidFree(peer) && match.Near(peer))];
     }
 
     /// <summary>

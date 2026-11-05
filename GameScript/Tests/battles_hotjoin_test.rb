@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-11-05: Checked that a guest enters its own troop in the Library as its battle starts
 #                            - Checked that a guest builds the enemies it adds through the one factory, started once as the game starts them
+#                            - Expected a Classic world's player to tell the battle it fights too
 #      Paulinchen  2026-11-01: Read the waiting box's lines from its box of the Mod Framework
 #      Paulinchen  2026-10-30: Checked that the battle server places joining enemies by the widths of the troop its setup carried
 #                            - Read the players taken in from the joins stand-in
@@ -182,7 +183,7 @@ check("one who fights alone tells their own", hotjoin.state_fields, { "rb" => "o
 sync.join_world(:guest, "g1", [4], "P4")
 check("a guest tells the battle and its host", hotjoin.state_fields, { "rb" => "g1", "rbh" => "4" })
 $raid = false
-check("a Classic world's player tells nothing", hotjoin.state_fields, {})
+check("so does a Classic world's player, so a party member who missed the battle finds it", hotjoin.state_fields, { "rb" => "g1", "rbh" => "4" })
 $raid = true
 reset
 

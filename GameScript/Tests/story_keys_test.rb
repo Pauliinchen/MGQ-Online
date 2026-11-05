@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-11-05: Checked that a talk that gives a key item goes to the DLL with it, though it changed no shared key
 #                            - Checked that a story reset that takes the route's key items notes none of them
+#                            - Dropped the stand-in of the game's frame counter, which no script reads
 #                            - Checked that a battle's drop of a key item goes to the DLL with it, and its entry on to the world's story
 #      Paulinchen  2026-11-01: Checked which commands run inside a story reset
 #      Paulinchen  2026-10-31: Kept a Classic leader's writes by the scopes of the reviewed list
@@ -81,7 +82,6 @@ module SceneManager; class << self; attr_accessor :scene; def run; end; end; end
 module BattleManager; def self.gain_drop_items; $drop_items.call; end; end
 class Scene_Novel; end
 # Stands in for the frame counter.
-module Graphics; def self.frame_count; 0; end; end
 # A common event of the database.
 CommonEvent = Struct.new(:id, :list)
 # The game's system data, with the names of the switches and variables.

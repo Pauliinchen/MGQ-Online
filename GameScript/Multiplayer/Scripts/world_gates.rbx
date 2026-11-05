@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-05: Left what a move kept back leaves to the one guard of the game's flow
+#                            - Counted the notices' pause by the bridge's frame
 #      Paulinchen  2026-10-24: Created
 #
 #----------------------------------------------------------------
@@ -111,9 +112,9 @@ module MGQ_MpWorldGates
   # @param area [Area] The area.
   def self.tell_shut(area)
     last = @noticed[area.name]
-    return if last && Graphics.frame_count - last >= 0 && Graphics.frame_count - last < NOTICE_FRAMES
+    return if last && MGQ_Multiplayer::Bridge.frame_number - last < NOTICE_FRAMES
 
-    @noticed[area.name] = Graphics.frame_count
+    @noticed[area.name] = MGQ_Multiplayer::Bridge.frame_number
     MGQ_MpOverworldSync.notice("#{area.name} opens once the world finished: #{needs_text(missing(area))}.")
   end
 

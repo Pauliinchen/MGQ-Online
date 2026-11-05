@@ -2,6 +2,7 @@
 #  battles_served.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Told the front whether the served battle takes players in, is full, ends or is closed
 #      Paulinchen  2026-10-31: Told the starter the front state again once a player comes onto the battle channel
 #                            - Handed the setup's Strings to C# as text
 #                            - Worded what the player reads plainly, leaving causes and internals to the log
@@ -111,7 +112,7 @@ module MGQ_MpBattlesServed
   FRONT_LEFT = "front_left"
 
   # The fields of the server's state the starter tells as its own, see FRONT_STATE.
-  FRONT_FIELDS = %w(rbn)
+  FRONT_FIELDS = %w(rbn rbs)
 
   # Frames between two looks at the server's state for the front, half a second.
   FRONT_STATE_FRAMES = 30
@@ -444,7 +445,7 @@ module MGQ_MpBattlesServed
     return nil unless starter? && @channel == :open
 
     told = MGQ_Multiplayer::Bridge.call(FRONT_STATE_TOPIC)
-    fields = { "rb" => MGQ_MpBattlesSync.battle_id.to_s, "rbh" => MGQ_MpOverworldSync::Me.seat.to_s }.merge(told.is_a?(Hash) ? told : { "rbn" => 0 })
+    fields = { "rb" => MGQ_MpBattlesSync.battle_id.to_s, "rbh" => MGQ_MpOverworldSync::Me.seat.to_s }.merge(told.is_a?(Hash) ? told : { "rbn" => 0, "rbs" => "closed" })
     fields.select { |key, _| keys.include?(key) }
   end
 

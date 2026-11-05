@@ -2,6 +2,7 @@
 #  coop_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Told whether the running battle takes players in or why not as JoinIntake.Told does
 #      Paulinchen  2026-10-30: Stood in for the widths of a served battle's troop the battle server keeps
 #                            - Stood in for the joins the live session holds
 #                            - Stood in for asking a running battle and joining one by choice
@@ -67,7 +68,7 @@ module CoopStandIn
     when "coop.read_entries" then read_entries(request)
     when "coop.write_entries" then request.map { |entry| entry.first(4).join(":") }.join(";")
     when "coop.intake" then intake(request)
-    when "coop.room" then closed(request) ? 0 : players_in(request)
+    when "coop.room" then closed(request) ? { "rbn" => 0, "rbs" => closed(request)[0] } : { "rbn" => players_in(request), "rbs" => "open" }
     when "coop.level" then level(request)
     when "coop.write_roster" then wire.line(request.key?("turn") ? request.values_at("enemies", "players", "level", "turn") : request.values_at("enemies", "players", "level"))
     when "coop.write_party" then wire.line([request])
@@ -403,7 +404,7 @@ coop_cases("intake.json")["cases"].each do |entry|
   asked = entry["request"].merge("facts" => entry["facts"])
   encounter = CoopStandIn.intake(asked.merge("kind" => "encounter"))
   found = [encounter["refusal"] && encounter["refusal"][1], encounter["kept"], encounter["left"], encounter["room"],
-           CoopStandIn.intake(asked.merge("kind" => "choice"))["refusal"], CoopStandIn.answer("coop.room", entry["facts"])]
+           CoopStandIn.intake(asked.merge("kind" => "choice"))["refusal"], CoopStandIn.answer("coop.room", entry["facts"])["rbn"]]
   raise "the intake stand-in differs at #{entry['name']}" unless found == [entry["hot"], entry["kept"], entry["left"], entry["room"], entry["pick"], entry["rbn"]]
 end
 
@@ -730,7 +731,7 @@ end
 # @param map [Boolean] Whether it came through the map's gate.
 def coop_deliver(peer, message, map = false)
   $coop_match.answer("coop.frame", MGQ_MpBattlesCoop.facts)
-  if AskStandIn::KINDS.include?(message["coop"].to_s) && (!map || $coop_match.instance_variable_get(:@world).raid?)
+  if AskStandIn::KINDS.include?(message["coop"].to_s) && (!map || $coop_match.instance_variable_get(:@world).raid? || (peer.member && message["coop"] == "pick_no"))
     $coop_ask.take_message(peer, message)
   elsif !$coop_match.route(peer, message, map)
     return MGQ_MpBattlesCoop.take(peer, message)

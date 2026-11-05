@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-11-05: Checked that whom a telling takes along follows the DLL's one decision, with the progress noted as it started
 #                            - Checked that a follow hands the move to the one guard of the game's flow, which shows the followers the map left hidden
+#                            - Read the scripts' clock from $frame_count and dropped the check of a call from before a loaded save, since the clock never goes back
 #      Paulinchen  2026-11-01: Dropped the stand-in of a lapse after a frame count, which no script asks for any more
 #      Paulinchen  2026-10-31: Dropped the warp ban a teleport to the story took
 #                            - Expected the plainer texts the player reads
@@ -46,8 +47,9 @@ require_relative "rules_support"
 
 # Stands in for the mod's log, printing each line.
 module MGQ_Multiplayer; module Log; def self.write(m); puts "  log: #{m}"; end; end; end
-# Stands in for RGSS graphics, whose frame count is $frame_count.
-module Graphics; def self.frame_count; $frame_count; end; def self.brightness; 255; end; end
+# Stands in for RGSS graphics; the scripts' clock reads $frame_count.
+module Graphics; def self.brightness; 255; end; end
+clock_from { $frame_count }
 # Stands in for the game's event interpreter.
 class Game_Interpreter; def execute_command; end; end
 # Stands in for the game's map.
@@ -137,10 +139,6 @@ check("a battle of the calling leader on the map the call leads to belongs to th
       [gather.calling_battle?($leader, 9), gather.calling_battle?($leader, 4), gather.calling_battle?(other, 9)], [true, false, false])
 $frame_count += GatherStandIn::CALL_LAPSE_FRAMES + 1
 check("nor once the call lapsed", gather.calling_battle?($leader, 9), false)
-
-gather.called($leader, place)
-$frame_count = 100
-check("a call from before a loaded save's lower frame count is long past", gather.coming?, false)
 
 gather.called($leader, place)
 DataManager.extract_save_contents({})

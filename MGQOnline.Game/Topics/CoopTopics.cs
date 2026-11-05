@@ -2,6 +2,8 @@
 //  CoopTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Told whether the running battle takes players in or why not, which Sessions reads in the other games
+//                            - Timed the players taken in by the bridge's frame
 //      Paulinchen  2026-10-30: Kept the widths of a served battle's troop its setup carries
 //                            - Collected the joins of a gathered battle, the roster and the players taken in from the live session
 //                            - Placed enemies by the widths the players who asked to join measured
@@ -19,6 +21,7 @@ using MGQOnline.Bridge.Ruby;
 using MGQOnline.Game.Battles.Live;
 using MGQOnline.Game.Battles.Wire;
 using MGQOnline.Game.Coop;
+using MGQOnline.Game.World;
 
 namespace MGQOnline.Game.Topics;
 
@@ -76,8 +79,8 @@ public static class CoopTopics
     public const string Intake = "coop.intake";
 
     /// <summary>
-    /// Tells the players the running battle has room for, which the player's state tells as "rbn",
-    /// see <see cref="JoinIntake.Told"/>: the facts in, the count out.
+    /// Tells the running battle as the player's state tells it, see <see cref="JoinIntake.Told"/>:
+    /// the facts in; the state's fields <c>rbn</c> and <c>rbs</c> out.
     /// </summary>
     public const string Room = "coop.room";
 
@@ -177,7 +180,7 @@ public static class CoopTopics
         var joins = new CoopJoins(session);
         context.Register(Gather, (_, request) => GatherOf(joins, request.AsHash()));
         context.Register(RosterWait, (_, request) => RosterOf(joins, request.AsHash()));
-        context.Register(Pending, (_, request) => PendingOf(joins, request.AsHash()));
+        context.Register(Pending, (host, request) => PendingOf(joins, request.AsHash(), host.Frame));
         var widths = new EnemyWidths();
         context.Register(Place, (_, request) => PlaceOf(request.AsHash(), widths));
         context.Register(KeepWidths, (_, request) =>
@@ -191,7 +194,11 @@ public static class CoopTopics
             .Select(entry => (RubyValue)new RubyArray { entry.Id, entry.X, entry.Y, entry.Mark })));
         context.Register(WriteEntries, (_, request) => TroopEntries.Write(request.AsArray().Select(entry => entry.AsArray().Select(field => field.AsLong()).ToList())));
         context.Register(Intake, (_, request) => IntakeOf(request.AsHash(), joins));
-        context.Register(Room, (_, request) => JoinIntake.Told(FactsOf(request.AsHash(), joins)));
+        context.Register(Room, (_, request) =>
+        {
+            (int rbn, string rbs) = JoinIntake.Told(FactsOf(request.AsHash(), joins));
+            return new RubyHash { { "rbn", rbn }, { "rbs", rbs } };
+        });
         context.Register(Level, (_, request) => LevelOf(request.AsHash()));
         context.Register(WriteRoster, (_, request) =>
         {
@@ -422,10 +429,11 @@ public static class CoopTopics
     /// </summary>
     /// <param name="joins">The joins.</param>
     /// <param name="request">The request, see <see cref="Pending"/>.</param>
+    /// <param name="frame">The bridge's frame, the clock.</param>
     /// <returns>The answer.</returns>
-    private static RubyValue PendingOf(CoopJoins joins, RubyHash request)
+    private static RubyValue PendingOf(CoopJoins joins, RubyHash request, long frame)
     {
-        long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        long now = GameClock.Milliseconds(frame);
         List<int> SeatsOf(string field) => [.. Seats(request[field]).Select(seat => (int)seat)];
         switch (request["op"].AsText())
         {

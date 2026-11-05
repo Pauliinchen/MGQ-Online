@@ -6,6 +6,7 @@
 #                            - Noted the found items a run gave or used up, but none a story reset takes, so a run that changed no shared key is handed over too
 #                            - Dropped the names of the commands running, which only the found items' rule read
 #                            - Handed the found items a battle's drops gave to the DLL, and their entry on like a run's
+#                            - Counted its timers by the bridge's frame
 #      Paulinchen  2026-11-01: Noted a run's checks of what the party holds and of the event's own self switches as inputs, which a replay follows
 #                            - Named every command running now, which tells one use of an item from another
 #                            - Told whether a command runs inside a story reset, whose losses use nothing up
@@ -464,7 +465,7 @@ module MGQ_MpStoryKeys
   # @param site [String] Where it came from.
   def self.add(kind, key, value, site)
     if @batch.size >= MAX_BATCH
-      return log_once([:batch_full, Graphics.frame_count / 600], "dropped writes past #{MAX_BATCH} in one frame")
+      return log_once([:batch_full, MGQ_Multiplayer::Bridge.frame_number / 600], "dropped writes past #{MAX_BATCH} in one frame")
     end
 
     text = text_of(kind, value)
@@ -625,11 +626,11 @@ module MGQ_MpStoryKeys
     held = table
     stamp = [raid, held && held.rev, MGQ_MpStoryState.rewards_serial]
     return @scopes[1] if @scopes && @scopes[0] == stamp && @scopes[1]
-    return nil if @scopes && @scopes[0] == stamp && Graphics.frame_count - @scopes[2] < SCOPES_ASK_FRAMES && Graphics.frame_count >= @scopes[2]
+    return nil if @scopes && @scopes[0] == stamp && MGQ_Multiplayer::Bridge.frame_number - @scopes[2] < SCOPES_ASK_FRAMES
 
     hash = MGQ_Multiplayer::Bridge.call(SCOPES_TOPIC, "party" => !raid)
     found = hash ? scopes_of(hash) : nil
-    @scopes = [stamp, found, Graphics.frame_count]
+    @scopes = [stamp, found, MGQ_Multiplayer::Bridge.frame_number]
     log("read who keeps each key: #{found[:keys].size} chest self switches, #{found[:self].size} self switch rules") if found
     found
   rescue => e
@@ -1166,7 +1167,7 @@ module MGQ_MpStoryKeys
       MGQ_MpCoopStory.keep_own(kind, key, value_of(kind, key)) if defined?(MGQ_MpCoopStory) && MGQ_MpCoopStory.guest?
     end
     answer = MGQ_Multiplayer::Bridge.call(RAN_TOPIC, request)
-    return @unsent << [Graphics.frame_count, request] if answer.is_a?(Hash) && answer["unknown"]
+    return @unsent << [MGQ_Multiplayer::Bridge.frame_number, request] if answer.is_a?(Hash) && answer["unknown"]
 
     log("the run of #{run.site} changed #{request['changed'].size} shared keys#{request['found'] ? " and #{request['found'].size} found items" : ''}#{answer.is_a?(Hash) ? ", its entry #{answer['id']} goes to #{answer['stream']}" : ''}")
     hand_entry(answer, request["party"])
@@ -1189,13 +1190,13 @@ module MGQ_MpStoryKeys
 
   # Tries again the ends of runs the DLL could not log yet, once a second.
   def self.send_unsent
-    return if @unsent.empty? || Graphics.frame_count - @unsent.first[0] < UNSENT_FRAMES
+    return if @unsent.empty? || MGQ_Multiplayer::Bridge.frame_number - @unsent.first[0] < UNSENT_FRAMES
 
     unsent = @unsent
     @unsent = []
     unsent.each do |_frame, request|
       answer = MGQ_Multiplayer::Bridge.call(RAN_TOPIC, request)
-      next @unsent << [Graphics.frame_count, request] if answer.is_a?(Hash) && answer["unknown"]
+      next @unsent << [MGQ_Multiplayer::Bridge.frame_number, request] if answer.is_a?(Hash) && answer["unknown"]
 
       hand_entry(answer, request["party"])
     end

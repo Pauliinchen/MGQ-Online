@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-05: Opened the player's own scene as a resume begins, so what it puts back counts as the scene's
+#                            - Counted its timers by the bridge's frame, which never goes back as a save loads
 #      Paulinchen  2026-10-28: Read the freeze's tables from the DLL's events database in place of battles_raid_freeze_data.rbx
 #                            - Read whether a page shows only during a scene or runs nothing from the DLL's events database
 #      Paulinchen  2026-10-23: Kept the story's writes in a DLL journal instead of copying the whole story
@@ -383,7 +384,7 @@ module MGQ_MpRaidFreeze
   def self.battle_command(interpreter, original)
     begin
       @at_301 = [interpreter, MGQ_MpGame.get(interpreter, :index).to_i, MGQ_MpGame.get(interpreter, :indent).to_i,
-                 (MGQ_MpGame.get(interpreter, :branch) || {}).dup, Graphics.frame_count]
+                 (MGQ_MpGame.get(interpreter, :branch) || {}).dup, MGQ_Multiplayer::Bridge.frame_number]
     rescue => e
       @at_301 = nil
       log_once(:battle_command, "noting a battle command failed: #{e.class}: #{e.message}")
@@ -405,7 +406,7 @@ module MGQ_MpRaidFreeze
     @battle = nil
     return unless active? && MGQ_MpRaidBosses.boss?(troop)
 
-    at = nil if at && at[4] != Graphics.frame_count
+    at = nil if at && at[4] != MGQ_Multiplayer::Bridge.frame_number
     kind = MGQ_MpRaidPool.respond_to?(:set_up_kind) ? MGQ_MpRaidPool.set_up_kind : nil
     fight = MGQ_MpRaidPool.fight
     side = fight && fight.troop == troop && fight.side ? true : false
@@ -961,7 +962,7 @@ module MGQ_MpRaidFreeze
     end
 
     @pending = { :troop => troop, :kind => battle[:kind], :mark => @seq, :items => item_counts,
-                 :start => battle[:start], :pre => battle[:pre], :at => Graphics.frame_count }
+                 :start => battle[:start], :pre => battle[:pre], :at => MGQ_Multiplayer::Bridge.frame_number }
     record = record_for(troop)
     record["state"] = "lost" if record && battle[:record]
     log("lost the battle against #{label(troop)} (troop #{troop}, #{battle[:kind] || 'no pool'}#{battle[:side] ? ', side' : ''}): " \
@@ -1649,7 +1650,7 @@ module MGQ_MpRaidFreeze
   # event runs, no transfer waits and no message shows.
   def self.undo_due
     pending = @pending
-    return if Graphics.frame_count == pending[:at]
+    return if MGQ_Multiplayer::Bridge.frame_number == pending[:at]
     return if $game_map.interpreter.running? || $game_player.transfer? || $game_message.busy?
 
     @pending = nil
@@ -1751,8 +1752,8 @@ module MGQ_MpRaidFreeze
   # Forgets the records of bosses the player's story beat, and tells the world of frozen fights it
   # lacks, every CHECK_FRAMES.
   def self.drop_beaten
-    now = Graphics.frame_count
-    return if @checked_at && (now - @checked_at).abs < CHECK_FRAMES
+    now = MGQ_Multiplayer::Bridge.frame_number
+    return if @checked_at && now - @checked_at < CHECK_FRAMES
 
     @checked_at = now
     notes = field
@@ -2286,12 +2287,12 @@ module MGQ_MpRaidFreeze
   # @return [Hash{Symbol => Object}] The tables.
   def self.tables
     return @tables if @tables
-    return {} if @tables_failed_at && Graphics.frame_count - @tables_failed_at < TABLES_FRAMES
+    return {} if @tables_failed_at && MGQ_Multiplayer::Bridge.frame_number - @tables_failed_at < TABLES_FRAMES
 
     MGQ_MpCoopEvents.open_events if MGQ_MpCoopEvents.respond_to?(:open_events)
     answer = MGQ_Multiplayer::Bridge.call(SITES_TOPIC, "troops" => raid_troops)
     unless answer.is_a?(Hash)
-      @tables_failed_at = Graphics.frame_count
+      @tables_failed_at = MGQ_Multiplayer::Bridge.frame_number
       log_once(:no_tables, "the DLL told no sites of the story's raid boss fights: no fight freezes until it does")
       return {}
     end

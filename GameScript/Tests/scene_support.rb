@@ -2,6 +2,7 @@
 #  scene_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Answered at the bridge's frame, the scripts' clock
 #      Paulinchen  2026-10-28: Created
 #
 #----------------------------------------------------------------
@@ -301,12 +302,12 @@ def check_scene_stand_in
   end
 end
 
-# Answers the scene's topics from a stand-in at the frame the tests count, Graphics.frame_count.
+# Answers the scene's topics from a stand-in at the frame the tests count, the bridge's.
 #
 # @param fake [FakeBridge] The test's bridge.
 def answer_scene(fake)
   stand_in = SceneStandIn.new
   %w(scene.change scene.flush scene.clear scene.take scene.check).each do |topic|
-    fake.answer(topic) { |request| stand_in.answer(topic, request, defined?(Graphics) ? Graphics.frame_count : 0) }
+    fake.answer(topic) { |request| stand_in.answer(topic, request, MGQ_Multiplayer::Bridge.frame_number) }
   end
 end

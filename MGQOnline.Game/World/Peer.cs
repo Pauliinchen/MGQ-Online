@@ -2,6 +2,7 @@
 //  Peer.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Told whether the connection is down, which the grace of Sessions counts
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -36,10 +37,10 @@ public sealed class Peer
     public WorldFields State { get; internal set; }
 
     /// <summary>
-    /// Gets the frames the game is still kept for while its connection is down, <see langword="null"/>
-    /// while it stands.
+    /// Gets a value indicating whether the game's connection is down, while <see cref="Sessions"/>
+    /// keeps it for the grace.
     /// </summary>
-    public int? AwayLeft { get; internal set; }
+    public bool Away { get; internal set; }
 
     /// <summary>
     /// Gets a value indicating whether the player was in the player's party at their last state.
@@ -59,7 +60,7 @@ public sealed class Peer
     /// <summary>
     /// Gets a value indicating whether the game's connection stands.
     /// </summary>
-    public bool Present => AwayLeft is null;
+    public bool Present => !Away;
 
     /// <summary>
     /// Names the player for the log: their name and seat.

@@ -2,6 +2,7 @@
 #  ui_raid_bar_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Read the scripts' clock from $frame
 #      Paulinchen  2026-11-01: Read the bars from the Mod Framework's components they build, the DLL's bars answered by a stand-in
 #                            - Stopped loading the deleted ui_boxes.rbx
 #      Paulinchen  2026-10-31: Kept the strip's place in the Mod Framework's settings
@@ -70,9 +71,8 @@ module Graphics
   def self.height; 480; end
   # Shows nothing.
   def self.update; end
-  # The frame count.
-  def self.frame_count; $frame; end
 end
+clock_from { $frame }
 
 # Stand-ins for the world, the game's battles and the map.
 

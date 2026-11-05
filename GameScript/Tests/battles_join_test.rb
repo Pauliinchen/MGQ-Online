@@ -2,6 +2,9 @@
 #  battles_join_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Expected the battle's players and state in the state, in a Classic world too
+#                            - Covered a party member's battle a member who missed it joins late in a Classic world (issue 76)
+#                            - Covered a press near a battle that ends, which tells why and starts no side battle (issue 74)
 #      Paulinchen  2026-11-01: Named the Mod Framework's interface by its own name
 #                            - Checked the prompt as a button of the Mod Framework below the player, which a click presses as the hotkey does
 #                            - Stood in for the wheels of the Mod Framework
@@ -212,30 +215,30 @@ $game_player.y = 0
 $scene_now = Scene_Map.new
 
 # The state a host tells.
-check("on the map a Raid World's player tells no battle that takes players in", join.state_fields, { "rbn" => 0 })
+check("on the map a Raid World's player tells no battle that takes players in", join.state_fields, { "rbn" => 0, "rbs" => "closed" })
 $raid = false
-check("a Classic world's player tells nothing", join.state_fields, {})
+check("so does a Classic world's player, whose party members join its battles late", join.state_fields, { "rbn" => 0, "rbs" => "closed" })
 $raid = true
 $scene_now = scene
 $game_troop.setup(31)
 hotjoin.fight_alone("own1")
-check("one who fights alone tells one player", join.state_fields, { "rbn" => 1 })
+check("one who fights alone tells one player and takes players in", join.state_fields, { "rbn" => 1, "rbs" => "open" })
 sync.join_world(:guest, "g1", [4], "P4")
-check("a guest tells nothing of the battle, its host does", join.state_fields, { "rbn" => 0 })
+check("a guest tells nothing of the battle, its host does", join.state_fields, { "rbn" => 0, "rbs" => "closed" })
 reset
 $scene_now = scene
 sync.join_world(:host, "g2", [7], "the players")
 sync.battle_started
 hotjoin.fight_alone("g2")
-check("a host still gathering its players takes nobody in", [join.state_fields, closed_code.call], [{ "rbn" => 0 }, "gathering"])
+check("a host still gathering its players takes nobody in", [join.state_fields, closed_code.call], [{ "rbn" => 0, "rbs" => "gathering" }, "gathering"])
 reset
 $scene_now = scene
 hotjoin.fight_alone("own2")
 $ending = true
-check("nor does a battle that ends", [join.state_fields, closed_code.call], [{ "rbn" => 0 }, "ending"])
+check("nor does a battle that ends", [join.state_fields, closed_code.call], [{ "rbn" => 0, "rbs" => "ending" }, "ending"])
 $ending = false
 MGQ_MpBattles.instance_variable_set(:@kind, :pvp)
-check("nor a PvP battle", [join.state_fields, closed_code.call], [{ "rbn" => 0 }, "pvp"])
+check("nor a PvP battle", [join.state_fields, closed_code.call], [{ "rbn" => 0, "rbs" => "pvp" }, "pvp"])
 reset
 
 # When the prompt shows.
@@ -357,7 +360,7 @@ check("a host who fights an event's battle alone takes the player in with an inv
       map_sent("invite").map { |seat, f| [seat, f["bid"], f["troop"], f["seats"], f["hot"], f["boss"]] }, [[8, "ev1", "52", "8", "1", nil]])
 check("hosting it without turning it live until the player joins", [sync.role, sync.live?, sync.expected], [:host, false, [8]])
 check("taking no enemies in", $coop_joins.entries.map { |entry| [entry[:seats], entry[:enemies]] }, [[[8], []]])
-check("its state counts the player taken in", join.state_fields, { "rbn" => 2 })
+check("its state counts the player taken in", join.state_fields, { "rbn" => 2, "rbs" => "open" })
 $sent.clear
 coop_deliver_map(asker, request)
 check("a player taken in already is refused", map_sent("pick_no").map { |seat, f| [seat, f["why"]] }, [[8, "closed"]])
@@ -369,7 +372,7 @@ coop_deliver_map(player(10), request)
 $sent.clear
 coop_deliver_map(player(11), request)
 check("and a fifth player", map_sent("pick_no").map { |seat, f| [seat, f["why"]] }, [[11, "full"]])
-check("whom the state tells, taking nobody in", join.state_fields, { "rbn" => 0 })
+check("whom the state tells, taking nobody in as it is full", join.state_fields, { "rbn" => 0, "rbs" => "full" })
 coop_deliver_map(asker, { "coop" => "off", "bid" => "ev1" })
 check("a player who stopped waiting is forgotten", hotjoin.pending_seats.include?(8), false)
 
@@ -486,12 +489,23 @@ check("a player who joins another battle meanwhile is logged so", $log.grep(/joi
 reset
 $scene_now = Scene_Map.new
 $raid = false
-before = $log.size
+mate = player(5, { "scene" => "battle", "rb" => "cb1", "rbh" => "5", "rbn" => "1", "rbs" => "open", "x" => "1" })
+mate.member = true
+MGQ_MpOverworldSync::Peers.all.replace([mate])
+map_frame
+check("in a Classic world a member who missed a party member's battle may join it late (issue 76)", [offered, join.prompt_text], [[mate, "cb1"], "Press J to join battle"])
 $down = [0x4A]
 map_frame
 $down = []
-check("outside a Raid World the hotkey stays unread, so another may share its key", $log[before..-1].grep(/join battle|Join Battle/), [])
+check("the hotkey asks the member's battle through the map's gate", map_sent("pick").map { |seat, f| [seat, f["bid"]] }, [[5, "cb1"]])
+reset
+$raid = false
+mate.member = false
+MGQ_MpOverworldSync::Peers.all.replace([mate])
+map_frame
+check("but never the battle of a player outside the party", [offered, join.prompt_text], [nil, nil])
 $raid = true
+reset
 $settings = { "key_overview" => "74" }
 map_frame
 check("a hotkey with the same key turns Join Battle off, its prompt hidden", [join.reads_hotkey?, join.prompt_text], [false, nil])
@@ -628,6 +642,18 @@ $down = [0x4A]
 map_frame
 $down = []
 check("a side battle that cannot start tells the player", $messages.last, "Cannot fight Queen Harpy now.")
+boss_host.state["rbs"] = "ending"
+boss_host.state["x"] = "1"
+$side_started = nil
+$side_ok = true
+map_frame
+check("a raid boss battle that ends offers no side battle the player would fight alone (issue 74)", [offered, offered(:side), join.prompt_text], [nil, nil, nil])
+$down = [0x4A]
+map_frame
+$down = []
+map_frame
+check("and the hotkey tells the player why, starting nothing", [$side_started, $messages.last], [nil, "P5's battle is ending."])
+$side_ok = false
 reset
 
 # The side battle starts as the player's own, which others may join by choice.
@@ -639,7 +665,7 @@ BattleManager.setup(71, false, true)
 check("a side battle against a raid boss invites and holds nobody", [map_sent("invite"), map_sent("freeze"), sync.role], [[], [], nil])
 $scene_now = scene
 side_bid = hotjoin.state_fields["rb"]
-check("it is the player's own, which tells itself to the others", [side_bid.empty?, join.state_fields], [false, { "rbn" => 1 }])
+check("it is the player's own, which tells itself to the others", [side_bid.empty?, join.state_fields], [false, { "rbn" => 1, "rbs" => "open" }])
 coop_deliver_map(bystander, { "coop" => "pick", "bid" => side_bid, "map" => "5" })
 check("and takes in a player who asks to join it by choice", map_sent("invite").map { |seat, f| [seat, f["bid"], f["hot"]] }, [[9, side_bid, "1"]])
 $side_troop = nil

@@ -2,6 +2,7 @@
 //  BattleSession.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Told the served battle's state as the starter's own, whether it takes players in too
 //      Paulinchen  2026-10-30: Kept the serve's time-out, the refusals that last the session, the channel's open time-out and the starter's front in the world room
 //      Paulinchen  2026-10-15: Created
 //
@@ -162,7 +163,7 @@ internal sealed partial class BattleSession
     /// <summary>
     /// The fields of the server's state the starter tells as its own.
     /// </summary>
-    private static readonly HashSet<string> FrontFields = new(StringComparer.Ordinal) { "rbn" };
+    private static readonly HashSet<string> FrontFields = new(StringComparer.Ordinal) { "rbn", "rbs" };
 
     /// <summary>
     /// What the front's battle lines are read against: plain values alone.

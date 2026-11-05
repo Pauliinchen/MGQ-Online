@@ -2,6 +2,7 @@
 //  CoopMatchmaking.Invites.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Turned down an invite the player stayed busy for in any scene, not only on the map
 //      Paulinchen  2026-10-30: Logged a co-op message taken for the other sides too
 //                            - Created
 //
@@ -172,7 +173,7 @@ public sealed partial class CoopMatchmaking
 
     /// <summary>
     /// Logs once per kind and player a co-op message that came through the map's gate outside a Raid
-    /// World, which keeps the party's gate.
+    /// World from a player outside the party, which keeps the party's gate.
     /// </summary>
     /// <param name="peer">Who sent it.</param>
     /// <param name="kind">Its kind.</param>
@@ -291,6 +292,26 @@ public sealed partial class CoopMatchmaking
         awaited = kept;
         Log($"gave battle {ownBid} up and joins {Who(kept.Peer)}'s battle {kept.Fields["bid"]} against troop {kept.Fields["troop"]} as a guest");
         return [new CoopAction("yield", Seat: kept.Peer.Seat, Label: kept.Peer.Name, Fields: kept.Fields)];
+    }
+
+    /// <summary>
+    /// Turns down the invite that waited <see cref="AcceptMilliseconds"/> for the player to be free.
+    /// Runs every frame in every scene.
+    /// </summary>
+    /// <remarks>
+    /// The map's poll alone would keep the invite of a player in a menu, and the host's gathering
+    /// would wait for them to the end of its time.
+    /// </remarks>
+    /// <returns>Whether an invite was turned down.</returns>
+    public bool Lapse()
+    {
+        if (invite is not { } waiting || facts.Role is not null || !Expired(waiting))
+        {
+            return false;
+        }
+
+        Decline(waiting.Peer, waiting.Fields, $"the player stayed busy for {AcceptMilliseconds / 1000} s");
+        return true;
     }
 
     /// <summary>

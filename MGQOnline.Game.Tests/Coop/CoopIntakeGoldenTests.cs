@@ -2,6 +2,7 @@
 //  CoopIntakeGoldenTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Read the "rbn" of the battle's state from the fields the topic tells
 //      Paulinchen  2026-10-30: Registered the topics over a live session
 //                            - Gave the placement's enemies their ids and the battle's id
 //                            - Created
@@ -110,7 +111,7 @@ public sealed class CoopIntakeGoldenTests
         Assert.Equal(Numbers(entry.GetProperty("left")), Numbers(encounter["left"]));
         Assert.Equal(entry.GetProperty("room").GetInt32(), encounter["room"].AsInt());
         Assert.Equal(Pair(entry.GetProperty("pick")), choice["refusal"].IsNil ? null : string.Join("|", choice["refusal"].AsArray().Select(part => part.AsText())));
-        Assert.Equal(entry.GetProperty("rbn").GetInt32(), _context.Ask(CoopTopics.Room, facts)!.AsInt());
+        Assert.Equal(entry.GetProperty("rbn").GetInt32(), _context.Ask(CoopTopics.Room, facts)!.AsHash()["rbn"].AsInt());
     }
 
     /// <summary>

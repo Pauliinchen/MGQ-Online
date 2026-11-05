@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-11-05: Registered the topic of the battlers the scripts build
+//                            - Registered the topics of the grace of players away
 //                            - Registered the topics of the guard of the game's flow
 //                            - Registered the topic of the story's ids
 //      Paulinchen  2026-10-31: Registered the freeze journal topics, which the scripts call on the battle server too
@@ -84,6 +85,7 @@ public static class SharedTopics
         PoolTopics.Register(context, pools);
         SetupTopics.Register(context);
         JournalTopics.Register(context);
+        PresenceTopics.Register(context);
     }
 
     /// <summary>
