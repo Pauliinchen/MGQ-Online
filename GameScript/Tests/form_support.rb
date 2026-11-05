@@ -2,129 +2,136 @@
 #  form_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Answered the world screen's forms with the DLL's recorded views and the values each test sets instead of the Ruby forms they were made from
 #      Paulinchen  2026-10-23: Created
 #
 #----------------------------------------------------------------
 
-# The form.* topics of the world screen's forms (FormTopics in the DLL), answered by FakeBridge from
-# fixtures/forms/form_prototype.rb, the Ruby forms the DLL's WorldForms were made from. The prototype
-# is checked against every golden case of fixtures/forms/world.json as this file loads, which the C#
-# forms pass too, so the stand-in cannot drift from what the DLL answers.
+# Answers the form.* topics of the world screen's forms (FormTopics in the DLL) on a FakeBridge with
+# fixed views: a form opens on the view the DLL answers for its kind (recorded in
+# fixtures/forms/world.json), and a test sets what a topic answers for its case. Unless a test sets
+# an answer, a page keeps the view it showed last with the values handed to it, a text box takes
+# its text as typed, a page sends without a problem, and the limits page shows its recorded view.
+# Every rule (which fields show, what a switch changes, how a text is tidied or refused) is
+# WorldFormsTests' and FormTopicsTests' to cover.
 
 require "json"
-require_relative "../../fixtures/forms/form_prototype"
+require_relative "bridge_support"
 
-# The golden cases of the world screen's forms.
-FORM_CASES = JSON.parse(File.read(File.expand_path("../../fixtures/forms/world.json", __dir__), :encoding => "UTF-8"))
+# Stands in for the DLL's answers of the world screen's forms.
+class FormAnswers
+  include NotedRequests
 
-FORM_CASES["forms"].each do |entry|
-  shown = FormPrototype.view_of(FormPrototype.act(FormPrototype.open(entry["open"]), entry["steps"]))
-  raise "the form stand-in shows #{entry['case']} otherwise than the golden case" if shown != entry["view"]
-end
-FORM_CASES["checks"].each do |entry|
-  form = FormPrototype.open(entry["open"])
-  answer = form.check(form.fields.find { |field| field.key.to_s == entry["key"] }, entry["text"])
-  raise "the form stand-in checks #{entry['text'].inspect} otherwise than the golden case" if answer != entry["answer"]
-end
+  # The topics answered.
+  TOPICS = %w(form.open form.view form.set form.turn form.tick form.check form.send form.close).freeze
 
-# The forms the stand-in holds, by slot, as FormTopics does.
-class FakeForms
+  # The views the DLL answered as the golden cases recorded them, by the case's name.
+  VIEWS = JSON.parse(File.read(File.expand_path("../../fixtures/forms/world.json", __dir__), :encoding => "UTF-8"))["forms"].each_with_object({}) do |entry, views|
+    views[entry["case"]] = entry["view"].reject { |key, _| key == "problem" }
+  end.freeze
+
+  # The recorded view each kind of form opens on.
+  OPENED = { "create" => "create as it opens", "edit" => "edit of a Classic world, by an admin", "rename" => "rename without a name while Discord tells none",
+             "password" => "password", "join" => "join" }.freeze
+
+  # The recorded view of the formation limits.
+  LIMITS = "create with its formation limits"
+
   # The forms whose one text box sends them with Enter.
-  SENDS_ON_ENTER = %w(rename password join)
+  SENDS_ON_ENTER = %w(rename password join).freeze
 
-  # Creates the stand-in with no form open.
-  def initialize
-    @forms = {}
-  end
+  # @return [FakeBridge] The bridge answered on.
+  attr_reader :fake
 
-  # Answers the form.* topics.
+  # Answers the topics on a bridge.
   #
   # @param fake [FakeBridge] The bridge.
-  def answer(fake)
-    fake.answer("form.open") { |request| open(request) }
-    fake.answer("form.view") { |request| @forms[request["form"]] && view(request) }
-    fake.answer("form.set") { |request| page_of(request)[request["key"].to_sym] = request["value"]; nil }
-    fake.answer("form.turn") { |request| page_of(request).turn(field_of(request), request["step"]); view(request) }
-    fake.answer("form.tick") { |request| page_of(request).tick(field_of(request).key); view(request) }
-    fake.answer("form.check") { |request| know(request); page_of(request).check(field_of(request), request["text"]) }
-    fake.answer("form.send") { |request| send_page(request) }
-    fake.answer("form.close") { |request| @forms.delete(request["form"]); nil }
+  def initialize(fake)
+    @fake = fake
+    @asked = []
+    @fixed = {}
+    @pages = {}
+    TOPICS.each { |topic| fake.answer(topic) { |request| answer(topic, request) } }
+  end
+
+  # Sets what a topic answers: a value, or a block that makes it of the request. A view answered
+  # becomes the page's view.
+  #
+  # @param topic [String] The topic.
+  # @param value [Object] The answer, nil to answer as before the test set one.
+  # @yieldparam request [Hash] The request.
+  def set(topic, value = nil, &block)
+    block || !value.nil? ? @fixed[topic] = (block || value) : @fixed.delete(topic)
+  end
+
+  # Forgets the requests taken so far, so a check reads only those of its own case.
+  def clear
+    @asked.clear
+  end
+
+  # Makes a recorded view of the DLL's.
+  #
+  # @param name [String] The golden case that recorded it.
+  # @param sends_on_enter [Boolean] Whether Enter in its one text box sends it.
+  # @return [Hash] The view.
+  def self.view(name, sends_on_enter = false)
+    JSON.parse(JSON.generate(VIEWS.fetch(name))).merge("page" => "main", "sends_on_enter" => sends_on_enter)
+  end
+
+  # Answers a topic: what the test set, else what the page shows.
+  #
+  # @param topic [String] The topic.
+  # @param request [Hash] The request.
+  # @return [Object] The reply.
+  def answer(topic, request)
+    note(topic, request)
+    if @fixed.key?(topic)
+      fixed = @fixed[topic]
+      reply = fixed.respond_to?(:call) ? fixed.call(request) : fixed
+      keep(request, reply) if reply.is_a?(Hash) && reply["fields"] && topic != "form.check"
+      return reply
+    end
+
+    case topic
+    when "form.open" then keep(request, FormAnswers.view(OPENED.fetch(request["kind"]), SENDS_ON_ENTER.include?(request["kind"])))
+    when "form.set"
+      page_of(request)["values"][request["key"]] = request["value"]
+      nil
+    when "form.check" then [request["text"], nil]
+    when "form.close"
+      @pages.delete(request["form"])
+      nil
+    else page_of(request)
+    end
   end
 
   private
 
-  # Opens a form in a slot, as FormTopics does.
+  # Keeps a view as its page's.
   #
-  # @param request [Hash] The request.
-  # @return [Hash] The view of its main page.
-  def open(request)
-    case_request = request.merge("world" => request["world"] && world_of(request["world"]))
-    @forms[request["form"]] = [FormPrototype.open(case_request), request["kind"]]
-    view(request)
-  end
-
-  # Turns the world an edit opens on into the prototype's listed world.
-  #
-  # @param world [Hash] The world as the scripts send it.
-  # @return [Hash] The world as the prototype reads it.
-  def world_of(world)
-    world.merge("settings" => world["shared"] ? "shared" : "", "type" => world["raid"] ? "raid" : "classic")
-  end
-
-  # Sends a page: its first problem, or the page tidied as the world screen tidied it before.
-  #
-  # @param request [Hash] The request.
-  # @return [Hash] The problem or the view.
-  def send_page(request)
-    know(request)
-    page = page_of(request)
-    index, reason = page.problem
-    return { "problem" => [page.fields[index].key.to_s, reason] } if reason
-
-    page.fields.each { |field| page[field.key] = page.check(field, page[field.key].to_s)[0] if field.typed? && page.enabled?(field) }
-    view(request)
-  end
-
-  # Takes the facts a request names.
-  #
-  # @param request [Hash] The request.
-  def know(request)
-    FormPrototype.discord = request["facts"].include?("discord") if request["facts"]
-  end
-
-  # Writes a page's view, as FormTopics does.
-  #
-  # @param request [Hash] The request.
+  # @param request [Hash] The request, naming the form and the page.
+  # @param view [Hash] The view.
   # @return [Hash] The view.
-  def view(request)
-    page = page_of(request)
-    shown = FormPrototype.view_of(page)
-    shown.delete("problem")
-    typed = page.fields.count { |field| field.typed? }
-    shown.merge("page" => request["page"] || "main", "sends_on_enter" => SENDS_ON_ENTER.include?(@forms[request["form"]][1]) && typed == 1)
+  def keep(request, view)
+    (@pages[request["form"]] ||= {})[request["page"] || "main"] = view
   end
 
-  # Finds the page a request names.
+  # Finds the view a page showed last; the limits page shows its recorded view at first.
   #
-  # @param request [Hash] The request.
-  # @return [FormPrototype::Form] The page.
+  # @param request [Hash] The request, naming the form and the page.
+  # @return [Hash] The view.
   def page_of(request)
-    form = (@forms[request["form"]] or raise FakeBridge::BadRequest, "No form is open in #{request['form']}.")[0]
-    request["page"] == "limits" ? form.limits : form
-  end
-
-  # Finds the shown field a request names.
-  #
-  # @param request [Hash] The request.
-  # @return [FormPrototype::Form::Field] The field.
-  def field_of(request)
-    page_of(request).fields.find { |field| field.key.to_s == request["key"] } or raise FakeBridge::BadRequest, "No field #{request['key']}."
+    pages = @pages[request["form"]] or raise FakeBridge::BadRequest, "No form is open in #{request['form']}."
+    pages[request["page"] || "main"] ||= FormAnswers.view(LIMITS).merge("page" => request["page"])
   end
 end
 
-# Answers the form.* topics from the prototype.
+# Answers the form.* topics with the recorded views and the values each test sets, kept in $forms;
+# a bridge answered already keeps its answers.
 #
-# @param fake [FakeBridge] The bridge.
+# @param fake [FakeBridge] The test's bridge.
+# @return [FormAnswers] The answers.
 def answer_forms(fake)
-  FakeForms.new.answer(fake)
+  $forms = FormAnswers.new(fake) unless $forms && $forms.fake.equal?(fake)
+  $forms
 end

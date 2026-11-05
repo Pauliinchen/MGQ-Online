@@ -2,7 +2,8 @@
 #  pvp_backline_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Wrote and read the Frontline's message through the codec's stand-in
+#      Paulinchen  2026-11-05: Answered the Frontlines with the values each case sets and checked what the script asks
+#                            - Wrote and read the Frontline's message through the codec's stand-in
 #                            - Stood in for the player's id the DLL tells through its topic
 #                            - Checked that the other side's Backline gets the game's start with the troop once, and a swap none again
 #      Paulinchen  2026-11-01: Checked the option's row in Options > Mods, which the Mod Framework keeps
@@ -33,13 +34,12 @@ module MGQ_Multiplayer
   # Stands in for Discord, which is not running.
   module Discord; def self.available?; false; end; end
 end
-# The DLL's side of the bridge, whose live battle checks the Frontlines each game tells.
+# The DLL's side of the bridge, answering the live battle's topics and the battlers' plans with the
+# values each case sets.
 load_bridge
 $fake = FakeBridge.new
 answer_live($fake)
 answer_wire($fake)
-# The plans of the battlers the scripts build.
-require_relative "battlers_support"
 answer_battlers($fake)
 MGQ_Multiplayer::Bridge.open($fake)
 # Stands in for the world's sync, as far as coop.rbx, through which the option registers, asks it.
@@ -173,8 +173,8 @@ end
 
 # Stands in for the battles, keeping each battle kind's mode.
 module MGQ_MpBattles
-  # Stands in for a battle kind's mode, whose stream carries the messages the DLL names, as battles.rbx's does.
-  module Mode; def stream_kinds; Array(MGQ_Multiplayer::Bridge.call("live.mode", "op" => "kinds")); end; end
+  # Stands in for what every battle kind's mode extends.
+  module Mode; end
   # Keeps a battle kind's mode.
   #
   # @param name [Symbol] The battle kind.
@@ -248,7 +248,7 @@ $game_troop.instance_variable_set(:@enemies, others.first(2))
 $scene = Scene_Battle.new
 
 # Outside a battle nothing is swapped in or kept in reserve.
-check("outside a battle nothing is swapped in or kept in reserve", [backline.on?, backline.swapped_in?(own[0]), backline.reserve, mode.own_order, mode.stream_kinds], [false, false, [], nil, []])
+check("outside a battle nothing is swapped in or kept in reserve", [backline.on?, backline.swapped_in?(own[0]), backline.reserve, mode.own_order], [false, false, [], nil])
 check("and a skill of the other side reaches the troop alone", backline.troop_targets(item.new(true, false), others.first(2)), others.first(2))
 
 # In a battle with the Backline, the other side's characters past its Frontline wait in reserve.
@@ -274,30 +274,40 @@ $scene.bench_member_ok
 own.each(&:make_actions)
 check("swapped back in the same round, the character commands again", [own[1].inputable?, own[1].actions], [true, [:attack]])
 $scene.bench_member_ok
+$live.set("live.backline settle", "front" => [1, 3])
 mode.share_order
-check("the host tells the guest its Frontline before the turn's events", $posted, [[:flush], [backline::FRONT_MESSAGE, wire_line([[1, 3]])]])
+check("the host asks the DLL with its Frontline and tells the guest the one it answers before the turn's events",
+      [$live.asked("live.backline").last, $posted], [{ "op" => "settle", "front" => [1, 3] }, [[:flush], [backline::FRONT_MESSAGE, wire_line([[1, 3]])]]])
 $posted.clear
+$live.set("live.backline settle", nil)
 $game_troop.turn_count = 1
 own.each(&:make_actions)
 check("in the next round the character commands", [own[2].inputable?, own[2].actions], [true, [:attack]])
 mode.share_order
-check("a Frontline that did not change is not told again", $posted, [])
+check("a Frontline the DLL answers none for is not told", $posted, [])
 
 # The other side's swap.
 others[1].make_actions
 others[2].make_actions
+$live.set("live.backline take", "front" => [5, 7])
 mode.take_order(nil, [5, 7])
+check("the other side's Frontline goes to the DLL with the troop as it stands", $live.asked("live.backline").last, { "op" => "take", "ids" => [5, 7], "troop" => [5, 6] })
 check("the other side's Frontline is put in the troop and drawn anew", [$game_troop.members.map(&:id), $stood, $scene.instance_variable_get(:@spriteset).drawn, backline.reserve], [[5, 7], [5, 7], 1, [others[1]]])
 check("the character swapped in loses the actions it had left", [others[2].actions, others[0].actions], [[], []])
 check("and is not started again, keeping its TP, counters and states", others.map { |other| $battle_starts.count(other) }, [1, 1, 1])
 others[2].make_actions
 mode.share_order
 check("and the commands a guest sent for it", others[2].actions, [])
+$live.set("live.backline take", "front" => [6, 7])
 mode.take(backline::FRONT_MESSAGE, $scene, wire_line([[6, 7]]))
-check("a guest takes the host's Frontline from the stream", $game_troop.members.map(&:id), [6, 7])
-[[5, 5], [5, 9], [5], "x", nil].each { |front| mode.take_order(nil, front) }
-check("a Frontline that does not fit the team is left out", $game_troop.members.map(&:id), [6, 7])
-check("the stream carries the Frontline's message", mode.stream_kinds, [backline::FRONT_MESSAGE])
+check("a guest takes the host's Frontline from the stream", [$live.asked("live.backline").last["ids"], $game_troop.members.map(&:id)], [[6, 7], [6, 7]])
+$live.set("live.backline take", "unfit" => "left out a Frontline that does not fit the other side's team: [5, 9]")
+asked = $live.asked("live.backline").size
+mode.take_order(nil, [5, 9])
+["x", nil].each { |front| mode.take_order(nil, front) }
+check("a Frontline the DLL finds unfit is left out, logged, and one that is no list never asked",
+      [$game_troop.members.map(&:id), $log.grep(/left out a Frontline that does not fit/).size, $live.asked("live.backline").size - asked], [[6, 7], 1, 1])
+$live.set("live.backline take", nil)
 
 # The stream names the characters outside both Frontlines.
 check("the host names its own Backline and the other side's", [mode.reserve_ref(own[1]), mode.reserve_ref(others[0]), mode.reserve_ref(own[0])], ["b2", "r5", nil])

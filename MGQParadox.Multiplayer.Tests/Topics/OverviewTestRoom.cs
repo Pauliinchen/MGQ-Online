@@ -2,6 +2,7 @@
 //  OverviewTestRoom.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Let the player connect on a seat and another player send them a message
 //      Paulinchen  2026-10-31: Created
 //
 //----------------------------------------------------------------
@@ -13,8 +14,8 @@ using MGQOnline.Game.World;
 namespace MGQParadox.Multiplayer.Tests.Topics;
 
 /// <summary>
-/// A world room the overview's topic tests play in: the player "me000001", named "Me", on map 3,
-/// and the other players told through the room's inbox.
+/// A world room the overview's and the co-op routes' topic tests play in: the player "me000001",
+/// named "Me", on map 3, and the other players and their messages told through the room's inbox.
 /// </summary>
 internal sealed class OverviewTestRoom : IWorldRoomHost
 {
@@ -51,6 +52,27 @@ internal sealed class OverviewTestRoom : IWorldRoomHost
     public void Tell(int seat, params (string Key, string Value)[] fields)
     {
         inbox.Enqueue(new InboxEntry("message", seat, new WorldFields(), "state=1\n" + string.Concat(fields.Select(pair => $"{pair.Key}={pair.Value}\n")) + "\n"));
+        Step();
+    }
+
+    /// <summary>
+    /// Connects the player on a seat, and runs a frame.
+    /// </summary>
+    /// <param name="seat">The seat.</param>
+    public void Connect(int seat)
+    {
+        inbox.Enqueue(new InboxEntry("seat", seat, new WorldFields(), string.Empty));
+        Step();
+    }
+
+    /// <summary>
+    /// Lets another player send the player a message, and runs a frame.
+    /// </summary>
+    /// <param name="seat">Their seat.</param>
+    /// <param name="fields">The message's fields, in order.</param>
+    public void Receive(int seat, params (string Key, string Value)[] fields)
+    {
+        inbox.Enqueue(new InboxEntry("message", seat, new WorldFields(), string.Concat(fields.Select(pair => $"{pair.Key}={pair.Value}\n")) + "\n"));
         Step();
     }
 

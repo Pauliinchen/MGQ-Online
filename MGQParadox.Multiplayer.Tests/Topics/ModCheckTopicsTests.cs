@@ -2,6 +2,7 @@
 //  ModCheckTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Covered the check of a game without the catalog
 //      Paulinchen  2026-10-31: Covered the creator's hashes of a mod installed after Patch was read
 //      Paulinchen  2026-10-30: Covered the mods a world's session loads and those it turns off now
 //                            - Dropped the install, which the Mod Framework does
@@ -91,6 +92,25 @@ public sealed class ModCheckTopicsTests
         _files["Patch/Level_Cap.rb"] = "bb";
         _topics.Call(ModCheckTopics.ForgetTopic);
         Assert.Empty(_topics.Call(ModCheckTopics.CheckTopic, request)!.AsHash()["rows"].AsArray());
+    }
+
+    /// <summary>
+    /// Asserts that without the catalog a required mod whose script Patch lacks comes as a row the
+    /// player can only get from its author, and an installed one as none.
+    /// </summary>
+    [Fact]
+    public void Check_WithoutTheCatalog_NamesTheMissingMods()
+    {
+        _catalog = null;
+
+        RubyHash check = _topics.Call(ModCheckTopics.CheckTopic, new RubyHash { { "mods", "!Level Cap; !Missing Mod" }, { "hashes", "" }, { "world", "Modded" } })!.AsHash();
+
+        Assert.Equal(new RubyHash
+        {
+            { "known", false },
+            { "rows", new RubyArray([new RubyHash { { "name", "Missing Mod" }, { "yours", "not installed" }, { "worlds", RubyNil.Value }, { "key", RubyNil.Value }, { "target", RubyNil.Value }, { "text", "Missing Mod: not installed" }, { "downloadable", false } }]) },
+            { "summary", "Modded needs mods that are missing or in another version here: Missing Mod (get it from its author)." },
+        }, check);
     }
 
     /// <summary>

@@ -2,7 +2,9 @@
 #  overworld_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Told a member's followers as values
+#      Paulinchen  2026-11-05: Answered the teleports' view with fixed offers per case instead of from the party's stand-in
+#                            - Handed the other players' states and messages as the DLL reads them and expected the messages sent as the scripts hand them
+#                            - Told a member's followers as values
 #                            - Expected the player's state handed to the DLL with its numbers as numbers, which the DLL writes into the message
 #      Paulinchen  2026-11-01: Named the Mod Framework's interface by its own name
 #                            - Read the ghosts' labels, the own ping, the own line and the world status from the Mod Framework's components
@@ -137,7 +139,7 @@ check("a step is handed over once", $staged_world.map { |_, frame| frame["state"
 $staged_world.clear
 
 # The DLL's events of a player make a peer and a ghost on the same map; the notices are the DLL's.
-friend = { "id" => "friend", "name" => "Friend", "sprite" => "Actor2", "index" => 3, "map" => 5, "x" => 10, "y" => 10, "d" => 4, "speed" => 4, "hidden" => 0, "scene" => "map" }
+friend = { "id" => "friend", "name" => "Friend", "sprite" => "Actor2", "index" => "3", "map" => "5", "x" => "10", "y" => "10", "d" => "4", "speed" => "4", "hidden" => "0", "scene" => "map" }
 peers = MGQ_MpOverworldSync::Peers
 $world_bridge.post("world.peer", { "seat" => 2, "state" => plain_state(friend), "member" => false })
 $world_bridge.post("world.labels", { 2 => "Friend" })
@@ -149,7 +151,7 @@ peer = MGQ_MpOverworld.ghosts.first
 ghost, state = peer.ghost, peer.state
 check("ghost where the friend stands", [ghost.x, ghost.y, ghost.character_name, ghost.character_index], [10, 10, "Actor2", 3])
 check("ghost faces as the friend", ghost.direction, 4)
-$inbox << entry("message", 2, told(friend.merge("sprite" => "$missing", "index" => 2)))
+$inbox << entry("message", 2, told(friend.merge("sprite" => "$missing", "index" => "2")))
 MGQ_MpOverworldSync.tick
 MGQ_MpOverworld.update_ghosts
 check("a sprite this game lacks shows Luka's of the game's data instead", [ghost.character_name, ghost.character_index], ["Luka", 0])
@@ -219,22 +221,22 @@ MGQ_MpOverworld.outline_frame(sheet, outline, Rect.new(2, 1, 2, 3), green)
 check("and the frame's edge counts as transparent", marked.size, 6)
 
 # One tile away: the ghost walks; far away: it jumps.
-$inbox << entry("message", 2, told(friend.merge("x" => 11)))
+$inbox << entry("message", 2, told(friend.merge("x" => "11")))
 MGQ_MpOverworldSync.tick
 MGQ_MpOverworld.update_ghosts
 check("ghost walked one tile", [ghost.x, ghost.y, ghost.direction], [11, 10, 6])
-$inbox << entry("message", 2, told(friend.merge("x" => 11, "y" => 30)))
+$inbox << entry("message", 2, told(friend.merge("x" => "11", "y" => "30")))
 MGQ_MpOverworldSync.tick
 MGQ_MpOverworld.update_ghosts
 check("ghost jumped far", [ghost.x, ghost.y], [11, 30])
-$inbox << entry("message", 2, told(friend.merge("x" => 13, "y" => 30)))
+$inbox << entry("message", 2, told(friend.merge("x" => "13", "y" => "30")))
 MGQ_MpOverworldSync.tick
 MGQ_MpOverworld.update_ghosts
 MGQ_MpOverworld.update_ghosts
 check("ghost caught up two tiles by walking", [ghost.x, ghost.y], [13, 30])
 
 # Another map: the ghost goes; back: it comes again.
-$inbox << entry("message", 2, told(friend.merge("map" => 6)))
+$inbox << entry("message", 2, told(friend.merge("map" => "6")))
 MGQ_MpOverworldSync.tick
 MGQ_MpOverworld.update_ghosts
 check("no ghost for another map", MGQ_MpOverworld.ghosts, [])
@@ -315,7 +317,7 @@ PARTY, LEAVE, STORY, CHAT = MGQ_MpActions.wheel_places
 # The middle, which the World overview fills in the game.
 MGQ_MpActions.wheel_center { MGQ_MpActions::Option.new("World (F11)", lambda { $world_ran = MGQ_MpActions.wheel.open? }, nil, 3988) }
 $game_player.x, $game_player.y = 20, 20
-$inbox << entry("message", 2, told(friend.merge("map" => 5, "x" => 40, "y" => 40)))
+$inbox << entry("message", 2, told(friend.merge("map" => "5", "x" => "40", "y" => "40")))
 MGQ_MpOverworldSync.tick
 check("four choices spread over the ring", [PARTY, LEAVE, STORY, CHAT], [:UP, :RIGHT, :DOWN, :LEFT])
 check("nobody near: invite greyed", option(PARTY), ["Invite to a party", false])
@@ -359,7 +361,7 @@ $raid_world = false
 MGQ_MpOverworld.update_ghosts
 check("and see-through again in a Classic world", ghost.opacity, MGQ_MpOverworld::STRANGER_OPACITY)
 
-$inbox << entry("message", 2, told(friend.merge("map" => 5, "x" => 21, "y" => 22)))
+$inbox << entry("message", 2, told(friend.merge("map" => "5", "x" => "21", "y" => "22")))
 MGQ_MpOverworldSync.tick
 check("someone near: invite first", option(PARTY), ["Invite to a party", true])
 my_party = "mep1"
@@ -443,8 +445,9 @@ MGQ_MpActions.define_singleton_method(:own_lines, own_lines)
 
 check("an invite can be stopped", option(LEAVE), ["Stop inviting", true])
 
-$inbox << entry("message", 2, told(friend.merge("map" => 5, "x" => 21, "y" => 22, "party" => my_party)))
+$inbox << entry("message", 2, told(friend.merge("map" => "5", "x" => "21", "y" => "22", "party" => my_party)))
 take_party(my_party, [MGQ_MpOverworldSync::Peers.at(2)], 2)
+$teleport_view = teleport_view(2 => teleport_offer("Teleport to Friend", "You are with Friend already."))
 MGQ_MpOverworldSync.tick
 check("once the DLL counts the friend in, the invite has no frames left", [MGQ_MpCoop::Party.inviting?, MGQ_MpCoop::Party.invite_frames_left], [false, 0])
 check("members", MGQ_MpCoop::Party.members.map { |peer| peer.state["name"] }, ["Friend"])
@@ -457,17 +460,18 @@ check("and names them in the members' color, with the party's size after the nam
       [part_with_text(member_tag.root, "Friend").color, part_with_text(member_tag.root, "2 / 4").color], [:ally, :ally])
 member_tag.close
 # The view makes Friend the party's leader, whom the player stands near already.
-check("a member is not invited again, the wheel offers the teleport to the leader instead", option(PARTY), ["Teleport to Friend", false])
+check("a member is not invited again, the wheel offers the teleport to the leader instead, closed as the DLL answers", option(PARTY), ["Teleport to Friend", false])
+$teleport_view = nil
 
 # A member's ghost has the followers they show, which step where the one before stood.
 check("followers are told only once shown", MGQ_MpOverworldSync::Me.current.values_at("trail", "follow"), [[], 0])
 [21, 22, 23, 24].each do |x|
-  $inbox << entry("message", 2, told(friend.merge("map" => 5, "x" => x, "y" => 22, "party" => my_party, "trail" => [["Actor5", 1], ["Actor6", 2]])))
+  $inbox << entry("message", 2, told(friend.merge("map" => "5", "x" => x.to_s, "y" => "22", "party" => my_party, "trail" => [["Actor5", 1], ["Actor6", 2]])))
   MGQ_MpOverworldSync.tick
   MGQ_MpOverworld.update_ghosts
 end
 check("a member's ghost has their followers", ghost.followers.map { |f| [f.character_name, f.character_index] }, [["Actor5", 1], ["Actor6", 2]])
-$inbox << entry("message", 2, told(friend.merge("map" => 5, "x" => 24, "y" => 22, "party" => my_party, "trail" => [["Actor5", 1], ["$missing", 2]])))
+$inbox << entry("message", 2, told(friend.merge("map" => "5", "x" => "24", "y" => "22", "party" => my_party, "trail" => [["Actor5", 1], ["$missing", 2]])))
 MGQ_MpOverworldSync.tick
 MGQ_MpOverworld.update_ghosts
 check("a follower whose sprite this game lacks shows only the outline of Luka's",
@@ -476,7 +480,7 @@ outlined = ghost.followers.last
 outlined.look_like("$missing", 2, Struct.new(:member, :move_speed, :opacity, :transparent).new(false, 4, 255, false))
 check("in white once its player is no longer in the party", outlined.outline, :stranger)
 check("each a step behind the one before", [ghost.x, ghost.followers.map(&:x)], [24, [23, 22]])
-$inbox << entry("message", 2, told(friend.merge("map" => 5, "x" => 24, "y" => 40, "party" => my_party, "trail" => [["Actor5", 1]])))
+$inbox << entry("message", 2, told(friend.merge("map" => "5", "x" => "24", "y" => "40", "party" => my_party, "trail" => [["Actor5", 1]])))
 MGQ_MpOverworldSync.tick
 MGQ_MpOverworld.update_ghosts
 check("a jump gathers the followers, as many as told", ghost.followers.map { |f| [f.x, f.y] }, [[24, 40]])
@@ -489,7 +493,7 @@ check("a stranger's ghost has no followers", ghost.followers, [])
 check("leaving asks the DLL", [$party_calls.last, MGQ_MpCoop::Party.id], [["leave", nil], nil])
 check("no party to leave", option(LEAVE), ["Leave the party", false])
 
-$inbox << entry("message", 2, told(friend.merge("map" => 5, "x" => 20, "y" => 21, "party" => "theirs", "invite" => 1)))
+$inbox << entry("message", 2, told(friend.merge("map" => "5", "x" => "20", "y" => "21", "party" => "theirs", "invite" => true)))
 MGQ_MpOverworldSync.tick
 check("an inviter shows the invite line", MGQ_MpOverworldSync.label_line_of(MGQ_MpOverworldSync::Peers.at(2)).to_a[0], "Invites to a party (B)")
 check("an invite nearby is offered", option(PARTY), ["Accept Friend's invite", true])
@@ -497,7 +501,7 @@ $party_answer = party_view("theirs", [MGQ_MpOverworldSync::Peers.at(2)], 2)
 wheel(:UP, :C)
 $party_answer = nil
 check("accepting an invite asks the DLL to join the inviter and takes their party", [$party_calls.last, MGQ_MpCoop::Party.id], [["join", 2], "theirs"])
-$inbox << entry("message", 2, told(friend.merge("map" => 5, "x" => 20, "y" => 21, "party" => "", "invite" => 0)))
+$inbox << entry("message", 2, told(friend.merge("map" => "5", "x" => "20", "y" => "21", "party" => "", "invite" => false)))
 take_party("theirs")
 MGQ_MpOverworldSync.tick
 
@@ -557,14 +561,7 @@ check("no connection, no ping shown", [ping.measured, MGQ_MpOverworld.ping_label
 module MGQ_MpCoopEvents; def self.take(peer, message); ($taken_events ||= []) << [peer && peer.seat, message["pevent"], message["map"]]; end; end
 MGQ_MpOverworldSync.route("pevent") { |peer, message| MGQ_MpCoopEvents.take(peer, message) }
 before = MGQ_MpOverworldSync::Peers.at(2).state.dup
-$inbox << entry("message", 2, "pevent=travel
-party=p1
-map=77
-x=1
-y=2
-d=2
-
-")
+$inbox << entry("message", 2, { "pevent" => "travel", "party" => "p1", "map" => "77", "x" => "1", "y" => "2", "d" => "2" })
 MGQ_MpOverworldSync.tick
 check("a script's message with a map goes to its script", $taken_events, [[2, "travel", "77"]])
 check("and leaves the sender's state alone", MGQ_MpOverworldSync::Peers.at(2).state, before)
@@ -572,11 +569,8 @@ check("and leaves the sender's state alone", MGQ_MpOverworldSync::Peers.at(2).st
 # Stands in for the battle sync, noting each message taken in $taken_battle.
 module MGQ_MpBattlesSync; def self.take(peer, message); ($taken_battle ||= []) << [message["battle"], message[:payload]]; end; end
 MGQ_MpOverworldSync.route("battle") { |peer, message| MGQ_MpBattlesSync.take(peer, message) }
-$inbox << entry("message", 2, "battle=join
-bid=b1
-
-first line	second
-third")
+$inbox << entry("message", 2, { "battle" => "join", "bid" => "b1", :payload => "first line	second
+third" })
 MGQ_MpOverworldSync.tick
 check("a script's message keeps its body", $taken_battle, [["join", "first line	second
 third"]])
@@ -586,14 +580,11 @@ MGQ_MpOverworldSync.state_fields { { "battle" => "clash", "kept" => 1 } }
 state = MGQ_MpOverworldSync::Me.current
 check("a state keeps a field named like a route, and carries the marker", [state["battle"], state["kept"], state["state"]], ["clash", 1, 1])
 $taken_battle = nil
-$inbox << entry("message", 2, told(friend.merge("x" => 12, "battle" => "clash")))
+$inbox << entry("message", 2, told(friend.merge("x" => "12", "battle" => "clash")))
 MGQ_MpOverworldSync.tick
 check("a state with a route's field is taken as a state, not by the route",
       [$taken_battle, MGQ_MpOverworldSync::Peers.at(2).state["x"]], [nil, "12"])
-$inbox << entry("message", 2, "map=5
-x=1
-
-")
+$inbox << entry("message", 2, { "map" => "5", "x" => "1" })
 MGQ_MpOverworldSync.tick
 check("a message with a map but no marker is no state", MGQ_MpOverworldSync::Peers.at(2).state["x"], "12")
 
@@ -614,7 +605,7 @@ MGQ_MpOverworldSync.on_leave { |peer| left << peer.seat }
 $world_bridge.post("world.peer_left", { "seat" => 6 })
 world_frame
 check("a player the DLL forgets leaves the mirror, and the scripts hear of it", [MGQ_MpOverworldSync::Peers.empty?, left], [true, [6]])
-$inbox << entry("message", 3, told(friend.merge("seat" => 3)))
+$inbox << entry("message", 3, told(friend.merge("seat" => "3")))
 MGQ_MpOverworldSync.tick
 $open = false
 MGQ_MpOverworldSync.tick
@@ -629,20 +620,18 @@ check("notices ran out", MGQ_MpOverworldSync::Status.lines, [])
 $gate = []
 MGQ_MpCoop.route("gtest") { |peer, message| $gate << [peer.seat, message["gtest"]] }
 $open = true
-$inbox << entry("message", 4, told(friend.merge("x" => 50, "y" => 50)))
+$inbox << entry("message", 4, told(friend.merge("x" => "50", "y" => "50")))
 MGQ_MpOverworldSync.tick
 mine = "me-p1"
 MGQ_MpOverworldSync::Peers.at(4).state["party"] = mine
 take_party(mine, [MGQ_MpOverworldSync::Peers.at(4)])
 check("a party route is registered with the party's gate", MGQ_MpOverworldSync.instance_variable_get(:@gates)["gtest"], "party")
-$inbox << entry("message", 4, "gtest=mine\nparty=#{mine}\n\n")
+$inbox << entry("message", 4, { "gtest" => "mine", "party" => mine })
 MGQ_MpOverworldSync.tick
 check("a message the gate passed reaches its script", $gate, [[4, "mine"]])
 $sent.clear
 MGQ_MpCoop.tell(4, "gtest", "hello", "extra" => 1)
-check("tell adds the party id", [$sent.last[0], $sent.last[1].include?("gtest=hello
-party=#{mine}
-extra=1")], [4, true])
+check("tell adds the party id", $sent.last, [4, { "gtest" => "hello", "party" => mine, "extra" => 1, :payload => "" }])
 
 # Two players of the same name, found apart by the name the DLL numbers, and nobody by none.
 peers = MGQ_MpOverworldSync::Peers
@@ -710,10 +699,12 @@ check("the leader may invite more", MGQ_MpCoop::Party.may_invite?, true)
 MGQ_MpCoop::Party.remove(far)
 check("and removes a member through the DLL", $party_calls.last, ["remove", 4])
 take_party("me-p2", [far], 4)
+$teleport_view = teleport_view(4 => teleport_offer("Teleport to #{far.state['name']}"))
 MGQ_MpOverworldSync.tick
 check("a member may not invite, and teleports to the leader with the wheel's party choice instead",
       [MGQ_MpCoop::Party.may_invite?, MGQ_MpCoop::Offers.invite_refusal("full"), MGQ_MpActions.wheel_options[PARTY].text.start_with?("Teleport to ")],
       [false, "Only the party's leader invites.", true])
+$teleport_view = nil
 take_party(nil)
 
 # The relay dealing the seats anew, as the DLL's events tell it: a player who takes the seat of one

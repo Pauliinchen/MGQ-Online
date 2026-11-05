@@ -2,6 +2,7 @@
 #  level_sync_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Answered the battle's level with fixed values and checked what the script asks
 #      Paulinchen  2026-10-30: Asked the battle's level of the rules in C# on the stand-in bridge
 #      Paulinchen  2026-10-08: Checked that a Raid World's battles have no level
 #      Paulinchen  2026-10-07: Checked that the log tells each character's sync
@@ -84,25 +85,26 @@ class Brittle < Game_Actor
 end
 
 load_script "battles_coop_level_sync"
-# The rules in C#, which work the battle's level out.
+# The DLL's side of the bridge, answering the battle's level with the values the file sets.
 level_bridge = FakeBridge.new
 answer_coop(level_bridge)
 MGQ_Multiplayer::Bridge.open(level_bridge)
 SceneManager.run
 sync = MGQ_MpCoopLevelSync
 
-# The battle's level.
+# The battle's level, which the DLL works out from the leader's characters in it.
 $leader_seat = 0
 leader = MGQ_MpBattlesCoop::Player.new(0, "50,80,12", [[0], [2]])
 member = MGQ_MpBattlesCoop::Player.new(2, "90,95", [[0], [1]])
-check("the battle's level is the highest of the leader's characters in it", sync.level_for([member, leader]), 50)
-$leader_seat = 5
-check("without the leader in the battle there is none", sync.level_for([member, leader]), nil)
-$leader_seat = 0
+$coop.set("coop.level", "level" => 50, "log" => "level 50: the leader's")
+check("the battle's level is the DLL's, its reason logged", [sync.level_for([member, leader]), $log.last], [50, "level sync: level 50: the leader's"])
+check("asked with each player's seat, whether they lead, their places and the leader's characters' levels",
+      $coop.asked("coop.level").last, { "raid" => false, "players" => [[2, false, [0, 1], []], [0, true, [0, 2], [50, 80, 12]]] })
 $raid = true
-check("a Raid World's battles have none", sync.level_for([member, leader]), nil)
+sync.level_for([member, leader])
+check("a Raid World's battle asks without its players", $coop.asked("coop.level").last, { "raid" => true, "players" => [] })
 $raid = false
-
+$coop.set("coop.level", nil)
 # Syncing.
 $kind = :coop
 sync.begin(10)

@@ -2,7 +2,10 @@
 #  world_data_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Checked that a fingerprint the DLL did not answer is measured again
+#      Paulinchen  2026-11-05: Answered the mods text, the mod keys and the scripts in Patch with fixed values and checked what goes to the DLL instead of the rules
+#                            - Checked the ids the fingerprint is made of and what goes to the DLL to compare, instead of what its stand-ins compared
+#                            - Answered the forms, the list's rows, the choices, the list box and the mod picker with the values each check sets, leaving their rules to the DLL's tests
+#                            - Checked that a fingerprint the DLL did not answer is measured again
 #                            - Read the directory's list and the player's id through the DLL's topics
 #      Paulinchen  2026-11-01: Checked only the mods of a world as the DLL orders them, whose required and essential readers are gone
 #                            - Dropped the checks that read the old screen prototype instead of the scripts
@@ -76,13 +79,9 @@
 #----------------------------------------------------------------
 
 # Checks what a creator tells about a world and which games may enter it (world.rbx,
-# world_screen.rbx): the fingerprint of a game's data, the form's description, mods and rule,
-# the directory's fields for them, a differing game kept out or asked first, what the details
-# say, the list box, the text boxes and the mod picker.
-
-require "zlib"
-require "fileutils"
-require "tmpdir"
+# world_screen.rbx): the ids of a game's data the fingerprint is made of, what goes to the DLL to
+# compare and name them, the forms' requests, the directory's fields, the list box, the text boxes
+# and the mod picker drawn from the DLL's answers, whose rules its tests cover.
 
 require_relative "support"
 require_relative "rules_support"
@@ -236,11 +235,21 @@ def game_data(skills, maps, more_maps = [1])
   MGQ_MpWorld::GameData.instance_variable_set(:@fingerprint, nil)
 end
 
-# The fingerprint.
+# The fingerprint: the script reads the ids in use of each part, the DLL writes the fingerprint of
+# them (DataFingerprintTests) and compares two (WorldRulesTests).
+# Tells the ids the script handed the DLL's measure last.
+measured = lambda { Marshal.load($world_bridge.calls.reverse.find { |topic, _| topic == "worlds.fingerprint" }[1]) }
 game_data([DataUsable.new("Slash", "<power 2>"), DataUsable.new(""), DataUsable.new("Fire", "", [], [:damage])], [2, 1])
 plain = MGQ_MpWorld::GameData.fingerprint
-check("the fingerprint names its format and a checksum per part", plain =~ /\A2:[0-9a-f]{8}(\.[0-9a-f]{8}){10}\z/ ? true : false, true)
-check("a game matches itself", MGQ_MpWorld::GameData.differing(plain), [])
+untranslated = measured.call
+check("the fingerprint is the DLL's of the ids in use of each part, an entry holding a note, features or effects, the maps sorted",
+      [plain, untranslated.values_at(0, 2, 8, 9, 10)], [$world_bridge.instance_variable_get(:@handlers)["worlds.fingerprint"].call(untranslated), [[1, 2], [1, 3], [1], [1], [1, 2, 1001]]])
+$locals.clear
+$locals.set("worlds.data_differing", [])
+check("comparing it with another game's hands the DLL this game's fingerprint once, then the other's, each asked once",
+      [MGQ_MpWorld::GameData.differing("2:other"), MGQ_MpWorld::GameData.differing("2:other"), $locals.asked("worlds.game_data"), $locals.asked("worlds.data_differing")],
+      [[], [], [plain], ["2:other"]])
+$locals.set("worlds.data_differing")
 measuring = $world_bridge.instance_variable_get(:@handlers)["worlds.fingerprint"]
 $world_bridge.answer("worlds.fingerprint") { nil }
 MGQ_MpWorld::GameData.instance_variable_set(:@fingerprint, nil)
@@ -248,27 +257,31 @@ silent = MGQ_MpWorld::GameData.fingerprint
 $world_bridge.answer("worlds.fingerprint", &measuring)
 check("a fingerprint the DLL did not answer is measured again at the next ask", [silent, MGQ_MpWorld::GameData.fingerprint], ["", plain])
 game_data([DataUsable.new("Schlag", "<power 2>"), DataUsable.new("Leer", " \r\n"), DataUsable.new("Feuer", "", [], [:damage])], [1, 2])
-check("a translated game matches the untranslated one, even where it names an empty place", MGQ_MpWorld::GameData.differing(plain), [])
+MGQ_MpWorld::GameData.fingerprint
+check("a translated game reads the same ids as the untranslated one, even where it names an empty place", measured.call, untranslated)
 game_data([DataUsable.new("Slash", "<power 2>"), DataUsable.new("Mod Skill", "", [:feature]), DataUsable.new("Fire", "", [], [:damage])], [1, 2, 488])
-check("a mod's new skill and map are told apart, by what the skill holds", MGQ_MpWorld::GameData.differing(plain), ["skills", "maps"])
+MGQ_MpWorld::GameData.fingerprint
+check("a mod's new skill and map are read, the skill by what it holds", measured.call.values_at(2, 10), [[1, 2, 3], [1, 2, 488, 1001]])
 game_data([DataUsable.new("Slash", "<power 2>"), DataUsable.new(""), DataUsable.new("Fire", "", [], [:damage])], [1, 2], [1, 5])
-check("so is a map in a further map folder", MGQ_MpWorld::GameData.differing(plain), ["maps"])
-check("whose maps count on from a thousand", MGQ_MpWorld::GameData.map_ids, [1, 2, 1001, 1005])
+check("the maps of a further map folder count on from a thousand", MGQ_MpWorld::GameData.map_ids, [1, 2, 1001, 1005])
 game_data([DataUsable.new("Slash", "<power 2>"), DataUsable.new("Mod Skill", "", [:feature]), DataUsable.new("Fire", "", [], [:damage])], [1, 2, 488])
-check("a world without game data is not compared", [MGQ_MpWorld::GameData.differing(""), MGQ_MpWorld::GameData.differing(nil)], [nil, nil])
-check("nor one of another format", MGQ_MpWorld::GameData.differing(plain.sub("2:", "1:")), nil)
-check("nor a damaged one", MGQ_MpWorld::GameData.differing("1:abc"), nil)
-check("or past as many as asked", MGQ_MpWorld::GameData.text(%w[actors classes skills items], 2), "actors, classes and 2 more")
-check("many parts are counted past the first four", MGQ_MpWorld::GameData.text(%w[actors classes skills items weapons armors]), "actors, classes, skills, items and 2 more")
-check("few are all named", MGQ_MpWorld::GameData.text(%w[skills maps]), "skills, maps")
+$locals.clear
+check("a world without game data is not compared, the DLL not asked", [MGQ_MpWorld::GameData.differing(""), MGQ_MpWorld::GameData.differing(nil), $locals.asked("worlds.data_differing")],
+      [nil, nil, []])
+$locals.set("worlds.data_text", "skills, maps and 2 more")
+check("the parts that differ are named as the DLL writes them, four at most unless asked otherwise",
+      [MGQ_MpWorld::GameData.text(%w[skills maps]), MGQ_MpWorld::GameData.text(%w[skills], 2), $locals.asked("worlds.data_text")],
+      ["skills, maps and 2 more", "skills, maps and 2 more", [{ "parts" => %w[skills maps], "named" => 4 }, { "parts" => %w[skills], "named" => 2 }]])
+$locals.set("worlds.data_text")
 modded = MGQ_MpWorld::GameData.fingerprint
 
 # The measure once a world's mods loaded, which the battle server, measuring without them, never takes.
 $data_items << DataEntry.new("Mod Potion", "<Mod Potion>")
 entered = MGQ_MpWorld::GameData.measure_entered
-check("a world's mod that adds an item shows in the measure taken once the world's mods loaded", MGQ_MpWorld::GameData.differing(entered), ["items"])
+check("a world's mod that adds an item shows in the measure taken once the world's mods loaded", [measured.call[3], entered == modded], [[1, 2], false])
+MGQ_MpWorld::GameData.differing(entered)
 check("while the fingerprint the DLL keeps and served battles carry stays the title's, so the server still hosts them",
-      [MGQ_MpWorld::GameData.fingerprint, $game_fingerprint], [modded, modded])
+      [MGQ_MpWorld::GameData.fingerprint, $locals.asked("worlds.game_data").last], [modded, modded])
 $data_items.pop
 
 # GameData.ini, which the title screen writes once per session for the World Admin tool.
@@ -303,38 +316,22 @@ check("a write that fails raises nothing and only logs, naming the file and the 
 MGQ_Multiplayer::Ini.singleton_class.send(:remove_method, :write)
 MGQ_MpWorld::GameData.instance_variable_set(:@fingerprint, nil)
 
-# The form.
-form = MGQ_MpWorld::WorldForm.create(:new_world)
-form[:name] = "Modded Run"
-check("a new world needs no description and no mods", [form.problem, form[:description], form[:mods]], [nil, "", ""])
-description = form.fields.find { |field| field.key == :description }
-check("the description is a box of several lines in a panel of its own", [description.kind, description.lines, description.group, description.max_chars], [:area, 4, "Description", 1000])
-check("the mods and Shared Mod Settings share the Game data panel", [:mods, :shared].map { |key| field = form.fields.find { |candidate| candidate.key == key }; [field.kind, field.label, field.group] }, [[:mods, "Mods", "Game data"], [:check, "Shared Mod Settings", "Game data"]])
-check("the world type and the starting point share the World panel", form.fields.select { |field| field.group == "World" }.map { |field| field.label },
-      ["Name", "Password", "Max Players", "Hidden", "World type", "Shared save", "Player's choice", "Save", "Raid Bosses"])
-form[:type] = 1
-check("a Raid World has Sharing companions in place of Player's choice, Shared save beside the Difficulty, and its Save beside the button of its squad rules",
-      form.fields.select { |field| field.group == "World" }.map { |field| field.label },
-      ["Name", "Password", "Max Players", "Hidden", "World type", "Sharing companions", "Shared save", "Difficulty", "Save", "Set formation limits"])
-check("its Save's row comes off its description, so the form keeps its height",
-      [form.fields.find { |field| field.key == :description }.lines, form.fields.map { |field| field.row }.max], [2, 10])
-form[:type] = 0
-check("a description is tidied", form.check(description, "  A slow run.  "), ["A slow run.", nil])
-check("and may be empty", form.check(description, "  "), ["", nil])
-$called = nil
-check("while a name may not", form.check(form.fields[0], " ")[1], "The world needs a name.")
+# The forms' fields and rules are the DLL's (WorldFormsTests). The name form tells it whether
+# Discord told the player's name, which lets the name stay empty.
 rename = MGQ_MpWorld::WorldForm.rename(:rename, "")
 # Discord, which tells the player's name from $discord_name.
 module MGQ_Multiplayer; module Discord; def self.player_name; $discord_name; end; end; end
 # Player.ini, whose settings come from $player_ini.
 module MGQ_Multiplayer::Player; DISCORD_NAME = "discord_name"; def self.setting(key); ($player_ini || {})[key]; end; end
+# Tells the facts the name form hands the DLL with a check of an empty name.
+facts = lambda { rename.check(rename.fields[0], " "); $forms.asked("form.check").last["facts"] }
 $discord_name = nil
-check("an empty name of the player is refused while Discord never told theirs", rename.check(rename.fields[0], " ")[1], "Type a name: Discord has not told yours yet.")
+told_none = facts.call
 $discord_name = "Discord Me"
-check("and taken while Discord tells it, which it then stands for", rename.check(rename.fields[0], " "), ["", nil])
+told_now = facts.call
 $discord_name = nil
 $player_ini = { "discord_name" => "Earlier Me" }
-check("or told it in an earlier session", rename.check(rename.fields[0], ""), ["", nil])
+check("the name form tells the DLL whether Discord told the player's name, now or in an earlier session", [told_none, told_now, facts.call], [[], ["discord"], ["discord"]])
 $player_ini = nil
 
 # A new world: the DLL builds the request from the form it holds and says what came of it
@@ -346,10 +343,6 @@ strict_form[:name] = "W"
 $screen_steps = [["busy", "create"]]
 scene.create_world
 check("making a world has the DLL make it, with no files without a shared save", [screen_requests("screen.do").last.values_at("do", "start"), scene.busy], [["create", []], "create"])
-shared_field = strict_form.fields.find { |field| field.key == :shared }
-check("Shared Mod Settings has its row to itself, unticked, and says what it does to players, with no checkbox of the game data beside it",
-      [shared_field.kind, shared_field.label, shared_field.group, shared_field.side, strict_form.fields.any? { |field| field.key == :mismatch }, MGQ_MpWorld::WorldForm.create(:new_world)[:shared], shared_field.hint],
-      [:check, "Shared Mod Settings", "Game data", nil, false, false, "Ticked: every player plays with your mod options here. Unticked: each keeps their own."])
 scene = new_scene
 scene.enter_form(:new_world)
 ui = Mod_Framework::UI
@@ -358,19 +351,23 @@ $screen_steps = [["buzz"], ["say", "The request could not be started. Try again 
 scene.create_world
 check("a world the DLL refuses leaves the form open at the field it was sent from, with why", [said(scene), scene.form.nil?, $focused.id, scene.busy],
       ["The request could not be started. Try again in a moment.", false, "form:confirm", nil])
-$directory = directory_list([
-  listed_value("w1", "Strict", "open" => true, "strict" => true, "data" => plain, "mods" => "No mods", "description" => "Unmodded only."),
-  listed_value("w2", "Loose", "open" => true, "data" => plain, "mods" => "Some Mod", "description" => "A slow run through part one of the story with friends."),
-  listed_value("w3", "Same", "open" => true, "strict" => true, "data" => modded),
-  listed_value("w4", "Old", "open" => true)])
+DATA_WORLDS = [listed_value("w1", "Strict", "open" => true, "strict" => true, "data" => plain, "mods" => "No mods", "description" => "Unmodded only."),
+               listed_value("w2", "Loose", "open" => true, "data" => plain, "mods" => "Some Mod", "description" => "A slow run through part one of the story with friends."),
+               listed_value("w3", "Same", "open" => true, "strict" => true, "data" => modded),
+               listed_value("w4", "Old", "open" => true)]
+$directory = directory_list(DATA_WORLDS)
 _, _, listed, = MGQ_MpWorld::Directory.list
 check("the list reads which worlds take the same data only", listed.map { |world| world.strict }, [true, false, true, false])
 check("their creators' game data", listed.map { |world| world.data }, [plain, plain, modded, ""])
 check("the mods they need and their descriptions", [listed[1].mods, listed[0].description, listed[3].mods, listed[3].description], ["Some Mod", "Unmodded only.", "", ""])
-$local_worlds.clear
-$world_lists["favourite"] = []
-entries = screen_entries(listed, true).sort_by { |entry| entry.id }
-check("an entry tells what differs", entries.map { |entry| entry.differing }, [["skills", "maps"], ["skills", "maps"], [], nil])
+entries = DATA_WORLDS.map { |values| screen_entry(listed_row(values)) }
+screen_list(entries.map { |entry| entry.row })
+MGQ_MpWorld::GameData.instance_variable_set(:@handed, nil)
+$locals.clear
+$locals.set("worlds.data_differing") { |other| other == plain ? %w[skills maps] : [] }
+check("an entry tells what the DLL finds differs from its creator's game data, each fingerprint asked once, none without one",
+      [entries.map { |entry| entry.differing }, $locals.asked("worlds.data_differing")], [[["skills", "maps"], ["skills", "maps"], [], nil], [plain, modded]])
+$locals.set("worlds.data_differing")
 
 # Adding a hidden world by its id.
 added = []
@@ -390,21 +387,14 @@ check("a world found is added, the form empty again and closed", [said(scene), s
 added << "ab" * 16
 
 # Taking an added world off the list again.
-hidden_entry = screen_entry(MGQ_MpWorld::Entry.new("ab" * 16, "Hidden Base", listed[0], nil, false, false))
-actions = lambda do |entry|
-  screen = new_scene
-  screen.on_world(entry)
-  offered = MGQ_MpWorldScreen.actions(entry)
-  shown = menu_texts == offered.map { |label, _symbol| label }
-  [screen, offered.map { |_label, symbol| symbol }, shown]
-end
-scene, offered_actions, shown = actions.call(hidden_entry)
-check("an added world never entered may be removed from the list, as its menu shows", [offered_actions.include?(:forget), shown], [true, true])
+hidden_entry = screen_entry(screen_row("Hidden Base", "id" => "ab" * 16, "listed" => DATA_WORLDS[0]))
+$screens.actions["ab" * 16] = [["Enter the world", "enter", true], ["Remove from my list", "forget", true], ["Back", "cancel", true]]
+scene = new_scene
+scene.on_world(hidden_entry)
+check("a world's choices are the DLL's, asked by its row's key, in the menu", [$screens.asked("screen.actions").last, menu_texts], ["ab" * 16, ["Enter the world", "Remove from my list", "Back"]])
 $screen_steps = [["say", "Hidden Base was removed from your list."], ["back"]]
-pick_menu(scene, offered_actions.index(:forget))
-check("removing it has the DLL forget its id, and says what the DLL tells", [screen_requests("screen.do").last.values_at("do", "id"), said(scene)], [["forget", "ab" * 16], "Hidden Base was removed from your list."])
-check("another world may not", actions.call(entries[1])[1].include?(:forget), false)
-cancel_menu(scene)
+pick_menu(scene, 1)
+check("removing an added world has the DLL forget its id, and says what the DLL tells", [screen_requests("screen.do").last.values_at("do", "id"), said(scene)], [["forget", "ab" * 16], "Hidden Base was removed from your list."])
 
 # Input past the capture: buttons held in $held, the key in $key_down, the mouse in $mouse, $click
 # and $wheel.
@@ -436,39 +426,17 @@ check("a place in the text is on the line that starts at or before it", [spans, 
 # The text box from here on types what $typed holds.
 open_fake_ui { typed = $typed.to_s; $typed = nil; [typed, typed.size] }
 
-# The hints, which share two lines at the top of the world screen.
-hinted_raid = listed[1].dup
-hinted_raid.type = MGQ_MpWorld::RAID
-edits = (listed + [hinted_raid]).flat_map { |world| MGQ_MpWorld::WorldForm.edit(:edit_world, world, false).fields + MGQ_MpWorld::WorldForm.edit(:edit_world, world, true).fields }
-# A new form takes the slot of the one before, so each form's fields are read before the next opens.
-classic_fields = MGQ_MpWorld::WorldForm.create(:new_world).fields
-raid_create = MGQ_MpWorld::WorldForm.create(:new_world)
-raid_create.turn(raid_create.fields.find { |field| field.key == :type }, 1)
-raid_fields = raid_create.fields
-form_fields = classic_fields + raid_fields + raid_create.limits.fields + MGQ_MpWorld::WorldForm.join(:join_hidden).fields
-long = (form_fields + edits).select { |field| field.hint.size > 100 }
-check("every field's hint fits two lines, a Raid World's and its formation limits' too",
-      [long.map { |field| field.key }, [:difficulty, :limits] - raid_fields.map { |field| field.key }], [[], []])
-
 # Changing a world.
-edit = MGQ_MpWorld::WorldForm.edit(:edit_world, listed[1], false)
-check("the edit form holds what may change, filled in as the world is", [edit.title, edit.fields.map { |field| field.key }, edit[:seats], edit[:mods], edit[:description]], ["Edit Loose", [:seats, :raid_bosses, :mods, :other_mods_off, :description, :confirm], "4", "Some Mod", "A slow run through part one of the story with friends."])
-check("and may be sent as it is", edit.problem, nil)
-offered = lambda do |me, admin|
-  scene = new_scene
-  scene.instance_variable_set(:@me, me)
-  scene.instance_variable_set(:@admin, admin)
-  world = screen_entry(entries[1].dup, admin, me)
-  scene.on_world(world)
-  edits = MGQ_MpWorldScreen.actions(world).any? { |_label, symbol| symbol == :edit_world }
-  cancel_menu(scene)
-  edits
-end
-check("the creator and an admin are offered to edit a world, another player is not", [offered.call("c", false), offered.call("me", true), offered.call("me", false)], [true, true, false])
+MGQ_MpWorld::WorldForm.edit(:edit_world, listed[1], false)
+check("the edit form opens on the world as the list tells it, for its creator or not",
+      [$forms.asked("form.open").last.values_at("kind", "own"), $forms.asked("form.open").last["world"]],
+      [["edit", false], { "name" => "Loose", "seats" => 4, "mods" => "Some Mod", "description" => "A slow run through part one of the story with friends.", "shared" => false,
+                          "difficulty" => nil, "raid" => false, "other_mods_off" => false, "raid_bosses" => false, "squad" => nil }])
 scene = new_scene
 scene.instance_variable_set(:@entry, entries[1])
 scene.on_edit_world
-check("editing opens the form in place of the details, the focus on its first field", [scene.form.title, scene.instance_variable_get(:@form_symbol), $focused.id], ["Edit Loose", :edit_world, "form:seats"])
+check("editing opens the form in place of the details, the focus on its first field", [scene.form.title, scene.instance_variable_get(:@form_symbol), $focused.id],
+      [FormAnswers.view("edit of a Classic world, by an admin")["title"], :edit_world, "form:seats"])
 scene.form[:seats] = "8"
 $screen_steps = [["busy", "edit"]]
 scene.send_form
@@ -478,37 +446,48 @@ check("once changed, the form closes and the screen says what the DLL tells", [s
 scene.on_edit_world
 scene.form[:seats] = "99"
 calls = screen_requests("screen.do").size
+$forms.set("form.send", "problem" => ["seats", "Max Players must be a number from 2 to 32."])
 scene.send_form
-check("seats out of range are refused before anything is sent, the focus on them", [screen_requests("screen.do").size, said(scene), $focused.id], [calls, "Max Players must be a number from 2 to 32.", "form:seats"])
+$forms.set("form.send")
+check("seats the DLL refuses are refused before anything is sent, the focus on them", [screen_requests("screen.do").size, said(scene), $focused.id],
+      [calls, "Max Players must be a number from 2 to 32.", "form:seats"])
 raid_listed = listed[1].dup
 raid_listed.type = MGQ_MpWorld::RAID
 raid_listed.difficulty = nil
 scene.instance_variable_set(:@entry, MGQ_MpWorld::Entry.new("w2", "Loose", raid_listed, nil, false, false))
 scene.leave_form
+raid_edit = FormAnswers.view("edit of a Raid World without a difficulty, by its creator")
+$forms.set("form.open", raid_edit)
 scene.on_edit_world
-picked = scene.form.fields.find { |field| field.key == :difficulty }
-check("a Raid World that sets none shows Per player first", [picked.choices.first, picked.choices[scene.form[:difficulty]], scene.form.difficulty], ["Per player", "Per player", nil])
+$forms.set("form.open")
 form_part(scene, :limits).receive("click")
-check("the button of the formation limits opens them over the world's form", [scene.limits.open?, scene.form.title], [true, "Edit Loose"])
+check("the button of the formation limits opens them over the world's form", [scene.limits.open?, scene.form.title], [true, raid_edit["title"]])
+# The world's form as the DLL tells it once the limits changed: a Formation of 6 and two in front in raids.
+picked = { "luka" => false, "formation" => 6, "front" => 1, "raid_front" => 2 }
+$forms.set("form.view") { |request| request["page"] ? FormAnswers.view(FormAnswers::LIMITS) : raid_edit.merge("derived" => raid_edit["derived"].merge("squad" => picked)) }
 scene.form.limits.turn(scene.form.limits.fields.find { |field| field.key == :formation }, 2)
 scene.form.limits.turn(scene.form.limits.fields.find { |field| field.key == :raid_front }, 1)
 scene.limits.close(:cancel)
-check("cancel goes back to the world's form at the button, keeping what was picked", [scene.limits, scene.instance_variable_get(:@form_symbol), scene.instance_variable_get(:@field_key), scene.form.squad],
-      [nil, :edit_world, :limits, { :luka => false, :formation => 6, :front => 1, :raid_front => 2 }])
+check("the limits' switches go to the DLL on their page, and cancel goes back to the world's form at the button, which reads what the DLL adds up",
+      [$forms.asked("form.turn").last(2).map { |request| request.values_at("page", "key", "step") }, scene.limits, scene.instance_variable_get(:@form_symbol),
+       scene.instance_variable_get(:@field_key), scene.form.squad],
+      [[["limits", "formation", 2], ["limits", "raid_front", 1]], nil, :edit_world, :limits, { :luka => false, :formation => 6, :front => 1, :raid_front => 2 }])
 form_part(scene, :limits).receive("click")
 scene.limits.find("form:done").receive("click")
 check("as Done does", [scene.limits, scene.form.squad[:formation]], [nil, 6])
+$forms.set("form.view")
 scene.leave_form
 
-# The seats a world's code tells follow the directory.
-world = local_world("abcdef012345", "code" => "mgqmp2;abcdefghjkmnpqrs;r1;4")
-world.describe("Loose", "w2", 8)
-check("a world's code takes the seats the directory lists", [world.seats, world.code], [8, "mgqmp2;abcdefghjkmnpqrs;r1;8"])
-
-# The players and the mods of a world, listed from its choices.
-check("a mod written with an exclamation mark or a question mark is named first without its mark, the required ones before the essential ones", MGQ_MpWorld.mods_of("Mod A; ?Mod D; !Mod B;! Mod C; !; ?"), ["Mod B", "Mod C", "Mod D", "Mod A"])
+# The players and the mods of a world, listed from its choices: the DLL reads the mods text and
+# makes each mod's key (ModsTextTests and ModKeyTests cover the rules).
+$rule_answers.set("mods.text", { "names" => ["Mod B", "Mod C", "Mod D", "Mod A"], "required" => ["Mod B", "Mod C"], "essential" => ["Mod D"] })
+check("a world's mods are named as the DLL reads its mods text",
+      [MGQ_MpWorld.mods_of("Mod A; ?Mod D; !Mod B;! Mod C; !; ?"), $rule_answers.asked("mods.text").last], [["Mod B", "Mod C", "Mod D", "Mod A"], "Mod A; ?Mod D; !Mod B;! Mod C; !; ?"])
+$rule_answers.set("mods.text", nil)
+mod_keys = { "Mod B" => "modb", "Mod C" => "modc", "Deep Mod" => "deepmod", "Other" => "other" }
+$rule_answers.set("mods.keys") { |names| names.map { |name| mod_keys.fetch(name) } }
 MGQ_MpWorld.instance_variable_set(:@installed, [["modb", "Patch/Mod_B.rb", "Mod_B"], ["maskofenvy", "Patch/Mask_of_Envy.rb", "Mask_of_Envy"]])
-check("a mod's script is found by its name, whatever its case, spaces or underscores", ["Mod B", "mod_b.rb", "Mask of Envy", "Mask-Of-Envy", "Mod C"].map { |mod| MGQ_MpWorld.installed_mod?(mod) }, [true, true, true, true, false])
+check("a mod is installed when the DLL's key of its name is a script's in Patch", ["Mod B", "Mod C"].map { |mod| MGQ_MpWorld.installed_mod?(mod) }, [true, false])
 
 # A world the list names without its mods, as the relay lists it for this version.
 unread_world = listed[1].dup
@@ -517,42 +496,36 @@ unread_world.mods_unread = true
 unread_entry = MGQ_MpWorld::Entry.new("w2", "Loose", unread_world, nil, false, false)
 scene = new_scene
 scene.instance_variable_set(:@entry, unread_entry)
-listed_before = $directory
-$directory = directory_list([listed_value("w2", "Loose", "open" => true, "data" => plain, "mods" => "!Mod C", "description" => "A slow run.")])
+list_before = $screens.list
+$screens.list = { "state" => "ready", "error" => nil, "admin" => false, "info" => nil,
+                  "rows" => [listed_row(listed_value("w2", "Loose", "open" => true, "data" => plain, "mods" => "!Mod C", "description" => "A slow run."))] }
 $screen_steps = [["read"]]
 scene.on_enter
-check("once the DLL read its mods, the read step takes the world anew from the list", unread_entry.listed.mods, "!Mod C")
-$directory = listed_before
-Dir.mktmpdir do |folder|
-  FileUtils.mkdir_p(File.join(folder, "Patch", "Sub"))
-  File.write(File.join(folder, "Patch", "Mask_of_Envy.rb"), "")
-  File.write(File.join(folder, "Patch", "Sub", "Deep Mod.rb"), "")
-  Dir.chdir(folder) do
-    MGQ_MpWorld.instance_variable_set(:@installed, nil)
-    check("the Patch folder is read with its folders", ["Mask of Envy", "deep_mod", "Other"].map { |mod| MGQ_MpWorld.installed_mod?(mod) }, [true, true, false])
-  end
-end
+check("once the DLL read its mods, the read step takes the world anew from the DLL's list", [$screens.asked("screen.world").last, unread_entry.listed.mods], ["w2", "!Mod C"])
+$screens.list = list_before
+$rule_answers.set("mods.installed", [["deepmod", "Patch/Sub/Deep Mod.rb", "Deep Mod"]])
+MGQ_MpWorld.instance_variable_set(:@installed, nil)
+check("the scripts in Patch are those the DLL lists", ["Deep Mod", "Other"].map { |mod| MGQ_MpWorld.installed_mod?(mod) }, [true, false])
 MGQ_MpWorld.instance_variable_set(:@installed, [["modb", "Patch/Mod_B.rb", "Mod_B"]])
 modded_world = listed[1].dup
 modded_world.mods = "Mod A; Mod B"
 member = MGQ_MpWorld::Directory::Member
 modded_world.members = [member.new("me", true, "Me"), member.new("a", false, "Ann")]
-modded_entry = screen_entry(MGQ_MpWorld::Entry.new("w2", "Loose", modded_world, nil, false, false))
+modded_entry = MGQ_MpWorld::Entry.new("w2", "Loose", modded_world, nil, false, false, "w2")
+$screens.boxes[["w2", "players"]] = [["head", "Online (1)"], ["item", "Me (you)", "good", "online"], ["head", "Offline (1)"], ["item", "Ann", "grey", "offline"]]
+$screens.boxes[["w2", "mods"]] = [["head", "Mods (2)"], ["item", "Mod A", "plain", nil], ["item", "Mod B", "plain", nil]]
 scene = new_scene
 scene.instance_variable_set(:@me, "me")
-scene.on_world(modded_entry)
-check("a world's choices leave its players and its mods to the details", menu_texts.grep(/Players|Mods/), [])
-cancel_menu(scene)
 scene.instance_variable_set(:@entry, modded_entry)
 scene.open_box(:players)
 box = scene.list_box
 check("the players open in the list box, under the world's name", [box.children.first.children.map { |label| label.text }], [["Loose", "Players"]])
-check("those online first, then the others, each under a heading, the player marked", MGQ_MpListBox.list(box).rows,
+check("the DLL's lines, its headings as headings and its items in their colours", MGQ_MpListBox.list(box).rows,
       [{ :heading => "Online (1)" }, { :text => "Me (you)", :color => :good, :right => "online" }, { :heading => "Offline (1)" }, { :text => "Ann", :color => :dim, :right => "offline" }])
 check("the first player is picked", MGQ_MpListBox.list(box).index, 1)
 scene.open_box(:mods)
 box = scene.list_box
-check("each mod is listed on its own", [note_text(box), MGQ_MpListBox.list(box).rows],
+check("the mods the same way", [note_text(box), MGQ_MpListBox.list(box).rows],
       ["Mods", [{ :heading => "Mods (2)" }, { :text => "Mod A", :color => nil, :right => nil }, { :text => "Mod B", :color => nil, :right => nil }]])
 box.close
 
@@ -566,106 +539,140 @@ check("the whole description opens in the list box, wrapped", [note_text(box), b
 box.close
 
 # The edit form of a world's creator.
-own_edit = MGQ_MpWorld::WorldForm.edit(:edit_world, listed[1], true)
-check("the creator's edit form has Shared Mod Settings, unticked while the world leaves every player their own, and no button of the game data",
-      [own_edit.fields.map { |field| field.key }, own_edit.fields[3].kind, own_edit.fields[3].label, own_edit.fields[3].group, own_edit[:shared]],
-      [[:seats, :raid_bosses, :mods, :shared, :other_mods_off, :description, :confirm], :check, "Shared Mod Settings", "Game data", false])
-check("another editor's form does not", MGQ_MpWorld::WorldForm.edit(:edit_world, listed[1], false).fields.map { |field| field.key }, [:seats, :raid_bosses, :mods, :other_mods_off, :description, :confirm])
 scene = new_scene
 scene.instance_variable_set(:@me, "c")
 scene.instance_variable_set(:@entry, entries[1])
 scene.on_edit_world
 $screen_steps = [["busy", "edit"]]
 form_part(scene, :confirm).receive("click")
-check("the form's own button has the DLL save the changes, the shared settings with them", screen_requests("screen.do").last["do"], "edit")
+check("the form's own button has the DLL save the changes, the creator's form told it is theirs", [$forms.asked("form.open").last["own"], screen_requests("screen.do").last["do"]],
+      [true, "edit"])
 entries[1].listed.settings = ""
 scene.play("steps" => [["idle"], ["close_form"]])
 
 # The mod picker, which the DLL keeps (ModPickTests): the script shows what it answers and hands each
 # change over.
-$picker_installed = ["Battle_Dialogue", "Level_Cap"]
-pick = MGQ_MpWorld::ModPick.new("!level cap; Unknown Mod; ?Data Pack")
-check("named mods take their state, label and colour, matched whatever their case or spaces, and those not installed follow as added", pick.entries.map { |entry| entry.to_a },
-      [["Battle_Dialogue", :unlisted, true, "unlisted", :grey], ["Level_Cap", :required, true, "required", :bad], ["Data Pack", :essential, false, "essential", :gold], ["Unknown Mod", :listed, false, "listed", :plain]])
-check("the text names the mods as the world keeps them, an installed one by its file's name", pick.text, "!Level_Cap; ?Data Pack; Unknown Mod")
-first = pick.entries[0]
-pick.toggle(0)
-check("a change goes to the DLL, and a mod read before it tells its new state", [first.state, pick.text], [:listed, "Battle_Dialogue; !Level_Cap; ?Data Pack; Unknown Mod"])
-check("a mod added by name is removed on its own, an installed one not", [pick.remove(3), pick.remove(0), pick.entries.size], [true, false, 3])
-check("a refusal comes back as the DLL says it", pick.add("level_cap"), "Level_Cap is in the list already.")
-check("and list all lists the rest", [pick.mark(1, :required), pick.unlist_all, pick.list_all, pick.text, pick.all_listed?], [nil, nil, nil, "Battle_Dialogue; Level_Cap; ?Data Pack", true])
-$picker_installed = nil
-
-Dir.mktmpdir do |folder|
-  FileUtils.mkdir_p(File.join(folder, "Patch", "Sub"))
-  %w[Patch.rb Multiplayer.rb 0_ModConfigRemake.rb Level_Cap.rb battle_dialogue.rb Zeta.rb].each { |name| File.write(File.join(folder, "Patch", name), "") }
-  File.write(File.join(folder, "Patch", "Sub", "Party Sheet.rb"), "")
-  File.write(File.join(folder, "Patch", "Sub", "Level Cap.rb"), "")
-
-  Dir.chdir(folder) do
-    MGQ_MpWorld.forget_installed
-    off = [{ :text => "!", :color => :bad, :on => false }, { :text => "?", :color => :warn, :on => false }]
-    scene = new_scene
-    scene.enter_form(:new_world)
-    form = scene.form
-    form[:mods] = "?Data Pack"
-    form_part(scene, :mods).receive("click")
-    list = MGQ_MpListBox.list(scene.list_box)
-    row = lambda { |name| list.rows.find { |each| each[:text] == name } }
-    check("the picker lists the row that lists every mod, the installed mods with their two toggles, the added ones and the row that adds one",
-          [list.rows.map { |each| each[:text] || each[:heading] }, row.call("Zeta").values_at(:color, :right, :toggles), list.index],
-          [["List all your mods", "Your mods (4)", "battle_dialogue", "Level_Cap", "Party Sheet", "Zeta", "Added by name (1)", "Data Pack", "Add a mod by name . . ."],
-           [:dim, "unlisted", off], 0])
-    at = lambda { |name| list.rows.index(row.call(name)) }
-    list.receive("submit", at.call("Level_Cap"))
-    check("confirm on a mod lists it in the form at once", [form[:mods], row.call("Level_Cap")[:right]], ["Level_Cap; ?Data Pack", "listed"])
-    list.receive("toggle", at.call("Level_Cap"), 0)
-    check("its ! toggle makes it required, the toggle on", [form[:mods], row.call("Level_Cap")[:toggles][0][:on]], ["!Level_Cap; ?Data Pack", true])
-    list.receive("toggle", at.call("Level_Cap"), 1)
-    check("its ? toggle makes it essential", [form[:mods], row.call("Level_Cap")[:toggles].map { |toggle| toggle[:on] }], ["?Level_Cap; ?Data Pack", [false, true]])
-    list.receive("submit", at.call("Level_Cap"))
-    check("confirm unlists it again", form[:mods], "?Data Pack")
-    list.receive("submit", 0)
-    check("the first row lists every installed mod, then offers to unlist them", [form[:mods], list.rows[0][:text]], ["battle_dialogue; Level_Cap; Party Sheet; Zeta; ?Data Pack", "Unlist all your mods"])
-    list.receive("submit", 0)
-    check("and unlists them", [form[:mods], list.rows[0][:text]], ["?Data Pack", "List all your mods"])
-    list.index = at.call("Data Pack")
-    scene.show_remove
-    check("while a mod added by name is picked, the Remove button shows", MGQ_MpListBox.remove_button(scene.list_box).visible, true)
-    MGQ_MpListBox.remove_button(scene.list_box).receive("click")
-    check("Remove takes it out of the list and the form", [list.rows.map { |each| each[:text] || each[:heading] }.include?("Data Pack"), form[:mods]], [false, ""])
-    list.index = at.call("Zeta")
-    scene.show_remove
-    check("an installed mod has no Remove", MGQ_MpListBox.remove_button(scene.list_box).visible, false)
-    $sounds.clear
-    list.receive("submit", list.rows.index { |each| each[:data] == :add })
-    field = MGQ_MpListBox.field(scene.list_box)
-    help = MGQ_MpListBox.key_help(scene.list_box)
-    check("the last row opens the Name field under the list, typing, the box at least as wide as its key line",
-          [field.parent.parent.visible?, $focused.equal?(field), $mgq_text_input, scene.list_box.min_size[0] >= help.measure[0] + 2 * Mod_Framework::UI::Box::ROOM],
-          [true, true, true, true])
-    type_in("New Mod\r")
-    check("Enter adds the mod, picked, and hides the field", [form[:mods], list.rows[list.index][:text], field.parent.parent.visible?, $focused.equal?(list)],
-          ["New Mod", "New Mod", false, true])
-    list.receive("submit", list.rows.size - 1)
-    type_in("Other")
-    cancel_in(field)
-    check("cancel in the field goes back to the list without adding", [form[:mods], field.parent.parent.visible?, $mgq_text_input], ["New Mod", false, false])
-    list.receive("submit", list.rows.size - 1)
-    field.receive("submit")
-    pad = Mod_Framework::UI::Tree.roots.find { |root| root.is_a?(Mod_Framework::UI::LetterPad) }
-    check("a gamepad's letters take the keys from the Name field, which stays open", [pad.nil?, field.parent.parent.visible?], [false, true])
-    "Pad Mod".each_char { |letter| pad.type(letter) } if pad
-    pad.finish if pad
-    check("their OK adds the mod and hides the field", [form[:mods], field.parent.parent.visible?], ["New Mod; Pad Mod", false])
-    pad.close if pad
-    $sounds.clear
-    scene.add_mod("level cap")
-    check("a name already listed is refused beside the title", [$sounds, note_text(scene.list_box)], [["buzzer"], "Level_Cap is in the list already."])
-    scene.list_box.close(:cancel)
-    check("closing goes back to the form, which shows the mods picked", [scene.list_box, form_part(scene, :mods).text, scene.instance_variable_get(:@field_key)], [nil, "New Mod; Pad Mod", :mods])
-  end
+# Makes the picker as the DLL tells it: each mod with its state, whether it is installed, its label
+# and its colour.
+pick_view = lambda do |mods, text, all_listed = false|
+  colors = { "unlisted" => "grey", "listed" => "plain", "required" => "bad", "essential" => "gold" }
+  { "entries" => mods.map { |name, state, installed| [name, state, installed, state, colors[state]] }, "text" => text, "all_listed" => all_listed }
 end
+$locals.set("modpick.open", pick_view.call([["Battle_Dialogue", "unlisted", true], ["Level_Cap", "required", true], ["Data Pack", "essential", false]], "!Level_Cap; ?Data Pack"))
+pick = MGQ_MpWorld::ModPick.new("!level cap; ?Data Pack")
+check("the picker opens on the world's mods through the DLL and takes each mod's state, label and colour as it answers",
+      [$locals.asked("modpick.open").last, pick.entries.map { |entry| entry.to_a }, pick.text, pick.all_listed?],
+      [{ "text" => "!level cap; ?Data Pack" }, [["Battle_Dialogue", :unlisted, true, "unlisted", :grey], ["Level_Cap", :required, true, "required", :bad], ["Data Pack", :essential, false, "essential", :gold]],
+       "!Level_Cap; ?Data Pack", false])
+first = pick.entries[0]
+$locals.set("modpick.act", "answer" => nil, "pick" => pick_view.call([["Battle_Dialogue", "listed", true], ["Level_Cap", "required", true], ["Data Pack", "essential", false]],
+                                                                     "Battle_Dialogue; !Level_Cap; ?Data Pack", true))
+pick.toggle(0)
+check("a change goes to the DLL, and a mod read before it tells its new state", [$locals.asked("modpick.act").last, first.state, pick.text, pick.all_listed?],
+      [{ "do" => "toggle", "index" => 0 }, :listed, "Battle_Dialogue; !Level_Cap; ?Data Pack", true])
+pick.mark(1, :essential)
+pick.set(1, :unlisted)
+pick.list_all
+pick.unlist_all
+check("marks, states and the whole list go to the DLL by name", $locals.asked("modpick.act").last(4),
+      [{ "do" => "mark", "index" => 1, "state" => "essential" }, { "do" => "set", "index" => 1, "state" => "unlisted" }, { "do" => "list_all" }, { "do" => "unlist_all" }])
+$locals.set("modpick.act", "answer" => "Level_Cap is in the list already.", "pick" => pick_view.call([["Battle_Dialogue", "listed", true]], "Battle_Dialogue"))
+check("a refusal comes back as the DLL says it, the picker made anew of the mods it tells", [pick.add("level_cap"), pick.entries.map { |entry| entry.name }],
+      ["Level_Cap is in the list already.", ["Battle_Dialogue"]])
+$locals.set("modpick.act", "answer" => true, "pick" => pick_view.call([], ""))
+check("a mod removed is what the DLL says", [pick.remove(0), $locals.asked("modpick.act").last], [true, { "do" => "remove", "index" => 0 }])
+$locals.set("modpick.act")
+$locals.set("modpick.open")
+
+# The picker on the world screen: four installed mods and one added by name, each change answered
+# as the DLL would.
+installed = %w[battle_dialogue Level_Cap Party\ Sheet Zeta]
+# Makes the picker with the installed mods in their states and Data Pack added, essential, unless gone.
+screen_pick = lambda do |states, text, added = [["Data Pack", "essential", false]], all_listed = false|
+  pick_view.call(installed.zip(states).map { |name, state| [name, state, true] } + added, text, all_listed)
+end
+unlisted = %w[unlisted] * 4
+$locals.set("modpick.open", screen_pick.call(unlisted, "?Data Pack"))
+replies = []
+$locals.set("modpick.act") { |_request| replies.shift }
+off = [{ :text => "!", :color => :bad, :on => false }, { :text => "?", :color => :warn, :on => false }]
+scene = new_scene
+scene.enter_form(:new_world)
+form = scene.form
+form[:mods] = "?Data Pack"
+form_part(scene, :mods).receive("click")
+list = MGQ_MpListBox.list(scene.list_box)
+row = lambda { |name| list.rows.find { |each| each[:text] == name } }
+check("the picker opens on the form's mods and lists the row that lists every mod, the installed mods with their two toggles, the added ones and the row that adds one",
+      [$locals.asked("modpick.open").last, list.rows.map { |each| each[:text] || each[:heading] }, row.call("Zeta").values_at(:color, :right, :toggles), list.index],
+      [{ "text" => "?Data Pack" }, ["List all your mods", "Your mods (4)", "battle_dialogue", "Level_Cap", "Party Sheet", "Zeta", "Added by name (1)", "Data Pack", "Add a mod by name . . ."],
+       [:dim, "unlisted", off], 0])
+at = lambda { |name| list.rows.index(row.call(name)) }
+replies << { "answer" => nil, "pick" => screen_pick.call(%w[unlisted listed unlisted unlisted], "Level_Cap; ?Data Pack") }
+list.receive("submit", at.call("Level_Cap"))
+check("confirm on a mod lists it through the DLL and in the form at once", [$locals.asked("modpick.act").last, form[:mods], row.call("Level_Cap")[:right]],
+      [{ "do" => "toggle", "index" => 1 }, "Level_Cap; ?Data Pack", "listed"])
+replies << { "answer" => nil, "pick" => screen_pick.call(%w[unlisted required unlisted unlisted], "!Level_Cap; ?Data Pack") }
+list.receive("toggle", at.call("Level_Cap"), 0)
+check("its ! toggle makes it required, the toggle on", [$locals.asked("modpick.act").last, form[:mods], row.call("Level_Cap")[:toggles][0][:on]],
+      [{ "do" => "mark", "index" => 1, "state" => "required" }, "!Level_Cap; ?Data Pack", true])
+replies << { "answer" => nil, "pick" => screen_pick.call(%w[unlisted essential unlisted unlisted], "?Level_Cap; ?Data Pack") }
+list.receive("toggle", at.call("Level_Cap"), 1)
+check("its ? toggle makes it essential", [$locals.asked("modpick.act").last["state"], form[:mods], row.call("Level_Cap")[:toggles].map { |toggle| toggle[:on] }],
+      ["essential", "?Level_Cap; ?Data Pack", [false, true]])
+replies << { "answer" => nil, "pick" => screen_pick.call(%w[listed] * 4, "battle_dialogue; Level_Cap; Party Sheet; Zeta; ?Data Pack", [["Data Pack", "essential", false]], true) }
+list.receive("submit", 0)
+check("the first row lists every installed mod, then offers to unlist them", [$locals.asked("modpick.act").last, form[:mods], list.rows[0][:text]],
+      [{ "do" => "list_all" }, "battle_dialogue; Level_Cap; Party Sheet; Zeta; ?Data Pack", "Unlist all your mods"])
+replies << { "answer" => nil, "pick" => screen_pick.call(unlisted, "?Data Pack") }
+list.receive("submit", 0)
+check("and unlists them", [$locals.asked("modpick.act").last, form[:mods], list.rows[0][:text]], [{ "do" => "unlist_all" }, "?Data Pack", "List all your mods"])
+list.index = at.call("Data Pack")
+scene.show_remove
+check("while a mod added by name is picked, the Remove button shows", MGQ_MpListBox.remove_button(scene.list_box).visible, true)
+replies << { "answer" => true, "pick" => screen_pick.call(unlisted, "", []) }
+MGQ_MpListBox.remove_button(scene.list_box).receive("click")
+check("Remove takes it out through the DLL, out of the list and the form",
+      [$locals.asked("modpick.act").last, list.rows.map { |each| each[:text] || each[:heading] }.include?("Data Pack"), form[:mods]], [{ "do" => "remove", "index" => 4 }, false, ""])
+list.index = at.call("Zeta")
+scene.show_remove
+check("an installed mod has no Remove", MGQ_MpListBox.remove_button(scene.list_box).visible, false)
+$sounds.clear
+list.receive("submit", list.rows.index { |each| each[:data] == :add })
+field = MGQ_MpListBox.field(scene.list_box)
+help = MGQ_MpListBox.key_help(scene.list_box)
+check("the last row opens the Name field under the list, typing, the box at least as wide as its key line",
+      [field.parent.parent.visible?, $focused.equal?(field), $mgq_text_input, scene.list_box.min_size[0] >= help.measure[0] + 2 * Mod_Framework::UI::Box::ROOM],
+      [true, true, true, true])
+replies << { "answer" => nil, "pick" => screen_pick.call(unlisted, "New Mod", [["New Mod", "listed", false]]) }
+type_in("New Mod\r")
+check("Enter adds the mod through the DLL, picked, and hides the field",
+      [$locals.asked("modpick.act").last, form[:mods], list.rows[list.index][:text], field.parent.parent.visible?, $focused.equal?(list)],
+      [{ "do" => "add", "name" => "New Mod" }, "New Mod", "New Mod", false, true])
+list.receive("submit", list.rows.size - 1)
+type_in("Other")
+asked = $locals.asked("modpick.act").size
+cancel_in(field)
+check("cancel in the field goes back to the list without adding", [$locals.asked("modpick.act").size, form[:mods], field.parent.parent.visible?, $mgq_text_input], [asked, "New Mod", false, false])
+list.receive("submit", list.rows.size - 1)
+field.receive("submit")
+pad = Mod_Framework::UI::Tree.roots.find { |root| root.is_a?(Mod_Framework::UI::LetterPad) }
+check("a gamepad's letters take the keys from the Name field, which stays open", [pad.nil?, field.parent.parent.visible?], [false, true])
+replies << { "answer" => nil, "pick" => screen_pick.call(unlisted, "New Mod; Pad Mod", [["New Mod", "listed", false], ["Pad Mod", "listed", false]]) }
+"Pad Mod".each_char { |letter| pad.type(letter) } if pad
+pad.finish if pad
+check("their OK adds the mod and hides the field", [$locals.asked("modpick.act").last, form[:mods], field.parent.parent.visible?],
+      [{ "do" => "add", "name" => "Pad Mod" }, "New Mod; Pad Mod", false])
+pad.close if pad
+$sounds.clear
+replies << { "answer" => "Level_Cap is in the list already.", "pick" => screen_pick.call(unlisted, "New Mod; Pad Mod", [["New Mod", "listed", false], ["Pad Mod", "listed", false]]) }
+scene.add_mod("level cap")
+check("a name the DLL refuses is refused beside the title", [$sounds, note_text(scene.list_box)], [["buzzer"], "Level_Cap is in the list already."])
+scene.list_box.close(:cancel)
+check("closing has the DLL close the picker and goes back to the form, which shows the mods picked",
+      [$locals.asked("modpick.close").size, scene.list_box, form_part(scene, :mods).text, scene.instance_variable_get(:@field_key)], [1, nil, "New Mod; Pad Mod", :mods])
+$locals.set("modpick.act")
+$locals.set("modpick.open")
 
 # The text boxes of the forms.
 named = nil
@@ -686,4 +693,9 @@ check("a text box of digits leaves the numpad's 0 out of the typing line", scene
 cancel_in($focused)
 create[:name] = "  Spaced  "
 create[:seats] = "08"
-check("a form sends its tidied values", [create.problem, create[:name], create[:seats]], [nil, "Spaced", "8"])
+tidied = FormAnswers.view("create as it opens")
+tidied["values"].merge!("name" => "Spaced", "seats" => "8")
+$forms.set("form.send", tidied)
+check("a form sent takes the values the DLL tidied", [create.problem, $forms.asked("form.set").last(2).map { |request| request["value"] }, create[:name], create[:seats]],
+      [nil, ["  Spaced  ", "08"], "Spaced", "8"])
+$forms.set("form.send")

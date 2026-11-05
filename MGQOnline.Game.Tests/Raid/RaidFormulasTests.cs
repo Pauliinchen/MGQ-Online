@@ -2,7 +2,8 @@
 //  RaidFormulasTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Held the script tests to both checks too
+//      Paulinchen  2026-11-05: Expected no script test to count the regeneration either
+//                            - Held the script tests to both checks too
 //                            - Checked that the refusal chain is written once
 //                            - Created
 //
@@ -25,14 +26,13 @@ public sealed partial class RaidFormulasTests
 {
     /// <summary>
     /// Asserts that only the ledger fills a pool up by the share a minute, and that no script,
-    /// script test or battle server file reads the share a minute but the pools' stand-in.
+    /// script test or battle server file reads the share a minute.
     /// </summary>
-    /// <remarks>The pools' stand-in of the script tests still counts it; its removal is queued.</remarks>
     [Fact]
     public void Regeneration_IsCountedOnce()
     {
         Assert.Equal(["MGQOnline.Game/Raid/PoolLedger.cs"], FilesWhere(CSharpSources(), line => RegenTimes().IsMatch(line)));
-        Assert.Equal(["GameScript/Tests/pool_support.rb"], FilesWhere(ScriptSources(), line => RegenWord().IsMatch(line)));
+        Assert.Empty(FilesWhere(ScriptSources(), line => RegenWord().IsMatch(line)));
     }
 
     /// <summary>

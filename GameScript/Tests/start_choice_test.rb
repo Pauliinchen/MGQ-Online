@@ -2,7 +2,8 @@
 #  start_choice_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Read the directory's list and the player's id through the DLL's topics
+#      Paulinchen  2026-11-05: Left the new world's form to the DLL's tests and took the world on this PC from the DLL's answers
+#                            - Read the directory's list and the player's id through the DLL's topics
 #      Paulinchen  2026-11-01: Dropped the checks that read the old screen prototype instead of the scripts
 #                            - Dropped the stand-in of the title screen's commands, which no script hooks any more
 #                            - Stopped loading the deleted ui_boxes.rbx
@@ -42,7 +43,7 @@
 #----------------------------------------------------------------
 
 # Checks where a new player of a world starts (world.rbx, world_save_distribution.rbx): the
-# creator's Players choose checkbox, the directory's flag for it, and the world screen asking a
+# creator's Player's choice handed to the DLL's form, the directory's flag for it, and the world screen asking a
 # new player to start at the beginning, from their own save or from the creator's.
 
 require_relative "support"
@@ -131,14 +132,6 @@ def new_scene
   scene
 end
 
-# The form.
-form = MGQ_MpWorld::WorldForm.create(:new_world)
-choose = form.fields.find { |field| field.key == :choose }
-check("the form has a Player's choice checkbox beside Shared save", [choose.kind, choose.row, choose.side, choose.label, choose.group], [:check, 3, :right, "Player's choice", "World"])
-check("Players choose starts unticked", form[:choose], false)
-check("the button comes last", form.fields.last.row, 10)
-check("a form with Players choose ticked alone can be sent", (form[:name] = "W"; form[:password] = "p"; form[:choose] = true; form.problem), nil)
-
 # The directory.
 $directory = directory_list([listed_value("w1", "Free", "choose" => true), listed_value("w2", "Fixed", "start" => "ready", "hidden" => true), listed_value("w3", "Old")])
 _, _, listed, = MGQ_MpWorld::Directory.list
@@ -162,7 +155,9 @@ Dir.mktmpdir do |root|
     scene.form.tap { |made| made[:name] = "Free"; made[:choose] = true }
     $screen_steps = [["busy", "create"]]
     scene.send_form
-    check("sending the form has the DLL make the world, with no starting save to copy", screen_requests("screen.do").last.values_at("do", "start"), ["create", []])
+    check("sending the form has the DLL make the world from the form it holds, Player's choice ticked, with no starting save to copy",
+          [screen_requests("screen.do").last.values_at("do", "start"), $forms.asked("form.set").map { |request| request.values_at("form", "key", "value") }.last],
+          [["create", []], ["new_world", "choose", true]])
     scene.play("steps" => [["idle"], ["fresh_form", "new_world"], ["close_form"], ["select", "w"], ["say", "Free was created. #{MGQ_MpWorldScreen.text("enter_hint")}"], ["back"]])
     check("once made, the form is empty and no longer has the cursor", [scene.instance_variable_get(:@forms)[:new_world][:name], scene.form], ["", nil])
     check("and the screen says where to enter it", [said(scene), menu_texts], ["Free was created. #{MGQ_MpWorldScreen.text("enter_hint")}", nil])
@@ -217,11 +212,11 @@ Dir.mktmpdir do |root|
     check("leaving it without a save tells the DLL, which asks again", screen_requests("screen.answer").last, { "answer" => "own_save", "index" => nil })
     MGQ_MpSaveDistribution.choose(:own)
     MGQ_MpSaveDistribution.chosen = 2
-    $screen_steps = [["copy_own", $local_worlds[world.id], 2]]
+    $screen_steps = [["copy_own", $locals.worlds[world.id], 2]]
     scene.take_start_save
     check("a save picked tells the DLL which", screen_requests("screen.answer").last, { "answer" => "own_save", "index" => 2 })
     check("and the copy waits for the next frame", scene.instance_variable_get(:@own_start)[1], 2)
-    $screen_steps = [["start", $local_worlds[world.id], true, false, true]]
+    $screen_steps = [["start", $locals.worlds[world.id], true, false, true]]
     scene.start_from_own
     check("the save becomes the world's first save", File.binread("#{world.save_folder}/Save01.rvdata2"), my_save)
     check("with the player's system save", File.binread("#{world.save_folder}/SystemSave.rvdata2"), my_system)
@@ -231,12 +226,12 @@ Dir.mktmpdir do |root|
 
     # A start that fails.
     $start_error = "The latest save of Free could not be loaded."
-    $screen_steps = [["start", $local_worlds[world.id], true, false, true]]
+    $screen_steps = [["start", $locals.worlds[world.id], true, false, true]]
     scene.on_enter
     check("a start that fails tells the DLL why, and whether its save was just placed",
           screen_requests("screen.answer").last, { "answer" => "start_failed", "text" => $start_error, "placed" => true })
     $start_error = nil
-    $screen_steps = [["discard", $local_worlds[world.id]], ["buzz"], ["say", "Could not."], ["back"]]
+    $screen_steps = [["discard", $locals.worlds[world.id]], ["buzz"], ["say", "Could not."], ["back"]]
     scene.on_enter
     check("the discard step throws the placed save away", File.exist?("#{world.save_folder}/Save01.rvdata2"), false)
 

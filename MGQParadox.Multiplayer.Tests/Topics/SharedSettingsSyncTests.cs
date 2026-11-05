@@ -2,7 +2,8 @@
 //  SharedSettingsSyncTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Handed the creator's options and the Mod Config groups as values, expected the settings to apply as values, and covered every type as released games wrote it
+//      Paulinchen  2026-11-05: Checked the world entered and the details' text
+//                            - Handed the creator's options and the Mod Config groups as values, expected the settings to apply as values, and covered every type as released games wrote it
 //      Paulinchen  2026-10-31: Covered the settings the relay tells every player, the creator's game included
 //      Paulinchen  2026-10-23: Created
 //
@@ -59,6 +60,29 @@ public sealed class SharedSettingsSyncTests
         _sync = new SharedSettingsSync(_directory, new DirectoryTickets(() => _directory.Action.State, () => _directory.Action = ("idle", null, null)), new TopicCaller.NoLog(), () => { });
         _topics = new TopicCaller(_sync.Register);
         Call(SharedSettingsSync.GroupsTopic, new RubyArray([new RubyArray(["Level Cap", new RubyArray([new RubyArray(["mod_level_cap", "Level Cap", new RubyArray([new RubyArray([1, "On"]), new RubyArray([0, "Off"])])])])])]));
+    }
+
+    /// <summary>
+    /// Asserts that entering a world describes it to the scripts: the values its settings set, the
+    /// settings the relay took over an older list, whether it is the player's own and whether its
+    /// settings are shared; and that its details name who shares them.
+    /// </summary>
+    [Fact]
+    public void Enter_DescribesTheWorld()
+    {
+        Call(SharedSettingsSync.ConfirmedTopic, new RubyHash { { "id", "w1" }, { "text", Off } });
+
+        RubyHash member = EnterWorld("", On, false);
+        RubyHash creator = EnterWorld("creator", On, true);
+        RubyHash loose = EnterWorld("member", "", true);
+
+        Assert.Equal((Values(("mod_level_cap", 0)), false, true), (member["values"], member["own"].AsBool(), member["shared"].AsBool()));
+        Assert.Equal((Values(("mod_level_cap", 1)), true), (creator["values"], creator["own"].AsBool()));
+        Assert.Equal((false, false), (loose["own"].AsBool(), loose["shared"].AsBool()));
+        RubyHash details = new() { { "settings", On }, { "creator_id", "creator" }, { "creator_name", "Creator" }, { "me", "creator" } };
+        Assert.Equal("Mod settings: shared by you (Level Cap)", Call(SharedSettingsSync.DetailsTopic, details)!.AsText());
+        details["me"] = "member";
+        Assert.Equal("Mod settings: shared by Creator (Level Cap)", Call(SharedSettingsSync.DetailsTopic, details)!.AsText());
     }
 
     /// <summary>
@@ -227,16 +251,25 @@ public sealed class SharedSettingsSyncTests
     }
 
     /// <summary>
+    /// Enters world w1 of the creator "creator" from a fresh list.
+    /// </summary>
+    /// <param name="me">The player's id.</param>
+    /// <param name="settings">The list's settings.</param>
+    private void Enter(string me, string settings) => EnterWorld(me, settings, true);
+
+    /// <summary>
     /// Enters world w1 of the creator "creator".
     /// </summary>
     /// <param name="me">The player's id.</param>
     /// <param name="settings">The list's settings.</param>
-    private void Enter(string me, string settings) => Call(SharedSettingsSync.EnterTopic, new RubyHash
+    /// <param name="fresh">Whether the list was read anew since the relay last took the settings.</param>
+    /// <returns>The world as the scripts get it.</returns>
+    private RubyHash EnterWorld(string me, string settings, bool fresh) => Call(SharedSettingsSync.EnterTopic, new RubyHash
     {
         { "world", new RubyHash { { "id", "w1" }, { "name", "Modded" }, { "creator_id", "creator" }, { "creator_name", "Creator" }, { "mods", "!Level Cap" }, { "settings", settings } } },
         { "me", me },
-        { "fresh", true },
-    });
+        { "fresh", fresh },
+    })!.AsHash()["world"].AsHash();
 
     /// <summary>
     /// Writes a load's request: the creator's options and every option key the game has.

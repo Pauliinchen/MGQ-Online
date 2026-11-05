@@ -12,9 +12,9 @@
 
 # Writes the rows of the catch-up's tables as the relay's story tables take them (Relay/README.md
 # "Catch-up tables"), from the Ruby rows of the generated tables (generated_tables.rb) and the
-# tests' own rows of the same shape, which the script tests hand to the catch-up engine with it
-# (fixtures/catchup/engine.rb). It also writes a stand-in of the rewards tables as the DLL hands them
-# to the scripts (party_rewards).
+# rows of the same shape the script tests of old_tests.rb hand to the catch-up engine with it
+# (fixtures/catchup/engine.rb). It also writes the rewards tables as the DLL hands them to the
+# scripts (party_rewards), for those tests. A recording tool: no test runs against it.
 
 # The catch-up's rows as the relay keeps them.
 module CatchupRelayRows

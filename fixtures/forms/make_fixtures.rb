@@ -9,8 +9,9 @@
 
 # Writes world.json: what the world screen's forms of world.rbx showed and answered, from
 # form_prototype.rb (MGQ_MpWorld::Form before its schema moved to WorldForms in MGQOnline.Game), as
-# golden cases both sides check: each form opened, a few player actions, then the fields shown, the
-# values, what the values add up to, the first problem, and the checks of text boxes.
+# golden cases the DLL's tests check and whose views the script tests answer the form topics with:
+# each form opened, a few player actions, then the fields shown, the values, what the values add up
+# to, the first problem, and the checks of text boxes.
 #
 #   ruby fixtures/forms/make_fixtures.rb
 

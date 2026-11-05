@@ -2,7 +2,9 @@
 #  world_open_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Read the directory's list, the world room and the player's id through the DLL's topics
+#      Paulinchen  2026-11-05: Answered the squad rules' text with fixed values and checked what goes to the DLL instead of the rule
+#                            - Answered the worlds on this PC, the list's rows, the forms and the invite with the values each check sets, and checked what goes to the DLL instead of what its stand-ins decided
+#                            - Read the directory's list, the world room and the player's id through the DLL's topics
 #      Paulinchen  2026-11-01: Dropped the checks that read the old screen prototype instead of the scripts
 #                            - Dropped the checks of the form window no screen draws with any more
 #                            - Reached the update over the title's commands through the world screen's opening alone, the Mod Framework adding Multiplayer
@@ -70,9 +72,10 @@
 #----------------------------------------------------------------
 
 # Checks finding and entering worlds (world.rbx, world_screen.rbx): worlds without a password,
-# featured worlds and Raid Worlds in the list, the details and world.ini, the worlds and favourites
-# kept on this PC, the forms and their switches, the cursor on a world just made or added, Discord
-# invites, a world's new game, and an outdated game kept out and offered the update.
+# featured worlds and Raid Worlds in the list and the rows' colours, what goes to the DLL's worlds
+# on this PC and what the scripts take from them, a form's switch, the cursor on a world just made
+# or added, Discord invites, a world's new game, and an outdated game kept out and offered the
+# update. The rules behind them are the DLL's.
 
 require_relative "support"
 require_relative "rules_support"
@@ -209,7 +212,7 @@ load_script "ui_online"
 load_script "world"
 load_script "world_mods"
 load_script "world_screen"
-fake = open_rules_bridge
+open_rules_bridge
 
 open_fake_ui { typed = $typed.to_s; $typed = nil; [typed, typed.size] }
 
@@ -220,41 +223,34 @@ def new_scene
   world_scene
 end
 
-# The forms.
-form = MGQ_MpWorld::WorldForm.create(:new_world)
-form[:name] = "Open Fields"
-check("a new world needs no password", form.problem, nil)
-password = form.fields.find { |field| field.key == :password }
-check("a password keeps its spaces", form.check(password, " a b "), [" a b ", nil])
-join = MGQ_MpWorld::WorldForm.join(:join_hidden)
-join[:id] = "a" * 32
-check("a hidden world is added by its id alone", [join.problem, join.fields.map { |field| field.key }], [nil, [:id, :confirm]])
+# The forms' fields are the DLL's (WorldFormsTests); the scripts' own form still turns a switch.
 switch = MGQ_MpWorld::Form::Field.new(:way, :switch, "Way", 0, "Which way.", :choices => %w(Left Middle Right), :note => lambda { |_, index| "Picked #{index}" })
 ways = MGQ_MpWorld::Form.new("Ways", [switch], :way => 0)
 check("a switch turns round between its outcomes, with the line of the one picked", [ways.turn(switch, -1), switch.note_of(ways), ways.turn(switch, 1)], [2, "Picked 2", 0])
 
 # The directory.
-$directory = directory_list([listed_value("w1", "Plain"), listed_value("w2", "Golden", "creator_name" => "Global", "open" => true, "featured" => true), listed_value("w3", "Old")])
+DIRECTORY = [listed_value("w1", "Plain"), listed_value("w2", "Golden", "creator_name" => "Global", "open" => true, "featured" => true), listed_value("w3", "Old")]
+$directory = directory_list(DIRECTORY)
 _, _, listed, = MGQ_MpWorld::Directory.list
 check("the list reads which worlds have no password", listed.map { |world| world.open }, [false, true, false])
 check("and which are featured", listed.map { |world| world.featured }, [false, true, false])
 
-# The worlds on this PC and their order come from the DLL (LocalWorldsTests, WorldEntriesTests);
-# the script hands the list over and builds its entries from the answer.
-$local_worlds.clear
-$world_lists["favourite"] = ["w3"]
+# The worlds on this PC, their folders and world.ini, are the DLL's (LocalWorldsTests); the script
+# hands over what it knows of a world and keeps what the DLL answers.
+$locals.set("worlds.found", $locals.keep("f1", "name" => "First", "code" => "mgqmp2;abcdefghjkmnpqrs;r1;4", "world" => "w1", "seats" => 4))
 made = MGQ_MpWorld::World.found("mgqmp2;abcdefghjkmnpqrs;r1;4", "First", "w1")
-check("a world made comes back with its folder and its seats", [made.name, made.directory_id, made.seats, MGQ_MpWorld::World.all.map { |world| world.id }], ["First", "w1", 4, [made.id]])
-check("which go over as the DLL takes them", fake.calls.reverse.map { |topic, bytes| topic == "worlds.found" ? Marshal.load(bytes) : nil }.compact.first,
+$locals.set("worlds.found")
+check("a world found comes back as the DLL keeps it, with its folder and its seats, and is listed on this PC",
+      [made.id, made.name, made.directory_id, made.seats, MGQ_MpWorld::World.all.map { |world| world.id }], ["f1", "First", "w1", 4, ["f1"]])
+check("which go over as the DLL takes them", $locals.asked("worlds.found").last,
       { "name" => "First", "world" => "w1", "type" => nil, "share" => nil, "difficulty" => nil, "squad" => nil, "raid_bosses" => nil, "code" => "mgqmp2;abcdefghjkmnpqrs;r1;4" })
-check("a world played is written, and takes the time", [made.played!, made.played_at.nil?], [true, false])
-# The DLL deletes a world's saves (WorldEnteringTests); the world is gone from this PC again.
-$local_worlds.delete(made.id)
-FileUtils.rm_rf("#{MGQ_MpWorld::WORLDS_DIR}/#{made.id}")
+check("a world played has the DLL write it, and takes the time it answers",
+      [made.played!, $locals.asked("worlds.update").last, made.played_at], [true, { "id" => "f1", "played" => true }, Time.at(LocalWorldAnswers::PLAYED_AT)])
+$locals.worlds.clear
 
-# The list's order.
-entries = screen_entries(listed, true)
-check("favourites come first, then featured worlds", entries.map { |entry| entry.name }, ["Old", "Golden", "Plain"])
+# The list's entries, made of the rows the DLL orders (WorldEntriesTests), Old a favourite.
+rows = [listed_row(DIRECTORY[2], "favourite" => true, "color" => "favourite"), listed_row(DIRECTORY[1], "color" => "featured"), listed_row(DIRECTORY[0])]
+entries = rows.map { |row| screen_entry(row) }
 check("an entry tells whether it is featured or open", [entries[1].featured?, entries[1].open?, entries[2].featured?], [true, true, false])
 gone = MGQ_MpWorld::Entry.new("w9", "Gone", nil, nil, false, true)
 check("a world the directory no longer lists is neither", [gone.featured?, gone.open?], [false, false])
@@ -273,16 +269,14 @@ scene.instance_variable_set(:@entry, entries[2])
 $called = nil
 $screen_steps = [["password", "Plain"]]
 scene.on_enter
-check("the password step asks for it in a form typed in place", [$called, scene.form.title, $focused.id, $mgq_text_input], [nil, "Enter Plain", "form:password", true])
+check("the password step asks for it in a form typed in place", [$called, $forms.asked("form.open").last.values_at("kind", "name"), $focused.id, $mgq_text_input],
+      [nil, ["password", "Plain"], "form:password", true])
 type_in("secret\r")
 check("Enter hands the password to the DLL", screen_requests("screen.answer").last, { "answer" => "password", "text" => "secret" })
 $screen_steps = [["password", "Plain"]]
 scene.on_enter
 cancel_in($focused)
 check("backing out of the password tells the DLL, which may end an entry after a restart", [screen_requests("screen.answer").last, scene.form], [{ "answer" => "password_back" }, nil])
-
-# The seats, which the world code tells.
-check("a world's code tells its seats", local_world("abcdef012345", "code" => "mgqmp2;abcdefghjkmnpqrs;r1;8").seats, 8)
 
 # Raid Worlds: the type and companion sharing the list reads, their place and colour, the details,
 # world.ini, what every script asks of the open world, and the new world's form.
@@ -298,35 +292,35 @@ check("the list reads each world's type and companion sharing",
 check("and a Raid World's difficulty", typed.map { |world| world.difficulty }, [1, nil, nil, nil])
 check("and a Raid World's squad rules", typed.map { |world| world.squad },
       [{ :luka => true, :formation => 6, :front => 2, :raid_front => 1 }, nil, nil, nil])
-$local_worlds.clear
-raid_entries = screen_entries(typed, true)
-check("Raid Worlds come above every other world, favourites and featured ones too", raid_entries.map { |entry| entry.name }, ["Raid Gold", "Raid Night", "Old", "Plain"])
 raid_local = local_world("abcdef012345", "code" => "x", "name" => "Kept", "type" => "raid", "share" => "story")
 check("a Raid World the directory no longer lists stays one by its world.ini", [MGQ_MpWorld::Entry.new("r9", "Kept", nil, raid_local, false, true).raid?, gone.raid?], [true, false])
-$local_worlds.clear
-local_world("abcdef012345", "code" => "x", "name" => "Kept", "type" => "raid", "share" => "story", "world" => "r9")
-check("but comes after every world the directory lists", screen_entries(typed, true).map { |entry| [entry.name, entry.gone] },
-      [["Raid Gold", false], ["Raid Night", false], ["Old", false], ["Plain", false], ["Kept", true]])
-$local_worlds.clear
+$locals.worlds.clear
 
-# The colour of a row in the list and of the details' title.
+# The colour the DLL names for a row in the list and for the details' title (WorldScreenModelTests).
 scene = new_scene
-colors = raid_entries.map { |entry| scene.world_row(entry)[:color] }
-check("a Raid World's row is red, which wins over a featured one's gold and a favourite's colour",
-      colors.map { |color| color.equal?(MGQ_MpWorld::RAID_COLOR) ? :red : color }, [:red, :red, :warn, nil])
-check("and so is a Raid World's name above its details", scene.title_color(MGQ_MpWorldScreen.details(raid_entries[0])["title_color"]).equal?(MGQ_MpWorld::RAID_COLOR), true)
+raid_rows = [listed_row(listed_value("r2", "Raid Gold", "type" => "raid"), "color" => "raid"), listed_row(listed_value("w2", "Golden"), "color" => "featured"),
+             listed_row(listed_value("w3", "Old"), "color" => "favourite"), listed_row(listed_value("w1", "Plain"))]
+colors = raid_rows.map { |row| scene.world_row(screen_entry(row))[:color] }
+check("a row takes the colour the DLL names: a Raid World red, a featured world gold, a favourite the crisis colour, another the text's own",
+      [colors[0].equal?(MGQ_MpWorld::RAID_COLOR), colors[1].equal?(MGQ_MpWorld::FEATURED_COLOR), colors[2, 2]], [true, true, [:warn, nil]])
+$screens.details["r2"] = screen_details("Raid Gold", [], [], nil).merge("title_color" => "raid")
+check("and so does a world's name above its details", scene.title_color(MGQ_MpWorldScreen.details(screen_entry(raid_rows[0]))["title_color"]).equal?(MGQ_MpWorld::RAID_COLOR), true)
 
 # A world entered while the directory listed it hands its type, sharing, difficulty and squad rules
 # to the DLL, which keeps them in world.ini (LocalWorldsTests).
+$locals.set("worlds.found", $locals.keep("f2", "name" => "Raid Night", "world" => "r1", "type" => "raid", "share" => "story", "difficulty" => -1,
+                                         "squad" => { "luka" => true, "formation" => 0, "front" => 3, "raid_front" => 4 }, "seats" => 4))
 raid_found = MGQ_MpWorld::World.found("mgqmp2;abcdefghjkmnpqrs;r1;4", "Raid Night", "r1", "raid", "story", -1, { :luka => true, :formation => 0, :front => 3, :raid_front => 4 })
+$locals.set("worlds.found")
 check("a Raid World found goes over with its type, companion sharing, difficulty and squad rules",
-      Marshal.load(fake.calls.reverse.find { |topic, _| topic == "worlds.found" }[1]).values_at("type", "share", "difficulty", "squad"),
-      ["raid", "story", -1, { "luka" => true, "formation" => 0, "front" => 3, "raid_front" => 4 }])
-check("and reads back as one", [raid_found.raid?, raid_found.companion_sharing, raid_found.difficulty, raid_found.squad],
+      $locals.asked("worlds.found").last.values_at("type", "share", "difficulty", "squad"), ["raid", "story", -1, { "luka" => true, "formation" => 0, "front" => 3, "raid_front" => 4 }])
+check("and reads back as one from the DLL's answer", [raid_found.raid?, raid_found.companion_sharing, raid_found.difficulty, raid_found.squad],
       [true, :story, -1, { :luka => true, :formation => 0, :front => 3, :raid_front => 4 }])
 raid_found.describe("Raid Night", "r1", 8, nil, nil, 3, { :luka => false, :formation => 7, :front => 1, :raid_front => 2 })
-check("a difficulty, squad rules and seats the list tells on entry replace the ones kept", [raid_found.difficulty, raid_found.squad[:formation], raid_found.seats], [3, 7, 8])
-$local_worlds.clear
+check("a difficulty, squad rules and seats the list tells on entry go to the DLL, the world taking what it keeps",
+      [$locals.asked("worlds.describe").last.values_at("id", "seats", "difficulty", "squad"), raid_found.difficulty, raid_found.squad[:formation], raid_found.seats],
+      [["f2", 8, 3, { "luka" => false, "formation" => 7, "front" => 1, "raid_front" => 2 }], 3, 7, 8])
+$locals.worlds.clear
 check("a world.ini from before types is Classic", [local_world("abcdef012345", "code" => "x").raid?, local_world("abcdef012345", "code" => "x").type], [false, nil])
 
 # What every script asks of the open world.
@@ -337,40 +331,45 @@ MGQ_MpWorld.instance_variable_set(:@world, local_world("abcdef012345", "code" =>
 check("a sharing this game does not know shares nothing", MGQ_MpWorld.companion_sharing, :off)
 MGQ_MpWorld.instance_variable_set(:@world, local_world("abcdef012345", "code" => "x", "type" => "classic", "share" => "all"))
 check("a Classic world is no Raid World and shares nothing", [MGQ_MpWorld.raid?, MGQ_MpWorld.companion_sharing], [false, :off])
-MGQ_MpWorld.instance_variable_set(:@world, local_world("abcdef012345", "code" => "x", "type" => "classic", "difficulty" => "2"))
+MGQ_MpWorld.instance_variable_set(:@world, local_world("abcdef012345", "code" => "x", "type" => "classic", "difficulty" => 2))
 check("and sets no difficulty, whatever its world.ini says, nor takes one", [MGQ_MpWorld.difficulty, MGQ_MpWorld.take_difficulty(1), MGQ_MpWorld.world.difficulty], [nil, false, 2])
-MGQ_MpWorld.instance_variable_set(:@world, local_world("abcdef012345", "code" => "x", "type" => "raid", "difficulty" => "2"))
+MGQ_MpWorld.instance_variable_set(:@world, local_world("abcdef012345", "code" => "x", "type" => "raid", "difficulty" => 2))
 check("a Raid World tells its difficulty", MGQ_MpWorld.difficulty, 2)
-check("and takes a new one the relay tells, keeping it in world.ini", [MGQ_MpWorld.take_difficulty(-2), MGQ_MpWorld.difficulty, $local_worlds["abcdef012345"]["difficulty"]], [true, -2, -2])
+check("and takes a new one the relay tells, which the DLL keeps in world.ini",
+      [MGQ_MpWorld.take_difficulty(-2), MGQ_MpWorld.difficulty, $locals.asked("worlds.update").last], [true, -2, { "id" => "abcdef012345", "difficulty" => -2 }])
 check("but no value that is no difficulty", [MGQ_MpWorld.take_difficulty(5), MGQ_MpWorld.difficulty], [false, -2])
-MGQ_MpWorld.instance_variable_set(:@world, local_world("abcdef012345", "code" => "x", "type" => "raid", "difficulty" => "hard"))
-check("a world.ini's difficulty this game does not know is none", MGQ_MpWorld.difficulty, nil)
 check("the difficulties carry the game's own names", [MGQ_MpWorld.difficulty_name(-2), MGQ_MpWorld.difficulty_name(0), MGQ_MpWorld.difficulty_name(4), MGQ_MpWorld.difficulty_name(nil)],
       ["VERY EASY", "NORMAL", "PARADOX", nil])
 MGQ_MpWorld.instance_variable_set(:@world, nil)
 
-# A Raid World's squad rules: read and written as text, and what every script asks of the open world.
-check("squad rules read from their text", [MGQ_MpWorld.squad_of("0 4 1 1"), MGQ_MpWorld.squad_of("1 0 4 3"), MGQ_MpWorld.squad_of("1 8 2 2")],
-      [{ :luka => false, :formation => 4, :front => 1, :raid_front => 1 }, { :luka => true, :formation => 0, :front => 4, :raid_front => 3 },
-       { :luka => true, :formation => 8, :front => 2, :raid_front => 2 }])
-check("and written back the same", ["0 4 1 1", "1 0 4 3", "1 8 2 2"].map { |text| MGQ_MpWorld.squad_text(MGQ_MpWorld.squad_of(text)) }, ["0 4 1 1", "1 0 4 3", "1 8 2 2"])
+# A Raid World's squad rules: read and written as text by the DLL (WorldTopicsTests covers the
+# text), and what every script asks of the open world. The DLL's readings of the texts below, and
+# none for rules out of range or no text.
+squad_texts = { "0 4 1 1" => { "luka" => false, "formation" => 4, "front" => 1, "raid_front" => 1 },
+                "1 0 4 3" => { "luka" => true, "formation" => 0, "front" => 4, "raid_front" => 3 },
+                "0 0 4 1" => { "luka" => false, "formation" => 0, "front" => 4, "raid_front" => 1 } }
+$rule_answers.cases("squad.read", squad_texts.merge("" => nil))
+$rule_answers.cases("squad.write", squad_texts.invert.merge({ "luka" => false, "formation" => 3, "front" => 1, "raid_front" => 1 } => nil))
+check("squad rules go to the DLL as their text and come back by the scripts' keys",
+      [MGQ_MpWorld.squad_of("1 0 4 3"), $rule_answers.asked("squad.read").last], [{ :luka => true, :formation => 0, :front => 4, :raid_front => 3 }, "1 0 4 3"])
+check("and go to it by their names to be written as text",
+      [MGQ_MpWorld.squad_text({ :luka => true, :formation => 0, :front => 4, :raid_front => 3 }), $rule_answers.asked("squad.write").last],
+      ["1 0 4 3", { "luka" => true, "formation" => 0, "front" => 4, "raid_front" => 3 }])
 check("Formation sizes are named for texts", [MGQ_MpWorld.formation_name(0), MGQ_MpWorld.formation_name(4), MGQ_MpWorld.formation_name(8)], ["Original", "4", "8"])
 check("outside a world there are no squad rules", MGQ_MpWorld.squad, nil)
-MGQ_MpWorld.instance_variable_set(:@world, local_world("abcdef012345", "code" => "x", "type" => "classic", "squad" => "1 6 2 2"))
+MGQ_MpWorld.instance_variable_set(:@world, local_world("abcdef012345", "code" => "x", "type" => "classic", "squad" => { "luka" => true, "formation" => 6, "front" => 2, "raid_front" => 2 }))
 check("nor in a Classic world, whatever its world.ini says, which takes none", [MGQ_MpWorld.squad, MGQ_MpWorld.take_squad(MGQ_MpWorld.default_squad)], [nil, false])
 MGQ_MpWorld.instance_variable_set(:@world, local_world("abcdef012345", "code" => "x", "type" => "raid"))
 check("a Raid World that names none plays with the defaults", MGQ_MpWorld.squad, { :luka => false, :formation => 4, :front => 1, :raid_front => 1 })
 MGQ_MpWorld.squad[:formation] = 8
 check("which no caller changes", MGQ_MpWorld.default_squad[:formation], 4)
-MGQ_MpWorld.instance_variable_set(:@world, local_world("abcdef012345", "code" => "x", "type" => "raid", "squad" => "1 6 2 3"))
+MGQ_MpWorld.instance_variable_set(:@world, local_world("abcdef012345", "code" => "x", "type" => "raid", "squad" => { "luka" => true, "formation" => 6, "front" => 2, "raid_front" => 3 }))
 check("a Raid World tells its squad rules", MGQ_MpWorld.squad, { :luka => true, :formation => 6, :front => 2, :raid_front => 3 })
-check("and takes new ones the relay tells, keeping them in world.ini",
-      [MGQ_MpWorld.take_squad(MGQ_MpWorld.squad_of("0 0 4 1")), MGQ_MpWorld.squad, $local_worlds["abcdef012345"]["squad"]],
-      [true, { :luka => false, :formation => 0, :front => 4, :raid_front => 1 }, { "luka" => false, "formation" => 0, "front" => 4, "raid_front" => 1 }])
+check("and takes new ones the relay tells, which the DLL keeps in world.ini",
+      [MGQ_MpWorld.take_squad(MGQ_MpWorld.squad_of("0 0 4 1")), MGQ_MpWorld.squad, $locals.asked("worlds.update").last],
+      [true, { :luka => false, :formation => 0, :front => 4, :raid_front => 1 }, { "id" => "abcdef012345", "squad" => { "luka" => false, "formation" => 0, "front" => 4, "raid_front" => 1 } }])
 check("but none out of range, nor nothing", [MGQ_MpWorld.take_squad({ :luka => false, :formation => 3, :front => 1, :raid_front => 1 }), MGQ_MpWorld.take_squad(nil), MGQ_MpWorld.squad[:formation]],
       [false, false, 0])
-MGQ_MpWorld.instance_variable_set(:@world, local_world("abcdef012345", "code" => "x", "type" => "raid", "squad" => "lots"))
-check("a world.ini's squad rules this game cannot read are the defaults", MGQ_MpWorld.squad, MGQ_MpWorld.default_squad)
 MGQ_MpWorld.instance_variable_set(:@world, nil)
 
 # A Classic world's raid bosses: the list, the details, world.ini and what every script asks of the
@@ -383,40 +382,33 @@ $directory = directory_list([
   listed_value("w3", "Old")])
 _, _, bossed, = MGQ_MpWorld::Directory.list
 check("the list reads a Classic world's raid bosses", bossed.map { |world| world.raid_bosses }, [true, false, false, false])
+$locals.set("worlds.found", $locals.keep("f3", "name" => "Plain", "world" => "w1", "type" => "classic", "share" => "off", "raid_bosses" => true))
 bossed_found = MGQ_MpWorld::World.found("mgqmp2;abcdefghjkmnpqrs;r1;4", "Plain", "w1", "classic", "off", nil, nil, true)
-check("a Classic world found goes over with its raid bosses and reads back with them",
-      [Marshal.load(fake.calls.reverse.find { |topic, _| topic == "worlds.found" }[1])["raid_bosses"], bossed_found.raid_bosses], [true, true])
+$locals.set("worlds.found")
+check("a Classic world found goes over with its raid bosses and reads back with them", [$locals.asked("worlds.found").last["raid_bosses"], bossed_found.raid_bosses], [true, true])
 bossed_found.describe("Plain", "w1", nil, nil, nil, nil, nil, false)
-check("and goes without them once the list tells they are off", bossed_found.raid_bosses, false)
-$local_worlds.clear
+check("and hands the DLL that they are off once the list tells it", [$locals.asked("worlds.describe").last["raid_bosses"], bossed_found.raid_bosses], [false, false])
+$locals.worlds.clear
 check("outside a world there are no raid bosses, nor any to take", [MGQ_MpWorld.raid_bosses?, MGQ_MpWorld.take_raid_bosses(true)], [false, false])
-MGQ_MpWorld.instance_variable_set(:@world, local_world("abcdef012345", "code" => "x", "type" => "classic", "raid_bosses" => "1"))
+MGQ_MpWorld.instance_variable_set(:@world, local_world("abcdef012345", "code" => "x", "type" => "classic", "raid_bosses" => true))
 check("a Classic world tells its raid bosses", MGQ_MpWorld.raid_bosses?, true)
-check("and takes them off as the relay tells, keeping that in world.ini",
-      [MGQ_MpWorld.take_raid_bosses(false), MGQ_MpWorld.raid_bosses?, $local_worlds["abcdef012345"]["raid_bosses"]], [true, false, false])
-check("and on again", [MGQ_MpWorld.take_raid_bosses(true), MGQ_MpWorld.raid_bosses?, $local_worlds["abcdef012345"]["raid_bosses"]], [true, true, true])
-MGQ_MpWorld.instance_variable_set(:@world, local_world("abcdef012345", "code" => "x", "type" => "raid", "raid_bosses" => "1"))
+check("and takes them off as the relay tells, which the DLL keeps in world.ini",
+      [MGQ_MpWorld.take_raid_bosses(false), MGQ_MpWorld.raid_bosses?, $locals.asked("worlds.update").last], [true, false, { "id" => "abcdef012345", "raid_bosses" => false }])
+check("and on again", [MGQ_MpWorld.take_raid_bosses(true), MGQ_MpWorld.raid_bosses?, $locals.asked("worlds.update").last["raid_bosses"]], [true, true, true])
+MGQ_MpWorld.instance_variable_set(:@world, local_world("abcdef012345", "code" => "x", "type" => "raid", "raid_bosses" => true))
 check("a Raid World has none, whatever its world.ini says, and takes none", [MGQ_MpWorld.raid_bosses?, MGQ_MpWorld.take_raid_bosses(true)], [false, false])
 MGQ_MpWorld.instance_variable_set(:@world, nil)
 
-# The new world's form.
-raid_form = MGQ_MpWorld::WorldForm.create(:new_world)
-type_field = raid_form.fields.find { |field| field.key == :type }
-check("the form has a World type switch beside Hidden, Classic at first", [type_field.kind, type_field.row, type_field.side, type_field.choices, raid_form.type], [:switch, 2, :right, ["Classic", "Raid"], "classic"])
-check("and Sharing companions is left out of a Classic world", [raid_form.fields.any? { |field| field.key == :share }, raid_form.share], [false, "off"])
-raid_form[:type] = 1
-raid_form[:share] = 1
-share_field = raid_form.fields.find { |field| field.key == :share }
-check("a Raid World brings it back below the type", [share_field.kind, share_field.row, share_field.choices.size, raid_form.type, raid_form.share], [:switch, 3, 3, "raid", "story"])
-
-# Turning the form's switches on the world screen.
+# Turning a form's switch back on the world screen, whose outcomes the DLL turns (WorldFormsTests).
+$forms.set("form.open", FormAnswers.view("create turned to a Raid World"))
 scene = new_scene
 scene.enter_form(:new_world)
-$sounds.clear
-form_part(scene, :type).receive("step", 1)
-check("a switch turned takes the form anew from the DLL, the new fields with it", [scene.form.type, form_part(scene, :share).nil?], ["raid", false])
+$forms.set("form.open")
+$forms.set("form.turn", FormAnswers.view("create of a Raid World with its choices"))
 form_part(scene, :share).receive("step", -1)
-check("and a step back turns it round", scene.form.share, "all")
+$forms.set("form.turn")
+check("a switch turned back round to its last outcome goes to the DLL as the steps to it, the form taking the outcome it answers",
+      [$forms.asked("form.turn").last.values_at("key", "step"), scene.form.share], [["share", 2], "all"])
 cancel_in($focused || form_part(scene, :share))
 
 # An outdated game.
@@ -580,15 +572,20 @@ MGQ_MpWorld.singleton_class.send(:alias_method, :enter, :tested_enter)
 MGQ_MpWorld.instance_variable_set(:@world, nil)
 MGQ_Multiplayer::Stages.define_singleton_method(:staged?) { false }
 
-# A Discord invite into a world, which carries the world code.
-$invite_world_id = "w3"
+# A Discord invite into a world, which carries the world code; the DLL reads it and keeps it
+# (LocalWorldTopicsTests).
 added = []
 MGQ_MpWorld::Added.define_singleton_method(:add) { |id| added << id }
-check("an invite that is no world code is left to PvP battles", MGQ_MpWorld::Invite.receive("mgqmp1;abcdefghjk;47625;203.0.113.7"), false)
+check("an invite the DLL finds no world code in is left to PvP battles",
+      [MGQ_MpWorld::Invite.receive("mgqmp1;abcdefghjk;47625;203.0.113.7"), $locals.asked("worlds.invite").last], [false, { "code" => "mgqmp1;abcdefghjk;47625;203.0.113.7", "open" => nil }])
 MGQ_MpWorld.instance_variable_set(:@world, local_world("abcdef012345", "world" => "w3"))
-check("an invite into the world already open is dropped", [MGQ_MpWorld::Invite.receive("mgqmp2;abcdefghjkmnpqrs;r1;4"), MGQ_Multiplayer::Bridge.call("worlds.invite_take")], [true, nil])
+$locals.set("worlds.invite", "world" => "w3", "taken" => false)
+check("an invite goes to the DLL with the world open, and one it does not take waits for no screen",
+      [MGQ_MpWorld::Invite.receive("mgqmp2;abcdefghjkmnpqrs;r1;4"), $locals.asked("worlds.invite").last["open"], MGQ_MpWorld::Invite.instance_variable_get(:@waiting)],
+      [true, "w3", nil])
 MGQ_MpWorld.instance_variable_set(:@world, nil)
-check("an invite into a world is taken", MGQ_MpWorld::Invite.receive("mgqmp2;abcdefghjkmnpqrs;r1;4"), true)
+$locals.set("worlds.invite", "world" => "w3", "taken" => true)
+check("an invite into a world the DLL takes is taken", MGQ_MpWorld::Invite.receive("mgqmp2;abcdefghjkmnpqrs;r1;4"), true)
 $called = nil
 MGQ_MpWorld.on_title_update(asking)
 check("the title screen opens the world screen for it", $called, Scene_MpWorlds)
@@ -627,6 +624,7 @@ $screen_waiting = false
 # A later screen of the session reads the list on its first look although the list bit was taken
 # before, so the DLL sees how the list stands and not an empty one it would drop the invite over.
 MGQ_MpWorld::Changes.take?(MGQ_MpWorld::Changes::LIST)
+$screens.list = { "state" => "ready", "error" => nil, "admin" => false, "info" => nil, "rows" => rows }
 later = new_scene
 later.instance_variable_set(:@me, "me")
 $screen_waiting = true
@@ -647,10 +645,12 @@ offering.instance_variable_get(:@command_window).activate
 MGQ_MpWorld::Invite.receive("mgqmp2;abcdefghjkmnpqrs;r1;4")
 $called = nil
 $required.clear
+$locals.clear
 MGQ_MpWorld.on_title_update(offering)
-check("an outdated game asks for the update for a Discord invite instead of opening the world screen, and drops the invite",
-      [$called, $required.size, update.asking?, offering.instance_variable_get(:@command_window).active, MGQ_Multiplayer::Bridge.call("worlds.invite_take")],
-      [nil, 1, true, false, nil])
+check("an outdated game asks for the update for a Discord invite instead of opening the world screen, and has the DLL drop the invite",
+      [$called, $required.size, update.asking?, offering.instance_variable_get(:@command_window).active, $locals.asked("worlds.invite_take").size],
+      [nil, 1, true, false, 1])
+$locals.set("worlds.invite")
 $required.last[3].call(:declined)
 check("declining it gives the title's commands back", [update.asking?, offering.instance_variable_get(:@command_window).active], [false, true])
 MGQ_MpWorldMods.restarted_for("w1")
@@ -688,7 +688,6 @@ MGQ_MpSaveDistribution.define_singleton_method(:place, place_was)
 logged = logged_lines { scene.play("steps" => $screen_steps_after) }
 check("a world created is the one the list puts the cursor on, and the screen says to confirm to enter it",
       [scene.instance_variable_get(:@select), said(scene), scene.form, scene.busy], ["w7", "Free was created. #{MGQ_MpWorldScreen.text("enter_hint")}", nil, nil])
-check("the hint says to confirm to enter it, as the guide does", MGQ_MpWorldScreen.text("enter_hint"), "Confirm to enter it.")
 logged += logged_lines { scene.select_world("w8") }
 check("the ask is logged, and a world asked for before gives way", [logged.map { |line| line[/the cursor goes onto .*/] }.compact, scene.instance_variable_get(:@select)],
       [["the cursor goes onto world w7 once the list shows it", "the cursor goes onto world w8 once the list shows it, instead of world w7"], "w8"])

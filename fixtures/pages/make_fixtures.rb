@@ -12,8 +12,7 @@
 # tells, keeps while the player skips and tells the end of, and how a viewer keeps the pages heard,
 # shows them once the player is free, leaves out those the teller moved past and holds the page
 # shown until it is over. Each scenario is a list of steps; a step's operation runs, then the step
-# records what the script did. MGQOnline.Game.Tests replays them against the C# class, and the
-# script tests' stand-in (GameScript/Tests/pages_support.rb) is checked against them.
+# records what the script did. MGQOnline.Game.Tests replays them against the C# class.
 #
 # It runs on the coop_events.rbx of commit 5bcdc4bf, which still kept the rules, with the
 # stand-ins below, on Ruby 3.3:

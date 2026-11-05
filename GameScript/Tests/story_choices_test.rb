@@ -2,6 +2,7 @@
 #  story_choices_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Answered the outcomes offered and their notes with fixed values instead of the stand-in's rules
 #      Paulinchen  2026-11-01: Created
 #
 #----------------------------------------------------------------
@@ -11,7 +12,8 @@
 # the Great Decision, turns them and shows the note of the cursor's choice, takes every outcome on
 # "Bring me there", leaves the story on cancel and closes with a notice once the offer is gone; a
 # choice of the player's own closed with cancel opens again only after they were busy and stand
-# free, or at once when its menu scene never started or the framework refused it. The rules behind the outcomes and notes are ChoicesStandIn's (choices_support.rb).
+# free, or at once when its menu scene never started or the framework refused it. The DLL offers
+# fixed outcomes and notes that name the outcome asked (telling_support.rb).
 
 require_relative "support"
 require_relative "story_screens_support"
@@ -27,7 +29,12 @@ module MGQ_MpCoop
 end
 # Whether the player follows the leader's story, which a choice of their own asks: always here.
 module MGQ_MpCoopStory; def self.follows_leader?; true; end; def self.follow_place; nil; end; end
-answer_choices(FAKE)
+answer_telling(FAKE)
+# The outcomes offered and the note of each, which names the choice and the outcome asked.
+OFFERED = { "magistea" => { "labels" => ["Defeat Lily", "Defeat Lucia"], "outcomes" => [0, 1] },
+            "decision" => { "labels" => ["Angelic Dominion", "Monster Realm"], "outcomes" => [0, 1] } }
+$tells.set("choices.offered") { |request| OFFERED[request["key"]] }
+$tells.set("choices.note") { |request| "#{request['key']} #{request['index']} for #{request['leader']} on route #{request['route']}" }
 
 choices = MGQ_MpCoopChoices
 leader = Struct.new(:state).new({ "id" => "a", "name" => "Ana" })
@@ -48,21 +55,20 @@ list = window.find(:mgq_online_story_choices_list)
 rows = list.rows
 check("the window lists the choices under a heading, each with its outcome, the leader's route first at the Great Decision",
       [window.title, rows[0], rows[1..-1].map { |row| [row[:label], row[:value]] }],
-      ["Sync story with Ana", { :heading => "Your choices" }, [[ChoicesStandIn.branch("magistea")["title"], choices.labels(:magistea)[0]],
-                                                                [ChoicesStandIn.branch("decision")["title"], choices.labels(:decision)[1]]]])
+      ["Sync story with Ana", { :heading => "Your choices" }, [["Magistea Village", "Defeat Lily"], ["The Great Decision", "Monster Realm"]]])
 texts = label_texts(window)
-check("the hint of the cursor's choice and the note of its outcome show",
-      [texts[0], texts[1]], [choices.branch(:magistea)[3], choices.note(:magistea, 0, { :magistea => 0, :decision => 1 }, 1, "Ana")])
+check("the hint of the cursor's choice from the DLL's table and the note of its outcome show",
+      [texts[0], texts[1]], [TellingAnswers::TABLE["branches"][1][3], "magistea 0 for Ana on route 1"])
 help = window.children.last
 check("the key line names the bound cancel key", help.line.to_s.include?("#{Mod_Framework::UI.cancel_keys}: cancel"), true)
 
 # Turning: Left and Right step an outcome round, Enter steps it on; the note follows.
 $sounds = []
 list.emit(:side, list.row_at(2), 2, -1)
-check("Left turns the Great Decision back, round to the first route", [choices.screen[:answers][:decision], list.rows[2][:value]], [0, choices.labels(:decision)[0]])
+check("Left turns the Great Decision back, round to the first route", [choices.screen[:answers][:decision], list.rows[2][:value]], [0, "Angelic Dominion"])
 list.emit(:submit, list.row_at(1), 1)
 check("Enter turns Magistea Village on, with the cursor's sound", [choices.screen[:answers][:magistea], $sounds], [1, ["cursor", "cursor"]])
-check("and its note follows", label_texts(window)[1], choices.note(:magistea, 1, { :magistea => 1, :decision => 0 }, 1, "Ana"))
+check("and its note follows", label_texts(window)[1], "magistea 1 for Ana on route 1")
 
 # Bring me there takes every outcome shown.
 buttons = window.children[-2].children

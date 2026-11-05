@@ -2,7 +2,8 @@
 #  coop_scene_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Told the telling of the story as true
+#      Paulinchen  2026-11-05: Answered the scene's messages, refusals and the guard's plans with fixed values and checked what goes to the DLL and what a member makes of its answers
+#                            - Told the telling of the story as true
 #                            - Wrote the leader's changes through the codec's stand-in
 #                            - Expected the ids a map message names as a list
 #                            - Put the viewer's screen back through the one guard of the game's flow, answered by its stand-in, and moved the checks of the player's own scene to flow_guard_test.rb
@@ -35,10 +36,12 @@
 #
 #----------------------------------------------------------------
 
-# Covers coop_scene.rbx: the leader's story tells the party its pictures, screen effects and the
-# leader's hidden character, a member on the leader's map sees them, and the member's screen comes
-# back once the story ended. In a Raid World the teller on the map shows it to everyone there whose
-# story matches.
+# Covers coop_scene.rbx with fixed answers of the DLL (telling_support.rb): the leader's story hands
+# the DLL its pictures, screen effects and the leader's hidden character and tells the party the
+# messages the DLL makes of them, a member on the leader's map sees what the DLL does not refuse,
+# and the member's screen comes back once the story ended as the one guard of the game's flow plans.
+# In a Raid World the teller on the map shows it to everyone there whose story matches. How the DLL
+# merges, paces and refuses changes is SceneQueueTests' and SceneChecksTests' to cover.
 
 require_relative "support"
 require_relative "rules_support"
@@ -190,11 +193,12 @@ end
 module SceneManager; class << self; attr_accessor :scene; end; end
 # Stands in for the data manager.
 module DataManager; def self.extract_save_contents(contents); end; def self.setup_new_game; end; end
-# Stands in for the world room's players, each a Peer of seat and state, and its routes, which keep
-# each field's handler in $routes.
+# Stands in for the world room's players, each a Peer of seat and state, who are named by their
+# state, and its routes, which keep each field's handler in $routes.
 module MGQ_MpOverworldSync
   module Peers; Peer = Struct.new(:seat, :state); end
   def self.route(field, _gate = nil, &handler); ($routes ||= {})[field] = handler; end
+  def self.who(peer); peer.state["name"].to_s; end
 end
 # Stands in for coop.rbx: routes in $routes, tells in $sent and the leader in $leader.
 module MGQ_MpCoop
@@ -205,8 +209,6 @@ module MGQ_MpCoop
 end
 # Stands in for coop_events.rbx, the story playing while $playing is and skipped while $skipping is.
 module MGQ_MpCoopEvents
-  # Frames between two messages of a teller holding the game's skip.
-  SKIP_SEND_FRAMES = 10
   def self.story_playing?; $playing; end
   def self.skip_held?; $skipping ? true : false; end
   def self.leading_story?; $leader == :me && !$followers.empty?; end
@@ -260,124 +262,108 @@ changes = lambda do |messages, field|
   end.flatten(1)
 end
 
-# The leader's game tells the story's changes.
+# The kinds of the changes handed to the DLL since the answers were last cleared.
+handed = lambda { $tells.asked("scene.change").map { |request| request["kind"] } }
+
+# The leader's game hands the DLL the story's changes and sends the members who follow the story
+# the messages the DLL makes of them at the frame's end.
 $leader = :me
 $playing = true
 $sent = []
+$tells.clear
 run.call(main, lambda do
   pictures[3].show("story_cg", 0, 0, 0, 100, 100, 255, 0)
   $game_map.screen.start_tone_change(Tone.new(-68, -68, 0, 0), 30)
   $game_player.transparent = true
 end)
-check("the story's changes wait for the frame's end", $sent, [])
+check("the story's picture, tint and hidden leader go to the DLL and wait for the frame's end",
+      [handed.call, $tells.asked("scene.change")[0].values_at("args", "map", "skip"), $sent],
+      [["picture.show", "screen.start_tone_change", "player.transparent"], [[3, "story_cg", 0, 0, 0, 100, 100, 255, 0], 7, false], []])
 $game_map.update
-check("then the story's picture, tint and hidden leader go to the members who follow the story in one message, with the camera's place",
-      [$sent.map { |seat, fields| [seat, fields["pscene"], fields["map"]] }, changes.call($sent, "pscene").map { |_, kind, _, _| kind }],
-      [[[4, "batch", 7]], ["picture.show", "screen.start_tone_change", "player.transparent", "map.camera"]])
+check("then the camera's place goes too, and the DLL's messages go to the members who follow the story with the map they happened on",
+      [handed.call.last, $sent.map { |seat, fields| [seat, fields["pscene"], fields["map"]] }],
+      ["map.camera", [[4, "picture.show", 7], [4, "screen.start_tone_change", 7], [4, "player.transparent", 7], [4, "map.camera", 7]]])
+$sent.clear
+batch = [["picture.show", [5, "story_cg", 0, 0, 0, 100, 100, 255, 0]], ["screen.start_fadeout", [30]]]
+$tells.set("scene.flush", [{ "map" => 7, "kind" => "batch", "args" => FakeLines.line(batch),
+                             "changes" => [["picture.show", "5 story_cg", true], ["screen.start_fadeout", "30", false]] }])
+lines = logged_lines { frame.call(main, lambda { $game_map.screen.start_fadeout(30) }) }
+check("a message of several changes the DLL makes goes out as it is, logged with the changes it logs",
+      [$sent.map { |seat, fields| [seat, fields["pscene"], fields["args"]] }, lines.grep(/told Friend 2 changes in one message on map 7|with picture.show 5 story_cg|with screen/).size],
+      [[[4, "batch", FakeLines.line(batch)]], 2])
+$tells.set("scene.flush", nil)
 $sent.clear
 following = $followers
 $followers = []
+$tells.clear
 frame.call(main, lambda { pictures[5].show("story_cg", 0, 0, 0, 100, 100, 255, 0) })
-check("with no member following it, the story's scene goes to nobody", $sent, [])
+check("with no member following it, the story's scene goes to nobody and the DLL keeps none of it", [$sent, handed.call], [[], []])
 $followers = following
 $game_map.update
 $sent.clear
+$tells.clear
 parallel = Game_Interpreter.new
 frame.call(parallel, lambda { pictures[20].show("hud", 0, 0, 0, 100, 100, 255, 0) })
-check("a parallel event's picture, such as the map's display, stays the leader's own", $sent, [])
+check("a parallel event's picture, such as the map's display, stays the leader's own", [$sent, handed.call], [[], []])
 frame.call(main, lambda do
   Game_Interpreter.new(1)
   pictures[4].erase
   pictures[4].show("cg2", 0, 0, 0, 100, 100, 255, 0)
 end)
-check("but a common event the story calls is the story's, a lone change in a message of its own as earlier builds take it",
-      $sent.map { |_, fields| fields["pscene"] }, ["picture.show"])
+check("but a common event the story calls is the story's, an erasure of a picture never shown left out",
+      [handed.call, $sent.map { |_, fields| fields["pscene"] }], [["picture.show"], ["picture.show"]])
 $sent.clear
 frame.call(parallel, lambda {})
 frame.call(main, lambda { $game_map.screen.start_fadeout(30) })
 check("the story's first change after parallel events ran meanwhile, as while the party gathers, goes out",
       $sent.map { |_, fields| fields["pscene"] }, ["screen.start_fadeout"])
 $sent.clear
+$tells.clear
 pictures[8].show("menu", 0, 0, 0, 100, 100, 255, 0)
 $game_map.update
-check("a change outside every interpreter is the leader's own", $sent, [])
+check("a change outside every interpreter is the leader's own", [$sent, handed.call], [[], []])
 $playing = false
 frame.call(main, lambda { pictures[3].erase })
-check("nothing goes out once the story ended", $sent, [])
+check("nothing goes out once the story ended", [$sent, handed.call], [[], []])
 $playing = true
 $game_map.update
 $sent.clear
 
-# While the teller holds the game's skip, the changes of SKIP_SEND_FRAMES frames go out in one
-# message, keeping of a picture's moves in a row only the last, the camera's last place and the
-# last sound effect, but every move route.
+# While the teller holds the game's skip, each change and each flush tells the DLL so, and the
+# changes wait while the DLL answers that they are not due yet.
 $skipping = true
-$frame_count += MGQ_MpCoopEvents::SKIP_SEND_FRAMES
-frame.call(main, lambda { pictures[3].move(0, 10, 10, 100, 100, 255, 0, 30) })
-check("the first change while skipping goes out at once", changes.call($sent, "pscene").map { |_, kind, args, _| [kind, args[2]] }, [["picture.move", 10]])
-$sent.clear
 step = RPG::MoveRoute.new
 step.list = [RPG::MoveCommand.new(4), RPG::MoveCommand.new(0)]
-turn = RPG::MoveRoute.new
-turn.list = [RPG::MoveCommand.new(16), RPG::MoveCommand.new(0)]
-$frame_count += 1
+$tells.clear
+$tells.set("scene.flush", false)
 frame.call(main, lambda do
   pictures[3].move(0, 20, 10, 100, 100, 255, 0, 30)
   Audio.se_play("Audio/SE/Door", 80, 100)
   $game_player.force_move_route(step)
 end)
-$frame_count += 1
-$game_map.set_display_pos(5.0, 5.0)
-frame.call(main, lambda do
-  pictures[3].move(0, 30, 10, 100, 100, 255, 0, 30)
-  Audio.se_play("Audio/SE/Knock", 80, 100)
-  $game_player.force_move_route(turn)
-end)
-$frame_count += 1
-frame.call(main, lambda do
-  pictures[4].move(0, 0, 5, 100, 100, 255, 0, 30)
-  pictures[4].rotate(2)
-  pictures[4].move(0, 0, 6, 100, 100, 255, 0, 30)
-end)
-$frame_count += MGQ_MpCoopScene::CAMERA_FRAMES
-$game_map.set_display_pos(6.0, 5.0)
+check("while the skip is held, the changes go to the DLL marked so, the sound by its file and the player's route with its commands",
+      $tells.asked("scene.change").map { |request| request.values_at("kind", "args", "skip") },
+      [["picture.move", [3, 0, 20, 10, 100, 100, 255, 0, 30], true], ["audio.se_play", ["Door", 80, 100], true], ["event.route", [-1, true, false, [[4], [0]]], true]])
+check("and wait while the DLL answers they are not due", [$sent, $tells.asked("scene.flush").last], [[], { "skip" => true, "playing" => true }])
+$tells.set("scene.flush", nil)
 frame.call(main, lambda {})
-check("the changes wait while the skip is held", $sent, [])
-$frame_count += 1
-frame.call(main, lambda {})
-check("then go out in one message, SKIP_SEND_FRAMES after the last",
-      [$sent.map { |seat, fields| [seat, fields["pscene"]] }, changes.call($sent, "pscene").map { |_, kind, args, _| [kind, args] }],
-      [[[4, "batch"]], [["event.route", [-1, true, false, [[4], [0]]]], ["picture.move", [3, 0, 30, 10, 100, 100, 255, 0, 30]], ["audio.se_play", ["Knock", 80, 100]],
-                        ["event.route", [-1, true, false, [[16], [0]]]], ["picture.move", [4, 0, 0, 5, 100, 100, 255, 0, 30]], ["picture.rotate", [4, 2]],
-                        ["picture.move", [4, 0, 0, 6, 100, 100, 255, 0, 30]], ["map.camera", [6.0, 5.0]]]])
+check("then go out once it hands them", $sent.map { |_, fields| fields["pscene"] }, ["picture.move", "audio.se_play", "event.route"])
 $sent.clear
-$frame_count += 1
+$tells.set("scene.flush", false)
 frame.call(main, lambda { $game_map.screen.start_fadein(30) })
-$skipping = false
-frame.call(main, lambda { $game_map.screen.start_fadeout(30) })
-check("once the skip is let go, the changes waiting go out with the frame's",
-      changes.call($sent, "pscene").map { |_, kind, _, _| kind }, ["screen.start_fadein", "screen.start_fadeout"])
-$sent.clear
-$skipping = true
-$frame_count += 1
-frame.call(main, lambda { $game_map.screen.start_fadein(30) })
-$frame_count += 1
-frame.call(main, lambda { Audio.se_play("Audio/SE/Door", 80, 100) })
+$tells.set("scene.flush", nil)
 $playing = false
 $game_map.update
-check("and once the story stopped playing", changes.call($sent, "pscene").map { |_, kind, _, _| kind }, ["screen.start_fadein", "audio.se_play"])
+check("once the story stopped playing, the DLL is told so and hands the changes waiting",
+      [$tells.asked("scene.flush").last, $sent.map { |_, fields| fields["pscene"] }], [{ "skip" => true, "playing" => false }, ["screen.start_fadein"]])
 $skipping = false
 $playing = true
 $game_map.set_display_pos(0.0, 0.0)
 $game_map.update
 $sent.clear
 
-# The DLL sends a world message of at most its 256 KB frame less the cipher's 41 bytes.
-check("the changes of one message leave room below the largest world message the DLL sends",
-      SceneStandIn::MAX_BATCH_BYTES + 16_000 <= 256 * 1024 - 41, true)
-
 # A member sees them on the leader's map.
-leader = MGQ_MpOverworldSync::Peers::Peer.new(2, { "map" => "7", "telling" => true })
+leader = MGQ_MpOverworldSync::Peers::Peer.new(2, { "name" => "Leader", "map" => "7", "telling" => true })
 $leader = leader
 $game_map = Game_Map.new
 $game_player = Game_Player.new
@@ -387,42 +373,34 @@ $game_map.screen.done.clear
 # Stands in for overworld.rbx, knowing only these pictures of this game.
 module MGQ_MpOverworld; def self.graphic?(folder, name); folder == :picture && %w(story_cg ev_aguni._hb1 ahead elsewhere).include?(name); end; end
 take = lambda { |kind, args, map = 7| $routes["pscene"].call(leader, { "pscene" => kind, "map" => map.to_s, "args" => wire_line(args) }) }
+# Has the DLL refuse the changes of the next messages a member takes for the reasons given, nil for
+# a change that passes, or the whole message for a text.
+refuse = lambda { |refusals| $tells.set("scene.take") { |request| { "args" => FakeLines.parse(request["line"]), "refusals" => refusals } } }
+$tells.clear
 take.call("picture.show", [3, "story_cg", 0, 0, 0, 100, 100, 255, 0])
 take.call("screen.start_fadeout", [30])
 take.call("screen.start_flash", [Color.new(255, 255, 255, 170), 20])
 take.call("player.transparent", [true])
-check("a member on the leader's map sees the picture", $game_map.screen.pictures[3].done, [[:show, "story_cg", 0, 0, 0, 100, 100, 255, 0]])
+check("a member hands the DLL each message with the teller's map and their own", $tells.asked("scene.take")[0].reject { |key, _| key == "line" },
+      { "kind" => "picture.show", "map" => 7, "here" => 7 })
+check("and on the leader's map sees the picture", $game_map.screen.pictures[3].done, [[:show, "story_cg", 0, 0, 0, 100, 100, 255, 0]])
 check("and the screen's fade and flash", $game_map.screen.done, [[:fadeout, 30], [:flash, [255, 255, 255, 170], 20]])
 check("and hides their own character as the leader's is", $game_player.transparent, true)
-take.call("picture.show", [5, "../../evil", 0, 0, 0, 100, 100, 255, 0])
-take.call("picture.show", [9, "a..b", 0, 0, 0, 100, 100, 255, 0])
-take.call("picture.show", [101, "story_cg", 0, 0, 0, 100, 100, 255, 0])
+refuse.call(["'../../evil' is no picture's file name"])
+lines = logged_lines { take.call("picture.show", [5, "../../evil", 0, 0, 0, 100, 100, 255, 0]) }
+$tells.set("scene.take", nil)
+check("a change the DLL refuses is left out, logged with its reason",
+      [$game_map.screen.pictures[5].done, lines.grep(/ignored picture.show .* on map 7: '\.\.\/\.\.\/evil' is no picture's file name/).size], [[], 1])
 take.call("screen.exit", [])
-check("a path, a number past the pictures or an unknown method is left out",
-      [$game_map.screen.pictures[5].done, $game_map.screen.pictures[9].done, $game_map.screen.pictures[101].done, $game_map.screen.done.size],
-      [[], [], [], 2])
+check("a screen change this game has no such change for is left out", $game_map.screen.done.size, 2)
 take.call("picture.show", [10, "ev_aguni._hb1", 0, 0, 0, 100, 100, 255, 0])
 check("a picture whose name holds a dot shows", $game_map.screen.pictures[10].done.size, 1)
 take.call("picture.show", [10, "mod_cg", 0, 0, 0, 100, 100, 255, 0])
 check("a picture this game lacks erases the picture's place instead of showing", $game_map.screen.pictures[10].done.last, [:erase])
-screen_done = $game_map.screen.done.size
-take.call("picture.start_tone_change", [10, "dark", 30])
-take.call("screen.start_tone_change", ["dark", 30])
-take.call("screen.start_flash", ["white", 20])
-take.call("screen.start_fadeout", [30, 1])
-check("a text in place of a tone or color, or an argument too many, is left out",
-      [$game_map.screen.pictures[10].done.size, $game_map.screen.done.size], [2, screen_done])
-$routes["pscene"].call(leader, { "pscene" => "picture.move", "map" => "7", "args" => wire_line([12, 0, 0.5, 0, 100, 100, 255, 0, 30]).sub("0.5", "1e400") })
-take.call("picture.move", [12, 0, 0, 0, 100, 100, 255, 0, -1])
-take.call("picture.move", [12, 0, 0, 0, 100, 100, 255, 0, 2.5])
-take.call("picture.rotate", [12, 1_000_000_000])
-take.call("screen.start_shake", [10, 5, 30])
-check("Infinity, a negative or broken duration, a turning speed past the limit or a shake past the editor's range is left out",
-      [$game_map.screen.pictures[12].done, $game_map.screen.done.size], [[], screen_done])
 take.call("picture.move", [12, 0, 10.5, -20, 100, 100, 255, 0, 30.0])
 take.call("picture.rotate", [12, -5])
 take.call("screen.start_shake", [5, 9, 30])
-check("but numbers within the limits are taken",
+check("a picture's move and turn and the screen's shake are made with the teller's numbers",
       [$game_map.screen.pictures[12].done, $game_map.screen.done.last], [[[:move, 0, 10.5, -20, 100, 100, 255, 0, 30.0], [:rotate, -5]], [:shake, 5, 9, 30]])
 $follows = false
 take.call("picture.show", [11, "story_cg", 0, 0, 0, 100, 100, 255, 0])
@@ -433,68 +411,61 @@ check("a change on another map is left out", $game_map.screen.pictures[6].done, 
 $following = 8
 take.call("picture.show", [6, "ahead", 0, 0, 0, 100, 100, 255, 0], 8)
 check("but not on the map the member follows the leader to", $game_map.screen.pictures[6].done, [[:show, "ahead", 0, 0, 0, 100, 100, 255, 0]])
+refuse.call([nil, "the player is still on the way, on map 7", nil])
 take.call("batch", [["picture.show", [14, "ahead", 0, 0, 0, 100, 100, 255, 0]], ["event.balloon", [1, 3]], ["picture.move", [14, 0, 5, 5, 100, 100, 255, 0, 30]]], 8)
-check("a message of several changes makes them in their order, each through its own gate, so an event's on the map the member is still on the way to is left out",
-      $game_map.screen.pictures[14].done, [[:show, "ahead", 0, 0, 0, 100, 100, 255, 0], [:move, 0, 5, 5, 100, 100, 255, 0, 30]])
-take.call("batch", Array.new(SceneStandIn::MAX_BATCH + 1) { ["picture.rotate", [15, 1]] }, 8)
-take.call("batch", [["picture.rotate", [15, 1]], "picture.rotate"], 8)
-take.call("batch", [["picture.rotate", [15, 1]], ["picture.rotate", 1]], 8)
-check("one of more than MAX_BATCH changes, or holding anything but changes, is left out whole", $game_map.screen.pictures[15].done, [])
+check("a message of several changes makes them in their order, each but those the DLL refuses",
+      [$game_map.screen.pictures[14].done, $tells.asked("scene.take").last["kind"]], [[[:show, "ahead", 0, 0, 0, 100, 100, 255, 0], [:move, 0, 5, 5, 100, 100, 255, 0, 30]], "batch"])
+refuse.call("more than 256 or not changes")
+lines = logged_lines { take.call("batch", [["picture.rotate", [15, 1]], ["picture.rotate", [15, 2]]], 8) }
+$tells.set("scene.take", nil)
+check("one the DLL refuses whole is left out whole, logged with its reason",
+      [$game_map.screen.pictures[15].done, lines.grep(/ignored 2 changes from Leader in one message: more than 256 or not changes/).size], [[], 1])
 $game_map.screen.pictures[14].erase
 $game_map.screen.pictures[6].erase
 $following = nil
+$tells.clear
 $game_map.update
-check("while the story plays, nothing is put back", $game_map.screen.pictures[3].done.size, 1)
+check("while the story plays, nothing is put back", [$game_map.screen.pictures[3].done.size, $tells.asked("flow.plan")], [1, []])
 
-# Once the story ended, the member's screen comes back.
+# Once the story ended, the member's screen comes back as the one guard of the game's flow plans.
+plan = lambda do |named|
+  $tells.set("flow.plan", { "erase" => [], "fade_in" => false, "tone" => nil, "hidden" => nil, "followers" => nil, "release_party" => false, "music" => nil,
+                            "lift" => [], "end_route" => false, "clear_effects" => false, "frames" => 30 }.merge(named))
+end
+plan.call("erase" => [3], "fade_in" => true, "hidden" => false, "clear_effects" => true)
 leader.state["telling"] = "0"
 $game_map.update
-check("right after a change, the leader's state may still follow, so nothing is put back yet", $game_map.screen.pictures[3].done.size, 1)
+check("right after a change, the leader's state may still follow, so nothing is put back yet", $tells.asked("flow.plan"), [])
 $frame_count += MGQ_MpCoopScene::STATE_GRACE_FRAMES
 $game_map.update
-check("then the story's pictures are erased", $game_map.screen.pictures[3].done.last, [:erase])
-check("the screen comes back with the member's own tint, which the scene never changed", [$game_map.screen.done.last(3), $game_map.screen.tone.to_a],
-      [[[:clear_flash], [:clear_shake], [:fadein, FlowStandIn::FRAMES]], [-34, -34, -34, 0]])
-check("and the member's own character shows again", $game_player.transparent, false)
-done = $game_map.screen.done.size
+ended = $tells.asked("flow.plan").last
+check("then the guard is handed the state before the scene first changed the screen and what of it reached the screen",
+      [ended && ended["cut"], ended && ended["before"].values_at("map", "tone", "hidden"), ended && ended["watch"].values_at("screen", "hidden", "music", "route"),
+       ended && ended["watch"]["pictures"].include?(3)], ["watched", [7, [-34, -34, -34, 0], false], [true, true, false, false], true])
+check("and puts back what it plans: the story's pictures erased, the screen's effects cleared and faded in, the character shown",
+      [$game_map.screen.pictures[3].done.last, $game_map.screen.done.last(3), $game_player.transparent], [[:erase], [[:clear_flash], [:clear_shake], [:fadein, 30]], false])
+asked = $tells.asked("flow.plan").size
 $game_map.update
-check("only once", $game_map.screen.done.size, done)
+check("only once", $tells.asked("flow.plan").size, asked)
 
 # The leader's scene reached the member first with its music on another map, then tinted the
-# member's screen on the map they stand on now.
+# member's screen on the map they stand on now, and the story brought them to another map before it
+# ended.
 leader.state["telling"] = "1"
 $game_map.map_id = 8
 take.call("audio.bgm_play", ["Story", 90, 100], 8)
 $game_map.map_id = 7
 take.call("screen.start_tone_change", [Tone.new(-68, -68, 0, 0), 30])
-leader.state["telling"] = "0"
-$frame_count += MGQ_MpCoopScene::STATE_GRACE_FRAMES
-$game_map.update
-check("its end gives back the member's own tint of the map the tint came on", $game_map.screen.tone.to_a, [-34, -34, -34, 0])
-
-# A member the story brought to another map comes back without a tint and with their character
-# shown, as when the story ends a new game's hidden start, and as when the teller's own ending goes
-# on hidden and dark after it brought them there.
-leader.state["telling"] = "1"
-$game_player.transparent = true
-take.call("screen.start_tone_change", [Tone.new(-68, -68, 0, 0), 30])
-take.call("player.transparent", [false])
 $game_map.map_id = 8
 leader.state["telling"] = "0"
+plan.call("tone" => [0, 0, 0, 0])
 $frame_count += MGQ_MpCoopScene::STATE_GRACE_FRAMES
 $game_map.update
-check("on another map the story's tint goes", $game_map.screen.done.last, [:tone, [0, 0, 0, 0], FlowStandIn::FRAMES])
-check("and the character the story showed stays shown", $game_player.transparent, false)
-leader.state["telling"] = "1"
-$game_map.map_id = 7
-take.call("screen.start_tone_change", [Tone.new(-255, -255, -255, 0), 30])
-take.call("player.transparent", [true])
-$game_map.map_id = 8
-leader.state["telling"] = "0"
-$frame_count += MGQ_MpCoopScene::STATE_GRACE_FRAMES
-$game_map.update
-check("a character the teller's story hid on the way shows again on the other map, with no tint",
-      [$game_player.transparent, $game_map.screen.done.last], [false, [:tone, [0, 0, 0, 0], FlowStandIn::FRAMES]])
+ended = $tells.asked("flow.plan").last
+check("its end hands the guard the state of the map the tint came on, and the state on the map the player is on now",
+      [ended["before"].values_at("map", "tone"), ended["now"]["map"], ended["watch"].values_at("screen", "music")], [[7, [-34, -34, -34, 0]], 8, [true, true]])
+check("and takes the tint the guard plans", $game_map.screen.done.last, [:tone, [0, 0, 0, 0], 30])
+$tells.set("flow.plan", nil)
 $game_map.map_id = 7
 
 # In a Raid World the player telling the story on the map shows it to everyone there whose story
@@ -539,9 +510,8 @@ away = MGQ_MpOverworldSync::Peers::Peer.new(6, { "name" => "Away", "id" => "a", 
 $peers = [matching, behind, away]
 $playing = true
 frame.call(main, lambda { $game_map.screen.pictures[3].show("story_cg", 0, 0, 0, 100, 100, 255, 0) })
-check("the teller's scene goes through the map's gate to the players on the map who play the player's track",
-      [$told.map { |seat, fields| [seat, fields["map_pscene"], fields["mmap"]] }, changes.call($told, "map_pscene").map { |_, kind, _, _| kind }],
-      [[[4, "batch", 7]], ["picture.show", "map.camera"]])
+check("the teller's scene goes through the map's gate to the players on the map who play the player's track, naming the map",
+      $told.map { |seat, fields| [seat, fields["map_pscene"], fields["mmap"]] }, [[4, "picture.show", 7], [4, "map.camera", 7]])
 second = MGQ_MpOverworldSync::Peers::Peer.new(7, { "name" => "Second", "id" => "s", "map" => "7", "trk" => "world", "since" => "3000" })
 $peers = [matching, behind, second]
 $told.clear
@@ -617,19 +587,6 @@ check("the teller's story values go out once at the frame's end, what is each pl
 check("the move route goes out without its script, its sound by its file",
       told.call("event.route"), [[12, false, false, [[1], [41, "Actor1", 2], [44, "Door", 80, 100], [0]]]])
 check("so do the balloon and the erasure", [told.call("event.balloon"), told.call("event.erase")], [[[12, 1]], [[12]]])
-$skipping = true
-$frame_count += MGQ_MpCoopEvents::SKIP_SEND_FRAMES
-frame.call(main, lambda { $game_switches[40] = false })
-$told.clear
-$frame_count += 1
-frame.call(main, lambda { $game_switches[40] = true; $game_variables[1001] = 42 })
-$frame_count += 1
-frame.call(main, lambda { $game_switches[40] = false })
-$frame_count += MGQ_MpCoopEvents::SKIP_SEND_FRAMES
-$game_map.update
-check("while the teller skips, the story values of the frames between go out as one change, the newest value of each",
-      told.call("story.values"), [[[1, 1001, 42], [0, 40, false]]])
-$skipping = false
 $told.clear
 $playing = false
 $game_switches[41] = true
@@ -730,10 +687,9 @@ $game_player.update
 check("a camera place of another map is left out", $game_map.display_x, 20.4375)
 $played = []
 scene.call("audio.bgm_play", ["Story", 90, 100, 0])
-scene.call("audio.se_play", ["../evil", 80, 100])
 scene.call("audio.bgm_fade", [1000])
 scene.call("audio.exit", [])
-check("the viewer plays the teller's music, sounds and fades, never a path or an unknown call", $played, [["BGM", "Story", 90, 100, 0], ["BGM", :fade, 1000]])
+check("the viewer plays the teller's music and fades, never an unknown call", $played, [["BGM", "Story", 90, 100, 0], ["BGM", :fade, 1000]])
 $played = []
 scene.call("audio.se_play", ["Door"])
 check("a sound sent without volume and pitch plays at the game's defaults", $played, [["SE", "Door", 100, 100]])
@@ -788,9 +744,12 @@ scene.call("event.route", [-1, true, false, [[4], [0]]])
 $forcing = true
 $restored = nil
 $tellings.delete(2)
+plan.call("end_route" => true)
 $game_map.update
-check("a route still walked once the relay ended the telling, which ends the scene at once, ends, giving the player their character back",
-      [$restored, $game_player.instance_variable_get(:@move_route_forcing), MGQ_MpCoopScene.walks_player?], [true, false, false])
+check("a route still walked once the relay ended the telling, which ends the scene at once, is handed to the guard, whose plan gives the player their character back",
+      [$tells.asked("flow.plan").last["watch"]["route"], $restored, $game_player.instance_variable_get(:@move_route_forcing), MGQ_MpCoopScene.walks_player?],
+      [true, true, false, false])
+$tells.set("flow.plan", nil)
 check("and the scene switch the scene turned on is off again", $game_switches[2029], false)
 $tellings[2] = ["x1", 7, "map:7:1:1"]
 $raid = false

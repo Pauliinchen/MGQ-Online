@@ -2,6 +2,7 @@
 #  make_turn_fixtures.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Read the ledger's stand-in from the last commit that kept it, the script tests no longer having one
 #      Paulinchen  2026-10-31: Read the old scripts from a commit that feat/refactor holds
 #      Paulinchen  2026-10-30: Created
 #
@@ -10,22 +11,38 @@
 # Writes the golden cases of a raid boss fight's turns next to this file, turns.json, from
 # battles_raid_pool.rbx as it reported and synced its fights before that moved to C# (commit
 # e2d9fc67, which this generator reads through git, so it runs again on later commits), with the
-# pools of the ledger's stand-in (GameScript/Tests/pool_support.rb). Each scenario opens a fight and
+# pools of the ledger's stand-in (GameScript/Tests/pool_support.rb as commit 9e078f28 kept it, read
+# the same way). A recording tool: no test runs against it. Each scenario opens a fight and
 # runs steps on it: the enemies as the battle has them, the player's role, time passing, the DLL
 # refusing reports, the relay's word of a pool, and a moment of the battle (its start, a command
 # phase, an action's end, the wait for commands, a turn's end, its end, a takeover). Each step
 # records the reports sent, the enemies' HP and deaths after it, the enemies killed by an empty
-# pool, whether the battle was judged, and the fight's state. MGQOnline.Game.Tests and
-# pool_support.rb replay them.
+# pool, whether the battle was judged, and the fight's state. MGQOnline.Game.Tests replays them.
 #
 #   ruby fixtures/pool/make_turn_fixtures.rb
 
 require "json"
 require "tempfile"
-require_relative "../../GameScript/Tests/pool_support"
+require_relative "../../GameScript/Tests/bridge_support"
 
 # The commit whose battles_raid_pool.rbx kept the turns.
 SOURCE_COMMIT = "e2d9fc67"
+
+# The last commit whose script tests kept the ledger's stand-in.
+STAND_IN_COMMIT = "9e078f28"
+
+# Loads the ledger's stand-in of the stand-in commit.
+def load_stand_in
+  source = `git -C "#{File.expand_path('../..', __dir__)}" show #{STAND_IN_COMMIT}:GameScript/Tests/pool_support.rb`
+  raise "git could not read pool_support.rb of #{STAND_IN_COMMIT}" if source.empty?
+
+  stand_in = Tempfile.new(["pool_support", ".rb"])
+  stand_in.write(source.sub(/^require_relative "bridge_support"
+/, ""))
+  stand_in.close
+  load stand_in.path
+end
+load_stand_in
 
 # The log stays quiet; the cases record what the rules did, not their lines.
 module MGQ_Multiplayer; module Log; def self.write(_line); end; end; end

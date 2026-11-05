@@ -2,7 +2,10 @@
 #  battles_join_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Wrote and read the battle lines through the codec's stand-in
+#      Paulinchen  2026-11-05: Answered the squad math with fixed values per case
+#                            - Read the messages sent as the scripts hand them and handed those of other games as the DLL reads them
+#                            - Answered the co-op topics with the values each case sets and checked what the scripts ask and do with the answers
+#                            - Wrote and read the battle lines through the codec's stand-in
 #                            - Told every host's battle state in rbs beside its players in rbn
 #                            - Expected the battle's players and state in the state, in a Classic world too
 #                            - Covered a party member's battle a member who missed it joins late in a Classic world (issue 76)
@@ -36,16 +39,26 @@
 
 # Covers joining a battle by choice in a Raid World, battles_coop_join.rbx with
 # battles_coop_hotjoin.rbx, battles_coop.rbx and battles_sync.rbx: the state a host tells, the
-# prompt and its hotkey, the host's answer, the late guest, and the side battle the prompt offers
-# near a full raid boss battle, and the frozen fight it offers near its boss's stand-in.
+# prompt and its hotkey, the host's answer, the late guest, the party members' offers, and the
+# side battle the prompt offers near a full raid boss battle, and the frozen fight it offers near
+# its boss's stand-in. What the prompt offers, whom a host takes in and the room a battle tells
+# are the DLL's to answer (JoinChoice, JoinIntake), here with the fixed values each case sets.
 
 require_relative "battle_support"
+
+# The DLL's arrangement of the battles' players below (SquadMathTests covers it), by the players
+# handed over, each [id, first, party_member_max, characters], answered as [index, Frontline,
+# Backline] of each in their order.
+$rule_answers.cases("squad.arrange", {
+  [["id-me", true, 8, 3]] => [[0, 1, 2]],
+  [["id-me", true, 8, 3], ["id-8", false, 4, 3]] => [[0, 1, 2], [1, 1, 2]],
+  [["id-me", true, 8, 3], ["id-8", false, 4, 1]] => [[0, 1, 2], [1, 1, 0]]
+}) { |request| request["players"] }
+$rule_answers.set("squad.raid", { "regular" => [1, 2], "raid" => [1, 2], "largest" => 3 })
 
 sync = MGQ_MpBattlesSync
 hotjoin = MGQ_MpBattlesHotjoin
 coop = MGQ_MpBattlesCoop
-# Tells the code a player reads of why the host's battle takes nobody in, as the rules in C# tell it.
-closed_code = lambda { CoopStandIn.closed(hotjoin.intake_facts)[0] }
 scene = Scene_Battle.new
 spriteset = Spriteset_Battle.new
 scene.instance_variable_set(:@spriteset, spriteset)
@@ -135,7 +148,7 @@ join = MGQ_MpBattlesJoin
 # @param kind [String] The co-op message's kind.
 # @return [Array<Array>] Each message's seat and fields.
 def map_sent(kind)
-  $sent.map { |seat, text| [seat, fields_of(text)] }.select { |_, f| f["map_coop"] == kind }
+  $sent.select { |_, f| f["map_coop"] == kind }
 end
 
 # Reads the battle messages sent.
@@ -143,7 +156,7 @@ end
 # @param kind [String] The battle message's kind.
 # @return [Array<Array>] Each message's seat and fields.
 def battle_sent(kind)
-  $sent.map { |seat, text| [seat, fields_of(text)] }.select { |_, f| f["battle"] == kind }
+  $sent.select { |_, f| f["battle"] == kind }
 end
 
 # Makes another player on map 5.
@@ -169,13 +182,15 @@ def open_phase(scene)
   MGQ_MpBattlesSync::Recorder.command_phase
 end
 
-# Forgets every battle, invite, hotjoin and request, as after a reset.
+# Forgets every battle, invite, hotjoin and request, as after a reset, and gives the scripts a DLL
+# with nothing to say.
 def reset
   MGQ_MpBattlesCoop.drop
   MGQ_MpBattlesJoin.drop
   MGQ_MpBattlesSync.finish
   MGQ_MpBattles.drop
   MGQ_MpBattles.instance_variable_set(:@kind, nil)
+  answer_coop($world_bridge)
   $sent.clear
   $messages = []
   $frames = 0
@@ -196,6 +211,16 @@ def map_frame
   map
 end
 
+# Runs a frame of the map with the Join Battle hotkey pressed.
+#
+# @return [Scene_Map] The map.
+def press
+  $down = [0x4A]
+  map_frame
+ensure
+  $down = []
+end
+
 # Runs a frame on the map without the hotkey and reads what the prompt offers.
 #
 # @param part [Symbol] :target (the battle's host and id), :side or :freeze.
@@ -204,6 +229,22 @@ def offered(part = :target)
   MGQ_MpBattlesJoin.on_map(false)
   found = MGQ_MpBattlesJoin.instance_variable_get(:"@#{part}")
   part == :target && found ? [MGQ_MpOverworldSync::Peers.at(found[0]), found[1]] : found
+end
+
+# Reads the last frame on the map the scripts told the DLL of the prompt.
+#
+# @return [Hash] The request.
+def join_frame
+  $coop.asked("coop.join_frame").last
+end
+
+# Has a co-op topic's step answer a value once, then nil, as a DLL with nothing more to say.
+#
+# @param key [String] The topic and its step, such as "coop.pending joins".
+# @param value [Object] The answer.
+def once(key, value)
+  answers = [value]
+  $coop.set(key) { |_request| answers.shift }
 end
 
 $my_seat = 0
@@ -215,86 +256,72 @@ $game_map.map_id = 5
 $game_player.x = 0
 $game_player.y = 0
 $scene_now = Scene_Map.new
+reset
 
-# The state a host tells.
-check("on the map a Raid World's player tells no battle that takes players in", join.state_fields, { "rbn" => 0, "rbs" => "closed" })
-$raid = false
-check("so does a Classic world's player, whose party members join its battles late", join.state_fields, { "rbn" => 0, "rbs" => "closed" })
-$raid = true
+# The state a host tells, as the DLL tells it from the facts of the player's battle.
 $scene_now = scene
 $game_troop.setup(31)
 hotjoin.fight_alone("own1")
-check("one who fights alone tells one player and takes players in", join.state_fields, { "rbn" => 1, "rbs" => "open" })
+$coop.set("coop.room", "rbn" => 1, "rbs" => "open")
+check("one who fights alone tells the players and whether the battle takes players in as the DLL tells them, from the battle's facts",
+      [join.state_fields, $coop.asked("coop.room").last.values_at("bid", "host", "role", "players", "live", "ending", "pvp", "boss")],
+      [{ "rbn" => 1, "rbs" => "open" }, ["own1", 0, nil, 1, false, false, false, false]])
 sync.join_world(:guest, "g1", [4], "P4")
-check("a guest tells nothing of the battle, its host does", join.state_fields, { "rbn" => 0, "rbs" => "closed" })
+join.state_fields
+check("a guest tells the DLL the battle and its host", $coop.asked("coop.room").last.values_at("bid", "host", "role", "players"), ["g1", 4, "guest", 1])
 reset
 $scene_now = scene
 sync.join_world(:host, "g2", [7], "the players")
 sync.battle_started
 hotjoin.fight_alone("g2")
-check("a host still gathering its players takes nobody in", [join.state_fields, closed_code.call], [{ "rbn" => 2, "rbs" => "gathering" }, "gathering"])
+join.state_fields
+check("a host still gathering its players tells the DLL whom it waits for", $coop.asked("coop.room").last.values_at("role", "seats", "players"), ["host", [7], 2])
 reset
 $scene_now = scene
 hotjoin.fight_alone("own2")
 $ending = true
-check("nor does a battle that ends", [join.state_fields, closed_code.call], [{ "rbn" => 1, "rbs" => "ending" }, "ending"])
-$ending = false
 MGQ_MpBattles.instance_variable_set(:@kind, :pvp)
-check("nor a PvP battle", [join.state_fields, closed_code.call], [{ "rbn" => 1, "rbs" => "pvp" }, "pvp"])
+join.state_fields
+check("a battle that ends tells so, as does a PvP battle", $coop.asked("coop.room").last.values_at("ending", "pvp"), [true, true])
+$coop.set("coop.room") { |_request| nil }
+check("a battle the DLL tells nothing of takes nobody in", join.state_fields, { "rbn" => 0, "rbs" => "closed" })
 reset
 
 # When the prompt shows.
 host = player(5, { "scene" => "battle", "rb" => "b1", "rbh" => "5", "rbn" => "1", "rbs" => "open", "x" => "2", "y" => "1" })
 MGQ_MpOverworldSync::Peers.all.replace([host])
+$coop.set("coop.join_frame", "target" => [5, "b1"])
 map_frame
-check("a player near a battle that takes players in sees the prompt", [offered, join.prompt_text], [[host, "b1"], "Press J to join battle"])
-host.state["scene"] = "away"
-check("so does one near a battle under the Library or Config, whose window is in the background", offered, [host, "b1"])
-host.state["rb"] = ""
-check("but not near a player whose window is merely in the background", offered, nil)
-host.state.merge!("scene" => "battle", "rb" => "b1")
-host.state["x"] = "4"
-map_frame
-check("not when its player stands further than #{join::JOIN_DISTANCE} steps", join.prompt_text, nil)
-guest = player(6, { "scene" => "battle", "rb" => "b1", "rbh" => "5", "x" => "-1", "y" => "-3" })
-MGQ_MpOverworldSync::Peers.all.replace([host, guest])
-check("but near one of its guests, whose host stands further", offered, [host, "b1"])
-host.state["x"] = "1"
-host.state.merge!("rbn" => "4", "rbs" => "full")
-check("not when four players fight in it", offered, nil)
-host.state.merge!("rbn" => "1", "rbs" => "closed")
-check("nor when its host takes nobody in", offered, nil)
-host.state.merge!("rbn" => "2", "rbs" => "open")
-host.state["map"] = "6"
-check("nor when its host is on another map", offered, nil)
-host.state["map"] = "5"
-duelist = player(7, { "scene" => "battle", "rb" => "", "x" => "1" })
-MGQ_MpOverworldSync::Peers.all.replace([duelist])
-check("nor near a PvP battle, which tells no battle to join", offered, nil)
-MGQ_MpOverworldSync::Peers.all.replace([host])
-$raid = false
-map_frame
-check("never in a Classic world", join.prompt_text, nil)
-$raid = true
+check("a player near a battle the DLL finds sees the prompt", [offered, join.prompt_text], [[host, "b1"], "Press J to join battle"])
+check("each frame on the map tells the DLL the player's facts, that the hotkey is read and not pressed, and nothing keeps the player busy",
+      join_frame.values_at("reads", "pressed", "changing", "busy", "sides", "freeze") + [join_frame["facts"]["map"]], [true, false, false, [nil, nil], nil, nil, 5])
+busy = []
 $game_map.interpreter.busy = true
-check("nor while an event runs", offered, nil)
+offered
+busy << join_frame["busy"]
+check("the prompt hides while an event or a message holds the map", join.prompt_text, nil)
 $game_map.interpreter.busy = false
-$typing = true
-check("nor while the chat box is open", offered, nil)
-$typing = false
-$wheel = true
-check("nor while the action wheel is open", offered, nil)
-$wheel = false
-$trading = :session
-check("nor while the player trades", offered, nil)
-$trading = nil
+# Each turns on or off what keeps the player busy: the chat box, the action wheel, a trade.
+[lambda { |on| $typing = on }, lambda { |on| $wheel = on }, lambda { |on| $trading = on && :session }].each do |turn|
+  turn.call(true)
+  offered
+  busy << join_frame["busy"]
+  turn.call(false)
+end
 sync.join_world(:guest, "x1", [9], "P9")
-check("nor while the player is in a battle", offered, nil)
+offered
+busy << join_frame["busy"]
 sync.finish
-$scene_now = Object.new
-check("nor outside the map", offered, nil)
+check("it tells the DLL what keeps the player from joining: an event, the chat box, the action wheel, a trade, a battle",
+      busy, [["the map is not free: an event, a message or a transfer", nil], [nil, "the chat box is open"], [nil, "the action wheel is open"],
+             [nil, "the player trades or is about to teleport"], ["the player is in a multiplayer battle", nil]])
+$settings = { "key_overview" => "74" }
 map_frame
-check("the prompt shows again once the player is free", join.prompt_text, "Press J to join battle")
+check("a hotkey with the same key turns Join Battle off, its prompt hidden and nothing read",
+      [join.reads_hotkey?, join.prompt_text, join_frame.values_at("reads", "busy")], [false, nil, [false, [nil, nil]]])
+$settings = nil
+map_frame
+check("the prompt shows again once the hotkey is free", join.prompt_text, "Press J to join battle")
 
 # The prompt below the player's character.
 prompt = join::Prompt.new
@@ -312,100 +339,87 @@ map_frame
 prompt.update
 prompt.close
 
-# The hotkey asks the host.
-$sent.clear
-$down = [0x4A]
-map_frame
-$down = []
-check("the hotkey asks the battle's host through the map's gate", map_sent("pick").map { |seat, f| [seat, f["bid"], f["map"]] }, [[5, "b1", "5"]])
-check("the player stands still meanwhile, the prompt hidden", [MGQ_MpHooks.player_held?, join.prompt_text], [true, nil])
-check("and reads that they ask", $messages.last, "Asking P5 to join their battle...")
-$down = [0x4A]
-$sent.clear
-map_frame
-$down = []
-check("a second press asks nothing more", map_sent("pick"), [])
-coop_deliver_map(host, { "coop" => "pick_no", "bid" => "b1", "why" => "full" })
-check("a refusal tells the player why", $messages.last, "Cannot join P5's battle.")
-check("and lets them walk on", MGQ_MpHooks.player_held?, false)
-map_frame
-$down = [0x4A]
-map_frame
-$down = []
-$coop_ask.age_join(AskStandIn::ANSWER_SECONDS + 1)
-map_frame
-check("without an answer the player walks on", [$messages.last, MGQ_MpHooks.player_held?], ["No answer from P5's battle.", false])
-map_frame
-$sent.clear
+# The hotkey asks the host through the DLL.
+press
+check("a press of the hotkey goes to the DLL with the frame", join_frame["pressed"], true)
+$coop.status("join_waits" => true)
+check("the player stands still while the DLL says they wait for the host's answer", [join.asking?, MGQ_MpHooks.player_held?], [true, true])
+$coop.status
+check("and walks on once it says no more", MGQ_MpHooks.player_held?, false)
 join.click
 map_frame
-check("a click on the prompt asks the battle's host as the hotkey does", map_sent("pick").map { |seat, f| [seat, f["bid"]] }, [[5, "b1"]])
-$coop_ask.age_join(AskStandIn::ANSWER_SECONDS + 1)
-map_frame
-reset
-MGQ_MpOverworldSync::Peers.all.replace([])
-map_frame
-$down = [0x4A]
-map_frame
-check("the hotkey asks nobody without a battle near the player", map_sent("pick"), [])
+check("a click on the prompt presses the hotkey at the next frame", join_frame["pressed"], true)
+$log.clear
+$coop.set("coop.join_frame", "busy_reason" => "the battle is ending")
+press
+$coop.set("coop.join_frame", nil)
+press
+check("a press the DLL takes nothing for logs why", $log.grep(/ignored: /).map { |line| line[/ignored: .*/] },
+      ["ignored: the battle is ending", "ignored: nobody near the player fights a battle that takes players in"])
+$log.clear
+$coop.set("coop.join_frame", "target" => [5, "b1"], "asked" => true)
+press
+$coop.set("coop.join_frame", nil)
+$mgq_text_input = true
+press
+$mgq_text_input = nil
+check("a press the DLL asked the host for, or one while the player types, logs nothing", $log.grep(/ignored: /), [])
 reset
 
 # The host takes the player in or refuses them.
 asker = player(8)
-MGQ_MpOverworldSync::Peers.all.replace([asker])
+MGQ_MpOverworldSync::Peers.all.replace([asker, player(9)])
 $scene_now = scene
 $game_troop.setup(52)
 hotjoin.fight_alone("ev1")
 request = { "coop" => "pick", "bid" => "ev1", "map" => "5" }
-coop_deliver_map(asker, request)
-check("a host who fights an event's battle alone takes the player in with an invite to the running battle",
-      map_sent("invite").map { |seat, f| [seat, f["bid"], f["troop"], f["seats"], f["hot"], f["boss"]] }, [[8, "ev1", "52", "8", "1", nil]])
+$coop.message(asker, request)
+intake = $coop.asked("coop.intake").last
+check("a request to join by choice goes to the DLL's intake with the battle's facts",
+      [intake.values_at("kind", "seat", "bid", "map"), intake["facts"]["bid"]], [["choice", 8, "ev1", "5"], "ev1"])
+check("taken in, the player gets an invite to the running battle of the event the host fights alone",
+      map_sent("invite").map { |seat, f| [seat, f["bid"], f["troop"], f["seats"], f["hot"], f["boss"]] }, [[8, "ev1", 52, [8], true, nil]])
 check("hosting it without turning it live until the player joins", [sync.role, sync.live?, sync.expected], [:host, false, [8]])
-check("taking no enemies in", $coop_joins.entries.map { |entry| [entry[:seats], entry[:enemies]] }, [[[8], []]])
-check("its state counts the player taken in", join.state_fields, { "rbn" => 2, "rbs" => "open" })
+check("the DLL keeping them without enemies", $coop.asked("coop.pending").last, { "op" => "take_in", "requester" => 8, "seats" => [8], "enemies" => [] })
 $sent.clear
-coop_deliver_map(asker, request)
-check("a player taken in already is refused", map_sent("pick_no").map { |seat, f| [seat, f["why"]] }, [[8, "closed"]])
+$coop.set("coop.intake", "refusal" => ["full", "the battle is full"], "kept" => [], "left" => [], "room" => 0)
+$coop.message(MGQ_MpOverworldSync::Peers.at(9), request)
+check("a request the DLL refuses tells the player why", map_sent("pick_no").map { |seat, f| [seat, f["bid"], f["why"]] }, [[9, "ev1", "full"]])
+$coop.set("coop.intake", nil)
+$raid = false
+asked = $coop.asked("coop.intake").size
 $sent.clear
-coop_deliver_map(player(9), request.merge("bid" => "other"))
-check("so is a request for another battle", map_sent("pick_no").map { |seat, f| [seat, f["why"]] }, [[9, "closed"]])
-coop_deliver_map(player(9), request)
-coop_deliver_map(player(10), request)
-$sent.clear
-coop_deliver_map(player(11), request)
-check("and a fifth player", map_sent("pick_no").map { |seat, f| [seat, f["why"]] }, [[11, "full"]])
-check("whom the state tells, taking nobody in as it is full", join.state_fields, { "rbn" => 4, "rbs" => "full" })
-coop_deliver_map(asker, { "coop" => "off", "bid" => "ev1" })
-check("a player who stopped waiting is forgotten", hotjoin.pending_seats.include?(8), false)
+$coop.message(asker, request)
+check("a Classic world takes no request of a player outside the party", [map_sent("pick_no"), map_sent("invite"), $coop.asked("coop.intake").size - asked], [[], [], 0])
+asker.member = true
+$coop.message(asker, request)
+check("but a party member's, who missed the battle (issue 76)", $coop.asked("coop.intake").last.values_at("kind", "seat"), ["choice", 8])
+asker.member = false
+$raid = true
+reset
 
 # The player who joins takes the host's party, the troop untouched.
-reset
 $scene_now = scene
 $game_troop.setup(52)
 hotjoin.fight_alone("ev2")
-coop_deliver_map(asker, request.merge("bid" => "ev2"))
+$coop.message(asker, request.merge("bid" => "ev2"))
 $sent.clear
 sync.take(asker, { "battle" => "join", "bid" => "ev2", :payload => wire_line(["5,6,7", [[50, 5], [60, 6], [70, 7]], 4]) })
+$coop.set("coop.pending count", 1)
+once("coop.pending joins", [[8, wire_line(["5,6,7", [[50, 5], [60, 6], [70, 7]], 4])]])
 open_phase(scene)
 check("the command phase turns the event's battle live for the player who joined", [sync.host?, sync.guests_in], [true, [8]])
 check("whose first character joins the party", $game_party.battle_members.map(&:name), ["Actor1", "Actor5 (P8)"])
 check("while the troop stays the event's", $game_troop.members.map(&:enemy_id), [52])
 roster = battle_sent("roster")
 check("the player gets the roster with the event's troop", [roster.map(&:first), wire_values(roster[0][1][:payload])[0].map(&:first)], [[8], [52]])
-
 reset
+
 $scene_now = scene
 $game_troop.setup(29)
 hotjoin.fight_alone("boss1")
-coop_deliver_map(asker, request.merge("bid" => "boss1"))
-check("a boss battle takes the player in too, its invite marking it one", map_sent("invite").map { |seat, f| [seat, f["boss"]] }, [[8, "1"]])
-$sent.clear
-coop_deliver_map(player(9, { "scene" => "battle", "rb" => "boss1", "rbh" => "0" }),
-              { "coop" => "hot", "bid" => "boss1", "troop" => "50", "enemies" => "50:320:300:0", "seats" => "", "map" => "5" })
-check("though it still takes no encounter in", map_sent("hot_no").map(&:first), [9])
-sync.take(asker, { "battle" => "join", "bid" => "boss1", :payload => wire_line(["5", [[50, 5]], 4]) })
-open_phase(scene)
-check("the player joins the boss battle, which keeps its own troop", [sync.guests_in, $game_troop.members.map(&:enemy_id)], [[8], [29]])
+$coop.message(asker, request.merge("bid" => "boss1"))
+check("a boss battle takes the player in too, its invite marking it one", map_sent("invite").map { |seat, f| [seat, f["boss"]] }, [[8, true]])
 reset
 
 # A boss battle whose troop grew mid-battle, such as by another mod, stays one.
@@ -413,180 +427,54 @@ $scene_now = scene
 $game_troop.setup(29)
 $game_troop.members << Game_Enemy.new(1, 31)
 hotjoin.fight_alone("boss2")
-coop_deliver_map(asker, request.merge("bid" => "boss2"))
+$coop.message(asker, request.merge("bid" => "boss2"))
 check("a boss battle whose troop grew mid-battle takes the player in as one",
-      [hotjoin.boss_battle?, map_sent("invite").map { |seat, f| [seat, f["boss"]] }], [true, [[8, "1"]]])
-$sent.clear
-coop_deliver_map(player(9, { "scene" => "battle", "rb" => "boss2", "rbh" => "0" }),
-              { "coop" => "hot", "bid" => "boss2", "troop" => "50", "enemies" => "50:320:300:0", "seats" => "", "map" => "5" })
-check("and takes no encounter in", map_sent("hot_no").map(&:first), [9])
+      [hotjoin.boss_battle?, map_sent("invite").map { |seat, f| [seat, f["boss"]] }, $coop.asked("coop.intake").last["facts"]["boss"]], [true, [[8, true]], true])
 sync.take(asker, { "battle" => "join", "bid" => "boss2", :payload => wire_line(["5", [[50, 5]], 4]) })
+$coop.set("coop.pending count", 1)
+once("coop.pending joins", [[8, wire_line(["5", [[50, 5]], 4])]])
 open_phase(scene)
 roster = battle_sent("roster")
 check("the player joins with every enemy in the roster, the one added mid-battle after the troop's own",
       [sync.guests_in, wire_values(roster[0][1][:payload])[0].map(&:first), $game_troop.members.map(&:enemy_id)], [[8], [29, 31], [29, 31]])
 reset
 
-$raid = false
-coop_deliver_map(asker, request)
-coop.take(asker, request)
-check("a Classic world takes no request", [map_sent("pick_no"), map_sent("invite")], [[], []])
-$raid = true
-reset
-
-# The player who asked joins as a late guest once the invite comes.
+# The player who asked joins as a late guest once the DLL accepts the host's invite.
 host = player(5, { "scene" => "battle", "rb" => "b1", "rbh" => "5", "rbn" => "1", "rbs" => "open", "x" => "1" })
 MGQ_MpOverworldSync::Peers.all.replace([host])
-map_frame
-$down = [0x4A]
-map_frame
-$down = []
 $setup.clear
-coop_deliver_map(host, { "coop" => "invite", "bid" => "b1", "troop" => "29", "escape" => "0", "lose" => "1", "seats" => "0", "map" => "5", "hot" => "1", "boss" => "1" })
+invite = { "coop" => "invite", "bid" => "b1", "troop" => "29", "escape" => false, "lose" => true, "seats" => [0], "map" => "5", "hot" => true, "boss" => true }
+$coop.set("coop.poll", "actions" => [coop_step("accept", "seat" => 5, "fields" => invite)])
 map_frame
+$coop.set("coop.poll", nil)
 check("the invite of the host the player asked starts the battle as a late guest",
       [$called, $setup.last, sync.role, sync.battle_id, hotjoin.late?, hotjoin.own_troop?], [Scene_Battle, [29, false, true], :guest, "b1", true, false])
 check("which stays a boss battle should the player take it over", hotjoin.boss_battle?, true)
-check("the player waits for nothing more", [join.asking?, MGQ_MpHooks.player_held?], [false, false])
 $scene_now = scene
-$inject = lambda do |frame|
-  next unless frame == 2
-
-  line = wire_line([[[29, 320, 300, 0]], [[5, "P5", "1,2,3", [], 4, [0, 1, 2], 1, 2], [0, "Me", "1,2,3", [], 4, [0, 1, 2], 1, 2]], nil, 4])
-  sync.take(host, { "battle" => "roster", "bid" => "b1", :payload => line })
-end
+$coop.roster(wire_line([[[29, 320, 300, 0]], [[5, "P5", "1,2,3", [], 4, [0, 1, 2], 1, 2], [0, "Me", "1,2,3", [], 4, [0, 1, 2], 1, 2]], nil, 4]))
 check("and takes the roster at the host's next turn", [coop.join(scene), $game_troop.instance_variable_get(:@turn_count)], [nil, 4])
+check("having waited for it as long as a late guest waits", $coop.asked("coop.roster_wait").first, { "op" => "start", "limit" => hotjoin::ROSTER_FRAMES })
 check("with the host's troop alone", $game_troop.members.map(&:enemy_id), [29])
-reset
-
-# The battle the player left, the map held, a player who stops waiting, and the hotkey's key.
-$scene_now = Scene_Map.new
-MGQ_MpOverworldSync::Peers.all.replace([host])
-map_frame
-check("no prompt near the battle the player left, whose host keeps them among its seats", offered, nil)
-host.state["rb"] = "b2"
-map_frame
-$game_map.interpreter.busy = true
-check("the prompt hides while an event or a message holds the map", join.prompt_text, nil)
-$game_map.interpreter.busy = false
-$down = [0x4A]
-map_frame
-$down = []
-$coop_ask.age_join(AskStandIn::ANSWER_SECONDS + 1)
-$sent.clear
-map_frame
-check("a player who stops waiting tells the host, which forgets them", map_sent("off").map { |seat, f| [seat, f["bid"]] }, [[5, "b2"]])
-coop_deliver_map(host, { "coop" => "invite", "bid" => "b2", "troop" => "29", "escape" => "0", "lose" => "1", "seats" => "0", "map" => "5", "hot" => "1" })
-map_frame
-check("and ignores its late invite", [sync.role, coop.invited_by?(5, "b2")], [nil, false])
-reset
-$scene_now = Scene_Map.new
-map_frame
-$down = [0x4A]
-map_frame
-$down = []
-sync.join_world(:guest, "c9", [9], "P9")
-map_frame
-check("a player who joins another battle meanwhile is logged so", $log.grep(/joins battle c9 as guest instead of P5's battle b2/).size, 1)
-reset
-$scene_now = Scene_Map.new
-$raid = false
-mate = player(5, { "scene" => "battle", "rb" => "cb1", "rbh" => "5", "rbn" => "1", "rbs" => "open", "x" => "1" })
-mate.member = true
-MGQ_MpOverworldSync::Peers.all.replace([mate])
-map_frame
-check("in a Classic world a member who missed a party member's battle may join it late (issue 76)", [offered, join.prompt_text], [[mate, "cb1"], "Press J to join battle"])
-$down = [0x4A]
-map_frame
-$down = []
-check("the hotkey asks the member's battle through the map's gate", map_sent("pick").map { |seat, f| [seat, f["bid"]] }, [[5, "cb1"]])
-reset
-$raid = false
-mate.member = false
-MGQ_MpOverworldSync::Peers.all.replace([mate])
-map_frame
-check("but never the battle of a player outside the party", [offered, join.prompt_text], [nil, nil])
-$raid = true
-reset
-$settings = { "key_overview" => "74" }
-map_frame
-check("a hotkey with the same key turns Join Battle off, its prompt hidden", [join.reads_hotkey?, join.prompt_text], [false, nil])
-$settings = nil
-MGQ_MpOverworldSync::Peers.all.replace([])
-$mgq_text_input = true
-before = $log.size
-$down = [0x4A]
-map_frame
-$down = []
-$mgq_text_input = nil
-check("a press while the player types logs nothing", $log[before..-1].grep(/join battle hotkey/), [])
-reset
-
-# An encounter that would bring along more players than the running battle takes joins with as many
-# as it has room for.
-companions = [player(7, { "x" => "1" }), player(9, { "x" => "2" }), player(10, { "x" => "3" })]
-$scene_now = scene
-$game_troop.setup(31)
-hotjoin.fight_alone("own7")
-asker7 = player(8, { "scene" => "battle", "rb" => "own7", "rbh" => "0" })
-MGQ_MpOverworldSync::Peers.all.replace([asker7] + companions)
-coop_deliver_map(asker7, { "coop" => "hot", "bid" => "own7", "troop" => "50", "enemies" => "50:320:300:0", "seats" => "7,9,10", "map" => "5" })
-check("a running battle takes an encounter that brings along more players than it takes, with those that fit",
-      [map_sent("hot_no"), map_sent("hot_ok").map { |seat, f| [seat, f["seats"]] }, map_sent("invite").map(&:first)], [[], [[8, "8,7,9"]], [7, 9]])
-reset
-running = player(5, { "scene" => "battle", "rb" => "hb7", "rbh" => "5", "rbn" => "1", "rbs" => "open" })
-MGQ_MpOverworldSync::Peers.all.replace([running] + companions)
-$scene_now = Scene_Map.new
-$encounter_troop = 50
-$game_player.encounter
-check("an encounter near a running battle asks its host, bringing along as many free players as it has room for",
-      map_sent("hot").map { |seat, f| [seat, f["seats"]] }, [[5, "7,9"]])
-coop_deliver_map(running, { "coop" => "hot_no", "bid" => "hb7" })
-$sent.clear
-$scene_now = scene
-coop::Mode.before_start(scene)
-check("refused, the requester starts a battle of their own, inviting the players it brought along",
-      [sync.role, sync.battle_id == "hb7", map_sent("invite").map(&:first), map_sent("off")], [:host, false, [7, 9, 10], []])
 reset
 
 # A party member's offer to come along to a battle outside the party.
 $scene_now = Scene_Map.new
-map_frame
 fellow = player(8, { "scene" => "battle", "rb" => "hb9", "rbh" => "5" })
 outsider = player(5, { "scene" => "battle", "rb" => "hb9", "rbh" => "5", "rbn" => "2", "rbs" => "open", "x" => "1" })
 MGQ_MpOverworldSync::Peers.all.replace([fellow, outsider])
-coop_deliver_map(fellow, { "coop" => "party_hot", "mode" => "join", "host" => "5", "bid" => "hb9", "map" => "5" })
-check("a member's offer to join a battle along stands", hotjoin.party_offer_text(fellow, hotjoin.party_offers[fellow.seat]), "Join battle with P8?")
-hotjoin.accept_party(fellow)
-check("taken up, the player asks the battle's host to join by choice, asking no party along",
-      [map_sent("pick").map { |seat, f| [seat, f["bid"]] }, map_sent("party_hot")], [[[5, "hb9"]], []])
-reset
-coop_deliver_map(fellow, { "coop" => "party_hot", "mode" => "start", "host" => "5", "bid" => "hb9", "map" => "5" })
-check("a member's offer to start a battle instead reads so", hotjoin.party_offer_text(fellow, hotjoin.party_offers[fellow.seat]), "Start battle with P8?")
-hotjoin.decline_party(fellow)
-check("declined, the member hears no", map_sent("party_ans").map { |seat, f| [seat, f["bid"], f["ok"]] }, [[8, "hb9", "0"]])
-check("and the offer is gone", hotjoin.party_offers[fellow.seat], nil)
-coop_deliver_map(fellow, { "coop" => "party_hot", "mode" => "join", "host" => "5", "bid" => "hb9", "map" => "5" })
-outsider.state["rb"] = ""
 MGQ_Multiplayer::Bridge.frame
-check("an offer lapses once the battle is over", hotjoin.party_offers[fellow.seat], nil)
-reset
-
-# Joining by choice asks the party member near along where the battle has room for them both.
-outsider.state["rb"] = "hb9"
-mate = player(9, { "x" => "2" })
-mate.member = true
-MGQ_MpOverworldSync::Peers.all.replace([outsider, mate])
-$down = [0x4A]
-map_frame
-$down = []
-check("asking to join by choice asks the party member near along", map_sent("party_hot").map { |seat, f| [seat, f["mode"]] }, [[9, "join"]])
-reset
-outsider.state.merge!("rbn" => "3", "rbs" => "open")
-$down = [0x4A]
-map_frame
-$down = []
-check("not where the battle has room for the player alone", [map_sent("pick").map(&:first), map_sent("party_hot")], [[5], []])
+$coop.set("coop.party_offers", [[8, "join", 5, "hb9", 1000]])
+check("a member's offer to join a battle along reads so", hotjoin.party_offer_text(fellow, hotjoin.party_offers[fellow.seat]), "Join battle with P8?")
+hotjoin.party_offers
+check("the offers the DLL keeps are read once a frame", $coop.asked("coop.party_offers").size, 1)
+hotjoin.accept_party(fellow)
+check("taken up, the DLL hears whom the player comes along with and what keeps the player busy",
+      $coop.asked("coop.accept_party").last.values_at("seat", "busy"), [8, [nil, nil]])
+$coop.set("coop.party_offers", [[8, "start", 5, "hb9", 1000]])
+check("and the offers are read anew, such as a member's offer to start a battle instead",
+      hotjoin.party_offer_text(fellow, hotjoin.party_offers[fellow.seat]), "Start battle with P8?")
+hotjoin.decline_party(fellow)
+check("declined, the DLL hears whose offer", $coop.asked("coop.decline_party").last["seat"], 8)
 reset
 MGQ_MpOverworldSync::Peers.all.clear
 
@@ -607,55 +495,27 @@ module MGQ_MpRaidPool
 end
 $scene_now = Scene_Map.new
 boss_host = player(5, { "scene" => "battle", "rb" => "b3", "rbh" => "5", "rbn" => "4", "rbs" => "full", "rpb" => "71;100,100,0", "x" => "2", "y" => "1" })
-MGQ_MpOverworldSync::Peers.all.replace([boss_host])
+MGQ_MpOverworldSync::Peers.all.replace([boss_host, player(6, { "rpb" => "71;100,100,0", "map" => "6" })])
+$coop.set("coop.join_frame", "side" => [71, "100,100,0", "Queen Harpy"])
 map_frame
-check("near a full raid boss battle the prompt offers a side battle", [offered, join.prompt_text], [nil, "Press J to fight Queen Harpy alongside"])
-boss_host.state["scene"] = "away"
-check("also while its host is in the Library or Config with the window in the background", offered(:side), [71, "100,100,0", "Queen Harpy"])
-boss_host.state["scene"] = "battle"
-$settings = { "key_overview" => "74" }
-map_frame
-check("a hotkey that turns Join Battle off hides the side battle's prompt too", join.prompt_text, nil)
-$settings = nil
-map_frame
-boss_host.state.merge!("rbn" => "2", "rbs" => "open")
-map_frame
-check("near one that takes the player in it offers to join it", join.prompt_text, "Press J to join battle")
-boss_host.state.merge!("rbn" => "4", "rbs" => "full")
-boss_host.state["rpb"] = ""
-map_frame
-check("a full battle against no raid boss offers nothing", join.prompt_text, nil)
-boss_host.state["rpb"] = "71;100,100,0"
-boss_host.state["x"] = "6"
-map_frame
-check("nor one too far", join.prompt_text, nil)
+check("each frame tells the DLL the side battles the raid boss battles on the player's map offer, by their hosts' states",
+      join_frame["sides"], [[5, 71, "100,100,0", nil, "Queen Harpy"]])
+check("the side battle the DLL picks is offered in the prompt", [offered, join.prompt_text], [nil, "Press J to fight Queen Harpy alongside"])
 # The raid bar, whose boss of troop 71 stands one step from the player.
 module MGQ_MpRaidBar; def self.distance_to_boss(troop, _x, _y); troop == 71 ? 1 : 9999; end; end
 map_frame
-check("unless the boss's event stands near the player", join.prompt_text, "Press J to fight Queen Harpy alongside")
-$side_ok = true
-$down = [0x4A]
+check("with the steps to each boss's event", join_frame["sides"], [[5, 71, "100,100,0", 1, "Queen Harpy"]])
+$settings = { "key_overview" => "74" }
 map_frame
-$down = []
+check("a hotkey that turns Join Battle off hides the side battle's prompt too", [join.prompt_text, join_frame["sides"]], [nil, nil])
+$settings = nil
+$side_ok = true
+press
 check("the hotkey starts the side battle with the host's troop and enemy rates", $side_started, [71, "100,100,0"])
 $side_ok = false
-map_frame
-$down = [0x4A]
-map_frame
-$down = []
+press
 check("a side battle that cannot start tells the player", $messages.last, "Cannot fight Queen Harpy now.")
-boss_host.state["rbs"] = "ending"
-boss_host.state["x"] = "1"
 $side_started = nil
-$side_ok = true
-map_frame
-check("a raid boss battle that ends offers no side battle the player would fight alone (issue 74)", [offered, offered(:side), join.prompt_text], [nil, nil, nil])
-$down = [0x4A]
-map_frame
-$down = []
-map_frame
-check("and the hotkey tells the player why, starting nothing", [$side_started, $messages.last], [nil, "P5's battle is ending."])
-$side_ok = false
 reset
 
 # The side battle starts as the player's own, which others may join by choice.
@@ -663,20 +523,22 @@ bystander = player(9, { "x" => "1" })
 MGQ_MpOverworldSync::Peers.all.replace([bystander])
 $scene_now = Scene_Map.new
 $side_troop = 71
+$coop.set("coop.offer", "actions" => [coop_step("fight_alone")])
 BattleManager.setup(71, false, true)
-check("a side battle against a raid boss invites and holds nobody", [map_sent("invite"), map_sent("freeze"), sync.role], [[], [], nil])
+$coop.set("coop.offer", nil)
 $scene_now = scene
 side_bid = hotjoin.state_fields["rb"]
-check("it is the player's own, which tells itself to the others", [side_bid.empty?, join.state_fields], [false, { "rbn" => 1, "rbs" => "open" }])
-coop_deliver_map(bystander, { "coop" => "pick", "bid" => side_bid, "map" => "5" })
-check("and takes in a player who asks to join it by choice", map_sent("invite").map { |seat, f| [seat, f["bid"], f["hot"]] }, [[9, side_bid, "1"]])
+check("a side battle against a raid boss goes to the DLL as one, which leaves it the player's own",
+      [$coop.asked("coop.offer").last["side"], sync.role, side_bid.empty?], [true, nil, false])
+$coop.message(bystander, { "coop" => "pick", "bid" => side_bid, "map" => "5" })
+check("and takes in a player who asks to join it by choice", map_sent("invite").map { |seat, f| [seat, f["bid"], f["hot"]] }, [[9, side_bid, true]])
 $side_troop = nil
 reset
 # Takes troop 72 for a side battle.
 def MGQ_MpRaidPool.side_battle?(troop); troop.to_i == 72; end
 $scene_now = Scene_Map.new
 BattleManager.setup(72, false, true)
-check("battles_raid_pool.rbx's word that a battle is a side battle comes first", [map_sent("invite"), sync.role], [[], nil])
+check("battles_raid_pool.rbx's word that a battle is a side battle goes to the DLL", $coop.asked("coop.offer").last["side"], true)
 reset
 
 # A raid boss's frozen fight near the player, through ui_raid_freeze.rbx, which stands in here.
@@ -692,33 +554,15 @@ $freeze_joined = []
 $freeze_steps = 2
 $scene_now = Scene_Map.new
 MGQ_MpOverworldSync::Peers.all.replace([])
+$coop.set("coop.join_frame", "freeze" => [868, "Sonya Mazda"])
 map_frame
-check("near a frozen fight's boss the prompt offers to fight it", join.prompt_text, "Press J to fight Sonya Mazda")
-$down = [0x4A]
-map_frame
-$down = []
+check("near a frozen fight's boss the DLL hears of it, and the prompt offers to fight the one it picks",
+      [join_frame["freeze"], join.prompt_text], [[868, "Sonya Mazda"], "Press J to fight Sonya Mazda"])
+press
 check("the hotkey resumes it", $freeze_joined, [868])
 $freeze_steps = join::JOIN_DISTANCE + 1
 map_frame
-check("not from further than #{join::JOIN_DISTANCE} steps", join.prompt_text, nil)
-$freeze_steps = 2
-MGQ_MpOverworldSync::Peers.all.replace([player(5, { "scene" => "battle", "rb" => "b5", "rbh" => "5", "rbn" => "1", "rbs" => "open", "x" => "1" })])
-map_frame
-check("a battle near that takes the player in comes first", join.prompt_text, "Press J to join battle")
-MGQ_MpOverworldSync::Peers.all.replace([player(5, { "scene" => "battle", "rb" => "b6", "rbh" => "5", "rbn" => "4", "rbs" => "full", "rpb" => "71;100,100,0", "x" => "1" })])
-map_frame
-check("so does a side battle near", join.prompt_text, "Press J to fight Queen Harpy alongside")
-MGQ_MpOverworldSync::Peers.all.replace([])
-$game_map.interpreter.busy = true
-map_frame
-check("a busy player gets no prompt", [offered(:freeze), join.prompt_text], [nil, nil])
-$game_map.interpreter.busy = false
-$typing = true
-$down = [0x4A]
-map_frame
-$down = []
-$typing = false
-check("nor does the hotkey resume the fight while the chat box is open", $freeze_joined, [868])
+check("a fight further than #{join::JOIN_DISTANCE} steps is none the DLL hears of", join_frame["freeze"], nil)
 join.drop
 check("a reset forgets the frozen fight offered", join.instance_variable_get(:@freeze), nil)
 $freeze_steps = nil

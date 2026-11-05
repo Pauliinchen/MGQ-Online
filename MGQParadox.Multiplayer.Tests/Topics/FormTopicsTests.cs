@@ -2,6 +2,7 @@
 //  FormTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Covered an empty name taken once the scripts tell that Discord told one
 //      Paulinchen  2026-10-23: Registered the topics through a block, since Register answers them
 //                            - Created
 //
@@ -93,6 +94,23 @@ public sealed class FormTopicsTests
         _topics.Call(FormTopics.Close, new RubyHash { { "form", "join_hidden" } });
 
         Assert.Equal("bad_request", _topics.Refusal(FormTopics.Check, new RubyHash { { "form", "join_hidden" }, { "key", "id" }, { "text", "" } }));
+    }
+
+    /// <summary>
+    /// Asserts that the name form sends with Enter and takes an empty name only once the scripts tell
+    /// that Discord told the player's.
+    /// </summary>
+    [Fact]
+    public void Rename_TakesAnEmptyNameOnceDiscordToldOne()
+    {
+        RubyHash view = _topics.Call(FormTopics.Open, new RubyHash { { "form", "rename" }, { "kind", "rename" }, { "name", "" }, { "discord", false } })!.AsHash();
+        Assert.True(view["sends_on_enter"].AsBool());
+
+        Assert.Equal(new RubyArray([" ", "Type a name: Discord has not told yours yet."]),
+            _topics.Call(FormTopics.Check, new RubyHash { { "form", "rename" }, { "key", "name" }, { "text", " " }, { "facts", new RubyArray() } }));
+        Assert.Equal(new RubyArray(["", RubyNil.Value]),
+            _topics.Call(FormTopics.Check, new RubyHash { { "form", "rename" }, { "key", "name" }, { "text", " " }, { "facts", new RubyArray(["discord"]) } }));
+        Assert.False(_topics.Call(FormTopics.Send, new RubyHash { { "form", "rename" }, { "facts", new RubyArray(["discord"]) } })!.AsHash().TryGetValue("problem", out _));
     }
 
     /// <summary>

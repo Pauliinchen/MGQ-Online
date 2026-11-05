@@ -14,8 +14,7 @@
 # changes a viewer refuses before the game's own facts are asked. Each queue scenario is a list of
 # steps, a change kept or a flush with the messages it sent; each check case is one change and the
 # refusal the viewer logged, nil for one taken. MGQOnline.Game.Tests replays them against the C#
-# classes, and the script tests' stand-in (GameScript/Tests/scene_support.rb) is checked against
-# them.
+# classes.
 #
 # It runs on the coop_scene.rbx of commit d7bc93af, which still kept the rules, and the
 # battles_sync_wire.rbx of that commit, which it reads through git, with the stand-ins below, on

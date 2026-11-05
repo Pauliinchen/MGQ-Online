@@ -3,7 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-05: Dropped the checks of unpacking a story, which the DLL does
-#                            - Answered the side the player took along by the DLL's rule as engine.rb stands in for it
+#                            - Answered the side the player took along with fixed values and checked what goes to the DLL and what the scripts note
 #                            - Answered what a Classic member takes of a joined story by the DLL's rule
 #                            - Dropped the stand-in of the game's frame counter, which no script reads
 #      Paulinchen  2026-11-01: Covered the side the save notes the player took along in Iliasville
@@ -175,28 +175,28 @@ state.repair_check(true)
 state.repair
 check("a new game needs no repair", [$repair_asks.size, $game_system.instance_variable_get(state::REPAIRED_FIELD)], [3, true])
 
-# The side the player took along in Iliasville, as the DLL's rule of the side decides it
-# (fixtures/catchup/engine.rb stands in for it): their switches tell it before the Great Decision,
-# and the save notes it; past it, where the route's reset turned switch 4 on for the Angelic
-# Dominion (map 432), the note tells it, and nothing while the save noted none. A save of another
-# player's starting save holds that player's side, so the player has not picked.
-require_relative "../../fixtures/catchup/engine"
-side_tables = CatchupEngine.read("rules" => [{ "rule" => "side_step", "value" => 7 }])
-fake.answer("catchup.side") { |request| CatchupEngine.side(side_tables, request) }
+# The side the player took along in Iliasville, which the DLL's rule of the side decides
+# (SidePickTests): the scripts hand it the story's side switches and markers with the save's note,
+# note the side it says to note and take the side it answers.
+side_asks = []
+fake.answer("catchup.side") { |request| side_asks << request; $side_answer }
 ilias = []
 ilias[5] = true
-dominion = []
-dominion[4] = true
-on_route = []
-on_route[1141] = 3
 $game_system = Object.new
-picks = [state.own_pick(ilias, []), state.own_pick(dominion, on_route)]
-$game_system = Object.new
-picks << state.own_pick(dominion, on_route)
+$side_answer = { "side" => "ilias", "note" => "ilias" }
+picked = state.own_pick(ilias, [])
+check("the scripts hand the DLL the story's side switches and markers with the save's note, none yet",
+      [side_asks.last["own"]["s"], side_asks.last["own"]["v"].assoc(1001), side_asks.last.key?("note"), side_asks.last["note"]], [[5], [1001, 0], true, nil])
+check("and take the side it answers, noting the one it names in the save", [picked, state.pick_note], [:ilias, "ilias"])
+$side_answer = { "side" => "ilias", "note" => nil }
+state.own_pick([], [])
+check("the next ask hands the DLL the save's note", side_asks.last["note"], "ilias")
+$side_answer = { "side" => nil, "note" => nil }
+check("a side the DLL does not know is none, the note kept", [state.own_pick([], []), state.pick_note], [nil, "ilias"])
+$side_answer = nil
+check("as while the DLL answers nothing", [state.own_pick([], []), state.pick_note], [nil, "ilias"])
 $game_system = Object.new
 $game_switches = Game_Switches.new
 $game_switches[4] = true
 state.note_other_start
-picks << state.pick_note << state.own_pick(dominion, []) << state.own_pick(dominion, on_route)
-check("the save notes the side the player took along before the Great Decision, never the route's, and none of another player's start",
-      picks, [:ilias, :ilias, nil, "", nil, nil])
+check("a save of another player's starting save with that player's side notes that the player has not picked", state.pick_note, "")

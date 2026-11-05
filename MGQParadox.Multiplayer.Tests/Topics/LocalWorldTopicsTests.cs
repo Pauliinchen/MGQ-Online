@@ -2,6 +2,7 @@
 //  LocalWorldTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Covered a world found, changed and played, its latest save, and the picker's scripts in subfolders
 //      Paulinchen  2026-10-30: Listed the scripts of the Patch folder without the parking
 //                            - Left the Mod Framework's loader out of the picker
 //      Paulinchen  2026-10-23: Added and removed hidden worlds through the lists, whose topics the DLL dropped
@@ -53,6 +54,11 @@ public sealed class LocalWorldTopicsTests : IDisposable
     private readonly WorldLists _lists;
 
     /// <summary>
+    /// The time a world is made or played at, in seconds since 1970, which a test moves on.
+    /// </summary>
+    private long _now = 1_000;
+
+    /// <summary>
     /// Creates the topics over empty folders.
     /// </summary>
     public LocalWorldTopicsTests()
@@ -62,7 +68,7 @@ public sealed class LocalWorldTopicsTests : IDisposable
         _topics = new TopicCaller(context =>
         {
             WorldServices services = new(player, new WorldChanges(context), () => WorldDirectory.Current, () => PatchScripts.List(_game.Path), new DirectoryTickets(() => "idle", () => { }));
-            LocalWorldTopics.Register(context, services, new LocalWorlds(Path.Combine(_mod.Path, "Worlds"), "Worlds", () => 1_000), _lists);
+            LocalWorldTopics.Register(context, services, new LocalWorlds(Path.Combine(_mod.Path, "Worlds"), "Worlds", () => _now), _lists);
             ModPickTopics.Register(context, services.Scripts);
         });
     }
@@ -86,6 +92,42 @@ public sealed class LocalWorldTopicsTests : IDisposable
 
         Assert.True(_lists.Remove("w1"));
         Assert.Equal("w2", _topics.Call(LocalWorldTopics.Added)!.AsArray()[0].AsText());
+    }
+
+    /// <summary>
+    /// Asserts that a world found keeps what the directory says of it, that a change and a play go
+    /// into its world.ini, and that its latest save, an autosave too, is found by the files.
+    /// </summary>
+    [Fact]
+    public void FoundChangedAndPlayed_KeepTheWorldOnThisPc()
+    {
+        RubyHash squad = new() { { "luka", true }, { "formation", 6 }, { "front", 2 }, { "raid_front", 3 } };
+        RubyHash found = _topics.Call(LocalWorldTopics.Found, new RubyHash
+        {
+            { "code", Code }, { "name", "Raid Night" }, { "world", "r1" }, { "type", "raid" }, { "share", "story" }, { "difficulty", 1 }, { "squad", squad }, { "raid_bosses", RubyNil.Value },
+        })!.AsHash();
+        string id = found["id"].AsText();
+        Assert.Equal(("Raid Night", "r1", "raid", "story", 1, 8), (found["name"].AsText(), found["world"].AsText(), found["type"].AsText(), found["share"].AsText(), found["difficulty"].AsInt(), found["seats"].AsInt()));
+        Assert.Equal(squad, found["squad"]);
+        Assert.True(found["played"].IsNil);
+        Assert.Null(_topics.Call(LocalWorldTopics.Found, new RubyHash { { "code", "no code" }, { "name", "Raid Night" }, { "world", "r1" } }));
+        Assert.Null(_topics.Call(LocalWorldTopics.LatestSave, id));
+
+        _now = 2_000;
+        RubyHash updated = _topics.Call(LocalWorldTopics.Update, new RubyHash { { "id", id }, { "difficulty", -2 }, { "raid_bosses", true }, { "played", true } })!.AsHash();
+        Assert.True(updated["written"].AsBool());
+        RubyHash listed = _topics.Call(LocalWorldTopics.Local)!.AsArray().Single().AsHash();
+        Assert.Equal((-2, true, 2_000L, 1_000L), (listed["difficulty"].AsInt(), listed["raid_bosses"].AsBool(), listed["played"].AsLong(), listed["created"].AsLong()));
+        Assert.Equal(squad, listed["squad"]);
+        Assert.Null(_topics.Call(LocalWorldTopics.Update, new RubyHash { { "id", "nobody" }, { "played", true } }));
+
+        string saves = Path.Combine(_mod.Path, "Worlds", id, LocalWorlds.SaveFolder);
+        Directory.CreateDirectory(saves);
+        File.WriteAllText(Path.Combine(saves, "Save01.rvdata2"), "");
+        File.WriteAllText(Path.Combine(saves, "AutoSave02.rvdata2"), "");
+        File.SetLastWriteTimeUtc(Path.Combine(saves, "Save01.rvdata2"), new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+        File.SetLastWriteTimeUtc(Path.Combine(saves, "AutoSave02.rvdata2"), new DateTime(2026, 1, 2, 0, 0, 0, DateTimeKind.Utc));
+        Assert.Equal(new RubyArray(["02", $"Worlds/{id}/Save/AutoSave02.rvdata2"]), _topics.Call(LocalWorldTopics.LatestSave, id));
     }
 
     /// <summary>
@@ -135,6 +177,24 @@ public sealed class LocalWorldTopicsTests : IDisposable
         Assert.True(acted["answer"].IsNil);
         Assert.Equal("!Level_Cap; Other", acted["pick"].AsHash()["text"].AsText());
         Assert.Equal("bad_request", _topics.Refusal(ModPickTopics.Act, new RubyHash { { "do", "toggle" }, { "index", 9 } }));
+    }
+
+    /// <summary>
+    /// Asserts that the picker lists each script of Patch and its folders once by its key, sorted by
+    /// name, without the scripts every player has.
+    /// </summary>
+    [Fact]
+    public void ModPick_ListsEachScriptOnceWithoutTheSharedOnes()
+    {
+        string patch = Path.Combine(_game.Path, "Patch");
+        Directory.CreateDirectory(Path.Combine(patch, "Sub"));
+        foreach (string name in new[] { "Patch.rb", "Multiplayer.rb", "Zeta.rb", "Level_Cap.rb", "battle_dialogue.rb", Path.Combine("Sub", "Party Sheet.rb"), Path.Combine("Sub", "Level Cap.rb") })
+        {
+            File.WriteAllText(Path.Combine(patch, name), "");
+        }
+
+        RubyHash opened = _topics.Call(ModPickTopics.Open, new RubyHash { { "text", "" } })!.AsHash();
+        Assert.Equal(["battle_dialogue", "Level_Cap", "Party Sheet", "Zeta"], opened["entries"].AsArray().Select(entry => entry.AsArray()[0].AsText()));
     }
 
     /// <inheritdoc />

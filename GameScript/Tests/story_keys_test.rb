@@ -2,7 +2,9 @@
 #  story_keys_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Handed and expected sites as plain values
+#      Paulinchen  2026-11-05: Wrote the rewards tables' answer without the catch-up's recording tool
+#                            - Answered a Classic party's table with fixed tables instead of a copy of the C# one
+#                            - Handed and expected sites as plain values
 #                            - Expected the writes, the self switch rules and a run's changes as [kind, key] with values
 #                            - Checked that a talk that gives a key item goes to the DLL with it, though it changed no shared key
 #                            - Checked that a story reset that takes the route's key items notes none of them
@@ -252,16 +254,20 @@ check("and none once the party's story records no more", $recorded.size, 1)
 
 # A Classic party's table is the DLL's, built with the chest flags of the mapping it holds: asked
 # with nothing of the scripts' own, kept while the rewards a party member catches up with stay, and
-# asked again once they changed, since the DLL then holds another mapping.
+# asked again once they changed, since the DLL then holds another mapping. The DLL's tables here
+# share every switch but the one chest flag of each mapping.
 requests = []
 flags = [2045]
-fake.answer("story.classic_table") { |request| requests << request; classic_table_hash(classic_request.merge("chest_flags" => flags)) }
+fake.answer("story.classic_table") do |request|
+  requests << request
+  flags == [2045] ? story_table_hash([[0, 2044, 1], [2045, 2045, 8], [2046, 9999, 1]], [[0, 4999, 1]], 1) : story_table_hash([[0, 7101, 1], [7102, 7102, 8], [7103, 9999, 1]], [[0, 4999, 1]], 1)
+end
 keys.instance_variable_set(:@classic, nil)
 keys.instance_variable_set(:@classic_asked, false)
 first = keys.bridge_classic_table
 kept = keys.bridge_classic_table
 flags = [7102]
-fake.answer("story.rewards") { |_known| CatchupRelayRows.party_rewards(nil).merge("chest_flags" => flags, "rev" => 1) }
+fake.answer("story.rewards") { |_known| party_rewards("chest_flags" => flags) }
 rewards_changed
 MGQ_MpStoryState.rewards
 later = keys.bridge_classic_table

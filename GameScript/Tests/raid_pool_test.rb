@@ -2,7 +2,8 @@
 #  raid_pool_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Answered the raid bosses' rules with fixed values per case and dropped the checks of the tables, markers and refusals, which the DLL keeps
+#      Paulinchen  2026-11-05: Answered the pools and the fight with fixed values per case and checked what the script hands C# and does with its answers
+#                            - Answered the raid bosses' rules with fixed values per case and dropped the checks of the tables, markers and refusals, which the DLL keeps
 #                            - Told the boss battle, the rates and the invite's pool as values
 #                            - Stood in for the DLL's fetch of the pools through its topic
 #                            - Checked that a boss takes its pool's HP once the game's own events before the battle ran
@@ -43,18 +44,17 @@
 #----------------------------------------------------------------
 
 # Covers battles_raid_pool.rbx with battles_raid_bosses.rbx: what the DLL's rules hear of a battle
-# and how the kind they answer fights a raid boss's pools and with what max HP, the reports a battle
-# sends and the pools' HP it takes, the kills by the relay, bosses of several enemies, guests and
-# takeovers, the game's retry, the side battles, the invite's and the state's fields, the pushes and
-# fetching the pools. The rules answer fixed values per case (raid_support.rb); events run in
-# fibers as the game's interpreter runs them.
+# and how the kind they answer fights a raid boss's pools and with what max HP, what each moment of
+# the battle hands C# and how the enemies take the HP it hands back, bosses of several enemies,
+# guests and takeovers, the game's retry, the side battles, the invite's and the state's fields, the
+# defeats told and fetching the pools. The rules, the pools and the fight answer fixed values per
+# case (raid_support.rb), whose rules the C# tests cover; events run in fibers as the game's
+# interpreter runs them.
 
-require_relative "pool_support"
+require_relative "bridge_support"
 
 # Stands in for the mod's base script, whose log prints each line.
 module MGQ_Multiplayer; module Log; def self.write(m); puts "  log: #{m}"; end; end; end
-$calls = []
-$report_result = 1
 $chat = []
 $notices = []
 $ticks = []
@@ -354,9 +354,10 @@ load_script "battles_raid_bosses"
 load_script "battles_raid_pool"
 require_relative "raid_support"
 
-# The DLL's raid bosses' rules and pools' ledger behind the bridge, on the clock in milliseconds.
+# The DLL's raid bosses' rules, pools and fight behind the bridge, answering fixed values per case.
 $fake = FakeBridge.new
 answer_raid_rules($fake)
+answer_raid_pools($fake)
 MGQ_Multiplayer::Bridge.open($fake)
 # What the rules answer of a Queen Harpy battle that fights her pool, an event's unless a case
 # answers otherwise.
@@ -365,21 +366,8 @@ HARPY = { "kind" => "event", "keys" => ["Queen Harpy"], "tier" => 9, "defeated" 
 MGQ_MpRaidBosses.tiers.keys.each { |tier| MGQ_MpRaidBosses.tiers[tier] = { :mhp => 7.5 } }
 
 pool = MGQ_MpRaidPool
+answers = $pool_answers
 SceneManager.run
-
-$pools = PoolLedgerStandIn.new($fake) { (Time.now.to_f * 1000).round }
-$pools.reporter = lambda do |world, key, battle, text|
-  $calls << ["mp_raid_boss_report", [world, key, battle, text]]
-  $report_result == 1
-end
-# The DLL's fetch of the pools: each call is noted, and a fetch it takes reaches the pools' ledger as
-# the DLL's does.
-$fake.answer("raid.pools.fetch") do |world|
-  $calls << ["raid.pools.fetch", [world]]
-  $pools.enter(world) if $report_result == 1
-  $report_result == 1
-end
-check_pool_stand_in
 
 # Starts the game's objects anew and forgets every battle and pool.
 def reset
@@ -391,18 +379,17 @@ def reset
   $game_system = Game_System.new
   $scene = Scene_Battle.new
   MGQ_MpRaidPool.forget
-  [$calls, $chat, $notices, $ran, $borrowed, $collapsed, $won, $called, $pages_run].each(&:clear)
+  [$chat, $notices, $ran, $borrowed, $collapsed, $won, $called, $pages_run].each(&:clear)
   $side_at_setup = nil
   $setups = []
   $phases = []
   $given_back = 0
-  $pools.reset
-  $report_result = 1
   $raid = true
   $mode = :world
   $role = nil
   $turn_end = nil
   $raid_answers.clear
+  $pool_answers.clear
   harpy({})
   $raid_answers.troops[71] = { "pooled" => true, "keys" => ["Queen Harpy"] }
 end
@@ -430,13 +417,6 @@ def start(list, event_id = 7)
   frames
 end
 
-# Lists the reports sent.
-#
-# @return [Array<Array(String, String, String)>] Each one's key, battle id and text.
-def reports
-  $calls.select { |name, _| name == "mp_raid_boss_report" }.map { |_, args| args[1..3] }
-end
-
 # Finds the enemy of the battle at a place in its troop.
 #
 # @param index [Integer] The place.
@@ -451,37 +431,15 @@ def next_turn
   $scene.start_party_command_selection
 end
 
-# Has the relay push a pool.
+# Has the DLL tell a pool, which the scripts read at once.
 #
 # @param key [String] The pool's key.
 # @param left [String] The share of its max left.
-# @param max [String] Its max HP.
+# @param max [Integer] Its max HP.
 # @param defeated [Boolean] Whether it is empty for good.
-def push(key, left, max = "6000", defeated = false)
-  $pools.enter("w1")
-  $pools.hear(key, left.to_f, max.to_i, defeated, defeated ? "Someone" : "", :pushed)
-  $pools.frame
+def told(key, left, max = 6000, defeated = false)
+  $pool_answers.pool(key, left, max, defeated, defeated ? "Someone" : "")
   MGQ_MpRaidPool.read_state
-end
-
-# Has the relay tell a pool in a fetch, or the battle server learn another battle's change; the
-# pools read it at their next read.
-#
-# @param key [String] The pool's key.
-# @param left [String] The share of its max left.
-# @param world [String] The world.
-def told(key, left, world = "w1")
-  $pools.enter(world)
-  $pools.hear(key, left.to_f, 6000, false, "", :fetched)
-end
-
-# Has the relay answer the oldest of the player's own reports of a pool.
-#
-# @param key [String] The pool's key.
-# @param left [String] The share of its max left after it.
-def answer(key, left)
-  $pools.settled(key)
-  $pools.hear(key, left.to_f, 6000, false, "", :answered)
 end
 
 # Lets some seconds pass.
@@ -501,6 +459,13 @@ def ticks(count = MGQ_MpRaidPool::STATE_FRAMES)
   end
 end
 
+# Lists the fetches of the pools the scripts started.
+#
+# @return [Array<String>] Each fetch's world.
+def fetches
+  $pool_answers.asked("raid.pools.fetch")
+end
+
 # A one-time boss outside the story fights a pool of its own under its name.
 reset
 $raid_answers.pool_kinds[3127] = { "kind" => "event", "keys" => ["Void Image of Paradise"], "tier" => 1 }
@@ -513,6 +478,9 @@ start([[:var, 1001, 40], [:battle, 71], [:mark, :after]])
 fight = pool.fight
 check("a story boss's last phase fights its pool, even after the event moved the story", [$game_party.in_battle, fight && fight.key, fight && fight.own], [true, "Queen Harpy", 1])
 check("its enemy has 7.5 times its max HP, all of it", [enemy.mhp, enemy.hp], [6000, 6000])
+check("the battle opens in C# with the world, its id, its pools and who reports",
+      answers.asked("raid.fight.open"), [{ "world" => "w1", "battle" => fight.battle, "keys" => ["Queen Harpy"], "own" => 1, "guest" => false, "side" => false }])
+check("its id is one the relay takes", fight.battle =~ /\A[a-z0-9]{3,64}\z/ ? true : false, true)
 
 # A tier's stat factors are the battle's.
 bosses = MGQ_MpRaidBosses
@@ -525,81 +493,47 @@ check("another stat a tier names takes its factor after the game computed it", [
 check("and the max HP its own", pool::Stats.stat(enemy, :mhp, 800), 6000)
 bosses.tiers[9] = kept
 
-# The story boss's battle has an id the relay takes and keeps its HP without word from the relay.
-check("its battle id is one the relay takes", fight.battle =~ /\A[a-z0-9]{3,64}\z/ ? true : false, true)
-$scene.start_party_command_selection
-check("a command phase without word from the relay keeps the HP", enemy.hp, 6000)
-
-# What a turn dealt is reported as the next command phase opens.
+# Each moment of the battle hands C# the own enemies, and the enemies take the HP it hands back.
 enemy.hp = 4500
+answers.turn = { "actions" => [[0, 3000]] }
 next_turn
-key, battle, text = reports.last
-check("the next command phase reports the share of the max HP the boss lost", [key, battle, text], ["Queen Harpy", fight.battle, "1\t0.2500000000\t6000\t0"])
-check("the report names the world", $calls.last[1][0], "w1")
-next_turn
-check("a turn that dealt nothing reports nothing", reports.size, 1)
-$scene.start_party_command_selection
-check("the next command phase keeps what the battle dealt before the relay answers", enemy.hp, 4500)
-enemy.hp = 4800
-next_turn
-check("healing reports a share lost below 0, numbered on", reports.last[2], "2\t-0.0500000000\t6000\t0")
+check("the turn's end and the next command phase hand C# each own enemy's place, HP, max HP and death, as the battle's reporter",
+      answers.asked("raid.fight.turn").last(2).map { |request| [request["moment"], request["reporter"], request["enemies"].map { |each| each[0, 4] }] },
+      [["turn_end", true, [[0, 4500, 6000, false]]], ["phase", true, [[0, 3000, 6000, false]]]])
+check("the enemy takes the HP C# hands back", enemy.hp, 3000)
 
-# The relay's word comes in at the command phase.
-push("Queen Harpy", "0.5")
+# An empty pool kills its enemy with its collapse, and the battle wins.
+answers.turn = lambda { |request| request["moment"] == "phase" ? { "actions" => [[0, 0]], "killed" => true } : {} }
 $scene.start_party_command_selection
-check("another battle's blows reach the boss at the next command phase", enemy.hp, 3000)
-pass(60)
-$scene.start_party_command_selection
-check("the pool gains 3 % of its max back every minute", enemy.hp, 3180)
-pass(6000)
-$scene.start_party_command_selection
-check("never past its max", enemy.hp, 6000)
-
-# The pools are read every few frames: what the relay told counts, and the player's own report
-# counts at once, before the relay answers.
-told("Queen Harpy", "0.9")
-ticks
-check("what the relay told of a pool counts at the next read", [pool.pool("Queen Harpy").left, pool.pool("Queen Harpy").max], [0.9, 6000])
-$scene.start_party_command_selection
-enemy.hp = 4800
-$scene.turn_end
-ticks
-$scene.start_party_command_selection
-check("the player's own report counts before the relay answers", enemy.hp, 4800)
-told("Queen Harpy", "0.7")
-ticks
-$scene.start_party_command_selection
-check("another battle's blow the relay told counts", enemy.hp, 4200)
-
-# A pool the relay emptied kills the boss, and the battle wins.
-push("Queen Harpy", "0", "6000", true)
-check("the push that empties the pool tells the chat log and the notification box", [$chat.last, $notices.last], ["Queen Harpy is defeated for the whole world."] * 2)
-push("Queen Harpy", "0", "6000", true)
-check("only once", $chat.size, 1)
-$scene.start_party_command_selection
-check("the boss falls at the next command phase", [enemy.dead?, $collapsed, $won], [true, ["Queen Harpy"], [71]])
-check("and its death goes to the relay as the battle ends", reports.last[2].split("\t").values_at(2, 3), ["6000", "1"])
-check("the battle is over", pool.fight, nil)
+check("an enemy whose pool C# tells empty falls at the command phase, and the battle wins", [enemy.dead?, $collapsed, $won], [true, ["Queen Harpy"], [71]])
+check("the battle's end goes to C# and closes the fight", [answers.moments.last, pool.fight], ["end", nil])
 frames
 check("the event goes on at once", [$ran, $branch], [[:after], 0])
 
-# A boss the battle kills: its death is reported and the story goes on without waiting.
+# The relay's word of a pool's defeat tells the chat log and the notification box once.
+reset
+told("Queen Harpy", "0", 6000, true)
+answers.push("Queen Harpy", true)
+check("the push that empties the pool tells the chat log and the notification box", [$chat.last, $notices.last], ["Queen Harpy is defeated for the whole world."] * 2)
+answers.push("Queen Harpy", true)
+check("only once", $chat.size, 1)
+
+# A boss the battle kills: its end goes to C# and the story goes on without waiting.
 reset
 start([[:battle, 71], [:mark, :after]])
-battle = pool.fight.battle
 enemy.hp = 0
 BattleManager.battle_end(0)
-check("the battle's last blow reports the kill", reports.last, ["Queen Harpy", battle, "1\t1.0000000000\t6000\t1"])
+check("the battle's last blow goes to C# as it ends", [answers.moments.last, answers.asked("raid.fight.turn").last["enemies"][0][1, 3]], ["end", [0, 6000, true]])
 frames
 check("the event runs on at once", $ran, [:after])
 
-# A battle against a pool that is empty already wins at once.
-start([[:battle, 71], [:mark, :after_again]])
-check("its boss starts dead", [enemy.dead?, enemy.hp], [true, 0])
+# A battle against pools the rules call empty is won already.
 reset
 harpy("defeated" => true)
 $game_map.interpreter.instance_variable_set(:@event_id, 7)
 pool.in_map { pool.at_command { check("a battle about to fight pools the rules call empty is won already", pool.won_already?(71), true) } }
+start([[:battle, 71], [:mark, :after]])
+check("its battle tells the player it is won at once", $notices.last, "The world already beat Queen Harpy. This battle is won at once.")
 
 # The rules hear of the battle and the story values they read, and a battle they give no kind
 # fights no pool, the log saying why.
@@ -619,7 +553,7 @@ check("a battle the rules give no kind fights no pool, its enemy keeps its max H
 $scene.turn_end
 BattleManager.battle_end(0)
 frames
-check("and reports nothing", [reports, $ran], [[], [:after]])
+check("and hands C# nothing", [answers.moments, $ran], [[], [:after]])
 reset
 start([[:battle, 71], [:mark, :after]], 0)
 common = $raid_answers.asked("raid.kind").first.values_at("at_command", "in_map", "event")
@@ -647,106 +581,74 @@ check("the event goes on", $ran, [:after])
 
 # A boss of several enemies has a pool per enemy, and falls once every one is empty.
 reset
-$raid_answers.pool_kinds[1599] = { "kind" => "event", "keys" => ["Metatronne and Sandalphone#0", "Metatronne and Sandalphone#1"], "tier" => 4 }
-$raid_answers.troops[1599] = { "keys" => ["Metatronne and Sandalphone#0", "Metatronne and Sandalphone#1"] }
+nobles = ["Metatronne and Sandalphone#0", "Metatronne and Sandalphone#1"]
+$raid_answers.pool_kinds[1599] = { "kind" => "event", "keys" => nobles, "tier" => 4 }
+$raid_answers.troops[1599] = { "keys" => nobles }
 start([[:battle, 1599], [:mark, :after]])
 fight = pool.fight
-check("a pool per own enemy of the troop", fight.members.map(&:key), ["Metatronne and Sandalphone#0", "Metatronne and Sandalphone#1"])
+check("a pool per own enemy of the troop, the troop's other enemies left out", [fight.members.map(&:key), answers.asked("raid.fight.open").last["keys"]], [nobles, nobles])
 check("each with 7.5 times its own max HP", [enemy(0).mhp, enemy(1).mhp], [15000, 22500])
-enemy(0).hp = 7500
-next_turn
-check("each reports its own share", reports.map { |key, _, text| [key, text] }, [["Metatronne and Sandalphone#0", "1\t0.5000000000\t15000\t0"]])
-push("Metatronne and Sandalphone#1", "0", "22500", true)
+told(nobles[1], "0", 22500, true)
+answers.push(nobles[1], true)
 check("one enemy's empty pool is no defeat of the boss yet", $chat, [])
+answers.turn = { "actions" => [[1, 0]], "killed" => true }
 $scene.start_party_command_selection
 check("it kills only that enemy, so the battle goes on", [enemy(0).dead?, enemy(1).dead?, $won], [false, true, []])
-push("Metatronne and Sandalphone#0", "0", "15000", true)
+told(nobles[0], "0", 15000, true)
+answers.push(nobles[0], true)
 check("once every enemy's pool is empty, the boss is defeated", $chat, ["Metatronne and Sandalphone is defeated for the whole world."])
-$scene.start_party_command_selection
-check("and the battle wins", $won, [1599])
-push("Metatronne and Sandalphone#0", "1", "15000")
-push("Metatronne and Sandalphone#0", "0", "15000", true)
+told(nobles[0], "1", 15000)
+answers.push(nobles[0], false)
+told(nobles[0], "0", 15000, true)
+answers.push(nobles[0], true)
 check("an admin's reset lets the boss be defeated again", $chat.size, 2)
 
-# A guest fights the pools the invite names, and reports once it takes the battle over.
+# A guest fights the pools the invite names; C# hears whether the player reports.
 reset
 check("an invite's pool is none outside a battle that fights one", pool.invite_fields(31), {})
 harpy("kind" => "guest")
 pool.note_invite("troop" => "71", "pool" => 1, "boss" => true)
 $role = :guest
+answers.turn = { "guest" => true }
 BattleManager.setup(71)
-check("the guest's battle tells the rules of the invite and fights its pool",
-      [$raid_answers.asked("raid.kind").find { |asked| asked["troop"] == 71 }["invited"], pool.fight && pool.fight.key, enemy.mhp], [[71, false], "Queen Harpy", 6000])
+check("the guest's battle tells the rules of the invite and fights its pool as a guest",
+      [$raid_answers.asked("raid.kind").find { |each| each["troop"] == 71 }["invited"], pool.fight && pool.fight.key, enemy.mhp, answers.asked("raid.fight.open").last["guest"]],
+      [[71, false], "Queen Harpy", 6000, true])
 $scene.start_party_command_selection
-# The host's action dealt half the boss's HP, which the host reported as it ended.
-enemy.hp = 3000
-pass(RaidFightStandIn::REPORT_MS / 1000)
-$scene.process_action
-next_turn
-check("a guest reports nothing", reports, [])
-$role = nil
-$scene.start_party_command_selection
-check("a guest who takes the battle over reports nothing of what the host reported", [reports, enemy.hp], [[], 3000])
-enemy.hp = 2400
-next_turn
-check("its first report carries only what it dealt since it took the battle over", reports.map { |_key, _battle, text| text }, ["1\t0.1000000000\t6000\t0"])
-reset
-harpy("kind" => "guest")
-pool.note_invite("troop" => "71", "pool" => 1)
-$role = :guest
-BattleManager.setup(71)
-enemy.hp = 4800
-$role = nil
-pass(RaidFightStandIn::REPORT_MS / 1000)
-$scene.process_action
-check("a takeover seen first as an action ends reports nothing of the host's either", reports, [])
-enemy.hp = 4200
-$scene.start_party_command_selection
-check("only what came after", reports.map { |_key, _battle, text| text }, ["1\t0.1000000000\t6000\t0"])
-reset
-harpy("kind" => "guest")
-pool.note_invite("troop" => "71", "pool" => 1)
-$role = :guest
-BattleManager.setup(71)
-$role = nil
-pool.taken_over
-# The battle the host never formed starts now, its start dealing damage of its own.
-enemy.hp = 5400
-$scene.start_party_command_selection
-check("a takeover told as it happens reports the damage of the battle's start that follows", reports.map { |_key, _battle, text| text }, ["1\t0.1000000000\t6000\t0"])
-reset
-pool.taken_over
-check("a takeover outside a pooled battle does nothing", [pool.fight, reports], [nil, []])
-reset
-harpy("kind" => "guest")
-push("Queen Harpy", "0", "6000", true)
-pool.note_invite("troop" => "71", "pool" => 1)
-$role = :guest
-BattleManager.setup(71)
-$scene.start_party_command_selection
+check("its moments tell C# it does not report, and it stays a guest while C# says so", [answers.asked("raid.fight.turn").last.values_at("moment", "reporter"), pool.fight.guest], [["phase", false], true])
 BattleManager.instance_variable_set(:@phase, :input)
-pass(RaidFightStandIn::WAIT_SYNC_MS / 1000)
+pass(10)
 $scene.update_basic
-$scene.turn_end
-check("a guest never kills the boss by its own view of the pool, its host's stream does", [enemy.dead?, enemy.hp, $won, $collapsed], [false, 6000, [], []])
+check("a guest never takes the pools' HP while it waits for commands, its host's stream does", answers.moments.include?("wait"), false)
+$role = nil
+answers.turn = { "guest" => false, "took_over" => true }
+$scene.update_basic
+check("a guest that becomes the battle's reporter tells C# its role at once",
+      [answers.asked("raid.fight.turn").find { |request| request["moment"] == "role" }["reporter"], pool.fight.guest], [true, false])
 BattleManager.instance_variable_set(:@phase, nil)
+pool.taken_over
+check("a takeover told as it happens hands C# the enemies' HP then", answers.moments.last, "take_over")
+reset
+pool.taken_over
+check("a takeover outside a pooled battle does nothing", [pool.fight, answers.moments], [nil, []])
 reset
 pool.note_invite("troop" => "71")
 BattleManager.setup(71)
 check("an invite without pools tells the rules of none", $raid_answers.asked("raid.kind").first["invited"], nil)
 
-# The game's retry of a lost battle fights the pool again, with the pool's HP.
+# The game's retry of a lost battle fights the pool again.
 reset
 start([[:battle, 71], [:mark, :after]])
 first = pool.fight.battle
 enemy.hp = 3000
 $game_map.interpreter.clear
 BattleManager.battle_end(2)
-check("a lost battle reports what it dealt", reports.last[2], "1\t0.5000000000\t6000\t0")
+check("a lost battle hands C# what it dealt", [answers.moments.last, answers.asked("raid.fight.turn").last["enemies"][0][1]], ["end", 3000])
+answers.turn = { "actions" => [[0, 3000]] }
 BattleManager.retry_battle
 check("the retry fights the pool as a battle of its own", [pool.fight && pool.fight.battle != first, enemy.mhp, pool.set_up_kind], [true, 6000, :event])
 check("the map's interpreter runs its commands inside in_map only", [pool.in_map?, pool.in_map { pool.in_map? }, pool.in_map?], [false, true, false])
-check("with the HP the pool has left", enemy.hp, 3000)
+check("with the HP C# hands back as its battle starts", [answers.moments.last, enemy.hp], ["start", 3000])
 
 # The invite and the player's state name the battle that fights a pool.
 check("the invite of a battle that fights a pool names how many enemies it has", pool.invite_fields, { "pool" => 1 })
@@ -769,10 +671,7 @@ check("nor one whose boss the rules give no pools", [pool.side_of(Host.new({ "rp
 harpy("kind" => "side")
 check("the side battle starts", pool.start_side(71, [90, 100, 0]), true)
 check("with the host's rates, the same troop, no escape, and the game's defeat", [$borrowed, $setups.last, $called], [[[90, 100, 0]], [71, false, false], [Scene_Battle]])
-check("it fights the same pool, marked a side battle", [pool.fight.key, pool.fight.side, enemy.mhp], ["Queen Harpy", true, 6000])
-enemy.hp = 5400
-next_turn
-check("and reports like any other", reports.last[0..2].values_at(0, 2), ["Queen Harpy", "1\t0.1000000000\t6000\t0"])
+check("it fights the same pool, marked a side battle", [pool.fight.key, pool.fight.side, enemy.mhp, answers.asked("raid.fight.open").last["side"]], ["Queen Harpy", true, 6000, true])
 reset
 $raid_answers.troops[71] = { "pooled" => true, "defeated" => true }
 check("a side battle never starts against pools the rules call empty", [pool.side_of(Host.new({ "rpb" => [71, [1, 2]] })), pool.start_side(71, [1, 2]), $setups], [nil, false, []])
@@ -780,95 +679,114 @@ reset
 $mode = :own
 check("nor for a player behind the world's story", pool.start_side(71, "1,2"), false)
 
-# The pools are fetched as the player enters the world and each map.
+# The pools are fetched as the player enters the world and each map, and read every few frames.
 reset
 ticks(1)
-check("the pools are fetched as the player enters the world", $calls.select { |name, _| name == "raid.pools.fetch" }, [["raid.pools.fetch", ["w1"]]])
+check("the pools are fetched as the player enters the world", fetches, ["w1"])
 ticks(5)
-check("once per map", $calls.count { |name, _| name == "raid.pools.fetch" }, 1)
+check("once per map", fetches.size, 1)
 $game_map.map_id = 6
 ticks(1)
-check("and again on another map", $calls.count { |name, _| name == "raid.pools.fetch" }, 2)
-
-# The relay's pushes count.
-reset
-push("EX-Kyubi", "0.25", "3750")
-check("a push counts the pool as told", [pool.pool("EX-Kyubi").left, pool.pool("EX-Kyubi").max, pool.pool("EX-Kyubi").defeated], [0.25, 3750, false])
-push("EX-Kyubi", "0", "3750", true)
-check("an empty pool of a fight of its own tells its boss's name", [$chat.last, pool.pool("EX-Kyubi").by], ["EX-Kyubi is defeated for the whole world.", "Someone"])
-
-# Damage the game's turn end and battle start deal goes to the pool too.
-reset
-push("Queen Harpy", "0.5")
-start([[:battle, 71], [:mark, :after]])
-enemy.hp -= 300
-$scene.start_party_command_selection
-check("a battle start skill's damage is reported at the first command phase", [reports.last[2], enemy.hp], ["1\t0.0500000000\t6000\t0", 2700])
-$turn_end = proc { enemy.hp -= 600 }
-next_turn
-check("slip damage at the turn's end is reported, not undone", [reports.last[2], enemy.hp], ["2\t0.1000000000\t6000\t0", 2100])
-reset
-start([[:battle, 71], [:mark, :after]])
-enemy.hp = 5000
-$scene.start_party_command_selection
-check("so is damage before the first command phase against a pool the relay told nothing of", reports.last[2], "1\t0.1666666667\t6000\t0")
-
-# A report the DLL refuses keeps the HP until the next goes.
+check("and again on another map", fetches.size, 2)
 reset
 ticks(1)
-push("Queen Harpy", "0.5")
-start([[:battle, 71], [:mark, :after]])
-$report_result = 0
-enemy.hp = 2400
-$scene.start_party_command_selection
-check("a refused report keeps the HP the battle dealt", [reports.size, enemy.hp], [1, 2400])
-$report_result = 1
-$scene.start_party_command_selection
-check("which goes with the next report", [reports.last[2], enemy.hp], ["1\t0.1000000000\t6000\t0", 2400])
-
-# Word of a pool older than the player's own reports the relay has not answered yet is ignored.
-push("Queen Harpy", "0.5")
-$scene.start_party_command_selection
-check("a push older than an unanswered report is ignored", enemy.hp, 2400)
-told("Queen Harpy", "0.5")
+$pool_answers.pool("EX-Kyubi", "0.25", 3750)
 ticks
-$scene.start_party_command_selection
-check("so is a fetch's word while the report waits", enemy.hp, 2400)
-answer("Queen Harpy", "0.45")
+check("what C# tells of a pool counts at the next read", [pool.pool("EX-Kyubi").left, pool.pool("EX-Kyubi").max, pool.pool("EX-Kyubi").defeated], [0.25, 3750, false])
+told("EX-Kyubi", "0", 3750, true)
+answers.push("EX-Kyubi", true)
+check("an empty pool of a fight of its own tells its boss's name", [$chat.last, pool.pool("EX-Kyubi").by], ["EX-Kyubi is defeated for the whole world.", "Someone"])
+answers.state = { "world" => "w2", "pools" => [["Queen Harpy", "0.2", 6000, false, ""]] }
 ticks
-$scene.start_party_command_selection
-check("the relay's answer counts", enemy.hp, 2700)
-enemy.hp = 2100
-$scene.start_party_command_selection
-push("Queen Harpy", "1")
-$scene.start_party_command_selection
-check("an admin's reset counts at once", enemy.hp, 6000)
+check("the pools of another world are ignored", [pool.pool("Queen Harpy"), pool.pool("EX-Kyubi").defeated], [nil, true])
 
-# The ledger's pools of another world are ignored.
+# The fetch the DLL did not start is tried again.
 reset
-told("Queen Harpy", "0.2", "w2")
-ticks
-check("the ledger's pools of another world are ignored", pool.pool("Queen Harpy"), nil)
+answers.fetch = false
+ticks(1)
+ticks(pool::FETCH_RETRY_FRAMES - 1)
+check("not before a while", fetches.size, 1)
+answers.fetch = true
+ticks(2)
+check("then again until it starts", fetches.size, 2)
+ticks(pool::FETCH_RETRY_FRAMES * 2)
+check("and no more once it did", fetches.size, 2)
 
-# A pool whose share rounds to 0 while it stands never kills the boss.
+# The battle's moments in their order: its start once the game's own events before it ran, then
+# its command phases, actions and turn ends, as often as C# allows.
 reset
-push("Queen Harpy", "0", "18000000000000")
+$battle_start_events = lambda { $data_enemies[1].params[0] = 400 }
+$start_skills = lambda { enemy.hp -= 300 }
+answers.turn = lambda { |request| request["moment"] == "start" ? { "actions" => [[0, 1500]] } : { "report_in" => 2000 } }
 start([[:battle, 71], [:mark, :after]])
-check("a pool the relay keeps standing never kills the boss", [enemy.dead?, enemy.hp], [false, 1])
+$battle_start_events = $start_skills = nil
+first = answers.asked("raid.fight.turn").first
+check("the boss takes its pool's HP of the max HP the events before the battle left, before the party's start skills",
+      [first["moment"], first["enemies"][0][2], enemy.mhp, enemy.hp], ["start", 3000, 3000, 1200])
+$data_enemies[1].params[0] = 800
+$scene.start_party_command_selection
+$scene.process_action
+check("an action hands C# nothing until the time C# named for the next report passed", answers.moments, ["start", "phase"])
+pass(2)
+$scene.process_action
+$scene.process_action
+check("then once, and waits again", answers.moments, ["start", "phase", "action"])
 
-# The game's retry invites as a battle that fights the pool.
+# A boss whose pool is below a phase's share of its HP switches phase before anyone acts: the
+# troop's pages are checked once more right after the pool's HP, before the start skills, where the
+# game would check them next at the first turn's end (user decision 2026-11-05).
 reset
+$data_troops[71].pages = [:harpy_taunts, [:harpy_rages, 0.5]]
+$battle_start_events = lambda { $game_troop.setup_battle_event }
+phases = nil
+$start_skills = lambda { phases = $pages_run.dup }
+answers.turn = lambda { |request| request["moment"] == "start" ? { "actions" => [[0, 2000]] } : { "report_in" => 2000 } }
 start([[:battle, 71], [:mark, :after]])
-enemy.hp = 3000
-$game_map.interpreter.clear
-BattleManager.battle_end(2)
-check("the retry's invite names the pool", pool.retrying { pool.invite_fields(71) }, { "pool" => 1 })
-push("Queen Harpy", "0", "6000", true)
-harpy("defeated" => true)
-check("and is won already once the rules call the pool empty", pool.retrying { pool.won_already?(71) }, true)
+$battle_start_events = $start_skills = nil
+$data_troops[71].pages = [:harpy_taunts]
+check("a boss whose pool is below a phase's share switches phase before the start skills", [enemy.hp, phases], [2000, [:harpy_taunts, [:harpy_rages, 0.5]]])
+reset
+start([[:battle, 71]])
+pool.forget
+$scene.process_action
+check("a battle whose pool is forgotten keeps its enemy's max HP and hands C# nothing", [enemy.mhp, answers.moments], [800, ["start"]])
+
+# While the battle waits for commands, its enemies take the pools' HP as often as C# allows.
+reset
+start([[:var, 1001, 40], [:battle, 71], [:mark, :after]])
+answers.turn = { "actions" => [[0, 3015]], "sync_in" => 5000 }
+$scene.start_party_command_selection
+BattleManager.instance_variable_set(:@phase, :input)
+$scene.update_basic
+pass(4)
+$scene.update_basic
+check("while the battle waits for commands, the enemy takes the pools' HP, then waits the time C# named",
+      [answers.moments.count("wait"), enemy.hp], [0, 3015])
+pass(1)
+$scene.update_basic
+check("and takes them again once it passed", answers.moments.count("wait"), 1)
+BattleManager.instance_variable_set(:@phase, :turn)
+pass(5)
+$scene.update_basic
+check("never while a turn runs", answers.moments.count("wait"), 1)
+BattleManager.instance_variable_set(:@phase, :input)
+answers.turn = { "actions" => [[0, 0]], "killed" => true }
+$scene.update_basic
+check("a pool emptied meanwhile fells the boss and wins the battle", [enemy.dead?, $won], [true, [71]])
+reset
+start([[:var, 1001, 40], [:battle, 71], [:mark, :after]])
+$scene.start_party_command_selection
+BattleManager.instance_variable_set(:@phase, :input)
+$waiting = true
+answers.turn = { "actions" => [[0, 0]], "killed" => true }
+$scene.update_basic
+check("a pool emptied while a live battle's host waits for commands fells the boss, the wait winning the battle", [enemy.dead?, $won], [true, []])
+$waiting = false
+BattleManager.instance_variable_set(:@phase, nil)
 
 # A guest's troop built anew from its host's gets the raised max HP at once.
 reset
+harpy("kind" => "guest")
 pool.note_invite("troop" => "71", "pool" => 1, "boss" => true)
 $role = :guest
 BattleManager.setup(71)
@@ -876,166 +794,16 @@ rebuilt = [Game_Enemy.new(0, 1)]
 rebuilt[0].hp = 400
 $game_troop.instance_variable_set(:@members, rebuilt)
 pool.rescale
-check("gets the raised max HP at once, keeping its share", [enemy.mhp, enemy.hp], [6000, 3000])
+check("gets the raised max HP at once, keeping its share, and hands C# the troop built anew", [enemy.mhp, enemy.hp, answers.moments.last], [6000, 3000, "start"])
 
-# A boss built anew at full HP, as the battle server rebuilt its troop, heals no pool: it reports
-# nothing and takes its pool's HP (the boss healed to full once a second player joined).
-reset
-push("Queen Harpy", "0.1")
-start([[:battle, 71], [:mark, :after]])
-check("the boss starts at its pool's HP", enemy.hp, 600)
-$game_troop.instance_variable_set(:@members, [Game_Enemy.new(0, 1)])
-next_turn
-check("one built anew at full HP reports nothing and takes its pool's HP", [reports, enemy.hp], [[], 600])
-enemy.hp = 300
-next_turn
-check("what the battle deals to it after counts", reports.last[2], "1	0.0500000000	6000	0")
-$game_troop.instance_variable_set(:@members, [Game_Enemy.new(0, 1)])
-pool.rescale
-check("one built anew and given its tier's stats takes its pool's HP at once", enemy.hp, 300)
-
-# The fetch the DLL did not start is tried again.
-reset
-$report_result = 0
-ticks(1)
-ticks(pool::FETCH_RETRY_FRAMES - 1)
-check("not before a while", $calls.count { |name, _| name == "raid.pools.fetch" }, 1)
-$report_result = 1
-ticks(2)
-check("then again until it starts", $calls.count { |name, _| name == "raid.pools.fetch" }, 2)
-ticks(pool::FETCH_RETRY_FRAMES * 2)
-check("and no more once it did", $calls.count { |name, _| name == "raid.pools.fetch" }, 2)
-
-# A battle whose pool is forgotten keeps its enemy's own max HP.
-reset
-start([[:battle, 71]])
-pool.forget
-check("a battle that fights no pool keeps its enemy's max HP", enemy.mhp, 800)
-
-# A long turn reports what its actions dealt, a few seconds apart.
-reset
-start([[:var, 1001, 40], [:battle, 71], [:mark, :after]])
-$scene.start_party_command_selection
-pass(RaidFightStandIn::REPORT_MS / 1000)
-enemy.hp = 5400
-$scene.process_action
-check("an action reports what it dealt", reports.map { |_key, _battle, text| text }, ["1	0.1000000000	6000	0"])
-enemy.hp = 4800
-$scene.process_action
-check("the next one within two seconds waits", reports.size, 1)
-pass(RaidFightStandIn::REPORT_MS / 1000)
-$scene.process_action
-check("and goes out once they passed, with all it dealt since", reports.last[2], "2	0.1000000000	6000	0")
-$scene.start_party_command_selection
-check("the command phase reports nothing dealt twice, and takes the pool's HP with its regeneration since", [reports.size, enemy.hp], [2, 4806])
-enemy.hp = 4506
-$scene.start_party_command_selection
-check("but still reports at once, however soon", reports.last[2], "3	0.0500000000	6000	0")
-pool.forget
-enemy.hp = 4000
-pass(RaidFightStandIn::REPORT_MS / 1000)
-$scene.process_action
-check("a battle that fights no pool reports nothing", reports.size, 3)
-
-# While the battle waits for commands, its enemies take the pools' HP every few seconds.
-reset
-start([[:var, 1001, 40], [:battle, 71], [:mark, :after]])
-$scene.start_party_command_selection
-BattleManager.instance_variable_set(:@phase, :input)
-push("Queen Harpy", "0.5")
-$scene.update_basic
-check("another battle's blows wait while the battle waits for commands", enemy.hp, 6000)
-pass(RaidFightStandIn::WAIT_SYNC_MS / 1000)
-$scene.update_basic
-check("until five seconds passed, then the enemy takes the pool's HP with its regeneration", enemy.hp, 3015)
-BattleManager.instance_variable_set(:@phase, :turn)
-push("Queen Harpy", "0.2")
-pass(RaidFightStandIn::WAIT_SYNC_MS / 1000)
-$scene.update_basic
-check("never while a turn runs", enemy.hp, 3015)
-BattleManager.instance_variable_set(:@phase, :input)
-push("Queen Harpy", "0", "6000", true)
-pass(RaidFightStandIn::WAIT_SYNC_MS / 1000)
-$scene.update_basic
-check("a pool emptied meanwhile fells the boss and wins the battle", [enemy.dead?, $won], [true, [71]])
-BattleManager.instance_variable_set(:@phase, nil)
-
-# While a live battle's host waits for the other players' commands, a pool emptied meanwhile fells
-# the boss, and the wait wins the battle.
-reset
-start([[:var, 1001, 40], [:battle, 71], [:mark, :after]])
-$scene.start_party_command_selection
-BattleManager.instance_variable_set(:@phase, :input)
-$waiting = true
-push("Queen Harpy", "0", "6000", true)
-pass(RaidFightStandIn::WAIT_SYNC_MS / 1000)
-$scene.update_basic
-check("a pool emptied while the host waits for commands fells the boss, the wait winning the battle", [enemy.dead?, $won], [true, []])
-$waiting = false
-BattleManager.instance_variable_set(:@phase, nil)
-
-# A change of the boss's max HP, such as a state that lowers it, is no damage.
+# The game's retry invites as a battle that fights the pool.
 reset
 start([[:battle, 71], [:mark, :after]])
-$scene.start_party_command_selection
-$data_enemies[1].params[0] = 400
-enemy.hp = 3000
-next_turn
-check("a boss whose max HP halves, taking its HP down with it, reports nothing", [reports, enemy.mhp], [[], 3000])
-enemy.hp = 1500
-next_turn
-check("and what it loses afterwards counts against the new max", reports.map { |_key, _battle, text| text }, ["1\t0.5000000000\t3000\t0"])
-$data_enemies[1].params[0] = 800
-next_turn
-check("a max HP back up reports nothing, and the boss takes the pool's share of it", [reports.size, enemy.hp], [1, 3000])
-
-# A max HP the game lowers without taking the HP down, as the higher difficulties' boss rate the
-# battle's start sets, heals no pool.
-reset
-push("Queen Harpy", "0.75")
-start([[:battle, 71], [:mark, :after]])
-$scene.start_party_command_selection
-$data_enemies[1].params[0] = 400
-next_turn
-check("a boss whose max HP halves under its HP reports nothing, and takes the pool's share of the new max", [reports, enemy.hp], [[], 2250])
-$data_enemies[1].params[0] = 800
-
-# The boss takes its pool's HP once the game's own events before the battle ran, such as the
-# higher difficulties' boss rate that halves its max HP, and before the party's start skills,
-# whose damage the first report counts.
-reset
-push("Queen Harpy", "0.5")
-$battle_start_events = lambda { $data_enemies[1].params[0] = 400 }
-$start_skills = lambda { enemy.hp -= 300 }
-start([[:battle, 71], [:mark, :after]])
-$battle_start_events = $start_skills = nil
-check("the boss takes its pool's share of the max HP the events before the battle left", [enemy.mhp, enemy.hp + 300], [3000, 1500])
-$scene.start_party_command_selection
-check("and the first report counts the damage of the start skills", reports.map { |_key, _battle, text| text }, ["1	0.1000000000	3000	0"])
-$data_enemies[1].params[0] = 800
-
-# A boss whose pool is below a phase's share of its HP switches phase before anyone acts: the
-# troop's pages are checked once more right after the pool's HP, before the start skills, where the
-# game would check them next at the first turn's end (user decision 2026-11-05).
-reset
-push("Queen Harpy", "0.4")
-$data_troops[71].pages = [:harpy_taunts, [:harpy_rages, 0.5]]
-$battle_start_events = lambda { $game_troop.setup_battle_event }
-phases = nil
-$start_skills = lambda { phases = $pages_run.dup }
-start([[:battle, 71], [:mark, :after]])
-$battle_start_events = $start_skills = nil
-$data_troops[71].pages = [:harpy_taunts]
-check("a boss whose pool is below a phase's share switches phase before the start skills", [enemy.hp, phases], [2400, [:harpy_taunts, [:harpy_rages, 0.5]]])
-
-# A small change the relay tells counts as it is: the ledger takes each word once, so nothing
-# tells a pool twice.
-reset
-told("Queen Harpy", "0.9")
-ticks
-told("Queen Harpy", "0.8996")
-ticks
-check("a change however small counts at the next read", pool.pool("Queen Harpy").left, 0.8996)
+$game_map.interpreter.clear
+BattleManager.battle_end(2)
+check("the retry's invite names the pool", pool.retrying { pool.invite_fields(71) }, { "pool" => 1 })
+harpy("defeated" => true)
+check("and is won already once the rules call the pool empty", pool.retrying { pool.won_already?(71) }, true)
 
 # A side battle runs none of its troop's battle events and gives its boss's rewards only once.
 reset
@@ -1060,7 +828,6 @@ enemy.hp = 0
 BattleManager.battle_end(0)
 check("which the save notes, by the boss's key", $game_system.instance_variable_get(:@mgq_mp_raid_rewards), { "world" => "w1", "keys" => { "Queen Harpy" => true } })
 check("once it is over, it is a side battle no more", pool.side_battle?(71), false)
-push("Queen Harpy", "1")
 pool.start_side(71, "100,100,0")
 check("another side battle of that boss gives none", [BattleManager.enable_get_exp?, BattleManager.enable_get_gold?, BattleManager.enable_get_drop?], [false, false, false])
 $game_map.interpreter.clear
@@ -1101,9 +868,9 @@ check("a guest of a boss's event battle does not", [pool.fight.side, BattleManag
 
 # The World overview reads the pools as a copy, and their shares, labels and boss keys.
 reset
-push("Queen Harpy", "0.4", "6000")
+told("Queen Harpy", "0.4")
 pools = pool.pools
-check("pools lists what the relay told, by key", [pools.keys, pools["Queen Harpy"].left, pools["Queen Harpy"].max], [["Queen Harpy"], 0.4, 6000])
+check("pools lists what C# told, by key", [pools.keys, pools["Queen Harpy"].left, pools["Queen Harpy"].max], [["Queen Harpy"], 0.4, 6000])
 pools["Other"] = :nothing
 check("as a copy, so a reader changes nothing", pool.pools.keys, ["Queen Harpy"])
 check("the share left, a troop's label and a pool's boss key stay readable from outside",
@@ -1111,27 +878,24 @@ check("the share left, a troop's label and a pool's boss key stay readable from 
 
 # The battle server: the starter hands it the battle's fight and pools, and it fights them as host.
 reset
-push("Queen Harpy", "0.5", "6000")
 start([[:battle, 71], [:mark, :after]])
-fields = pool.served_fields
-check("the starter hands the battle server how many enemies fight, whether it is a side battle, and the pools as it knows them",
-      [fields[0], fields[1], fields[2].map { |key, left, max, defeated, by| [key, left.to_f, max, defeated, by] }], [1, 0, [["Queen Harpy", 0.5, 6000, 0, ""]]])
+answers.export = [1, 0, [["Queen Harpy", "0.5", 6000, 0, ""]]]
+check("the starter hands the battle server what C# writes of its fight", pool.served_fields, [1, 0, [["Queen Harpy", "0.5", 6000, 0, ""]]])
 BattleManager.battle_end(1)
-check("a battle that fights no pool hands it nothing", pool.served_fields, nil)
+check("a battle that fights no pool hands it nothing, without asking C#", [pool.served_fields, answers.asked("raid.fight.export").size], [nil, 1])
 reset
 harpy("kind" => nil)
+answers.import = [1, false]
+answers.turn = { "actions" => [[0, 3000]] }
 BattleManager.setup(71)
-pool.serve_fight(71, fields)
+pool.serve_fight(71, [1, 0, [["Queen Harpy", "0.5", 6000, 0, ""]]])
 BattleManager.start_battle
-check("the server fights the starter's pools as host, its enemy at the pool's HP once its battle started",
-      [pool.fight.key, pool.fight.guest, enemy.mhp, enemy.hp], ["Queen Harpy", false, 6000, 3000])
-$scene.start_party_command_selection
-enemy.hp = 2400
-next_turn
-check("and reports what the battle dealt", reports.map { |key, _battle, text| [key, text] }, [["Queen Harpy", "1\t0.1000000000\t6000\t0"]])
+check("the server hands C# the starter's fields and fights its pools as host, its enemy at the pool's HP once its battle started",
+      [answers.asked("raid.fight.import").last, pool.fight.key, pool.fight.guest, enemy.mhp, enemy.hp],
+      [{ "world" => "w1", "fields" => [1, 0, [["Queen Harpy", "0.5", 6000, 0, ""]]] }, "Queen Harpy", false, 6000, 3000])
 BattleManager.battle_end(1)
 reset
 harpy("kind" => nil)
 BattleManager.setup(71)
 pool.serve_fight(71, ["1", 0, []])
-check("a count that is no number fights no pool", pool.fight, nil)
+check("fields C# takes none of fight no pool", pool.fight, nil)

@@ -2,6 +2,7 @@
 #  notices_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Handed the other players' states as the DLL reads them
 #      Paulinchen  2026-11-01: Checked the invites, the world's messages, the World overview and the announcement on the Mod Framework's notification box
 #                            - Left the check of the Mod Framework's settings notice to the Mod Framework's tests
 #      Paulinchen  2026-10-31: Read Accept and Decline as the Mod Framework's hotkeys and checked the accept key while a question box is open
@@ -106,8 +107,8 @@ frames.call(2)
 check("with nothing to tell, the box shows nothing", [box.box, shown.call], [nil, []])
 
 # An invite and a challenge from afar.
-bea = { "id" => "bea", "name" => "Bea", "map" => 9, "x" => 1, "y" => 1, "d" => 2, "scene" => "map", "party" => "bea-p1", "invite" => 1, "invite_to" => "me" }
-cid = { "id" => "cid", "name" => "Cid", "map" => 7, "x" => 1, "y" => 1, "d" => 2, "scene" => "map", "challenge" => 1, "challenge_to" => "me" }
+bea = { "id" => "bea", "name" => "Bea", "map" => "9", "x" => "1", "y" => "1", "d" => "2", "scene" => "map", "party" => "bea-p1", "invite" => true, "invite_to" => ["me"] }
+cid = { "id" => "cid", "name" => "Cid", "map" => "7", "x" => "1", "y" => "1", "d" => "2", "scene" => "map", "challenge" => "1", "challenge_to" => "me" }
 $inbox << entry("in", 3) << entry("message", 3, told(cid)) << entry("in", 2) << entry("message", 2, told(bea))
 reaching.call(2)
 MGQ_MpOverworldSync.tick
@@ -136,7 +137,7 @@ $party_answer = nil
 check("the accept hotkey accepts the first invite through the DLL, taking the party it answers", [$party_calls, MGQ_MpCoop::Party.id, $sounds],
       [[["join", 2]], "bea-p2", ["ok"]])
 check("which fades away below the offers that stand", shown.call, ["Cid challenges you to a duel", "Y: Accept   N: Decline", "Bea invites you to a party"])
-$inbox << entry("message", 2, told(bea.merge("party" => "bea-p2", "party_members" => "me", "invite" => 0)))
+$inbox << entry("message", 2, told(bea.merge("party" => "bea-p2", "party_members" => "me", "invite" => false)))
 MGQ_MpOverworldSync.tick
 frames.call(Mod_Framework::UI::Style::FADE_FRAMES)
 check("then the challenge is alone", shown.call, ["Cid challenges you to a duel", "Y: Accept   N: Decline"])
@@ -149,7 +150,7 @@ check("in a menu a challenge can only be declined", [shown.call, $duel_answer], 
 decline.call
 check("which tells the challenger", $duel_answer, [:decline, "Cid", "no"])
 SceneManager.scene = Scene_Map.new
-$inbox << entry("message", 3, told(cid.merge("challenge" => 0)))
+$inbox << entry("message", 3, told(cid.merge("challenge" => "0")))
 MGQ_MpOverworldSync.tick
 frames.call(2)
 $inbox << entry("message", 3, told(cid))

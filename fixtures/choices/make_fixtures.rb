@@ -14,9 +14,9 @@
 # coop_choices.rbx as it was before its table and rules moved to C# (MGQOnline.Game's
 # Story/Choices). "table" holds the script's constants; "cases" hold each rule's answer in the shape
 # of the bridge topic that answers it now (ChoiceTopics), the request as the script builds it and
-# the reply the old rule gave. MGQOnline.Game.Tests replays every case, and the script tests'
-# stand-in (GameScript/Tests/choices_support.rb) is checked against them. The script no longer holds
-# those rules, so hand it the script of commit 40f11e4d, which still kept them, to write the cases
+# the reply the old rule gave. MGQOnline.Game.Tests replays every case; the script tests answer
+# the table topic with its recorded reply and every other topic with fixed values. The script no
+# longer holds those rules, so hand it the script of commit 40f11e4d, which still kept them, to write the cases
 # again, on Ruby 3.3. Since 2026-11-01 the outcomes of the branch events come from the walk of the
 # game's data (ChoiceTable.Outcomes.cs), which no old script knows: a new recording keeps the
 # table's branches, Succubus outcomes, choice companions and keys, the branches' hints the table

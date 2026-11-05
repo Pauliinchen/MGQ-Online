@@ -2,7 +2,8 @@
 #  emotes_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Read the scripts' clock from $frame_count and dropped the check of a cooldown a loaded save ended, since the clock never goes back
+#      Paulinchen  2026-11-05: Handed the other players' messages as the DLL reads them and expected the emote sent as the scripts hand it
+#                            - Read the scripts' clock from $frame_count and dropped the check of a cooldown a loaded save ended, since the clock never goes back
 #      Paulinchen  2026-11-01: Checked the emote wheel as a Mod Framework wheel, its drawing left to the framework's tests
 #      Paulinchen  2026-10-31: Expected the game's cancel key in the wheel's hint and read the Mod Framework's capture
 #      Paulinchen  2026-10-30: Dropped the fade checks
@@ -38,8 +39,8 @@ $frame_count = 0
 load_script "ui_emotes"
 
 emotes = MGQ_MpEmotes
-friend = { "id" => "friend", "name" => "Friend", "map" => 5, "x" => 4, "y" => 4, "d" => 2, "sprite" => "Actor2", "index" => 0, "speed" => 4 }
-$inbox << entry("seat", 0, "")
+friend = { "id" => "friend", "name" => "Friend", "map" => "5", "x" => "4", "y" => "4", "d" => "2", "sprite" => "Actor2", "index" => "0", "speed" => "4" }
+$inbox << entry("seat", 0)
 $inbox << entry("message", 2, told(friend))
 MGQ_MpOverworldSync.tick
 MGQ_MpOverworld.update_ghosts
@@ -87,8 +88,7 @@ emote_frame.call
 check("confirm closes the wheel and gives the buttons back, the emote not played yet", [wheel.open?, Mod_Framework::UI::Capture.on?, $sent], [false, false, []])
 emote_frame.call
 check("the frame after plays the picked emote, a balloon above the player", $game_player.balloon_id, 1)
-check("and tells the others", $sent.last[1].start_with?("emote=1
-") && $sent.last[1].include?("map=5"), true)
+check("and tells the others", $sent.last[1].values_at("emote", "map"), [1, 5])
 open_wheel.call
 $buttons << :C
 $sounds.clear
@@ -116,17 +116,17 @@ $game_message.busy = false
 check("a message that starts closes it", wheel.open?, false)
 
 ghost = MGQ_MpOverworldSync::Peers.at(2).ghost
-$inbox << entry("message", 2, "emote=4\nmap=5\n\n")
+$inbox << entry("message", 2, { "emote" => 4, "map" => "5" })
 MGQ_MpOverworldSync.tick
 check("another player's emote plays on their ghost", ghost.balloon_id, 4)
-$inbox << entry("message", 2, "emote=0\nmap=5\n\n")
+$inbox << entry("message", 2, { "emote" => 0, "map" => "5" })
 MGQ_MpOverworldSync.tick
 check("their jump too", ghost.jumps, 1)
-$inbox << entry("message", 2, "emote=4\nmap=9\n\n")
+$inbox << entry("message", 2, { "emote" => 4, "map" => "9" })
 ghost.balloon_id = 0
 MGQ_MpOverworldSync.tick
 check("but not one from another map", ghost.balloon_id, 0)
-$inbox << entry("message", 2, "emote=99\nmap=5\n\n")
+$inbox << entry("message", 2, { "emote" => 99, "map" => "5" })
 MGQ_MpOverworldSync.tick
 check("nor one the wheel has not", ghost.balloon_id, 0)
 

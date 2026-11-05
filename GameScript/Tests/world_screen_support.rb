@@ -84,7 +84,7 @@ end
 
 play_focus_at_once
 
-# Opens the world screen as the game starts it, the list read as the DLL's stand-ins hold it; the
+# Opens the world screen as the game starts it, the list read as the DLL's answers hold it; the
 # scenes' base of the test takes the start.
 #
 # @return [Scene_MpWorlds] The screen.

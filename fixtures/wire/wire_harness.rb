@@ -10,9 +10,7 @@
 # Runs battles_sync_wire.rbx outside the game for the battle line codec's golden cases: stand-ins
 # for the game classes it writes and reads, the game facts the cases share, and the description of
 # a value both the fixtures and MGQOnline.Game.Tests use. make_fixtures.rb writes the cases with it
-# from the script that still kept the codec, GameScript/Tests/wire_fixtures_test.rb checks the
-# values the scripts hand over and take back against them. Each loads its script, then calls
-# WireHarness.prepare.
+# from the script that still kept the codec: it loads that script, then calls WireHarness.prepare.
 #
 # A value's description is JSON: nil, true and false as themselves, {"i" => "42"},
 # {"f" => <the double's 16 hex digits>}, {"sym" => text}, {"s" => text}, {"ref" => "a0"},

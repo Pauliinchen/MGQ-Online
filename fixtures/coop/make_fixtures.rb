@@ -13,8 +13,7 @@
 
 # Writes the golden cases of the co-op battles' rules next to this file from the scripts of commit
 # 1a38be7d, the last that kept them in Ruby (battles_coop*.rbx), which MGQOnline.Game.Tests replays
-# against MGQOnline.Game's Coop folder and GameScript/Tests/coop_support.rb checks its stand-ins
-# against:
+# against MGQOnline.Game's Coop folder. A recording tool: no script test runs against it.
 #
 # - placement.json: the places battles_coop_hotjoin.rbx's place_anew found for an encounter's
 #   enemies in a troop, each enemy's width as the game measured it.
@@ -27,9 +26,8 @@
 #   troop repaired on a guest.
 # - match.json: scenarios of the matchmaking (offers, held encounters, the stand-still and the
 #   encounter's steps), each step with the world as the script saw it and what it sent, showed,
-#   logged and had the scripts do; GameScript/Tests/match_support.rb replays them on its stand-in.
-#   A Classic battle invites the busy members on the map too, by the rule that came after these
-#   scripts (#76).
+#   logged and had the scripts do. A Classic battle invites the busy members on the map too, by
+#   the rule that came after these scripts (#76).
 #
 # It runs on the old scripts with their own test support, on Ruby 3.3:
 #

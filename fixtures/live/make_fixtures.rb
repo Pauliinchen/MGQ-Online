@@ -13,8 +13,7 @@
 
 # Writes the golden cases of the live battle's rules next to this file from the scripts of commit
 # 2f89514d, the last that kept them in Ruby (battles_sync*.rbx), which MGQOnline.Game.Tests replays
-# against MGQOnline.Game's Battles/Live folder and GameScript/Tests/live_support.rb checks its
-# stand-ins against:
+# against MGQOnline.Game's Battles/Live folder. A recording tool: no script test runs against it.
 #
 # - stream.json: the guest's intake of the host's stream. Each case sets the guest up with the
 #   host's names and its own, takes one send and lists what the old playback did with each line

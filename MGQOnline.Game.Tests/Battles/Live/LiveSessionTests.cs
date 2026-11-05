@@ -2,6 +2,8 @@
 //  LiveSessionTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Covered a battle the battle server hosts
+//                            - Covered the command phase of a player who chooses again
 //      Paulinchen  2026-10-30: Created
 //
 //----------------------------------------------------------------
@@ -151,6 +153,35 @@ public sealed class LiveSessionTests
     }
 
     /// <summary>
+    /// Asserts that a command phase opens once, that the guests sent back to choose again owe their
+    /// commands anew, and that the next phase owes every guest's.
+    /// </summary>
+    [Fact]
+    public void CommandPhase_OpensOnce_AndOwesTheCommandsOfWhoChoosesAgain()
+    {
+        var session = new LiveSession();
+        session.Join("host", "p2", [2, 3], "the party", "coop", false, false);
+        session.Start();
+
+        bool opened = session.OpenPhase();
+        bool openedAgain = session.OpenPhase();
+        session.Answer(2);
+        session.Answer(3);
+        List<int> answered = session.Unanswered;
+        session.Unanswer([3]);
+        List<int> chooseAgain = session.Unanswered;
+        bool closed = session.ClosePhase();
+        bool closedAgain = session.ClosePhase();
+        session.OpenPhase();
+
+        Assert.Equal((true, false), (opened, openedAgain));
+        Assert.Empty(answered);
+        Assert.Equal([3], chooseAgain);
+        Assert.Equal((true, false), (closed, closedAgain));
+        Assert.Equal([2, 3], session.Unanswered);
+    }
+
+    /// <summary>
     /// Asserts that a departure told twice is told once.
     /// </summary>
     [Fact]
@@ -160,6 +191,37 @@ public sealed class LiveSessionTests
         session.Join("host", "d1", [2], "the party", "coop", false, false);
 
         Assert.Equal((true, false, true), (session.Tell(2, "left"), session.Tell(2, "left"), session.Tell(2, "joined")));
+    }
+
+    /// <summary>
+    /// Asserts that a battle the server takes over runs on, that the server takes out each player the
+    /// presence tells gone or who said they leave, and that a guest counts the battle as gone only
+    /// once its channel closed.
+    /// </summary>
+    [Fact]
+    public void Served_RunsOnAndEndsOnceItsPlayersAreGone()
+    {
+        var server = new LiveSession();
+        server.Join("host", "s1", [2], "the party", "coop", false, false);
+        server.Start();
+        server.Join("host", "s1", [1, 2], "the players", "coop", false, true);
+        var open = new LiveFacts(true, false);
+        var departed = new List<(int Seat, int StillIn)>();
+
+        bool first = server.ServedGone(open, departed);
+        server.NoteGone([1]);
+        bool second = server.ServedGone(open, departed);
+        server.Receive(2, "leave", "", "Friend");
+        bool third = server.ServedGone(open, departed);
+
+        Assert.True(server.Live);
+        Assert.Equal((false, false, true), (first, second, third));
+        Assert.Equal([(1, 1), (2, 0)], departed);
+
+        var guest = new LiveSession();
+        guest.Join("guest", "s2", [250], "the server", "coop", false, true);
+        Assert.False(guest.Live);
+        Assert.Equal((false, true), (guest.ServedGone(open, departed), guest.ServedGone(new LiveFacts(true, true), departed)));
     }
 
     /// <summary>

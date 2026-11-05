@@ -2,7 +2,10 @@
 #  world_overview_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Dropped the check of the sections' order, which the DLL's table of the raid bosses keeps
+#      Paulinchen  2026-11-05: Answered the teleports' view with a fixed offer instead of from the party's stand-in
+#                            - Answered the title with fixed values per world
+#                            - Answered the lists, the told state and the pages with the values each check sets and checked what goes to the DLL, instead of what its stand-ins built
+#                            - Dropped the check of the sections' order, which the DLL's table of the raid bosses keeps
 #                            - Expected the box's switch kept as true or false
 #                            - Read the scripts' clock from $frame
 #      Paulinchen  2026-11-01: Named the Mod Framework's interface by its own name
@@ -71,7 +74,8 @@
 # played through its tree: what the player tells the others, the Players page with its menus, the
 # party box and the map box it feeds, the World, Quests and Unlocks pages, the pages of other mods,
 # the window the player moves and resizes, and the question box before leaving the party or
-# removing a member. The DLL's models answer through the stand-ins of overview_support.rb.
+# removing a member. The DLL's models answer with the values each check sets (overview_support.rb):
+# the script tests check what goes to them and what the overview draws of their answers.
 require_relative "hud_support"
 require_relative "rules_support"
 # The open world: its name and seats.
@@ -96,14 +100,12 @@ module MGQ_MpWorldStory
   DECISION_PART = "3"
   # The routes' keys in the world's story.
   ROUTES = %w(ad mr chaos)
-  # The variables that count each route's progress, in the order of ROUTES.
-  ROUTE_VARIABLES = [1141, 1142, 1143]
   # Answers the story in $world_story.
   def self.world; $world_story; end
   # Answers whether the world keeps a story, as a Raid World does.
   def self.active?; $raid; end
-  # Reads the part from a story's counters, or finds it from variable 1001 and the routes as the DLL does.
-  def self.part_of(counters); counters.key?("part") ? counters["part"] : stand_in_part("p" => counters["p"].to_i, "routes" => ROUTE_VARIABLES.map { |id| counters["r#{id}"].to_i }); end
+  # Reads the part a story's counters name.
+  def self.part_of(counters); counters["part"]; end
 end
 # Stands in for the catch-up: its list of what it hands out by level in $unlocks, and the level it
 # counts in $counted_level.
@@ -210,6 +212,12 @@ load_script "world_overview_mods"
 module MGQ_MpEmotes; def self.wheel; StandInWheel.new(lambda { $emotes_open }); end; end
 load_script "ui_party_box"
 rules_bridge = open_rules_bridge
+# The title's tail and the World page's note the DLL writes for the worlds below, by whether it is
+# a Raid World and its difficulty (OverviewTextTests covers the texts).
+$rule_answers.cases("overview.title", {
+  [false, nil] => { "tail" => " | Classic", "note" => "Classic | Per player" }, [false, 1] => { "tail" => " | Classic | Hard", "note" => "Classic | Hard" },
+  [true, nil] => { "tail" => " | Raid", "note" => "Raid | Per player" }, [true, 1] => { "tail" => " | Raid | Hard", "note" => "Raid | Hard" },
+}) { |request| request.values_at("raid", "difficulty") }
 # The scripts' clock, which the checks move with $frame.
 clock_from { $frame }
 require_relative "overview_support"
@@ -239,22 +247,43 @@ check("Luka counts like everyone in the formation", overview.formation_level, 60
 $game_party.all_members = [Actor.new(30, true), Actor.new(55, false), Actor.new(99, false)]
 check("a map the game names nowhere has no place, never its untranslated name in the editor", overview.place, "")
 $game_map.display_name = "Ilias Village"
+$overviews.set("overview.tell", "told the others: level nil -> 55, story nil -> \"3:destroyer\"")
 told = logged_lines { tell_overview_read(rules_bridge); map_frame }
-check("the DLL's ask has the script read the level and the story, and what changed is logged", told.grep(/told the others/),
-      ["overview: told the others: level nil -> 55, story nil -> \"3:destroyer\""])
+$overviews.set("overview.tell")
+check("the DLL's ask has the script hand it the level and the story read, and what the DLL says changed is logged",
+      [$overviews.asked("overview.tell").last, told.grep(/told the others/)],
+      [{ "lv" => 55, "flv" => nil, "story" => overview.story_request, "battle" => false }, ["overview: told the others: level nil -> 55, story nil -> \"3:destroyer\""]])
+$overviews.set("overview.fields") { |place| { "place" => place, "lv" => 55, "progress" => "3:destroyer" } }
 MGQ_MpOverworldSync.tick
-check("the state tells place, level and story, as the DLL keeps them", MGQ_MpOverworldSync::Me.current.values_at("place", "lv", "progress"), ["Ilias Village", 55, "3:destroyer"])
+check("the state tells the fields the DLL answers for the place handed", [MGQ_MpOverworldSync::Me.current.values_at("place", "lv", "progress"), $overviews.asked("overview.fields").last],
+      [["Ilias Village", 55, "3:destroyer"], "Ilias Village"])
 
-# The list groups the players by place, the player's own first.
+# The lists of players as the DLL builds them (OverviewRowsTests): the player in Ilias Village,
+# Friend in Forest, member where a check puts them; in Friend's party once the player joined it.
+set_lists = lambda do |member_place, party|
+  me = [-1, "Me (you)", "Ilias Village", "Lv 55", "Part 3: Destroyer route", "", "", party, nil]
+  friend = [2, "Friend", "Forest", "Lv 30", "Part 2: Ilias side", "250", "battle", party, party ? ["2 / 4", true] : nil]
+  member = [3, "member", member_place, "Lv 12", "Part 1", "40", "menu", false, nil]
+  lines = if member_place == "Forest" then [["place", "Ilias Village"], ["player", 0], ["place", "Forest"], ["player", 1], ["player", 2]]
+          else [["place", "Ilias Village"], ["player", 0], ["player", 2], ["place", "Forest"], ["player", 1]]
+          end
+  own = [-1, "Me", "Ilias Village", "Lv 55", "Part 3: Destroyer route", "", "", true, ["2 / 4", false]]
+  $overviews.lists = { "players" => [me, friend, member], "lines" => lines, "party" => party ? [friend, own] : [] }
+end
+set_lists.call("Ilias Village", false)
+
+# The Players page lays the players out by place as the DLL lines them up.
 other = { "id" => "other", "name" => "member", "map" => 5, "x" => 30, "y" => 30, "d" => 2, "scene" => "menu", "place" => "Ilias Village", "lv" => 12, "progress" => "1", "ping" => 40 }
 friend = { "id" => "friend", "name" => "Friend", "map" => 7, "x" => 1, "y" => 1, "d" => 2, "scene" => "battle", "place" => "Forest", "lv" => 30, "progress" => "2:ilias", "ping" => 250 }
 $inbox << entry("seat", 0) << entry("in", 2) << entry("message", 2, told(friend)) << entry("in", 3) << entry("message", 3, told(other))
 MGQ_MpOverworldSync.tick
 lines = overview.lines(overview.rows)
-check("places: the player's first, each with its players, the player first", lines.map { |kind, value| kind == :place ? value : value.name },
-      ["Ilias Village", "Me (you)", "member", "Forest", "Friend"])
+check("the lines the DLL hands, each place with its players, the script asking with the player's name", [lines.map { |kind, value| kind == :place ? value : value.name },
+      $overviews.asked("overview.rows").last["name"]], [["Ilias Village", "Me (you)", "member", "Forest", "Friend"], "Me"])
 friend_row = lines[4][1]
 check("a player's row", [friend_row.level, friend_row.story, friend_row.ping[0], friend_row.icon], ["Lv 30", "Part 2: Ilias side", "250 ms", 451])
+check("the script asks again with the serial of the lists it holds, which the DLL answers with nothing while they stay",
+      [overview.rows.size, $overviews.asked("overview.rows").last["serial"].nil?, overview.rows.size], [3, false, 3])
 
 # F11 opens the overview, a framework window, on the Players page; confirm on a player opens their
 # menu beside the row, and cancel steps back.
@@ -367,8 +396,9 @@ $party_answer = party_view("friend-p", [MGQ_MpOverworldSync::Peers.at(2)], 2, "a
 pick.call(0, nil)
 $party_answer = nil
 check("a click on a choice takes it", [$party_calls.last, MGQ_MpCoop::Party.id], [["join", 2], "friend-p"])
-check("in a party the player's own row is green", overview.rows.first.member, true)
-check("the party box lists the party, its leader first, with levels", overview.party_rows.map { |row| [row.name, row.level, row.badge[1]] },
+set_lists.call("Ilias Village", true)
+check("in a party the player's own row is green, as the DLL marks it", overview.rows.first.member, true)
+check("the party box lists the party the DLL lists, with levels and the leader's crown", overview.party_rows.map { |row| [row.name, row.level, row.badge[1]] },
       [["Friend", "Lv 30", true], ["Me", "Lv 55", false]])
 check("and where each one is", overview.party_rows.map(&:place), overview.party_rows.map { |row| overview.rows.find { |r| r.name.start_with?(row.name) }.place })
 
@@ -417,12 +447,14 @@ before_move = shown.call
 tell.call([players.call.node, "change", row_named.call("member")])
 $inbox << entry("message", 3, told(other.merge("map" => 7, "place" => "Forest")))
 MGQ_MpOverworldSync.tick
+set_lists.call("Forest", true)
 overview.on_map
 check("the rows set again with the players in a new order keep the cursor on the same player",
       [before_move, shown.call, players.call.index == row_named.call("member")],
       [["Ilias Village", "Me (you)", "member", "Forest", "Friend"], ["Ilias Village", "Me (you)", "Forest", "Friend", "member"], true])
 $inbox << entry("message", 3, told(other))
 MGQ_MpOverworldSync.tick
+set_lists.call("Ilias Village", true)
 overview.on_map
 last_row = players.call.rows.size - 1
 tell.call([players.call.node, "change", last_row])
@@ -486,8 +518,10 @@ check("the chat box closes it", [MGQ_MpChat.typing?, overview.open?, closing.gre
 # Only the party's leader invites and removes.
 friend_peer = MGQ_MpOverworldSync::Peers.at(2)
 member_peer = MGQ_MpOverworldSync::Peers.at(3)
+$teleport_view = teleport_view(2 => teleport_offer("Teleport to Friend"))
 MGQ_MpCoopTeleport.tick(true)
 check("a member may teleport to their leader", MGQ_MpActions.peer_options(friend_peer).map(&:text), ["Teleport to Friend", "Duel"])
+$teleport_view = nil
 check("and may not invite", [MGQ_MpCoop::Offers.peer_option(member_peer).run, MGQ_MpCoop::Offers.peer_option(member_peer).refusal], [nil, "Only the party's leader invites."])
 $inbox << entry("message", 3, told(other.merge("party" => "me-p2", "id" => "zz-member")))
 # Friend's invite from afar still names the player, who is outside Friend's party now.
@@ -508,7 +542,7 @@ $front = [Actor.new(40, true), Actor.new(70, false), Actor.new(90, false)]
 # Has the DLL ask the script to read the levels and the story, and the state go out.
 tell_state = lambda { tell_overview_read(rules_bridge); map_frame; MGQ_MpOverworldSync.tick }
 tell_state.call
-check("a Classic world tells no Frontline level", [MGQ_MpOverworldSync::Me.current.key?("flv"), MGQ_MpPartyBox.map_box?], [false, false])
+check("a Classic world tells no Frontline level", [$overviews.asked("overview.tell").last["flv"], MGQ_MpPartyBox.map_box?], [nil, false])
 $raid = true
 MGQ_MpOverworldSync.tick
 check("in a Raid World the Frontline level is the one Frontline character's, Luka included", overview.front_level, 40)
@@ -519,7 +553,7 @@ MGQ_MpCoopSquad.define_singleton_method(:own_share) { nil }
 check("without a share it is the first character's", overview.front_level, 40)
 MGQ_MpCoopSquad.define_singleton_method(:own_share, own_share)
 tell_state.call
-check("a Raid World tells it as flv beside lv", MGQ_MpOverworldSync::Me.current.values_at("lv", "flv"), [55, 40])
+check("a Raid World hands the DLL the Frontline level beside the formation's", $overviews.asked("overview.tell").last.values_at("lv", "flv"), [55, 40])
 # Stands in for co-op battles, one running while $coop_battle is set.
 module MGQ_MpBattlesCoop; def self.active?; $coop_battle; end; end
 $coop_battle = true
@@ -527,7 +561,7 @@ $front = [Actor.new(5, true)]
 members = $game_party.all_members
 $game_party.all_members = [Actor.new(5, true)]
 tell_state.call
-check("during a co-op battle the DLL keeps the levels read before", MGQ_MpOverworldSync::Me.current.values_at("lv", "flv"), [55, 40])
+check("during a co-op battle the script tells the DLL so, which keeps the levels read before", $overviews.asked("overview.tell").last.values_at("lv", "flv", "battle"), [5, 5, true])
 $game_party.all_members = members
 $coop_battle = false
 $front = [Actor.new(40, true), Actor.new(70, false), Actor.new(90, false)]
@@ -536,10 +570,17 @@ stranger = { "id" => "stranger", "name" => "Stranger", "map" => 5, "x" => 2, "y"
 $inbox << entry("in", 4) << entry("message", 4, told(stranger)) << entry("in", 5) << entry("message", 5, told(stranger.merge("id" => "loner", "name" => "loner", "flv" => 0, "party" => "loner-p", "invite" => 0)))
 $inbox << entry("message", 3, told(other.merge("party" => MGQ_MpCoop::Party.id, "id" => "zz-member", "flv" => 33)))
 MGQ_MpOverworldSync.tick
+# The lists of a Raid World's map as the DLL builds them: the player leads member, loner and
+# Stranger stand on the map too.
+raid_me = [-1, "Me", "Ilias Village", "Lv 40", "Part 3: Destroyer route", "", "", true, ["2 / 4", true]]
+raid_member = [3, "member", "Ilias Village", "Lv 33", "Part 1", "40", "menu", true, ["2 / 4", false]]
+map_lists = { "players" => [], "party" => [raid_me.dup.tap { |row| row[3] = "Lv 55" }, raid_member.dup.tap { |row| row[3] = "Lv 12" }], "raid_party" => [raid_me, raid_member],
+              "map" => [raid_me, raid_member, [5, "loner", "Ilias Village", "", "Part 1", "80", "map", false, nil], [4, "Stranger", "Ilias Village", "Lv 20", "Part 1", "80", "map", false, nil]] }
+$overviews.lists = map_lists
 map_rows = overview.map_rows
-check("the map box lists everyone on the map, the party first with its leader, then the others by name",
+check("the map box lists the DLL's players on the map, with their party marks and levels",
       map_rows.map { |row| [row.name, row.member, row.level] }, [["Me", true, "Lv 40"], ["member", true, "Lv 33"], ["loner", false, ""], ["Stranger", false, "Lv 20"]])
-check("only the party's leader keeps a crown, and every other player shows their ping", [map_rows.map { |row| row.badge && row.badge[1] }, map_rows[1..-1].map { |row| row.ping && row.ping[0] }],
+check("the crown only where the DLL gives the leader's, and every other player's ping", [map_rows.map { |row| row.badge && row.badge[1] }, map_rows[1..-1].map { |row| row.ping && row.ping[0] }],
       [[true, false, nil, nil], ["40 ms", "80 ms", "80 ms"]])
 check("the box follows the world's type", MGQ_MpPartyBox.map_box?, true)
 
@@ -582,6 +623,7 @@ MGQ_MpPartyBox.on_map
 check("its key makes it small", MGQ_MpPartyBox.small?, true)
 peers_here = MGQ_MpCoop::Scope.method(:peers_here)
 MGQ_MpCoop::Scope.define_singleton_method(:peers_here) { [] }
+$overviews.lists = map_lists.merge("map" => [])
 check("alone on the map the party box still lists the party, and its key works", [overview.map_rows, MGQ_MpPartyBox.busy_reason, MGQ_MpPartyBox.sections.map { |rows| rows.map(&:name) }],
       [[], nil, [["Me", "member"], []]])
 in_party = MGQ_MpCoop.method(:in_party?)
@@ -591,17 +633,26 @@ MGQ_MpCoop.define_singleton_method(:in_party?, in_party)
 MGQ_MpCoop::Scope.define_singleton_method(:peers_here, peers_here)
 $raid = false
 check("back in a Classic world the party box lists the party alone", overview.party_rows.map(&:name), ["Me", "member"])
+# The lists once the player leads member's party, Friend outside it.
+$overviews.lists = { "players" => [[-1, "Me (you)", "Ilias Village", "Lv 55", "Part 3: Destroyer route", "", "", true, ["2 / 4", true]],
+                                   [2, "Friend", "Forest", "Lv 30", "Part 2: Ilias side", "250", "battle", false, nil],
+                                   [3, "member", "Ilias Village", "Lv 12", "Part 1", "40", "menu", true, ["2 / 4", false]]],
+                     "lines" => [["place", "Ilias Village"], ["player", 0], ["player", 2], ["place", "Forest"], ["player", 1]], "party" => map_lists["party"] }
+
+# The pages as the DLL lays them out (OverviewPagesTests): the head's title, note and lines, the
+# rows ([kind, view, entry], see MGQ_MpWorldOverview.model_of) and the places that can be picked.
+page_of = lambda { |lines, rows, picks = [], head = {}| { "head" => { "title" => nil, "note" => nil, "lines" => lines, "entry" => nil }.merge(head), "rows" => rows, "picks" => picks } }
+$overviews.set("overview.world", page_of.call(["Players online: 3 / 8", "Each party plays its leader's story."], [["none", "Raid bosses fight in Raid Worlds."]]))
 
 # Left and Right turn the pages, round at either end.
 $buttons.clear
 open_overview.call
 check("the overview opens on the Players page", overview.page, :players)
 tell.call([tabs.call.node, "step", 1])
-online = overview.rows.size
 world = overview.model(:world)
-check("Right turns to the World page, which in a Classic world heads the world's name with its type and difficulty, its players and that each party plays its leader's story",
-      [overview.page, world.head.title, world.head.note, world.head.lines, world.rows],
-      [:world, "Test World", "Classic | Per player", ["Players online: #{online} / 8", "Each party plays its leader's story."], [[:none, "Raid bosses fight in Raid Worlds."]]])
+check("Right turns to the World page, headed by the world's name with its type and difficulty, the DLL laying out the rest from the seats and the story the script hands",
+      [overview.page, world.head.title, world.head.note, $overviews.asked("overview.world").last.values_at("seats", "story", "main"), world.head.lines, world.rows],
+      [:world, "Test World", "Classic | Per player", [8, nil, nil], ["Players online: 3 / 8", "Each party plays its leader's story."], [[:none, "Raid bosses fight in Raid Worlds."]]])
 world_view = view_of.call(:world)
 check("its view shows the globe in the head and a dim line in place of raid bosses",
       [world_view.instance_variable_get(:@head_value).values_at(:icon, :title, :note), world_view.list.rows], [[3988, "Test World", "Classic | Per player"], [{ :heading => "Raid bosses fight in Raid Worlds.", :color => :dim }]])
@@ -628,16 +679,22 @@ $unlocks = [unlock.new(10, :story, "Part 1", nil, true, false, nil, [gain.new(:i
             unlock.new(25, :companion, "Lime", nil, false, true, 54, []),
             unlock.new(40, :makina, "Super Vibro Blade", 183, false, false, 701, [])]
 $counted_level = 30
+passed_fold = ["fold", [nil, "▸ Passed (1)", nil, false, nil], ["fold", "passed", "Passed (1)", false]]
+passed_open = ["fold", [nil, "▾ Passed (1)", nil, false, nil], ["fold", "passed", "Passed (1)", true]]
+coming_fold = ["fold", [nil, "▾ Coming up (2)", nil, false, nil], ["fold", "coming", "Coming up (2)", true]]
+coming_shut = ["fold", [nil, "▸ Coming up (2)", nil, false, nil], ["fold", "coming", "Coming up (2)", false]]
+level_10 = ["entry", ["Level 10", "Part 1", nil, true, nil], ["level", 10, [0], true, false]]
+level_25 = ["entry", ["Level 25", "Part 2, Lime", "Due", false, nil], ["level", 25, [1, 2], false, true]]
+level_40 = ["entry", ["Level 40", "Super Vibro Blade", nil, false, nil], ["level", 40, [3], false, false]]
+unlocks_head = { "title" => "Catch-up EXP", "note" => "Your level 30" }
+unlocks_folded = page_of.call(["Starts once the world's story raises the level cap."], [passed_fold, coming_fold, level_25, level_40], [0, 1, 2, 3], unlocks_head)
+$overviews.set("overview.unlocks", unlocks_folded)
 2.times { tell.call([tabs.call.node, "step", 1]) }
 unlocks = overview.model(:unlocks)
-check("in a Raid World Right turns on past the Quests page to the Unlocks page, headed by the catch-up experience with the level it counts",
-      [overview.page, unlocks.head.title, unlocks.head.note, unlocks.head.lines, unlocks.head.grid],
-      [:unlocks, "Catch-up EXP", "Your level 30", ["Starts once the world's story raises the level cap."], nil])
-check("the DLL folds the levels whose every unlock the player got under Passed, the others follow under Coming up, each naming the unlocks handed by their places",
-      unlocks.rows.map { |kind, value| kind == :none ? [kind, value] : value.value },
-      [["fold", "passed", "Passed (1)", false], ["fold", "coming", "Coming up (2)", true], ["level", 25, [1, 2], false, true], ["level", 40, [3], false, false]])
-check("a level's row tells what it brings and that it is due",
-      unlocks.rows[2][1].row.to_a, ["Level 25", "Part 2, Lime", "Due", false, nil])
+check("in a Raid World Right turns on past the Quests page to the Unlocks page, the DLL laying it out from the levels the script hands",
+      [overview.page, $overviews.asked("overview.unlocks").last, unlocks.head.title, unlocks.head.note, unlocks.head.lines, unlocks.head.grid],
+      [:unlocks, { "target" => nil, "level" => 30, "unlocks" => [[10, "Part 1", true, false], [25, "Part 2", false, true], [25, "Lime", false, true], [40, "Super Vibro Blade", false, false]] },
+       "Catch-up EXP", "Your level 30", ["Starts once the world's story raises the level cap."], nil])
 pane = overview.pane_of(unlocks.rows[2][1])
 check("its pane lists key items and unlocks first, then moving on, the companions, the skills, the Makina and the other items, each with its icon or portrait, the note they share once in the title",
       [pane.title, pane.lines.map { |kind, item| item ? [item.name, item.icon, item.note] : kind }],
@@ -653,29 +710,35 @@ shown_pane = unlocks_view.instance_variable_get(:@pane_value)
 check("a level picked shows its pane, the things it brings in runs a gap apart",
       [shown_pane[:title], shown_pane[:lines].map { |line| line.is_a?(Hash) ? line[:items].map { |item| [item[:text], item[:icon]] } : line }],
       ["Level 25 · Due", [[["Informant Papers", 230]], :gap, [["Moving on from Part 2", nil]], :gap, [["Lime", nil]], :gap, [["Hero Slash", 40]], :gap, [["Herb x3", 20]]]])
+$overviews.set("overview.unlocks", page_of.call(unlocks_folded["head"]["lines"], [passed_open, level_10, coming_fold, level_25, level_40], [0, 1, 2, 3, 4], unlocks_head))
 tell.call([unlocks_view.list.node, "submit", 0])
 unlocks = overview.model(:unlocks)
-check("confirm on Passed opens it, which the DLL keeps", [unlocks.rows.first(2).map { |_, value| value.value[0] == "fold" ? value.value[2] : value.value[1] }, unlocks_view.list.rows.first(2).map { |row| row[:text] }],
-      [["Passed (1)", 10], ["▾ Passed (1)", "Part 1"]])
+check("confirm on Passed has the DLL open it, and the page shows as the DLL lays it out anew",
+      [$overviews.asked("overview.fold").last, unlocks_view.list.rows.first(2).map { |row| row[:text] }], [{ "page" => "unlocks", "key" => "passed", "open" => true }, ["▾ Passed (1)", "Part 1"]])
 check("a passed level's pane says so, its unlocks dimmed",
       [overview.pane_of(unlocks.rows[1][1]).title, overview.pane_of(unlocks.rows[1][1]).lines.map { |kind, item| item ? [item.name, item.note, item.dim] : kind }],
       ["Level 10, passed", [["Moving on from Part 1", nil, true], :gap, ["Herb", nil, true]]])
+$overviews.set("overview.unlocks", unlocks_folded)
 tell.call([unlocks_view.list.node, "submit", 0])
-check("and confirm folds it again", overview.model(:unlocks).rows.first[1].value[3], false)
+$overviews.set("overview.unlocks", page_of.call(unlocks_folded["head"]["lines"], [passed_fold, coming_shut], [0, 1], unlocks_head))
 tell.call([unlocks_view.list.node, "submit", 1])
-check("Coming up folds the same way", overview.model(:unlocks).rows.map { |kind, value| [kind, value.value[2], value.value[3]] }, [[:fold, "Passed (1)", false], [:fold, "Coming up (2)", false]])
+check("confirm folds it again, and Coming up the same way", [$overviews.asked("overview.fold").last(2), unlocks_view.list.rows.map { |row| row[:text] }],
+      [[{ "page" => "unlocks", "key" => "passed", "open" => false }, { "page" => "unlocks", "key" => "coming", "open" => false }], ["▸ Passed (1)", "▸ Coming up (2)"]])
+$overviews.set("overview.unlocks", unlocks_folded)
 tell.call([unlocks_view.list.node, "submit", 1])
 $unlocks = []
+$overviews.set("overview.unlocks", page_of.call(unlocks_folded["head"]["lines"], [["none", "Nothing to catch up with yet."]], [], unlocks_head))
 overview.forget_model(:unlocks)
 overview.on_map
-check("with nothing unlocked yet it says so", unlocks_view.list.rows, [{ :heading => "Nothing to catch up with yet.", :color => :dim }])
+check("with nothing unlocked yet it shows the DLL's line, dim", [$overviews.asked("overview.unlocks").last["unlocks"], unlocks_view.list.rows],
+      [[], [{ :heading => "Nothing to catch up with yet.", :color => :dim }]])
 members = $game_party.all_members
 $game_party.all_members = [Actor.new(30, true), Actor.new(20, false), Actor.new(99, false)]
 $world_story = $world_story.merge("caps" => [10, 40, 65])
 overview.forget_model(:unlocks)
 overview.on_map
-check("once the world's story raised the level cap, the head lists each formation member's level and catch-up experience up to the level it holds",
-      [overview.model(:unlocks).head.title, overview.model(:unlocks).head.grid], ["Catch-up EXP until level 40", [["Luka", "Lv 30", "x4"], ["Lv20", "Lv 20", "x7"]]])
+check("once the world's story raised the level cap, the DLL hears the level characters catch up to, and the head lists each formation member's level and catch-up experience",
+      [$overviews.asked("overview.unlocks").last["target"], overview.model(:unlocks).head.grid], [40, [["Luka", "Lv 30", "x4"], ["Lv20", "Lv 20", "x7"]]])
 check("its view shows them in a grid, the factor in the title color", unlocks_view.instance_variable_get(:@head_value)[:grid],
       [["Luka", "Lv 30", { :text => "x4", :color => :title }], ["Lv20", "Lv 20", { :text => "x7", :color => :title }]])
 $uncounted = ["Lv20"]
@@ -694,34 +757,35 @@ check("a Classic world has no Unlocks page, which turns back to the Players page
 $raid = true
 overview.on_map
 check("the Unlocks page coming back leaves the page shown", overview.page, :players)
+# A raid boss's row as the DLL lays it out: its share left over a gauge, and its pane's lines.
+boss_row = lambda do |section, name, share, parts, defeated, by, tier|
+  pane = [["text", section, 0]] + (tier ? [["text", tier, 0]] : []) + [["gauge", share, parts]] + (by ? [["text", "Last hurt by #{by}.", 0]] : [])
+  ["entry", [nil, name, share, defeated, defeated ? nil : parts], ["boss", section, name, defeated, by, pane]]
+end
+bandits = boss_row.call("Part 1", "Four bandits", "100%", 1_000_000, false, nil, "Tier 9: enemies have HP x5.")
+$overviews.set("overview.world", page_of.call(["Players online: 3 / 8", "Story: Part 2"], [["fold", [nil, "▾ Part 1 (1)", nil, false, nil], ["fold", "Part 1", "Part 1 (1)", true]], bandits], [0, 1]))
 overview.turn_to(:world, "the test")
 world = overview.model(:world)
 sections = MGQ_MpRaidBosses.sections
-check("a Raid World heads its type and difficulty, its players and its story, then lists its raid bosses under a heading per section with how many it holds",
-      [world.head.note, world.head.lines, [world.rows.first[0], world.rows.first[1].value[2]]], ["Raid | Hard", ["Players online: #{online} / 8", "Story: Part 2"], [:fold, "Part 1 (#{sections[0][1].size})"]])
-# Tells a page's section headings without their counts.
-headings = lambda { |model| model.rows.select { |kind, _| kind == :fold }.map { |_, fold| fold.value[2].sub(/ \(\d+\)\z/, "") } }
-bosses = world.rows.select { |kind, _| kind == :entry }.map { |_, entry| entry.value }
-check("at Part 2 only Part 1 and Part 2 follow, each boss once in the order the story meets them, untouched while the relay told no pool",
-      [headings.call(world), bosses.map { |boss| boss[2] }, bosses.first[3, 2], bosses.last[3, 2]],
-      [["Part 1", "Part 2"], sections[0][1] + sections[1][1], [false, nil], [false, nil]])
-check("a boss's row tells its share left over a gauge, its pane its section, its tier with what it changes and its gauge",
+asked_world = $overviews.asked("overview.world").last
+check("a Raid World's page hands the DLL the world's story, the sections of the raid bosses, each boss's section and tier and each tier's stats, the head noting its type and difficulty",
+      [world.head.note, asked_world.values_at("seats", "story"), asked_world["sections"].first[0], asked_world["bosses"]["Four bandits"], asked_world["tiers"].first],
+      ["Raid | Hard", [8, { "part" => "2", "done" => [] }], sections.first[0].to_s, ["Part 1", 9], [0, [["mhp", "50.0"], ["def", "5.0"], ["mdf", "5.0"]]]])
+check("a boss's row tells its share left over a gauge, its pane the lines the DLL wrote, the gauge's share in whole parts",
       [world.rows[1][1].row.to_a, overview.pane_of(world.rows[1][1]).to_a],
       [[nil, "Four bandits", "100%", false, 1.0], ["Four bandits", nil, [[:text, "Part 1"], [:text, "Tier 9: enemies have HP x5."], [:gauge, 1.0, "100%"]]]])
 check("a boss's section is found by its troop or its name",
       [MGQ_MpRaidBosses.section(838), MGQ_MpRaidBosses.section("1509"), MGQ_MpRaidBosses.section("Tamamo (cap 83)"), MGQ_MpRaidBosses.section(2221), MGQ_MpRaidBosses.section("Chaos Maria"), MGQ_MpRaidBosses.section("Nobody")],
       ["Part 2", "Part 3", "Monster Realm", "Chaos route", "Chaos Domain", nil])
-# Tells the section headings the World page shows for a world's story.
+# Tells the story the World page hands the DLL for a world's story.
 reached = lambda do |story|
   $world_story = story
-  headings.call(overview.world_model)
+  overview.world_model
+  $overviews.asked("overview.world").last["story"]
 end
-every = sections.map(&:first)
-check("the sections shown follow the world's story: Part 1 from the start, Part 3 on every route, a route once under way or finished, the Chaos route with all",
-      [reached.call("part" => "1"), reached.call("part" => "3"), reached.call("part" => "ad"), reached.call("part" => "mr", "done" => ["ad"]),
-       reached.call("part" => "chaos", "done" => ["ad", "mr"]), reached.call("part" => "3", "done" => ["chaos"])],
-      [every[0, 1], every[0, 3], every[0, 4], every[0, 5], every, every])
-check("before the relay told the story no section shows without a pool, which says so", [reached.call(nil), overview.world_model.rows], [[], [[:none, "No raid bosses yet."]]])
+check("the world's story goes to the DLL with its part and the routes done, none before the relay told it",
+      [reached.call("part" => "mr", "done" => ["ad"]), reached.call("part" => "chaos", "done" => [:ad, "mr"]), reached.call(nil)],
+      [{ "part" => "mr", "done" => ["ad"] }, { "part" => "chaos", "done" => ["ad", "mr"] }, nil])
 $world_story = { "part" => "2" }
 check("the title says the type and the difficulty after the world's name", [overview.world_name, overview.title_tail], ["Test World", " | Raid | Hard"])
 titles_asked = lambda { rules_bridge.calls.count { |topic, _| topic == "overview.title" } }
@@ -729,12 +793,9 @@ before = titles_asked.call
 3.times { overview.title_tail }
 check("the title is asked once while the type and the difficulty stay", [before > 0, titles_asked.call - before], [true, 0])
 $difficulty = nil
-check("without a difficulty the type alone", overview.title_tail, " | Raid")
+check("a changed difficulty asks the DLL again", [overview.title_tail, $rule_answers.asked("overview.title").last], [" | Raid", { "raid" => true, "difficulty" => nil }])
 $difficulty = 1
-$world_story = { "part" => "mr" }
-check("the world's part goes to the DLL, which names a route as the player's own", overview.world_model.head.lines.last, "Story: Part 3: Judgment route")
 $world_story = nil
-check("before the relay told the story", overview.world_model.head.lines.last, "Story: Not told yet")
 
 # The story's objective is what Amira's event tells when asked for information.
 # An event command: its code, indent and parameters.
@@ -767,10 +828,13 @@ check("the main quest is Amira's words in a branch, plain, past her network's br
       [["Head to the Tartarus rift south of Iliasville."], ["Cross the eastern mountains."], ["Your party has 3 members."], nil])
 $world_story = { "part" => "1" }
 $game_variables[1001] = 5
+objective_row = ["entry", ["Objective", "Head to the Tartarus rift.", nil, false, nil], ["note", "Objective", ["Head to the Tartarus rift south of Iliasville.", "Then rest."]]]
+$overviews.set("overview.world", page_of.call(["Players online: 3 / 8", "Story: Part 1"], [objective_row], [0]))
 note = overview.world_model.rows.first[1]
-check("the World page lists it first as the objective, its first sentence in the row and all of it in the pane",
-      [note.value[1], note.row.to_a, overview.pane_of(note).lines],
-      ["Objective", ["Objective", "Head to the Tartarus rift south of Iliasville.", nil, false, nil], [[:text, "Head to the Tartarus rift south of Iliasville."]]])
+check("the World page hands the DLL the objective, and the objective's pane lays its texts out a gap apart",
+      [$overviews.asked("overview.world").last["main"], note.row.to_a, overview.pane_of(note).to_a],
+      [["Amira", ["Head to the Tartarus rift south of Iliasville."]], ["Objective", "Head to the Tartarus rift.", nil, false, nil],
+       ["Objective", nil, [[:text, "Head to the Tartarus rift south of Iliasville."], [:gap], [:text, "Then rest."]]]])
 
 # The Quests page: the main quest, Amira's side quests and the board's companion quests.
 # Makes the command that marks where a quest's entry starts.
@@ -868,13 +932,26 @@ check("the side quests and the main quest have no portrait of their own", [overv
 check("the portraits are sprites until the player picks faces, which Player.ini keeps",
       [overview.portraits, (overview.choose_portraits("Faces"); overview.portraits), $player_ini["quest_portraits"], (overview.choose_portraits("Bogus"); overview.portraits)],
       ["Sprites", "Faces", "Faces", "Sprites"])
+# A quest's row as the DLL lays it out: its label and first sentence, and the quest.
+quest_row = lambda { |kind, label, speaker, texts, number, title| ["entry", [label, texts[0], nil, false, nil], ["quest", kind, speaker, texts, number, title]] }
+quests_page = page_of.call(["Cross the mountains."],
+                           [["fold", [nil, "▾ Side quests (2)", nil, false, nil], ["fold", "side", "Side quests (2)", true]],
+                            quest_row.call("side", "1.", "Amira", ["Strange crying near Iliasville."], 1, "Side quest 1 · Amira"),
+                            quest_row.call("side", "2.", "Amira", ["A troublesome job.", "Go to the slums."], 2, "Side quest 2 · Amira"),
+                            ["fold", [nil, "▾ Companion quests (3)", nil, false, nil], ["fold", "companion", "Companion quests (3)", true]],
+                            quest_row.call("companion", "Rami", "Rami", ["Take me to Harpy Village♪"], nil, "Request · Rami"),
+                            quest_row.call("companion", "Kamuro", "Kamuro", ["Homework."], nil, "Request · Kamuro"),
+                            quest_row.call("companion", "ポチ", "ポチ", ["犬に会いたい"], nil, "Request · ポチ")],
+                           [-1, 0, 1, 2, 3, 4, 5, 6],
+                           "title" => "Main quest", "entry" => ["quest", "main", "Amira", ["Cross the mountains.", "Buy golden equipment."], nil, "Main quest · Amira"])
+$overviews.set("overview.quests", quests_page)
 $frame = $frame.to_i + overview::READ_FRAMES
 data = overview.model(:quests)
-check("the quests go to the DLL, whose list heads the side and companion quests with how many each holds, the main quest first among those to pick",
-      [data.rows.map { |kind, value| [kind, kind == :entry ? value.row.text : value.value[2]] }, data.picks.map { |pick| pick.kind == "fold" ? pick.value[2] : pick.value[3].first }],
-      [[[:fold, "Side quests (2)"], [:entry, "Strange crying near Iliasville."], [:entry, "A troublesome job."],
-        [:fold, "Companion quests (3)"], [:entry, "Take me to Harpy Village♪"], [:entry, "Homework."], [:entry, "犬に会いたい"]],
-       ["Cross the mountains.", "Side quests (2)", "Strange crying near Iliasville.", "A troublesome job.", "Companion quests (3)", "Take me to Harpy Village♪", "Homework.", "犬に会いたい"]])
+check("the quests the script reads go to the DLL, each by who tells it with its texts",
+      $overviews.asked("overview.quests").last,
+      { "main" => ["Amira", ["Cross the mountains.", "Buy golden equipment."]],
+        "side" => [["Amira", ["Strange crying near Iliasville."]], ["Amira", ["A troublesome job.", "Go to the slums."]]],
+        "companion" => [["Rami", ["Take me to Harpy Village♪"]], ["Kamuro", ["Homework."]], ["ポチ", ["犬に会いたい"]]] })
 check("the head holds Amira with the main quest's first sentence, its pane titled by who tells it", [data.head.title, data.head.lines, data.head.entry.equal?(data.picks.first), overview.pane_of(data.picks.last).title],
       ["Main quest", ["Cross the mountains."], true, "Request · ポチ"])
 
@@ -916,23 +993,29 @@ $game_variables[1001] = 12
 $game_variables[1004] = 1
 $game_switches[2018] = true
 $class_levels = false
+side_none = ["fold", [nil, "▾ Side quests (0)", nil, false, nil], ["fold", "side", "Side quests (0)", true]]
+companion_none = ["fold", [nil, "▾ Companion quests (0)", nil, false, nil], ["fold", "companion", "Companion quests (0)", true]]
+$overviews.set("overview.quests", page_of.call(["None right now."], [side_none, ["none", "None right now."], companion_none, ["none", "None right now."]], [0, 2], "title" => "Main quest"))
 $frame = $frame.to_i + overview::READ_FRAMES
 data = overview.model(:quests)
-check("with nothing to tell the main quest is gone and each list says so",
-      [data.head.entry, data.head.lines, data.rows.select { |kind, _| kind == :none }.map(&:last), data.picks.map { |pick| pick.value[2] }],
-      [nil, ["None right now."], ["None right now."] * 2, ["Side quests (0)", "Companion quests (0)"]])
+check("with nothing to tell the DLL hears no quest, and the page has no main quest to pick",
+      [$overviews.asked("overview.quests").last, data.head.entry, data.picks.map { |pick| pick.value[2] }],
+      [{ "main" => nil, "side" => [], "companion" => [] }, nil, ["Side quests (0)", "Companion quests (0)"]])
 overview.on_map
 check("its view: no pick on the head, a dim line under each group", [quests.instance_variable_get(:@head_value).key?(:pick), quests.list.rows.map { |row| row[:heading] || row[:text] }],
       [false, ["▾ Side quests (0)", "None right now.", "▾ Companion quests (0)", "None right now."]])
+$overviews.set("overview.quests", page_of.call(["None right now."], [["fold", [nil, "▸ Side quests (0)", nil, false, nil], ["fold", "side", "Side quests (0)", false]], companion_none,
+                                                                     ["none", "None right now."]], [0, 1], "title" => "Main quest"))
 tell.call([quests.list.node, "submit", 0])
-check("the quest groups fold too, which the DLL keeps", [overview.model(:quests).rows.first[1].value, quests.list.rows.first[:text]],
-      [["fold", "side", "Side quests (0)", false], "▸ Side quests (0)"])
+check("the quest groups fold too, through the DLL", [$overviews.asked("overview.fold").last, quests.list.rows.first[:text]],
+      [{ "page" => "quests", "key" => "side", "open" => false }, "▸ Side quests (0)"])
 tell.call([quests.list.node, "submit", 0])
 overview.turn_to(:world, "the test")
 $frame = $frame.to_i + overview::READ_FRAMES
 $data_common_events = nil
 objective.call(5)
-check("without Amira's event the World page lists no objective", overview.world_model.rows.any? { |kind, entry| kind == :entry && entry.kind == "note" }, false)
+overview.world_model
+check("without Amira's event the World page hands the DLL no objective", $overviews.asked("overview.world").last["main"], nil)
 $world_story = nil
 $world_story = { "part" => "2" }
 
@@ -943,21 +1026,15 @@ $pools = { "Queen Harpy" => pool.new(0.4, 6000, false, "Player A", told), "Four 
            "Metatronne and Sandalphone#0" => pool.new(0.5, 9000, false, "Player C", told), "Metatronne and Sandalphone#1" => pool.new(1.0, 9000, false, "Player D", told + 1),
            "Fourth Law" => pool.new(0.25, 1, false, "", told), "Sisel" => pool.new(0.9, 1, false, "Player E", told),
            "Unknown Boss" => pool.new(0.5, 1, false, "Player F", told) }
-pooled = overview.world_model
-# Finds a raid boss of the World page by its name: its section, its row and its pane's lines.
-boss_named = lambda do |name|
-  entry = pooled.rows.map { |_, value| value }.find { |value| value.is_a?(overview::Entry) && value.kind == "boss" && value.value[2] == name }
-  [entry.value[1], entry.row.to_a, overview.pane_of(entry).lines]
-end
-check("the tables hand the DLL each pooled boss's section and tier, also of a fight's own pool by its troop, and an unknown boss goes under Other last",
-      [headings.call(pooled), boss_named.call("Sisel")[0], boss_named.call("Sisel")[2][1], boss_named.call("Unknown Boss")[0]],
-      [["Part 1", "Part 2", "Angelic Dominion", "Chaos route", "Chaos Domain", "Other"], "Chaos route", [:text, "Tier 2: enemies have HP x40, DEF x3.67, MDF x3.67."], "Other"])
-check("a pool tells a boss's share left and who last hurt it, a boss of several enemies sharing its pools' HP, an empty one defeated",
-      [boss_named.call("Queen Harpy")[1], boss_named.call("Queen Harpy")[2].last, boss_named.call("Metatronne and Sandalphone")[1][2], boss_named.call("Four bandits")[1]],
-      [[nil, "Queen Harpy", "40%", false, 0.4], [:text, "Last hurt by Player A."], "75%", [nil, "Four bandits", "Defeated", true, nil]])
-$world_story = nil
-check("before the relay told the story only the sections with a pool show", headings.call(overview.world_model), ["Part 1", "Angelic Dominion", "Chaos route", "Chaos Domain", "Other"])
-$world_story = { "part" => "2" }
+harpy = boss_row.call("Part 1", "Queen Harpy", "40%", 400_000, false, "Player A", "Tier 9: enemies have HP x5.")
+defeated = boss_row.call("Part 1", "Four bandits", "Defeated", 0, true, "Player B", nil)
+$overviews.set("overview.world", page_of.call(["Players online: 3 / 8", "Story: Part 2"], [["fold", [nil, "▾ Part 1 (2)", nil, false, nil], ["fold", "Part 1", "Part 1 (2)", true]], defeated, harpy],
+                                              [0, 1, 2]))
+overview.world_model
+bosses = $overviews.asked("overview.world").last["bosses"]
+check("the tables hand the DLL each pooled boss's section and tier, also of a fight's own pool by its troop, none for a boss they do not know",
+      [bosses["Sisel"], bosses["Metatronne and Sandalphone"], bosses["Unknown Boss"]],
+      [["Chaos route", 2], ["Angelic Dominion", 4], [nil, nil]])
 
 # The World page in its view: the raid bosses under their sections, each with a thin gauge, a
 # boss's pane, the title and the gold mark of a call waiting on the Players page.

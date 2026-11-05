@@ -2,7 +2,8 @@
 //  EventTopicsTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Checked that a sort answers the one decision of where its list runs
+//      Paulinchen  2026-11-05: Checked the castle's maps and a map's chests and pages without the events database, and a resumed fight's page as story
+//                            - Checked that a sort answers the one decision of where its list runs
 //                            - Expected the Library's switch among the values a sort needs
 //                            - Checked that the battlefuck events are read once and stay while the common events differ
 //      Paulinchen  2026-10-30: Kept the database fingerprint format in the differing game data
@@ -84,8 +85,8 @@ public sealed class EventTopicsTests
     /// <summary>
     /// Asserts that a sort answers the one decision of where its list runs, whatever list it is: a
     /// list handed over that is the game's transfer process (common event 114) runs in the player's
-    /// own game, and one that calls the maid's party saves is a talk on the Pocket Castle's maps only,
-    /// never turning into story there.
+    /// own game, one that calls the maid's party saves is a talk on the Pocket Castle's maps only,
+    /// never turning into story there, and a resumed raid fight's page is story whatever it holds.
     /// </summary>
     [Fact]
     public void Sort_AnswersWhereTheListRuns()
@@ -107,6 +108,7 @@ public sealed class EventTopicsTests
         Assert.Equal(("talk", false), (Sort(maid, ("map", 228))["kind"].AsText(), Sort(maid, ("map", 228))["may_tell"] is RubyBool { Flag: true }));
         Assert.Equal(new RubyHash { { "story", false } }, _topics.Call(EventTopics.Sort, new RubyHash { { "list", maid }, { "map", 228 }, { "index", 5 }, { "values", Values(0) } }));
         Assert.Equal(("talk", true), (Sort(maid, ("map", 1))["kind"].AsText(), Sort(maid, ("map", 1))["may_tell"] is RubyBool { Flag: true }));
+        Assert.Equal(("story", "story"), (Sort(maid, ("map", 1), ("resumed", true))["kind"].AsText(), Sort(maid, ("map", 1), ("resumed", true))["list_kind"].AsText()));
     }
 
     /// <summary>
@@ -190,20 +192,28 @@ public sealed class EventTopicsTests
     }
 
     /// <summary>
-    /// Asserts that a mod folder without the events database answers why, and still sorts the lists
-    /// the scripts hand over.
+    /// Asserts that a mod folder without the events database answers why and names the castle's
+    /// maps, still sorts the lists the scripts hand over, and knows no chest or page flags of a map.
     /// </summary>
     [Fact]
     public void Open_WithoutTheDatabase_SortsOnlyTheListsHandedOver()
     {
         using var folder = new TempFolder();
         var missing = new GameEvents(() => EventStore.Open(Path.Combine(folder.Path, EventSchema.GamePath)), () => new TinyGame().Files(), _ => { });
-        var topics = new TopicCaller(context => EventTopics.Register(context, () => missing));
+        var topics = new TopicCaller(context =>
+        {
+            EventTopics.Register(context, () => missing);
+            EventTableTopics.Register(context, () => missing);
+        });
 
         RubyHash opened = topics.Call(EventTopics.Open, new RubyHash { { "fingerprint", "1:0.0.0.0.0.0.0.0.0.0.0" } })!.AsHash();
+        var rows = new RubyHash { { "map", 1 }, { "rows", new RubyArray { new RubyArray { 2, 0, 4, 1 } } } };
 
         Assert.False(opened["usable"].AsBool());
         Assert.StartsWith("no events database at ", opened["problem"].AsText(), StringComparison.Ordinal);
+        Assert.Equal((new RubyArray(), new RubyArray { 227, 228, 229, 230, 268, 269, 270, 271, 272, 273, 274, 275, 276, 277, 278 }), (opened["differing"], opened["castle_maps"]));
+        Assert.Equal(new RubyHash { { "letters", new RubyArray { RubyNil.Value } } }, topics.Call(EventTableTopics.Chests, rows));
+        Assert.Equal(new RubyHash { { "pages", new RubyArray { RubyNil.Value } } }, topics.Call(EventTableTopics.Pages, rows));
         Assert.Equal(new RubyHash { { "unknown", true } }, topics.Call(EventTopics.Sort, new RubyHash { { "map", 1 }, { "event", 2 }, { "page", 0 }, { "size", 4 }, { "shape", 1 } }));
         Assert.Equal("talk", topics.Call(EventTopics.Sort, new RubyHash { { "list", new RubyArray { Row(101, 0, ["", 0, 0, 2]), Row(0, 0, []) } }, { "values", Values(0) } })!.AsHash()["kind"].AsText());
     }

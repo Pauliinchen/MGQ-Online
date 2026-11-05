@@ -2,6 +2,8 @@
 #  make_rows.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Read the relay's seed rules itself instead of through the script tests' support
+#                            - Read the choices' keys from their golden cases instead of the script tests' stand-in
 #      Paulinchen  2026-10-28: Recorded the cases from the catch-up engine of engine.rb, as the script's decisions moved to it
 #                            - Created
 #
@@ -10,19 +12,27 @@
 # Writes the golden cases of the catch-up's row rules next to this file, rows.json, from the
 # catch-up engine as world_catchup.rbx decided it (engine.rb) over the generated tables in
 # fixtures/catchup/generated and the relay's seed rules, with the choices'
-# outcomes the DLL names a Raid World player's own, as the script tests answer them
-# (GameScript/Tests/choices_support.rb): for stories at places of the story, which rows of each
+# outcomes the DLL names a Raid World player's own, as the choices' golden cases record them
+# (fixtures/choices/cases.json): for stories at places of the story, which rows of each
 # table the story is past (passed?), alone
 # and with the world's story (passed_any?), which key items a later row took back (taken_since?),
 # which companions are on a visit (visiting?), which joins a removal takes back (taking_back), which
 # removals come after which joins of the same companion (after?), and where a player moves on to
-# (next_part). MGQOnline.Game.Tests replays them against StoryRows. Run it again only when a case
-# is added or the rules changed:
+# (next_part). MGQOnline.Game.Tests replays them against StoryRows. A recording tool: no test runs
+# against it. Run it again only when a case is added or the rules changed:
 #
 #   ruby fixtures/catchup/make_rows.rb
 
 require "json"
-require_relative "../../GameScript/Tests/catchup_support"
+require_relative "engine"
+
+# Reads the rows of a seed file of the relay's story tables.
+#
+# @param table [String] The table, such as "rules".
+# @return [Array<Hash>] Its rows.
+def seed_rows(table)
+  JSON.parse(File.read(File.expand_path("../../Relay/seed/story/#{table}.json", __dir__), :encoding => "UTF-8"))["rows"]
+end
 
 # The generated tables and the relay's seed rules, as the DLL reads them with the story mapping.
 table_rows = {}
@@ -31,7 +41,7 @@ Dir[File.join(__dir__, "generated", "*.json")].each { |file| table_rows[File.bas
 TABLE_SET = CatchupEngine.read(table_rows)
 
 # The choices' outcomes, which only the player's own story holds.
-CHOICES = ChoicesStandIn.personal("raid" => true, "own" => nil)
+CHOICES = CatchupEngine::CHOICE_KEYS
 
 # Builds a story as the game's own data holds it: switches and self switches on, variables set.
 #

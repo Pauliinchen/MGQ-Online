@@ -2,7 +2,11 @@
 #  coop_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Handed a message no stand-in took to the scripts with its fields read by their kinds
+#      Paulinchen  2026-11-05: Answered the co-op topics with the values each test sets instead of a copy of the C# rules
+#                            - Handed a co-op message's fields as the test writes them instead of through a copy of the DLL's codec
+#                            - Wrote and read the roster's lines as fake lines and checked the stand-in's level alone against its golden cases, the lines' cases being C#'s
+#                            - Took the joins from the messages the live battle's fixed answers keep
+#                            - Handed a message no stand-in took to the scripts with its fields read by their kinds
 #                            - Wrote and read the roster's lines with the codec's stand-in
 #                            - Told the battle's players in rbn whether or not it takes players in, as JoinIntake.Told does
 #                            - Told whether the running battle takes players in or why not as JoinIntake.Told does
@@ -17,739 +21,188 @@
 #
 #----------------------------------------------------------------
 
-# What the tests of the co-op battles share, which battle_support.rb loads: the DLL's and the
-# battle server core's side of the co-op battles (MGQOnline.Game's Coop folder, behind CoopTopics)
-# on the test's one stand-in bridge. CoopStandIn answers the topics as C# does and is checked
-# against the golden cases of fixtures/coop, which battles_coop*.rbx played before the rules left
-# them, as this file loads; the roster's lines are written and read with the codec's stand-in, read
-# into the objects battles_sync_wire.rbx makes of them, which it loads unless a test did.
+# Answers the topics of the co-op battles (MGQOnline.Game's Coop folder behind CoopTopics, and the
+# matchmaking, asking and joining sides behind CoopRoomTopics) on a FakeBridge with the fixed values
+# each test sets for its case, and hands the scripts the DLL's co-op events. Unless a test sets an
+# answer, the DLL has nothing to say: no step to take, a quiet status, nobody joined, no roster yet. The
+# roster's, the party's and the troop's lines are fake lines (wire_support.rb), read back as they
+# were written. Every rule (whom a battle invites and when, the waits, the intake, the places, the
+# level, the repair, the joins) is the C# tests' to cover.
 
-require "json"
+require_relative "bridge_support"
 require_relative "wire_support"
-load_script "battles_sync_wire" unless defined?(MGQ_MpBattlesSync::Wire)
 
-# Folder of the co-op battles' golden cases.
-COOP_FIXTURES = File.expand_path("../../fixtures/coop", __dir__)
+# Stands in for the DLL's answers of the co-op battles.
+class CoopAnswers
+  include NotedRequests
 
-# Reads a golden file of the co-op battles.
-#
-# @param name [String] The file, such as "placement.json".
-# @return [Hash] Its content.
-def coop_cases(name)
-  JSON.parse(File.read(File.join(COOP_FIXTURES, name), :encoding => "UTF-8"))
-end
+  # The topics answered.
+  TOPICS = %w(coop.offer coop.host coop.poll coop.frame coop.release coop.steps coop.freeze_party coop.raid_candidates coop.take_off coop.leader_wait
+              coop.leader_end coop.yield coop.decline_waiting coop.refuse_lead coop.clear coop.drop coop.ask_off coop.gather coop.roster_wait
+              coop.ask coop.ask_wait coop.ask_party_wait coop.ask_party_end coop.ask_end coop.ask_release coop.ask_undo coop.ask_abandon coop.ask_forget
+              coop.party_offers coop.accept_party coop.decline_party coop.join_frame coop.pending coop.place coop.write_widths coop.keep_widths
+              coop.read_entries coop.write_entries coop.intake coop.room coop.level coop.write_roster coop.write_party coop.read_roster coop.read_party
+              coop.read_troop coop.repair coop.settle).freeze
 
-# Stands in for the co-op battles' rules in C#, each topic's request in, its reply out.
-module CoopStandIn
-  # The enemies a troop holds at most.
-  TROOP_LIMIT = 8
+  # The topics that answer the matchmaking's status with the steps to take.
+  STATUS_TOPICS = %w(coop.offer coop.host coop.poll coop.release coop.yield coop.decline_waiting coop.clear coop.drop coop.take_off coop.ask
+                     coop.ask_undo coop.ask_abandon coop.ask_forget coop.accept_party coop.decline_party).freeze
 
-  # The share of the narrower of two pictures that may hide behind the other.
-  MAX_OVERLAP = 0.5
+  # The status of a matchmaking with nothing going on.
+  QUIET = { "holding" => false, "frozen" => false, "busy" => false, "waiting" => nil, "rival" => false, "asking" => false, "requested" => false,
+            "waits" => nil, "ask" => false, "ask_party" => false, "join_waits" => false }.freeze
 
-  # The pixels between two places an added enemy may stand at.
-  PLACE_STEP = 8
+  # What a frame of the join prompt answers besides the status unless a test sets it.
+  PROMPT = { "target" => nil, "side" => nil, "freeze" => nil, "busy_reason" => nil, "asked" => false, "not_taken" => nil }.freeze
 
-  # The players a battle holds at most.
-  PLAYERS = 4
+  # What a topic, or a topic's step, answers unless a test sets it.
+  DEFAULTS = { "coop.leader_wait" => "silent", "coop.ask_wait" => "silent", "coop.ask_party_wait" => "done", "coop.ask_off" => false,
+               "coop.raid_candidates" => [], "coop.party_offers" => [], "coop.place" => [], "coop.read_entries" => [], "coop.write_widths" => "",
+               "coop.write_entries" => "", "coop.room" => { "rbn" => 0, "rbs" => "open" }, "coop.level" => { "level" => nil, "log" => "no level" },
+               "coop.gather frame" => true, "coop.gather end" => { "joined" => [], "outcomes" => [], "frames" => 0 },
+               "coop.roster_wait frame" => { "roster" => nil, "late" => false, "frames" => 1 },
+               "coop.pending release" => [], "coop.pending expire" => [], "coop.pending joins" => [], "coop.pending take_off" => false,
+               "coop.pending call_off" => [], "coop.pending queued" => [], "coop.pending count" => 0, "coop.pending seats" => [] }.freeze
 
-  # The widest picture a request may tell.
-  MAX_WIDTH = 65535
-
-  # The widths the requests to join a battle told, by enemy id, and that battle's id.
-  @widths = {}
-  @battle = nil
-
-  # Answers a topic.
+  # Answers the topics on a bridge.
   #
-  # @param topic [String] The topic, such as "coop.place".
-  # @param request [Object] The request.
-  # @return [Object] The reply.
-  def self.answer(topic, request)
-    case topic
-    when "coop.place" then place_first(request)
-    when "coop.write_widths" then request.map { |id, width| "#{id}:#{width}" }.join(";")
-    when "coop.keep_widths" then note_widths(request["bid"].to_s, request["widths"]) && nil
-    when "coop.read_entries" then read_entries(request)
-    when "coop.write_entries" then request.map { |entry| entry.first(4).join(":") }.join(";")
-    when "coop.intake" then intake(request)
-    when "coop.room" then { "rbn" => request["bid"].nil? || request["role"] == "guest" ? 0 : players_in(request), "rbs" => closed(request) ? closed(request)[0] : "open" }
-    when "coop.level" then level(request)
-    when "coop.write_roster" then wire.line(request.key?("turn") ? request.values_at("enemies", "players", "level", "turn") : request.values_at("enemies", "players", "level"))
-    when "coop.write_party" then wire.line([request])
-    when "coop.read_roster" then read_roster(request)
-    when "coop.read_party" then read_players(Array(wire_values(request.to_s))[0])
-    when "coop.read_troop" then read_troop(request)
-    when "coop.repair" then repair(request["enemies"], request)
-    when "coop.settle" then settle(request)
-    end
+  # @param fake [FakeBridge] The bridge.
+  def initialize(fake)
+    @fake = fake
+    @asked = []
+    @fixed = {}
+    TOPICS.each { |topic| fake.answer(topic) { |request| answer(topic, request) } }
   end
 
-  # The battle line codec's stand-in.
+  # Sets what a topic answers, for every step or for one: a value, or a block that makes it of the
+  # request. A status topic's answer is merged over the status and no step.
   #
-  # @return [Module] WireStandIn.
-  def self.wire
-    WireStandIn
+  # @param key [String] The topic, or the topic and its step, such as "coop.gather end".
+  # @param value [Object] The answer, nil to answer as before the test set one.
+  # @yieldparam request [Object] The request.
+  def set(key, value = nil, &block)
+    block || !value.nil? ? @fixed[key] = (block || value) : @fixed.delete(key)
   end
 
-  # Answers coop.level.
+  # Has the DLL's matchmaking host every battle the game sets up as one battle, or no longer.
   #
-  # @param request [Hash] The request.
-  # @return [Hash] The level and its log line.
-  def self.level(request)
-    return { "level" => nil, "log" => "no level: a Raid World's battles sync none" } if request["raid"]
-
-    leader = request["players"].find { |player| player[1] }
-    return { "level" => nil, "log" => "no level: the party leader is not among the battle's players (seats #{request['players'].map(&:first).join(', ')})" } unless leader
-
-    levels = leader[2].map { |place| leader[3][place] }.compact
-    { "level" => levels.max, "log" => "level #{levels.max.inspect}: the highest of the leader's (seat #{leader[0]}) characters in the battle, at levels #{levels.join(', ')}" }
+  # @param bid [String, nil] The battle's id, nil to answer as before the test set one.
+  # @param seats [Array<Integer>] The seats it invites.
+  # @param label [String] Whom the waits name.
+  def hosts(bid, seats = [], label = "the party")
+    set("coop.offer", bid && { "actions" => [coop_step("join", "role" => "host", "bid" => bid, "seats" => seats, "label" => label)] })
   end
 
-  # Answers coop.read_roster.
+  # Has the host's gathering end with the joins the DLL took, each player's outcome "joined".
   #
-  # @param request [Hash] The request.
-  # @return [Hash] The roster.
-  def self.read_roster(request)
-    enemies, players, level, turn = Array(wire_values(request["line"].to_s))
-    read_players(players).merge(repair(plain_enemies(enemies), request)).merge(
-      "size" => Array(enemies).size, "level" => level.is_a?(Integer) ? level : nil, "turn" => turn.is_a?(Integer) ? turn : nil)
+  # @param joined [Array<Array>] Each player's seat and join, none for a gathering nobody joined.
+  def gathered(*joined)
+    set("coop.gather end", "joined" => joined, "outcomes" => joined.map { |seat, body| [seat, "joined (#{body.to_s.size} bytes)"] }, "frames" => 3)
   end
 
-  # Answers coop.read_troop.
+  # Has a guest's wait for the roster take a roster at its first frame, or run late there.
   #
-  # @param request [Hash] The request.
-  # @return [Hash] The troop.
-  def self.read_troop(request)
-    entries, names = Array(wire_values(request["line"].to_s))
-    repair(plain_enemies(entries), request).merge("names" => names.is_a?(String) ? names : nil)
+  # @param line [String, nil, false] The roster, false to run late, nil to answer as before the test
+  #   set one.
+  def roster(line)
+    set("coop.roster_wait frame", line.nil? ? nil : { "roster" => line || nil, "late" => line == false, "frames" => 1 })
   end
 
-  # Reads the players of a line, noting their fields of the wrong kind.
+  # Hands the scripts the matchmaking's status as the DLL's coop.status event does once a co-op
+  # message changed it; the topics answer a quiet status unless a test sets otherwise.
   #
-  # @param list [Object] The players.
-  # @return [Hash] "players" and "dropped".
-  def self.read_players(list)
-    dropped = []
-    players = Array(list).map do |fields|
-      seat, name, builds, vitals, max, order, front, bench = Array(fields).first(8)
-      unless seat.is_a?(Integer)
-        dropped << ["seat", seat.class.name, "a player's"]
-        next nil
-      end
-
-      dropped << ["vitals", vitals.class.name, "a player's"] unless vitals.is_a?(Array)
-      vitals = vitals.is_a?(Array) ? vitals.map { |entry| vitals_of(entry) } : []
-      counts = { "max" => max, "order" => order, "front" => front, "bench" => bench }.map do |field, value|
-        fits = field == "order" ? value.is_a?(Array) && value.all? { |place| place.is_a?(Integer) && place >= 0 } : value.is_a?(Integer) && value >= 0
-        next value if value.nil? || fits
-
-        dropped << [field, value.class.name, "a player's"]
-        nil
-      end
-      [seat, name.to_s, builds.to_s, vitals] + counts
-    end
-    { "players" => players.compact, "dropped" => dropped }
+  # @param fields [Hash] The status' fields that are not quiet, none for a quiet status.
+  def status(fields = {})
+    @fake.post("coop.status", QUIET.merge(fields))
+    MGQ_Multiplayer::Bridge.frame
   end
 
-  # Reads a character's HP and MP as the battle takes them.
+  # Hands the scripts a co-op message the DLL's routes leave to them, as the coop.message event does.
   #
-  # @param entry [Object] The HP and MP.
-  # @return [Array, nil] The numbers, others as nil; nil for none.
-  def self.vitals_of(entry)
-    return entry.map { |value| value.is_a?(Integer) ? value : nil } if entry.is_a?(Array)
-
-    entry.is_a?(Integer) ? [entry] : nil
+  # @param peer [Object] Who sent it.
+  # @param fields [Hash] The message's fields as the DLL reads them, its kind under "coop".
+  def message(peer, fields)
+    @fake.post("coop.message", "seat" => peer.seat, "fields" => fields)
+    MGQ_Multiplayer::Bridge.frame
   end
 
-  # Writes the host's enemies as the scripts hand them over, see MGQ_MpBattlesCoop.plain_enemies.
-  #
-  # @param enemies [Object] The enemies.
-  # @return [Array] The enemies.
-  def self.plain_enemies(enemies)
-    Array(enemies).map { |entry| entry.is_a?(Array) ? Array.new(4) { |index| entry[index].is_a?(Integer) ? entry[index] : entry[index].class.name } : entry.class.name }
-  end
-
-  # Repairs the host's enemies against this game's troop.
-  #
-  # @param enemies [Array] The enemies, plain.
-  # @param request [Hash] "own" and "count".
-  # @return [Hash] "enemies", "enemy_dropped" and "lacking".
-  def self.repair(enemies, request)
-    dropped = []
-    repaired = []
-    enemies.each_with_index do |entry, index|
-      return { "enemies" => nil, "enemy_dropped" => dropped << ["enemy", entry, "the host's troop for its"], "lacking" => [] } unless entry.is_a?(Array)
-      return { "enemies" => nil, "enemy_dropped" => dropped << ["id", entry[0], "the host's troop for its enemy"], "lacking" => [] } unless entry[0].is_a?(Integer)
-
-      x, y = request["own"][index] || [0, 0]
-      fields = { "x" => x, "y" => y, "mark" => 0 }.each_with_index.map do |(field, fallback), offset|
-        value = entry[offset + 1]
-        next value if value.is_a?(Integer)
-
-        dropped << [field, value, "the host's enemy"]
-        fallback
-      end
-      repaired << [entry[0]] + fields
-    end
-    lacking = repaired.map(&:first).reject { |id| id > 0 && id < request["count"] }
-    { "enemies" => lacking.empty? ? repaired : nil, "enemy_dropped" => dropped, "lacking" => lacking }
-  end
-
-  # Answers coop.settle.
-  #
-  # @param request [Hash] The request.
-  # @return [Hash] Who stays, who left and what the host does.
-  def self.settle(request)
-    staying = request["players"].select { |seat| seat == request["own"] || request["in"].include?(seat) }
-    outcome = if staying.size == request["players"].size then "none"
-              elsif request["served"] && staying.empty? then "abandon"
-              elsif !request["served"] && staying.size == 1 then "solo"
-              else "reform"
-              end
-    { "staying" => staying, "left" => request["players"] - staying, "outcome" => outcome }
-  end
-
-  # Places the first of an encounter's enemies that still find a place, by the widths the battle
-  # kept where it has them.
-  #
-  # @param request [Hash] The request of coop.place.
-  # @return [Array<Array>] The enemies placed, [id, x, y] each.
-  def self.place_first(request)
-    bid = request["bid"].to_s
-    note_widths(bid, request["widths"]) if request.key?("widths")
-    width = lambda { |id, measured| bid == @battle && @widths.key?(id) ? @widths[id] : measured }
-    request = { "screen" => request["screen"],
-                "troop" => request["troop"].map { |id, x, measured, hidden, fallen| [x, width.call(id, measured), hidden, fallen] },
-                "queued" => request["queued"].map { |id, x, measured| [x, width.call(id, measured)] },
-                "entries" => request["entries"].map { |id, y, measured| [id, y, width.call(id, measured)] } }
-    count = request["entries"].size
-    count -= 1 until place(request, request["entries"].first(count)) || count == 0
-    place(request, request["entries"].first(count)) || []
-  end
-
-  # Keeps the widths a request tells for its battle, forgetting those of another battle.
-  #
-  # @param bid [String] The battle's id.
-  # @param text [String, nil] The widths, such as "31:160;32:600".
-  def self.note_widths(bid, text)
-    @widths = {} unless bid == @battle
-    @battle = bid
-    text.to_s.split(";").each do |entry|
-      id, width = fields = entry.split(":").map(&:to_i)
-      @widths[id] = width if fields.size == 2 && id > 0 && width > 0 && width <= MAX_WIDTH
-    end
-  end
-
-  # Places every one of some enemies.
-  #
-  # @param request [Hash] The request of coop.place.
-  # @param entries [Array<Array>] The enemies, [id, y, width] each.
-  # @return [Array<Array>, nil] The enemies placed, nil when one finds none.
-  def self.place(request, entries)
-    screen = request["screen"]
-    return nil if request["troop"].size + request["queued"].size + entries.size > TROOP_LIMIT
-
-    taken = request["troop"].reject { |_, _, hidden, fallen| hidden || fallen }.map { |x, width| span(x, width) }
-    taken.concat(request["queued"].map { |x, width| span(x, width) })
-    taken.reject! { |left, right| right - left >= screen }
-    entries.map do |id, y, width|
-      next [id, screen / 2, y] if width >= screen
-
-      x = free_x(width, taken, screen)
-      return nil unless x
-
-      taken << span(x, width)
-      [id, x, y]
-    end
-  end
-
-  # Finds the place where a picture hides least, the nearest to the middle among equals.
-  #
-  # @param width [Integer] The picture's width.
-  # @param taken [Array<Array<Integer>>] The others' edges.
-  # @param screen [Integer] The screen's width.
-  # @return [Integer, nil] The picture's middle, nil when every place hides too much.
-  def self.free_x(width, taken, screen)
-    half = width / 2
-    best = (half..(screen - half)).step(PLACE_STEP).to_a.min_by { |x| [crowding(x - half, x + half, taken), (x - screen / 2).abs] }
-    best && crowding(best - half, best + half, taken) <= MAX_OVERLAP ? best : nil
-  end
-
-  # Measures how much a picture hides behind others, or they behind it.
-  #
-  # @param left [Integer] Its left edge.
-  # @param right [Integer] Its right edge.
-  # @param taken [Array<Array<Integer>>] The others' edges.
-  # @return [Float] The largest share covered.
-  def self.crowding(left, right, taken)
-    taken.map do |other_left, other_right|
-      overlap = [right, other_right].min - [left, other_left].max
-      overlap > 0 ? overlap.to_f / [[right - left, other_right - other_left].min, 1].max : 0.0
-    end.max || 0.0
-  end
-
-  # Tells a picture's edges.
-  #
-  # @param x [Integer] Its middle.
-  # @param width [Integer] Its width.
-  # @return [Array<Integer>] The edges.
-  def self.span(x, width)
-    [x - width / 2, x + width / 2]
-  end
-
-  # Reads the enemies a request carries.
-  #
-  # @param text [String] The enemies.
-  # @return [Array<Array<Integer>>] Each enemy's fields.
-  def self.read_entries(text)
-    text.to_s.split(";").map { |entry| entry.split(":").map(&:to_i) }.select { |entry| entry.size == 4 && entry[0] > 0 }.first(TROOP_LIMIT)
-  end
-
-  # Counts the battle's players with those taken in.
-  #
-  # @param facts [Hash] The facts.
-  # @return [Integer] The count.
-  def self.players_in(facts)
-    facts["players"] + facts["pending"].size
-  end
-
-  # Tells why the battle takes nobody in now.
-  #
-  # @param facts [Hash] The facts.
-  # @return [Array<String>, nil] [code, reason], nil when it takes players in.
-  def self.closed(facts)
-    return ["pvp", "a PvP battle runs"] if facts["pvp"]
-
-    running(facts, "choice", nil) || full(facts)
-  end
-
-  # Tells why the battle the player fights takes nobody in for what it is now.
-  #
-  # @param facts [Hash] The facts.
-  # @param kind [String] "encounter" or "choice".
-  # @param bid [String, nil] The battle a request with an encounter names.
-  # @return [Array<String>, nil] [code, reason], nil when it takes players in.
-  def self.running(facts, kind, bid)
-    return ["closed", "the player fights no battle others may join"] unless facts["bid"]
-    return ["closed", "the player is a guest of battle #{facts['bid']}"] unless facts["host"] == facts["own_seat"]
-    return ["closed", "it asks for battle #{bid}, the player's is #{facts['bid']}"] if kind == "encounter" && bid.to_s != facts["bid"]
-    return ["gathering", kind == "encounter" ? "the player's battle still gathers its players" : "the battle still gathers its players"] if facts["live"] && !facts["active"]
-    return ["closed", "the computer plays on for those who left"] if facts["live"] && facts["solo"]
-
-    facts["ending"] ? ["ending", "the battle ends"] : nil
-  end
-
-  # Tells whether the battle is full.
-  #
-  # @param facts [Hash] The facts.
-  # @return [Array<String>, nil] [code, reason], nil while it has room.
-  def self.full(facts)
-    count = players_in(facts)
-    count >= PLAYERS ? ["full", "#{count} players fight, as many as a battle takes"] : nil
-  end
-
-  # Tells why the battle cannot take in a player it knows.
-  #
-  # @param facts [Hash] The facts.
-  # @param seat [Integer] The player's seat.
-  # @param pending [String] The reason for one taken in already.
-  # @return [Array<String>, nil] [code, reason], nil for one it does not know.
-  def self.known(facts, seat, pending)
-    return ["closed", "its player was in this battle before"] if facts["role"] && facts["seats"].include?(seat)
-
-    facts["pending"].include?(seat) ? ["closed", pending] : nil
-  end
-
-  # Answers coop.intake.
-  #
-  # @param request [Hash] The request.
-  # @return [Hash] The refusal, and for an encounter the players kept and left out and the room.
-  def self.intake(request)
-    facts = request["facts"]
-    seat = request["seat"]
-    return { "refusal" => choice_refusal(facts, seat, request) } if request["kind"] == "choice"
-
-    refusal = running(facts, "encounter", request["bid"]) ||
-              (facts["boss"] ? ["closed", "the player's battle is a boss battle"] : nil) ||
-              (request["boss_troop"] ? ["closed", "the encounter's troop #{request['troop']} is a boss"] : nil) ||
-              known(facts, seat, "its player is already taken in with another encounter") || full(facts)
-    known_seats = (facts["role"] ? facts["seats"] : []) + facts["pending"] + [facts["own_seat"], seat]
-    seats = [seat] + (field_text("seats", request["seats"]).split(",").map(&:to_i) - known_seats)
-    room = PLAYERS - players_in(facts)
-    kept = seats.first([room, 1].max)
-    { "refusal" => refusal, "kept" => kept, "left" => seats - kept, "room" => room }
-  end
-
-  # Tells why the battle cannot take in a player who asks by choice.
-  #
-  # @param facts [Hash] The facts.
-  # @param seat [Integer] The player's seat.
-  # @param request [Hash] The request.
-  # @return [Array<String>, nil] [code, reason], nil when it can.
-  def self.choice_refusal(facts, seat, request)
-    found = closed(facts)
-    return found if found
-    return ["closed", "it asks for battle #{request['bid']}, the player's is #{facts['bid']}"] unless request["bid"].to_s == facts["bid"]
-    return ["closed", "it asks from map #{request['map']}, the player's is #{facts['map']}"] unless request["map"].to_i == facts["map"]
-
-    known(facts, seat, "its player is taken in already")
-  end
-end
-
-coop_cases("placement.json")["cases"].each do |entry|
-  request = { "bid" => "golden", "troop" => entry["troop"].map { |spot| [0] + spot }, "queued" => entry["queued"], "entries" => entry["entries"], "screen" => entry["screen"] }
-  raise "the placement stand-in differs at #{entry['name']}" unless CoopStandIn.place_first(request) == entry["placed"]
-end
-coop_cases("entries.json").tap do |cases|
-  cases["reads"].each { |entry| raise "the entries stand-in reads #{entry['text'].inspect} otherwise" unless CoopStandIn.read_entries(entry["text"]) == entry["entries"] }
-  cases["writes"].each { |entry| raise "the entries stand-in writes #{entry['entries'].inspect} otherwise" unless CoopStandIn.answer("coop.write_entries", entry["entries"]) == entry["text"] }
-end
-coop_cases("intake.json")["cases"].each do |entry|
-  asked = entry["request"].merge("facts" => entry["facts"])
-  encounter = CoopStandIn.intake(asked.merge("kind" => "encounter"))
-  found = [encounter["refusal"] && encounter["refusal"][1], encounter["kept"], encounter["left"], encounter["room"],
-           CoopStandIn.intake(asked.merge("kind" => "choice"))["refusal"]]
-  raise "the intake stand-in differs at #{entry['name']}" unless found == [entry["hot"], entry["kept"], entry["left"], entry["room"], entry["pick"]]
-end
-
-# Writes the log lines of fields left out as the scripts write them, each field and kind once, and
-# the line of the enemies this game lacks.
-#
-# @param answer [Hash] The answer.
-# @param key [String] The field of the notes, "dropped" or "enemy_dropped".
-# @return [Array<String>] The lines.
-def coop_logged(answer, key)
-  lines = answer[key].uniq { |field, kind, _| [field, kind] }.map { |field, kind, owner| "co-op battle: dropped #{owner} #{field} another game sent as #{kind}" }
-  lacking = Array(answer["lacking"])
-  key == "enemy_dropped" && !lacking.empty? ? lines + ["co-op battle: the host's troop holds enemies this game lacks (#{lacking.join(', ')}); it keeps its own"] : lines
-end
-
-# Checks the roster's stand-ins against their golden cases.
-def check_roster_stand_in
-  cases = coop_cases("roster.json")
-  cases["levels"].each do |entry|
-    players = entry["players"].map { |seat, leads, levels, places| [seat, leads, places, levels] }
-    answer = CoopStandIn.answer("coop.level", "raid" => entry["raid"], "players" => players)
-    raise "the level stand-in differs at #{entry['name']}" unless [answer["level"], "level sync: #{answer['log']}"] == [entry["level"], entry["logs"][0]]
-  end
-  cases["rosters"].each do |entry|
-    answer = CoopStandIn.answer("coop.read_roster", entry)
-    players = entry["players"].map { |player| player.each_with_index.map { |field, index| index == 3 ? field.map { |vitals| CoopStandIn.vitals_of(vitals) } : field } }
-    found = [answer["players"], coop_logged(answer, "dropped"), answer["enemies"], coop_logged(answer, "enemy_dropped"), answer["level"], answer["turn"], answer["size"]]
-    raise "the roster stand-in differs at #{entry['name']}" unless found == [players, entry["player_logs"], entry["repaired"], entry["repair_logs"], entry["level"], entry["turn"], entry["enemies_size"]]
-  end
-  cases["troops"].each do |entry|
-    answer = CoopStandIn.answer("coop.read_troop", entry)
-    raise "the troop stand-in differs at #{entry['name']}" unless [answer["enemies"], coop_logged(answer, "enemy_dropped"), answer["names"]] == [entry["repaired"], entry["repair_logs"], entry["names"]]
-  end
-  cases["writes"].each do |entry|
-    written = entry["kind"] == "party" ? CoopStandIn.answer("coop.write_party", entry["players"]) : CoopStandIn.answer("coop.write_roster", entry.reject { |key, _| %w(kind line).include?(key) })
-    raise "the line stand-in differs at #{entry['kind']}" unless written == entry["line"]
-  end
-end
-
-# The co-op topics CoopStandIn answers.
-COOP_TOPICS = %w(coop.place coop.write_widths coop.keep_widths coop.read_entries coop.write_entries coop.intake coop.room coop.level coop.write_roster coop.write_party coop.read_roster
-                 coop.read_party coop.read_troop coop.repair coop.settle)
-
-require_relative "match_support"
-require_relative "ask_support"
-
-# Stands in for the joins of a co-op battle the DLL takes from the live battle's session
-# (MGQOnline.Game's CoopJoins, behind CoopTopics): the host's gathering, a guest's wait for the
-# roster and the host's players taken into its running battle, over the live session's stand-in.
-class CoopJoinsStandIn
-  # Seconds the host keeps the players it took in waiting for them to join.
-  WAIT_SECONDS = 60
-
-  # The topics the stand-in answers.
-  TOPICS = %w(coop.gather coop.roster_wait coop.pending)
-
-  # The encounters and players taken in who have not all joined yet: :requester, :seats, :enemies,
-  # :at and :added each.
-  attr_reader :entries
-
-  # Makes the joins over a live session's stand-in.
-  #
-  # @param session [LiveSessionStandIn, nil] The session, whose messages hold the joins; nil for a
-  #   test without live battles, whose session holds none.
-  def initialize(session)
-    @session = session
-    @entries = []
-    @gathering = nil
-    @roster_frames = 0
-    @roster_limit = 0
-  end
-
-  # Answers a topic.
+  # Answers a topic: what the test set, else what a DLL with nothing to say answers.
   #
   # @param topic [String] The topic.
-  # @param request [Hash] The request.
+  # @param request [Object] The request.
   # @return [Object] The reply.
   def answer(topic, request)
-    case topic
-    when "coop.gather" then gather(request)
-    when "coop.roster_wait" then roster_wait(request)
-    when "coop.pending" then pending(request)
-    end
-  end
+    note(topic, request)
+    step = request.is_a?(Hash) ? request["op"] : nil
+    key = @fixed.key?("#{topic} #{step}") ? "#{topic} #{step}" : topic
+    fixed = @fixed[key]
+    fixed = fixed.call(request) if fixed.respond_to?(:call)
+    return QUIET.merge("actions" => []).merge(fixed || {}) if STATUS_TOPICS.include?(topic)
+    return QUIET.merge(PROMPT).merge(fixed || {}) if topic == "coop.join_frame"
+    return fixed if @fixed.key?(key)
 
-  # @return [Array<Integer>] The seats of the players taken in who have not joined yet.
-  def pending_seats
-    seats
+    quiet(topic, request, step)
   end
 
   private
 
-  # Takes the oldest message of a kind from a sender.
+  # Answers a topic as a DLL with nothing to say: the lines written and read as fake lines, the rest
+  # by DEFAULTS.
   #
-  # @param kind [String] The kind.
-  # @param seat [Integer, nil] The sender, nil for any.
-  # @return [Array, nil] The message.
-  def take(kind, seat = nil)
-    @session && @session.taken([kind], seat)
-  end
-
-  # Answers a step of the gathering, as CoopJoins' gathering does.
-  #
-  # @param request [Hash] The step.
-  # @return [Object] The answer.
-  def gather(request)
-    case request["op"]
-    when "start"
-      @gathering = { :invited => Array(request["seats"]), :limit => request["limit"], :joined => [], :outcomes => {}, :frames => 0 }
-      nil
-    when "frame"
-      gather = @gathering
-      return true unless gather
-
-      gather[:invited].each do |seat|
-        next if gather[:outcomes].key?(seat)
-
-        if (joined = take("join", seat))
-          gather[:joined] << [seat, joined[1]]
-          gather[:outcomes][seat] = "joined (#{joined[1].to_s.size} bytes)"
-        elsif take("decline", seat)
-          gather[:outcomes][seat] = "declined"
-        elsif Array(request["gone"]).include?(seat)
-          gather[:outcomes][seat] = "left the world"
-        end
-      end
-      gather[:frames] += 1
-      gather[:outcomes].size == gather[:invited].size || gather[:frames] >= gather[:limit]
-    else
-      gather = @gathering || { :invited => [], :joined => [], :outcomes => {}, :frames => 0 }
-      @gathering = nil
-      { "joined" => gather[:joined], "outcomes" => gather[:invited].map { |seat| [seat, gather[:outcomes][seat]] }, "frames" => gather[:frames] }
+  # @param topic [String] The topic.
+  # @param request [Object] The request.
+  # @param step [String, nil] The request's step.
+  # @return [Object] The reply.
+  def quiet(topic, request, step)
+    case topic
+    when "coop.steps" then request["steps"]
+    when "coop.intake" then { "refusal" => nil, "kept" => [request["seat"]], "left" => [], "room" => 1 }
+    when "coop.write_roster" then FakeLines.line(request.values_at(*%w(enemies players level turn).select { |key| request.key?(key) }))
+    when "coop.write_party" then FakeLines.line([request])
+    when "coop.read_roster" then read_roster(request["line"])
+    when "coop.read_party" then { "players" => Array(Array(FakeLines.parse(request.to_s))[0]), "dropped" => [] }
+    when "coop.read_troop" then read_troop(request["line"])
+    when "coop.repair" then { "enemies" => request["enemies"], "enemy_dropped" => [], "lacking" => [] }
+    when "coop.settle" then { "staying" => request["players"], "left" => [], "outcome" => "none" }
+    else DEFAULTS.fetch(step ? "#{topic} #{step}" : topic, DEFAULTS[topic])
     end
   end
 
-  # Answers a step of a guest's wait for the roster, as CoopJoins.RosterFrame does.
+  # Reads a roster's fake line back as it was written, nothing dropped or lacking.
   #
-  # @param request [Hash] The step.
-  # @return [Hash, nil] The answer.
-  def roster_wait(request)
-    if request["op"] == "start"
-      @roster_frames = 0
-      @roster_limit = request["limit"]
-      return nil
-    end
-
-    @roster_frames += 1
-    if request["restart"]
-      @roster_frames = 0
-      @roster_limit = request["restart"]
-    end
-    roster = take("roster")
-    { "roster" => roster && roster[1], "late" => roster.nil? && @roster_frames >= @roster_limit, "frames" => @roster_frames }
+  # @param line [String] The line.
+  # @return [Hash] The roster.
+  def read_roster(line)
+    enemies, players, level, turn = Array(FakeLines.parse(line.to_s))
+    { "players" => Array(players), "dropped" => [], "enemies" => enemies, "enemy_dropped" => [], "lacking" => [], "size" => Array(enemies).size,
+      "level" => level, "turn" => turn }
   end
 
-  # Answers a step of the list of the players taken in, as CoopJoins does.
+  # Reads a troop's fake line back as it was written, nothing dropped or lacking.
   #
-  # @param request [Hash] The step.
-  # @return [Object] The answer.
-  def pending(request)
-    case request["op"]
-    when "take_in"
-      @entries << { :requester => request["requester"], :seats => Array(request["seats"]).dup, :enemies => Array(request["enemies"]).dup, :at => Time.now,
-                    :added => false }
-      nil
-    when "release"
-      seat = request["seat"]
-      dropped = []
-      @entries.each do |entry|
-        next if entry[:requester] == seat || !entry[:seats].include?(seat)
-
-        drop(entry, seat)
-        dropped << [seat, "they ask with their own encounter"]
-      end
-      @entries.reject! { |entry| entry[:seats].empty? }
-      dropped
-    when "expire" then expire(Array(request["gone"]))
-    when "joins" then seats.map { |seat| (joined = take("join", seat)) && [seat, joined[1]] }.compact
-    when "next_added"
-      entry = @entries.find { |candidate| !candidate[:added] && Array(request["seats"]).include?(candidate[:requester]) }
-      entry && (entry[:added] = true) && entry[:enemies]
-    when "remove"
-      @entries.each { |entry| entry[:seats] -= Array(request["seats"]) }
-      @entries.reject! { |entry| entry[:seats].empty? }
-      nil
-    when "take_off"
-      entry = @entries.find { |candidate| candidate[:requester] == request["seat"] && candidate[:seats].include?(request["seat"]) }
-      return false unless entry
-
-      drop(entry, request["seat"])
-      @entries.reject! { |candidate| candidate[:seats].empty? }
-      true
-    when "call_off"
-      called = seats
-      @entries = []
-      called
-    when "queued" then @entries.reject { |entry| entry[:added] }.map { |entry| entry[:enemies] }.flatten(1)
-    when "count" then @entries.size
-    else seats
-    end
-  end
-
-  # @return [Array<Integer>] The seats of the players taken in who have not joined yet.
-  def seats
-    @entries.map { |entry| entry[:seats] }.flatten
-  end
-
-  # Forgets the players taken in who are done, as CoopJoins.Expire does.
-  #
-  # @param gone [Array<Integer>] The players the world no longer knows.
-  # @return [Array<Array>] Each forgotten seat, why, and whether they are told it is off.
-  def expire(gone)
-    dropped = []
-    @entries.each do |entry|
-      entry[:seats].dup.each do |seat|
-        reason = if take("decline", seat) then "turned the invite down or stopped waiting"
-                 elsif take("leave", seat) then "left the battle"
-                 elsif gone.include?(seat) then "left the world"
-                 elsif Time.now - entry[:at] > WAIT_SECONDS then "did not join within #{WAIT_SECONDS} s"
-                 end
-        next unless reason
-
-        drop(entry, seat)
-        dropped << [seat, reason, reason.start_with?("did not")]
-      end
-    end
-    @entries.reject! { |entry| entry[:seats].empty? }
-    dropped
-  end
-
-  # Forgets a player taken in and their join.
-  #
-  # @param entry [Hash] The encounter they came with.
-  # @param seat [Integer] Their seat.
-  def drop(entry, seat)
-    entry[:seats].delete(seat)
-    entry[:enemies] = [] if seat == entry[:requester]
-    take("join", seat)
+  # @param line [String] The line.
+  # @return [Hash] The troop.
+  def read_troop(line)
+    enemies, names = Array(FakeLines.parse(line.to_s))
+    { "enemies" => enemies, "enemy_dropped" => [], "lacking" => [], "names" => names }
   end
 end
 
-# The world of the script tests as the matchmaking stand-in reads it: the world room's stand-ins,
-# their sends and log, the notification box's messages as the DLL's events on the stand-in bridge,
-# and the time and randomness of the process.
-class TestMatchWorld
-  # @return [Boolean] Whether a world is open.
-  def in_world?; MGQ_MpOverworldSync.in_world?; end
-  # @return [Boolean] Whether it is a Raid World.
-  def raid?; MGQ_MpCoop::Scope.raid?; end
-  # @return [Integer] The player's seat.
-  def own_seat; MGQ_MpOverworldSync::Me.seat; end
-  # @return [Integer] When the player entered the map.
-  def own_since; MGQ_MpOverworldSync::Me.map_since.to_i; end
-  # @return [String] The player's id.
-  def own_id; MGQ_MpOverworldSync::Me.id.to_s; end
-  # @return [Array] The other players.
-  def peers; MGQ_MpOverworldSync::Peers.all; end
-  # @return [String, nil] The party's id.
-  def party_id; MGQ_MpCoop::Party.id; end
-  # @return [Array] The party's other members.
-  def members; MGQ_MpCoop::Party.members; end
-  # @return [Boolean] Whether the player plays in a party with someone else.
-  def in_party?; MGQ_MpCoop.in_party?; end
-  # @return [Object] The party's leader: :me, a player or nil.
-  def leader; MGQ_MpCoop::Party.leader; end
-  # Finds a player by seat.
-  def at(seat); MGQ_MpOverworldSync::Peers.at(seat); end
-  # Sends a message of the world room.
-  def send(seat, fields); MGQ_MpOverworldSync.tell(seat, Hash[fields]); end
-  # Writes a log line.
-  def log(line); MGQ_Multiplayer::Log.write(line); end
-  # Posts a message for the notification box, which the next frame hands to the scripts.
-  def notice(key, seat, text, frames); $world_bridge.post("coop.notice", "key" => key, "seat" => seat, "text" => text, "frames" => frames); end
-  # Posts a message taken away, which the next frame hands to the scripts.
-  def drop_notice(key, seat, reason); $world_bridge.post("coop.drop_notice", "key" => key, "seat" => seat, "reason" => reason); end
-  # @return [Float] The clock in seconds.
-  def now; Time.now.to_f; end
-  # @return [Float] A number of 0 to below 1.
-  def rand; Kernel.rand; end
-  # @return [String] A new battle id.
-  def new_id; MGQ_MpCoop.random_id(8); end
-end
-
-# Answers the co-op topics with CoopStandIn, its roster checked, the matchmaking's with a MatchStandIn over the tests' world, kept in $coop_match, the asking and
-# joining sides' with an AskStandIn beside it, kept in $coop_ask, and the joins with a
-# CoopJoinsStandIn over the live session's stand-in in $live, kept in $coop_joins.
+# Makes a step the matchmaking asks the scripts to take, as its answers carry it.
 #
-# @param fake [FakeBridge] The bridge.
+# @param kind [String] What, such as "join" or "accept".
+# @param fields [Hash] Its other fields; "fields" holds an invite or request as the DLL reads it.
+# @return [Hash] The step.
+def coop_step(kind, fields = {})
+  step = { "kind" => kind, "role" => nil, "bid" => nil, "seats" => nil, "label" => nil, "seat" => nil, "troop" => nil, "escape" => false, "lose" => false,
+           "fields" => nil }.merge(fields)
+  step
+end
+
+# Answers the co-op topics with the values each test sets, kept in $coop.
+#
+# @param fake [FakeBridge] The test's bridge.
+# @return [CoopAnswers] The answers.
 def answer_coop(fake)
-  check_roster_stand_in
-  COOP_TOPICS.each { |topic| fake.answer(topic) { |request| CoopStandIn.answer(topic, with_pending(topic, request)) } }
-  $coop_match = MatchStandIn.new(TestMatchWorld.new)
-  $coop_ask = AskStandIn.new($coop_match)
-  $coop_match.asks = $coop_ask
-  MatchStandIn::TOPICS.each { |topic| fake.answer(topic) { |request| $coop_match.answer(topic, request) } }
-  AskStandIn::TOPICS.each { |topic| fake.answer(topic) { |request| $coop_ask.answer(topic, request) } }
-  $coop_joins = CoopJoinsStandIn.new($live && $live.session)
-  CoopJoinsStandIn::TOPICS.each { |topic| fake.answer(topic) { |request| $coop_joins.answer(topic, request) } }
-end
-
-# Adds the players taken in, which the DLL's intake reads from its joins, to the battle's facts of a
-# request that leaves them out, as the scripts' facts do.
-#
-# @param topic [String] The topic.
-# @param request [Object] The request.
-# @return [Object] The request, with the players taken in.
-def with_pending(topic, request)
-  pending = $coop_joins ? $coop_joins.pending_seats : []
-  case topic
-  when "coop.room" then request.key?("pending") ? request : request.merge("pending" => pending)
-  when "coop.intake" then request["facts"].key?("pending") ? request : request.merge("facts" => request["facts"].merge("pending" => pending))
-  else request
-  end
-end
-
-# Hands a co-op message over as the DLL's routes do: the matchmaking's own kinds and the asking and
-# joining sides' to the stand-ins, which read the player's facts of the frame, and whose status the
-# scripts then take as the coop.status event brings it; the rest to the scripts' take, as the
-# coop.message event does.
-#
-# @param peer [Object] Who sent it.
-# @param message [Hash] The message, its kind under "coop".
-# @param map [Boolean] Whether it came through the map's gate.
-def coop_deliver(peer, message, map = false)
-  $coop_match.answer("coop.frame", MGQ_MpBattlesCoop.facts)
-  if AskStandIn::KINDS.include?(message["coop"].to_s) && (!map || $coop_match.instance_variable_get(:@world).raid? || (peer.member && message["coop"] == "pick_no"))
-    $coop_ask.take_message(peer, message)
-  elsif !$coop_match.route(peer, message, map)
-    return MGQ_MpBattlesCoop.take(peer, fields_read(message))
-  end
-
-  MGQ_MpBattlesCoop.take_status($coop_match.state)
-  # The DLL's messages for the box reach the scripts as events of the next frame.
-  MGQ_Multiplayer::Bridge.frame
-end
-
-# Hands a co-op message over that came through the map's gate, see coop_deliver.
-#
-# @param peer [Object] Who sent it.
-# @param message [Hash] The message, its kind under "coop".
-def coop_deliver_map(peer, message)
-  coop_deliver(peer, message, true)
+  $coop = CoopAnswers.new(fake)
 end

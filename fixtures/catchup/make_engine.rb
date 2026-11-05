@@ -2,21 +2,24 @@
 #  make_engine.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Kept one call of the side's rule per kind of request and answer
+#      Paulinchen  2026-11-05: Recorded from the script test of the last commit that answered the catch-up from engine.rb
+#                            - Kept one call of the side's rule per kind of request and answer
 #      Paulinchen  2026-10-28: Created
 #
 #----------------------------------------------------------------
 
 # Writes the golden cases of the catch-up's decisions next to this file, engine.json: every call of
-# the DLL's catch-up topics the script tests make (GameScript/Tests/world_catchup_test.rb), each
-# once, with the tables and the save's notes the engine of engine.rb answered it over and its
-# answer. A table that holds the generated rows of fixtures/catchup/generated is named by "generated"
-# alone. MGQOnline.Game.Tests replays them against CatchupEngine. Run it again after a rule of the
-# engine or a test of the catch-up changed:
+# the DLL's catch-up topics GameScript/Tests/world_catchup_test.rb of the last commit whose tests
+# answered them from engine.rb makes (old_tests.rb), each once, with the tables and the save's notes
+# the engine of engine.rb answered it over and its answer. A table that holds the generated rows of
+# fixtures/catchup/generated is named by "generated" alone. MGQOnline.Game.Tests replays them
+# against CatchupEngine. A recording tool: no test runs against it. Run it again after a rule of
+# the engine changed:
 #
 #   ruby fixtures/catchup/make_engine.rb
 
 require "json"
+require_relative "old_tests"
 
 # Writes a plain value as JSON takes it: a Hash with a key that is no String as {"#pairs" => [[key,
 # value], ...]}.
@@ -35,7 +38,7 @@ def plain_json(value)
 end
 
 $catchup_record = []
-load File.expand_path("../../GameScript/Tests/world_catchup_test.rb", __dir__)
+OldCatchupTests.run("GameScript/Tests/world_catchup_test.rb")
 
 generated = {}
 Dir[File.join(__dir__, "generated", "*.json")].each { |file| generated[File.basename(file, ".json")] = JSON.parse(File.read(file, :encoding => "UTF-8"))["rows"] }

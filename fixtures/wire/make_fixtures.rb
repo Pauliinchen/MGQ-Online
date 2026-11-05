@@ -11,8 +11,8 @@
 # kept the codec before it moved to C# (commit 508f616e, which this generator reads through git,
 # so it runs again on later commits; see wire_harness.rb): encode.json (described values and the
 # line Wire.line writes) and decode.json (a line and the values Wire.parse reads, nil for a refused
-# one), which MGQOnline.Game.Tests and GameScript/Tests/wire_fixtures_test.rb check. Run it again
-# only when a case changes, on Ruby 3.3:
+# one), which MGQOnline.Game.Tests checks. A recording tool: no script test runs against it. Run it
+# again only when a case changes, on Ruby 3.3:
 #
 #   ruby fixtures/wire/make_fixtures.rb
 

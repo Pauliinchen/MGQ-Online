@@ -2,7 +2,9 @@
 #  coop_teleport_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Read the scripts' clock from $frame_count
+#      Paulinchen  2026-11-05: Answered the teleports' view with fixed offers per case instead of from the party's stand-in
+#                            - Answered the calls of a story with fixed values and checked the call handed over and the teleport taken
+#                            - Read the scripts' clock from $frame_count
 #      Paulinchen  2026-11-01: Dropped the stand-in of a lapse after a frame count, which no script asks for any more
 #      Paulinchen  2026-10-31: Expected places and teleports without a warp ban
 #      Paulinchen  2026-10-30: Checked the script's wiring to the DLL's requests on the stand-in bridge
@@ -115,6 +117,7 @@ $leader = leader
 tick.call(false)
 check("outside a world the script asks the DLL nothing and offers nothing", [$teleport_calls, $offers.peer_option(friend), $state_fields.call], [[], nil, { "tpask" => "" }])
 
+$teleport_view = teleport_view(2 => teleport_offer("Teleport to Leader"), 3 => teleport_offer("Ask to teleport to Friend"))
 tick.call(true)
 check("each frame in a world hands the DLL where the player stands", $teleport_calls.last, ["tp.view", { "map" => 3, "x" => 0, "y" => 0, "d" => 2 }])
 check("and offers each member the teleport the view names", [$offers.peer_option(leader).text, $offers.peer_option(friend).text], ["Teleport to Leader", "Ask to teleport to Friend"])
@@ -157,8 +160,12 @@ fake.post("tp.allowed", { "name" => "Friend", "map" => 7, "x" => 4, "y" => 4, "d
 fake.post("tp.notice", "Teleporting to Friend . . .")
 $map_free = false
 MGQ_Multiplayer::Bridge.frame
-check("the DLL's allow brings the player over once free", [MGQ_MpCoopGather.coming?, MGQ_MpCoopGather.pending_call[:place]], [true, [7, 4, 4, 2]])
+check("the DLL's allow hands the DLL's calls the friend's name and place", $tells.asked("gather.come_to").last, { "name" => "Friend", "place" => [7, 4, 4, 2] })
 check("with the DLL's notice", $notices.last, "Teleporting to Friend . . .")
+$tells.set("gather.frame", "coming" => true, "come" => [7, 4, 4, 2])
+$tells.set("gather.take", "name" => "Friend", "id" => nil, "place" => [7, 4, 4, 2], "follow" => false, "asked" => true, "bans" => [])
+MGQ_MpCoopGather.update
+check("once the calls say the player comes, a busy player stays", [$tells.asked("gather.take").size, $game_player.reserved], [0, nil])
 $map_free = true
 MGQ_MpCoopGather.update
-check("and teleports the player once free", [$game_player.reserved, MGQ_MpCoopGather.coming?], [[7, 4, 4, 2], false])
+check("and a free one takes the call and teleports there", [$tells.asked("gather.take").size, $game_player.reserved], [1, [7, 4, 4, 2]])

@@ -2,6 +2,7 @@
 #  save_export_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Answered the world's latest save with the one each check names instead of a copy of the DLL's search
 #      Paulinchen  2026-11-01: Checked Copy to my game in the game's menu through the Mod Framework and its message
 #                            - Stopped loading the deleted ui_boxes.rbx
 #                            - Dropped the stand-ins of the name box and letters of the deleted text screen
@@ -158,8 +159,10 @@ Dir.mktmpdir do |root|
     FileUtils.mkdir_p("Save")
     File.binwrite("Save/Save01.rvdata2", "my own")
 
+    # The DLL finds the latest save among the files (WorldRulesTests, LocalWorldsTests).
+    $locals.set("worlds.latest_save") { |id| id == world.id ? ["01", "#{world.save_folder}/AutoSave01.rvdata2"] : nil }
     said = MGQ_MpSaveExport.export(world)
-    check("the latest save, an autosave too, goes into the first free slot", File.binread("Save/Save02.rvdata2"), "newest")
+    check("the latest save the DLL finds, an autosave too, goes into the first free slot", [$locals.asked("worlds.latest_save").last, File.binread("Save/Save02.rvdata2")], [world.id, "newest"])
     check("with its thumbnail", File.binread("Save/Save02.png"), "newest picture")
     check("the player's own save stays", File.binread("Save/Save01.rvdata2"), "my own")
     check("the player is told the slot", said.end_with?("is now save 2 of your own game."), true)

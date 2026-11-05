@@ -2,6 +2,8 @@
 #  make_fixtures.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Kept the old wait for a dropped player and the old message reader, which the scripts no longer hold
+#                            - Handed the messages over as fields, as the tests' world room takes and sends them
 #      Paulinchen  2026-10-31: Read the old scripts from a commit that feat/refactor holds
 #                            - Handed the old script the trade messages the world room now gives C#
 #                            - Left out the notice of an applied trade as the old script words it
@@ -114,6 +116,20 @@ module MGQ_Multiplayer
     end
     # The relay's answer about the commit, or an empty list of trades to recover.
     def self.read(name, _size); name == "mp_trade_state" ? $relay_state : "state=done\n\n"; end
+    # Reads a message or the relay's answer into its fields, its body under :payload, as the old
+    # scripts did.
+    #
+    # @param text [String] The text.
+    # @return [Hash] The fields.
+    def self.parse(text)
+      head, payload = text.force_encoding("UTF-8").split("\n\n", 2)
+      state = { :payload => payload.to_s }
+      head.to_s.split("\n").each do |line|
+        key, value = line.split("=", 2)
+        state[key] = value if value
+      end
+      state
+    end
   end
 end
 # The open world, with its directory id.
@@ -122,13 +138,23 @@ module MGQ_MpWorld; World = Struct.new(:id, :directory_id); def self.world; Worl
 class Scene_MpTrade; end
 # The scene manager's call, which only opens the trade screen here.
 module SceneManager; def self.call(_scene); end; end
-# Sends that fail while $send_fails.
-module MGQ_MpOverworldSync::Link; def self.send_to(target, text); $sent << [target, text]; !$send_fails; end; end
+# Sends that fail while $send_fails, each kept in $sent as the old scripts wrote it.
+module MGQ_MpOverworldSync::Port
+  # Records the message as text.
+  def self.send_to(target, fields, body)
+    $sent << [target, fields.map { |key, value| "#{key}=#{value.to_s.gsub(/[\r\n]/, ' ')}" }.join("\n") + "\n\n" + body.to_s]
+    !$send_fails
+  end
+end
 
 $game_party = Game_Party.new
 $game_system = Game_System.new
 $dll = []
 $relay_state = ""
+
+# The old trade.rbx waits for a partner as long as the world room kept a dropped player, which
+# overworld_sync.rbx no longer names since that wait moved to C#.
+MGQ_MpOverworldSync::REJOIN_FRAMES = 900 unless MGQ_MpOverworldSync.const_defined?(:REJOIN_FRAMES)
 
 source = `git -C "#{File.expand_path('../..', __dir__)}" show #{SOURCE_COMMIT}:GameScript/Multiplayer/Scripts/trade.rbx`
 raise "git could not read trade.rbx of #{SOURCE_COMMIT}" if source.empty?
@@ -219,7 +245,7 @@ def run(op)
   trade = MGQ_MpTrade
   peer = MGQ_MpOverworldSync::Peers.at(2)
   case op[0]
-  when "message" then $inbox << entry("message", 2, op[1])
+  when "message" then $inbox << entry("message", 2, MGQ_Multiplayer::Link.parse(op[1].dup))
   when "out" then $inbox << entry("out", 2)
   when "back" then $inbox << entry("in", 2) << entry("message", 2, told(FRIEND))
   when "invite" then trade.invite

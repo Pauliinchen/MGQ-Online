@@ -2,6 +2,7 @@
 //  WorldFormsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Covered every field's hint fitting the world screen's two lines
 //      Paulinchen  2026-10-23: Covered Enter sending a form
 //                            - Created
 //
@@ -25,6 +26,11 @@ public sealed class WorldFormsTests
     /// Writes JSON as Ruby's JSON did: non-ASCII letters as they are.
     /// </summary>
     private static readonly JsonSerializerOptions Json = new() { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+
+    /// <summary>
+    /// The most characters a field's hint takes, which fill the two lines at the top of the world screen.
+    /// </summary>
+    private const int MaxHintChars = 100;
 
     /// <summary>
     /// The rules the cases were recorded with (fixtures/world/rules.json).
@@ -85,6 +91,22 @@ public sealed class WorldFormsTests
         form.Turn(type, 1);
 
         Assert.False(form.IsTicked("other_mods_off"));
+    }
+
+    /// <summary>
+    /// Asserts that every field's hint fits the two lines at the top of the world screen, those of a
+    /// Raid World, its formation limits and the edit forms too.
+    /// </summary>
+    [Fact]
+    public void Hints_FitTwoLines()
+    {
+        foreach (JsonElement entry in Cases("forms"))
+        {
+            Form form = Open(entry.GetProperty("open"));
+            string page = Act(form, entry.GetProperty("steps"));
+
+            Assert.All(form.Fields(page), field => Assert.True(field.Hint.Length <= MaxHintChars, $"{entry.GetProperty("case").GetString()}: {field.Key}"));
+        }
     }
 
     /// <summary>

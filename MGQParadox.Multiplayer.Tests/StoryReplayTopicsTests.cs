@@ -2,7 +2,8 @@
 //  StoryReplayTopicsTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Handed and expected the keys, values, sites and things a replay reads as plain values, and read the entries of an earlier release's save
+//      Paulinchen  2026-11-05: Covered which of the leader's changes a member takes, over the topic
+//                            - Handed and expected the keys, values, sites and things a replay reads as plain values, and read the entries of an earlier release's save
 //                            - Covered a talk that gave a key item handed over in both world types, a Makina never, and the Medal King's run never
 //                            - Covered a battle's drop of a key item reaching the other players in both world types, once, and never the player who won it
 //      Paulinchen  2026-11-01: Covered a choice named by its place among the kept commands, with the shapes of the receiver's lists, and the side pick never handed over
@@ -97,6 +98,29 @@ public sealed class StoryReplayTopicsTests
         Drain(1);
         Drain(2);
         Call(StoryTopics.ReplayLogTopic, new RubyHash { { "log", RubyNil.Value }, { "place", new RubyArray { 5, 0, 0, 0 } } });
+    }
+
+    /// <summary>
+    /// Asserts that a member who follows the leader's story takes a change of a key the reviewed list
+    /// makes the world's, but not a choice's outcome their own story keeps, a key the party or the
+    /// player keeps, nor a switch beyond their game.
+    /// </summary>
+    [Fact]
+    public void ClassicFollow_TakesTheWorldsKeysButChoicesOwnKeysAndKeysBeyondTheGame()
+    {
+        RubyArray keys =
+        [
+            new RubyArray { 0, 300 }, new RubyArray { 0, 301 }, new RubyArray { 0, 2045 }, new RubyArray { 1, 57 }, new RubyArray { 0, 9000 },
+            new RubyArray { 2, new RubyArray { 1, 8, "A" } },
+        ];
+        var request = new RubyHash
+        {
+            { "keys", keys }, { "choices", new RubyHash { { "s", new RubyArray { 301 } }, { "v", new RubyArray() } } }, { "sizes", new RubyArray { 5000, 3000 } },
+        };
+
+        RubyValue follows = Call(StoryTopics.ClassicFollowTopic, request);
+
+        Assert.Equal(new RubyArray { true, false, false, false, false, true }, follows);
     }
 
     /// <summary>

@@ -2,7 +2,11 @@
 #  catchup_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Wrote a story's keys as the rows the DLL hands the scripts
+#      Paulinchen  2026-11-05: Answered the DLL's catch-up topics with the fixed values each test sets instead of from the catch-up engine of engine.rb, and dropped the tables of rows
+#                            - Gave the items and skills an icon, which the Unlocks page reads
+#                            - Answered the rewards tables with fixed fields instead of a stand-in of their constants
+#                            - Took the recorded Classic party's table for the world's story mapping
+#                            - Wrote a story's keys as the rows the DLL hands the scripts
 #                            - Stood in for the shared companions through the DLL's topics
 #                            - Answered the side a player takes along by engine.rb's rule of the side
 #                            - Let a test put the Medal King's switches and the items an event takes away in place
@@ -20,19 +24,14 @@
 #
 #----------------------------------------------------------------
 
-# The game a Raid World's catch-up runs in, for the script tests and the recorder of the catch-up's
-# golden cases (fixtures/catchup/make_engine.rb): stand-ins of the game's objects, the players, the
-# world and the message window, the real story_state.rbx, coop_story.rbx, coop_choices.rbx,
-# world_story.rbx and world_catchup.rbx on a stand-in of the DLL's story topics (story_support.rb)
-# and of its catch-up (fixtures/catchup/engine.rb, over the generated tables of
-# fixtures/catchup/generated_tables.rb, which the tests replace with rows of their own), and helpers that start a game, hand the relay's
-# tracks over and run frames.
+# The game a Raid World's catch-up runs in, for the script tests: stand-ins of the game's objects,
+# the players, the world and the message window, the real story_state.rbx, coop_story.rbx,
+# coop_choices.rbx, world_story.rbx and world_catchup.rbx on the DLL's story topics
+# (story_support.rb) and its catch-up topics answered with the fixed values each test sets
+# (CatchupAnswers), and helpers that start a game, hand the relay's tracks over and run frames.
 
 require_relative "support"
 require_relative "story_support"
-require_relative "../../fixtures/catchup/relay_rows"
-require_relative "../../fixtures/catchup/engine"
-require_relative "../../fixtures/catchup/generated_tables"
 
 $logs = []
 # Stands in for the mod's log: records each line in $logs and prints it.
@@ -114,21 +113,6 @@ end
 $game_message = Game_Message.new
 # Stands in for the gathering: joining the story does nothing.
 module MGQ_MpCoopGather; def self.join_story; end; end
-# Stands in for the story's reward tables, two chests and one chest flag in all.
-module MGQ_MpCoopStoryRewards
-  # The self switches of the chests.
-  CHESTS = [[12, 3, "A"], [30, 4, "A"]]
-  # The switches only chests turn on.
-  CHEST_FLAGS = [7102]
-  # The story's event groups, none.
-  GROUPS = []
-  # The companions who join in events, none.
-  ACTORS = []
-  # The skills and companions only the events where the sides differ give, none.
-  SIDED = { :skills => [], :actors => [] }
-  # The skills and companions of SIDED the Final Chapter gives too, none.
-  ROUTE = { :skills => [], :actors => [] }
-end
 # Stands in for the player's actions.
 module MGQ_MpActions
   # The color of the player's own line.
@@ -188,9 +172,11 @@ module RPG
     def initialize(id, name, description = "", key = true); @id = id; @name = name; @description = description; @key = key; end
     # Answers whether the item is a key item.
     def key_item?; @key; end
+    # Answers the item's icon, the first.
+    def icon_index; 0; end
   end
-  # Stands in for a skill.
-  Skill = Struct.new(:id, :name)
+  # Stands in for a skill, with the first icon.
+  Skill = Struct.new(:id, :name) { def icon_index; 0; end }
 end
 # Stands in for RPG::Actor, with the level a companion joins at.
 ActorData = Struct.new(:id, :name, :initial_level)
@@ -356,8 +342,80 @@ module DataManager
   def self.setup_new_game; end
 end
 
+# Answers the DLL's catch-up topics with the values a test sets, noting each request.
+class CatchupAnswers
+  include NotedRequests
+
+  # The topics answered.
+  TOPICS = %w(catchup.keys catchup.check catchup.note catchup.hold_join catchup.unlocks catchup.side).freeze
+
+  # What the catch-up reads, as catchup.keys answers it while a test sets nothing: some keys of the
+  # story, three items, two Makina, three parts with their gates and the orbs' common event.
+  KEYS = {
+    "switches" => [4, 5, 500, 2023, 7096], "variables" => [1001, 1002, 1009, 1032], "selves" => [[30, 4, "A"]], "items" => %w(i501 i502 i600), "makina" => [700, 701],
+    "parts" => [["1", "Part 1", 25], ["2", "Part 2", 55], ["3", "Part 3", 65]], "orb_event" => 330,
+  }.freeze
+
+  # What a topic answers while a test sets nothing: nothing to carry out, a join that goes, no unlock.
+  DEFAULTS = {
+    "catchup.keys" => KEYS, "catchup.check" => { "actions" => [] }, "catchup.note" => { "actions" => [] }, "catchup.hold_join" => { "actions" => [] },
+    "catchup.unlocks" => { "unlocks" => [] }, "catchup.side" => nil,
+  }.freeze
+
+  # Answers the topics on a bridge.
+  #
+  # @param fake [FakeBridge] The bridge.
+  def initialize(fake)
+    @asked = []
+    @answers = {}
+    @queued = Hash.new { |queues, topic| queues[topic] = [] }
+    TOPICS.each { |topic| fake.answer(topic) { |request| note(topic, request) && answer(topic, request) } }
+  end
+
+  # Sets what a topic answers from now on.
+  #
+  # @param topic [String] The topic.
+  # @param value [Object] The answer, unless a block gives it.
+  # @yieldparam request [Object] The request.
+  # @yieldreturn [Object] The answer.
+  def set(topic, value = nil, &block)
+    @answers[topic] = block || value
+  end
+
+  # Sets what the next calls of a topic answer, each once, before what set gives.
+  #
+  # @param topic [String] The topic.
+  # @param answers [Array<Object>] The answers, in order.
+  def queue(topic, *answers)
+    @queued[topic].concat(answers)
+  end
+
+  # Forgets the answers set and the requests noted.
+  def clear
+    @asked.clear
+    @answers.clear
+    @queued.clear
+  end
+
+  private
+
+  # Answers a request.
+  #
+  # @param topic [String] The topic.
+  # @param request [Object] The request.
+  # @return [Object] The answer.
+  def answer(topic, request)
+    return @queued[topic].shift unless @queued[topic].empty?
+
+    found = @answers.key?(topic) ? @answers[topic] : DEFAULTS[topic]
+    found.respond_to?(:call) ? found.call(request) : found
+  end
+end
+
 $fake = open_rules_bridge
 answer_story($fake)
+# The rewards tables: two chests and one chest flag.
+answer_party_rewards($fake, "chests" => [[12, 3, "A"], [30, 4, "A"]], "chest_flags" => [7102])
 load_script "story_state"
 load_script "coop_story"
 load_script "coop_choices"
@@ -365,76 +423,9 @@ load_script "world_story"
 load_script "world_catchup"
 # The world's story mapping: what the Raid personal lists of earlier builds shared, the chest flags
 # each player's own.
-$classes = listed_raid_table_hash("switches" => 8000, "variables" => 4000, "companions" => 1000, "chest_flags" => MGQ_MpStoryState.chest_flags)
-# The catch-up's tables, which the tests replace with rows of their own.
-DATA = GeneratedCatchupTables
-# The generated joins, kept before the tests replace them.
-REAL_JOINS = DATA::JOINS
-# The generated removals, kept before the tests replace them.
-REAL_REMOVALS = DATA::REMOVALS
-# The generated settings, kept before the tests replace them.
-REAL_SETTINGS = DATA::SETTINGS
-# The generated key items, kept before the tests replace them.
-REAL_KEY_ITEMS = DATA::KEY_ITEMS
-# The generated actor changes, kept before the tests replace them.
-REAL_ACTOR_CHANGES = DATA::ACTOR_CHANGES
-
-# Puts tables of rows in place of the generated ones.
-#
-# @param tables [Hash{Symbol => Array}] The rows by table, the others empty.
-def tables(tables = {})
-  [:JOINS, :REMOVALS, :KEY_ITEMS, :CHESTS, :REWARDS, :LESSONS, :CLASS_LEVELS, :ACTOR_CHANGES, :SETTINGS, :VEHICLES, :MAKINA, :PRIZE_SWITCHES, :TAKEN_ITEMS].each do |name|
-    DATA.send(:remove_const, name)
-    DATA.const_set(name, tables[name] || [])
-  end
-  $catchup_rows = nil
-  [:@keys, :@tested, :@unlock_ids].each { |name| MGQ_MpWorldCatchup.instance_variable_set(name, nil) }
-end
-
-# The DLL's catch-up, as the script decided it (fixtures/catchup/engine.rb), with the save's notes
-# the DLL holds.
-$catchup = CatchupEngine::Host.new
-
-# The catch-up's tables as the relay hands them with the story mapping: the rows the tests put in
-# place, and the relay's seed rows of the rules, the counts
-# and the companion values.
-#
-# @return [Array(Hash, CatchupEngine::Tables)] The relay's rows by table, and the tables read.
-def catchup_tables
-  $catchup_rows ||= begin
-    rows = CatchupRelayRows.tables(Hash[CatchupRelayRows::TABLES.keys.map { |name| [name, DATA.const_get(name)] }])
-    %w(rules counts companion_values).each { |table| rows[table] = seed_rows(table) }
-    [rows, CatchupEngine.read(rows)]
-  end
-end
-
-# The answers of the catch-up's topics make_engine.rb records, each with the tables and the notes
-# they were answered over; nil while nothing records.
-$catchup_record ||= nil
-
-# Answers a topic of the DLL's catch-up from the engine, recording it while a recorder runs.
-#
-# @param topic [String] The topic.
-# @yieldparam tables [CatchupEngine::Tables] The tables.
-# @yieldreturn [Hash] The answer.
-def answer_catchup_topic(topic)
-  $fake.answer(topic) do |request|
-    rows, read = catchup_tables
-    # The engine takes the notes a request hands and changes them in place, so the record copies
-    # the request and the notes before the call and the answer right after it.
-    asked = Marshal.load(Marshal.dump("ledger" => $catchup.ledger, "request" => request))
-    answer = yield(read, request)
-    $catchup_record << asked.merge("topic" => topic, "tables" => rows, "answer" => Marshal.load(Marshal.dump(answer))) if $catchup_record
-    answer
-  end
-end
-
-$fake.answer("catchup.keys") { CatchupEngine.keys(catchup_tables[1]) }
-answer_catchup_topic("catchup.check") { |read, request| $catchup.check(read, request) }
-answer_catchup_topic("catchup.note") { |read, request| $catchup.note(read, request) }
-answer_catchup_topic("catchup.hold_join") { |read, request| $catchup.hold_join(read, request) }
-answer_catchup_topic("catchup.unlocks") { |read, request| $catchup.unlocks(read, request) }
-answer_catchup_topic("catchup.side") { |read, request| CatchupEngine.side(read, request) }
+$classes = listed_raid_table_hash
+# The DLL's catch-up topics.
+$answers = CatchupAnswers.new($fake)
 
 # Starts a game: a new story with some values, a party of Luka at a level and the save's notes, with
 # nothing recorded yet.
@@ -457,6 +448,7 @@ def new_game(variables = {}, switches = [], level = 10)
   $notices.clear
   $messages.clear
   $logs.clear
+  $answers.clear
   MGQ_MpCoopChoices.forget("next check")
   MGQ_MpWorldStory.loaded(:load)
   MGQ_MpWorldCatchup.loaded

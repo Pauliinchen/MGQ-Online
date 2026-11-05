@@ -2,18 +2,20 @@
 #  flow_guard_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Created
+#      Paulinchen  2026-11-05: Answered the guard's topics with fixed plans and checked what the guard hands the DLL and how it puts a plan back
+#                            - Created
 #
 #----------------------------------------------------------------
 
-# Covers coop_flow.rbx, the one guard of the game's flow, with the DLL's guard standing in
-# (flow_support.rb): the player's own scene it keeps, from a loaded save too, what it puts back
-# where the mod ends an event early, keeps one from starting, moves the player away, ends a watched
-# scene, resumes a frozen fight's scene or puts the game back after a duel, a screen left dark that
-# no such place saw, and what it hands the DLL.
+# Covers coop_flow.rbx, the one guard of the game's flow, with fixed plans of the DLL
+# (telling_support.rb): what it hands the DLL where the mod ends an event early, keeps one from
+# starting, moves the player away, ends a watched scene, resumes a frozen fight's scene or puts the
+# game back after a duel, the player's own scene it keeps for that, from a loaded save too, a screen
+# left dark that no such place saw, and how it puts back what a plan names. What a plan holds for
+# each case is FlowGuardTests' to cover.
 
 require_relative "support"
-require_relative "flow_support"
+require_relative "telling_support"
 
 # Stands in for the game's data: a piece of music, which notes what plays in $played, and a common
 # event.
@@ -100,7 +102,7 @@ end
 load_script "coop_flow"
 require_relative "bridge_support"
 fake = FakeBridge.new
-answer_flow(fake)
+answer_telling(fake)
 MGQ_Multiplayer::Bridge.open(fake)
 
 guard = MGQ_MpFlowGuard
@@ -125,9 +127,16 @@ idle = lambda do
   $game_map.update
 end
 command = lambda { |code, *params| RPG::EventCommand.new(code, 0, params) }
+# Has the DLL answer a plan that puts back what it names and nothing else.
+plan = lambda do |named|
+  $tells.set("flow.plan", { "erase" => [], "fade_in" => false, "tone" => nil, "hidden" => nil, "followers" => nil, "release_party" => false, "music" => nil,
+                            "lift" => [], "end_route" => false, "clear_effects" => false, "frames" => 30 }.merge(named))
+end
+# The last plan the guard asked for.
+asked = lambda { $tells.asked("flow.plan").last }
 
-# A talk the mod ends early: its picture goes, the tint, the light and the music come back as it
-# began, while a parallel event's picture stays (issue #49).
+# A talk the mod ends early hands the DLL the state it began with, the pictures it showed and its
+# commands from where it ends, and the guard puts back what the plan names (issue #49).
 $music = RPG::BGM.new("Castle", 100, 100)
 talk = [command.call(101, "", 0, 0, 2), command.call(401, "Not now."), command.call(121, 2001, 2001, 0), command.call(235, 5), command.call(0)]
 run.call(talk) do
@@ -137,17 +146,19 @@ run.call(talk) do
   $music = RPG::BGM.new("Sad", 90, 100)
 end
 pictures[20].show("hud")
-$flow_asks = []
+plan.call("erase" => [5], "tone" => [0, 0, 0, 0], "fade_in" => true, "music" => ["Castle", 100, 100])
 guard.cut(talk, 2, "a talk ended where it would move the story on")
-check("a talk the mod ends hands the DLL its commands from where it ends", $flow_asks.last["rest"].map(&:first), [121, 235, 0])
-check("and erases the picture it showed, but not a parallel event's", [pictures[5].done.last, pictures[20].done.last], [:erase, :show])
-check("and brings back the tint, the light and the music it began with",
-      [$game_map.screen.done.last(2), $played], [[[:tone, [0, 0, 0, 0], FlowStandIn::FRAMES], [:fadein, FlowStandIn::FRAMES]], [["Castle", 100, 100]]])
+check("a talk the mod ends hands the DLL the tint and music it began with, the picture it showed and its commands from where it ends",
+      [asked.call["cut"], asked.call["before"].values_at("tone", "music"), asked.call["owned"], asked.call["now"]["pictures"], asked.call["rest"].map(&:first)],
+      ["cut", [[0, 0, 0, 0], ["Castle", 100, 100]], [5], [5, 20], [121, 235, 0]])
+check("and erases the picture the plan names, but no other", [pictures[5].done.last, pictures[20].done.last], [:erase, :show])
+check("and brings back the tint, the light and the music the plan names over its frames",
+      [$game_map.screen.done.last(2), $played], [[[:tone, [0, 0, 0, 0], 30], [:fadein, 30]], [["Castle", 100, 100]]])
 guard.cut(talk, 0, "a talk ended before its first line")
-check("a message's text never crosses to the DLL", $flow_asks.last["rest"][1], [401, 0, [nil]])
+check("a message's text never crosses to the DLL", asked.call["rest"][1], [401, 0, [nil]])
 pictures[20].erase
 idle.call
-check("once its event ended with nothing of it standing, the player's own scene closes", guard.open?, false)
+check("once its event ended and the DLL finds nothing of it stands, the player's own scene closes", guard.open?, false)
 
 # An ending puts the player in a temporary party, hidden, and lets them walk; the world's return to
 # the Great Decision then takes them out of it (issue #52).
@@ -156,41 +167,51 @@ run.call([command.call(0)]) do
   $game_player.transparent = true
   $game_player.followers.visible = false
 end
-$flow_stands = 0
+$tells.set("flow.stands", true)
+$tells.clear
 3.times { idle.call }
-check("an ending that leaves the player walking in a temporary party stays under way, asked once while nothing changes", [guard.open?, $flow_stands], [true, 1])
+stands = $tells.asked("flow.stands")
+check("an ending the DLL finds still stands keeps the player's own scene under way, asked once while nothing changes, with the state it began from",
+      [guard.open?, stands.size, stands[0]["start"].values_at("temp_party", "hidden"), stands[0]["now"].values_at("temp_party", "hidden")],
+      [true, 1, [false, false], [true, true]])
 villager = [command.call(101, "", 0, 0, 2), command.call(0)]
 run.call(villager) { pictures[6].show("villager") }
+plan.call("erase" => [6])
 guard.cut(villager, 1, "a talk ended where it would move the story on")
-check("a talk cut on that walk takes back only its own picture, not the ending's party or hidden character",
-      [pictures[6].done.last, $temp_party, $game_player.transparent], [:erase, true, true])
+check("a talk cut on that walk hands the DLL only its own picture, with the ending's party and hidden character it began with",
+      [asked.call["owned"], asked.call["before"].values_at("temp_party", "hidden"), pictures[6].done.last], [[6], [true, true], :erase])
 idle.call
+plan.call("hidden" => false, "followers" => true, "release_party" => true)
 guard.leave("the world went back to the Great Decision", true, true)
-check("the world's return ends the temporary party and shows the player and the followers",
+check("the world's return hands the DLL the state the scene began from, whole and elsewhere",
+      [asked.call["cut"], asked.call["before"].values_at("temp_party", "hidden"), asked.call.values_at("whole", "elsewhere")], ["leave", [false, false], [true, true]])
+check("and ends the temporary party and shows the player and the followers as the plan names, which closes the scene",
       [$temp_party, $game_player.transparent, $game_player.followers.visible, guard.open?], [false, false, true, false])
-$temp_party = true
-$game_player.transparent = true
+$tells.set("flow.stands", nil)
 guard.leave("the player went to the story")
-check("a teleport on the map with no scene of the player's own under way leaves the party and the character as they are", [$temp_party, $game_player.transparent], [true, true])
-DataManager.extract_save_contents({})
-guard.leave("the world went back to the Great Decision", true, true)
-check("the world's return after a save loaded in the middle of the ending ends its temporary party and shows the player", [$temp_party, $game_player.transparent], [false, false])
+check("a teleport with no scene of the player's own under way hands the DLL no state before", asked.call.values_at("before", "whole", "elsewhere"), [nil, false, false])
 
 # A teleport out of a place that bans the escape spell lifts its ban, and shows the followers a
 # defeat's place left hidden (issues #1 and #63, the field test of 2026-10-11).
 $game_switches[94] = true
 $game_player.followers.visible = false
+plan.call("lift" => ["escape"], "followers" => true)
 guard.leave("the player went to the leader", false, true)
-check("a teleport to another map lifts the escape spell's ban of the place and shows the followers", [$game_switches[94], $game_player.followers.visible], [false, true])
+check("a teleport hands the DLL the escape spell's ban on, and lifts it and shows the followers as the plan names",
+      [asked.call["now"]["bans"], $game_switches[94], $game_player.followers.visible], [["escape"], false, true])
 
 # The report of issue #68: after F12 the world's autosave loads on map 1951 showing Chaos's CG
 # with no event running. The story event that would erase it starts only by the player's touch and
 # never runs; the player teleports to the story on map 228.
 pictures[5].show("80_chaos_st01")
 DataManager.extract_save_contents({})
+$tells.set("flow.stands", true)
 2.times { idle.call }
+plan.call("erase" => [5])
 guard.leave("the player went to the story", false, true)
-check("a loaded save's CG that no event erased goes as the player teleports away", pictures[5].done.last, :erase)
+check("a loaded save's CG that no event erased is no part of the state the scene it stopped began from as the player teleports away",
+      [asked.call["before"] && asked.call["before"]["pictures"], asked.call["now"]["pictures"], pictures[5].done.last], [[], [5], :erase])
+$tells.set("flow.stands", nil)
 
 # The same CG goes once the player touches that event while another player's game runs the story
 # there, so it is kept from starting; the DLL names the common event it calls (issue #68).
@@ -200,36 +221,42 @@ $data_common_events[9050] = RPG::CommonEvent.new([command.call(231, 5, "80_chaos
                                                    command.call(211, 0), command.call(222), command.call(0)])
 pictures[5].show("80_chaos_st01")
 event34 = [command.call(117, 9050), command.call(0)]
-$flow_asks = []
+$tells.set("flow.plan") { |request| request["commons"] ? { "erase" => [5], "frames" => 30 } : { "needs" => [9050] } }
+$tells.clear
 guard.skipped(event34, "event 34 on map 1951")
+asks = $tells.asked("flow.plan")
 check("an event kept from starting that calls a common event hands its commands once the DLL names it",
-      [$flow_asks.size, $flow_asks[0].key?("commons"), $flow_asks[1]["commons"].keys], [2, false, [9050]])
+      [asks.size, asks[0]["cut"], asks[0].key?("commons"), asks[1]["commons"].keys], [2, "skip", false, [9050]])
 check("without a picture's name or a message's text, but with a script's",
-      $flow_asks[1]["commons"][9050].first(4).map(&:last), [[5, nil], [nil], [], ["$game_party.release_temp_actors"]])
-check("and the CG the common event's end erases goes", pictures[5].done.last, :erase)
-asked = $flow_asks.size
+      asks[1]["commons"][9050].first(4).map(&:last), [[5, nil], [nil], [], ["$game_party.release_temp_actors"]])
+check("and the plan's picture goes", pictures[5].done.last, :erase)
 2.times { guard.skipped(event34, "event 34 on map 1951") }
 check("the same event kept again asks once for the state the guard left, the common event handed over with it, then nothing more, as the game starts it every frame",
-      [$flow_asks.size, $flow_asks.last["commons"].keys], [asked + 1, [9050]])
+      [$tells.asked("flow.plan").size, $tells.asked("flow.plan").last["commons"].keys], [3, [9050]])
 
-# The teller's CG on the same picture, shown while the player watches, stays (issue #68).
+# The teller's CG on the same picture, shown while the player watches, goes with the request.
 pictures[5].show("80_chaos_st01")
 $watched = { "screen" => true, "hidden" => false, "music" => false, "route" => false, "pictures" => [5] }
+plan.call({})
 guard.skipped(event34, "event 34 on map 1951")
-check("while the player watches a telling, the kept event leaves the teller's CG shown", pictures[5].done.last, :show)
+check("while the player watches a telling, the kept event hands the DLL what the watched scene shows", asked.call["watch"], $watched)
 $watched = nil
 pictures[5].erase
 
 # A frozen fight's resume puts its scene back, CG and story party included. The resumed event stops
-# before its end; once the player stands free, a teleport away erases the CG and ends the party the
-# resume put back (issue #68).
+# before its end; once the player stands free, a teleport away hands the state before the resume
+# (issue #68).
 before_resume = guard.resume_begins
 $temp_party = true
 guard.resuming(before_resume) { pictures[7].show("80_chaos_st01") }
 run.call([command.call(301, 0, 2219, false, false), command.call(235, 7), command.call(0)])
+$tells.set("flow.stands", true)
 2.times { idle.call }
+plan.call("erase" => [7], "release_party" => true)
 guard.leave("the player went to the story", false, true)
-check("a teleport away from a resumed scene, once the player stood free, erases its CG and ends its party", [pictures[7].done.last, $temp_party], [:erase, false])
+check("a teleport away from a resumed scene hands the DLL the state before the resume, and the plan erases its CG and ends its party",
+      [asked.call["before"].values_at("temp_party", "pictures"), pictures[7].done.last, $temp_party], [[false, []], :erase, false])
+$tells.set("flow.stands", nil)
 
 # An event of the player's own began while a watched scene tinted the screen and hid their
 # character; the watched scene's end put both back, then the mod cuts that event.
@@ -241,16 +268,22 @@ own = [command.call(101, "", 0, 0, 2), command.call(0)]
 run.call(own)
 shown = $watched
 $watched = nil
+plan.call("tone" => [0, 0, 0, 0], "hidden" => false)
 guard.watched(unwatched, shown)
+check("a watched scene's end hands the DLL the state before it and what it showed, and puts back the plan's tint and character",
+      [asked.call["cut"], asked.call["before"]["tone"], asked.call["watch"], $game_map.screen.tone.to_a, $game_player.transparent],
+      ["watched", [0, 0, 0, 0], shown, [0, 0, 0, 0], false])
+plan.call({})
 guard.cut(own, 1, "a talk ended where it would move the story on")
-check("a cut of an event that began during a watched scene brings back neither that scene's tint nor its hidden character",
-      [$game_map.screen.tone.to_a, $game_player.transparent], [[0, 0, 0, 0], false])
+check("a cut of an event that began during the watched scene hands the DLL the tint and character that scene's end left, not its own",
+      asked.call["before"].values_at("tone", "hidden"), [[0, 0, 0, 0], false])
 idle.call
 
 # A move kept back after the scene faded out brings the light back (the field test of 2026-10-24).
 $game_map.screen.start_fadeout(30)
+plan.call("fade_in" => true)
 guard.refused("the Central Tartarus is shut")
-check("a move kept back fades the screen in again", $game_map.screen.done.last, [:fadein, FlowStandIn::FRAMES])
+check("a move kept back asks the DLL and fades the screen in as the plan names", [asked.call["cut"], $game_map.screen.done.last], ["refused", [:fadein, 30]])
 
 # A duel's end puts the game back from its snapshot, whose screen the leader's call had faded out
 # (the field test of 2026-10-04).
@@ -259,7 +292,7 @@ $game_map.screen.start_fadeout(30)
 DataManager.extract_save_contents({})
 counted = fades.call
 guard.restored("a PvP battle put the game back")
-check("a duel's end fades in the screen its snapshot held dark", fades.call, counted + 1)
+check("a duel's end asks the DLL and fades in the screen its snapshot held dark", [asked.call["cut"], fades.call], ["free", counted + 1])
 
 # A screen left dark by a cause none of the places that call the guard saw comes back once the
 # player stands free with nothing of the game's flow running, and only then.
@@ -270,16 +303,17 @@ parallel.instance_variable_get(:@interpreter).running = true
 $watched = { "screen" => true, "hidden" => false, "music" => false, "route" => false, "pictures" => [] }
 $transferring = true
 counted = fades.call
+$tells.clear
 idle.call
 $watched = nil
 idle.call
 $transferring = false
 idle.call
-check("a dark screen stays while a watched scene, a transfer or a parallel event runs", fades.call, counted)
+check("a dark screen asks nothing while a watched scene, a transfer or a parallel event runs", [$tells.asked("flow.plan").size, fades.call], [0, counted])
 parallel.instance_variable_get(:@interpreter).running = false
 lines = logged_lines { idle.call }
-check("then fades in, logged with the map and the event that ran last",
-      [fades.call, lines.grep(/screen stood dark on map 1951 .* after event 34 /).size], [counted + 1, 1])
+check("then asks the DLL and fades in, logged with the map and the event that ran last",
+      [asked.call["cut"], fades.call, lines.grep(/screen stood dark on map 1951 .* after event 34 /).size], ["free", counted + 1, 1])
 $game_map.screen.start_fadeout(30)
 lines = logged_lines { idle.call }
 check("again, logged once per map and event", [fades.call, lines.grep(/screen stood dark/).size], [counted + 2, 0])

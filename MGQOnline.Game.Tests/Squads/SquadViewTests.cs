@@ -2,6 +2,8 @@
 //  SquadViewTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Checked that a member takes the leader's active Frontline over their own choice, also before the leader told one
+//                            - Checked the squad of a player who leads a party
 //      Paulinchen  2026-10-30: Created
 //
 //----------------------------------------------------------------
@@ -31,6 +33,43 @@ public sealed class SquadViewTests
         SquadViewState view = SquadView.Of(world.Room, 8, SquadView.ActiveFrontline, false, false, SquadRules.Default);
 
         Assert.Equal(new SquadViewState(new SquadShare(1, 1), SquadView.LeadersOnly, true), view);
+    }
+
+    /// <summary>
+    /// Asserts that a member takes the leader's active Frontline over their own choice of leaders
+    /// only, also while the leader told no choice, since only the leader's choice counts in a party.
+    /// </summary>
+    [Fact]
+    public void Of_GivesAMemberTheLeadersActiveFrontlineOverTheirOwnChoice()
+    {
+        var toldWorld = new PartyWorld();
+        toldWorld.Tell(2, ("id", "leader01"), ("name", "Leader"), ("party", "leader01p1"), ("party_members", "me000001"), ("follow", "0"));
+        toldWorld.Room.Party.Join(toldWorld["leader01"]);
+        var untoldWorld = new PartyWorld();
+        untoldWorld.Tell(2, ("id", "leader01"), ("name", "Leader"), ("party", "leader01p1"), ("party_members", "me000001"));
+        untoldWorld.Room.Party.Join(untoldWorld["leader01"]);
+
+        SquadViewState told = SquadView.Of(toldWorld.Room, 8, SquadView.LeadersOnly, false, false, SquadRules.Default);
+        SquadViewState untold = SquadView.Of(untoldWorld.Room, 8, SquadView.LeadersOnly, false, false, SquadRules.Default);
+
+        Assert.Equal(SquadView.ActiveFrontline, told.Mode);
+        Assert.Equal(SquadView.ActiveFrontline, untold.Mode);
+    }
+
+    /// <summary>
+    /// Asserts that a player who leads a party of two gets the first share and keeps their own
+    /// choice of followers.
+    /// </summary>
+    [Fact]
+    public void Of_GivesTheLeaderTheFirstShareAndTheirOwnFollowers()
+    {
+        var world = new PartyWorld();
+        world.Room.Party.Invite("friend01");
+        world.Tell(3, ("id", "friend01"), ("name", "Friend"), ("party", "me000001p1"));
+
+        SquadViewState view = SquadView.Of(world.Room, 8, SquadView.LeadersOnly, false, false, SquadRules.Default);
+
+        Assert.Equal(new SquadViewState(new SquadShare(2, 2), SquadView.LeadersOnly, true), view);
     }
 
     /// <summary>

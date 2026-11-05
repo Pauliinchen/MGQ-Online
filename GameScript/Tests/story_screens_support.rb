@@ -2,6 +2,7 @@
 #  story_screens_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Loaded the fixed answers of the story's telling instead of the stand-in of the choices' rules
 #      Paulinchen  2026-11-01: Created
 #
 #----------------------------------------------------------------
@@ -13,7 +14,7 @@
 # player on the window's parts with their events.
 
 require_relative "bridge_support"
-require_relative "choices_support"
+require_relative "telling_support"
 
 # The game's rectangle and font, and a picture that measures texts at half the font's size a
 # character, as far as the framework's parts measure their texts.

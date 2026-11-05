@@ -2,7 +2,9 @@
 #  world_room_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Read a message as the DLL reads it
+#      Paulinchen  2026-11-05: Named each told player by the name the test wrote instead of by a copy of the DLL's naming
+#                            - Handed states and messages over with their fields as the test writes them instead of through a copy of the DLL's codec
+#                            - Read a message as the DLL reads it
 #                            - Handed states and messages over with each field as its kind reads
 #      Paulinchen  2026-11-01: Handed the chat's messages to C#, which the chat's model takes, and dropped the stand-in for its send
 #      Paulinchen  2026-10-31: Dropped the messages whose field a rule in C# takes, as the room does
@@ -47,17 +49,20 @@ $world_bridge.answer("world.since") { |map| { "map" => map, "since" => $map_sinc
 end
 MGQ_Multiplayer::Bridge.open($world_bridge)
 
-# Writes a state as the DLL hands it on: each field as its kind reads (see fields_read), marked
-# as a state.
+# A state as the DLL hands it on, its fields as the test writes them, marked as a state.
 #
 # @param state [Hash] The state's fields.
 # @return [Hash] The state.
 def plain_state(state)
-  fields_read({ "state" => 1 }.merge(state))
+  { "state" => "1" }.merge(state)
 end
 
-# Plays the DLL telling that another player told their state: the mirror takes it, with each
-# present player named plainly, and the scripts follow it.
+# The names the DLL hands to tell the players apart, by seat: each told player's name as the test
+# wrote it, as no check gives two players one name.
+$peer_labels = {}
+
+# Plays the DLL telling that another player told their state: the mirror takes it with the names
+# of $peer_labels, and the scripts follow it.
 #
 # @param seat [Integer] Their seat.
 # @param state [Hash] Their state's fields.
@@ -71,16 +76,10 @@ def peer_told(seat, state, member = nil)
              MGQ_MpCoop::Party.instance_variable_get(:@view)["member_ids"].include?(state["id"])
   end
   peers.take(seat, state, member)
-  name_plainly
+  name = state["name"].to_s
+  name.empty? ? $peer_labels.delete(seat) : ($peer_labels[seat] = name)
+  peers.take_labels($peer_labels.dup)
   peers.at(seat)
-end
-
-# Names every present player by their own name, as the DLL does while no two share one.
-def name_plainly
-  peers = MGQ_MpOverworldSync::Peers
-  labels = {}
-  peers.present.each { |peer| labels[peer.seat] = peer.state["name"].to_s unless peer.state["name"].to_s.empty? }
-  peers.take_labels(labels)
 end
 
 # Plays the DLL handing a message to the script registered for its field, past the gates; one
@@ -91,7 +90,7 @@ end
 # @param body [String] What follows them.
 # @param relay [Boolean] Whether the relay pushed it.
 def message_from(seat, fields, body = "", relay = false)
-  message = fields_read(fields)
+  message = Hash[fields.map { |key, value| [key.to_s, value] }]
   return if message.keys.any? { |key| CSHARP_FIELDS.include?(key) }
 
   MGQ_MpOverworldSync.take_route("field" => message.keys.first, "seat" => seat, "fields" => message, "body" => body, "relay" => relay)
@@ -144,8 +143,8 @@ class WorldInbox
     when "seat" then MGQ_MpOverworldSync::Me.take_seat(seat)
     when "out" then MGQ_MpOverworldSync::Peers.away(seat)
     when "message"
-      fields = decode_message(item[:payload])
-      body = fields.delete(:payload)
+      fields = item[:payload].dup
+      body = fields.delete(:payload).to_s
       fields["state"] ? peer_told(seat, fields.reject { |key, _| key == "state" }) : message_from(seat, fields, body)
     end
     self

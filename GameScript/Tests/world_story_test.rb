@@ -2,7 +2,11 @@
 #  world_story_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Checked that the frozen fights hear of the world's story a take wrote
+#      Paulinchen  2026-11-05: Answered the runs handed to the replay with fixed values per case
+#                            - Answered the rewards tables with fixed fields instead of a stand-in of their constants
+#                            - Took the recorded Classic party's table for the world's story mapping
+#                            - Answered whether both endings are cleared with a fixed answer and checked the world's clears go with the request
+#                            - Checked that the frozen fights hear of the world's story a take wrote
 #                            - Handed and expected sites as plain values
 #                            - Handed and expected the story's keys and values as [kind, key] with values
 #                            - Stood in for the shared companions through the DLL's topics
@@ -138,19 +142,6 @@ end
 # Stands in for gathering: counts in $joined how often the player teleports to the story.
 module MGQ_MpCoopGather; def self.join_story; ($joined ||= 0); $joined += 1; end; end
 
-# Stands in for the rewards table, of which only one chest is in the checks.
-module MGQ_MpCoopStoryRewards
-  # The chests' self switches: map, event and letter.
-  CHESTS = [[12, 3, "A"]]
-  # The events where the sides get other rewards, none.
-  GROUPS = []
-  # The companions who join in events, none.
-  ACTORS = []
-  # The rewards only the events where the sides differ give, none.
-  SIDED = { :skills => [], :actors => [] }
-  # The rewards of the Final Chapter, none.
-  ROUTE = { :skills => [], :actors => [] }
-end
 
 # Stands in for the actions, which offer nothing.
 module MGQ_MpActions
@@ -351,6 +342,8 @@ class Scene_Novel; end
 class Game_Map; attr_accessor :events; end
 
 fake = open_rules_bridge
+# The rewards tables, of which only one chest is in the checks.
+answer_party_rewards(fake, "chests" => [[12, 3, "A"]])
 answer_story(fake)
 # The DLL's fetch of the shared companions, which ends at once with the companions in $comps.
 fake.answer("raid.story.fetch") { |world| $calls << ["raid.story.fetch", world]; true }
@@ -364,7 +357,7 @@ choices = MGQ_MpCoopChoices
 keys = MGQ_MpStoryKeys
 # The world's story mapping: what the Raid personal lists of earlier builds shared, the Queen's
 # Cup's steps local where it plays, and a companion's affection the whole world keeps going only up.
-mapping = listed_raid_table_hash({ "switches" => 8000, "variables" => 4000, "companions" => 600, "chest_flags" => [7102] }, [2029])
+mapping = listed_raid_table_hash([2029])
 variables = mapping["variables"].unpack("C*")
 variables[3005] = 35
 variables[1144] = 3
@@ -621,7 +614,11 @@ $game_system_switches = { :ed1 => true, :ed2 => false, :op1 => true }
 check("the endings read the world's clear switches", [interpreter.ssw(:ed1), interpreter.ssw(:ed2), interpreter.ssw(:op1)], [false, false, true])
 $game_switches[7096] = true
 $game_switches[7097] = true
-check("which open the third way for the world", [interpreter.ssw(:ed1), interpreter.ssw(:ed2), choices.both_endings?], [true, true, true])
+$tells.set("choices.endings", true)
+check("which the Raid World's third way asks the DLL about with the world's clears",
+      [interpreter.ssw(:ed1), interpreter.ssw(:ed2), choices.both_endings?, $tells.asked("choices.endings").last["raid"], ($tells.asked("choices.endings").last["values"]["s"] & [7096, 7097])],
+      [true, true, true, true, [7096, 7097]])
+$tells.set("choices.endings", nil)
 $raid = false
 check("a Classic world reads the install's", [interpreter.ssw(:ed2), choices.both_endings?], [false, false])
 $raid = true
@@ -714,7 +711,9 @@ $replay_waiting = []
 $free = false
 $walks = []
 fake.answer("story.hand_entry") { |entry| $story_staged << ["story.hand_entry", entry]; nil }
-fake.answer("story.stream") { |request| $walks << request; request["free"] && request["waiting"].empty? ? { "id" => "gift" } : nil }
+# The runs the DLL hands the replay, one per call, as each case sets them.
+$streamed = []
+fake.answer("story.stream") { |request| $walks << request; $streamed.shift }
 $story_staged.clear
 $game_variables[1001] = 43
 check("a run goes in a Raid World", story.hand_entry("id" => "mine"), true)
@@ -722,8 +721,9 @@ frames(1)
 check("after the writes recorded before it", $story_staged.map { |topic, _| topic } & ["story.writes", "story.hand_entry"], ["story.writes", "story.hand_entry"])
 check("nothing reaches the replay while the player is not free", [$replay_waiting, $walks.last["free"]], [[], false])
 $free = true
+$streamed = [{ "id" => "gift" }]
 frames(2)
-check("once free, the next run reaches the replay, and none more while it waits there", [$replay_waiting, $walks.last["waiting"]], [[{ "id" => "gift" }], ["gift"]])
+check("once free, the next run the DLL hands reaches the replay, which the next call names waiting", [$replay_waiting, $walks.last["waiting"]], [[{ "id" => "gift" }], ["gift"]])
 
 # Closing the world: the frame's writes go to the DLL ahead of the close, as a world left for the
 # title screen closes its room before the frame ends.

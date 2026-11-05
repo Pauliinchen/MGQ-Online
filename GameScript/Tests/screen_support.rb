@@ -2,6 +2,7 @@
 #  screen_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Answered the world screen's model with the values each test sets instead of the screen's methods as they were before they moved to C#
 #      Paulinchen  2026-11-01: Dropped the details' old methods for tests, which read only the prototype
 #      Paulinchen  2026-10-31: Stopped calling the deleted mp_dir_refresh as the screen opens
 #      Paulinchen  2026-10-30: Turned off none of the player's mods, without the parking
@@ -10,264 +11,157 @@
 #
 #----------------------------------------------------------------
 
-# The topics of the world screen's model (screen.*), answered by FakeBridge stand-ins: the list
-# from the directory's list the test's stand-in of the DLL hands ($directory) joined with the
-# worlds on this PC as local_worlds_support.rb keeps them, and a world's row, details, choices and
-# list box lines from fixtures/screen/screen_prototype.rb, the screen's methods as they were before
-# they moved to C#, asking the other scripts' stand-ins what they asked them. The prototype is
-# checked against fixtures/screen/screen.json, which the C# model passes too, as this file loads.
+# Answers the topics of the world screen's model (ScreenTopics: screen.*) on a FakeBridge with the
+# fixed values each test sets for its case: the list's rows, and a row's details, choices and list
+# box lines by its key. The screen's texts are the ones the DLL answers (the recorded texts of
+# fixtures/screen/screen.json). Unless a test sets them, the list stands idle without rows and a
+# row has no details, no choice but Back and no lines. Every rule (the rows' order and colours, the
+# panels, which choices a world offers) is WorldScreenModelTests' and ScreenTopicsTests' to cover.
 
-require_relative "../../fixtures/screen/screen_cases"
+require "json"
+require_relative "bridge_support"
 
-# The golden screen: its texts and its cases.
-SCREEN_CASES = rule_cases("screen", "screen.json")
+# Stands in for the DLL's answers of the world screen's model.
+class ScreenAnswers
+  include NotedRequests
 
-SCREEN_CASES["cases"].each do |entry|
-  shown = ScreenPrototype::Cases.run(entry)
-  shown.each { |part, value| raise "the screen prototype shows #{part} of #{entry['name'].inspect} otherwise than screen.json" if value != entry[part] }
-end
+  # The topics answered.
+  TOPICS = %w(screen.open screen.close screen.texts screen.list screen.world screen.details screen.actions screen.box).freeze
 
-# What a world of the test reads beyond it: the other scripts, as ScreenPrototype::Model asked them.
-class StandInScreenFacts
-  # Names the parts of the game data that differ.
+  # The screen's texts as the DLL answers them.
+  TEXTS = JSON.parse(File.read(File.expand_path("../../fixtures/screen/screen.json", __dir__), :encoding => "UTF-8"))["texts"].reject { |name, _| name == "mod_states" }.freeze
+
+  # The list while the DLL fetched none.
+  IDLE = { "state" => "idle", "error" => nil, "admin" => false, "info" => nil, "rows" => [] }.freeze
+
+  # @return [FakeBridge] The bridge answered on.
+  attr_reader :fake
+
+  # @return [Hash] What screen.list answers.
+  attr_accessor :list
+
+  # @return [Hash] What screen.details answers, by the row's key.
+  attr_reader :details
+
+  # @return [Hash] What screen.actions answers, by the row's key: each choice's label, symbol and
+  #   whether it can be chosen.
+  attr_reader :actions
+
+  # @return [Hash] What screen.box answers, by the row's key and the kind, such as ["w1", "players"].
+  attr_reader :boxes
+
+  # Answers the topics on a bridge.
   #
-  # @param parts [Array<String>] The parts.
-  # @param named [Integer] Most parts named.
-  # @return [String] The text.
-  def data_text(parts, named)
-    MGQ_MpWorld::GameData.text(parts, named)
+  # @param fake [FakeBridge] The bridge.
+  def initialize(fake)
+    @fake = fake
+    @asked = []
+    @list = IDLE
+    @details = {}
+    @actions = {}
+    @boxes = {}
+    TOPICS.each { |topic| fake.answer(topic) { |request| answer(topic, request) } }
   end
 
-  # Lists the required mods that differ.
-  #
-  # @param listed [Object] The world.
-  # @return [Array] The rows.
-  def rows(listed)
-    MGQ_MpWorldMods.differing(listed)
+  # Forgets the requests taken so far, so a check reads only those of its own case.
+  def clear
+    @asked.clear
   end
 
-  # Writes the details' line of the shared settings.
+  # Answers a topic with what the test set.
   #
-  # @param listed [Object] The world.
-  # @param me [String] The player's id.
-  # @return [String] The line.
-  def settings_text(listed, me)
-    MGQ_MpWorldMods.details_text(listed, me)
+  # @param topic [String] The topic.
+  # @param request [Object] The request.
+  # @return [Object] The reply.
+  def answer(topic, request)
+    note(topic, request)
+    case topic
+    when "screen.texts" then TEXTS
+    when "screen.list" then @list
+    when "screen.world" then world(request)
+    when "screen.details" then @details[request]
+    when "screen.actions" then @actions[request]
+    when "screen.box" then @boxes[[request["key"], request["kind"]]]
+    end
   end
 
-  # Tells whether the settings are shared.
-  #
-  # @param text [String] The settings.
-  # @return [Boolean] Whether they are.
-  def shared?(text)
-    MGQ_MpWorldMods.shared?(text)
-  end
+  private
 
-  # Lists the player's mods a world turns off, none here.
+  # Finds a world of the list as screen.world answers it.
   #
-  # @param listed [Object] The world.
-  # @return [Array<Array>, nil] The mods.
-  def turned_off(listed)
-    []
-  end
-
-  # Tells whether a mod's script is installed.
-  #
-  # @param name [String] The mod.
-  # @return [Boolean] Whether it is.
-  def installed?(name)
-    MGQ_MpWorld.installed_mod?(name)
-  end
-
-  # Names a difficulty.
-  #
-  # @param value [Integer] The difficulty.
-  # @return [String, nil] Its name.
-  def difficulty_name(value)
-    MGQ_MpWorld.difficulty_name(value)
-  end
-
-  # Names a Formation size.
-  #
-  # @param value [Integer] The size.
-  # @return [String] Its name.
-  def formation_name(value)
-    MGQ_MpWorld.formation_name(value)
-  end
-
-  # Gives the default squad rules.
-  #
-  # @return [Hash] The rules.
-  def default_squad
-    MGQ_MpWorld.default_squad
-  end
-
-  # Lists the hidden worlds added.
-  #
-  # @return [Array<String>] Their ids.
-  def added
-    MGQ_MpWorld::Added.all
-  end
-
-  # Tells what of the game data differs.
-  #
-  # @param entry [Object] The world.
-  # @return [Array<String>, nil] The parts.
-  def differing(entry)
-    entry.listed.nil? ? nil : MGQ_MpWorld::GameData.differing(entry.listed.data)
+  # @param id [String] The world's id.
+  # @return [Hash] How the list stands and the world, nil when no row holds it.
+  def world(id)
+    row = @list["rows"].find { |each| each["id"] == id }
+    { "state" => @list["state"], "listed" => row && row["listed"] }
   end
 end
 
-# The rows of the screen's list the stand-in made last, by key: the entry the prototype reads.
-$screen_rows = {}
-
-# Writes a world of the directory as screen.list hands it out.
+# Answers the world screen's model with the values each test sets, kept in $screens; a bridge
+# answered already keeps its answers.
 #
-# @param world [MGQ_MpWorld::Directory::ListedWorld] The world, as the scripts' thin parser read it.
-# @return [Hash] Every field by name, the members as [id, online, name], the squad by its names in the DLL's answers.
-def stand_in_listed_value(world)
-  value = {}
-  MGQ_MpWorld::Directory::ListedWorld.members.each { |field| value[field.to_s] = world[field] }
-  value["members"] = world.members.map { |member| [member.id, member.online, member.name] }
-  value["squad"] = world.squad && { "luka" => world.squad[:luka], "formation" => world.squad[:formation], "front" => world.squad[:front], "raid_front" => world.squad[:raid_front] }
-  value["mods_unread"] = world.mods_unread ? true : false
-  value
-end
-
-# Makes the prototype's view of a world of the list.
-#
-# @param world [MGQ_MpWorld::Directory::ListedWorld, nil] The world.
-# @param local [Hash, nil] Its folder, as worlds.local hands it out.
-# @param id [String, nil] Its directory id.
-# @param name [String] Its name.
-# @param favourite [Boolean] Whether it is a favourite.
-# @param gone [Boolean] Whether the directory no longer has it.
-# @return [ScreenPrototype::Cases::Entry] The view.
-def stand_in_screen_entry(world, local, id, name, favourite, gone)
-  played = local && local["played"] && ScreenPrototype::Cases::Played.new(Time.at(local["played"]).strftime("%Y-%m-%d"))
-  folder = local && ScreenPrototype::Cases::Local.new(local["id"], played, !stand_in_latest_save_of(local["id"]).nil?, local["type"] == "raid")
-  listed = world && ScreenPrototype::Cases.listed_of(stand_in_listed_value(world))
-  ScreenPrototype::Cases::Entry.new(id, name, listed, folder, favourite, gone)
-end
-
-# Finds a world's latest save as worlds.latest_save answers it.
-#
-# @param id [String] The folder's id.
-# @return [Array, nil] The save, nil for none.
-def stand_in_latest_save_of(id)
-  MGQ_Multiplayer::Bridge.call("worlds.latest_save", id)
-end
-
-# The player's id the stand-ins name, as the DLL knows it; a test may set another.
-$screen_me = "me"
-
-# Makes the screen's rows of the directory's worlds and the worlds on this PC, as screen.list does,
-# and keeps them for the details, choices and list box lines.
-#
-# @param listed [Array<MGQ_MpWorld::Directory::ListedWorld>] The directory's worlds.
-# @param complete [Boolean] Whether the directory's list arrived.
-# @param admin [Boolean] Whether the player is one of the relay's admins.
-# @return [Array<Hash>] The rows, as screen.list hands them out.
-def stand_in_screen_rows(listed, complete, admin = false)
-  worlds = listed.map { |world| [world.id.to_s, world.name.to_s, world.raid? ? true : false, world.featured ? true : false] }
-  $screen_rows = {}
-  stand_in_entries(worlds, $local_worlds.values, $world_lists["favourite"], complete).map do |id, name, index, local, favourite, gone|
-    world = index && listed[index]
-    key = id || "folder:#{local['id']}"
-    entry = stand_in_screen_entry(world, local, id, name, favourite, gone)
-    $screen_rows[key] = [entry, world, admin == true, $screen_me]
-    model = ScreenPrototype::Model.new(entry, $screen_me, admin == true, StandInScreenFacts.new)
-    model.draw_item(0)
-    drawn = model.drawn
-    { "key" => key, "id" => id, "name" => name, "text" => drawn["text"], "count" => drawn["count"], "color" => drawn["color"].to_s, "dim" => drawn["dim"], "favourite" => favourite, "gone" => gone,
-      "listed" => world && stand_in_listed_value(world), "local" => local }
-  end
-end
-
-# Makes the screen's list as screen.list answers it, from the list the test's DLL stand-in reads.
-#
-# @return [Hash] The list.
-def stand_in_screen_list
-  state, error, listed, admin = MGQ_MpWorld::Directory.list
-  rows = stand_in_screen_rows(listed, state == "ready", admin == true)
-  info = { "loading" => "The list is being fetched . . .", "failed" => "The list could not be fetched: #{error}" }[state]
-  { "state" => state, "error" => error, "admin" => admin == true, "info" => info, "rows" => rows }
-end
-
-# Makes the entries the world screen lists, as it makes them of screen.list's rows.
-#
-# @param listed [Array<MGQ_MpWorld::Directory::ListedWorld>] The directory's worlds.
-# @param complete [Boolean] Whether the directory's list arrived.
-# @param admin [Boolean] Whether the player is one of the relay's admins.
-# @return [Array<MGQ_MpWorld::Entry>] The entries, each with its key and row.
-def screen_entries(listed, complete, admin = false)
-  stand_in_screen_rows(listed, complete, admin).map { |row| MGQ_MpWorldScreen.entry_of(row) }
-end
-
-# The worlds a test made itself, by the key screen_entry gave them, which the stand-ins answer as
-# if the DLL's list held them.
-$screen_test_rows = {}
-
-# Hands a world a test made to the screen's stand-ins under a key of its own, as if the DLL's list
-# held it.
-#
-# @param entry [MGQ_MpWorld::Entry] The world.
-# @param admin [Boolean] Whether the player is one of the relay's admins.
-# @param me [String] The player's id.
-# @return [MGQ_MpWorld::Entry] The world, with its key.
-def screen_entry(entry, admin = false, me = $screen_me)
-  entry.key = "test:#{$screen_test_rows.size + 1}"
-  $screen_test_rows[entry.key] = [entry, entry.listed, admin, me]
-  entry
-end
-
-# Points the prototype at a row of the list the stand-in made last, or at a world a test made.
-#
-# @param key [String] The row's key.
-# @return [Array, nil] The prototype and the entry, nil for a key the list lacks.
-def stand_in_screen_model(key)
-  stand_in_screen_list unless $screen_rows.key?(key) || $screen_test_rows.key?(key)
-  entry, _world, admin, me = $screen_test_rows[key] || $screen_rows[key]
-  entry && [ScreenPrototype::Model.new(entry, me, admin, StandInScreenFacts.new), entry, me]
-end
-
-# Writes a world's details as screen.details answers them.
-#
-# @param key [String] The row's key.
-# @return [Hash, nil] The details.
-def stand_in_screen_details(key)
-  model, entry, me = stand_in_screen_model(key)
-  return nil unless model
-
-  { "title" => entry.name, "title_color" => entry.raid? ? "raid" : entry.featured? ? "featured" : "system", "played" => model.played_text(entry.local),
-    "panels" => model.panels(entry, me).map { |panel| ScreenPrototype::Cases.panel_value(panel) }, "description" => entry.listed && entry.listed.description.to_s }
-end
-
-# Answers the topics of the world screen's model.
-#
-# @param fake [FakeBridge] The bridge.
+# @param fake [FakeBridge] The test's bridge.
+# @return [ScreenAnswers] The answers.
 def answer_screen(fake)
-  fake.answer("screen.open") { $screen_open = true; nil }
-  fake.answer("screen.close") { $screen_open = false; nil }
-  fake.answer("screen.texts") { SCREEN_CASES["texts"].reject { |name, _| name == "mod_states" } }
-  fake.answer("screen.list") { stand_in_screen_list }
-  fake.answer("screen.world") do |id|
-    state, _error, listed = MGQ_MpWorld::Directory.list
-    world = listed.find { |candidate| candidate.id == id }
-    { "state" => state, "listed" => world && stand_in_listed_value(world) }
-  end
-  fake.answer("screen.details") { |key| stand_in_screen_details(key) }
-  fake.answer("screen.actions") do |key|
-    model, = stand_in_screen_model(key)
-    model && (model.on_world; model.offered.call.map { |label, symbol, enabled| [label, symbol.to_s, enabled.nil? ? true : enabled] })
-  end
-  fake.answer("screen.box") do |request|
-    model, entry, = stand_in_screen_model(request["key"])
-    next nil unless model && entry.listed
+  $screens = ScreenAnswers.new(fake) unless $screens && $screens.fake.equal?(fake)
+  $screens
+end
 
-    lines = request["kind"] == "players" ? model.player_lines(entry.listed.members) : model.mod_lines(entry.listed.mods, StandInScreenFacts.new.differing(entry), MGQ_MpWorldMods.differing(entry.listed), [])
-    lines.map { |line| ScreenPrototype::Cases.line_value(line) }
-  end
+# Makes a row of the list as screen.list tells it, its key its directory id or its folder's.
+#
+# @param name [String] The world's name.
+# @param fields [Hash] What differs: such as "id", "listed" (see listed_value), "local" (as
+#   worlds.local tells a world), "text", "count", "color" ("raid", "featured", "favourite" or
+#   "normal"), "dim", "favourite" and "gone".
+# @return [Hash] The row.
+def screen_row(name, fields = {})
+  id = fields.key?("id") ? fields["id"] : fields["listed"] && fields["listed"]["id"]
+  key = id || "folder:#{fields['local']['id']}"
+  { "key" => key, "id" => id, "name" => name, "text" => name, "count" => "", "color" => "normal", "dim" => false, "favourite" => false, "gone" => false,
+    "listed" => nil, "local" => nil }.merge(fields)
+end
+
+# Makes the row of a world of the directory.
+#
+# @param listed [Hash] The world, see listed_value.
+# @param fields [Hash] What else differs, see screen_row.
+# @return [Hash] The row.
+def listed_row(listed, fields = {})
+  screen_row(listed["name"], { "listed" => listed }.merge(fields))
+end
+
+# Sets the list screen.list answers and tells the screen it changed.
+#
+# @param rows [Array<Hash>] The rows, see screen_row.
+# @param state [String] How the list stands: "idle", "loading", "ready" or "failed".
+# @param fields [Hash] What else differs: "error", "admin" or "info".
+def screen_list(rows, state = "ready", fields = {})
+  $screens.list = { "state" => state, "error" => nil, "admin" => false, "info" => nil, "rows" => rows }.merge(fields)
+  screen_changed
+end
+
+# Makes the entry the screen makes of a row.
+#
+# @param row [Hash] The row, see screen_row.
+# @return [MGQ_MpWorld::Entry] The entry.
+def screen_entry(row)
+  MGQ_MpWorldScreen.entry_of(row)
+end
+
+# Makes a world's details as screen.details tells them: its World panel naming its creator, its
+# mods as chips that open the list box, its players that open it too, and its description.
+#
+# @param title [String] The world's name.
+# @param mods [Array<String>] Its mods.
+# @param players [Array<String>] Its players.
+# @param description [String, nil] Its description, nil for none.
+# @return [Hash] The details.
+def screen_details(title, mods, players, description)
+  cell = lambda { |label, text, extra = {}| { "label" => label, "text" => text, "color" => "normal", "target" => nil, "chips" => nil, "chip_colors" => nil }.merge(extra) }
+  { "title" => title, "title_color" => nil, "played" => "", "description" => description,
+    "panels" => [{ "title" => "World", "note" => nil, "target" => nil, "rows" => [[cell.call("Creator", "Cara")]] },
+                 { "title" => "Game data", "note" => nil, "target" => nil, "rows" => [[cell.call("Mods", mods.join(", "), "target" => "mods", "chips" => mods)]] },
+                 { "title" => "Players", "note" => "#{players.size} joined", "target" => "players", "rows" => [players.map { |name| cell.call(nil, name) }] }] }
 end
 
 # Tells the screen that the list and what the details read changed, as the DLL's drain does.

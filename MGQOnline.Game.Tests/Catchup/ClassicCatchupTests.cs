@@ -2,7 +2,8 @@
 //  ClassicCatchupTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Replayed the recorded calls of the Classic catch-up, the side and the key item loan on the one engine
+//      Paulinchen  2026-11-05: Replayed every call the script tests answer by its recorded answer, and what the catch-up reads over each table set
+//                            - Replayed the recorded calls of the Classic catch-up, the side and the key item loan on the one engine
 //                            - Created
 //
 //----------------------------------------------------------------
@@ -20,7 +21,8 @@ namespace MGQOnline.Game.Tests.Catchup;
 /// Covers how a Classic party's member plays the leader's story and catches up with it on the one
 /// catch-up engine, the side a player takes along and the Classic key item loan, against every call
 /// the script tests made (fixtures/catchup/classic.json, made by fixtures/catchup/make_classic.rb),
-/// each answer checked by hand against the user's written answers, and the rules no test of the
+/// each answer checked by hand against the user's written answers, every call the script tests now
+/// answer by its recorded answer (fixtures/catchup/classic_calls.json), and the rules no test of the
 /// scripts reaches.
 /// </summary>
 public sealed class ClassicCatchupTests
@@ -29,6 +31,11 @@ public sealed class ClassicCatchupTests
     /// The golden cases.
     /// </summary>
     private static readonly JsonElement Classic = Fixtures.Read("catchup", "classic.json");
+
+    /// <summary>
+    /// Every call of the script tests with the answer they take as the DLL's.
+    /// </summary>
+    private static readonly JsonElement Calls = Fixtures.Read("catchup", "classic_calls.json");
 
     /// <summary>
     /// Asserts that every call answers as the user's answers its note names call for: members
@@ -46,17 +53,7 @@ public sealed class ClassicCatchupTests
             string topic = entry.GetProperty("topic").GetString()!;
             string note = entry.GetProperty("note").GetString()!;
             CatchupTables tables = entry.GetProperty("tables").ValueKind == JsonValueKind.Number ? sets[entry.GetProperty("tables").GetInt32()] : CatchupTables.Empty;
-            RubyHash request = CatchupEngineTests.ValueOf(entry.GetProperty("request")).AsHash();
-            RubyHash answer = topic switch
-            {
-                "catchup.classic" => CatchupEngine.Classic(tables, request, PartyOf(entry)),
-                "catchup.side" => SidePick.Answer(tables, request),
-                "catchup.key_loan" => KeyItemLoan.Answer(request),
-                "catchup.classic_sync" => ClassicStory.Sync(request),
-                "catchup.classic_followers" => ClassicStory.Followers(request),
-                "catchup.classic_mode" => ClassicStory.Mode(request),
-                _ => ClassicStory.Restore(request),
-            };
+            RubyHash answer = AnswerOf(entry, tables);
             RubyValue expected = CatchupEngineTests.ValueOf(entry.GetProperty("answer"));
 
             Assert.True(note.Length > 0 && note != "UNCHECKED", $"case {index} ({topic}) names no answer it follows");
@@ -65,6 +62,35 @@ public sealed class ClassicCatchupTests
         }
 
         Assert.True(index > 0);
+    }
+
+    /// <summary>
+    /// Asserts that every call coop_events_test.rb answers by its recorded answer gets that answer
+    /// from the C# rules, and that what the catch-up reads over each table set is what it takes.
+    /// </summary>
+    [Fact]
+    public void RecordedCalls_AnswerAsTheScriptTestsTakeThem()
+    {
+        CatchupTables[] sets = [.. Calls.GetProperty("tables").EnumerateArray().Select(CatchupEngineTests.TablesOf)];
+        RubyValue[] keys = [.. Calls.GetProperty("keys").EnumerateArray().Select(CatchupEngineTests.ValueOf)];
+        int index = 0;
+        foreach (JsonElement entry in Calls.GetProperty("calls").EnumerateArray())
+        {
+            CatchupTables tables = entry.GetProperty("tables").ValueKind == JsonValueKind.Number ? sets[entry.GetProperty("tables").GetInt32()] : CatchupTables.Empty;
+            RubyValue expected = CatchupEngineTests.ValueOf(entry.GetProperty("answer"));
+            RubyHash answer = AnswerOf(entry, tables);
+
+            Assert.True(expected.Equals(answer), $"call {index} ({entry.GetProperty("topic").GetString()}):\nexpected {expected}\nanswered {answer}");
+            index++;
+        }
+
+        Assert.True(index > 0);
+        Assert.Equal(keys.Length, sets.Length);
+        for (int set = 0; set < sets.Length; set++)
+        {
+            RubyHash read = CatchupEngine.Keys(sets[set]);
+            Assert.True(keys[set].Equals(read), $"keys of set {set}:\nexpected {keys[set]}\nanswered {read}");
+        }
     }
 
     /// <summary>
@@ -108,6 +134,27 @@ public sealed class ClassicCatchupTests
         RubyArray actions = CatchupEngine.Classic(tables, request, ClassicParty.None)["actions"].AsArray();
 
         Assert.DoesNotContain(actions, action => action.AsArray()[0].AsText() == "give");
+    }
+
+    /// <summary>
+    /// Answers a recorded call by the C# rule of its topic.
+    /// </summary>
+    /// <param name="entry">The call: its topic, request and what it read of the party.</param>
+    /// <param name="tables">The tables it was answered over.</param>
+    /// <returns>The answer.</returns>
+    private static RubyHash AnswerOf(JsonElement entry, CatchupTables tables)
+    {
+        RubyHash request = CatchupEngineTests.ValueOf(entry.GetProperty("request")).AsHash();
+        return entry.GetProperty("topic").GetString() switch
+        {
+            "catchup.classic" => CatchupEngine.Classic(tables, request, PartyOf(entry)),
+            "catchup.side" => SidePick.Answer(tables, request),
+            "catchup.key_loan" => KeyItemLoan.Answer(request),
+            "catchup.classic_sync" => ClassicStory.Sync(request),
+            "catchup.classic_followers" => ClassicStory.Followers(request),
+            "catchup.classic_mode" => ClassicStory.Mode(request),
+            _ => ClassicStory.Restore(request),
+        };
     }
 
     /// <summary>

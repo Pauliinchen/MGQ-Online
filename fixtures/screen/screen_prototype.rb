@@ -11,9 +11,8 @@
 # in MGQOnline.Game, kept as it was: its methods copied unchanged but for what they asked the other
 # scripts, which they ask a facts object instead (see Model#initialize), and for the game data's row
 # and the essential mods' marks, which follow the DLL since it compares the game data only once the
-# world's mods loaded. make_fixtures.rb records
-# fixtures/screen/screen.json from it, and the script tests answer the screen.* topics through it,
-# checked against that file as GameScript/Tests/screen_support.rb loads.
+# world's mods loaded. make_fixtures.rb records fixtures/screen/screen.json from it. A recording
+# tool: no test runs against it.
 module ScreenPrototype
   # What the screen says while nothing else happened.
   HINT = "Up and down pick the worlds or the commands, confirm moves into them. Right arrow on a world: its details."

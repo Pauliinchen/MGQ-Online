@@ -2,6 +2,8 @@
 #  choice_inputs_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Answered the model of each input with fixed values per case instead of from a copy of the C# one
+#                            - Answered the choices a catch-up passes with a fixed answer and checked where the stream began goes with the request
 #      Paulinchen  2026-11-01: Ended the map before its menu scene started, as the game does when another scene takes its place
 #                            - Played the question on the Mod Framework's window it now is
 #                            - Checked that a question whose menu scene never started opens again
@@ -17,7 +19,7 @@
 # menu scene of its own once the player is free on the map; a row, the digits or the Answer button
 # answer; cancel answers what the game's window answers, or puts a number and a choice without
 # cancel off until the player was busy and stands free again. The DLL's model of the inputs
-# (ChoiceInputs in MGQOnline.Game) is stood in for by its answers alone.
+# (ChoiceInputs in MGQOnline.Game, ChoiceInputsTests) answers with the fixed model each case sets.
 
 require_relative "support"
 require_relative "story_screens_support"
@@ -31,20 +33,34 @@ $game_actors = { 5 => Companion.new("Alice") }
 # The map, with its display name.
 $game_map = Struct.new(:display_name).new("Iliasburg")
 
-# The DLL's model of the inputs, as far as its answers: the rows with a last cancel row for an item
-# and a present, the start row and what cancel answers.
+# The DLL's model of the input open, which each case sets, and the requests it got.
+$input_model = nil
 opened = []
-FAKE.answer("choices.input_open") do |request|
-  opened << request
-  spec = request["spec"]
-  rows = (spec["labels"] || []).each_with_index.map { |label, place| [place, label, nil, "Pick your answer.", false] }
-  rows += (spec["items"] || []).map { |id, name, count, description| [id, name, count, description, false] } + [[0, "None", nil, "", true]] if request["kind"] != "choice"
-  rows << [rows.size, "Cancel", nil, "Pick your answer.", true] if request["kind"] == "choice" && spec["cancel"] == spec["labels"].size
-  cancel = { "choice" => spec["cancel"], "number" => nil }.fetch(request["kind"], 0)
-  { "kind" => request["kind"], "title" => "#{request['opener']}'s event", "keys" => [["Enter", "answer"], ["cancel", cancel.nil? ? "answer later" : "none"]],
-    "hint" => request["kind"] == "number" ? "No numpad." : rows[spec["index"]][3], "rows" => request["kind"] == "number" ? [] : rows,
-    "digits" => spec["digits"].to_i, "value" => spec["value"].to_i, "index" => spec["index"], "cancel" => cancel }
+FAKE.answer("choices.input_open") { |request| opened << request; $input_model }
+
+# Writes the DLL's model of an input as choices.input_open answers it, the first row picked.
+#
+# @param kind [String] "number", "choice", "item" or "present".
+# @param rows [Array<Array>] Each row's answer, text, count, hint and whether it is dim.
+# @param cancel [Integer, nil] What cancel answers, nil to answer later.
+# @param fields [Hash] The fields that differ, such as the digits.
+# @return [Hash] The model.
+def input_model(kind, rows, cancel, fields = {})
+  { "kind" => kind, "title" => "Ana's event", "keys" => [["Enter", "answer"], ["cancel", cancel.nil? ? "answer later" : "none"]], "hint" => rows.empty? ? "No numpad." : rows[0][3],
+    "rows" => rows, "digits" => 0, "value" => 0, "index" => 0, "cancel" => cancel }.merge(fields)
 end
+
+# Writes a row of a choice's label.
+#
+# @param place [Integer] The label's place.
+# @param text [String] The label.
+# @return [Array] The row.
+def label_row(place, text)
+  [place, text, nil, "Pick your answer.", false]
+end
+
+# The row that answers no item.
+NONE_ROW = [0, "None", nil, "", true]
 
 choices = MGQ_MpCoopChoices
 answers = []
@@ -54,6 +70,7 @@ frame = lambda { |free| $free = free; choices.update }
 
 # A number waits until the player is free, then opens its window in a menu scene of its own.
 $scenes = []
+$input_model = input_model("number", [], nil, "digits" => 3, "value" => 42)
 choices.ask_input("Ana", ["\\n<Shopkeeper>How many coins", "do you put in?"], "number", { "digits" => 3, "value" => 42 }, done)
 frame.call(false)
 check("a question waits while the player is not free on the map", $scenes.size, 0)
@@ -74,6 +91,7 @@ check("and the question is done", choices.question, nil)
 
 # Cancel puts a number off: walking on does not reopen it; a message, a menu or a battle of the
 # player's own does, once they stand free again, with the same digits.
+$input_model = input_model("number", [], nil, "digits" => 2, "value" => 7)
 choices.ask_input("Ana", ["How many?"], "number", { "digits" => 2, "value" => 7 }, done)
 frame.call(true)
 cancel(enter_menu)
@@ -97,6 +115,7 @@ check("the Answer button answers the digits shown", answers.last, 9)
 
 # A choice without cancel is put off as a number is; one with its own branch answers it on cancel,
 # from a dim last row.
+$input_model = input_model("choice", [label_row(0, "Yes"), label_row(1, "No")], nil)
 choices.ask("Ana", ["Will you help?"], ["Yes", "No"], done)
 frame.call(true)
 window = enter_menu
@@ -104,12 +123,14 @@ check("a choice lists its labels", window.find(:mgq_online_story_question_list).
 cancel(window)
 check("cancel puts a choice without cancel off", [answers.last, choices.question[:later]], [9, true])
 choices.forget("next check")
+$input_model = input_model("choice", [label_row(0, "Sword"), label_row(1, "Shield"), [2, "Cancel", nil, "Pick your answer.", true]], 2)
 choices.ask("Ana", [], ["Sword", "Shield"], done, 2)
 frame.call(true)
 window = enter_menu
 check("a choice with its own cancel branch shows it dim and last", window.find(:mgq_online_story_question_list).rows.last, { :text => "Cancel", :color => :dim, :data => 2 })
 cancel(window)
 check("and cancel answers the branch", answers.last, 2)
+$input_model = input_model("choice", [label_row(0, "Yes"), label_row(1, "No")], 1)
 choices.ask("Ana", [], ["Yes", "No"], done, 1)
 frame.call(true)
 list = enter_menu.find(:mgq_online_story_question_list)
@@ -117,6 +138,7 @@ list.emit(:submit, list.row_at(0), 0)
 check("a row picked answers its place", answers.last, 0)
 
 # A key item: the player's items with their descriptions, icons and counts; cancel answers none.
+$input_model = input_model("item", [[12, "Silver Ring", 1, "A ring.", false], [30, "Old Map", 2, "A map.", false], NONE_ROW], 0)
 choices.ask_input(nil, [], "item", { "items" => [[12, "Silver Ring", 1], [30, "Old Map", 2]] }, done)
 frame.call(true)
 window = enter_menu
@@ -129,6 +151,7 @@ cancel(window)
 check("cancel answers no item", answers.last, 0)
 
 # A present for a companion: the companion's name goes to the DLL; the row picked is given.
+$input_model = input_model("present", [[12, "Silver Ring", 1, "A ring.", false], NONE_ROW], 0)
 choices.ask_input("Ana", [], "present", { "actor" => 5, "items" => [[12, "Silver Ring", 1]] }, done)
 frame.call(true)
 list = enter_menu.find(:mgq_online_story_question_list)
@@ -137,6 +160,7 @@ list.emit(:submit, list.row_at(0), 0)
 check("the present picked is given", answers.last, 12)
 
 # A scene change closes the window without an answer, which then opens again at once.
+$input_model = input_model("item", [NONE_ROW], 0)
 choices.ask_input("Ana", [], "item", { "items" => [] }, done)
 frame.call(true)
 enter_menu.close(:scene)
@@ -150,6 +174,7 @@ check("forgetting drops the question", choices.question, nil)
 # A menu scene that never started, as when a battle took its place in the same frame, lets the
 # question open again once the player stands free on the map: the map ends with another scene
 # next, so the framework closes the window waiting for its menu scene.
+$input_model = input_model("number", [], nil, "digits" => 2, "value" => 7)
 choices.ask_input("Ana", ["How many?"], "number", { "digits" => 2, "value" => 7 }, done)
 map = $scene = Scene_Map.new
 frame.call(true)
@@ -162,17 +187,20 @@ check("a question whose menu scene never started opens again once the player sta
 cancel(window)
 choices.forget("next check")
 
-# A choice a stream's run hands over is the replay's: a catch-up asks only those up to where the
-# stream began handing runs, in a Classic party where the player started keeping the leader's story,
-# that place included.
-answer_choices(FAKE)
+# A choice a stream's run hands over is the replay's: a catch-up hands the DLL where the stream
+# began handing runs, in a Classic party where the player started keeping the leader's story, and
+# asks the choices the DLL names.
+answer_telling(FAKE)
 module MGQ_MpCoop; module Scope; def self.raid?; false; end; end; end
 module MGQ_MpCoopStory; def self.follow_place; [17, 0, 0, 0]; end; end
-check("a catch-up asks only the choices up to where the player started keeping the leader's story", choices.passed(5, 40, [], [], []), [:side, :magistea])
+$tells.set("choices.passed", %w(side magistea))
+check("a catch-up hands the DLL where the player started keeping the leader's story and asks the choices it names",
+      [choices.passed(5, 40, [], [], []), $tells.asked("choices.passed").last.values_at("from", "to", "start")], [[:side, :magistea], [5, 40, [17, 0, 0, 0]]])
 
 # A label's names are filled in as the game's windows fill them, its other codes kept.
 class Window_Base; def convert_escape_characters(text); text.gsub("\\", "\e").gsub(/\eN\[(\d+)\]/i) { $game_actors[$1.to_i].name }; end; end
 choices.forget("next check")
+$input_model = input_model("choice", [label_row(0, "Help Alice"), label_row(1, '\C[2]Leave\C[0]')], 1)
 choices.ask("Ana", [], ['Help \N[5]', '\C[2]Leave\C[0]'], done, 1)
 $free = true
 choices.show_question

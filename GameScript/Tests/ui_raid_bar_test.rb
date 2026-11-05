@@ -2,7 +2,9 @@
 #  ui_raid_bar_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Answered the raid bosses' rules with fixed values per case and asked which troops show a bar in one call
+#      Paulinchen  2026-11-05: Answered the troops of the map's pages with fixed values in place of a copy of the DLL's command index
+#                            - Answered the bars and the pools with fixed values per case in place of a copy of the DLL's bars
+#                            - Answered the raid bosses' rules with fixed values per case and asked which troops show a bar in one call
 #                            - Kept the bars' switches in the stand-in of Player.ini as true or false, as the DLL hands them back
 #                            - Noted invites with their pool as a number and their tier as true
 #                            - Read the scripts' clock from $frame
@@ -221,8 +223,6 @@ Command = Struct.new(:code, :parameters)
 Game_Event = Struct.new(:list, :character_name, :tile_id, :transparent, :opacity, :x, :y)
 # Names a map event by its x, unique on the checks' maps.
 class Game_Event; def id; x; end; end
-# A common event.
-CommonEvent = Struct.new(:list)
 # A character's sprite on the map.
 CharacterSprite = Struct.new(:character, :x, :y, :height, :visible, :opacity)
 # The map: its id and its events.
@@ -241,82 +241,47 @@ load_script "ui_online"
 load_script "battles_raid_bosses"
 load_script "battles_raid_pool"
 load_script "battles_raid_tiers"
-# Stands in for the DLL's command index of the map's pages: the troops each page fights, through
-# the common events of $data_common_events it calls, each once; the asks noted in $troops_asked.
+# Stands in for the DLL's command index of the map's pages: the troops of each event's page by
+# event id as $page_troops holds them; the asks noted in $troops_asked.
 module MGQ_MpCoopEvents
   # Lists the troops of the events' pages by event.
   def self.page_troops(events, skip)
     ($troops_asked ||= []) << [events.map(&:x), skip]
-    Hash[events.map { |event| [event.id, troops_in(event.list, {})] }]
-  end
-  # Lists the troops of commands.
-  def self.troops_in(list, seen)
-    list.flat_map do |command|
-      id = command.parameters[0]
-      next [command.parameters[1]] if command.code == 301
-      next [] unless command.code == 117 && !seen[id] && $data_common_events[id]
-
-      seen[id] = true
-      troops_in($data_common_events[id].list, seen)
-    end.uniq
+    $page_troops || {}
   end
 end
 load_script "ui_raid_bar"
 
 # The bridge to the fake models of the interface, which place the boxes in the layout.
-require_relative "pool_support"
 require_relative "raid_support"
 open_fake_ui { ["", 0] }
 answer_raid_rules($world_bridge)
+answer_raid_pools($world_bridge)
 # The battles below count on 8 times the max HP in every tier.
 MGQ_MpRaidBosses.tiers.keys.each { |tier| MGQ_MpRaidBosses.tiers[tier] = { :mhp => 8 } }
-$pools = PoolLedgerStandIn.new($world_bridge) { (Time.now.to_f * 1000).round }
 SceneManager.run
 
-# Stands in for the DLL's bars (HudTopics), as far as the scripts need them: the requests kept in
-# $bar_requests, each gauge's HP by the pool the scripts know, numbers as plain "hp / max".
-module BarStandIn
-  # Writes a gauge as the DLL answers it.
-  def self.gauge(name, hp, max)
-    [name, hp, max, "#{hp} / #{max}", format("%.1f%%", max > 0 ? hp * 100.0 / max : 0)]
-  end
-
-  # Answers the battle's bar.
-  def self.battle(request)
-    ($bar_requests ||= []) << [:battle, request]
-    gauges = request["enemies"].map do |name, hp, mhp, dead, key|
-      known = key && MGQ_MpRaidPool.pool(key)
-      max = known && known.max.to_i > 0 ? known.max.to_i : mhp
-      gauge(name, dead ? 0 : (key ? MGQ_MpRaidPool.hp_of(hp.to_f / mhp, max) : hp), max)
-    end
-    gauges.empty? ? nil : [request["title"], gauges]
-  end
-
-  # Answers a troop's bar on the map.
-  def self.map(request)
-    ($bar_requests ||= []) << [:map, request]
-    names = request["enemies"].map(&:first)
-    lettered = Hash.new(0)
-    names = names.map do |name|
-      next name if names.count(name) < 2
-
-      letters = request["letters"]
-      letter = letters ? letters[lettered[name] % letters.size] : " #{(65 + lettered[name]).chr}"
-      lettered[name] += 1
-      name + letter
-    end
-    own = request["enemies"].map { |_name, hp| hp * request["factor"] }
-    keys = request["keys"]
-    gauges = (keys || names).each_with_index.map do |key, index|
-      known = keys && $pools.pool(key)
-      max = known && known[1].to_i > 0 ? known[1].round : own[index].to_i
-      gauge(names[index].to_s, known ? MGQ_MpRaidPool.hp_of(known[0], max) : max, max)
-    end
-    [request["title"], gauges]
+# The bars the DLL's HudTopics hand back, by kind and title, as each case sets them; the requests
+# are kept in $bar_requests.
+$bar_answers = {}
+[[:battle, MGQ_MpRaidBar::BATTLE_BAR_TOPIC], [:map, MGQ_MpRaidBar::MAP_BAR_TOPIC]].each do |kind, topic|
+  $world_bridge.answer(topic) do |request|
+    $bar_requests << [kind, request]
+    gauges = $bar_answers[[kind, request["title"]]]
+    gauges && [request["title"], gauges]
   end
 end
-$world_bridge.answer(MGQ_MpRaidBar::BATTLE_BAR_TOPIC) { |request| BarStandIn.battle(request) }
-$world_bridge.answer(MGQ_MpRaidBar::MAP_BAR_TOPIC) { |request| BarStandIn.map(request) }
+
+# A gauge as the DLL hands it.
+#
+# @param name [String] The enemy's name.
+# @param hp [Integer] Its HP.
+# @param max [Integer] Its max HP.
+# @param share [String] The share left as the DLL writes it.
+# @return [Array] The gauge.
+def gauge(name, hp, max, share)
+  [name, hp, max, "#{hp} / #{max}", share]
+end
 
 bar = MGQ_MpRaidBar
 pool = MGQ_MpRaidPool
@@ -332,8 +297,9 @@ def reset
   $data_common_events = []
   $frame += MGQ_MpRaidBar::SCAN_FRAMES
   MGQ_MpRaidPool.forget
-  $pools.reset
+  $pool_answers.clear
   $bar_requests = []
+  $bar_answers = {}
   answer_bars
 end
 
@@ -346,17 +312,6 @@ def answer_bars
   $raid_answers.pool_kinds[836] = { "kind" => "guest", "keys" => (0..2).map { |index| "#{nobles}##{index}" }, "tier" => 5 }
   $raid_answers.troops[71] = { "shown" => true, "keys" => ["Queen Harpy"] }
   $raid_answers.troops[1599] = { "shown" => true, "keys" => ["Metatronne and Sandalphone#0", "Metatronne and Sandalphone#1"] }
-end
-
-# Has the relay push a pool, which the pools read at once.
-#
-# @param key [String] The pool's key.
-# @param left [String] The share of its max left.
-# @param max [String] Its max HP.
-def push(key, left, max)
-  $pools.enter("w1")
-  $pools.hear(key, left.to_f, max.to_i, false, "", :pushed)
-  MGQ_MpRaidPool.read_state
 end
 
 # A battle command of an event's page.
@@ -389,10 +344,9 @@ check("a battle that fights no pool shows no strip, without asking the DLL", [ba
 pool.note_invite("troop" => "71", "pool" => 1)
 BattleManager.setup(71)
 $game_troop.members[0].hp = 4500
-check("the battle asks the DLL for its boss's bar with each enemy's HP as the battle has it and its pool",
-      [flat(bar.battle_bar), $bar_requests.last], [["Tier 9 Raid Boss", [["Queen Harpy", 4500, 6000]]], [:battle, { "title" => "Tier 9 Raid Boss", "enemies" => [["Queen Harpy", 4500, 6000, false, "Queen Harpy"]] }]])
-push("Queen Harpy", "0.9", "7000")
-check("against the relay's max once it told one", flat(bar.battle_bar), ["Tier 9 Raid Boss", [["Queen Harpy", 5250, 7000]]])
+$bar_answers[[:battle, "Tier 9 Raid Boss"]] = [gauge("Queen Harpy", 5250, 7000, "75.0%")]
+check("the battle asks the DLL for its boss's bar with each enemy's HP as the battle has it and its pool, and shows what it hands back",
+      [flat(bar.battle_bar), $bar_requests.last], [["Tier 9 Raid Boss", [["Queen Harpy", 5250, 7000]]], [:battle, { "title" => "Tier 9 Raid Boss", "enemies" => [["Queen Harpy", 4500, 6000, false, "Queen Harpy"]] }]])
 spriteset = Spriteset_Battle.new
 spriteset.update
 strip = spriteset.instance_variable_get(:@mgq_mp_raid_bar)
@@ -418,7 +372,7 @@ sprite.update_hp_bar
 check("the game's top message hides the strip, and the game's bar stays", [hidden_root?(root), sprite.instance_variable_get(:@hp_bar).y], [true, -12])
 $game_message.visible = false
 spriteset.update
-$game_troop.members[0].hp = 4400
+$bar_answers[[:battle, "Tier 9 Raid Boss"]] = [gauge("Queen Harpy", 5134, 7000, "73.3%")]
 spriteset.update
 check("numbers that changed wait a few frames", gauges_of(strip.parts).first[1][1], "5250 / 7000")
 $frame += MGQ_MpRaidBar::REDRAW_FRAMES
@@ -450,6 +404,7 @@ spriteset.dispose
 reset
 pool.note_invite("troop" => "836", "pool" => 3)
 BattleManager.setup(836)
+$bar_answers[[:battle, "Tier 5 Raid Boss"]] = [gauge("Black Dahlia", 900, 900, "100.0%"), gauge("Black Mamba", 900, 900, "100.0%"), gauge("Black Rose", 900, 900, "100.0%")]
 spriteset = Spriteset_Battle.new
 spriteset.update
 strip = spriteset.instance_variable_get(:@mgq_mp_raid_bar)
@@ -457,7 +412,7 @@ names = parts_of_kind(strip.root, ui::Label).select { |label| label.text.start_w
 check("the Three Nobles of Black are three gauges, each name over its own and shrinking with the others down to 14 so each fits",
       [strip.parts.gauges.size, names.map(&:text), names.map(&:min_font_size).uniq], [3, ["Black Dahlia", "Black Mamba", "Black Rose"], [14]])
 first_gauges = strip.parts.gauges
-$game_troop.members[0].hp = 600
+$bar_answers[[:battle, "Tier 5 Raid Boss"]][0] = gauge("Black Dahlia", 600, 900, "66.7%")
 $frame += MGQ_MpRaidBar::REDRAW_FRAMES
 spriteset.update
 check("the same boss keeps its gauges, so their trails drain on", strip.parts.gauges.equal?(first_gauges) || strip.parts.gauges == first_gauges, true)
@@ -465,11 +420,13 @@ spriteset.dispose
 
 # The bosses' events on the map.
 reset
-$data_common_events[20] = CommonEvent.new([Command.new(117, [21]), battle(1599)])
-$data_common_events[21] = CommonEvent.new([Command.new(117, [20]), battle(126)])
+$bar_answers[[:map, "Tier 9 Raid Boss"]] = [gauge("Queen Harpy", 6000, 6000, "100.0%")]
+$bar_answers[[:map, "Archangel"]] = [gauge("Metatronne", 24000, 24000, "100.0%"), gauge("Sandalphone", 36000, 36000, "100.0%")]
 harpy = Game_Event.new([battle(31), battle(71)], "$Harpy", 0, false, 255, 10, 10)
 gate = Game_Event.new([Command.new(117, [20])], "", 0, false, 255, 30, 4)
 $game_map.events = { 1 => harpy, 2 => gate, 3 => Game_Event.new(nil, "$Erased", 0, false, 255, 0, 0) }
+# The DLL's index of the pages: the gate's page fights 126 and 1599 through the common events it calls.
+$page_troops = { 10 => [31, 71], 30 => [126, 1599] }
 check("the events whose page starts a battle the rules show a bar for, through common events too",
       bar.boss_events.map { |event, troop| [event.x, troop] }, [[10, 71], [30, 1599]])
 check("the DLL is asked once for the pages of the map's events, the Colosseum's common events left out", $troops_asked, [[[10, 30], 87]])
@@ -541,6 +498,8 @@ $raid_answers.tier_kinds[71] = { "kind" => "invited" }
 tiers.note_invite("troop" => "71", "tiers" => true)
 BattleManager.setup(71)
 $game_troop.members[0].hp = 4500
+$bar_answers[[:battle, "Tier 9 Raid Boss"]] = [gauge("Queen Harpy", 4500, 6000, "75.0%")]
+$bar_answers[[:map, "Tier 9 Raid Boss"]] = [gauge("Queen Harpy", 6000, 6000, "100.0%")]
 check("outside a Raid World a battle whose boss fights at its tier asks for a bar of its enemies' own HP, without a pool",
       [pool.fight, flat(bar.battle_bar), $bar_requests.last[1]["enemies"]], [nil, ["Tier 9 Raid Boss", [["Queen Harpy", 4500, 6000]]], [["Queen Harpy", 4500, 6000, false, nil]]])
 bar.show_bar(:battle, false)
@@ -574,12 +533,14 @@ bar.show_bar(:map, false)
 pool.note_invite("troop" => "71", "pool" => 1)
 BattleManager.setup(71)
 $game_troop.members[0].hp = 4500
-push("Queen Harpy", "0.5", "6000")
-check("a Raid World's battle bar goes by its pool, the rows outside Raid Worlds off", flat(bar.battle_bar), ["Tier 9 Raid Boss", [["Queen Harpy", 4500, 6000]]])
+$bar_answers[[:battle, "Tier 9 Raid Boss"]] = [gauge("Queen Harpy", 4500, 6000, "75.0%")]
+$bar_answers[[:map, "Tier 9 Raid Boss"]] = [gauge("Queen Harpy", 3000, 6000, "50.0%")]
+check("a Raid World's battle bar goes by its pool, the rows outside Raid Worlds off",
+      [flat(bar.battle_bar), $bar_requests.last[1]["enemies"][0][4]], [["Tier 9 Raid Boss", [["Queen Harpy", 4500, 6000]]], "Queen Harpy"])
 $game_map.events = { 1 => Game_Event.new([battle(71)], "$Harpy", 0, false, 255, 10, 10) }
-check("and its map's bars too, with the HP the relay told, which no tier bar knows",
-      [bar.tier_map?, bar.boss_events.map { |_event, troop| troop }, bar.shown_troops([71]).include?(71), flat(bar.map_bar(71))],
-      [false, [71], true, ["Tier 9 Raid Boss", [["Queen Harpy", 3000, 6000]]]])
+check("and its map's bars too, by the pools, which no tier bar knows",
+      [bar.tier_map?, bar.boss_events.map { |_event, troop| troop }, bar.shown_troops([71]).include?(71), flat(bar.map_bar(71)), $bar_requests.last[1]["keys"]],
+      [false, [71], true, ["Tier 9 Raid Boss", [["Queen Harpy", 3000, 6000]]], ["Queen Harpy"]])
 bar.show_bar(:battle, true)
 bar.show_bar(:map, true)
 $in_world = false
@@ -598,6 +559,7 @@ module MGQ_MpRaidFreezeUi
 end
 reset
 $raid = true
+$bar_answers[[:map, "Tier 9 Raid Boss"]] = [gauge("Queen Harpy", 6000, 6000, "100.0%")]
 frozen_boss = StandIn.new("$Harpy", 0, false, 255, 20, 20)
 $freeze_targets = [[frozen_boss, 71], [StandIn.new("$Slime", 0, false, 255, 1, 1), 50]]
 standin_sprite = CharacterSprite.new(frozen_boss, 240, 320, 48, true, 255)

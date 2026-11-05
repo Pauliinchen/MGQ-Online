@@ -2,6 +2,7 @@
 //  StoryJournalTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Checked that the scripts hear a mark gone unknown as an overflow
 //      Paulinchen  2026-10-31: Called the topics through TopicContext
 //      Paulinchen  2026-10-23: Created
 //
@@ -63,6 +64,19 @@ public sealed class StoryJournalTests
         Assert.Equal(StoryJournal.MaxEntries, journal.Count);
         Assert.Null(journal.Since(2));
         Assert.Equal(StoryJournal.MaxEntries, journal.Since(3)!.Count);
+    }
+
+    /// <summary>
+    /// Asserts that the scripts hear a mark whose entries went unknown as an overflow without rows.
+    /// </summary>
+    [Fact]
+    public void SinceTopic_TellsTheScriptsOfAMarkGoneUnknown()
+    {
+        var topics = new TopicContext();
+        JournalTopics.Register(topics.Context);
+        topics.Value(JournalTopics.JournalTopic, new RubyHash { { "entries", new RubyArray { new RubyArray { 1, 0, 5, RubyNil.Value } } }, { "keep", 1 } });
+
+        Assert.Equal(new RubyHash { { "rows", new RubyArray() }, { "overflow", true } }, topics.Value(JournalTopics.SinceTopic, 0));
     }
 
     /// <summary>

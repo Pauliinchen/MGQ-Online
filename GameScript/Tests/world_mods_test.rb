@@ -2,7 +2,8 @@
 #  world_mods_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Pushed the mods rule as the flag the DLL reads
+#      Paulinchen  2026-11-05: Answered the mods texts, the mod keys and the world entered with fixed values instead of from their stand-ins
+#                            - Pushed the mods rule as the flag the DLL reads
 #                            - Handed and expected the creator's options and the world's settings as values, and dropped the checks of the pairs the script no longer writes or reads
 #                            - Expected the Mod Config options handed to the DLL as values
 #                            - Read the player's id through the DLL's topic
@@ -283,6 +284,15 @@ load_script "world"
 load_script "world_mods"
 load_script "world_screen"
 open_rules_bridge
+# The mods texts and the mod keys the DLL makes of the names below (ModsTextTests and ModKeyTests
+# cover the rules).
+$rule_answers.cases("mods.text", {
+  "!Level Cap; Party Sheet" => { "names" => ["Level Cap", "Party Sheet"], "required" => ["Level Cap"], "essential" => [] },
+  "!Level Cap; Party Sheet; Own Mod" => { "names" => ["Level Cap", "Party Sheet", "Own Mod"], "required" => ["Level Cap"], "essential" => [] },
+})
+mod_keys = { "Party_Sheet" => "partysheet", "Party Sheet" => "partysheet", "Level Cap" => "levelcap", "Own Mod" => "ownmod", "Tab\tMod" => "tabmod",
+             "MGQ Online Settings" => "mgqonlinesettings", "MGQ Online Hotkeys" => "mgqonlinehotkeys" }
+$rule_answers.set("mods.keys") { |names| names.map { |name| mod_keys.fetch(name) } }
 open_fake_ui { typed = $typed.to_s; $typed = nil; [typed, typed.size] }
 # GameData.ini, which the title screen writes, is world_data_test.rb's; this game has no database to read.
 MGQ_MpWorld::GameData.instance_variable_set(:@written, true)
@@ -466,7 +476,15 @@ world = lambda { |creator_id, settings| MGQ_MpWorld::Directory::ListedWorld.new(
 # The request of the last call of a settings topic.
 asked = lambda { |topic| found = $settings_calls.reverse.find { |name, _| name == topic }; found && found[1] }
 shared = "@shared=o:1;mod_level_cap=i:0;mod_party_sheet_theme=y:dark;mod_party_sheet_hotkey=i:7;global_thing=i:9;mod_level_cap_look=i:3;mod_missing=i:7"
-$settings_values[shared] = [["mod_level_cap", 0], ["mod_party_sheet_theme", { "symbol" => "dark" }], ["mod_party_sheet_hotkey", 7], ["global_thing", 9], ["mod_level_cap_look", 3], ["mod_missing", 7]]
+# The world the DLL describes once entered, another player's unless a check says otherwise.
+entered = lambda do |id, name, creator_id, mods_text, values, shared|
+  { "id" => id, "name" => name, "creator_id" => creator_id, "creator_name" => "Creator", "mods" => mods_text, "values" => values, "own" => false,
+    "shared" => shared, "latest_shared" => shared }
+end
+$settings_world = entered.call("w1", "Modded", "creator", "!Level Cap; Party Sheet",
+                               [["mod_level_cap", 0], ["mod_party_sheet_theme", { "symbol" => "dark" }], ["mod_party_sheet_hotkey", 7], ["global_thing", 9], ["mod_level_cap_look", 3],
+                                ["mod_missing", 7]], true)
+$settings_details = "Mod settings: shared"
 
 check("the details say what the DLL says of a world's settings", [mods.details_text(world.call("creator", "@shared=o:1"), "me"), asked.call("settings.details")],
       ["Mod settings: shared", { "settings" => "@shared=o:1", "creator_id" => "creator", "creator_name" => "Creator", "me" => "me" }])
@@ -525,7 +543,7 @@ Scene_Title.new.start
 check("the title screen hides the row and lets every option be changed again", [row.call, Mod_Framework::Options.world_keys, asked.call("settings.forget")], [nil, [], nil])
 
 # The creator's own world.
-$settings_values["@shared=o:1;mod_level_cap=i:1"] = [["mod_level_cap", 1]]
+$settings_world = entered.call("w1", "Modded", "me", "!Level Cap; Party Sheet", [["mod_level_cap", 1]], true).merge("own" => true)
 mods.enter_world(world.call("me", "@shared=o:1;mod_level_cap=i:1"), "me")
 check("the creator may change the row, whose help says what it does to the others",
       [Mod_Framework::Options.enabled?(row.call), row.call[:help].call.start_with?("Whether every player in this world plays with your options")], [true, true])
@@ -551,6 +569,7 @@ check("the title screen forgets whose world it was", [row.call, mods.own_world?]
 
 # A world's settings are noted only once its entry goes on.
 strict = MGQ_MpWorld::Directory::ListedWorld.new("w2", 4, 0, "creator", 0, "Creator", "Strict", "none", [], false, false, true, false, true, "1:x", "", "", "", "@shared=o:1;mod_level_cap=i:0")
+$settings_world = entered.call("w2", "Strict", "creator", "", [], true)
 scene = new_scene
 scene.instance_variable_set(:@entry, MGQ_MpWorld::Entry.new("w2", "Strict", strict, nil, false, false))
 opening = MGQ_MpWorld.method(:start)
@@ -579,6 +598,7 @@ check("an option's values come from its :values too, as Mod Config Remake reads 
 
 # The world's mods the player's game runs, which the battle server runs too for a battle it hosts.
 $served_mods = [["levelcap", "link", "1.4.0", [["Level_Cap.rb", "bb"]]], ["ownmod", "", "", []]]
+$settings_world = entered.call("w1", "Modded", "creator", "!Level Cap; Party Sheet; Own Mod", [], false)
 mods.enter_world(MGQ_MpWorld::Directory::ListedWorld.new("w1", 4, 0, "creator", 0, "Creator", "Modded", "none", [], false, false, true, false, false, "",
                                                          "!Level Cap; Party Sheet; Own Mod", "", "", ""), "me")
 check("the battle server gets the world's mods as the DLL lists them", mods.served_mods, $served_mods)

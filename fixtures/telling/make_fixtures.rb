@@ -12,8 +12,7 @@
 # whether a story event that starts tells, goes on with the telling that ended in the same frame or
 # that moved the player onto its map, or starts a telling anew, and whether the telling still goes
 # on after its event ended. Each scenario is a list of steps; a step's operation runs, then the
-# step records what the script answered. MGQOnline.Game.Tests replays them against the C# machine,
-# and the script tests' stand-in (GameScript/Tests/telling_support.rb) is checked against them.
+# step records what the script answered. MGQOnline.Game.Tests replays them against the C# machine.
 #
 # It runs on the coop_events.rbx of commit c2e63c81, which still kept the rules, with the
 # stand-ins below, on Ruby 3.3:

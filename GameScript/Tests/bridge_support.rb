@@ -2,6 +2,7 @@
 #  bridge_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Kept the requests the fixed answers of a test took, for every test to share
 #      Paulinchen  2026-11-01: Stood in for every wheel the Mod Framework defines and handed the framework's wheels their frames
 #                            - Stood in for the Mod Framework's component tree
 #                            - Placed the tree's nodes and told the focus back as focus and blur
@@ -38,6 +39,29 @@ module MGQ_Multiplayer; module Log; def self.write(_line); end; end; end unless 
 # @return [String] The dump's bytes, empty for no reply.
 def bridge_fixture(name, part)
   File.binread(File.join(BRIDGE_FIXTURES, "#{name}.#{part}.marshal"))
+end
+
+# Keeps the requests a stand-in of the DLL's answers took.
+module NotedRequests
+  # Lists the requests of a topic since the answers were last cleared.
+  #
+  # @param topic [String] The topic.
+  # @return [Array<Object>] The requests, oldest first.
+  def asked(topic)
+    @asked.select { |name, _request| name == topic }.map { |_name, request| request }
+  end
+
+  private
+
+  # Keeps a request.
+  #
+  # @param topic [String] The topic.
+  # @param request [Object] The request.
+  # @return [Boolean] True.
+  def note(topic, request)
+    @asked << [topic, request]
+    true
+  end
 end
 
 # The DLL's side of the bridge as a backend of MGQ_Multiplayer::Bridge: the four exports, answering

@@ -13,8 +13,8 @@ require "json"
 
 # The catch-up's generated tables as Ruby rows, read back from fixtures/catchup/generated, where
 # Relay/seed/story/make_seed.rb wrote them from the game scripts' world_catchup_data.rbx before the
-# relay's tables replaced it. The script tests and the recorders of the catch-up's golden cases build
-# their tables from these rows, over which those cases were decided.
+# relay's tables replaced it. The recorders of the catch-up's golden cases build their tables from
+# these rows, over which those cases were decided. A recording tool: no test runs against it.
 module GeneratedCatchupTables
   # Where the generated tables lie.
   FOLDER = File.join(__dir__, "generated")

@@ -2,6 +2,7 @@
 //  ScreenTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Covered a world on this PC that names no directory id, and finding one world of the list
 //      Paulinchen  2026-10-30: Listed the scripts of the Patch folder without the parking
 //      Paulinchen  2026-10-23: Marked a favourite through the lists, whose topic the DLL dropped
 //                            - Created
@@ -146,6 +147,24 @@ public sealed class ScreenTopicsTests : IDisposable
         Assert.Contains("edit_world", actions.Select(action => action.AsArray()[1].AsText()));
         Assert.Equal("Online (1)", players[0].AsArray()[1].AsText());
         Assert.Null(_topics.Call(ScreenTopics.Details, "nowhere"));
+    }
+
+    /// <summary>
+    /// Asserts that a world on this PC whose world.ini names no directory id is listed by its folder,
+    /// without a description or list box lines, and that one world of the list is found by its id.
+    /// </summary>
+    [Fact]
+    public void FolderWithoutDirectoryId_IsListedByItsFolder()
+    {
+        _listed.Add(World("a", "Alpha", Me));
+        string folder = _topics.Call(LocalWorldTopics.Found, new RubyHash { { "code", Code }, { "name", "Kept" } })!.AsHash()["id"].AsText();
+
+        RubyHash row = _topics.Call(ScreenTopics.List)!.AsHash()["rows"].AsArray().Select(each => each.AsHash()).Single(each => each["name"].AsText() == "Kept");
+        Assert.Equal(("folder:" + folder, true, true), (row["key"].AsText(), row["id"].IsNil, row["gone"].AsBool()));
+        Assert.True(_topics.Call(ScreenTopics.Details, row["key"])!.AsHash()["description"].IsNil);
+        Assert.Null(_topics.Call(ScreenTopics.Box, new RubyHash { { "key", row["key"] }, { "kind", "mods" } }));
+        Assert.Equal("Alpha", _topics.Call(ScreenTopics.World, "a")!.AsHash()["listed"].AsHash()["name"].AsText());
+        Assert.True(_topics.Call(ScreenTopics.World, "nowhere")!.AsHash()["listed"].IsNil);
     }
 
     /// <summary>

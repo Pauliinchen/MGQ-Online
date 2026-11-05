@@ -2,7 +2,8 @@
 #  engine.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Named the chest a replay plays as [kind, key], and took and named sites as plain values, as the C# engine does
+#      Paulinchen  2026-11-05: Read the choices' keys and companions from the choices' golden cases, as the DLL answers them
+#                            - Named the chest a replay plays as [kind, key], and took and named sites as plain values, as the C# engine does
 #                            - Answered a Classic party's member's catch-up as one look in the Classic settings, the side a player takes along and the Classic key item loan, as the C# engine does
 #                            - Answered how a Classic member plays the leader's story, as ClassicStory in the DLL does
 #                            - Took a used-up key item, kept every choice's outcome the member's own, read the side from the save's note alone and played the closures and key item chests in a Classic member's catch-up, as the C# engine does
@@ -30,10 +31,11 @@
 # The catch-up of both world types as MGQOnline.Game's CatchupEngine decides it, with the side a
 # player takes along (SidePick) and the Classic key item loan (KeyItemLoan): the same rules, read
 # over what the DLL holds (the relay's catch-up tables and the save's notes) and the snapshot the
-# scripts hand it, answering the actions the scripts carry out. The script tests answer the DLL's
-# catch-up topics with it (GameScript/Tests/catchup_support.rb and coop_events_test.rb),
-# make_engine.rb and make_classic.rb record its answers as golden cases, and MGQOnline.Game.Tests
-# replays them against the C# engine.
+# scripts hand it, answering the actions the scripts carry out. make_engine.rb and make_classic.rb
+# record its answers as golden cases, make_rows.rb its row rules, and MGQOnline.Game.Tests replays
+# them against the C# engine. A recording tool: no test runs against it.
+
+require "json"
 
 # The catch-up's decisions.
 module CatchupEngine
@@ -64,6 +66,15 @@ module CatchupEngine
 
   # The switch of Ilias's side.
   ILIAS_CHOSEN = 5
+
+  # The choices' golden cases, whose replies are what the DLL answers.
+  CHOICE_CASES = JSON.parse(File.read(File.expand_path("../choices/cases.json", __dir__), :encoding => "UTF-8"))
+
+  # The keys the DLL names a Raid World player's own as choices' outcomes: "s" and "v".
+  CHOICE_KEYS = CHOICE_CASES["cases"].find { |entry| entry["topic"] == "choices.personal" && entry["request"] == { "raid" => true, "own" => nil } }["reply"]
+
+  # The companions of the Alice and Ilias choice, who come with the player's own outcome.
+  CHOICE_COMPANIONS = CHOICE_CASES["table"]["choice_companions"]
 
 
   # Where each part stands in the story's order; the routes stand side by side.
@@ -607,9 +618,8 @@ module CatchupEngine
       @before_notes = Marshal.dump(@host.ledger)
       @world_id = request["world"].to_s
       @mode = request["mode"]
-      choices = ChoicesStandIn.personal("raid" => true, "own" => nil)
-      @choice_switches = Array(choices["s"])
-      @choice_variables = Array(choices["v"])
+      @choice_switches = Array(CatchupEngine::CHOICE_KEYS["s"])
+      @choice_variables = Array(CatchupEngine::CHOICE_KEYS["v"])
       leader = @classic ? CatchupEngine.story_of(request["leader"]) : nil
       if leader
         @told = leader
@@ -1691,7 +1701,7 @@ module CatchupEngine
           next if carried && !carries?(row)
           next unless passed?(row, story)
           next done[key] = true if row.part.nil? || (carried && !before_log?(row)) || !allowed?(row.actor) ||
-                                   (@classic && ChoicesStandIn::TABLE["choice_companions"].include?(row.actor))
+                                   (@classic && CatchupEngine::CHOICE_COMPANIONS.include?(row.actor))
 
           fresh << row
         elsif state != true && removed[row.actor]

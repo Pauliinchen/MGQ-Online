@@ -2,19 +2,24 @@
 #  raid_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Answered a lost battle's defeat and its undo with the values each test sets
+#      Paulinchen  2026-11-05: Took the noted requests from bridge_support.rb
+#                            - Answered the pools and the battle that fights them with the values each test sets
+#                            - Answered a lost battle's defeat and its undo with the values each test sets
 #                            - Created
 #
 #----------------------------------------------------------------
 
-# Answers the topics of the raid bosses' rules (MGQOnline.Game's RaidTopics) and of a lost raid boss
-# battle's defeat (MGQParadox.Multiplayer's FreezeTopics) on a FakeBridge with the fixed values each
-# test sets for its case. The scripts only forward the rules' answers; the C# tests cover the rules.
+# Answers the topics of the raid bosses' rules (MGQOnline.Game's RaidTopics), of a Raid World's boss
+# pools and the battle that fights them (PoolTopics) and of a lost raid boss battle's defeat
+# (MGQParadox.Multiplayer's FreezeTopics) on a FakeBridge with the fixed values each test sets for its
+# case. The scripts only forward the rules' answers; the C# tests cover the rules.
 
 require_relative "bridge_support"
 
 # Stands in for the DLL's answers of the raid bosses' rules and of a lost battle's defeat.
 class RaidAnswers
+  include NotedRequests
+
   # The table raid.bosses hands: the bosses the script tests fight, with the story's sections cut
   # down to them.
   TABLE = {
@@ -104,25 +109,82 @@ class RaidAnswers
     @undo = {}
     @asked.clear
   end
+end
 
-  # Lists the requests of a topic since the answers were last cleared.
+# Stands in for the DLL's answers of a Raid World's boss pools and of the battle that fights them.
+class PoolAnswers
+  include NotedRequests
+
+  # @return [Hash] What raid.pools answers: the world and its pools, each as its key, the share
+  #   left as text, its max, whether it is defeated and by whom.
+  attr_accessor :state
+
+  # @return [Hash, Proc] What raid.fight.turn answers, or a block that makes it of the request.
+  attr_accessor :turn
+
+  # @return [Array, nil] What raid.fight.export answers.
+  attr_accessor :export
+
+  # @return [Array, nil] What raid.fight.import answers: the count and whether it is a side battle.
+  attr_accessor :import
+
+  # @return [Boolean] What raid.pools.fetch answers: whether the fetch started.
+  attr_accessor :fetch
+
+  # Answers the topics on a bridge.
   #
-  # @param topic [String] The topic.
-  # @return [Array<Hash>] The requests, oldest first.
-  def asked(topic)
-    @asked.select { |name, _request| name == topic }.map { |_name, request| request }
+  # @param fake [FakeBridge] The bridge.
+  def initialize(fake)
+    @fake = fake
+    @asked = []
+    clear
+    fake.answer("raid.pools") { |request| note("raid.pools", request) && @state }
+    fake.answer("raid.pools.fetch") { |world| note("raid.pools.fetch", world) && @fetch }
+    fake.answer("raid.fight.open") { |request| note("raid.fight.open", request) && nil }
+    fake.answer("raid.fight.turn") { |request| note("raid.fight.turn", request) && (@turn.respond_to?(:call) ? @turn.call(request) : @turn) }
+    fake.answer("raid.fight.close") { |request| note("raid.fight.close", request) && nil }
+    fake.answer("raid.fight.export") { |request| note("raid.fight.export", request) && @export }
+    fake.answer("raid.fight.import") { |request| note("raid.fight.import", request) && @import }
   end
 
-  private
+  # Forgets every answer and request: no pool of world w1, a turn that changes nothing, a fetch that
+  # starts.
+  def clear
+    @state = { "world" => "w1", "pools" => [] }
+    @turn = {}
+    @export = nil
+    @import = nil
+    @fetch = true
+    @asked.clear
+  end
 
-  # Keeps a request.
+  # Sets a pool of world w1 as raid.pools tells it.
   #
-  # @param topic [String] The topic.
-  # @param request [Object] The request.
-  # @return [Boolean] True.
-  def note(topic, request)
-    @asked << [topic, request]
-    true
+  # @param key [String] The pool's key.
+  # @param left [String] The share of its max left.
+  # @param max [Integer] Its max HP.
+  # @param defeated [Boolean] Whether it is empty for good.
+  # @param by [String] Who emptied it.
+  def pool(key, left, max = 6000, defeated = false, by = "")
+    @state = { "world" => "w1", "pools" => @state["pools"].reject { |each| each[0] == key } + [[key, left, max, defeated, by]] }
+  end
+
+  # Tells the scripts that the relay emptied a pool, or that an admin's reset filled it again, as the
+  # DLL's events do.
+  #
+  # @param key [String] The pool's key.
+  # @param defeated [Boolean] Whether it is empty now.
+  # @param by [String] Who emptied it.
+  def push(key, defeated, by = "Someone")
+    @fake.post(defeated ? "raid.boss_defeated" : "raid.boss_back", defeated ? { "key" => key, "by" => by } : { "key" => key })
+    MGQ_Multiplayer::Bridge.frame
+  end
+
+  # Lists the moments of the battle the scripts handed raid.fight.turn.
+  #
+  # @return [Array<String>] The moments, oldest first.
+  def moments
+    asked("raid.fight.turn").map { |request| request["moment"] }
   end
 end
 
@@ -132,4 +194,13 @@ end
 # @return [RaidAnswers] The answers.
 def answer_raid_rules(fake)
   $raid_answers = RaidAnswers.new(fake)
+end
+
+# Answers a Raid World's boss pools and the battle that fights them on a bridge, kept in
+# $pool_answers.
+#
+# @param fake [FakeBridge] The bridge.
+# @return [PoolAnswers] The answers.
+def answer_raid_pools(fake)
+  $pool_answers = PoolAnswers.new(fake)
 end

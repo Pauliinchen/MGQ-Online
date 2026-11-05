@@ -2,7 +2,9 @@
 #  support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Handed the story tables' self switch rules as the DLL's rows
+#      Paulinchen  2026-11-05: Kept a message sent as the scripts hand it instead of writing and reading it as a copy of the DLL's codec
+#                            - Handed the Classic party's table recorded in fixtures/story/classic.json instead of building it as a copy of the C# one
+#                            - Handed the story tables' self switch rules as the DLL's rows
 #                            - Wrote and read each message field by its kind, as the DLL's MessageFields does
 #                            - Dropped the export table's checks and wrote messages as the DLL does for the stand-ins of the world room and the battle channel
 #                            - Loaded the story's ids with the table the DLL hands
@@ -89,112 +91,18 @@ def check(label, actual, expected)
   Checks.check(label, actual, expected)
 end
 
-# The kinds of the message fields that hold more than a text, a stand-in of the DLL's table
-# (MGQOnline.Game's MessageFields): :flag, :number, :numbers, :texts, :value or :packed by name.
-FIELD_KINDS = {
-  "invite" => :flag, "invite_to" => :texts, "trading" => :flag, "trading_to" => :texts,
-  "busy" => :flag, "escape" => :flag, "lose" => :flag, "served" => :flag, "hot" => :flag, "boss" => :flag, "tiers" => :flag, "side" => :flag,
-  "pool" => :number, "seats" => :numbers, "rates" => :numbers, "rpb" => :value,
-  "sm" => :numbers, "ssoffer" => :value, "telling" => :flag, "z" => :packed, "part" => :flag, "s" => :value, "v" => :value, "ss" => :value,
-  "k" => :value, "runs" => :texts, "trail" => :value, "emote" => :number, "sq" => :number
-}
-
-# Writes a field's value as the DLL does (MessageFields.Write); a text the test hands for a field
-# of another kind is taken as written already, as another game's text.
-#
-# @param key [String] The field's name.
-# @param value [Object] The value.
-# @return [String] The text.
-def field_text(key, value)
-  kind = FIELD_KINDS[key.to_s]
-  return value if value.is_a?(String) && kind
-  return value ? "1" : "0" if kind == :flag
-  return value.nil? ? "" : JSON.generate(field_json(value)) if kind == :value
-  return value.nil? ? "" : [raw_deflate(JSON.generate(field_json(value)))].pack("m0") if kind == :packed
-
-  (value.is_a?(Array) ? value.join(",") : value == true ? "1" : value == false ? "0" : value.to_s).gsub(/[\r\n]/, " ")
-end
-
-# Deflates a text without zlib header, as the DLL's DeflateStream does.
-#
-# @param text [String] The text.
-# @return [String] The deflated bytes.
-def raw_deflate(text)
-  deflate = Zlib::Deflate.new(Zlib::DEFAULT_COMPRESSION, -Zlib::MAX_WBITS)
-  bytes = deflate.deflate(text, Zlib::FINISH)
-  deflate.close
-  bytes
-end
-
-# Writes a value for JSON as the DLL does: a Float as a Hash of its text.
-#
-# @param value [Object] The value.
-# @return [Object] The value for JSON.
-def field_json(value)
-  case value
-  when Float then { "float" => value.to_s }
-  when Array then value.map { |item| field_json(item) }
-  when Hash then Hash[value.map { |key, item| [key, field_json(item)] }]
-  else value
-  end
-end
-
-# Reads a field another game wrote as the DLL hands it to the scripts (MessageFields.Read).
-#
-# @param key [String] The field's name.
-# @param text [String] The text.
-# @return [Object] The value.
-def field_value(key, text)
-  case FIELD_KINDS[key.to_s]
-  when :flag then text == "1"
-  when :number then text =~ /\A-?\d+\z/ ? text.to_i : nil
-  when :numbers then text.split(",").map(&:to_i)
-  when :texts then text.split(",")
-  when :value then text.empty? ? nil : (JSON.parse(text) rescue nil)
-  when :packed then text.empty? ? nil : (JSON.parse(Zlib::Inflate.new(-Zlib::MAX_WBITS).inflate(text.unpack("m0")[0])) rescue nil)
-  else text
-  end
-end
-
-# Hands fields to the scripts as the DLL does once another game wrote them.
-#
-# @param fields [Hash] The fields as a game's scripts hand them over.
-# @return [Hash{String => Object}] The fields.
-def fields_read(fields)
-  Hash[fields.map { |key, value| [key.to_s, field_value(key, field_text(key, value))] }]
-end
-
-# Writes fields the scripts hand the DLL as the DLL keeps them, each as field_text writes it.
-#
-# @param fields [Hash] The fields.
-# @return [Hash{String => String}] The texts by name.
-def fields_written(fields)
-  Hash[fields.map { |key, value| [key.to_s, field_text(key, value)] }]
-end
-
-# Writes a message as the DLL does (MGQOnline.Game's WorldFields.Encode, topics world.send and
-# message.write), for the stand-ins of the world room and the battle channel, so a check reads what
-# another game receives: key=value lines, each value as field_text writes it, then an empty line
-# and the body.
+# A message as the scripts hand it to the DLL to send (world.send, served.send and the like), for the
+# stand-ins of the world room and the battle channel: its fields by name as handed, its body under
+# :payload. The C# tests own how the DLL writes and reads a message.
 #
 # @param fields [Hash] The fields.
 # @param body [String] The body.
-# @return [String] The message.
-def encode_message(fields, body = "")
-  fields.map { |key, value| "#{key}=#{field_text(key, value)}" }.join("\n") + "\n\n" + body.to_s
-end
-
-# Reads a message as the DLL does (MGQOnline.Game's WorldFields.Parse and MessageTopics.HashOf),
-# for the stand-ins of the world room and the battle channel.
-#
-# @param text [String] The message.
-# @return [Hash] The fields, its body under :payload.
-def decode_message(text)
-  head, payload = text.to_s.split("\n\n", 2)
-  fields = {}
-  head.to_s.split("\n").each { |line| key, value = line.split("=", 2); fields[key] = field_value(key, value) if value }
-  fields[:payload] = payload.to_s
-  fields
+# @return [Hash] The message.
+def sent_message(fields, body = "")
+  message = {}
+  fields.each { |key, value| message[key.to_s] = value }
+  message[:payload] = body.to_s
+  message
 end
 
 # Collects the log lines a block writes, then lets the log write as before.
@@ -258,51 +166,25 @@ end
 # Folder of the story's golden cases, which MGQOnline.Game.Tests checks too.
 STORY_FIXTURES = File.expand_path("../../fixtures/story", __dir__)
 
-# Loads story_keys.rbx, which Multiplayer.rb loads right after story_state.rbx, with a stand-in for
-# the DLL's Classic party's table (see classic_table_hash), so no test needs the DLL to tell what a
-# party shares; the script's own stays as bridge_classic_table for the test that builds it.
+# Loads story_keys.rbx, which Multiplayer.rb loads right after story_state.rbx, with the recorded
+# Classic party's table the DLL hands (see classic_table_hash), so no test needs the DLL to tell
+# what a party shares; the script's own fetch stays as bridge_classic_table for the test that
+# checks it.
 def load_story_keys
   load File.join(SCRIPTS_DIR, "story_keys.rbx")
   MGQ_MpStoryKeys.singleton_class.send(:alias_method, :bridge_classic_table, :classic_table)
-  MGQ_MpStoryKeys.define_singleton_method(:classic_table) { @classic ||= table_of(classic_table_hash(classic_request)) }
+  MGQ_MpStoryKeys.define_singleton_method(:classic_table) { @classic ||= table_of(classic_table_hash) }
 end
 
-# What the DLL builds a Classic party's table of (topic story.classic_table, from its events
-# database): the game's sizes as a test stands in for them, 10,000 switches and 5,000 variables
-# without a database, and the chest flags the story mapping brought.
+# The Classic party's table the DLL hands (topic story.classic_table) as fixtures/story/classic.json
+# recorded it for the game's sizes, with the chest flags 7102 to 7104; StoryTableTests holds the C#
+# to that recording.
 #
-# @return [Hash] The sizes and chest flags.
-def classic_request
-  { "switches" => $data_system ? $data_system.switches.size : 10_000, "variables" => $data_system ? $data_system.variables.size : 5000,
-    "companions" => $data_actors ? $data_actors.size : 1000, "chest_flags" => MGQ_MpStoryState.chest_flags }
-end
-
-# The switches a Classic party keeps each player's own, as ClassicStoryTable.PersonalSwitches.
-CLASSIC_PERSONAL_SWITCHES = [[0, 0], [22, 22], [73, 73], [94, 94], [95, 95], [97, 97], [100, 100], [445, 447], [502, 502], [1001, 2000], [6000, 6999]]
-
-# The variables alike, as ClassicStoryTable.PersonalVariables.
-CLASSIC_PERSONAL_VARIABLES = [[0, 0], [9, 9], [21, 23], [46, 48], [55, 57], [59, 59], [129, 129], [150, 150], [200, 201], [1002, 1002], [2000, 2999]]
-
-# Builds a Classic party's table as the DLL's ClassicStoryTable.Build does for the game's sizes and
-# chest flags: every switch and variable shared, a side switch shared as a side's, but the lists
-# each player keeps, the affection of each companion and the chest flags. It is checked against
-# fixtures/story/classic.json, which MGQOnline.Game.Tests checks the C# against, as this file
-# loads, so it cannot drift from what the DLL builds.
-#
-# @param request [Hash] "switches", "variables", "companions" and "chest_flags", see classic_request.
 # @return [Hash] The table, see story_table_hash.
-def classic_table_hash(request)
-  switches = Array.new(request["switches"], 1)
-  variables = Array.new(request["variables"], 1)
-  clear = lambda { |classes, ranges| ranges.each { |from, to| (from..[to, classes.size - 1].min).each { |id| classes[id] = 0 } } }
-  clear.call(switches, CLASSIC_PERSONAL_SWITCHES)
-  clear.call(variables, CLASSIC_PERSONAL_VARIABLES + [[3000, 3000 + [request["companions"], 1].max - 1]])
-  request["chest_flags"].each { |id| switches[id] = 8 if id < switches.size }
-  [4, 5].each { |id| switches[id] = 129 if id < switches.size }
-  { "rev" => 0, "switches" => switches.pack("C*"), "variables" => variables.pack("C*"), "self" => [], "common" => [], "index" => [], "local_steps" => [], "gates" => {},
-    "self_default" => 1 }
+def classic_table_hash
+  fixture = JSON.parse(File.read(File.join(STORY_FIXTURES, "classic.json")))
+  story_table_hash(fixture["switches"], fixture["variables"], fixture["self_default"])
 end
-
 
 # Builds a story table as the DLL hands it (StoryTopics.TableOf).
 #
@@ -334,14 +216,14 @@ LISTED_RAID_SWITCHES = [3, 23, 28, 41, 87, 504, 507, 2013, 2015]
 LISTED_RAID_VARIABLES = [[41, 45], [49, 49], [92, 99], [121, 121], [123, 123], [149, 149], [151, 151], [902, 903], [906, 906], [908, 908]]
 
 # Builds a story mapping's table that keeps what the Raid personal lists of earlier builds shared,
-# for the checks of a Raid World whose events must still sort as story: a Classic party's table
-# with the side switches, LISTED_RAID_SWITCHES and LISTED_RAID_VARIABLES each player's own.
+# for the checks of a Raid World whose events must still sort as story: the recorded Classic
+# party's table with the side switches, LISTED_RAID_SWITCHES and LISTED_RAID_VARIABLES each
+# player's own.
 #
-# @param request [Hash] As classic_table_hash takes it.
 # @param scene [Array<Integer>] The scene switches.
 # @return [Hash] The table, see story_table_hash.
-def listed_raid_table_hash(request, scene = [])
-  table = classic_table_hash(request)
+def listed_raid_table_hash(scene = [])
+  table = classic_table_hash
   switches = table["switches"].unpack("C*")
   variables = table["variables"].unpack("C*")
   ([4, 5] + LISTED_RAID_SWITCHES).each { |id| switches[id] = 0 if id < switches.size }
@@ -354,11 +236,6 @@ end
 #
 # @param scene [Array<Integer>] The scene switches.
 def use_listed_raid_table(scene = [])
-  MGQ_MpStoryKeys.instance_variable_set(:@raid, MGQ_MpStoryKeys.table_of(listed_raid_table_hash(classic_request, scene)))
+  MGQ_MpStoryKeys.instance_variable_set(:@raid, MGQ_MpStoryKeys.table_of(listed_raid_table_hash(scene)))
 end
 
-classic_fixture = JSON.parse(File.read(File.join(STORY_FIXTURES, "classic.json")))
-classic_built = classic_table_hash(classic_fixture["request"])
-unless classic_built == story_table_hash(classic_fixture["switches"], classic_fixture["variables"], classic_fixture["self_default"])
-  raise "the stand-in of the Classic party's table differs from fixtures/story/classic.json"
-end

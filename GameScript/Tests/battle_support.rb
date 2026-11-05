@@ -2,7 +2,9 @@
 #  battle_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Answered the topics that write and read battle lines
+#      Paulinchen  2026-11-05: Kept each message sent as the scripts hand it instead of as a copy of the DLL's codec writes it
+#                            - Answered the live battle's topics and the battlers' plans with the values each test sets
+#                            - Answered the topics that write and read battle lines
 #                            - Stood in for the world room's sending through its port, keeping each message as the DLL writes it
 #                            - Answered the plans of the battlers the scripts build and loaded their factory
 #                            - Stood in for the game's start of a battler, of the party, of the troop and of the battle, and for a state's counts
@@ -61,11 +63,10 @@
 
 # What the tests of live battles in a world share: stand-ins for the game, the world room and the
 # party, the scripts every one of them builds on (coop_squad.rbx, battles.rbx,
-# battles_coop.rbx and battles_sync.rbx), fields_of, and the game's objects on map 5.
+# battles_coop.rbx and battles_sync.rbx), and the game's objects on map 5.
 
 require_relative "rules_support"
 require_relative "live_support"
-require_relative "wire_support"
 
 
 $sent = []
@@ -103,9 +104,9 @@ module MGQ_MpOverworldSync
     def self.map_since; $my_since.to_i; end
   end
   module Status; def self.notice(text); ($notices ||= []) << text; end; end
-  # Stands in for the world room's sending, keeping each message in $sent as the DLL writes it.
+  # Stands in for the world room's sending, keeping each message in $sent as the scripts hand it.
   module Port
-    def self.send_to(seat, fields, body); $sent << [seat, encode_message(fields, body)]; true; end
+    def self.send_to(seat, fields, body); $sent << [seat, sent_message(fields, body)]; true; end
   end
 end
 # The leader's call, which coop_gather_test.rb covers: $gather_call is the calling player's seat and
@@ -493,10 +494,10 @@ module MGQ_MpOverworldSync
   def self.on_presence(*); end
   def self.label_line(*); end
 end
-# The DLL's side of the bridge, answering the rules' topics, such as the squad math, and the live
-# battle's.
+# The DLL's side of the bridge, answering the rules' topics, such as the squad math, the live
+# battle's with the values each test sets, kept in $live, and the battle lines' with fake lines.
 open_rules_bridge
-$live = answer_live($world_bridge)
+answer_live($world_bridge)
 answer_wire($world_bridge)
 load_script "ui_online"
 # Stands in for the Mod Framework's question box: each question lands in $asked, and $confirm
@@ -522,18 +523,6 @@ open_fake_ui { ["", 0] }
 SceneManager.run
 MGQ_MpBattlesCoop.install
 
-# Reads a message another game sent into its fields, its body under :payload.
-#
-# @param text [String] The message.
-# @return [Hash] The fields.
-def fields_of(text)
-  head, payload = text.split("\n\n", 2)
-  fields = {}
-  head.to_s.split("\n").each { |line| k, v = line.split("=", 2); fields[k] = v if v }
-  fields[:payload] = payload.to_s
-  fields
-end
-
 $game_switches = Game_Switches.new
 $game_variables = Game_Variables.new
 $game_temp = Game_Temp.new
@@ -550,6 +539,5 @@ $data_enemies = [nil] + Array.new(99) { Object.new }
 # The co-op battles' rules in C# on the same bridge.
 require_relative "coop_support"
 answer_coop($world_bridge)
-# The plans of the battlers the scripts build, in C# on the same bridge.
-require_relative "battlers_support"
+# The plans of the battlers the scripts build, with the values each test sets, kept in $battlers.
 answer_battlers($world_bridge)

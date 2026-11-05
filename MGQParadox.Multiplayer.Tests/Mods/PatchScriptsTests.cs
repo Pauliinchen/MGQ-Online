@@ -2,6 +2,7 @@
 //  PatchScriptsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Checked that the scripts sort whatever their case
 //      Paulinchen  2026-10-30: Created
 //
 //----------------------------------------------------------------
@@ -18,16 +19,16 @@ namespace MGQParadox.Multiplayer.Tests.Mods;
 public sealed class PatchScriptsTests
 {
     /// <summary>
-    /// Asserts that every script of Patch and its folders is listed, sorted, but this mod's own and
-    /// names that start with a dot.
+    /// Asserts that every script of Patch and its folders is listed, sorted whatever its case, but
+    /// this mod's own and names that start with a dot.
     /// </summary>
     [Fact]
     public void List_NamesThePlayersScripts()
     {
         using var game = new TempFolder();
-        Write(game, "Patch/Patch.rb", "Patch/Level_Cap.rb", "Patch/Invasions/waves.rb", "Patch/Invasions/readme.txt", "Patch/Multiplayer/Scripts/x.rb", "Patch/.git/hook.rb", "Patch/ünïcode Mod.rb");
+        Write(game, "Patch/Patch.rb", "Patch/apple.rb", "Patch/Level_Cap.rb", "Patch/Invasions/waves.rb", "Patch/Invasions/readme.txt", "Patch/Multiplayer/Scripts/x.rb", "Patch/.git/hook.rb", "Patch/ünïcode Mod.rb");
 
-        Assert.Equal(["Patch/Invasions/waves.rb", "Patch/Level_Cap.rb", "Patch/Patch.rb", "Patch/ünïcode Mod.rb"], PatchScripts.List(game.Path));
+        Assert.Equal(["Patch/apple.rb", "Patch/Invasions/waves.rb", "Patch/Level_Cap.rb", "Patch/Patch.rb", "Patch/ünïcode Mod.rb"], PatchScripts.List(game.Path));
         Assert.Empty(PatchScripts.List(Path.Combine(game.Path, "nowhere"))!);
     }
 

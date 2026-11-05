@@ -14,8 +14,7 @@
 # leader's hold of a scene while the party gathers, and the offers to follow a Raid World's teller,
 # each with its frames. Each scenario is a list of steps; a step's operation runs at its frame, then
 # the step records what the script answered. MGQOnline.Game.Tests replays them against the C#
-# machine, and the script tests' stand-in (GameScript/Tests/gather_support.rb) is checked against
-# them.
+# machine.
 #
 # It runs on the coop_gather.rbx of commit d7bc93af, which still kept the rules, with the
 # stand-ins below, on Ruby 3.3:

@@ -2,7 +2,9 @@
 #  coop_squad_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Expected the followers' looks told as values
+#      Paulinchen  2026-11-05: Answered the player's squad with a fixed view per case and checked the followers' choice that goes to the DLL
+#                            - Answered the squad math with fixed values per case and dropped the checks that restated it
+#                            - Expected the followers' looks told as values
 #                            - Stood in for the player's id the DLL tells through its topic
 #      Paulinchen  2026-11-01: Checked the followers' row in Options > Mods, which the Mod Framework keeps
 #      Paulinchen  2026-10-31: Took the mod's prefix and the style from ui_online.rbx and the Mod Framework
@@ -263,6 +265,24 @@ load_script "ui_online"
 rules_bridge = open_rules_bridge
 require_relative "party_support"
 answer_party(rules_bridge)
+# The DLL's squad math in the cases below (SquadMathTests and SquadViewTests cover it): the shares
+# and order of a party's players, a Raid World's squads by its rules, and the companions a team
+# past its cap leaves out, by the team, the cap and whether Luka stays.
+$rule_answers.cases("squad.shares", { { "count" => 2, "max" => 8 } => [[2, 2], [2, 2]], { "count" => 3, "max" => 8 } => [[2, 2], [1, 1], [1, 1]] })
+$rule_answers.cases("squad.rank", { [["me-id-000", true], ["friend-id", false]] => ["me-id-000", "friend-id"],
+                                    [["me-id-000", false], ["friend-id", true], ["a-other", false]] => ["friend-id", "a-other", "me-id-000"] })
+$rule_answers.cases("squad.raid", {
+  { "luka" => false, "formation" => 4, "front" => 1, "raid_front" => 1 } => { "regular" => [1, 2], "raid" => [1, 2], "largest" => 3 },
+  { "luka" => true, "formation" => 4, "front" => 1, "raid_front" => 1 } => { "regular" => [1, 2], "raid" => [1, 2], "largest" => 3 },
+  { "luka" => false, "formation" => 6, "front" => 2, "raid_front" => 1 } => { "regular" => [2, 3], "raid" => [1, 4], "largest" => 5 },
+  { "luka" => false, "formation" => 4, "front" => 4, "raid_front" => 4 } => { "regular" => [4, 0], "raid" => [4, 0], "largest" => 4 },
+  { "luka" => false, "formation" => 0, "front" => 1, "raid_front" => 1 } => { "regular" => [1, 8], "raid" => [1, 8], "largest" => 9 },
+}) { |request| request["rules"] }
+$rule_answers.cases("squad.past_cap", {
+  [[1, 2, 3, 4, 5, 6, 7], 4, true] => [5, 6, 7], [[1, 2, 3, 4, 9], 4, true] => [9], [[2, 3, 4, 5, 1, 6], 4, true] => [5, 6],
+  [[2, 3, 4, 5, 1, 6], 4, false] => [1, 6], [[1, 2, 3, 4, 5, 6], 4, true] => [5, 6], [[2, 3, 4, 5, 6, 1], 4, true] => [5, 6], [[1, 2, 3, 4], 4, true] => [],
+  [[1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 6, true] => [7, 8, 9, 10], [[2, 3, 4, 5, 6, 1], 4, false] => [6, 1], [[2, 3, 4, 5, 1], 4, true] => [5],
+}) { |request| request.values_at("team", "cap", "keep_luka") }
 load_script "coop"
 load_script "coop_scope"
 load_script "coop_squad"
@@ -279,10 +299,6 @@ $game_party.party_member_max = 8
 $game_player = Game_Player.new
 $game_player.followers = [1, 2, 3].map { |index| Game_Follower.new(index, "Follower#{index}") }
 
-# Shares.
-check("a larger party gives more of the Backline, the first ones first", (0..2).map { |at| squad.share(at, 3, 14) }, [[2, 4], [1, 3], [1, 3]])
-check("the leader first, then by id", squad.ranked([["b", false], ["c", true], ["a", false]]), %w[c a b])
-
 # Outside a party nothing is cut.
 check("outside a party no share", squad.own_share, nil)
 check("every follower shows", $game_player.followers.map { |f| f.visible? }, [true, true, true])
@@ -290,6 +306,7 @@ check("nobody is cut", squad.place_of(actors[7]), nil)
 check("no trail is told", squad.state_fields["trail"], [])
 
 # A party of two, the player leading.
+$squad_view = squad_view([2, 2])
 friend = MGQ_MpOverworldSync::Peers::Peer.new(2, { "id" => "friend-id", "name" => "Friend", "party" => "me-id-0p1" }, nil, true)
 MGQ_MpOverworldSync::Peers.all << friend
 take_party("me-id-0p1", [friend])
@@ -310,24 +327,27 @@ check("the option is in Options > Mods with its name, help, values and default",
        [[0, "Active Frontline"], [1, "Leaders Only"]], squad::ACTIVE_FRONTLINE])
 check("and the leader may choose", Mod_Framework::Options.enabled?(followers), true)
 $game_system.conf[squad::FOLLOWERS] = squad::LEADERS_ONLY
+$squad_view = squad_view([2, 2], squad::LEADERS_ONLY)
 MGQ_MpOverworldSync.tick(true)
+check("the leader's choice goes to the DLL", $squad_view_asks.last["own_mode"], squad::LEADERS_ONLY)
 check("leaders only hides every follower", $game_player.followers.map { |f| f.visible? }, [false, false, false])
 check("and is told", squad.state_fields, { "follow" => 1, "trail" => [] })
 $game_system.conf[squad::FOLLOWERS] = squad::ACTIVE_FRONTLINE
+$squad_view = squad_view([2, 2])
 
 # The player joins the friend's party instead: the friend leads.
 friend.state["party"] = "friend-p"
 friend.state["invite"] = "1"
 take_party("friend-p", [friend], 2)
-friend.state["follow"] = "1"
+$squad_view = squad_view([2, 2], squad::LEADERS_ONLY)
 MGQ_MpOverworldSync.tick(true)
-check("a member takes the leader's choice", squad.mode, squad::LEADERS_ONLY)
+check("a member takes the leader's choice as the DLL answers it", squad.mode, squad::LEADERS_ONLY)
 check("and tells it on", squad.state_fields["follow"], 1)
 check("a member may not choose", Mod_Framework::Options.enabled?(followers), false)
-friend.state["follow"] = "0"
 other = MGQ_MpOverworldSync::Peers::Peer.new(3, { "id" => "a-other", "name" => "Other", "party" => "friend-p" }, nil, true)
 MGQ_MpOverworldSync::Peers.all << other
 take_party("friend-p", [friend, other], 2)
+$squad_view = squad_view([1, 1])
 MGQ_MpOverworldSync.tick(true)
 check("of three, a member who does not lead has one and one", squad.own_share, [1, 1])
 check("and so walks alone", $game_player.followers.map { |f| f.visible? }, [false, false, false])
@@ -378,6 +398,7 @@ module MGQ_MpWorld
 end
 $raid = true
 $open = true
+$squad_view = squad_view([1, 2])
 $game_party.all_members = actors.first(7)
 check("the cap waits until the team is fitted, so the game cuts nobody", $game_party.party_member_max, 8)
 MGQ_MpOverworldSync.tick(true)
@@ -395,8 +416,9 @@ $game_party.temp = false
 check("and so does the team until it is fitted again", $game_party.party_member_max, 10)
 MGQ_MpOverworldSync.tick(true)
 check("which sends a companion who joined meanwhile to standby", [$game_party.actors, $game_party.standby, $game_party.party_member_max], [[1, 2, 3, 4], [5, 6, 7, 8, 9], 4])
-check("Luka stays in the team wherever he stands", squad.past_cap([2, 3, 4, 5, 1, 6], 4), [5, 6])
-check("unless he may leave it", squad.past_cap([2, 3, 4, 5, 1, 6], 4, false), [1, 6])
+check("the companions a team past its cap leaves out are the DLL's, told the team, the cap, Luka and whether he may leave",
+      [squad.past_cap([2, 3, 4, 5, 1, 6], 4, false), $rule_answers.asked("squad.past_cap").last],
+      [[1, 6], { "team" => [2, 3, 4, 5, 1, 6], "luka" => [1], "cap" => 4, "keep_luka" => false }])
 check("every player has one and two, in a party of four too", [MGQ_MpCoop.in_party?, squad.own_share], [true, [1, 2]])
 check("the fourth place is cut", actors.first(4).map { |a| squad.place_of(a) }, [:front, :bench, :bench, :cut])
 check("nobody follows", $game_player.followers.map { |f| f.visible? }, [false, false, false])
@@ -478,6 +500,7 @@ check("a squad rules push not from the relay is ignored", MGQ_MpWorld.squad, { :
 MGQ_MpOverworldSync.routes["squad_value"].call(nil, { "squad_value" => "0 6 2 1", :relay => true })
 check("the relay's push takes the rules and tells the player", [MGQ_MpWorld.squad, $notice],
       [{ :luka => false, :formation => 6, :front => 2, :raid_front => 1 }, "The world's team rules changed: Formation 6, Frontline 2 | 1."])
+$squad_view = squad_view([2, 3])
 MGQ_MpOverworldSync.tick(true)
 check("a team of six: two in front, three behind, one cut", [whole.actors, whole.party_member_max, squad.own_share, actors.first(6).map { |a| squad.place_of(a) }],
       [[1, 2, 3, 4, 5, 6], 6, [2, 3], [:front, :front, :bench, :bench, :bench, :cut]])
@@ -492,16 +515,19 @@ $game_troop.troop_id = 1
 check("a co-op battle's build holds the larger squad of both fights", squad.largest_squad(6), 5)
 whole.in_battle = false
 $squad = { :luka => false, :formation => 4, :front => 4, :raid_front => 4 }
+$squad_view = squad_view([4, 0])
 MGQ_MpOverworldSync.tick(true)
 check("a Frontline as large as the team leaves no cut place", [whole.actors, squad.own_share, actors.first(4).map { |a| squad.place_of(a) }],
       [[1, 2, 3, 4], [4, 0], [:front, :front, :front, :front]])
 $squad = { :luka => false, :formation => squad::ORIGINAL, :front => 1, :raid_front => 1 }
 whole.party_member_max = 9
+$squad_view = squad_view([1, 8])
 MGQ_MpOverworldSync.tick(true)
 check("the original size keeps the game's party size and cuts nobody", [whole.party_member_max, squad.own_share, squad.place_of(actors[3])], [9, [1, 8], :bench])
 
 # Luka may leave the team.
 $squad = { :luka => true, :formation => 4, :front => 1, :raid_front => 1 }
+$squad_view = squad_view([1, 2])
 free = Game_Party.new
 free.all_members = [2, 3, 4, 5, 6, 1].map { |id| $game_actors[id] }
 free.party_member_max = 8

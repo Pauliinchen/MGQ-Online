@@ -16,8 +16,8 @@ using MGQParadox.Multiplayer.Topics;
 namespace MGQParadox.Multiplayer.Tests.Topics;
 
 /// <summary>
-/// Covers the World overview's topics as the scripts call them, against the cases the script tests
-/// take from fixtures/overview/story.json.
+/// Covers the World overview's topics as the scripts call them, against the cases recorded in
+/// fixtures/overview/story.json.
 /// </summary>
 public sealed class OverviewTopicsTests
 {

@@ -2,7 +2,10 @@
 #  raid_freeze_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Asked the stand-in of the world's list why a fight is over, and answered a defeat's refusal and undo with fixed values per case
+#      Paulinchen  2026-11-05: Answered the sites of an earlier release's save with fixed values and checked the texts handed
+#                            - Dropped the checks of the write journal against its golden cases, which StoryJournalTests walks
+#                            - Answered why the world's list calls a fight over with fixed values per case
+#                            - Asked the stand-in of the world's list why a fight is over, and answered a defeat's refusal and undo with fixed values per case
 #                            - Asked the stand-in of the pools whether a troop's milestone is beaten
 #                            - Checked that a value written over that the bridge cannot carry stays with the scripts
 #                            - Handed and expected sites as plain values, and checked that the DLL reads the sites of an earlier release's save once
@@ -561,7 +564,7 @@ class Scene_Novel; end
 class Scene_Title; def start; end; end
 
 # Stands in for the raid pool: the player plays a Raid World's story while $active is, the battle
-# set up last fights as $kind, $fight is the fight, and $beaten names the milestones beaten.
+# set up last fights as $kind and $fight is the fight.
 module MGQ_MpRaidPool
   # A fight against a pool.
   Fight = Struct.new(:troop, :side)
@@ -575,8 +578,6 @@ module MGQ_MpRaidPool
   def self.fight; $fight; end
   # Answers a boss's key.
   def self.key_of(troop); { 868 => "Sonya Mazda", 807 => "Spider Princess", 870 => "Sonya Chaos" }[troop.to_i] || "Boss #{troop}"; end
-  # Answers whether a troop's milestone is beaten.
-  def self.beaten?(troop, _story = nil); $beaten.include?(MGQ_MpRaidBosses.at(troop).milestone); end
   # Answers whether a Hades rematch runs: $hades.
   def self.hades?; $hades; end
   # Answers a boss's name.
@@ -615,7 +616,7 @@ module FreezeTables
   DEFEAT_VARIABLES = [11]
 end
 # Stands in for the world's entries of frozen fights: $entries by troop, notes kept in $noted, the
-# troops whose fight ended for the world in $final, those whose milestone $beaten names over too,
+# troops whose fight ended for the world in $final, why the DLL calls fights over in $over by troop,
 # and the battles won in $won.
 module MGQ_MpWorldFreeze
   # Answers the world's entry of a troop.
@@ -624,15 +625,8 @@ module MGQ_MpWorldFreeze
   def self.note(entry); $noted << entry; true; end
   # Answers whether a troop's fight ended for the world.
   def self.final?(troop); ($final || []).include?(troop.to_i); end
-  # Answers why fights are over, as the DLL's one decision would for these stand-ins.
-  def self.over(troops)
-    found = {}
-    troops.each do |troop|
-      found[troop.to_i] = "the fight ended for the world before, for good" if final?(troop)
-      found[troop.to_i] ||= "the player's story beat it" if MGQ_MpRaidPool.beaten?(troop)
-    end
-    found
-  end
+  # Answers why the DLL calls fights over: $over's reasons of those troops.
+  def self.over(troops); $over.select { |troop, _reason| troops.map(&:to_i).include?(troop) }; end
   # Notes a battle won.
   def self.won(troop); ($won ||= []) << troop.to_i; end
 end
@@ -789,7 +783,7 @@ def reset
   $refreshes = 0
   $bgm = nil
   $bgm_pos = 0
-  [$entries = {}, $noted = [], $notices = [], $ran = [], $executed = [], $played = [], $beaten = [], $walls = []]
+  [$entries = {}, $noted = [], $notices = [], $ran = [], $executed = [], $played = [], $over = {}, $walls = []]
   $log.clear
   $raid_answers.clear
   $raid_answers.undo = UNDO
@@ -859,23 +853,6 @@ def core_only?(value)
   when Hash then value.all? { |key, item| core_only?(key) && core_only?(item) }
   else false
   end
-end
-
-# The journal finds what the old diff of the story at a mark against the story now found, on its
-# golden cases: the writes before the mark are the story's, those after go through the game's own
-# writes, which the journal notes while the mark lives.
-JOURNAL_CASES.each do |entry|
-  reset
-  start = entry["start"]
-  start["switches"].each { |id, value| MGQ_MpStoryState.data_of($game_switches)[id] = value }
-  start["variables"].each { |id, value| MGQ_MpStoryState.data_of($game_variables)[id] = value }
-  start["selves"].each { |map, event, letter, value| MGQ_MpStoryState.data_of($game_self_switches)[[map, event, letter]] = value }
-  objects = [$game_switches, $game_variables, $game_self_switches]
-  entry["before_mark"].each { |kind, key, value| objects[kind][key] = value }
-  mark = freeze.instance_variable_get(:@seq)
-  freeze.instance_variable_set(:@run, { :mark => mark })
-  entry["after_mark"].each { |kind, key, value| objects[kind][key] = value }
-  check("the journal finds what the whole-story diff found: #{entry['name']}", freeze.changed_since(mark), entry["diff"])
 end
 
 # A value written over that the bridge cannot carry stays with the scripts, the DLL's journal
@@ -1319,12 +1296,12 @@ $game_switches[4] = true
 $game_variables[1075] = 14
 fight_event(13)
 lose(SONYA_DEFEAT)
-$beaten << "Sonya Mazda"
+$over[868] = "the player's story beat it"
 check("a record of a boss the story beat is no record to show, though it stays until the next look", [freeze.records, freeze.record_for(868)["state"]], [[], "frozen"])
 $frame += MGQ_MpRaidFreeze::CHECK_FRAMES
 frames(1)
 check("which drops it", [freeze.record_for(868), $log.grep(/dropped the record of troop 868: the player's story beat it/).size], [nil, 1])
-$beaten.clear
+$over.clear
 $game_map.setup(138)
 fight_event(13)
 lose(SONYA_DEFEAT)
@@ -1627,10 +1604,12 @@ TRIGGER_PAGE.trigger = nil
 SONYA_PAGE.trigger = 3
 
 # A save of an earlier release keeps its frozen fights' sites as texts, which the DLL reads once
-# (StoryTopics.SitesTopic): its stand-in reads them as the DLL does.
-$world_bridge.answer("story.sites") { |texts| texts.map { |text| parts = text.split(":"); [parts[0]] + parts[1..-1].map(&:to_i) } }
+# (StoryTopicsTests.Sites_ReadTheTextsOfAnEarlierReleasesSave).
+sites_asked = []
+$world_bridge.answer("story.sites") { |texts| sites_asked << texts; [["ce", 347], ["map", 138, 13, 1]] }
 older = { "troop" => 868, "state" => "frozen", "site" => "ce:347", "outer" => "map:138:13:1", "frames" => [["map:138:13:1", 7, {}], ["ce:347", 11, {}, [138, 13]]] }
 MGQ_MpGame.set($game_system, :raid_freeze, { "world" => $world, "origin" => nil, "records" => { 868 => older } })
 read = freeze.record_for(868)
 check("a save of an earlier release has the DLL read its frozen fights' sites once",
-      [read["site"], read["outer"], read["frames"].map(&:first)], [["ce", 347], ["map", 138, 13, 1], [["map", 138, 13, 1], ["ce", 347]]])
+      [sites_asked, read["site"], read["outer"], read["frames"].map(&:first)],
+      [[["ce:347", "map:138:13:1"]], ["ce", 347], ["map", 138, 13, 1], [["map", 138, 13, 1], ["ce", 347]]])

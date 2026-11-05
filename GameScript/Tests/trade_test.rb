@@ -2,7 +2,8 @@
 #  trade_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Handed and took the offers and items as values, the DLL's stand-in naming the tokens
+#      Paulinchen  2026-11-05: Answered an offer with a fixed view in place of a copy of the DLL's revision count
+#                            - Handed and took the offers and items as values, the DLL's stand-in naming the tokens
 #                            - Expected the trade's invite told as true
 #      Paulinchen  2026-10-31: Expected the plainer texts the player reads
 #      Paulinchen  2026-10-30: Checked the trades to recover the DLL hands over
@@ -193,20 +194,13 @@ $game_party.gain_gold(100)
 # The trade's id in these checks.
 TID = "0123456789abcdef01234567"
 
-# The DLL's trade, standing in: each action is recorded in $trade_calls and answered with
-# $trade_view, an offer bumping the player's revision; what the scripts tell each frame goes to
-# $trade_ticks.
+# The DLL's trade, standing in: each action, an offer too, is recorded in $trade_calls and
+# answered with $trade_view; what the scripts tell each frame goes to $trade_ticks.
 $trade_calls = []
 $trade_ticks = []
 $trade_view = { "session" => nil, "accepted" => nil }
-%w[accept decline confirm cancel].each do |action|
+%w[accept decline confirm cancel offer].each do |action|
   $world_bridge.answer("trade.#{action}") { |request| $trade_calls << [action, request]; $trade_view }
-end
-$world_bridge.answer("trade.offer") do |offer|
-  $trade_calls << ["offer", offer]
-  session = $trade_view["session"]
-  $trade_view = $trade_view.merge("session" => session.merge("my_rev" => session["my_rev"] + 1, "confirmed" => false)) if session
-  $trade_view
 end
 $world_bridge.answer("trade.tick") { |frame| $trade_ticks << frame; nil }
 # The DLL's tokens, standing in: an item of the database by its letter and id, a copy by its rolls
@@ -327,8 +321,10 @@ $called.clear
 trade.on_map
 check("the map opens the trade screen", $called, [Scene_MpTrade])
 
-# Both offers: the bag and the party's gold hold an offer back before the DLL gets it.
+# Both offers: the bag and the party's gold hold an offer back before the DLL gets it, whose view
+# after the four changes counts the player's revisions.
 $trade_calls.clear
+$trade_view = open_view("my_rev" => 4)
 trade.set_amount(key, 1)
 check("key items stay out of an offer", [trade.session.mine.entries, $trade_calls], [[], []])
 trade.set_amount(potion, 9)
@@ -340,7 +336,7 @@ trade.set_gold(0)
 trade.set_gold(0)
 check("each change goes to the DLL as the offer's values, an unchanged one not", $trade_calls.map { |_, sent| [sent["gold"], sent["items"]] },
       [[0, [["i1", 5]]], [0, [["i1", 3]]], [100, [["i1", 3]]], [0, [["i1", 3]]]])
-check("whose answer counts the revisions", trade.session.my_rev, 4)
+check("whose answer the trade takes", trade.session.my_rev, 4)
 from_dll("trade.their_offer", { "rev" => 1, "offer" => offer(50, listed("weapon", 2, 1)) })
 check("the other player's offer is read as this game's items", [trade.session.theirs.gold, trade.session.theirs.entries.map { |e| [e.item, e.amount] }], [50, [[spear, 1]]])
 

@@ -7,7 +7,8 @@
 #----------------------------------------------------------------
 
 # Runs a case of fixtures/screen/screen.json through ScreenPrototype (screen_prototype.rb) and
-# writes what it showed as the case holds it, for make_fixtures.rb and the script tests alike.
+# writes what it showed as the case holds it, for make_fixtures.rb. A recording tool: no test runs
+# against it.
 
 require "json"
 require_relative "screen_prototype"

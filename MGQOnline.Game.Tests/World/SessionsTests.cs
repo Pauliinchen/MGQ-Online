@@ -2,7 +2,8 @@
 //  SessionsTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Checked the battle a host's state tells, open, full and ending, on the join prompt
+//      Paulinchen  2026-11-05: Checked that a battle under the Library or Config is asked and offered, a player merely in the background not, and a Classic world's encounter asks none
+//                            - Checked the battle a host's state tells, open, full and ending, on the join prompt
 //                            - Dropped the check of a battle state between released and new games, which read alike no more
 //                            - Created
 //
@@ -163,6 +164,31 @@ public sealed class SessionsTests
     }
 
     /// <summary>
+    /// Asserts that a running battle whose players' windows show the Library or Config, which waits
+    /// on their scene stack, is asked by an encounter near it and offered on the join prompt, while a
+    /// player merely in the background fights none, and that a Classic world's encounter asks no
+    /// running battle at all.
+    /// </summary>
+    [Fact]
+    public void RunningBattle_UnderTheLibrary_IsAskedAndOffered()
+    {
+        var raid = new TestWorld(raid: true);
+        Peer host = raid.Add(5, "Host", member: false, ("scene", "away"), ("rb", "hb1"), ("rbh", "5"), ("rbn", "1"), ("rbs", Sessions.Open), ("x", "11"));
+
+        Assert.Equal(("join", "hb1"), raid.Asking.Ask(Encounter()).Select(action => (action.Kind, action.BattleId)).Single());
+        Assert.Equal("hb1", raid.Join.Frame(Frame(pressed: false, null)).Target?.BattleId);
+
+        var background = new TestWorld(raid: true);
+        background.Add(5, "Host", member: false, ("scene", "away"), ("x", "11"));
+        Assert.Empty(background.Asking.Ask(Encounter()));
+        Assert.Null(background.Join.Frame(Frame(pressed: false, null)).Target);
+
+        var classic = new TestWorld(raid: false);
+        classic.Add(5, "Host", member: true, [.. host.State.Select(field => (field.Key, field.Value))]);
+        Assert.Empty(classic.Asking.Ask(Encounter()));
+    }
+
+    /// <summary>
     /// Asserts that the battle server keeps a player whose battle channel dropped for the grace,
     /// back within it after the frames they were away (issues 54 and 55), and forgets one who stays
     /// away for all of it.
@@ -209,6 +235,12 @@ public sealed class SessionsTests
     private static JoinFrame Frame(bool pressed, IReadOnlyList<JoinSide>? sides) => new(true, pressed, false, new JoinBusy(null, null), sides, null);
 
     /// <summary>
+    /// Makes a random encounter against troop 50 that asks a running battle.
+    /// </summary>
+    /// <returns>The encounter.</returns>
+    private static AskedEncounter Encounter() => new(50, true, false, false, [[50, 0, 0, 0]], [(50, 160)], []);
+
+    /// <summary>
     /// Makes an event's battle the game set up, no encounter.
     /// </summary>
     /// <returns>The battle.</returns>
@@ -232,7 +264,8 @@ public sealed class SessionsTests
         {
             Raid = raid;
             Match = new CoopMatchmaking(this, this, () => Now, () => 0.5, _ => "b1");
-            Join = new JoinChoice(this, this, Match, new CoopAsking(this, Match, () => Now), () => Now);
+            Asking = new CoopAsking(this, Match, () => Now);
+            Join = new JoinChoice(this, this, Match, Asking, () => Now);
             Reset();
         }
 
@@ -245,6 +278,11 @@ public sealed class SessionsTests
         /// Gets the matchmaking.
         /// </summary>
         public CoopMatchmaking Match { get; }
+
+        /// <summary>
+        /// Gets the asking side of an encounter that asks a running battle.
+        /// </summary>
+        public CoopAsking Asking { get; }
 
         /// <summary>
         /// Gets the join prompt.

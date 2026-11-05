@@ -2,7 +2,8 @@
 #  world_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Kept true or false and whole numbers in the stand-in of Player.ini as the DLL hands them back
+#      Paulinchen  2026-11-05: Kept each message sent as the scripts hand it and took the fields of each message told as the test writes them
+#                            - Kept true or false and whole numbers in the stand-in of Player.ini as the DLL hands them back
 #                            - Wrote a state as the DLL writes its fields
 #                            - Stood in for the world room's sending and the player's id through the DLL's topics
 #                            - Dropped the stand-in of the game's frame counter, which no script reads; the bridge's frame counts
@@ -239,10 +240,10 @@ $fake_chat = FakeChat.new($world_fake)
 # hotkeys of the next frame, which open and close the wheels.
 def map_frame; MGQ_MpActions.on_map; MGQ_MpChat.on_map; ui_frame; Mod_Framework::Hotkeys.fire; end
 
-# Stands in for the world room's sending: the messages sent in $sent, as the DLL writes them.
+# Stands in for the world room's sending: the messages sent in $sent, as the scripts hand them.
 module MGQ_MpOverworldSync::Port
   # Records a message in $sent, which always goes out.
-  def self.send_to(target, fields, body); $sent << [target, encode_message(fields, body)]; true; end
+  def self.send_to(target, fields, body); $sent << [target, sent_message(fields, body)]; true; end
 end
 
 # Lets the tests read the line at the bottom left of the map.
@@ -255,18 +256,18 @@ end
 #
 # @param kind [String] "seat", "in", "out" or "message".
 # @param seat [Integer] The seat it is about.
-# @param payload [String] A message's text.
+# @param message [Hash] A message's fields as the DLL reads them, its body under :payload.
 # @return [Hash] The entry.
-def entry(kind, seat, payload = "")
-  { "kind" => kind, "seat" => seat.to_s, :payload => payload }
+def entry(kind, seat, message = {})
+  { "kind" => kind, "seat" => seat.to_s, :payload => message }
 end
 
-# Writes a state as another game sends it, each field as the DLL writes its kind.
+# A state another game told, its fields as the DLL reads them.
 #
 # @param state [Hash] The state's fields.
-# @return [String] The message.
+# @return [Hash] The message.
 def told(state)
-  encode_message({ "state" => 1 }.merge(state))
+  { "state" => "1" }.merge(state)
 end
 
 # A player standing on map 5 of an open world.
