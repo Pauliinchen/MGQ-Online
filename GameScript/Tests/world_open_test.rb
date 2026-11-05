@@ -2,7 +2,8 @@
 #  world_open_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Checked that a refusal of this version on the world screen waits for its question to close instead of leaving
+#      Paulinchen  2026-11-06: Dropped the stand-ins of the mouse and the held buttons, which no check reads
+#                            - Checked that a refusal of this version on the world screen waits for its question to close instead of leaving
 #                            - Reached the Mod Framework's engine under its own name
 #                            - Checked that a refusal of this version asks for the update at the title at once and after a game at the next title
 #                            - Acted on the world screen as its window of the UI layer hands over what the player does
@@ -196,25 +197,6 @@ module MGQ_Multiplayer
 
   # Stands in for the ini files, which read empty.
   module Ini; def self.read(_path); {}; end; def self.load(_path, _quiet = false); {}; end; end
-
-  # Stands in for holding the buttons: the owner holding them is in $capture, the button pressed in
-  # $pressed.
-  module Mod_Framework::UI::Engine::Capture
-    # Holds the buttons for an owner.
-    def self.start(owner); $capture = owner; end
-
-    # Gives the buttons back if the owner holds them.
-    def self.stop(owner); $capture = nil if $capture == owner; end
-
-    # Answers whether a button is pressed, from $pressed.
-    def self.trigger?(button); $pressed == button; end
-
-    # Answers whether a button repeats, as it is pressed.
-    def self.repeat?(button); trigger?(button); end
-  end
-
-  # Stands in for the mouse, never clicked.
-  module Mod_Framework::UI::Engine::Mouse; def self.clicked?; false; end; end
 
   # Stands in for the player's id, as the DLL tells it.
   module Player; def self.id; "me"; end; end

@@ -2,6 +2,7 @@
 #  catchup_exp_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Answered the catch-up's topics with fixed values instead of recorded cases
 #      Paulinchen  2026-10-30: Kept one check of the target
 #      Paulinchen  2026-10-28: Checked that outside a Raid World's story the catch-up is not asked whether a character counts
 #      Paulinchen  2026-10-23: Checked the requests to the DLL, which owns the rule
@@ -53,6 +54,12 @@ module MGQ_MpWorldCatchup; def self.counts?(actor); $asked = $asked.to_i + 1; !A
 load_script("world_catchup_exp")
 exp = MGQ_MpWorldCatchupExp
 bridge = open_rules_bridge
+# The DLL's answers for the checks' characters: a world jumping from 10 to 15 catches up to 10, a
+# level 30 character below 40 gains four times, one of level 6 below 10 grows 5.8 times and one of
+# level 12 gains as given.
+bridge.answer("catchup.target") { |_caps| 10 }
+bridge.answer("catchup.factor") { |request| request["target"] ? "x4" : "x1" }
+bridge.answer("catchup.grow") { |request| request["level"] < request["target"] ? { "exp" => 580, "cexp" => 232, "factor" => "x5.8" } : nil }
 
 MGQ_MpWorldStory.active = true
 MGQ_MpWorldStory.world = { "caps" => [10, 15] }

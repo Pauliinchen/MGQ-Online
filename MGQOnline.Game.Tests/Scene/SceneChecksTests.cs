@@ -2,6 +2,8 @@
 //  SceneChecksTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Recorded the checks from SceneChecks, the script that recorded them being gone
+//                            - Dropped the checks that replayed recorded cases
 //      Paulinchen  2026-11-05: Handed the topics a change's arguments as values and took a message's back as values
 //      Paulinchen  2026-10-28: Created
 //
@@ -10,7 +12,6 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
-using System.Text.Json;
 using MGQOnline.Bridge;
 using MGQOnline.Bridge.Ruby;
 using MGQOnline.Game.Battles.Wire;
@@ -20,17 +21,10 @@ using MGQOnline.Game.Topics;
 namespace MGQOnline.Game.Tests.Scene;
 
 /// <summary>
-/// Covers what a viewer refuses of a scene's changes, replayed from the golden cases of
-/// fixtures/scene/cases.json, which coop_scene.rbx refused before the rules left it, and the topics
-/// the scripts read them through.
+/// Covers what a viewer refuses of a scene's changes, through the topics the scripts read them by.
 /// </summary>
 public sealed class SceneChecksTests
 {
-    /// <summary>
-    /// What the DLL knows of the game when it reads a scene's line: nothing.
-    /// </summary>
-    private static readonly WireGame NoGame = new([], [], new Dictionary<WireTable, int>());
-
     /// <summary>
     /// The context the topics answer on.
     /// </summary>
@@ -42,33 +36,6 @@ public sealed class SceneChecksTests
     public SceneChecksTests()
     {
         SceneTopics.Register(_context);
-    }
-
-    /// <summary>
-    /// Asserts that every change the script recorded is refused as the script refused it, or taken.
-    /// </summary>
-    [Fact]
-    public void Changes_AreRefusedAsTheScriptRefusedThem()
-    {
-        JsonElement cases = Fixtures.Read("scene", "cases.json");
-        Assert.Equal((SceneChecks.MaxPicture, SceneChecks.MostAmount, SceneChecks.MostFrames, SceneChecks.MostShake),
-            (cases.GetProperty("max_picture").GetInt32(), cases.GetProperty("most_amount").GetInt32(), cases.GetProperty("most_frames").GetInt32(), cases.GetProperty("most_shake").GetInt32()));
-        foreach (JsonElement entry in cases.GetProperty("checks").EnumerateArray())
-        {
-            string kind = entry.GetProperty("kind").GetString()!;
-            IReadOnlyList<WireValue>? args = WireReader.Parse(entry.GetProperty("line").GetString()!, NoGame);
-            Assert.NotNull(args);
-            string? refusal = SceneChecks.OnTheWay(kind, entry.GetProperty("map").GetInt32(), entry.GetProperty("here").GetInt32()) ?? SceneChecks.Refusal(kind, args);
-            Assert.True(entry.GetProperty("refusal").GetString() == refusal, $"{kind} {entry.GetProperty("line").GetString()![..System.Math.Min(60, entry.GetProperty("line").GetString()!.Length)]}: expected {entry.GetProperty("refusal")}, got {refusal ?? "null"}");
-        }
-
-        foreach (JsonElement entry in cases.GetProperty("batches").EnumerateArray())
-        {
-            IReadOnlyList<WireValue>? values = WireReader.Parse(entry.GetProperty("line").GetString()!, NoGame);
-            Assert.NotNull(values);
-            bool refused = SceneChecks.Batch(values) is null;
-            Assert.True(entry.GetProperty("refusal").ValueKind != JsonValueKind.Null == refused, $"{entry.GetProperty("name")}: expected refused {!refused}");
-        }
     }
 
     /// <summary>

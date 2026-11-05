@@ -2,6 +2,7 @@
 //  StoryTrackRelayTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Ran the harness next to it
 //      Paulinchen  2026-11-05: Checked the keys and values one game's scripts hand over reaching the other game's scripts as the same values, in the track and in a run
 //      Paulinchen  2026-10-31: Checked a run one game hands over reaching the other through the relay's walk, once
 //      Paulinchen  2026-10-23: Created
@@ -21,7 +22,7 @@ namespace MGQOnline.Game.Tests.Story;
 
 /// <summary>
 /// Plays two games' tracks against the relay's own story tracks, run by Node through
-/// fixtures/story/track_harness.mjs, so the frames both sides write are the ones the other reads.
+/// track_harness.mjs next to this file, so the frames both sides write are the ones the other reads.
 /// Skipped where Node is not installed.
 /// </summary>
 public sealed class StoryTrackRelayTests : IDisposable
@@ -49,7 +50,7 @@ public sealed class StoryTrackRelayTests : IDisposable
 
         try
         {
-            relay = Process.Start(new ProcessStartInfo("node", $"\"{Path.Combine(root, "fixtures", "story", "track_harness.mjs")}\"")
+            relay = Process.Start(new ProcessStartInfo("node", $"\"{Path.Combine(root, "MGQOnline.Game.Tests", "Story", "track_harness.mjs")}\"")
             {
                 RedirectStandardInput = true,
                 RedirectStandardOutput = true,

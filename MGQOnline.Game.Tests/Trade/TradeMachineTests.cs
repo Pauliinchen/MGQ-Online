@@ -12,7 +12,7 @@ using MGQOnline.Game.Trade;
 namespace MGQOnline.Game.Tests.Trade;
 
 /// <summary>
-/// Covers the rules of a trade the golden cases do not single out: a change of either offer
+/// Covers the rules of a trade: a change of either offer
 /// dropping both confirmations, a stray answered once, an offer no game writes, a commit the
 /// other player no longer stands by, and a confirmation state sent again that changes nothing.
 /// </summary>

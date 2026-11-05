@@ -2,6 +2,7 @@
 //  StoryMirrorTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Wrote the relay's mapping out instead of reading a recorded one
 //      Paulinchen  2026-10-28: Created
 //
 //----------------------------------------------------------------
@@ -21,7 +22,7 @@ namespace MGQOnline.Data.Tests.Events;
 public sealed class StoryMirrorTests : IDisposable
 {
     /// <summary>
-    /// What the fixture's mapping is written for.
+    /// What the mapping is written for.
     /// </summary>
     private static readonly MirrorStamp Stamp = new("wss://relay.test", "1:aa.bb");
 
@@ -181,13 +182,38 @@ public sealed class StoryMirrorTests : IDisposable
     }
 
     /// <summary>
-    /// Reads the mapping of fixtures/story/mirror.json, as the relay hands it to games.
+    /// Gives a mapping as the relay hands it to games: a row or two of every table.
     /// </summary>
     /// <returns>The mapping.</returns>
     private static JsonElement Mapping()
     {
-        using JsonDocument document = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "fixtures", "story", "mirror.json")));
-        return document.RootElement.GetProperty("mapping").Clone();
+        using JsonDocument document = JsonDocument.Parse("""
+            {"rev":2,"tables":{
+              "keys":[{"key":"s1","kind":"shared"},{"key":"v1075","kind":"one_way","battleScene":{"steps":[15,16],"start":14,"mainStep":33,"troops":[868,869]}}],
+              "events":[{"key":"ss0.*.F","share":"shared"}],
+              "parts":[{"id":"1","name":"Part 1","ending":[["v",1001,18],["v",1032,5]],"gate":25,"order":10}],
+              "joins":[{"actor":525,"persona":525,"site":"map:7:60:1","part":"1","step":5,"side":null,"marks":[["v",1001,6],["s",2010]],"gate":2,"rule":"start","index":25,"ran":true,"order":10}],
+              "removals":[{"actor":241,"persona":241,"site":"map:134:34:2","part":"1","step":7,"side":null,"marks":[["v",1001,7],["v",1056,5],["v",1061,3]],"first":false,"index":243,"order":10}],
+              "key_items":[{"item":502,"amount":1,"site":"map:6:33:1","part":"1","step":5,"side":null,"marks":[["v",1001,6]],"ran":false,"order":10}],
+              "chests":[{"key":"ss127.81.A","items":[511],"part":"1","step":7,"flags":[],"order":10}],
+              "rewards":[{"kind":"armor","id":234,"amount":1,"site":"map:5:38:1","part":"1","step":5,"side":null,"marks":[["v",1001,6]],"ran":true,"order":10}],
+              "lessons":[{"actor":56,"skill":544,"site":"map:12:64:1","part":"1","step":12,"side":null,"marks":[["v",1001,12],["v",1041,2]],"ran":true,"order":10}],
+              "class_levels":[{"actor":1,"class":1,"level":10,"site":"map:645:25:1","part":"1","step":12,"side":null,"marks":[["v",1001,12],["v",1021,2]],"ran":true,"order":10}],
+              "settings":[{"kind":"encounters","id":0,"value":false,"site":"map:545:1:1","part":"1","step":0,"side":null,"marks":[["v",1001,0]],"ran":true,"order":10}],
+              "vehicles":[{"vehicle":"ship","site":"ce:7354","part":"1","step":13,"side":null,"marks":[["v",1001,13],["v",1089,2]],"ran":true,"order":10}],
+              "makina":[{"item":700,"level":6,"site":"map:215:23:1"}],
+              "companion_values":[{"actor":540,"variable":1009,"atLeast":2}],
+              "rules":[{"rule":"lasting_companions","value":[5,26,29,30]}],
+              "counts":[{"variable":1353,"weights":[{"switch":3204,"weight":1},{"switch":3205,"weight":1}],"doneSwitch":7034,"doneValue":15,"since":{"variable":1312,"atLeast":3}}],
+              "actor_changes":[{"actor":295,"calls":[["persona_change",[296],false]],"gate":null,"site":"map:309:15:1","part":"1","step":13,"side":null,"marks":[["v",1001,13],["v",1230,3]],"ran":true,"order":10}],
+              "prize_switches":[{"switch":2324}],
+              "event_rewards":[{"kind":"skill","id":866,"most":null,"sided":false,"route":false,"final":false}],
+              "side_events":[{"site":"ce:346","alice":{"skills":[],"companions":[45]},"ilias":{"skills":[],"companions":[]},"choice":false,"marks":[[["v",1001,29],["v",1069,4]]]}],
+              "party_chests":[{"key":"ss6.9.A"}],
+              "chest_flags":[{"switch":2043}]
+            },"index":{"built":1,"stale":false,"events":[[7,39],[40,2]],"commons":[154]}}
+            """);
+        return document.RootElement.Clone();
     }
 
     /// <summary>

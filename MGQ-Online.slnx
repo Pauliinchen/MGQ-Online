@@ -90,7 +90,6 @@
     <File Path="GameScript/Tests/world_overview_test.rb" />
     <File Path="GameScript/Tests/world_screen_support.rb" />
     <File Path="GameScript/Tests/world_screen_test.rb" />
-    <File Path="GameScript/Tests/wire_fixtures_test.rb" />
     <File Path="GameScript/Tests/world_support.rb" />
   </Folder>
   <Project Path="MGQParadox.Multiplayer/MGQParadox.Multiplayer.csproj" />

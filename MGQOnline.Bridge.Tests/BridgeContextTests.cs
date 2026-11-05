@@ -2,6 +2,7 @@
 //  BridgeContextTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Built the checks' requests instead of reading recorded dumps
 //      Paulinchen  2026-10-23: Covered a topic asked in-process
 //                            - Covered the batch topic and checked the unknown topic against its contract fixture
 //                            - Created
@@ -68,15 +69,14 @@ public sealed class BridgeContextTests
     }
 
     /// <summary>
-    /// Asserts that a topic nobody registered answers unknown_topic, in the bytes the scripts expect.
+    /// Asserts that a topic nobody registered answers unknown_topic.
     /// </summary>
     [Fact]
     public void Call_AnswersUnknownTopic()
     {
-        byte[] reply = CallRaw("no.such.topic", Fixtures.Topic("envelope", "unknown_topic", "request"));
+        RubyHash reply = Call("no.such.topic", RubyMarshal.Write(new RubyHash { { "seat", 2 } }));
 
-        Assert.Equal(Fixtures.Topic("envelope", "unknown_topic", "reply"), reply);
-        Assert.Equal(BridgeEnvelope.Error(BridgeEnvelope.UnknownTopic, "There is no topic no.such.topic."), RubyMarshal.Read(reply));
+        Assert.Equal(BridgeEnvelope.Error(BridgeEnvelope.UnknownTopic, "There is no topic no.such.topic."), reply);
     }
 
     /// <summary>
@@ -87,10 +87,11 @@ public sealed class BridgeContextTests
     {
         List<string> appended = RegisterAppend();
 
-        byte[] reply = CallRaw(BridgeContext.BatchTopic, Fixtures.Topic("batch", "in_order", "request"));
+        var batch = new RubyArray { new RubyArray { "test.append", "a" }, new RubyArray { "test.append", "b" }, new RubyArray { "test.append", "c" } };
+
+        byte[] reply = CallRaw(BridgeContext.BatchTopic, RubyMarshal.Write(batch));
 
         Assert.Empty(reply);
-        Assert.Empty(Fixtures.Topic("batch", "in_order", "reply"));
         Assert.Equal(new[] { "a", "b", "c" }, appended);
         Assert.Equal(3, _context.Counters["test.append"].Calls);
     }
@@ -103,9 +104,20 @@ public sealed class BridgeContextTests
     {
         List<string> appended = RegisterAppend();
 
-        byte[] reply = CallRaw(BridgeContext.BatchTopic, Fixtures.Topic("batch", "failed_entries", "request"));
+        var batch = new RubyArray
+        {
+            new RubyArray { "test.append", "a" }, new RubyArray { "no.such.topic", RubyNil.Value }, new RubyArray { "test.append", 1 }, new RubyArray { "test.append", "d" },
+        };
 
-        Assert.Equal(Fixtures.Topic("batch", "failed_entries", "reply"), reply);
+        RubyHash reply = Call(BridgeContext.BatchTopic, RubyMarshal.Write(batch));
+
+        Assert.Equal(
+            BridgeEnvelope.Ok(new RubyArray
+            {
+                new RubyHash { { "topic", "no.such.topic" }, { "error", BridgeEnvelope.UnknownTopic }, { "text", "There is no topic no.such.topic." } },
+                new RubyHash { { "topic", "test.append" }, { "error", BridgeEnvelope.BadRequest }, { "text", "Expected a String, found an Integer." } },
+            }),
+            reply);
         Assert.Equal(new[] { "a", "d" }, appended);
     }
 
@@ -132,7 +144,7 @@ public sealed class BridgeContextTests
     {
         _context.Register("seat", (_, request) => request.AsHash()["seat"].IsNil ? throw new BridgeRequestException("The seat is missing.") : null);
 
-        RubyHash refused = Call("echo", Fixtures.Codec("object"));
+        RubyHash refused = Call("echo", [4, 8, (byte)'o', (byte)':', 14, .. "RPG::Item"u8, 0]);
         RubyHash missing = Call("seat", RubyMarshal.Write(new RubyHash()));
 
         Assert.Equal(BridgeEnvelope.Error(BridgeEnvelope.BadRequest, "RPG::Item cannot cross the bridge."), refused);
@@ -183,7 +195,7 @@ public sealed class BridgeContextTests
     }
 
     /// <summary>
-    /// Registers the contract fixtures' "test.append" topic, which collects the Strings it gets.
+    /// Registers a "test.append" topic, which collects the Strings it gets.
     /// </summary>
     /// <returns>The Strings it got, in order.</returns>
     private List<string> RegisterAppend()

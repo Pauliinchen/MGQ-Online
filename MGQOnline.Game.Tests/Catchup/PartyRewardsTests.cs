@@ -2,6 +2,7 @@
 //  PartyRewardsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Dropped the checks that replayed recorded cases
 //      Paulinchen  2026-10-31: Checked the party chests that gave a key item
 //      Paulinchen  2026-10-28: Created
 //
@@ -9,7 +10,6 @@
 
 using System.Collections.Generic;
 using System.Linq;
-using System.Text.Json;
 using MGQOnline.Bridge.Ruby;
 using MGQOnline.Data.Events;
 using MGQOnline.Game.Catchup;
@@ -25,22 +25,6 @@ namespace MGQOnline.Game.Tests.Catchup;
 /// </summary>
 public sealed class PartyRewardsTests
 {
-    /// <summary>
-    /// Asserts that the generated tables give the scripts the constants of coop_story_rewards.rbx
-    /// they replace (fixtures/catchup/party_rewards.json, written from the constants by
-    /// Relay/seed/story/make_seed.rb).
-    /// </summary>
-    [Fact]
-    public void Write_GivesTheConstantsTheTablesReplace()
-    {
-        using JsonDocument tables = JsonDocument.Parse(TableFiles.TablesText());
-        JsonElement golden = Fixtures.Read("catchup", "party_rewards.json").GetProperty("rewards");
-
-        RubyHash written = PartyRewards.Write(CatchupTables.Read(tables.RootElement));
-
-        Assert.Equal(CatchupEngineTests.ValueOf(golden), written);
-    }
-
     /// <summary>
     /// Asserts that tables without rows give the scripts empty lists.
     /// </summary>

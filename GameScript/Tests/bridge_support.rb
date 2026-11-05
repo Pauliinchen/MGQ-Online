@@ -3,6 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-06: Reached the Mod Framework's engine under its own name
+#                            - Dropped the reader of the bridge's recorded dumps
+#                            - Dropped the stand-in of the component tree, which no test read
 #                            - Left out sending the wheels defined by name, which the Mod Framework no longer has
 #                            - Stood in for UI.confirm as for the old question box
 #      Paulinchen  2026-11-06: Failed a test file whose scripts handed a topic a value that cannot cross the bridge
@@ -30,20 +32,8 @@
 require "json"
 require_relative "support"
 
-# Folder of the bridge's contract fixtures, which the C# tests read too.
-BRIDGE_FIXTURES = File.expand_path("../../fixtures/bridge", __dir__)
-
 # Stands in for the in-game log unless the test file brings its own; logged_lines collects it.
 module MGQ_Multiplayer; module Log; def self.write(_line); end; end; end unless defined?(MGQ_Multiplayer::Log)
-
-# Reads a contract fixture that fixtures/bridge/make_topic_fixtures.rb wrote.
-#
-# @param name [String] The topic's folder and case, such as "batch/in_order".
-# @param part [String] "request" or "reply".
-# @return [String] The dump's bytes, empty for no reply.
-def bridge_fixture(name, part)
-  File.binread(File.join(BRIDGE_FIXTURES, "#{name}.#{part}.marshal"))
-end
 
 # A script that hands a topic a value the core refuses only logs it in the game, so the file fails
 # here instead; this runs before support.rb's summary, as at_exit blocks run last first.
@@ -195,7 +185,7 @@ class FakeBridge
     @handlers[topic] = handler
   end
 
-  # Answers a topic with bytes as they are, such as a contract fixture's reply.
+  # Answers a topic with bytes as they are, such as a batch's reply.
   #
   # @param topic [String] The topic.
   # @param bytes [String] The reply, Marshal.
@@ -577,190 +567,10 @@ class FakeEdit
   end
 end
 
-# C#'s component tree on a FakeBridge, as far as the screens' tests need it: the components the
-# scripts add, set and remove, by node, a place for each (a root at its place and size, each child
-# a row under the one before), the focus the scripts ask for told back as focus and blur, and the
-# events a test hands them, which reach them in the next frame as C#'s report. The layout, the
-# keys and the drawing are the Mod Framework's tests'.
-class FakeTree
-  # The height of the rows a child takes under the one before.
-  ROW = 24
-
-  # @return [Hash{Integer => Hash}] Each node: :parent, :kind, :props and :children.
-  attr_reader :nodes
-
-  # @return [Integer, nil] The node that has the focus, nil for none.
-  attr_reader :focused
-
-  # Answers the tree's layout and takes its changes from the tick, and has the framework hand the
-  # tree its changes and the text fields their keys every frame, as its start does in the game.
-  #
-  # @param fake [FakeBridge] The bridge.
-  # @param ui [FakeUi] The tick.
-  def initialize(fake, ui)
-    @fake = fake
-    @nodes = {}
-    @told = {}
-    @pending = {}
-    @focused = nil
-    tree = Mod_Framework::UI::Engine::Tree
-    ui.model(tree::MODEL) { |changes| apply(changes); send_report }
-    fake.answer(tree::LAYOUT) { |changes| apply(changes); report }
-    fake.answer(tree::RESET) { |_request| reset; nil }
-    return if $tree_collecting
-
-    $tree_collecting = true
-    Mod_Framework::UI::Engine::Tick.collect("Mod Framework components") { Mod_Framework::UI::Engine::Tree.collect }
-    Mod_Framework::UI::Engine::Tick.collect("Mod Framework text fields") { Mod_Framework::UI::Engine::TextField.follow }
-  end
-
-  # Hands a component an event of C#'s tree in the next frame, such as "close" or "submit".
-  #
-  # @param component [Mod_Framework::UI::Component] The component.
-  # @param name [String] The event.
-  # @param values [Array] Its values.
-  def tell(component, name, *values)
-    post([[component.node, name] + values])
-  end
-
-  # Queues events for the next report, as the player's keys and clicks make them.
-  #
-  # @param events [Array<Array>] The events, each [node, name, values...].
-  def post(events)
-    (@pending["events"] ||= []).concat(events)
-  end
-
-  # Tells whether a component is in the tree.
-  #
-  # @param component [Mod_Framework::UI::Component] The component.
-  # @return [Boolean] Whether it is.
-  def holds?(component)
-    !component.node.nil? && @nodes.key?(component.node)
-  end
-
-  # Queues the states of nodes for the next report, as C# tells them when they change.
-  #
-  # @param states [Hash{Integer => Integer}] The states by node, such as Mod_Framework::UI::Engine::Tree::FOCUSED.
-  def post_states(states)
-    (@pending["states"] ||= {}).update(states)
-  end
-
-  # Tells a component's node as the tree holds it.
-  #
-  # @param component [Mod_Framework::UI::Component] The component.
-  # @return [Hash, nil] Its :parent, :kind, :props and :children; nil while it is not in the tree.
-  def node_of(component)
-    @nodes[component.node]
-  end
-
-  private
-
-  # Takes the scripts' changes, as Change does in C#, and tells the focus they ask for.
-  #
-  # @param changes [Hash] The changes, see Mod_Framework::UI::Engine::Tree.changes.
-  def apply(changes)
-    Array(changes["add"]).each { |node, parent, kind, index, props| add(node, parent, kind, index, props || {}) }
-    Array(changes["set"]).each { |node, props| @nodes[node][:props].update(props) if @nodes[node] }
-    Array(changes["remove"]).each { |node| remove(node) }
-    move_focus(changes["focus"]) if changes["focus"]
-    move_focus(nil) if changes["blur"] && changes["blur"] == @focused
-  end
-
-  # Forgets every node, as the tree's reset does in C#.
-  def reset
-    @nodes.clear
-    @told.clear
-    @focused = nil
-  end
-
-  # Adds a node, leaving out one whose parent is gone, as C# does.
-  #
-  # @param node [Integer] The node.
-  # @param parent [Integer, nil] Its parent, nil for a root.
-  # @param kind [String] Its kind.
-  # @param index [Integer, nil] Its place among its siblings, nil for the last.
-  # @param props [Hash] Its properties.
-  def add(node, parent, kind, index, props)
-    return if parent && !@nodes[parent]
-
-    @nodes[node] = { :parent => parent, :kind => kind, :props => props, :children => [] }
-    return unless parent
-
-    siblings = @nodes[parent][:children]
-    index ? siblings.insert([index, siblings.size].min, node) : siblings << node
-  end
-
-  # Removes a node with every node it holds.
-  #
-  # @param node [Integer] The node.
-  def remove(node)
-    entry = @nodes.delete(node)
-    return unless entry
-
-    @told.delete(node)
-    move_focus(nil) if @focused == node
-    @nodes[entry[:parent]][:children].delete(node) if entry[:parent] && @nodes[entry[:parent]]
-    entry[:children].each { |child| remove(child) }
-  end
-
-  # Moves the focus, telling the node that lost it and the one that took it.
-  #
-  # @param node [Integer, nil] The node that takes it, nil for none.
-  def move_focus(node)
-    return if node == @focused
-
-    post([[@focused, "blur"]]) if @focused && @nodes[@focused]
-    @focused = node
-    post([[node, "focus"]]) if node
-  end
-
-  # Builds what changed since the last report: the places of the nodes that are new or moved, and
-  # the events queued.
-  #
-  # @return [Hash] The report, see Mod_Framework::UI::Engine::Tree.take.
-  def report
-    report = @pending
-    @pending = {}
-    rects = {}
-    @nodes.each_key do |node|
-      rect = rect_of(node)
-      rects[node] = rect unless @told[node] == rect
-      @told[node] = rect
-    end
-    report["rects"] = rects unless rects.empty?
-    report
-  end
-
-  # Posts the report, unless nothing changed, as the tree's event in the next frame.
-  def send_report
-    report = self.report
-    @fake.post(Mod_Framework::UI::Engine::Tree::EVENT, report) unless report.empty?
-  end
-
-  # Tells a node's place.
-  #
-  # @param node [Integer] The node.
-  # @return [Array(Integer, Integer, Integer, Integer)] Its x, y, width and height.
-  def rect_of(node)
-    entry = @nodes[node]
-    props = entry[:props]
-    unless entry[:parent]
-      at = props["at"] || [0, 0]
-      size = props["size"] || [nil, nil]
-      return [at[0] || 0, at[1] || 0, size[0] || 200, size[1] || 100]
-    end
-
-    parent = rect_of(entry[:parent])
-    place = @nodes[entry[:parent]][:children].index(node)
-    [parent[0], parent[1] + ROW * place, parent[2], ROW]
-  end
-end
-
 # Opens the bridges, MGQ Online's and the Mod Framework's, to the test's one FakeBridge,
 # $world_bridge, made here unless the world room's or the rules' stand-ins made it, adding the
 # frame's tick, the text box, typing what a block hands out, the wheels, the layout, the
-# framework's settings in $framework_ini, a stand-in for its question box and its component tree
-# in $fake_tree.
+# framework's settings in $framework_ini and a stand-in for its question box.
 #
 # @yieldreturn [Array(String, Integer)] What was typed since the last take, and the keys pressed.
 # @return [Array(FakeBridge, FakeUi, FakeEdit)] The bridge, the tick and the box.
@@ -770,7 +580,6 @@ def open_fake_ui(&typed)
   edit = FakeEdit.new(fake, ui, &typed)
   FakeWheels.new(fake, ui)
   FakeLayout.new(fake)
-  $fake_tree = FakeTree.new(fake, ui)
   answer_framework_ini(fake)
   StandInConfirm.install
   open_framework(fake)

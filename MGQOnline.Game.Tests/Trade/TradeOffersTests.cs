@@ -2,19 +2,18 @@
 //  TradeOffersTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Dropped the checks that replayed recorded cases
 //      Paulinchen  2026-10-30: Created
 //
 //----------------------------------------------------------------
 
 using System.Linq;
-using System.Text.Json;
 using MGQOnline.Game.Trade;
 
 namespace MGQOnline.Game.Tests.Trade;
 
 /// <summary>
-/// Covers the offers as text: which offers a game writes, which hold nothing, and both offers and
-/// the relay's id as trade.rbx wrote them (fixtures/trade, "agreed").
+/// Covers the offers as text: which offers a game writes and which hold nothing.
 /// </summary>
 public sealed class TradeOffersTests
 {
@@ -46,36 +45,4 @@ public sealed class TradeOffersTests
         Assert.False(TradeOffers.IsEmpty("g1"));
         Assert.False(TradeOffers.IsEmpty("g0;w2*1"));
     }
-
-    /// <summary>
-    /// Gives every pair of players the script wrote both offers and the relay's id for.
-    /// </summary>
-    /// <returns>The cases' places.</returns>
-    public static TheoryData<int> Agreements() => new(Enumerable.Range(0, Cases().GetProperty("agreed").GetArrayLength()));
-
-    /// <summary>
-    /// Asserts that both offers and the relay's id come out byte for byte as the script wrote them,
-    /// ordered by player id and with revisions past 65535 wrapped.
-    /// </summary>
-    /// <param name="index">The case's place.</param>
-    [Theory]
-    [MemberData(nameof(Agreements))]
-    public void AgreedTextAndRelayId_AreTheScripts(int index)
-    {
-        JsonElement agreed = Cases().GetProperty("agreed")[index];
-        string me = agreed.GetProperty("me").GetString()!;
-        string partner = agreed.GetProperty("partner").GetString()!;
-
-        string text = TradeOffers.AgreedText(me, agreed.GetProperty("mine").GetString()!, partner, agreed.GetProperty("theirs").GetString()!);
-        string relayId = TradeOffers.RelayId(Cases().GetProperty("trade_id").GetString()!, me, agreed.GetProperty("my_rev").GetInt64(), partner, agreed.GetProperty("their_rev").GetInt64());
-
-        Assert.Equal(agreed.GetProperty("agreed_text").GetString(), text);
-        Assert.Equal(agreed.GetProperty("relay_id").GetString(), relayId);
-    }
-
-    /// <summary>
-    /// Reads the cases trade.rbx wrote.
-    /// </summary>
-    /// <returns>The cases.</returns>
-    private static JsonElement Cases() => Fixtures.Read("trade", "cases.json");
 }

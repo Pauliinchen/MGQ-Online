@@ -2,6 +2,8 @@
 //  ClassicCatchupTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Dropped the checks that replayed recorded cases
+//                            - Walked a member behind catching up with both sides' rows and their own side's
 //      Paulinchen  2026-11-05: Replayed every call the script tests answer by its recorded answer, and what the catch-up reads over each table set
 //                            - Replayed the recorded calls of the Classic catch-up, the side and the key item loan on the one engine
 //                            - Created
@@ -18,81 +20,29 @@ using MGQOnline.Game.Story;
 namespace MGQOnline.Game.Tests.Catchup;
 
 /// <summary>
-/// Covers how a Classic party's member plays the leader's story and catches up with it on the one
-/// catch-up engine, the side a player takes along and the Classic key item loan, against every call
-/// the script tests made (fixtures/catchup/classic.json, made by fixtures/catchup/make_classic.rb),
-/// each answer checked by hand against the user's written answers, every call the script tests now
-/// answer by its recorded answer (fixtures/catchup/classic_calls.json), and the rules no test of the
-/// scripts reaches.
+/// Covers how a Classic party's member catches up with the leader's story on the one catch-up
+/// engine.
 /// </summary>
 public sealed class ClassicCatchupTests
 {
     /// <summary>
-    /// The golden cases.
-    /// </summary>
-    private static readonly JsonElement Classic = Fixtures.Read("catchup", "classic.json");
-
-    /// <summary>
-    /// Every call of the script tests with the answer they take as the DLL's.
-    /// </summary>
-    private static readonly JsonElement Calls = Fixtures.Read("catchup", "classic_calls.json");
-
-    /// <summary>
-    /// Asserts that every call answers as the user's answers its note names call for: members
-    /// behind, as far along and ahead, the side taken either way, a used-up key item taken, a reward
-    /// behind a choice waiting for the member's own answer, the key items lent and given back, the
-    /// closures and chests the leader's story ran, and who plays one story.
+    /// Asserts that a member behind catches up with the skills the leader's story passed: those both
+    /// sides get and those of the side the member took along, never the other side's.
     /// </summary>
     [Fact]
-    public void Calls_AnswerAsTheUsersAnswersCallFor()
+    public void MemberBehind_CatchesUpWithTheRowsOfBothSidesAndTheirOwn()
     {
-        CatchupTables[] sets = [.. Classic.GetProperty("tables").EnumerateArray().Select(CatchupEngineTests.TablesOf)];
-        int index = 0;
-        foreach (JsonElement entry in Classic.GetProperty("cases").EnumerateArray())
-        {
-            string topic = entry.GetProperty("topic").GetString()!;
-            string note = entry.GetProperty("note").GetString()!;
-            CatchupTables tables = entry.GetProperty("tables").ValueKind == JsonValueKind.Number ? sets[entry.GetProperty("tables").GetInt32()] : CatchupTables.Empty;
-            RubyHash answer = AnswerOf(entry, tables);
-            RubyValue expected = CatchupEngineTests.ValueOf(entry.GetProperty("answer"));
+        CatchupTables tables = Read("""
+            {"rewards": [
+              {"kind": "skill", "id": 13, "amount": 1, "site": "map:50:1:1", "part": "1", "step": 10, "side": null, "marks": [["v", 1001, 10]], "ran": true},
+              {"kind": "skill", "id": 11, "amount": 1, "site": "map:50:3:1", "part": "1", "step": 10, "side": "alice", "marks": [["v", 1001, 10]], "ran": true},
+              {"kind": "skill", "id": 12, "amount": 1, "site": "map:50:4:1", "part": "1", "step": 10, "side": "ilias", "marks": [["v", 1001, 10]], "ran": true}]}
+            """);
 
-            Assert.True(note.Length > 0 && note != "UNCHECKED", $"case {index} ({topic}) names no answer it follows");
-            Assert.True(expected.Equals(answer), $"case {index} ({topic}, {note}):\nexpected {expected}\nanswered {answer}");
-            index++;
-        }
+        RubyArray actions = CatchupEngine.Classic(tables, Request("alice"), ClassicParty.None)["actions"].AsArray();
 
-        Assert.True(index > 0);
+        Assert.Equal([13L, 11L], actions.Select(action => action.AsArray()).Where(action => action[0].AsText() == "give" && action[1].AsText() == "skill").Select(action => action[2].AsLong()));
     }
-
-    /// <summary>
-    /// Asserts that every call coop_events_test.rb answers by its recorded answer gets that answer
-    /// from the C# rules, and that what the catch-up reads over each table set is what it takes.
-    /// </summary>
-    [Fact]
-    public void RecordedCalls_AnswerAsTheScriptTestsTakeThem()
-    {
-        CatchupTables[] sets = [.. Calls.GetProperty("tables").EnumerateArray().Select(CatchupEngineTests.TablesOf)];
-        RubyValue[] keys = [.. Calls.GetProperty("keys").EnumerateArray().Select(CatchupEngineTests.ValueOf)];
-        int index = 0;
-        foreach (JsonElement entry in Calls.GetProperty("calls").EnumerateArray())
-        {
-            CatchupTables tables = entry.GetProperty("tables").ValueKind == JsonValueKind.Number ? sets[entry.GetProperty("tables").GetInt32()] : CatchupTables.Empty;
-            RubyValue expected = CatchupEngineTests.ValueOf(entry.GetProperty("answer"));
-            RubyHash answer = AnswerOf(entry, tables);
-
-            Assert.True(expected.Equals(answer), $"call {index} ({entry.GetProperty("topic").GetString()}):\nexpected {expected}\nanswered {answer}");
-            index++;
-        }
-
-        Assert.True(index > 0);
-        Assert.Equal(keys.Length, sets.Length);
-        for (int set = 0; set < sets.Length; set++)
-        {
-            RubyHash read = CatchupEngine.Keys(sets[set]);
-            Assert.True(keys[set].Equals(read), $"keys of set {set}:\nexpected {keys[set]}\nanswered {read}");
-        }
-    }
-
     /// <summary>
     /// Asserts that the second look, once a member behind chose their side, gives no key item again
     /// that the first look gave: the World Seed the member used up since is not given back.
@@ -135,74 +85,6 @@ public sealed class ClassicCatchupTests
 
         Assert.DoesNotContain(actions, action => action.AsArray()[0].AsText() == "give");
     }
-
-    /// <summary>
-    /// Answers a recorded call by the C# rule of its topic.
-    /// </summary>
-    /// <param name="entry">The call: its topic, request and what it read of the party.</param>
-    /// <param name="tables">The tables it was answered over.</param>
-    /// <returns>The answer.</returns>
-    private static RubyHash AnswerOf(JsonElement entry, CatchupTables tables)
-    {
-        RubyHash request = CatchupEngineTests.ValueOf(entry.GetProperty("request")).AsHash();
-        return entry.GetProperty("topic").GetString() switch
-        {
-            "catchup.classic" => CatchupEngine.Classic(tables, request, PartyOf(entry)),
-            "catchup.side" => SidePick.Answer(tables, request),
-            "catchup.key_loan" => KeyItemLoan.Answer(request),
-            "catchup.classic_sync" => ClassicStory.Sync(request),
-            "catchup.classic_followers" => ClassicStory.Followers(request),
-            "catchup.classic_mode" => ClassicStory.Mode(request),
-            _ => ClassicStory.Restore(request),
-        };
-    }
-
-    /// <summary>
-    /// Builds what a case read of the party: the self switches it found a member's own, and the
-    /// chests it found gave key items, for the same opened chests and items asked.
-    /// </summary>
-    /// <param name="entry">The case.</param>
-    /// <returns>The party.</returns>
-    private static ClassicParty PartyOf(JsonElement entry)
-    {
-        if (!entry.TryGetProperty("party", out JsonElement party))
-        {
-            return ClassicParty.None;
-        }
-
-        RubyHash noted = CatchupEngineTests.ValueOf(party).AsHash();
-        HashSet<StoryKey> own = noted["own"] is RubyArray keys ? [.. keys.Select(KeyOf)] : [];
-        List<(RubyValue Opened, RubyValue Items, RubyArray Found)> chests = noted["chests"] is RubyArray asked
-            ? [.. asked.Select(call => (call.AsArray()[0], call.AsArray()[1], call.AsArray()[2].AsArray()))]
-            : [];
-        return new ClassicParty(
-            own.Contains,
-            (opened, items) =>
-            {
-                RubyArray openedAsked = new(opened.Select(CatchupLook.SelfSwitchOf));
-                RubyArray itemsAsked = new(items.Select(item => (RubyValue)item));
-                RubyArray found = chests.Single(call => call.Opened.Equals(openedAsked) && call.Items.Equals(itemsAsked)).Found;
-                return [.. found.Select(chest => ChestOf(chest.AsArray()))];
-            });
-    }
-
-    /// <summary>
-    /// Reads a chest a case found gave key items.
-    /// </summary>
-    /// <param name="chest">[[map, event, letter], [item, ...]].</param>
-    /// <returns>The chest, on its first page.</returns>
-    private static KeyItemChest ChestOf(RubyArray chest)
-    {
-        StoryKey key = KeyOf(chest[0]);
-        return new KeyItemChest(ReplaySite.Parse($"map:{key.Id}:{key.Event}:1"), key, [.. chest[1].AsArray().Select(item => item.AsInt())]);
-    }
-
-    /// <summary>
-    /// Reads a self switch as the scripts list it.
-    /// </summary>
-    /// <param name="value">[map, event, letter].</param>
-    /// <returns>The self switch.</returns>
-    private static StoryKey KeyOf(RubyValue value) => StoryKey.SelfSwitch(value.AsArray()[0].AsInt(), value.AsArray()[1].AsInt(), value.AsArray()[2].AsText());
 
     /// <summary>
     /// Makes the request of a member at step 5 behind a leader at step 20, who holds none of items 610

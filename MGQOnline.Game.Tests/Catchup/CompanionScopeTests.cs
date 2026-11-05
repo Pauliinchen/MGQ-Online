@@ -18,7 +18,7 @@ using MGQOnline.Game.Story;
 namespace MGQOnline.Game.Tests.Catchup;
 
 /// <summary>
-/// Covers the companions of the Alice and Ilias choice over the generated tables: a player gets
+/// Covers the companions of the Alice and Ilias choice over the relay's seed: a player gets
 /// only those of the side they took along in Iliasville and of the routes they played, on every
 /// path the catch-up hands one out, and loses one they never had a right to.
 /// </summary>
@@ -65,7 +65,7 @@ public sealed class CompanionScopeTests
     private static readonly int[] DoppelLukas = [506, 507, 508, 509];
 
     /// <summary>
-    /// The tables of the generated data and the rules.
+    /// The tables of the relay's seed.
     /// </summary>
     private static readonly CatchupTables Tables = ReadTables();
 
@@ -436,7 +436,8 @@ public sealed class CompanionScopeTests
         [.. actions.Select(action => action.AsArray()).Where(action => action[0].AsText() == "dismiss").Select(action => action[1].AsLong())];
 
     /// <summary>
-    /// Reads the generated tables and the rules.
+    /// Reads the tables of the relay's seed.
+
     /// </summary>
     /// <returns>The tables.</returns>
     private static CatchupTables ReadTables()

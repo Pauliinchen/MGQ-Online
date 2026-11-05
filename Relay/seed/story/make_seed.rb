@@ -14,9 +14,7 @@
 # RULES, COUNTS and COMPANION_VALUES below, which is where they are kept now, next to this file,
 # where the Node relay fills an empty table from at its start (Relay/node/story_seed.js). The
 # reviewed rows of every other table are kept here as lists of admin edits (REVIEW.md), which this
-# script never writes; the generated tables the tests read (fixtures/catchup/generated and
-# fixtures/catchup/party_rewards.json) stay as they were written from the game scripts the relay's
-# tables replaced. Run it again after a rule changed:
+# script never writes. Run it again after a rule changed:
 #
 #   ruby Relay/seed/story/make_seed.rb
 

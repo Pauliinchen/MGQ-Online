@@ -2,6 +2,7 @@
 //  BattleSessionTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Dropped the checks that replayed recorded cases
 //      Paulinchen  2026-11-05: Carried the fields of a request the starter passes on as values, the seats it brings along among them
 //                            - Carried the front's messages between the starter and the server's scripts, which hand over and take values
 //                            - Served, opened, sent over and read the battle channel through its topics end to end
@@ -14,11 +15,9 @@
 
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
-using System.Text.Json;
 using System.Threading;
 using MGQOnline.Bridge.Ruby;
 using MGQOnline.Game.Topics;
@@ -35,7 +34,7 @@ namespace MGQParadox.Multiplayer.Tests.Network.World;
 /// Covers co-op battles the relay's battle server hosts, at a relay inside this process: starting
 /// one for players seated in the world room, the relay's refusals and the time-outs, the battle's
 /// channel with its seat, messages both ways, end and breaks, and the starter's front in the
-/// world's room, held against the golden cases of fixtures/served/front.json.
+/// world's room.
 /// </summary>
 public sealed class BattleSessionTests
 {
@@ -388,82 +387,6 @@ public sealed class BattleSessionTests
     }
 
     /// <summary>
-    /// Asserts that the starter of a served battle stands in for the server in the world's room as
-    /// the script did: the requests it passes on and the word of a player who left, the server's
-    /// co-op messages it passes to the world's room at once, the server's state it keeps, and the
-    /// messages it passes on.
-    /// </summary>
-    [Fact]
-    public void Front_StandsInForTheServerAsTheScriptDid()
-    {
-        JsonElement golden = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "fixtures", "served", "front.json"))).RootElement;
-        string id = golden.GetProperty("battle").GetString()!;
-        foreach (JsonElement forward in golden.GetProperty("forward").EnumerateArray())
-        {
-            var states = forward.GetProperty("states").EnumerateArray()
-                .Select(state => (state[0].GetInt64(), (IReadOnlyList<(string, string)>)PairsOf(state[1]))).ToList();
-            Assert.Equal(forward.GetProperty("sent")[0][1].GetString(), BattleSession.FrontInText(id, forward.GetProperty("seat").GetInt32(), states, PairsOf(forward.GetProperty("fields"))));
-        }
-
-        JsonElement left = golden.GetProperty("left");
-        Assert.Equal(left.GetProperty("sent")[0][1].GetString(), BattleSession.FrontLeftText(id, left.GetProperty("seat").GetInt32()));
-
-        using var world = new TwoPlayers();
-        var passed = new List<(int, string)>();
-        var starter = world.NewBattle(CreatorKey, worldSend: (seat, text) =>
-        {
-            lock (passed)
-            {
-                passed.Add((seat, text));
-            }
-
-            return true;
-        });
-        Assert.False(starter.Fronts("hot", Battle));
-        Assert.True(starter.Serve(world.Id, Battle, world.Seats, Setup));
-        AwaitState(starter, "served");
-        Assert.True(starter.Open(world.Id, Battle));
-        AwaitEntry(starter, BattleSession.SeatKind);
-
-        foreach (JsonElement fronts in golden.GetProperty("fronts").EnumerateArray().Where(each => each.GetProperty("starter").GetBoolean() && each.GetProperty("open").GetBoolean()))
-        {
-            string bid = fronts.GetProperty("message").GetProperty("bid").GetString() == id ? Battle : "other";
-            Assert.Equal(fronts.GetProperty("fronts").GetBoolean(), starter.Fronts(fronts.GetProperty("message").GetProperty("coop").GetString()!, bid));
-        }
-
-        Assert.Null(starter.FrontStateNow());
-        foreach (JsonElement output in golden.GetProperty("front_out").EnumerateArray())
-        {
-            lock (passed)
-            {
-                passed.Clear();
-            }
-
-            world.Relay.SayToBattle(world.Id, Battle, -1, $"battle=front_out\nbid={Battle}\n\n{output.GetProperty("body").GetString()}");
-            world.Relay.SayToBattle(world.Id, Battle, -1, "battle=marker");
-            AwaitEntry(starter, BattleSession.MessageKind);
-            lock (passed)
-            {
-                Assert.Equal(output.GetProperty("world").EnumerateArray().Select(sent => (sent[0].GetInt32(), sent[1].GetString()!)), passed);
-            }
-        }
-
-        foreach (JsonElement state in golden.GetProperty("front_state").EnumerateArray())
-        {
-            world.Relay.SayToBattle(world.Id, Battle, -1, $"battle=front_state\nbid={Battle}\n\n{state.GetProperty("body").GetString()}");
-            world.Relay.SayToBattle(world.Id, Battle, -1, "battle=marker");
-            AwaitEntry(starter, BattleSession.MessageKind);
-            var expected = state.GetProperty("fields").EnumerateObject().Where(field => field.Name is not ("rb" or "rbh")).Select(field => $"{field.Name}={field.Value.GetString()}");
-            Assert.Equal(expected, starter.FrontStateNow()!.Select(field => $"{field.Key}={field.Value}"));
-        }
-
-        world.Relay.SayToBattle(world.Id, Battle, -1, $"battle=front_out\nbid=other\n\n{golden.GetProperty("front_out")[0].GetProperty("body").GetString()}");
-        Assert.Equal("battle=front_out\nbid=other", AwaitEntry(starter, BattleSession.MessageKind).Text.Split("\n\n")[0]);
-        Assert.True(starter.Left(4));
-        WaitUntil(() => world.Relay.TakeBattleMessages(world.Id, Battle).Any(sent => sent.Text == BattleSession.FrontLeftText(Battle, 4)), "the word that a player left");
-    }
-
-    /// <summary>
     /// Asserts that the front's messages cross between the starter and the server's scripts as
     /// values: a request the starter passes on reads on the server as its seat, the players' states
     /// and its fields, the seats it brings along as numbers, and a message for the world's room the server's script hands over as values
@@ -583,14 +506,6 @@ public sealed class BattleSessionTests
 
         throw new TimeoutException($"Never reached {what}.");
     }
-
-    /// <summary>
-    /// Reads [key, value] pairs of a golden case.
-    /// </summary>
-    /// <param name="pairs">The pairs.</param>
-    /// <returns>The keys and values.</returns>
-    private static List<(string Key, string Value)> PairsOf(JsonElement pairs) =>
-        pairs.EnumerateArray().Select(pair => (pair[0].GetString()!, pair[1].GetString()!)).ToList();
 
     /// <summary>
     /// A relay that takes connections and never answers.

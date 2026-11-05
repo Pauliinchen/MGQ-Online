@@ -12,7 +12,7 @@ using MGQOnline.Game.World;
 namespace MGQOnline.Game.Tests.World;
 
 /// <summary>
-/// Covers reading and writing messages, which the golden scenarios only pass through.
+/// Covers reading and writing messages.
 /// </summary>
 public sealed class WorldFieldsTests
 {

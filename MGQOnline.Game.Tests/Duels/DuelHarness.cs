@@ -17,10 +17,10 @@ using MGQOnline.Game.World;
 namespace MGQOnline.Game.Tests.Duels;
 
 /// <summary>
-/// A duel handshake in a world of stand-ins, as fixtures/duel/make_fixtures.rb set the scripts up:
-/// the player in seat 0 on map 5 at 3, 4, the other players as they told, the party as its view
-/// tells it, and the scripts' answers to the handshake's needs by the stand-in rules (a team's
-/// members are its lines that start with "member="), given at once unless <see cref="HoldNeeds"/>.
+/// A duel handshake in a world of stand-ins: the player in seat 0 on map 5 at 3, 4, the other
+/// players as they told, the party as its view tells it, and the scripts' answers to the
+/// handshake's needs by the stand-in rules (a team's members are its lines that start with
+/// "member="), given at once unless <see cref="HoldNeeds"/>.
 /// </summary>
 internal sealed class DuelHarness : IDuelWorld, IDuelHost
 {

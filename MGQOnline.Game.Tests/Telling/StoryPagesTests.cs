@@ -2,6 +2,7 @@
 //  StoryPagesTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Dropped the checks that replayed recorded cases
 //      Paulinchen  2026-10-28: Checked how long a page that holds holds by time alone
 //                            - Created
 //
@@ -11,8 +12,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using System.Text.Json;
-using System.Text.Json.Nodes;
 using MGQOnline.Bridge;
 using MGQOnline.Bridge.Ruby;
 using MGQOnline.Game.Telling;
@@ -21,105 +20,10 @@ using MGQOnline.Game.Topics;
 namespace MGQOnline.Game.Tests.Telling;
 
 /// <summary>
-/// Covers a story's pages, replayed from the golden cases of fixtures/pages/cases.json, which
-/// coop_events.rbx told and showed before the rules left it, and the topics the scripts reach them
-/// through.
+/// Covers a story's pages and the topics the scripts reach them through.
 /// </summary>
 public sealed class StoryPagesTests
 {
-    /// <summary>
-    /// Asserts that every scenario the script recorded goes as it went, step by step.
-    /// </summary>
-    [Fact]
-    public void Pages_GoAsTheScriptDid()
-    {
-        JsonElement cases = Fixtures.Read("pages", "cases.json");
-        JsonElement frames = cases.GetProperty("frames");
-        Assert.Equal((StoryPages.SkipSendFrames, StoryPages.ReadFrames, StoryPages.ReadFramesPerCharacter, StoryPages.MostReadFrames, StoryPages.StaleFrames),
-            (frames.GetProperty("skip_send").GetInt32(), frames.GetProperty("read").GetInt32(), frames.GetProperty("read_per_character").GetInt32(),
-             frames.GetProperty("most_read").GetInt32(), frames.GetProperty("stale").GetInt32()));
-        Assert.Equal((StoryPages.MaxHeard, StoryPages.MaxDone, StoryPages.CatchUpPages),
-            (cases.GetProperty("max_heard").GetInt32(), cases.GetProperty("max_done").GetInt32(), cases.GetProperty("catch_up_pages").GetInt32()));
-        foreach (JsonElement scenario in cases.GetProperty("scenarios").EnumerateArray())
-        {
-            var pages = new StoryPages(() => "sess01");
-            string teller = "Teller";
-            long frame = 0;
-            foreach (JsonElement step in scenario.GetProperty("steps").EnumerateArray())
-            {
-                frame = step.TryGetProperty("frame", out JsonElement at) ? at.GetInt64() : frame;
-                var sent = new JsonArray();
-                var answer = new JsonObject();
-                switch (step.GetProperty("op").GetString())
-                {
-                    case "show":
-                        var page = new StoryPage(Text(step, "face"), 0, 0, 2, Texts(step, "lines"), Texts(step, "choices"));
-                        if (pages.Show(page, Flag(step, "skip"), frame) is { Told: true } shown)
-                        {
-                            sent.Add(Say(shown.Id, shown.Page));
-                        }
-
-                        break;
-                    case "passed":
-                        if (pages.Passed() is { } done)
-                        {
-                            sent.Add(Done(done));
-                        }
-
-                        break;
-                    case "flush":
-                        if (pages.Flush(Flag(step, "skip"), Flag(step, "telling"), Flag(step, "map"), frame) is { } told)
-                        {
-                            sent.Add(Say(told.Id, told.Page));
-                            if (told.Passed)
-                            {
-                                sent.Add(Done(told.Id));
-                            }
-                        }
-
-                        break;
-                    case "telling":
-                        pages.TellingStarts();
-                        break;
-                    case "hear":
-                        var heard = new StoryPage(Text(step, "face"), Number(step, "index"), Number(step, "background"), Number(step, "position"),
-                            PageTopics.Decode(Text(step, "lines"))!, PageTopics.Decode(Text(step, "choices"))!);
-                        pages.Hear(Text(step, "page"), teller, heard);
-                        break;
-                    case "done":
-                        pages.Done(Text(step, "page"));
-                        break;
-                    case "forget":
-                        teller = "Another";
-                        pages.Forget();
-                        break;
-                    case "next":
-                        string? givingWay = step.TryGetProperty("giving_way", out JsonElement way) && way.ValueKind == JsonValueKind.String ? way.GetString() : null;
-                        HeardPage? next = pages.Next(givingWay, Flag(step, "sharing"), frame)?.Show;
-                        answer["show"] = next is null ? null : new JsonObject
-                        {
-                            ["page"] = next.Id, ["face"] = next.Face, ["index"] = next.Index, ["background"] = next.Background, ["position"] = next.Position,
-                            ["lines"] = new JsonArray([.. next.Lines.Select(line => (JsonNode?)line)]),
-                        };
-                        break;
-                    case "over":
-                        string? waits = step.TryGetProperty("giving_way", out JsonElement waiting) && waiting.ValueKind == JsonValueKind.String ? waiting.GetString() : null;
-                        answer["over"] = pages.Over(Flag(step, "teller") ? teller : null, Flag(step, "telling"), Flag(step, "raid"), waits, Flag(step, "confirm"), Flag(step, "skip"), frame).Over;
-                        break;
-                    case "ended":
-                        pages.Ended();
-                        break;
-                }
-
-                answer["sent"] = sent;
-                answer["waiting"] = pages.Waiting;
-                answer["mirroring"] = pages.Mirroring;
-                JsonNode? expected = JsonNode.Parse(step.GetProperty("answer").GetRawText());
-                Assert.True(JsonNode.DeepEquals(expected, answer), $"{scenario.GetProperty("name").GetString()}: after {step.GetRawText()} expected {expected?.ToJsonString()}, got {answer.ToJsonString()}");
-            }
-        }
-    }
-
     /// <summary>
     /// Asserts that a page that holds tells when time alone may end it: once the teller moved past
     /// it, when the player had the time to read it; while a Classic leader stopped telling, when the
@@ -182,55 +86,6 @@ public sealed class StoryPagesTests
         Assert.Equal(new RubyArray { "Which way?", "Teller chooses: Left / Right" }, next["show"].AsHash()["lines"]);
         Assert.Equal(told["id"], next["show"].AsHash()["page"]);
     }
-
-    /// <summary>
-    /// Writes a page told as the fixtures record it.
-    /// </summary>
-    /// <param name="id">The page's id.</param>
-    /// <param name="page">The page.</param>
-    /// <returns>The entry.</returns>
-    private static JsonArray Say(string id, StoryPage page) =>
-        ["say", id, new JsonArray([.. page.Lines.Select(line => (JsonNode?)line)]), new JsonArray([.. page.Choices.Select(choice => (JsonNode?)choice)])];
-
-    /// <summary>
-    /// Writes the end of a page told as the fixtures record it.
-    /// </summary>
-    /// <param name="id">The page's id.</param>
-    /// <returns>The entry.</returns>
-    private static JsonArray Done(string id) => ["done", id, null, null];
-
-    /// <summary>
-    /// Reads a text of a step, "" when missing.
-    /// </summary>
-    /// <param name="step">The step.</param>
-    /// <param name="name">The field.</param>
-    /// <returns>The text.</returns>
-    private static string Text(JsonElement step, string name) => step.TryGetProperty(name, out JsonElement value) && value.ValueKind == JsonValueKind.String ? value.GetString()! : "";
-
-    /// <summary>
-    /// Reads a list of texts of a step, none when missing.
-    /// </summary>
-    /// <param name="step">The step.</param>
-    /// <param name="name">The field.</param>
-    /// <returns>The texts.</returns>
-    private static List<string> Texts(JsonElement step, string name) =>
-        step.TryGetProperty(name, out JsonElement value) ? [.. value.EnumerateArray().Select(text => text.GetString()!)] : [];
-
-    /// <summary>
-    /// Reads a number of a step, 0 when missing.
-    /// </summary>
-    /// <param name="step">The step.</param>
-    /// <param name="name">The field.</param>
-    /// <returns>The number.</returns>
-    private static int Number(JsonElement step, string name) => step.TryGetProperty(name, out JsonElement value) ? value.GetInt32() : 0;
-
-    /// <summary>
-    /// Reads a flag of a step, false when missing.
-    /// </summary>
-    /// <param name="step">The step.</param>
-    /// <param name="name">The field.</param>
-    /// <returns>The flag.</returns>
-    private static bool Flag(JsonElement step, string name) => step.TryGetProperty(name, out JsonElement value) && value.ValueKind == JsonValueKind.True;
 
     /// <summary>
     /// Calls a topic as the scripts do.

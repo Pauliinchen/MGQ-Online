@@ -27,7 +27,7 @@ public sealed class RuleTopicsTests
 
     /// <summary>
     /// Asserts that each topic reads the request as the scripts send it and answers as they read it;
-    /// the rules themselves are the golden cases' of MGQOnline.Game.Tests.
+    /// MGQOnline.Game.Tests covers the rules themselves.
     /// </summary>
     [Fact]
     public void Topics_ReadTheScriptsRequests()

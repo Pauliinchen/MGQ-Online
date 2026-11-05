@@ -2,6 +2,7 @@
 #  screen_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Wrote the screen's texts out instead of reading recorded ones
 #      Paulinchen  2026-11-05: Answered the world screen's model with the values each test sets instead of the screen's methods as they were before they moved to C#
 #      Paulinchen  2026-11-01: Dropped the details' old methods for tests, which read only the prototype
 #      Paulinchen  2026-10-31: Stopped calling the deleted mp_dir_refresh as the screen opens
@@ -13,10 +14,10 @@
 
 # Answers the topics of the world screen's model (ScreenTopics: screen.*) on a FakeBridge with the
 # fixed values each test sets for its case: the list's rows, and a row's details, choices and list
-# box lines by its key. The screen's texts are the ones the DLL answers (the recorded texts of
-# fixtures/screen/screen.json). Unless a test sets them, the list stands idle without rows and a
-# row has no details, no choice but Back and no lines. Every rule (the rows' order and colours, the
-# panels, which choices a world offers) is WorldScreenModelTests' and ScreenTopicsTests' to cover.
+# box lines by its key. The screen's texts are the ones the DLL answers (TEXTS). Unless a test sets
+# them, the list stands idle without rows and a row has no details, no choice but Back and no
+# lines. Every rule (the rows' order and colours, the panels, which choices a world offers) is
+# WorldScreenModelTests' and ScreenTopicsTests' to cover.
 
 require "json"
 require_relative "bridge_support"
@@ -29,7 +30,16 @@ class ScreenAnswers
   TOPICS = %w(screen.open screen.close screen.texts screen.list screen.world screen.details screen.actions screen.box).freeze
 
   # The screen's texts as the DLL answers them.
-  TEXTS = JSON.parse(File.read(File.expand_path("../../fixtures/screen/screen.json", __dir__), :encoding => "UTF-8"))["texts"].reject { |name, _| name == "mod_states" }.freeze
+  TEXTS = {
+    "hint" => "Up and down pick the worlds or the commands, confirm moves into them. Right arrow on a world: its details.",
+    "enter_hint" => "Confirm to enter it.",
+    "busy" => {
+      "create" => "Creating the world . . .", "unlock" => "Opening the world . . .", "delete" => "Deleting the world . . .", "ban" => "Removing the player . . .",
+      "edit" => "Saving the changes . . .", "find" => "Looking for the world . . .", "data" => "Updating the game data . . .",
+      "start" => "Fetching the starting save . . .", "mods" => "Downloading the mods . . .", "settings" => "Saving the mod settings . . .",
+      "read" => "Reading the world's mods . . .",
+    },
+  }.freeze
 
   # The list while the DLL fetched none.
   IDLE = { "state" => "idle", "error" => nil, "admin" => false, "info" => nil, "rows" => [] }.freeze

@@ -2,6 +2,7 @@
 #  child_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Wrote the served setup out instead of reading a recorded one
 #      Paulinchen  2026-11-05: Read a setup's mods without loading the game's scripts
 #      Paulinchen  2026-10-30: Covered the mods a child reads of its setup before the core opens
 #      Paulinchen  2026-10-28: Covered the game data's fingerprint a child hands the core
@@ -189,8 +190,8 @@ check("with MGQ Online loaded the child hands the core the game data's fingerpri
 MGQ_Multiplayer::Bridge.close
 wanted = []
 ServedMods.define_singleton_method(:fetch) { |mods, _relay, _log = $stderr| wanted << mods; [] }
-# A setup a starter wrote, from the golden cases of the setup.
-setup = JSON.parse(File.read(File.expand_path("../../fixtures/served/setup.json", __dir__)))["writes"][0]["line"]
+# A setup a starter wrote for a raid with one mod.
+setup = "i1\ts0badf00d\ts1:data\ti40\ti1\ti0\ti5\ts100,100,0\t[\t[\ti31\ti320\ti300\ti0\t]\t[\ti32\ti400\ti310\ti1\t]\t]\t[\t[\ti0\tsMe\ts1,2,3\t[\t[\ti100\ti50\t]\t]\ti8\ti0\ti3\ti1\t]\t[\ti2\tsFriend\\tTab\ts7\t[\t]\ti8\ti1\ti2\ti0\t]\t]\ti30\t[\ti12\ti4001\t]\t[\t[\ti150\ti3\t]\t[\ti1003\ti-2\t]\t]\ti1\t[\ti1\ti0\t[\t[\tsQueen Harpy\ts0.5000000000\ti6000\ti0\ts\t]\t[\tsIlias#1\ts0.0000000000\ti9000\ti1\tsHero\t]\t]\t]\ti0\ti0\t[\t[\tsluka\t-\t]\t[\tsformation\ti4\t]\t[\tsfront\ti2\t]\t[\tsraid_front\ti1\t]\t]\t[\t[\tsteamboostfix\tsupload\ts1.0\t[\t[\tsTeam_Boost_Fix.rb\tsaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\t]\t]\t]\t]\tsmod_rate=i:2"
 BattleServer.instance_variable_set(:@served, true)
 mods = BattleServer.send(:mods_for, JSON.generate("op" => "serve", "bid" => "b1", "setup" => [setup].pack("m0")))
 check("a child gets the mods its setup names before the core opens, with the bridge still closed",

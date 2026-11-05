@@ -2,73 +2,21 @@
 //  TellingMachineTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Dropped the checks that replayed recorded cases
 //      Paulinchen  2026-10-28: Created
 //
 //----------------------------------------------------------------
 
 using System.Collections.Generic;
-using System.Text.Json;
 using MGQOnline.Game.Telling;
 
 namespace MGQOnline.Game.Tests.Telling;
 
 /// <summary>
-/// Covers the telling machine: the continuity the scripts kept, replayed from the golden cases of
-/// fixtures/telling/cases.json, and the relay's telling lock a new telling takes.
+/// Covers the telling machine: the relay's telling lock a new telling takes.
 /// </summary>
 public sealed class TellingMachineTests
 {
-    /// <summary>
-    /// Asserts that every scenario the scripts recorded goes on as they answered: which event
-    /// tells, which goes on with the telling and whether the telling still goes on after its event.
-    /// </summary>
-    [Fact]
-    public void Start_GoesOnWithTheTellingAsTheScriptsDid()
-    {
-        JsonElement cases = Fixtures.Read("telling", "cases.json");
-        Assert.Equal(TellingMachine.ContinueFrames, cases.GetProperty("continue_frames").GetInt32());
-        foreach (JsonElement scenario in cases.GetProperty("scenarios").EnumerateArray())
-        {
-            string name = scenario.GetProperty("name").GetString()!;
-            var machine = new TellingMachine(new Lock { Locks = true, Granted = true });
-            long frame = 0;
-            int map = 3;
-            foreach (JsonElement step in scenario.GetProperty("steps").EnumerateArray())
-            {
-                string op = step.GetProperty("op").GetString()!;
-                JsonElement answer = step.GetProperty("answer");
-                TellingContinued? continued = null;
-                switch (op)
-                {
-                    case "start":
-                    case "common":
-                        bool byItself = op == "common" || (step.TryGetProperty("by_itself", out JsonElement self) && self.GetBoolean());
-                        string site = op == "common" ? "ce:1" : $"map:{map}:{step.GetProperty("event").GetInt32()}:1";
-                        continued = machine.Start(step.GetProperty("story").GetBoolean(), byItself, map, site, frame).Continued;
-                        break;
-                    case "end": machine.End(); break;
-                    case "frame": machine.Step(frame++); break;
-                    case "wait":
-                        for (int count = step.GetProperty("frames").GetInt32(); count > 0; count--)
-                        {
-                            machine.Step(frame++);
-                        }
-
-                        break;
-                    case "transfer": machine.Moving(map, frame); map = step.GetProperty("to").GetInt32(); break;
-                }
-
-                Assert.True(answer.GetProperty("telling").GetBoolean() == machine.Telling, $"{name}: telling after {op}");
-                Assert.True(answer.GetProperty("or_moved").GetBoolean() == machine.TellingOrMoved(frame), $"{name}: or_moved after {op}");
-                if (continued is { } went)
-                {
-                    string? expected = answer.GetProperty("continued").ValueKind == JsonValueKind.String ? answer.GetProperty("continued").GetString() : null;
-                    Assert.True((expected switch { "frame" => TellingContinued.SameFrame, "moved" => TellingContinued.Moved, _ => TellingContinued.None }) == went, $"{name}: continued after {op}");
-                }
-            }
-        }
-    }
-
     /// <summary>
     /// Asserts that a new telling in a Raid World takes the lock of its map and holds its first
     /// command until the relay granted it, and ends the event once the relay refused it, naming

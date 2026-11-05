@@ -27,8 +27,7 @@ namespace MGQOnline.Game.Catchup;
 /// answered as actions the scripts carry out with the game's own grants. A Raid World's catch-up
 /// owns the save's notes (the ledger), which the scripts hand it after a load and keep in the save
 /// whenever an answer brings them; a Classic party's member catches up in the engine's Classic
-/// settings (<see cref="CatchupSettings.Classic"/>). The golden cases of
-/// fixtures/catchup/engine.json and classic.json were recorded from fixtures/catchup/engine.rb.
+/// settings (<see cref="CatchupSettings.Classic"/>).
 /// </summary>
 public sealed class CatchupEngine
 {

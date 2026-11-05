@@ -109,7 +109,7 @@ Dir.mktmpdir do |root|
     FileUtils.mkdir_p("Save")
     File.binwrite("Save/Save01.rvdata2", "my own")
 
-    # The DLL finds the latest save among the files (WorldRulesTests, LocalWorldsTests).
+    # The DLL finds the latest save among the files (LocalWorldsTests).
     $locals.set("worlds.latest_save") { |id| id == world.id ? ["01", "#{world.save_folder}/AutoSave01.rvdata2"] : nil }
     said = MGQ_MpSaveExport.export(world)
     check("the latest save the DLL finds, an autosave too, goes into the first free slot", [$locals.asked("worlds.latest_save").last, File.binread("Save/Save02.rvdata2")], [world.id, "newest"])

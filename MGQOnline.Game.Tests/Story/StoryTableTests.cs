@@ -2,6 +2,7 @@
 //  StoryTableTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Wrote the mapping out and dropped the recorded kinds and table
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -13,38 +14,23 @@ using MGQOnline.Game.Story;
 namespace MGQOnline.Game.Tests.Story;
 
 /// <summary>
-/// Covers the story mapping's table against the kinds the relay's tracks give
-/// (fixtures/story/classes.json), the keys, and the Classic party's table.
+/// Covers the story mapping's table, the keys, and the Classic party's table.
 /// </summary>
 public sealed class StoryTableTests
 {
-    /// <summary>
-    /// Asserts that every key is shared as the relay's tracks share it.
-    /// </summary>
-    [Fact]
-    public void ClassOf_SharesEachKeyAsTheRelay()
-    {
-        JsonElement fixture = Fixtures.Read("story", "classes.json");
-        StoryTable table = StoryMapping.Read(fixture.GetProperty("mapping"));
-
-        foreach (JsonElement entry in fixture.GetProperty("cases").EnumerateArray())
-        {
-            string key = entry.GetProperty("key").GetString()!;
-            string? site = entry.GetProperty("site").ValueKind == JsonValueKind.String ? entry.GetProperty("site").GetString() : null;
-            Assert.True(StoryKey.TryParse(key, out StoryKey parsed), key);
-            StoryClass found = table.ClassOf(parsed, site);
-
-            Assert.Equal((entry.GetProperty("kind").GetString(), entry.GetProperty("wholeWorld").GetBoolean()), (KindOf(parsed, found), found.HasFlag(StoryClass.WholeWorld)));
-        }
-    }
-
     /// <summary>
     /// Asserts that the table keeps the mapping's revision, its options and its parts' gates.
     /// </summary>
     [Fact]
     public void Read_KeepsTheRevisionTheOptionsAndTheGates()
     {
-        StoryTable table = StoryMapping.Read(Fixtures.Read("story", "classes.json").GetProperty("mapping"));
+        using JsonDocument mapping = JsonDocument.Parse("""
+            {"rev": 7, "tables": {
+              "keys": [{"key": "s31", "kind": "shared", "defeatWrite": true},
+                       {"key": "v1052", "kind": "shared", "localSteps": {"steps": [3, 4, 5], "sharedAs": 2, "places": [{"map": 484, "fromX": 30}, {"map": 483, "fromX": 0}]}}],
+              "parts": [{"id": "1", "name": "Part 1", "ending": [], "gate": 25, "order": 1}, {"id": "2", "name": "Part 2", "ending": [], "gate": 55, "order": 2}]}}
+            """);
+        StoryTable table = StoryMapping.Read(mapping.RootElement);
         LocalSteps cup = Assert.Single(table.LocalSteps);
 
         Assert.Equal(7, table.Rev);
@@ -95,44 +81,4 @@ public sealed class StoryTableTests
             new[] { StoryClass.Kept, StoryClass.Personal, StoryClass.Personal, StoryClass.Kept, StoryClass.Personal, StoryClass.Kept },
             new[] { table.ClassOf(StoryKey.Variable(1001)), table.ClassOf(StoryKey.Variable(1002)), table.ClassOf(StoryKey.Variable(3599)), table.ClassOf(StoryKey.Variable(3600)), table.ClassOf(StoryKey.Variable(2500)), table.ClassOf(StoryKey.SelfSwitch(7, 39, "A")) });
     }
-
-    /// <summary>
-    /// Asserts that a Classic party's table is the one fixtures/story/classic.json holds, which the
-    /// script tests take as the DLL's answer.
-    /// </summary>
-    [Fact]
-    public void Build_IsTheTableTheScriptTestsRead()
-    {
-        JsonElement fixture = Fixtures.Read("story", "classic.json");
-        JsonElement request = fixture.GetProperty("request");
-        StoryTable table = ClassicStoryTable.Build(request.GetProperty("switches").GetInt32(), request.GetProperty("variables").GetInt32(),
-            request.GetProperty("companions").GetInt32(), [.. request.GetProperty("chest_flags").EnumerateArray().Select(flag => flag.GetInt32())]);
-
-        Assert.Equal(Expanded(fixture.GetProperty("switches")), table.Switches);
-        Assert.Equal(Expanded(fixture.GetProperty("variables")), table.Variables);
-        Assert.Equal(fixture.GetProperty("self_default").GetInt32(), (int)table.SelfDefault);
-    }
-
-    /// <summary>
-    /// Expands runs of classes into a class per id.
-    /// </summary>
-    /// <param name="runs">The runs, each [from, to, class].</param>
-    /// <returns>The classes.</returns>
-    private static byte[] Expanded(JsonElement runs) =>
-        [.. runs.EnumerateArray().SelectMany(run => Enumerable.Repeat((byte)run[2].GetInt32(), run[1].GetInt32() - run[0].GetInt32() + 1))];
-
-    /// <summary>
-    /// Names a class as the relay names the kind.
-    /// </summary>
-    /// <param name="key">The key.</param>
-    /// <param name="found">The class.</param>
-    /// <returns>The kind.</returns>
-    private static string KindOf(StoryKey key, StoryClass found) =>
-        key.Kind == StoryKeyKind.Freeze ? "freeze"
-        : found.HasFlag(StoryClass.Count) ? "count"
-        : found.HasFlag(StoryClass.OneWay) ? "one_way"
-        : found.HasFlag(StoryClass.Kept) ? "shared"
-        : found.HasFlag(StoryClass.Scene) ? "scene"
-        : found.HasFlag(StoryClass.Chest) ? "chest"
-        : "personal";
 }

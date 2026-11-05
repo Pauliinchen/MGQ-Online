@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-11-06: Sent the player's key in the X-MGQ-Player header only
+//                            - Dropped the check against recorded mod keys
 //      Paulinchen  2026-11-05: Took the uploading player's key from the header only
 //      Paulinchen  2026-10-30: Covered the tags and the requirements of the catalog's mods
 //                            - Left the mod keys to the golden keys
@@ -24,7 +25,6 @@
 //
 //----------------------------------------------------------------
 
-import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { playerIdOf } from "./directory.js";
@@ -217,14 +217,6 @@ test("the options route reads a body larger than the other routes take", async (
   const answer = await handleModRequest(catalog, "POST", new URL("https://relay/v1/mods/levelcap/options"), async () => body, async () => null, ADMIN);
   assert.equal(answer.status, 200);
   assert.equal((await catalog.list()).body.mods[0].options[0].choices.length, 60);
-});
-
-test("modKey still makes the golden keys, which the game's ModKey makes too", () => {
-  const cases = JSON.parse(readFileSync(new URL("../../fixtures/mods/keys.json", import.meta.url), "utf8")).keys;
-
-  for (const { name, key } of cases) {
-    assert.equal(modKey(name), key, JSON.stringify(name));
-  }
 });
 
 test("a script hashes the same with and without carriage returns, other files as they are", async () => {

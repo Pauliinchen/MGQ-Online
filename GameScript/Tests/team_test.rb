@@ -23,7 +23,7 @@
 
 require_relative "battle_support"
 
-# The DLL's arrangement of the battles' players below (SquadMathTests covers it), by the players
+# The DLL's arrangement of the battles' players below, by the players
 # handed over, each [id, first, party_member_max, characters], answered as [index, Frontline,
 # Backline] of each in their order.
 $rule_answers.cases("squad.arrange", {

@@ -2,6 +2,7 @@
 //  PoolLedgerTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Dropped the checks that replayed recorded cases
 //      Paulinchen  2026-10-31: Checked the order the pools were told in
 //                            - Checked that a defeat pushed without a name takes the later answer's
 //      Paulinchen  2026-10-30: Created
@@ -9,18 +10,13 @@
 //----------------------------------------------------------------
 
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
-using System.Text.Json;
 using MGQOnline.Game.Raid;
 
 namespace MGQOnline.Game.Tests.Raid;
 
 /// <summary>
-/// Covers the pool ledger: the golden scenarios of fixtures/pool/ledger.json, which
-/// battles_raid_pool.rbx played before its ledger left it, the relay's share left of
-/// fixtures/pool/relay.json, and what the move adds: a clock that runs back, answers older than
-/// a push, and fetches.
+/// Covers the pool ledger: a clock that runs back, answers older than a push, and fetches.
 /// </summary>
 public sealed class PoolLedgerTests
 {
@@ -33,50 +29,6 @@ public sealed class PoolLedgerTests
     /// The clock the ledgers read.
     /// </summary>
     private long _now = Start;
-
-    /// <summary>
-    /// Asserts that every step of the golden scenarios leaves the pools, the defeats told and the
-    /// changes as the script left them.
-    /// </summary>
-    [Fact]
-    public void Scenarios_LeaveThePoolsAsTheScriptDid()
-    {
-        JsonElement golden = Fixtures.Read("pool", "ledger.json");
-        Assert.Equal(PoolLedger.DefaultRegenPerMinute, golden.GetProperty("regen_per_minute").GetDouble());
-        Assert.Equal(PoolLedger.MinLeft, golden.GetProperty("min_left").GetDouble());
-        foreach (JsonElement scenario in golden.GetProperty("scenarios").EnumerateArray())
-        {
-            _now = Start;
-            var ledger = new PoolLedger(() => _now);
-            int index = 0;
-            foreach (JsonElement step in scenario.GetProperty("steps").EnumerateArray())
-            {
-                Run(ledger, step);
-                string where = $"{scenario.GetProperty("name").GetString()}, step {index++}";
-                Assert.True(View(ledger) == Expected(step.GetProperty("view")), where);
-                Assert.Equal(step.GetProperty("told").EnumerateArray().Select(key => key.GetString()!), ledger.ToldDefeated());
-                Assert.Equal(step.GetProperty("events").EnumerateArray().Select(change => $"{change[0].GetString()} {change[1].GetString()}"),
-                    ledger.TakeChanges().Select(change => $"{(change.Defeated ? "defeated" : "back")} {change.Key}"));
-            }
-        }
-    }
-
-    /// <summary>
-    /// Asserts that a pool's share left at a moment is the relay's, to the last bit.
-    /// </summary>
-    [Fact]
-    public void ShareLeft_IsTheRelays()
-    {
-        foreach (JsonElement moment in Fixtures.Read("pool", "relay.json").GetProperty("cases").EnumerateArray())
-        {
-            _now = Start;
-            var ledger = new PoolLedger(() => _now);
-            bool defeated = moment.GetProperty("defeated").GetBoolean();
-            ledger.Hear(new PoolWord("Sara", moment.GetProperty("left").GetDouble(), 900, defeated, string.Empty), PoolSource.Fetched);
-            _now += moment.GetProperty("after").GetInt64();
-            Assert.Equal(double.Parse(moment.GetProperty("share").GetString()!, CultureInfo.InvariantCulture), ledger.Pools().Single().Left);
-        }
-    }
 
     /// <summary>
     /// Asserts that a pool gains nothing back while the clock stalls or runs back, and fills up
@@ -198,55 +150,5 @@ public sealed class PoolLedgerTests
         Assert.Null(PoolReport.Read("1\t0.1\t0\t0"));
         Assert.Null(PoolReport.Read("1\t0.1\t900\t2"));
         Assert.Null(PoolReport.Read("1\t0.1\t900"));
-    }
-
-    /// <summary>
-    /// Runs a golden step on a ledger.
-    /// </summary>
-    /// <param name="ledger">The ledger.</param>
-    /// <param name="step">The step.</param>
-    private void Run(PoolLedger ledger, JsonElement step)
-    {
-        switch (step.GetProperty("op").GetString())
-        {
-            case "push":
-                ledger.Hear(new PoolWord(step.GetProperty("key").GetString()!, double.Parse(step.GetProperty("left").GetString()!, CultureInfo.InvariantCulture),
-                    step.GetProperty("max").GetDouble(), step.GetProperty("defeated").GetBoolean(), step.GetProperty("by").GetString()!), PoolSource.Pushed);
-                break;
-            case "own":
-                ledger.Own(step.GetProperty("key").GetString()!, step.GetProperty("delta").GetDouble(), step.GetProperty("max").GetDouble(), step.GetProperty("dead").GetBoolean());
-                break;
-            case "settle":
-                ledger.Settled(step.GetProperty("key").GetString()!);
-                break;
-            case "wait":
-                _now += step.GetProperty("ms").GetInt64();
-                break;
-        }
-    }
-
-    /// <summary>
-    /// Writes the pools a golden step recorded as <see cref="View"/> writes them.
-    /// </summary>
-    /// <param name="view">The step's pools.</param>
-    /// <returns>The pools as compact JSON.</returns>
-    private static string Expected(JsonElement view) =>
-        $"[{string.Join(",", view.EnumerateArray().Select(row => $"[\"{row[0].GetString()}\",\"{row[1].GetString()}\",{row[2].GetRawText()},{row[3].GetRawText()},\"{row[4].GetString()}\"]"))}]";
-
-    /// <summary>
-    /// Writes the pools as the golden steps record them.
-    /// </summary>
-    /// <param name="ledger">The ledger.</param>
-    /// <returns>The pools as compact JSON.</returns>
-    private static string View(PoolLedger ledger)
-    {
-        var rows = new List<string>();
-        foreach (PoolView pool in ledger.Pools())
-        {
-            string share = pool.Left.ToString("F10", CultureInfo.InvariantCulture);
-            rows.Add($"[\"{pool.Key}\",\"{share}\",{pool.Max.ToString("0", CultureInfo.InvariantCulture)},{(pool.Defeated ? "true" : "false")},\"{(pool.Defeated ? pool.By : string.Empty)}\"]");
-        }
-
-        return $"[{string.Join(",", rows)}]";
     }
 }

@@ -15,7 +15,7 @@ using MGQOnline.Game.World;
 namespace MGQOnline.Game.Tests.World;
 
 /// <summary>
-/// Covers the relay dealing the seats anew, which the golden scenarios predate: a player who takes
+/// Covers the relay dealing the seats anew: a player who takes
 /// the seat of one away leaves them kept, the same player once they tell from another seat, and
 /// gone only once they stay away past the grace.
 /// </summary>

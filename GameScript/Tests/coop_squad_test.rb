@@ -265,7 +265,7 @@ load_script "ui_online"
 rules_bridge = open_rules_bridge
 require_relative "party_support"
 answer_party(rules_bridge)
-# The DLL's squad math in the cases below (SquadMathTests and SquadViewTests cover it): the shares
+# The DLL's squad math in the cases below (SquadViewTests covers the view): the shares
 # and order of a party's players, a Raid World's squads by its rules, and the companions a team
 # past its cap leaves out, by the team, the cap and whether Luka stays.
 $rule_answers.cases("squad.shares", { { "count" => 2, "max" => 8 } => [[2, 2], [2, 2]], { "count" => 3, "max" => 8 } => [[2, 2], [1, 1], [1, 1]] })

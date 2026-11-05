@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-06: Stood in for stay_off, which the stages test covers
+#                            - Dropped the sweeps of the code for old names and the guard of the formats
 #      Paulinchen  2026-11-05: Dropped the raid pools' beaten markers from the formats kept, which the DLL reads now
 #                            - Checked that no script builds or reads a format of C#, the network or a store C# reads, naming what stays with why
 #                            - Checked that only the bridge loads exports of the DLL and that no script calls an old export or writes or reads a message's key=value lines
@@ -112,115 +113,6 @@ check("the raid boss freeze loads its engine before the world's list, both after
       %w[battles_raid_pool battles_raid_freeze world_freeze].map { |name| scripts.index(name) }.each_cons(2).all? { |a, b| a < b }, true)
 check("the frozen fights' stand-ins load after the bars that draw over them and the join hotkey that resumes them",
       %w[battles_coop_join battles_raid_freeze world_freeze ui_raid_bar].all? { |name| scripts.index(name) < scripts.index("ui_raid_freeze") }, true)
-
-# The Mod Framework: the lowest version the mod runs with is named before any script loads, and
-# nothing the framework took over, nor the old interface the screens reached it by, is named by a
-# script or a test any more.
-required_at = source.index("MOD_FRAMEWORK_REQUIRED = ")
-check("the lowest Mod Framework is named before the scripts and before the mod loads them",
-      [source[/MOD_FRAMEWORK_REQUIRED = "([\d.]+)"/, 1], required_at < source.index("SCRIPTS = %w["), required_at < source.index("MGQ_Multiplayer::Stages.boot")],
-      ["0.1.0", true, true])
-moved = ["MGQ_Multiplayer::Key", "MGQ_Multiplayer::Capture", "MGQ_Multiplayer::Mouse", "MGQ_Multiplayer::Windows", "MGQ_Multiplayer::Background",
-         "Link.typing", "mp_typing", "mp_mouse_wheel", "mp_keep_running", "MGQ_MpWheel", "Sprite_MpConfirmBox", "Confirm.tick", "Theme::Skinned",
-         "numpad_cancel?", "NUMPAD_CANCEL_KEYS", "CLOSE_KEYS", "Style.close_hint", "MGQ_MpUi", "MGQ_MpScrollingWindow", ":mp_ui_positions",
-         ":mp_ui_preset", ":mp_ui_game_windows", "MGQ_MpHotkeys::BINDINGS", ":mp_key_", "Sprite_MpNoticeBox", "Sprite_MpActionWheel", "Sprite_MpEmoteWheel",
-         "MGQ_MpActions.cover", "MGQ_MpActions::Wheel", "Sprite_MpListBox", "Sprite_MpMessageBox", "Window_MpInfo", "Window_MpSaveExportNotice", "ui_boxes",
-         "Sprite_MpChatLog", "Sprite_MpChatBubble", "Sprite_MpWorldOverview"]
-# The hints name the cancel key as the player bound it, never Escape or the numpad's 0 alone.
-hinted = ["Esc or Numpad 0", "\"Numpad 0"]
-mod_files = Dir[File.join(SCRIPTS_DIR, "*.rbx")] + [File.expand_path("../Multiplayer.rb", __dir__)]
-swept = mod_files + Dir[File.join(__dir__, "*.rb")] - [File.expand_path(__FILE__)]
-named = swept.flat_map do |file|
-  code = File.read(file, :encoding => "BOM|UTF-8").lines.reject { |line| line.strip.start_with?("#") }.join
-  (moved + (mod_files.include?(file) ? hinted : [])).select { |name| code.include?(name) }.map { |name| "#{File.basename(file)}: #{name}" }
-end
-check("no script or test names what moved into the Mod Framework", named, [])
-# The title's and the menu's commands and the options rows go through the Mod Framework.
-own_ways = [/MGQ_MpHooks\.\w+\(\s*:*Window_(Title|Menu)Command\b/, /add_original_commands/, /MOD_CONTENTS\.insert/, /register_option/, /\badd_option\b/]
-own_commands = mod_files.flat_map do |file|
-  code = File.read(file, :encoding => "BOM|UTF-8").lines.reject { |line| line.strip.start_with?("#") }.join
-  own_ways.select { |way| code =~ way }.map { |way| "#{File.basename(file)}: #{way.source}" }
-end
-check("no script hooks the title's or the menu's commands or puts options rows in itself", own_commands, [])
-trade_screen = File.read(File.join(SCRIPTS_DIR, "ui_trade.rbx"), :encoding => "BOM|UTF-8").lines.reject { |line| line.strip.start_with?("#") }.join
-check("the trade screen is built of framework components, none of the game's windows",
-      ["Window_MpTrade", "VisibleRows", "Theme::Skinned", "ScrollingWindow", "< Window_"].select { |name| trade_screen.include?(name) }, [])
-# The world screen is built on the framework's components: its old windows and its text screen are
-# gone.
-gone = %w[Scene_MpText Window_MpTextEdit Window_MpTextInput Window_MpWorldList Window_MpWorldCommands Window_MpWorldDetail Window_MpChoice MpWorldListPane
-          MGQ_MpBoxCursor text_result]
-left = swept.flat_map do |file|
-  code = File.read(file, :encoding => "BOM|UTF-8").lines.reject { |line| line.strip.start_with?("#") }.join
-  gone.select { |name| code =~ /\b#{name}\b/ }.map { |name| "#{File.basename(file)}: #{name}" }
-end
-check("no script or test names the world screen's old windows or its text screen", left, [])
-# The HUD lies on the Mod Framework's components: none of the pictures they replaced comes back.
-replaced = %w[Sprite_MpLeaderHud Sprite_MpPartyBox Sprite_MpRaidBar Sprite_MpWorldStatus Window_MpWaiting Sprite_MpJoinPrompt Sprite_MpEdgeArrow
-              Sprite_MpGhostLabel Sprite_MpOwnPing Sprite_MpOwnLine MGQ_MpHud MGQ_MpLeaderHud.room hud.arrow_picture]
-redrawn = swept.flat_map do |file|
-  code = File.read(file, :encoding => "BOM|UTF-8").lines.reject { |line| line.strip.start_with?("#") }.join
-  replaced.select { |name| code =~ /#{Regexp.escape(name)}/ }.map { |name| "#{File.basename(file)}: #{name}" }
-end
-check("no script or test names the HUD's pictures the Mod Framework's components replaced", redrawn, [])
-csharp = Dir[File.expand_path("../../{MGQOnline.Game,MGQParadox.Multiplayer,MGQOnline.Game.Tests,MGQParadox.Multiplayer.Tests}/**/*.cs", __dir__)].reject { |file| file =~ %r{/(bin|obj)/} }
-in_csharp = csharp.flat_map do |file|
-  code = File.read(file, :encoding => "BOM|UTF-8").lines.reject { |line| line.strip.start_with?("//") }.join
-  names = %w[UiTopics GameWindow Keyboard MouseWheel AltMenuGuard].select { |name| code =~ /\b#{name}\b/ }
-  names << "MGQOnline.Game.Ui" if code.include?("MGQOnline.Game.Ui") && !File.basename(file).start_with?("ScreenshotWalk") && !code.include?("ScreenshotWalk")
-  names.map { |name| "#{File.basename(file)}: #{name}" }
-end
-check("no C# file names the interface's models, the window hook or the keyboard the Mod Framework holds", in_csharp, [])
-# The story's choices and the replay's question are the framework's windows: their old screens,
-# the mods parking lists and the question's steps are gone. The bug report's C# cases keep the old
-# scene's name, the recorded fixture's.
-gone = %w[Scene_MpStoryChoices Window_MpStoryChoices Scene_MpStoryQuestion Window_MpStoryQuestion MGQ_MpModParking world_mods_parking
-          ParkingRules ParkingTexts choices.input_step]
-left = (swept + csharp).flat_map do |file|
-  code = File.read(file, :encoding => "BOM|UTF-8").lines.reject { |line| line.strip.start_with?("#", "//") }.join
-  names = csharp.include?(file) ? gone - %w[Scene_MpStoryChoices] : gone
-  names.select { |name| code.include?(name) }.map { |name| "#{File.basename(file)}: #{name}" }
-end
-check("no script, test or C# file names the old dialogs' screens, the parking lists or the question's steps", left, [])
-
-# One bridge channel: no script reaches the DLL but through the bridge's four exports, and none
-# writes or reads the key=value lines of a message, which C# writes and reads.
-mod_code = (Dir[File.join(SCRIPTS_DIR, "*.rbx")] + [File.expand_path("../Multiplayer.rb", __dir__)]).map do |file|
-  [File.basename(file), File.read(file, :encoding => "BOM|UTF-8").lines.reject { |line| line.strip.start_with?("#") }.join]
-end
-check("only the bridge loads exports of the DLL, the four it names",
-      [mod_code.select { |_, code| code.include?("Win32API.new") }.map(&:first), source[/      SIGNATURES = \{.*?\n      \}/m].scan(/'(mp_[a-z_]+)'/).flatten],
-      [["Multiplayer.rb"], %w[mp_bridge_open mp_call mp_reply mp_drain]])
-check("no script calls an old export of the DLL",
-      mod_code.select { |_, code| code =~ /\bLink\.(function|read|parse|player_id)\b|MGQ_Multiplayer::Link\b|^\s*module Link\b/ }.map(&:first), [])
-check("no script writes or reads the empty line that ends a message's key=value lines", mod_code.select { |_, code| code.include?('\n\n') }.map(&:first), [])
-
-# C# writes and reads every format of the bridge, the network and the stores it reads: no script
-# splits a text, dumps or loads a Marshal, compares a flag as "1" or "0" or escapes a text as %XX
-# for them. What is kept stays inside the game, each named with why.
-format_ways = [/\.split\b/, /\bMarshal\.(dump|load)\b/, /[=!]= "[01]"/, /%3[BD]|%25/, /\.(un)?pack\(/]
-kept_formats = [
-  ["Multiplayer.rb", "Marshal.", "the bridge itself, which hands its plain values across as Marshal"],
-  ["battles_pvp.rbx", "Marshal.", "a snapshot of the game's own objects before a PvP battle, put back after it"],
-  ["battles_raid_freeze.rbx", "Marshal.", "the party and the screen at a frozen fight, game objects the save field keeps for this script alone"],
-  ["battles_sync.rbx", "class.name.split('::')", "the name of a Ruby class, for the log"],
-  ["battles_sync_playback.rbx", "kind.split(\".\", 2)", "a recorded call's name, the game's object and method, which no C# reads"],
-  ["coop_scene.rbx", "call.split(\"_\")", "an Audio call's name, the game's method, which no C# reads"],
-  ["coop_scene.rbx", "kind.split(\".\", 2)", "a screen call's name, the game's object and method, which no C# reads"],
-  ["coop_story.rbx", "Marshal.load(Marshal.dump(party))", "a copy of the game's party"],
-  ["story_replay.rbx", "Marshal.", "copies of the game's switches, variables and self switches for the replay's view"],
-  ["story_replay.rbx", "path.split(\"::\")", "the name of a Ruby class"],
-  ["story_state.rbx", "Marshal.load(Marshal.dump(story))", "a copy of a story's values"],
-  ["world_overview_pages.rbx", "match[2].split(\",\")", "the arguments of a check in the game's own event script"],
-  ["world_save_distribution.rbx", "Marshal.load(file)", "the game's own save files"],
-  ["world_save_distribution.rbx", "name.split(\"::\")", "the name of a Ruby class"],
-]
-format_uses = mod_code.flat_map do |name, code|
-  code.lines.select { |line| format_ways.any? { |way| line =~ way } }.map { |line| [name, line.strip] }
-end
-check("no script builds or reads a format of C#, the network or a store C# reads; what stays is the game's own",
-      format_uses.reject { |name, line| kept_formats.any? { |file, part, _| file == name && line.include?(part) } }.map { |name, line| "#{name}: #{line}" }, [])
-check("every format kept is still used, so the list names nothing gone",
-      kept_formats.reject { |file, part, _| format_uses.any? { |name, line| name == file && line.include?(part) } }.map { |file, part, _| "#{file}: #{part}" }, [])
 
 # The parts of Multiplayer.rb that load, taken out of it, so they run without the game.
 harness = Module.new

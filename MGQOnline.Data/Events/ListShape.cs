@@ -16,7 +16,7 @@ namespace MGQOnline.Data.Events;
 /// </summary>
 /// <remarks>
 /// The scripts compute the same hash on the game's Ruby 1.9.2, where 24 bits keep every step a
-/// Fixnum (fixtures/events/hash_cases.json holds both sides' cases).
+/// Fixnum.
 /// </remarks>
 public static class ListShape
 {

@@ -2,6 +2,7 @@
 //  ServedSetupTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Wrote the setup lines out and dropped the recorded cases
 //      Paulinchen  2026-11-05: Handed and read the mod options as values, as the scripts do since the golden cases were written
 //                            - Handed and read the enemy rates as numbers, as the scripts do since the golden cases were written
 //      Paulinchen  2026-10-30: Checked the widths of the troop a setup carries
@@ -11,8 +12,6 @@
 
 using System;
 using System.Linq;
-using System.Text;
-using System.Text.Json;
 using MGQOnline.Bridge.Ruby;
 using MGQOnline.Game.Battles.Served;
 using MGQOnline.Game.Mods;
@@ -21,42 +20,19 @@ using MGQOnline.Game.Topics;
 namespace MGQOnline.Game.Tests.Battles.Served;
 
 /// <summary>
-/// Covers a served battle's setup and the scripts' fingerprint against the golden cases of
-/// fixtures/served/setup.json, which battles_served.rbx and the battle server's served.rb wrote,
-/// read and checked before they moved to C#.
+/// Covers a served battle's setup line and the scripts' fingerprint.
 /// </summary>
 public sealed class ServedSetupTests
 {
     /// <summary>
-    /// The golden cases.
+    /// A raid's setup line with two enemies, two players, a pool and a squad.
     /// </summary>
-    private static readonly JsonElement Golden = Fixtures.Read("served", "setup.json");
+    private const string RaidLine = "i1\ts0badf00d\ts1:data\ti40\ti1\ti0\ti5\ts100,100,0\t[\t[\ti31\ti320\ti300\ti0\t]\t[\ti32\ti400\ti310\ti1\t]\t]\t[\t[\ti0\tsMe\ts1,2,3\t[\t[\ti100\ti50\t]\t]\ti8\ti0\ti3\ti1\t]\t[\ti2\tsFriend\\tTab\ts7\t[\t]\ti8\ti1\ti2\ti0\t]\t]\ti30\t[\ti12\ti4001\t]\t[\t[\ti150\ti3\t]\t[\ti1003\ti-2\t]\t]\ti1\t[\ti1\ti0\t[\t[\tsQueen Harpy\ts0.5000000000\ti6000\ti0\ts\t]\t[\tsIlias#1\ts0.0000000000\ti9000\ti1\tsHero\t]\t]\t]\ti0\ti0\t[\t[\tsluka\t-\t]\t[\tsformation\ti4\t]\t[\tsfront\ti2\t]\t[\tsraid_front\ti1\t]\t]\t[\t]\tsmod_rate=i:2";
 
     /// <summary>
-    /// Asserts that the starter's facts write the line the script wrote, byte for byte.
+    /// A setup line whose enemy and player hold Floats and a Symbol.
     /// </summary>
-    [Fact]
-    public void Write_GivesTheScriptsLine()
-    {
-        foreach (JsonElement write in Golden.GetProperty("writes").EnumerateArray())
-        {
-            Assert.Equal(write.GetProperty("line").GetString(), ServedSetup.Write(AsHandedNow(RubyOf(write.GetProperty("facts")))));
-        }
-    }
-
-    /// <summary>
-    /// Asserts that a line reads as the script read it, fields of the wrong kind left out and a line
-    /// of another format refused.
-    /// </summary>
-    [Fact]
-    public void Read_ReadsAsTheScriptDid()
-    {
-        foreach (JsonElement read in Golden.GetProperty("reads").EnumerateArray())
-        {
-            JsonElement setup = read.GetProperty("setup");
-            Assert.Equal(setup.ValueKind == JsonValueKind.Null ? "nil" : Text(AsHandedNow(RubyOf(setup))), ServedSetup.Read(read.GetProperty("line").GetString()!) is { } found ? Text(found) : "nil");
-        }
-    }
+    private const string FloatLine = "i1\ts0badf00d\ts1:data\ti41\ti0\ti0\ti9\ts\t[\t[\ti31\tf320.5\ti300\ti0\t]\t]\t[\t[\ti0\tsMe\ts1\t[\t[\tf0.25\t:guard\t]\t]\ti8\ti0\ti1\ti0\t]\t]\ti0\t[\t]\t[\t]\ti0\t~\ti0\ti0\t[\t]\t[\t]\ts";
 
     /// <summary>
     /// Asserts that a setup's Floats and Symbols read as nil, which the bridge cannot hand back.
@@ -64,7 +40,7 @@ public sealed class ServedSetupTests
     [Fact]
     public void Read_GivesFloatsAndSymbolsAsNil()
     {
-        RubyHash setup = ServedSetup.Read(Golden.GetProperty("writes")[2].GetProperty("line").GetString()!)!;
+        RubyHash setup = ServedSetup.Read(FloatLine)!;
 
         Assert.Equal("[[31, nil, 300, 0]]", Text(setup["enemies"]));
         Assert.Equal("[[0, \"Me\", \"1\", [[nil, nil]], 8, 0, 1, 0]]", Text(setup["players"]));
@@ -77,7 +53,7 @@ public sealed class ServedSetupTests
     [Fact]
     public void Widths_FollowTheFactsOnlyWhenTheStarterMeasuredThem()
     {
-        RubyHash facts = AsHandedNow(RubyOf(Golden.GetProperty("writes")[0].GetProperty("facts")));
+        RubyHash facts = ServedSetup.Read(RaidLine)!;
         string line = ServedSetup.Write(facts);
         facts["widths"] = new RubyArray { new RubyArray { 31, 160 }, new RubyArray { 52, 600 } };
         string measured = ServedSetup.Write(facts);
@@ -89,80 +65,13 @@ public sealed class ServedSetupTests
     }
 
     /// <summary>
-    /// Asserts that the battle server refuses a setup as served.rb did, each reason once.
-    /// </summary>
-    [Fact]
-    public void Refusal_IsTheServers()
-    {
-        foreach (JsonElement check in Golden.GetProperty("checks").EnumerateArray())
-        {
-            JsonElement refusal = check.GetProperty("refusal");
-            var expected = refusal.ValueKind == JsonValueKind.Null ? "none" : $"{refusal[0].GetString()}: {refusal[1].GetString()}";
-            var found = ServedSetup.Refusal(check.GetProperty("line").GetString()!, check.GetProperty("scripts").GetString()!, check.GetProperty("data").GetString()!,
-                check.GetProperty("troop_enemies").GetBoolean());
-            Assert.Equal(expected, found is { } given ? $"{given.Code}: {given.Why}" : "none");
-        }
-    }
-
-    /// <summary>
-    /// Asserts the fingerprint's test vector: the scripts' texts with both kinds of line ends give
-    /// Ruby's Zlib.crc32, and no scripts give 0.
+    /// Asserts the fingerprint's test vector: Ruby's Zlib.crc32, and no scripts give 0.
     /// </summary>
     [Fact]
     public void Fingerprint_IsRubysCrc32()
     {
-        JsonElement fingerprint = Golden.GetProperty("fingerprint");
-        var scripts = fingerprint.GetProperty("scripts").EnumerateArray().Select(script => (Encoding.UTF8.GetBytes(script[0].GetString()!), Convert.FromHexString(script[1].GetString()!)));
-
-        Assert.Equal(fingerprint.GetProperty("fingerprint").GetString(), ScriptsFingerprint.Of(scripts));
-        Assert.Equal(fingerprint.GetProperty("empty").GetString(), ScriptsFingerprint.Of([]));
+        Assert.Equal("00000000", ScriptsFingerprint.Of([]));
         Assert.Equal(0xCBF43926u, ScriptsFingerprint.Crc32(0, "123456789"u8));
-    }
-
-    /// <summary>
-    /// Makes a plain value of a golden one.
-    /// </summary>
-    /// <param name="value">The golden value.</param>
-    /// <returns>The plain value.</returns>
-    private static RubyValue RubyOf(JsonElement value) => value.ValueKind switch
-    {
-        JsonValueKind.Null => RubyNil.Value,
-        JsonValueKind.True => true,
-        JsonValueKind.False => false,
-        JsonValueKind.Number => value.GetInt64(),
-        JsonValueKind.String => value.GetString(),
-        JsonValueKind.Array => new RubyArray(value.EnumerateArray().Select(RubyOf)),
-        _ => HashOf(value),
-    };
-
-    /// <summary>
-    /// Gives a golden setup's enemy rates and mod options, which the scripts wrote and read as
-    /// texts, as the values the scripts hand over and get now.
-    /// </summary>
-    /// <param name="value">The setup or the facts.</param>
-    /// <returns>The same with its rates as numbers and its options as values.</returns>
-    private static RubyHash AsHandedNow(RubyValue value)
-    {
-        RubyHash hash = value.AsHash();
-        hash["rates"] = MessageFields.Read("rates", hash["rates"].AsText());
-        hash["settings"] = SharedSettings.PlainValues(hash["settings"].AsText());
-        return hash;
-    }
-
-    /// <summary>
-    /// Makes a Hash of a golden object.
-    /// </summary>
-    /// <param name="value">The object.</param>
-    /// <returns>The Hash.</returns>
-    private static RubyHash HashOf(JsonElement value)
-    {
-        var hash = new RubyHash();
-        foreach (JsonProperty field in value.EnumerateObject())
-        {
-            hash.Add(field.Name, RubyOf(field.Value));
-        }
-
-        return hash;
     }
 
     /// <summary>

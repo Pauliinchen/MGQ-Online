@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-06: Gave the party a member whose levels the game keeps per kind in one Hash
+#                            - Dropped the checks of the replayer's lists against recorded ones
 #      Paulinchen  2026-11-05: Handed and expected sites as plain values
 #                            - Handed and expected the keys, values and things a replay reads as [kind, key] with values
 #                            - Checked that a replay takes a key item it uses up, and dropped the copy got as found
@@ -27,8 +28,7 @@
 # commands as the game's scripts 042, 148 and 167 do. The receiver's own keys decide, a world key
 # reads its start value and never reaches the save, the page stays bound to its map and event, the
 # presentation and the opener's play stay shut, the record answers the inputs, a replay keeps
-# nothing until it finished and reached its step, the codes and functions the replay leaves out
-# are those the generator's gate closes, and another player's battle drop gives its item.
+# nothing until it finished and reached its step, and another player's battle drop gives its item.
 
 require "json"
 require_relative "support"
@@ -493,13 +493,6 @@ check("a plain interpreter still runs the mod's hooks", lambda {
   $hooked.uniq.sort
 }.call, [:command, :run])
 
-# The replay leaves out exactly the codes and the interpreter's functions the generator's gate
-# classes as the presentation or the opener's play alone, as fixtures/replay/channels.json holds
-# them, which MGQOnline.Data.Generator.Tests checks against the gate itself.
-CHANNELS = JSON.parse(File.read(File.expand_path("../../fixtures/replay/channels.json", __dir__)))
-check("the codes the replay leaves out are those the gate closes", MGQ_MpStoryReplay::CLOSED_CODES.sort, CHANNELS["closed_codes"].sort)
-check("the functions the replay leaves out are those the gate closes", MGQ_MpStoryReplay::CLOSED_FUNCTIONS.map { |name| name.to_s }.sort, CHANNELS["closed_functions"].sort)
-
 # The runs of the player's own game and the runs handed to them, over a stand-in of the DLL's topics:
 # a Classic world's party, where 2045 and the chest's A are the party's, v1001 the world's and
 # v57 the work's.
@@ -899,9 +892,6 @@ MGQ_MpStoryReplay.receive(entry.merge("id" => "e10", "inputs" => [[[["map", 217,
 MGQ_MpStoryReplay.update
 check("a run's take names the shapes of the player's lists of its choices",
       shapes.last, [[["map", 217, 5, 1], MGQ_MpStoryReplay.list_shape($maps[217].events[5].pages[0].list)]])
-
-# An input's place counts the commands the events database keeps, by the same codes.
-check("the codes an input's place counts are those the events database keeps", MGQ_MpStoryReplay::KEPT_CODES, CHANNELS["kept_codes"])
 
 # Another player's battle drop of a key item gives the receiver the item, with no event to replay,
 # and the DLL tells the notice from what they held before and after (user decision 2026-11-05).

@@ -2,6 +2,7 @@
 //  CatchupTablesTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Read the tables from the relay's seed alone
 //      Paulinchen  2026-11-05: Dropped the check of a world chest read with the chest flags, which no relay serves any more
 //                            - Dropped the check of the prize counts, which the story replay hands over
 //      Paulinchen  2026-10-31: Covered a world chest read without the chest flags released builds still get
@@ -18,8 +19,9 @@ using MGQOnline.Game.Story;
 namespace MGQOnline.Game.Tests.Catchup;
 
 /// <summary>
-/// Covers the catch-up tables read from the mapping, against the relay's seed rows of the rules
-/// and the game scripts' generated tables (see <see cref="TableFiles"/>).
+/// Covers the catch-up tables read from the mapping, against the relay's seed (see
+/// <see cref="TableFiles"/>).
+
 /// </summary>
 public sealed class CatchupTablesTests
 {
@@ -41,7 +43,7 @@ public sealed class CatchupTablesTests
         Assert.Equal(SeedCount("rewards"), tables.Rewards.Count);
         Assert.Equal(SeedCount("chests"), tables.Chests.Count);
         Assert.Equal(["1", "2", "3", "ad", "mr", "chaos"], tables.Parts.Select(part => part.Id));
-        Assert.Equal((525, "map:7:60:1", "1", 5L, 2, "start", 25, true), (sonya.Actor, sonya.Place.Site, sonya.Place.Part, sonya.Place.Step, sonya.Gate, sonya.Rule, sonya.Index, sonya.Ran));
+        Assert.Equal((525, "map:7:60:1", "1", 5L, 2, "start", 6, true), (sonya.Actor, sonya.Place.Site, sonya.Place.Part, sonya.Place.Step, sonya.Gate, sonya.Rule, sonya.Index, sonya.Ran));
         Assert.Equal([new StoryMark(StoryKey.Variable(1001), 6), new StoryMark(StoryKey.Switch(2010))], sonya.Place.Marks);
         Assert.Equal((5, 65, 2, "level_adjust", 65L), (alice.Actor, alice.Gate, alice.Calls.Count, alice.Calls[1].Name, alice.Calls[1].Numbers[1]));
         Assert.Equal((7034, 15L, 1312, 3L, 2), (powerUp.DoneSwitch, powerUp.DoneValue, powerUp.SinceVariable, powerUp.SinceAtLeast, powerUp.Weights.Single(weight => weight.Switch == 3211).Weight));

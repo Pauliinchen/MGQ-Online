@@ -18,8 +18,7 @@ namespace MGQOnline.Game.Catchup;
 /// <summary>
 /// How the rows of the catch-up's tables stand against a story, as world_catchup.rbx decides it:
 /// which rows a story is past, which key items a later row took back, which joins a removal takes
-/// back again, which companions are on a visit, and where a player moves on to. The golden cases
-/// of fixtures/catchup/rows.json were recorded from the script.
+/// back again, which companions are on a visit, and where a player moves on to.
 /// </summary>
 public static class StoryRows
 {

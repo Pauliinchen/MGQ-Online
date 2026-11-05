@@ -14,7 +14,7 @@ using MGQOnline.Game.Duels;
 namespace MGQOnline.Game.Tests.Duels;
 
 /// <summary>
-/// Covers what the golden cases leave to a closer look: each reason a duel ends with, a team duel
+/// Covers the duel handshake: each reason a duel ends with, a team duel
 /// whose gathered player leaves, a challenge that goes stale as the world changes, and what the
 /// handshake does while the scripts have not answered a need yet.
 /// </summary>

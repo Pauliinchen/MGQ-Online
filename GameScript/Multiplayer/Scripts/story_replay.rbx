@@ -301,8 +301,7 @@ module MGQ_MpStoryReplay
   end
 
   # Hashes a list's commands the events database keeps as MGQOnline.Data's ListShape does: code,
-  # indent and every Integer parameter, in order (fixtures/events/hash_cases.json holds both sides'
-  # cases).
+  # indent and every Integer parameter, in order.
   #
   # @param list [Array<RPG::EventCommand>] The commands.
   # @return [Integer] The shape.

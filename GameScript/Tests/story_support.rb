@@ -2,6 +2,7 @@
 #  story_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Named the story mapping's table and dropped the readers of recorded key names
 #      Paulinchen  2026-11-05: Handed the self switch rules and the takes' keys as the DLL's rows, and read a fixture's key names and sites into plain values
 #                            - Handed the scripts no rule of used up items' marks, which the story replay hands over
 #      Paulinchen  2026-11-01: Dropped the stand-in of the player's telling topic, which no script stages
@@ -14,16 +15,15 @@
 
 # The DLL's side of a Raid World's story on the relay's tracks (StoryTopics) for the script tests:
 # the story topics answered by FakeBridge, what the scripts staged kept, and the tables the DLL
-# hands out, among them the story mapping of fixtures/story/classes.json written as the DLL writes
-# it (StoryTopicsTests checks the same bytes).
+# hands out, among them a story mapping's table written as the DLL writes it.
 
 require_relative "rules_support"
 
-# The story mapping of fixtures/story/classes.json as the DLL hands it to the scripts, see
-# StoryTopicsTests.Classes_HandTheScriptsTheMappingsTable.
+# A story mapping's table as the DLL hands it to the scripts: a few keys of each kind, events and
+# the parts' gates.
 #
 # @return [Hash] The table.
-def classes_fixture_table
+def mapping_table
   story_table_hash(
     [[0, 22, 0], [23, 23, 64], [24, 30, 0], [31, 31, 65], [32, 2028, 0], [2029, 2029, 4], [2030, 7095, 0], [7096, 7096, 1], [7097, 7101, 0], [7102, 7102, 8]],
     [[0, 1000, 0], [1001, 1001, 3], [1002, 1051, 0], [1052, 1052, 1], [1053, 1061, 0], [1062, 1062, 1], [1063, 1140, 0], [1141, 1141, 3], [1142, 1353, 0],
@@ -35,30 +35,6 @@ def classes_fixture_table
     "index" => [7_000_039, 40_000_002],
     "local_steps" => [[1052, [3, 4, 5], 2, [[484, 30], [483, 0]]]],
     "gates" => { "1" => 25, "2" => 55 })
-end
-
-# Reads a key as a fixture shared with the relay names it, such as "ss7.39.A", into the [kind, key]
-# the DLL hands the scripts (StoryPlain).
-#
-# @param name [String] The key's name.
-# @return [Array, nil] Its kind and key, nil for no key.
-def fixture_key(name)
-  case name
-  when /\As(\d+)\z/ then [0, $1.to_i]
-  when /\Av(\d+)\z/ then [1, $1.to_i]
-  when /\Ass(\d+)\.(\d+)\.(\w+)\z/ then [2, [$1.to_i, $2.to_i, $3]]
-  when /\Af(\d+)\z/ then [3, $1.to_i]
-  end
-end
-
-# Reads a site as a fixture shared with the relay names it, such as "ce:154", into the site the DLL
-# hands the scripts (StoryPlain).
-#
-# @param text [String] The site's text.
-# @return [Array] Such as ["ce", 154] or ["map", 7, 39, 1].
-def fixture_site(text)
-  parts = text.split(":")
-  [parts[0]] + parts[1..-1].map(&:to_i)
 end
 
 # Answers the story topics of the DLL on a FakeBridge: the staged ones kept in $story_staged as

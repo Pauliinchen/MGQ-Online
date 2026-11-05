@@ -26,9 +26,4 @@
     <ProjectReference Include="..\MGQOnline.Bridge.Native\MGQOnline.Bridge.Native.csproj" />
   </ItemGroup>
 
-  <!-- The golden dumps Ruby wrote, shared with the Ruby side's tests. -->
-  <ItemGroup>
-    <None Include="..\fixtures\bridge\**\*.marshal" LinkBase="fixtures\bridge" CopyToOutputDirectory="PreserveNewest" />
-  </ItemGroup>
-
 </Project>

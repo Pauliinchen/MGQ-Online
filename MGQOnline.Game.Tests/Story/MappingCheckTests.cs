@@ -2,6 +2,7 @@
 //  MappingCheckTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Read the relay's seed through TableFiles
 //      Paulinchen  2026-11-05: Dropped the check of a world chest's flags, which the table keeps no more
 //                            - Created
 //
@@ -17,6 +18,7 @@ using System.Text.RegularExpressions;
 using MGQOnline.Data.Events;
 using MGQOnline.Data.Sqlite;
 using MGQOnline.Game.Story;
+using MGQOnline.Game.Tests.Catchup;
 
 namespace MGQOnline.Game.Tests.Story;
 
@@ -636,11 +638,7 @@ public sealed partial class MappingCheckTests : IDisposable
     /// </summary>
     /// <param name="table">The table.</param>
     /// <returns>The rows.</returns>
-    private static IEnumerable<JsonElement> Rows(string table)
-    {
-        JsonElement file = Fixtures.Read("seed", table + ".json");
-        return file.ValueKind == JsonValueKind.Array ? file.EnumerateArray().Select(edit => edit.GetProperty("row")) : file.GetProperty("rows").EnumerateArray();
-    }
+    private static IEnumerable<JsonElement> Rows(string table) => TableFiles.Rows(table);
 
     /// <summary>
     /// Lists a row's marks, each <c>[kind, id, value]</c>, a side event's in their groups too.

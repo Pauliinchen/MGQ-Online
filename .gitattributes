@@ -5,9 +5,6 @@
 # shell scripts run on Linux, copied there from a Windows checkout
 *.sh text eol=lf
 
-# Marshal fixtures are bytes, compared byte for byte
-*.marshal binary
-
 # the SQLite amalgamation, checked in as released and never diffed
 MGQOnline.Data/native/sqlite/* -text -diff
 

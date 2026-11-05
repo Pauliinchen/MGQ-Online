@@ -2,6 +2,7 @@
 //  CatchupEngineTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Dropped the checks that replayed recorded cases
 //      Paulinchen  2026-11-05: Read a chest without the flags only older games needed
 //                            - Expected the chest a replay plays as [kind, key], and handed and expected sites as plain values
 //                            - Replayed the calls of the side's rule too, and shared reading a golden case's tables
@@ -21,9 +22,7 @@
 //----------------------------------------------------------------
 
 using System;
-using System.IO;
 using System.Linq;
-using System.Text;
 using System.Text.Json;
 using MGQOnline.Bridge.Ruby;
 using MGQOnline.Game.Catchup;
@@ -31,48 +30,11 @@ using MGQOnline.Game.Catchup;
 namespace MGQOnline.Game.Tests.Catchup;
 
 /// <summary>
-/// Covers the catch-up's engine against every call the script tests made of the script's decisions
-/// (fixtures/catchup/engine.json, made by fixtures/catchup/make_engine.rb), and the rules no test
-/// of the scripts reaches any more.
+/// Covers the catch-up's engine over rows a test writes.
+
 /// </summary>
 public sealed class CatchupEngineTests
 {
-    /// <summary>
-    /// The golden cases.
-    /// </summary>
-    private static readonly JsonElement Engine = Fixtures.Read("catchup", "engine.json");
-
-    /// <summary>
-    /// Asserts that every call answers as the script decided, over the same tables and notes.
-    /// </summary>
-    [Fact]
-    public void Calls_AnswerAsTheScriptDecided()
-    {
-        CatchupTables[] sets = [.. Engine.GetProperty("tables").EnumerateArray().Select(TablesOf)];
-        int index = 0;
-        foreach (JsonElement entry in Engine.GetProperty("cases").EnumerateArray())
-        {
-            string topic = entry.GetProperty("topic").GetString()!;
-            var engine = new CatchupEngine { Ledger = ValueOf(entry.GetProperty("ledger")) };
-            CatchupTables tables = sets[entry.GetProperty("tables").GetInt32()];
-            RubyHash request = ValueOf(entry.GetProperty("request")).AsHash();
-            RubyHash answer = topic switch
-            {
-                "catchup.check" => engine.Check(tables, request),
-                "catchup.note" => engine.Note(tables, request),
-                "catchup.hold_join" => engine.HoldJoin(tables, request),
-                "catchup.side" => SidePick.Answer(tables, request),
-                _ => engine.Unlocks(tables, request),
-            };
-            RubyValue expected = ValueOf(entry.GetProperty("answer"));
-
-            Assert.True(expected.Equals(answer), $"case {index} ({topic}):\nexpected {expected}\nanswered {answer}");
-            index++;
-        }
-
-        Assert.True(index > 0);
-    }
-
     /// <summary>
     /// Asserts that a join's persona is left once a change of the story at its place or later set
     /// another, as Granberia's return to 16 after the join of 17 in common event 9106, while the
@@ -370,77 +332,5 @@ public sealed class CatchupEngineTests
     {
         using JsonDocument document = JsonDocument.Parse(json);
         return CatchupTables.Read(document.RootElement);
-    }
-
-    /// <summary>
-    /// Reads a table set of the cases: each table its rows, or "generated" for the generated rows of
-    /// fixtures/catchup/generated.
-    /// </summary>
-    /// <param name="set">The set.</param>
-    /// <returns>The tables.</returns>
-    internal static CatchupTables TablesOf(JsonElement set)
-    {
-        var text = new StringBuilder("{");
-        foreach (JsonProperty table in set.EnumerateObject())
-        {
-            string rows = table.Value.ValueKind == JsonValueKind.String ? GeneratedRows(table.Name) : table.Value.GetRawText();
-            text.Append(text.Length == 1 ? "" : ",").Append('"').Append(table.Name).Append("\":").Append(rows);
-        }
-
-        return Read(text.Append('}').ToString());
-    }
-
-    /// <summary>
-    /// Reads the generated rows of a table.
-    /// </summary>
-    /// <param name="table">The table.</param>
-    /// <returns>Its rows as JSON.</returns>
-    private static string GeneratedRows(string table)
-    {
-        using JsonDocument file = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "fixtures", "catchup", "generated", table + ".json")));
-        return file.RootElement.GetProperty("rows").GetRawText();
-    }
-
-    /// <summary>
-    /// Reads a plain value as make_engine.rb wrote it: a Hash with keys that are no texts as
-    /// {"#pairs": [[key, value], ...]}.
-    /// </summary>
-    /// <param name="json">The value.</param>
-    /// <returns>The Ruby value.</returns>
-    internal static RubyValue ValueOf(JsonElement json)
-    {
-        switch (json.ValueKind)
-        {
-            case JsonValueKind.Number:
-                return json.GetInt64();
-            case JsonValueKind.String:
-                return json.GetString();
-            case JsonValueKind.True:
-                return true;
-            case JsonValueKind.False:
-                return false;
-            case JsonValueKind.Array:
-                return new RubyArray(json.EnumerateArray().Select(ValueOf));
-            case JsonValueKind.Object:
-                var hash = new RubyHash();
-                if (json.TryGetProperty("#pairs", out JsonElement pairs))
-                {
-                    foreach (JsonElement pair in pairs.EnumerateArray())
-                    {
-                        hash[ValueOf(pair[0])] = ValueOf(pair[1]);
-                    }
-
-                    return hash;
-                }
-
-                foreach (JsonProperty property in json.EnumerateObject())
-                {
-                    hash[property.Name] = ValueOf(property.Value);
-                }
-
-                return hash;
-            default:
-                return RubyNil.Value;
-        }
     }
 }

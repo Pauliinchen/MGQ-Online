@@ -27,48 +27,9 @@
     <ProjectReference Include="..\MGQOnline.Data.Generator\MGQOnline.Data.Generator.csproj" />
   </ItemGroup>
 
-  <!-- The golden cases Ruby wrote, shared with the Ruby side's tests. -->
+  <!-- The relay's seed of the story tables, which the catch-up tables and the shipped keys are read from. -->
   <ItemGroup>
-    <None Include="..\fixtures\wire\*.json" LinkBase="fixtures\wire" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\fixtures\catchup\*.json" LinkBase="fixtures\catchup" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\fixtures\mods\*.json" LinkBase="fixtures\mods" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\fixtures\story\*.json" LinkBase="fixtures\story" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\fixtures\peers\*.json" LinkBase="fixtures\peers" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\fixtures\squad\*.json" LinkBase="fixtures\squad" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\fixtures\events\*.json" LinkBase="fixtures\events" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\fixtures\overview\*.json" LinkBase="fixtures\overview" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\fixtures\world\*.json" LinkBase="fixtures\world" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\fixtures\worlds\*.json" LinkBase="fixtures\worlds" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\fixtures\forms\*.json" LinkBase="fixtures\forms" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\fixtures\parking\*.json" LinkBase="fixtures\parking" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\fixtures\screen\*.json" LinkBase="fixtures\screen" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\fixtures\entering\*.json" LinkBase="fixtures\entering" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\fixtures\requests\*.json" LinkBase="fixtures\requests" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\fixtures\telling\*.json" LinkBase="fixtures\telling" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\fixtures\choices\*.json" LinkBase="fixtures\choices" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\fixtures\gather\*.json" LinkBase="fixtures\gather" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\fixtures\duel\*.json" LinkBase="fixtures\duel" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\fixtures\scene\*.json" LinkBase="fixtures\scene" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\fixtures\live\*.json" LinkBase="fixtures\live" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\fixtures\pages\*.json" LinkBase="fixtures\pages" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\fixtures\freeze\*.json" LinkBase="fixtures\freeze" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\fixtures\teleport\*.json" LinkBase="fixtures\teleport" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\fixtures\npcs\*.json" LinkBase="fixtures\npcs" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\fixtures\trade\*.json" LinkBase="fixtures\trade" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\fixtures\coop\*.json" LinkBase="fixtures\coop" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\fixtures\pool\*.json" LinkBase="fixtures\pool" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\fixtures\raid\*.json" LinkBase="fixtures\raid" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\fixtures\served\*.json" LinkBase="fixtures\served" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\fixtures\chat\*.json" LinkBase="fixtures\chat" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\fixtures\hud\*.json" LinkBase="fixtures\hud" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\fixtures\flow\*.json" LinkBase="fixtures\flow" CopyToOutputDirectory="PreserveNewest" />
-  </ItemGroup>
-
-  <!-- The seed rows of the relay's story tables and the game scripts' generated tables, which the
-       catch-up tables are read from. -->
-  <ItemGroup>
-    <None Include="..\Relay\seed\story\*.json" LinkBase="fixtures\seed" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\fixtures\catchup\generated\*.json" LinkBase="fixtures\catchup\generated" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\Relay\seed\story\*.json" LinkBase="seed" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

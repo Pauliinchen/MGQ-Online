@@ -285,8 +285,7 @@ load_script "world"
 load_script "world_mods"
 load_script "world_screen"
 open_rules_bridge
-# The mods texts and the mod keys the DLL makes of the names below (ModsTextTests and ModKeyTests
-# cover the rules).
+# The mods texts and the mod keys the DLL makes of the names below.
 $rule_answers.cases("mods.text", {
   "!Level Cap; Party Sheet" => { "names" => ["Level Cap", "Party Sheet"], "required" => ["Level Cap"], "essential" => [] },
   "!Level Cap; Party Sheet; Own Mod" => { "names" => ["Level Cap", "Party Sheet", "Own Mod"], "required" => ["Level Cap"], "essential" => [] },

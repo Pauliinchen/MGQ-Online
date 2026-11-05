@@ -125,7 +125,7 @@ const OPTION_TYPES = Object.freeze(["i", "f", "b", "y", "s"]);
 
 /**
  * Turns a mod's name or its script's file name into what the two are compared by, as the games do.
- * The games' ModKey (MGQOnline.Game) must make the same keys, which fixtures/mods/keys.json holds.
+ * The games' ModKey (MGQOnline.Game) must make the same keys.
  *
  * @param {string} name The name.
  * @returns {string} The name in lower case, without ".rb", spaces, underscores and hyphens.

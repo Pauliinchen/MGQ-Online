@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-06: Took half_loaded? along with available?, which asks it
+#                            - Checked the bytes that cross against Marshal's own instead of recorded dumps
 #                            - Cleared the request it refuses on purpose, which would fail the file at its end
 #      Paulinchen  2026-11-05: Checked that the events of a topic no script takes yet are held until one does
 #                            - Checked that a DLL that does not load is logged by what happened, never as older
@@ -137,10 +138,11 @@ check("a topic that answers nothing gives nil", bridge.call("test.quiet", "x"), 
 check("the handshake tells which topics the DLL answers", [bridge.has?("test.echo"), bridge.has?("batch"), bridge.has?("story.none")], [true, true, false])
 lines = logged_lines { 2.times { bridge.call("no.such.topic", { "seat" => 2 }) } }
 check("an error gives nil and is logged once per topic and code", lines, ["bridge: no.such.topic failed with unknown_topic: There is no topic no.such.topic."])
-check("the request has the bytes of the contract fixture", fake.calls.last, ["no.such.topic", bridge_fixture("envelope/unknown_topic", "request")])
+check("the request crosses as Marshal", fake.calls.last, ["no.such.topic", Marshal.dump({ "seat" => 2 })])
 reply = "\0".b * 256
 length = fake.call(bridge.instance_variable_get(:@context), "no.such.topic\0", fake.calls.last[1], fake.calls.last[1].bytesize, reply, reply.bytesize)
-check("the stand-in answers in the bytes the core does", reply[0, length], bridge_fixture("envelope/unknown_topic", "reply"))
+check("the stand-in answers the error in its envelope", Marshal.load(reply[0, length]),
+      { "ok" => false, "error" => "unknown_topic", "text" => "There is no topic no.such.topic." })
 lines = logged_lines { check("a request the game would refuse gives nil", bridge.call("test.echo", { :seat => 2 }), nil) }
 check("and the log names what cannot cross", lines, ["bridge: test.echo failed with bad_request: The Symbol :seat cannot cross the bridge."])
 FakeBridge.refused.clear
@@ -163,12 +165,15 @@ calls = fake.calls.size
 %w[a b c].each { |text| bridge.stage("test.append", text) }
 check("staging calls nothing until the frame", fake.calls.size, calls)
 bridge.frame
-check("the frame sends everything staged as one batch, in the bytes of the contract fixture",
-      [fake.calls.size - calls, fake.calls.last], [1, ["batch", bridge_fixture("batch/in_order", "request")]])
+check("the frame sends everything staged as one batch, in order",
+      [fake.calls.size - calls, fake.calls.last], [1, ["batch", Marshal.dump([["test.append", "a"], ["test.append", "b"], ["test.append", "c"]])]])
 check("whose entries run in order", appended, %w[a b c])
 bridge.frame
 check("a frame with nothing staged makes no call", fake.calls.size - calls, 1)
-fake.answer_bytes("batch", bridge_fixture("batch/failed_entries", "reply"))
+fake.answer_bytes("batch", Marshal.dump({ "ok" => true, "value" => [
+  { "topic" => "no.such.topic", "error" => "unknown_topic", "text" => "There is no topic no.such.topic." },
+  { "topic" => "test.append", "error" => "bad_request", "text" => "Expected a String, found an Integer." },
+] }))
 # A new handshake forgets the failures logged so far.
 bridge.open(fake)
 lines = logged_lines { 2.times { bridge.stage("test.append", "x"); bridge.frame } }

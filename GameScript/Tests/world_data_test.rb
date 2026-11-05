@@ -237,7 +237,7 @@ def game_data(skills, maps, more_maps = [1])
 end
 
 # The fingerprint: the script reads the ids in use of each part, the DLL writes the fingerprint of
-# them (DataFingerprintTests) and compares two (WorldRulesTests).
+# them (DataFingerprintTests) and compares two.
 # Tells the ids the script handed the DLL's measure last.
 measured = lambda { Marshal.load($world_bridge.calls.reverse.find { |topic, _| topic == "worlds.fingerprint" }[1]) }
 game_data([DataUsable.new("Slash", "<power 2>"), DataUsable.new(""), DataUsable.new("Fire", "", [], [:damage])], [2, 1])
@@ -451,7 +451,7 @@ $forms.set("form.view")
 scene.leave_form
 
 # The players and the mods of a world, listed from its choices: the DLL reads the mods text and
-# makes each mod's key (ModsTextTests and ModKeyTests cover the rules).
+# makes each mod's key.
 $rule_answers.set("mods.text", { "names" => ["Mod B", "Mod C", "Mod D", "Mod A"], "required" => ["Mod B", "Mod C"], "essential" => ["Mod D"] })
 check("a world's mods are named as the DLL reads its mods text",
       [MGQ_MpWorld.mods_of("Mod A; ?Mod D; !Mod B;! Mod C; !; ?"), $rule_answers.asked("mods.text").last], [["Mod B", "Mod C", "Mod D", "Mod A"], "Mod A; ?Mod D; !Mod B;! Mod C; !; ?"])
@@ -496,7 +496,7 @@ check("the form's own button has the DLL save the changes, the creator's form to
 entries[1].listed.settings = ""
 scene.play("steps" => [["idle"], ["close_form"]])
 
-# The mod picker, which the DLL keeps (ModPickTests): the script shows what it answers and hands each
+# The mod picker, which the DLL keeps: the script shows what it answers and hands each
 # change over.
 # Makes the picker as the DLL tells it: each mod with its state, whether it is installed, its label
 # and its colour.

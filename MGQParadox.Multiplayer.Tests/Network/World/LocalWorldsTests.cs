@@ -2,6 +2,7 @@
 //  LocalWorldsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Dropped the checks that replayed recorded cases
 //      Paulinchen  2026-10-28: Expected a world described anew in its world.ini at once
 //      Paulinchen  2026-10-23: Created
 //
@@ -17,8 +18,8 @@ using MGQParadox.Multiplayer.Network.World;
 namespace MGQParadox.Multiplayer.Tests.Network.World;
 
 /// <summary>
-/// Covers the worlds on this PC: world.ini read and written as the scripts did (fixtures/worlds/ini.json),
-/// a folder made and found, a world described and written, its latest save and its deletion.
+/// Covers the worlds on this PC: a folder made and found, a world described and written, its latest
+/// save and its deletion.
 /// </summary>
 public sealed class LocalWorldsTests : IDisposable
 {
@@ -51,30 +52,6 @@ public sealed class LocalWorldsTests : IDisposable
     /// Gets the folder's id of <see cref="Code"/>.
     /// </summary>
     private static string Id => WorldCode.IdOf(WorldCode.Parse(Code)!.Token);
-
-    /// <summary>
-    /// Asserts that world.ini reads and writes as the scripts read and wrote it.
-    /// </summary>
-    [Fact]
-    public void Read_TakesWorldIniAsTheScriptsDid()
-    {
-        using JsonDocument cases = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "fixtures", "worlds", "ini.json")));
-        foreach (JsonElement entry in cases.RootElement.GetProperty("cases").EnumerateArray())
-        {
-            Dictionary<string, string> values = entry.GetProperty("values").EnumerateObject().ToDictionary(property => property.Name, property => property.Value.GetString()!);
-            LocalWorld world = LocalWorld.Read("id", values);
-            JsonElement fields = entry.GetProperty("fields");
-            string shown = entry.GetProperty("values").GetRawText();
-
-            Assert.True(fields.GetProperty("name").GetString() == world.Name, $"the name of {shown}");
-            Assert.Equal(fields.GetProperty("created").GetInt64(), world.Created);
-            Assert.Equal(Optional(fields, "played", element => element.GetInt64()), world.PlayedAt);
-            Assert.Equal(Optional(fields, "difficulty", element => element.GetInt32()), world.Difficulty);
-            Assert.Equal(fields.GetProperty("squad").GetString(), world.Squad);
-            Assert.Equal(fields.GetProperty("raid_bosses").GetBoolean(), world.RaidBosses);
-            Assert.Equal(entry.GetProperty("written").EnumerateArray().Select(pair => $"{pair[0].GetString()}={pair[1].GetString()}"), world.Values().Select(pair => $"{pair.Key}={pair.Value}"));
-        }
-    }
 
     /// <summary>
     /// Asserts that a world's folder is made once, found again with what it holds, and listed.

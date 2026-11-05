@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-06: Checked that every stand-in of the Mod Framework's engine patches the engine's own module
+#                            - Wrote a Classic party's table out instead of reading a recorded one
 #      Paulinchen  2026-11-05: Kept a message sent as the scripts hand it instead of writing and reading it as a copy of the DLL's codec
 #                            - Handed the Classic party's table recorded in fixtures/story/classic.json instead of building it as a copy of the C# one
 #                            - Handed the story tables' self switch rules as the DLL's rows
@@ -164,10 +165,7 @@ def load_story_ids
   MGQ_MpStoryIds.instance_variable_set(:@table, JSON.parse(File.read(STORY_IDS_FILE)).freeze)
 end
 
-# Folder of the story's golden cases, which MGQOnline.Game.Tests checks too.
-STORY_FIXTURES = File.expand_path("../../fixtures/story", __dir__)
-
-# Loads story_keys.rbx, which Multiplayer.rb loads right after story_state.rbx, with the recorded
+# Loads story_keys.rbx, which Multiplayer.rb loads right after story_state.rbx, with the
 # Classic party's table the DLL hands (see classic_table_hash), so no test needs the DLL to tell
 # what a party shares; the script's own fetch stays as bridge_classic_table for the test that
 # checks it.
@@ -177,14 +175,22 @@ def load_story_keys
   MGQ_MpStoryKeys.define_singleton_method(:classic_table) { @classic ||= table_of(classic_table_hash) }
 end
 
-# The Classic party's table the DLL hands (topic story.classic_table) as fixtures/story/classic.json
-# recorded it for the game's sizes, with the chest flags 7102 to 7104; StoryTableTests holds the C#
-# to that recording.
+# The classes of a Classic party's switches as the DLL hands them, as runs [from, to, class]: 0
+# each player's own, 1 kept for the party, 129 the side switches, 8 the chest flags 7102 to 7104.
+CLASSIC_SWITCHES = [[0, 0, 0], [1, 3, 1], [4, 5, 129], [6, 21, 1], [22, 22, 0], [23, 72, 1], [73, 73, 0], [74, 93, 1], [94, 95, 0], [96, 96, 1], [97, 97, 0],
+                    [98, 99, 1], [100, 100, 0], [101, 444, 1], [445, 447, 0], [448, 501, 1], [502, 502, 0], [503, 1000, 1], [1001, 2000, 0],
+                    [2001, 5999, 1], [6000, 6999, 0], [7000, 7101, 1], [7102, 7104, 8], [7105, 9999, 1]].freeze
+
+# The classes of a Classic party's variables as the DLL hands them, as runs [from, to, class].
+CLASSIC_VARIABLES = [[0, 0, 0], [1, 8, 1], [9, 9, 0], [10, 20, 1], [21, 23, 0], [24, 45, 1], [46, 48, 0], [49, 54, 1], [55, 57, 0], [58, 58, 1], [59, 59, 0],
+                     [60, 128, 1], [129, 129, 0], [130, 149, 1], [150, 150, 0], [151, 199, 1], [200, 201, 0], [202, 1001, 1], [1002, 1002, 0],
+                     [1003, 1999, 1], [2000, 3999, 0], [4000, 4999, 1]].freeze
+
+# The Classic party's table the DLL hands (topic story.classic_table) for the game's sizes.
 #
 # @return [Hash] The table, see story_table_hash.
 def classic_table_hash
-  fixture = JSON.parse(File.read(File.join(STORY_FIXTURES, "classic.json")))
-  story_table_hash(fixture["switches"], fixture["variables"], fixture["self_default"])
+  story_table_hash(CLASSIC_SWITCHES, CLASSIC_VARIABLES, 1)
 end
 
 # Builds a story table as the DLL hands it (StoryTopics.TableOf).

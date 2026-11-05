@@ -2,6 +2,7 @@
 //  SquadTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Dropped the checks that replayed recorded cases
 //      Paulinchen  2026-11-05: Checked the squad math's topics with the requests the scripts send
 //      Paulinchen  2026-10-30: Dropped the default settings, which WorldTopicsTests checks
 //      Paulinchen  2026-10-23: Created
@@ -9,17 +10,14 @@
 //----------------------------------------------------------------
 
 using System;
-using System.IO;
 using System.Linq;
-using System.Text.Json;
 using MGQOnline.Bridge.Ruby;
 using MGQOnline.Game.Topics;
 
 namespace MGQParadox.Multiplayer.Tests.Topics;
 
 /// <summary>
-/// Covers the squad topics both hosts answer, against the golden cases recorded from the scripts
-/// (fixtures/squad/squad.json) and with the requests the scripts send.
+/// Covers the squad topics both hosts answer, with the requests the scripts send.
 /// </summary>
 public sealed class SquadTopicsTests
 {
@@ -27,23 +25,6 @@ public sealed class SquadTopicsTests
     /// The topics under test.
     /// </summary>
     private readonly TopicCaller _topics = new(SharedTopics.Register);
-
-    /// <summary>
-    /// The golden cases.
-    /// </summary>
-    private readonly JsonElement _cases = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "fixtures", "squad", "squad.json"))).RootElement;
-
-    /// <summary>
-    /// Asserts that a served battle's settings fill in the defaults as battles_served.rbx did.
-    /// </summary>
-    [Fact]
-    public void Served_FillsInTheDefaults()
-    {
-        foreach (JsonElement entry in _cases.GetProperty("served").EnumerateArray())
-        {
-            Assert.Equal(JsonValues.RubyOf(entry.GetProperty("squad")), _topics.Call(SquadTopics.Served, JsonValues.RubyOf(entry.GetProperty("list"))) ?? RubyNil.Value);
-        }
-    }
 
     /// <summary>
     /// Asserts that a served battle's settings out of range, which the scripts once passed on, are

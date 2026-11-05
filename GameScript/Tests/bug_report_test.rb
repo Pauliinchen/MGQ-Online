@@ -38,8 +38,8 @@
 
 # Covers the in-game bug report, ui_bug_report.rbx: what it hands the DLL's request (the scene, the
 # hotkey, the facts and details), the screenshot, the form on the Mod Framework's window, sending,
-# closing, and what it plays, says and logs for the DLL. The request's own rules are
-# BugReportRequestTests'; here the DLL answers from $answers and records each call in $asked.
+# closing, and what it plays, says and logs for the DLL. The request's own rules are the C#
+# tests'; here the DLL answers from $answers and records each call in $asked.
 
 require_relative "support"
 require_relative "rules_support"

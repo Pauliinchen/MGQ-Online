@@ -2,6 +2,7 @@
 #  rules_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Answered the sorts each test sets and wrote the world's rules out instead of reading recorded cases
 #      Paulinchen  2026-11-05: Answered the rewards a party member catches up with by the fields each test sets instead of from a stand-in of their constants
 #                            - Dropped the reader of the relay's seed rows, which only the tables of the catch-up engine read
 #                            - Answered the mods, squads, world rules, story parts and the World overview's title with the values each test sets instead of from their stand-ins
@@ -55,59 +56,26 @@
 #----------------------------------------------------------------
 
 # The topics of the game's rules that left the scripts, answered on the test's one FakeBridge with
-# fixed values: those each test sets for its own case, or a reply recorded under fixtures that every
-# test shares (the world's rules, the event sorter's and the catch-up's cases). The C# tests own the
-# rules; here the scripts are checked for what they ask and what they do with the answer.
+# the fixed values each test sets for its own case, or the world's rules every test shares. The C#
+# tests own the rules; here the scripts are checked for what they ask and what they do with the
+# answer.
 
 require "json"
 require_relative "bridge_support"
 
-# Folder of the golden cases.
-RULE_FIXTURES = File.expand_path("../../fixtures", __dir__)
-
-# Reads a golden case file.
-#
-# @param area [String] Its folder under fixtures, such as "catchup".
-# @param name [String] The file, such as "exp.json".
-# @return [Hash] Its content.
-def rule_cases(area, name)
-  JSON.parse(File.read(File.join(RULE_FIXTURES, area, name), :encoding => "UTF-8"))
-end
-
 # Folder of the relay's seed rows of its story tables.
 STORY_SEEDS = File.expand_path("../../Relay/seed/story", __dir__)
 
-# Answers the catch-up experience's topics from fixtures/catchup/exp.json.
-#
-# @param fake [FakeBridge] The bridge.
-def answer_catchup(fake)
-  cases = rule_cases("catchup", "exp.json")
-  fake.answer("catchup.target") do |caps|
-    found = cases["targets"].find { |entry| entry["caps"] == caps } or raise "no golden target for caps #{caps.inspect}"
-    found["target"]
-  end
-  fake.answer("catchup.factor") do |request|
-    grow_case(cases, request)["factor"]
-  end
-  fake.answer("catchup.grow") do |request|
-    found = grow_case(cases, request)
-    found["grown"] == [request["exp"], request["cexp"]] ? nil : { "exp" => found["grown"][0], "cexp" => found["grown"][1], "factor" => found["factor"] }
-  end
-end
-
-# Finds the golden case of a target and level, with the experience the request names, if any.
-#
-# @param cases [Hash] The catch-up cases.
-# @param request [Hash] The request.
-# @return [Hash] The case.
-def grow_case(cases, request)
-  keys = request.key?("exp") ? %w(target level exp cexp) : %w(target level)
-  cases["grow"].find { |entry| keys.all? { |key| entry[key] == request[key] } } or raise "no golden case for #{request.inspect}"
-end
-
-# The world's rules as the DLL answers world.rules, recorded in fixtures/world/rules.json, which
-# WorldTopicsTests holds the C# to.
-WORLD_RULES = rule_cases("world", "rules.json")["rules"]
+# The world's rules as the DLL answers world.rules: 2 to 32 seats, the game's difficulties and the
+# squad's limits.
+WORLD_RULES = {
+  "seats" => { "min" => 2, "max" => 32, "default" => 4 },
+  "difficulties" => [[-2, "VERY EASY"], [-1, "EASY"], [0, "NORMAL"], [1, "HARD"], [2, "VERY HARD"], [3, "HELL"], [4, "PARADOX"]],
+  "difficulty" => 0,
+  "formations" => [[0, "Original"], [4, "4"], [5, "5"], [6, "6"], [7, "7"], [8, "8"]],
+  "fronts" => [1, 2, 3, 4],
+  "squad" => { "luka" => false, "formation" => 4, "front" => 1, "raid_front" => 1 },
+}.freeze
 
 # Stands in for the DLL's answers of the rules' topics the scripts ask: the world's rules, the squads,
 # the story's part, the World overview's title and the mods'.
@@ -214,28 +182,35 @@ def counted_id(request)
   $random_ids.to_s(request["radix"] || 36).rjust(request["length"], "0")[-request["length"], request["length"]]
 end
 
-# The event sorter's recorded cases of fixtures/events/script_cases.json, whose answers the C#
-# EventSorterTests replay.
-EVENT_CASES = rule_cases("events", "script_cases.json")["cases"]
-
-# The values a sort's case recorded, by kind.
-SORT_VALUE_KINDS = %w(s v ps pv)
+# The sorts the DLL answers, which a test sets for each list it hands over (see sorted_as), by the
+# list's rows and, for a sort of one command, the command's index.
+$sorts = {}
 
 # The common events the DLL's decision answers as the player's own, which a test sets.
 $own_commons = []
 
 # What the DLL's decision answers for a resumed raid fight's page, which a test sets; nil answers
-# the recorded case's sort.
+# the page's own sort.
 $resumed_sort = nil
 
 # The maps of the Pocket Castle's residents events.open answers, as PocketCastle in MGQOnline.Game
 # names them.
 CASTLE_MAPS = [227, 228, 229, 230] + (268..278).to_a
 
+# Sets what the DLL answers when a list is sorted, or one of its commands.
+#
+# @param list [Array<RPG::EventCommand, Array>] The commands, or their rows as [code, indent, parameters].
+# @param answer [Hash] The answer, as events.sort answers it.
+# @param index [Integer, nil] The command a sort of one command names, nil for the whole list.
+def sorted_as(list, answer, index = nil)
+  rows = list.map { |command| command.is_a?(Array) ? command : [command.code, command.indent, command.parameters] }
+  $sorts[[JSON.parse(JSON.generate(rows)), index]] = answer
+end
+
 # Answers the event sorter's topics as a DLL without an events database: events.open takes the
 # fingerprint and answers that the database is missing, so the scripts hand every list over, whose
-# sort is looked up among the recorded cases (see recorded_sort); the chests, the page flags and the
-# command index of a map's pages answer none, and no telling moves the world's story on.
+# sort a test sets (see sorted_as); the chests, the page flags and the command index of a map's
+# pages answer none, and no telling moves the world's story on.
 #
 # @param fake [FakeBridge] The bridge.
 def answer_events(fake)
@@ -245,39 +220,28 @@ def answer_events(fake)
     { "usable" => false, "problem" => "no events database at Patch/Multiplayer/Data/events.db", "differing" => [], "castle_maps" => CASTLE_MAPS }
   end
   fake.answer("story.moves") { |_request| { "moves" => false, "progress" => [] } }
-  fake.answer("events.sort") { |request| recorded_sort(request) }
-  fake.answer("events.kinds") { |request| recorded_kinds(request) }
+  fake.answer("events.sort") { |request| set_sort(request) }
+  fake.answer("events.kinds") { |request| set_kinds(request) }
   fake.answer("events.chests") { |request| { "letters" => Array(request["rows"]).map { nil } } }
   fake.answer("events.pages") { |request| { "pages" => Array(request["rows"]).map { nil } } }
   fake.answer("events.index") { |request| { "indexes" => Array(request["pages"]).map { nil } } }
 end
 
-# Answers the sort of a map's pages from the recorded cases: a page named by its length and shape
-# as none, a page handed over as its recorded list's kind, the values its case read asked for.
+# Answers the sort of a map's pages: a page named by its length and shape as none, a page handed
+# over as the kind its list was set to.
 #
 # @param request [Hash] The request.
-# @return [Hash] The kinds, or the values the pages handed over need.
-def recorded_kinds(request)
-  answers = Array(request["pages"]).map do |row|
-    next nil unless row[2].is_a?(Array)
-
-    recorded_sort("list" => row[2], "trigger" => nil, "values" => request["values"])
-  end
-  needs = {}
-  answers.compact.each { |answer| (answer["needs"] || {}).each { |kind, ids| needs[kind] = (needs[kind] || []) | ids } }
-  return { "needs" => needs } unless needs.empty?
-
-  { "kinds" => answers.map { |answer| answer && answer["list_kind"] } }
+# @return [Hash] The kinds.
+def set_kinds(request)
+  { "kinds" => Array(request["pages"]).map { |row| row[2].is_a?(Array) ? set_sort("list" => row[2])["list_kind"] : nil } }
 end
 
-# Answers one sort with the recorded case of its list, trigger, command and resident flag: the
-# case whose values the request hands, else the values its cases read; a common event of
-# $own_commons as the player's own, a resumed fight's page as $resumed_sort, and a list no case
-# recorded fails the test.
+# Answers one sort with what a test set for its list: a common event of $own_commons as the
+# player's own, a resumed fight's page as $resumed_sort, and a list no test set fails the test.
 #
 # @param request [Hash] The request.
-# @return [Hash] The case's answer, the values it needs, or unknown.
-def recorded_sort(request)
+# @return [Hash] The answer, or unknown for a request that hands no list.
+def set_sort(request)
   if !request["index"] && $own_commons.include?(request["common"])
     return { "kind" => "own", "list_kind" => "own", "may_tell" => false, "scene" => false, "marks" => [], "own" => "common event #{request['common']} is one of the game's own" }
   end
@@ -285,24 +249,7 @@ def recorded_sort(request)
   return { "unknown" => true } unless request["list"]
 
   rows = JSON.parse(JSON.generate(request["list"]))
-  call = request["index"] ? "command" : (request["trigger"].nil? ? "list" : "page")
-  found = EVENT_CASES.select do |known|
-    known["call"] == call && known["list"] == rows && known["index"] == request["index"] &&
-      known["resident"] == (request["resident"] == true) && (call != "page" || known["trigger"] == request["trigger"])
-  end
-  raise "no recorded sort for the #{call} #{rows.inspect}" if found.empty?
-
-  values = request["values"] || {}
-  held = found.find { |known| SORT_VALUE_KINDS.all? { |kind| (known[kind] || {}).all? { |id, value| (values[kind] || {}).key?(id.to_i) && values[kind][id.to_i] == value } } }
-  return held["answer"] if held
-
-  needs = {}
-  found.each do |known|
-    SORT_VALUE_KINDS.each { |kind| (known[kind] || {}).each_key { |id| (needs[kind] ||= []) << id.to_i unless (values[kind] || {}).key?(id.to_i) } }
-  end
-  raise "no recorded sort for the #{call} #{rows.inspect} with #{values.inspect}" if needs.empty?
-
-  { "needs" => Hash[needs.map { |kind, ids| [kind, ids.uniq] }] }
+  $sorts.fetch([rows, request["index"]]) { raise "no sort set for #{rows.inspect} at #{request['index'].inspect}" }
 end
 
 # The rewards a party member catches up with as the DLL hands them (story.rewards, PartyRewards in
@@ -535,7 +482,6 @@ def open_rules_bridge
   load_bridge unless defined?(MGQ_Multiplayer::Bridge)
   fake = ($world_bridge ||= FakeBridge.new)
   answer_dll(fake)
-  answer_catchup(fake)
   $rule_answers = RuleAnswers.new(fake) unless $rule_answers && $rule_answers.fake.equal?(fake)
   answer_mod_check(fake)
   answer_settings(fake)

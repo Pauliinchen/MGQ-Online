@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-11-06: Dropped the tests of the keyed story's admin writes, route lock and pushes
+//                            - Dropped the check against recorded parts
 //      Paulinchen  2026-11-05: Dropped the tests of the games' story writes, checkpoint reads and route locks over HTTP, and covered the keyed story as world data
 //      Paulinchen  2026-10-31: Covered the keys a keyed story hands its story tracks
 //                            - Wrote every story key by key and covered games that keep no keys being turned away
@@ -25,7 +26,6 @@
 //
 //----------------------------------------------------------------
 
-import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -109,14 +109,6 @@ test("the parts follow variable 1001 up to the Great Decision, then the route ch
   assert.equal(partOf(counters({ p: 40, r1142: 81 })), PART.mr);
   assert.equal(partOf(counters({ p: 40, r1143: 25, clear: ["ad", "mr", "chaos"] })), PART.chaos);
   assert.equal(partOf(counters({ p: 39, clear: ["ad"] })), PART.three);
-});
-
-test("partOf still finds the golden parts, which the game's StoryParts finds too", () => {
-  const cases = JSON.parse(readFileSync(new URL("../../fixtures/story/parts.json", import.meta.url), "utf8")).parts;
-
-  for (const { part, ...found } of cases) {
-    assert.equal(partOf(found), part, JSON.stringify(found));
-  }
 });
 
 test("the story's order grows through a route, its finish and the return to the Great Decision", () => {

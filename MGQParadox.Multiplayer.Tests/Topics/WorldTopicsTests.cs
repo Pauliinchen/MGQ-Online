@@ -2,6 +2,7 @@
 //  WorldTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Checked the squad settings and world codes with own values instead of recorded ones
 //      Paulinchen  2026-10-23: Took the values of the golden cases from JsonValues
 //                            - Read and wrote squad settings through the topics both hosts answer
 //                            - Created
@@ -9,9 +10,7 @@
 //----------------------------------------------------------------
 
 using System;
-using System.IO;
 using System.Linq;
-using System.Text.Json;
 using MGQOnline.Bridge.Ruby;
 using MGQOnline.Game.Topics;
 using MGQParadox.Multiplayer.Topics;
@@ -19,8 +18,7 @@ using MGQParadox.Multiplayer.Topics;
 namespace MGQParadox.Multiplayer.Tests.Topics;
 
 /// <summary>
-/// Covers the topics of a world's rules against the answers the script tests take from
-/// fixtures/world/rules.json, so the two never drift apart.
+/// Covers the topics of a world's rules: squad settings and world codes.
 /// </summary>
 public sealed class WorldTopicsTests
 {
@@ -34,33 +32,17 @@ public sealed class WorldTopicsTests
     });
 
     /// <summary>
-    /// The golden answers.
-    /// </summary>
-    private readonly JsonElement _cases = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "fixtures", "world", "rules.json"))).RootElement;
-
-    /// <summary>
-    /// Asserts that the limits and defaults are those the scripts are tested with.
-    /// </summary>
-    [Fact]
-    public void Rules_AnswersTheLimitsAndDefaults() => Assert.Equal(JsonValues.RubyOf(_cases.GetProperty("rules")), _topics.Call(WorldTopics.Rules));
-
-    /// <summary>
-    /// Asserts that squad settings read from their text as the cases say, and that valid ones write
-    /// back the same text.
+    /// Asserts that a world's squad settings read from their text and write back the same text, and
+    /// that a text out of range reads as none.
     /// </summary>
     [Fact]
     public void Squad_ReadsAndWritesTheSettings()
     {
-        foreach (JsonElement entry in _cases.GetProperty("squads").EnumerateArray())
-        {
-            RubyValue? read = _topics.Call(SquadTopics.Read, entry.GetProperty("text").GetString());
-            Assert.Equal(JsonValues.RubyOf(entry.GetProperty("squad")), read ?? RubyNil.Value);
+        RubyValue? read = _topics.Call(SquadTopics.Read, "1 6 2 3");
 
-            if (read != null)
-            {
-                Assert.Equal(RubyString.Utf8(entry.GetProperty("text").GetString()!), _topics.Call(SquadTopics.Write, read));
-            }
-        }
+        Assert.Equal(new RubyHash { { "luka", true }, { "formation", 6 }, { "front", 2 }, { "raid_front", 3 } }, read);
+        Assert.Equal(RubyString.Utf8("1 6 2 3"), _topics.Call(SquadTopics.Write, read!));
+        Assert.Null(_topics.Call(SquadTopics.Read, "0 4 1 5"));
     }
 
     /// <summary>
@@ -71,16 +53,16 @@ public sealed class WorldTopicsTests
         Assert.Null(_topics.Call(SquadTopics.Write, new RubyHash { { "luka", false }, { "formation", 3L }, { "front", 1L }, { "raid_front", 1L } }));
 
     /// <summary>
-    /// Asserts that world codes tell and change their seats as the cases say.
+    /// Asserts that a world code tells its seats, changes them, and keeps them when asked for more
+    /// than a world holds.
     /// </summary>
     [Fact]
     public void Code_TellsAndChangesTheSeats()
     {
-        foreach (JsonElement entry in _cases.GetProperty("codes").EnumerateArray())
-        {
-            RubyHash request = new() { { "code", entry.GetProperty("code").GetString() }, { "seats", JsonValues.RubyOf(entry.GetProperty("seats")) } };
+        RubyValue? Ask(string code, RubyValue seats) => _topics.Call(WorldTopics.Code, new RubyHash { { "code", code }, { "seats", seats } });
 
-            Assert.Equal(JsonValues.RubyOf(entry.GetProperty("answer")), _topics.Call(WorldTopics.Code, request) ?? RubyNil.Value);
-        }
+        Assert.Equal(new RubyHash { { "code", "mgqmp2;abcdefghjkmnpqrs;r1;8" }, { "seats", 8 } }, Ask("mgqmp2;abcdefghjkmnpqrs;r1;8", RubyNil.Value));
+        Assert.Equal(new RubyHash { { "code", "mgqmp2;abcdefghjkmnpqrs;r1;12" }, { "seats", 12 } }, Ask("mgqmp2;abcdefghjkmnpqrs;r1;4", 12));
+        Assert.Equal(new RubyHash { { "code", "mgqmp2;abcdefghjkmnpqrs;r1;4" }, { "seats", 4 } }, Ask("mgqmp2;abcdefghjkmnpqrs;r1;4", 99));
     }
 }

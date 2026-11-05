@@ -31,10 +31,4 @@
     <ProjectReference Include="..\MGQOnline.Data\MGQOnline.Data.csproj" />
   </ItemGroup>
 
-  <!-- The shapes Ruby wrote, shared with the scripts' tests, and the relay's story mapping. -->
-  <ItemGroup>
-    <None Include="..\fixtures\events\hash_cases.json" LinkBase="fixtures\events" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\fixtures\story\mirror.json" LinkBase="fixtures\story" CopyToOutputDirectory="PreserveNewest" />
-  </ItemGroup>
-
 </Project>

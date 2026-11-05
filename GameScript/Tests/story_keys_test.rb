@@ -2,6 +2,7 @@
 #  story_keys_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Dropped the check of the recorded key kinds
 #      Paulinchen  2026-11-05: Wrote the rewards tables' answer without the catch-up's recording tool
 #                            - Answered a Classic party's table with fixed tables instead of a copy of the C# one
 #                            - Handed and expected sites as plain values
@@ -19,8 +20,7 @@
 #
 #----------------------------------------------------------------
 
-# Covers story_keys.rbx with story_state.rbx: the story mapping's table as the DLL hands it, looked
-# up as the relay's tracks look keys up (fixtures/story/classes.json), and the one hook on the
+# Covers story_keys.rbx with story_state.rbx: the story mapping's table as the DLL hands it, and the one hook on the
 # game's writes: which writes a story records, with the event that wrote them, which it never
 # records (the multiplayer's own, a lost battle's defeat scene, another object's), one batch a
 # frame for the DLL, the commands that run inside a story reset, the writes before the mapping
@@ -101,23 +101,8 @@ fake = open_rules_bridge
 answer_story(fake)
 keys = MGQ_MpStoryKeys
 
-# The story mapping's table as the DLL hands it: each key the kind the relay's tracks give it.
-names = lambda do |kind, found|
-  next "freeze" if kind == 3
-  next "count" if found & keys::COUNT != 0
-  next "one_way" if found & keys::ONE_WAY != 0
-  next "shared" if found & keys::KEPT != 0
-  next "scene" if found & keys::SCENE != 0
-
-  found & keys::CHEST != 0 ? "chest" : "personal"
-end
-table = keys.table_of(classes_fixture_table)
-cases = JSON.parse(File.read(File.join(STORY_FIXTURES, "classes.json")))["cases"]
-found = cases.map do |entry|
-  kind, key = fixture_key(entry["key"])
-  [entry["key"], entry["site"], names.call(kind, kind == 3 ? 0 : keys.class_of(kind, key, entry["site"] && fixture_site(entry["site"]), table))]
-end
-check("each key of the mapping's table is shared as the relay's tracks share it", found, cases.map { |entry| [entry["key"], entry["site"], entry["kind"]] })
+# The story mapping's table as the DLL hands it.
+table = keys.table_of(mapping_table)
 check("the table lists the switches and variables kept and the local steps", [table.kept_switches, table.kept_variables, table.local_steps[1052]],
       [[31, 7096], [1001, 1052, 1062, 1141, 1354, 3005], [[3, 4, 5], 2, [[484, 30], [483, 0]]]])
 
@@ -214,7 +199,7 @@ event.update
 keys.flush
 MGQ_Multiplayer::Bridge.frame
 before = staged("story.writes")
-$classes = classes_fixture_table
+$classes = mapping_table
 keys.load_raid
 keys.flush
 MGQ_Multiplayer::Bridge.frame

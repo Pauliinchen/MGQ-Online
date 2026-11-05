@@ -2,6 +2,7 @@
 //  ShippedChoicesTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Read the relay's seed through TableFiles
 //      Paulinchen  2026-11-01: Created
 //
 //----------------------------------------------------------------
@@ -14,6 +15,7 @@ using System.Text.Json;
 using MGQOnline.Data.Events;
 using MGQOnline.Game.Events.Data;
 using MGQOnline.Game.Story;
+using MGQOnline.Game.Tests.Catchup;
 
 namespace MGQOnline.Game.Tests.Story;
 
@@ -99,9 +101,8 @@ public sealed class ShippedChoicesTests : IDisposable
     /// <returns>The keys.</returns>
     private static IEnumerable<StoryKey> PersonalKeys()
     {
-        foreach (JsonElement entry in Fixtures.Read("seed", "keys.json").EnumerateArray())
+        foreach (JsonElement row in TableFiles.Rows("keys"))
         {
-            JsonElement row = entry.GetProperty("row");
             if (row.GetProperty("kind").GetString() == "personal" && StoryKey.TryParse(row.GetProperty("key").GetString(), out StoryKey key))
             {
                 yield return key;

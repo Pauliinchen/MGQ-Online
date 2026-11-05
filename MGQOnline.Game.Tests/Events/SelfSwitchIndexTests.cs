@@ -2,6 +2,7 @@
 //  SelfSwitchIndexTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Read the relay's seed through TableFiles
 //      Paulinchen  2026-10-28: Derived and walked over the events database
 //                            - Checked the derive and the troops of the game against the walks of its lists
 //                            - Classified the hand-made page
@@ -12,10 +13,10 @@
 
 using System.Collections.Generic;
 using System.Linq;
-using System.Text.Json;
 using MGQOnline.Data.Events;
 using MGQOnline.Game.Events;
 using MGQOnline.Game.Events.Data;
+using MGQOnline.Game.Tests.Catchup;
 using static MGQOnline.Game.Tests.Events.TinyGame;
 
 namespace MGQOnline.Game.Tests.Events;
@@ -85,8 +86,8 @@ public sealed class SelfSwitchIndexTests
     public void Derive_OverTheDatabaseOfTheGame_SharesWhatTheWalkOfItsListsShares()
     {
         EventStore store = GameFolder.StoreOrSkip();
-        StoryKeyRow[] keys = [.. SeedRows("keys.json").Select(row => new StoryKeyRow(row.GetProperty("key").GetString()!, row.GetProperty("kind").GetString()!))];
-        StoryEventRow[] events = [.. SeedRows("events.json").Select(row => new StoryEventRow(row.GetProperty("key").GetString()!, row.GetProperty("share").GetString()!))];
+        StoryKeyRow[] keys = [.. TableFiles.Rows("keys").Select(row => new StoryKeyRow(row.GetProperty("key").GetString()!, row.GetProperty("kind").GetString()!))];
+        StoryEventRow[] events = [.. TableFiles.Rows("events").Select(row => new StoryEventRow(row.GetProperty("key").GetString()!, row.GetProperty("share").GetString()!))];
 
         SelfSwitchIndex walked = SelfSwitchIndex.Derive(new GameDataSource(GameFolder.DataOrSkip()), keys, events);
         SelfSwitchIndex derived = SelfSwitchIndex.Derive(store, keys, events);
@@ -179,14 +180,6 @@ public sealed class SelfSwitchIndexTests
         Assert.Equal([new KeyRange(false, 61, 62), new KeyRange(true, 1075, 1075)], keys);
         Assert.Equal(["A", "B"], selfSwitches.Order());
     }
-
-    /// <summary>
-    /// Reads the rows a table of the relay's seed adds.
-    /// </summary>
-    /// <param name="file">The table's file, such as "keys.json".</param>
-    /// <returns>The rows.</returns>
-    private static IEnumerable<JsonElement> SeedRows(string file) =>
-        Fixtures.Read("seed", file).EnumerateArray().Where(entry => entry.GetProperty("op").GetString() == "add").Select(entry => entry.GetProperty("row"));
 
     /// <summary>
     /// Writes a command of whole number and text parameters.

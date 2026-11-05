@@ -2,6 +2,7 @@
 //  OverviewRoomTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Walked the World overview's title through its topic
 //      Paulinchen  2026-10-31: Checked the World page and the folds
 //                            - Checked that the lists of players come only when they changed
 //                            - Created
@@ -20,8 +21,8 @@ using MGQParadox.Multiplayer.Topics;
 namespace MGQParadox.Multiplayer.Tests.Topics;
 
 /// <summary>
-/// Covers the World overview's topics of the open world's room as the scripts call them: the
-/// reading of what the player tells the others, the lists of players and the pages.
+/// Covers the World overview's topics as the scripts call them: the reading of what the player
+/// tells the others, the lists of players, the pages and the title.
 /// </summary>
 public sealed class OverviewRoomTopicsTests
 {
@@ -88,6 +89,22 @@ public sealed class OverviewRoomTopicsTests
 
         Assert.Equal(new RubyArray { "fold", "side", "Side quests (1)", false }, rows[0].AsArray()[2]);
         Assert.Equal("fold", rows[1].AsArray()[0].AsText());
+    }
+
+    /// <summary>
+    /// Asserts that the World overview's title and note name the world's type, and its difficulty by
+    /// the game's own name where the world sets one, else that each player keeps their own.
+    /// </summary>
+    [Fact]
+    public void Title_NamesTheTypeAndTheWorldsDifficulty()
+    {
+        var topics = new TopicCaller(OverviewTopics.Register);
+
+        RubyValue? classic = topics.Call(OverviewTopics.Title, new RubyHash { { "raid", false }, { "difficulty", RubyNil.Value } });
+        RubyValue? raid = topics.Call(OverviewTopics.Title, new RubyHash { { "raid", true }, { "difficulty", 1 } });
+
+        Assert.Equal(new RubyHash { { "tail", " | Classic" }, { "note", "Classic | Per player" } }, classic);
+        Assert.Equal(new RubyHash { { "tail", " | Raid | Hard" }, { "note", "Raid | Hard" } }, raid);
     }
 
     /// <summary>

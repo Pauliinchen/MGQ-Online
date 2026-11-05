@@ -2,7 +2,8 @@
 #  boxes_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Reached the Mod Framework's engine under its own name
+#      Paulinchen  2026-11-06: Dropped the stand-ins of the keys, the mouse and the held buttons, which no check reads
+#                            - Reached the Mod Framework's engine under its own name
 #                            - Compared a player's color with the color the UI layer reads now
 #                            - Left the list box to the world screen's tests and the in-game suite, checking a player's color names
 #                            - Dropped the info strip's checks with the strip
@@ -21,44 +22,13 @@ require_relative "bridge_support"
 
 # Stand-ins for the game and the mod's base script.
 $log = []
-$keys_down = []
-$buttons = []
 $sounds = []
-$watched = []
 $frame = 0
 $player_ini = {}
-# The mod's base script: the log in $log, the keys held in $keys_down, the buttons in $buttons and
-# Player.ini in $player_ini.
+# The mod's base script: the log in $log and Player.ini in $player_ini.
 module MGQ_Multiplayer
   # The mod's log, kept in $log.
   module Log; def self.write(message); $log << message; end; end
-  # Windows' keys: those watched go to $watched, those in $keys_down are held and triggered.
-  module Mod_Framework::UI::Engine::Key
-    # Records the keys watched in $watched.
-    def self.watch(*codes); $watched.concat(codes); end
-    # Whether a key in $keys_down was pressed.
-    def self.triggered?(code); $keys_down.include?(code); end
-    # Whether a key in $keys_down is pressed.
-    def self.pressed?(code); $keys_down.include?(code); end
-    # Whether a key in $keys_down is held.
-    def self.down?(code); $keys_down.include?(code); end
-  end
-  # The mouse, off the screen.
-  module Mod_Framework::UI::Engine::Mouse; def self.position; nil; end; end
-  # The capture: kept by its owners, its buttons taken from $buttons once each.
-  module Mod_Framework::UI::Engine::Capture
-    @owners = []
-    # Adds an owner of the capture.
-    def self.start(owner); @owners.push(owner) unless @owners.include?(owner); end
-    # Removes an owner of the capture.
-    def self.stop(owner); @owners.delete(owner); end
-    # Whether anyone holds the capture.
-    def self.on?; !@owners.empty?; end
-    # Takes a button from $buttons as pressed.
-    def self.trigger?(button); $buttons.delete(button) ? true : false; end
-    # Takes a button from $buttons as repeated.
-    def self.repeat?(button); $buttons.delete(button) ? true : false; end
-  end
   # Player.ini, kept in $player_ini.
   module Player
     # A setting of Player.ini.

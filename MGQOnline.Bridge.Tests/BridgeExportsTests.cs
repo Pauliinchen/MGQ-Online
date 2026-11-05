@@ -2,6 +2,7 @@
 //  BridgeExportsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Built the batch instead of reading a recorded dump
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -134,7 +135,9 @@ public sealed unsafe class BridgeExportsTests
     {
         int context = Open();
 
-        int written = Call(context, BridgeContext.BatchTopic, Fixtures.Topic("batch", "in_order", "request"), new byte[ReplySize]);
+        var batch = new RubyArray { new RubyArray { "test.append", "a" }, new RubyArray { "test.append", "b" }, new RubyArray { "test.append", "c" } };
+
+        int written = Call(context, BridgeContext.BatchTopic, RubyMarshal.Write(batch), new byte[ReplySize]);
 
         Assert.Equal(0, written);
         Assert.Equal(new[] { "a", "b", "c" }, _appended);

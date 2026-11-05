@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-06: Reached the Mod Framework's engine under its own name
+#                            - Answered the catch-up's topics with fixed values instead of recorded cases
 #                            - Read the small party box's rows, leaving how it looks to the in-game suite
 #                            - Read the overview's rows, menus, gate and pages from the script, leaving its window of the UI layer to the in-game suite
 #                            - Dropped the pages of other mods, which come through UI.patch now
@@ -216,7 +217,7 @@ module MGQ_MpEmotes; def self.wheel; StandInWheel.new(lambda { $emotes_open }); 
 load_script "ui_party_box"
 rules_bridge = open_rules_bridge
 # The title's tail and the World page's note the DLL writes for the worlds below, by whether it is
-# a Raid World and its difficulty (OverviewTextTests covers the texts).
+# a Raid World and its difficulty.
 $rule_answers.cases("overview.title", {
   [false, nil] => { "tail" => " | Classic", "note" => "Classic | Per player" }, [false, 1] => { "tail" => " | Classic | Hard", "note" => "Classic | Hard" },
   [true, nil] => { "tail" => " | Raid", "note" => "Raid | Per player" }, [true, 1] => { "tail" => " | Raid | Hard", "note" => "Raid | Hard" },
@@ -679,6 +680,10 @@ check("with nothing unlocked yet it shows the DLL's line", [overview.model(:unlo
 members = $game_party.all_members
 $game_party.all_members = [Actor.new(30, true), Actor.new(20, false), Actor.new(99, false)]
 $world_story = $world_story.merge("caps" => [10, 40, 65])
+# The DLL's catch-up for the caps above: up to 40, a character of level 30 gaining four times and
+# one of level 20 seven times.
+rules_bridge.answer("catchup.target") { |_caps| 40 }
+rules_bridge.answer("catchup.factor") { |request| request["level"] == 30 ? "x4" : "x7" }
 overview.forget_model(:unlocks)
 overview.model(:unlocks)
 check("once the world's story raised the level cap, the DLL hears the level characters catch up to, and the head lists each formation member's level and catch-up experience",

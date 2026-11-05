@@ -2,7 +2,8 @@
 #  world_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Reached the Mod Framework's engine under its own name
+#      Paulinchen  2026-11-06: Dropped the stand-ins of the mouse and the held buttons, which no check reads
+#                            - Reached the Mod Framework's engine under its own name
 #                            - Stood in for UI.in_front? of the Mod Framework
 #      Paulinchen  2026-11-05: Kept each message sent as the scripts hand it and took the fields of each message told as the test writes them
 #                            - Kept true or false and whole numbers in the stand-in of Player.ini as the DLL hands them back
@@ -149,7 +150,6 @@ class Scene_Slot; end
 $sent = []
 $in_front = true
 $pressed = false
-$buttons = []
 $typed = ""
 $sounds = []
 # Stands in for the game's sounds, recording each one played in $sounds.
@@ -173,25 +173,6 @@ module Mod_Framework::UI::Engine::Key
   def self.triggered?(code); pressed?(code); end
   # Counts the frames ui_frame ended.
   def self.frame; $ui_frames.to_i; end
-end
-# Stands in for the mouse: held while $mouse_held is true, at $mouse, its wheel's notches in $wheel.
-module Mod_Framework::UI::Engine::Mouse; def self.held?; $mouse_held == true; end; def self.position; $mouse; end; def self.wheel; $wheel.to_i; end; end
-# Stands in for holding the game's buttons, held while any screen holds them; $held lists the
-# buttons held and $buttons those pressed, each read once.
-module Mod_Framework::UI::Engine::Capture
-  @owners = []
-  # Holds the buttons for a screen.
-  def self.start(owner); @owners.push(owner) unless @owners.include?(owner); end
-  # Lets a screen's hold go.
-  def self.stop(owner); @owners.delete(owner); end
-  # Answers whether any screen holds the buttons.
-  def self.on?; !@owners.empty?; end
-  # Answers whether a button is held, as $held lists it.
-  def self.press?(button); ($held || []).include?(button); end
-  # Answers whether a button was pressed, taking it from $buttons.
-  def self.trigger?(button); $buttons.delete(button) ? true : false; end
-  # Answers whether a button repeats, taking it from $buttons.
-  def self.repeat?(button); $buttons.delete(button) ? true : false; end
 end
 # Stands in for the parts of Multiplayer.rb the scripts call.
 module MGQ_Multiplayer
