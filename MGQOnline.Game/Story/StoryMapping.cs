@@ -2,6 +2,7 @@
 //  StoryMapping.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Kept the found marks of the Makina alone, and no marks of used up items, which the story replay hands over
 //      Paulinchen  2026-11-01: Read the whole world's option of a shared self switch's row
 //                            - Kept the found items' marks for the whole world, whatever the mapping's row of them says
 //                            - Kept the marks of the items used up for the whole world too
@@ -39,14 +40,14 @@ public static class StoryMapping
     };
 
     /// <summary>
-    /// The rules of the found items' marks, the self switches of map 0 (world_catchup.rbx
-    /// FOUND_MAP): the found marks (letter F) and the marks of the items events used up, which the
-    /// whole world keeps in place of the mapping's rows, as the relay's <c>TrackRules</c> does.
+    /// The rule of the Makina's found marks, the self switches of map 0 (world_catchup.rbx
+    /// FOUND_MAP, letter F), which the whole world keeps in place of the mapping's row, as the
+    /// relay's <c>TrackRules</c> does, for Makina by level.
     /// </summary>
     /// <remarks>
-    /// A relay seeded before the rule keeps a row <c>ss0.*.F</c> without <c>wholeWorld</c>, which comes before <c>ss0.*.*</c>.
+    /// A relay seeded before the rule keeps the row without <c>wholeWorld</c>.
     /// </remarks>
-    private static readonly string[] FoundMarks = ["ss0.*.F", "ss0.*.*"];
+    private static readonly string[] FoundMarks = ["ss0.*.F"];
 
     /// <summary>
     /// Reads the revision of an answer, which a request that named the revision this game holds

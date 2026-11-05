@@ -2,6 +2,10 @@
 //  StoryTopics.Replay.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Never handed over the Medal King's run, whose gift is its one path
+//                            - Handed over every run that gave or used up a found item, a personal talk too, but a Makina in a Raid World, which comes by level
+//                            - Played a chest the way its own letter shut it and never asked the player a derived entry's answers
+//                            - Handed over the found items of a battle's drops as the found items of a run, and gave them to each receiver
 //      Paulinchen  2026-11-01: Found the choices of a replay in the events database by their places among the kept commands of the player's lists
 //                            - Never handed over nor replayed a run where the player takes a side along
 //      Paulinchen  2026-10-31: Read a Classic party's scopes from the reviewed list alone
@@ -89,12 +93,22 @@ internal sealed partial class StoryTopics
     /// leader's "story:&lt;id&gt;"; nil for none), "party_stream" (its Classic party's, nil for none),
     /// "owner" (whether the player owns their story's stream, as a Classic leader does, so its entry
     /// is in it at once),
-    /// "changed" (key => [before, after]), "start" (key => value), "place" ([markers]), "inputs"
-    /// ([[at, occurrence, kind, value], ...]), "opener" (the player's name)}. Logs its step and
+    /// "changed" (key => [before, after]), "found" ([[item, change], ...] of the found items, key items
+    /// and items unlocking a job or a race, it gave or used up; nil for none), "start" (key =>
+    /// value), "place" ([markers]), "inputs" ([[at, occurrence, kind, value], ...]), "opener" (the
+    /// player's name)}. Logs its step and
     /// answers its entry to hand over (see <see cref="ReplayEntry.Write"/>), nil when it hands
     /// nothing over, or {"unknown"=>true} before the list came.
     /// </summary>
     public const string ReplayRanTopic = "story.replay_ran";
+
+    /// <summary>
+    /// The topic that takes the drops of a battle the player won: {"party", "stream", "party_stream"
+    /// (as <see cref="ReplayRanTopic"/> names them), "found" ([[item, change], ...] of the found items
+    /// the drops gave), "opener"}. Answers the entry that hands them to every player like a found
+    /// item's run (user decision 2026-11-05), nil when it hands nothing over.
+    /// </summary>
+    public const string ReplayDropTopic = "story.replay_drop";
 
     /// <summary>
     /// The topic that keeps a run handed to the player in the save's log until it is taken: entry.
@@ -109,7 +123,8 @@ internal sealed partial class StoryTopics
     /// inputs name)}. Answers {"do"=>"done"},
     /// {"needs"=>[name, ...]}, {"do"=>"pending", "why"}, {"do"=>"replay", "page" (from 1, nil for
     /// a common event), "sibling", "inputs" (the entry's, less the answers of the choices that are
-    /// the receiver's, whom the replay asks them)} or {"unknown"=>true} without an events database
+    /// the receiver's, whom the replay asks them)}, {"do"=>"gain", "items" ([[item, count], ...] of
+    /// another player's battle drops)} or {"unknown"=>true} without an events database
     /// or, for a run with a choice, before the scopes were read.
     /// </summary>
     public const string ReplayTakeTopic = "story.replay_take";
@@ -181,6 +196,7 @@ internal sealed partial class StoryTopics
         context.Register(ReplayScopesTopic, (_, request) => topics.ScopesOf(request.AsHash()["party"] is RubyBool { Flag: true }) is { } scopes ? ScopeTableOf(scopes.Table()) : null);
         context.Register(ReplayReadsTopic, (_, request) => topics.ReplayReads(request.AsHash()));
         context.Register(ReplayRanTopic, (_, request) => topics.ReplayRan(request.AsHash()));
+        context.Register(ReplayDropTopic, (_, request) => topics.ReplayDrop(request.AsHash()));
         context.Register(ReplayQueueTopic, (_, request) =>
         {
             topics._log.Queue(ReplayEntry.Read(request));
@@ -266,7 +282,7 @@ internal sealed partial class StoryTopics
         var brought = new SortedSet<int>();
         foreach (KeyItemChest chest in PartyRewards.KeyItemChests(store, opened, items))
         {
-            entries.Add(ReplayEntry.Derive(chest.Site, [chest.Key], key => KeyScopes.InView(scopes.ScopeOf(key, chest.Site.ToString()))).Write());
+            entries.Add(ChestEntry(store, chest.Site, [chest.Key], [chest.Key.Letter], scopes).Write());
             brought.UnionWith(chest.Items);
             Log.Write($"replay: the leader's chest {chest.Site} gave the key items {string.Join(", ", chest.Items)}, which the member's game plays");
         }
@@ -300,14 +316,27 @@ internal sealed partial class StoryTopics
         StoryKey[] closes = !request["closes"].IsNil
             ? [.. request["closes"].AsArray().Select(name => StoryKey.TryParse(name.AsText(), out StoryKey closing) ? closing : throw new BridgeRequestException($"{name.AsText()} is no story key."))]
             : chest is { } own ? [own] : [.. match.ClosingKeys(found)];
-        ReplayEntry entry = ReplayEntry.Derive(found, closes, key => KeyScopes.InView(scopes.ScopeOf(key, found.ToString())));
-        if (!request["letters"].IsNil)
-        {
-            entry = entry with { Inputs = DerivedAnswers.Of(store, found, [.. request["letters"].AsArray().Select(letter => letter.AsText())]) };
-        }
-
+        string[] letters = !request["letters"].IsNil ? [.. request["letters"].AsArray().Select(letter => letter.AsText())] : chest is { } shut ? [shut.Letter] : [];
+        ReplayEntry entry = ChestEntry(store, found, closes, letters, scopes);
         Log.Write($"replay: derived entry {entry.Id}, closed by {string.Join(", ", closes)}");
         return entry.Write();
+    }
+
+    /// <summary>
+    /// Makes the entry of a page the player's history or a feature names, its choices answered by the
+    /// branch that ends with the letters the source holds on, a chest's own letter for a chest, so
+    /// the page plays the way that shut it.
+    /// </summary>
+    /// <param name="store">The events database.</param>
+    /// <param name="site">The page.</param>
+    /// <param name="closes">The keys that close it.</param>
+    /// <param name="letters">The letters of the page's event the source holds on; none answers no choice.</param>
+    /// <param name="scopes">The scopes of the keys.</param>
+    /// <returns>The entry.</returns>
+    private static ReplayEntry ChestEntry(EventStore store, ReplaySite site, IReadOnlyCollection<StoryKey> closes, IReadOnlyCollection<string> letters, KeyScopes scopes)
+    {
+        ReplayEntry entry = ReplayEntry.Derive(site, closes, key => KeyScopes.InView(scopes.ScopeOf(key, site.ToString())));
+        return letters.Count == 0 ? entry : entry with { Inputs = DerivedAnswers.Of(store, site, letters) };
     }
 
     /// <summary>
@@ -405,8 +434,10 @@ internal sealed partial class StoryTopics
     /// Answers <see cref="ReplayRanTopic"/>: logs the step of the party and world keys the run
     /// changed, and makes its entry when it gives (rule 1), with every one of those keys as its step:
     /// into its story's stream when it changed a world key, else into its party's. A run that changed
-    /// a party key wrote a key a player keeps, so it gives; any other gives when its page does. The
-    /// entry is in a party's stream at once, and in a story's when the player owns it.
+    /// a party key wrote a key a player keeps, so it gives; any other gives when its page does. A run
+    /// that gave or used up a found item is handed over too, one that changed no shared key into a
+    /// Raid World's story or a Classic party's stream (user decision 2026-11-04). The entry is in a
+    /// party's stream at once, and in a story's when the player owns it.
     /// </summary>
     /// <param name="request">The run.</param>
     /// <returns>The entry, nil, or {"unknown"=>true}.</returns>
@@ -435,29 +466,94 @@ internal sealed partial class StoryTopics
             }
         }
 
-        if (keys.Count == 0)
+        bool classic = request["party"] is RubyBool { Flag: true };
+        int[] found = [.. FoundOf(request["found"], classic)];
+        if (keys.Count == 0 && found.Length == 0)
         {
             return RubyNil.Value;
         }
 
-        bool world = keys.Count > party.Count;
+        bool world = keys.Count > party.Count || (keys.Count == 0 && !classic);
         RubyValue streamOf = world ? request["stream"] : request["party_stream"];
         string? stream = streamOf.IsNil ? null : streamOf.AsText();
         bool pick = IsPickSite(site);
-        bool sent = stream is not null && !pick && (party.Count > 0 || PageGives(site, scopes));
+        bool medalKing = IsMedalKing(site);
+        bool sent = stream is not null && !pick && !medalKing && (party.Count > 0 || found.Length > 0 || PageGives(site, scopes));
         bool kept = sent && (!world || request["owner"] is RubyBool { Flag: true });
         string id = NewEntryId();
         _log.Ran(site, keys, kept ? stream : null, kept ? id : null);
         if (!sent)
         {
-            Log.Write($"replay: logged the run of {site}, which changed {keys.Count} shared keys and hands nothing over{(pick ? ": every player takes their own side along" : string.Empty)}");
+            Log.Write($"replay: logged the run of {site}, which changed {keys.Count} shared keys and hands nothing over{(pick ? ": every player takes their own side along" : medalKing ? ": the Medal King's gift reaches every player by its own rule" : string.Empty)}");
             return RubyNil.Value;
         }
 
         var entry = new ReplayEntry(id, site, stream!, world ? StoryScope.World : StoryScope.Party, request["opener"].IsNil ? null : request["opener"].AsText(),
-            keys, ReplayEntry.PlaceOf(request["place"]), ReplayEntry.KeysOf(request["start"]), ReplayEntry.InputsOf(request["inputs"]), false);
-        Log.Write($"replay: the run of {site} goes to {stream} as entry {id}, its step {string.Join(", ", keys.Keys)}");
+            keys, ReplayEntry.PlaceOf(request["place"]), ReplayEntry.KeysOf(request["start"]), ReplayEntry.InputsOf(request["inputs"]), false)
+        {
+            Found = found.Length > 0,
+        };
+        Log.Write($"replay: the run of {site} goes to {stream} as entry {id}, its step {(keys.Count == 0 ? "none" : string.Join(", ", keys.Keys))}{(found.Length > 0 ? $", the found items {string.Join(", ", found)}" : string.Empty)}");
         return entry.Write();
+    }
+
+    /// <summary>
+    /// Answers <see cref="ReplayDropTopic"/>: makes the entry of a battle's drops that gave found
+    /// items, into a Raid World's story or a Classic party's stream as a found item's run that
+    /// changed no shared key goes, and logs the step its own entry claims, so the player who won
+    /// them never takes them twice.
+    /// </summary>
+    /// <param name="request">The drops.</param>
+    /// <returns>The entry, nil when it hands nothing over.</returns>
+    private RubyValue ReplayDrop(RubyHash request)
+    {
+        bool classic = request["party"] is RubyBool { Flag: true };
+        KeyValuePair<int, int>[] drops = [.. FoundChanges(request["found"], classic).Where(drop => drop.Value > 0)];
+        RubyValue streamOf = classic ? request["party_stream"] : request["stream"];
+        if (drops.Length == 0 || streamOf.IsNil)
+        {
+            Log.Write($"replay: a battle's drops hand nothing over, {(drops.Length == 0 ? "they gave no found item another player gets" : "the player plays no story with others")}");
+            return RubyNil.Value;
+        }
+
+        string stream = streamOf.AsText();
+        string id = NewEntryId();
+        _log.Ran(ReplaySite.Drop, new Dictionary<StoryKey, string>(), stream, id);
+        var entry = new ReplayEntry(id, ReplaySite.Drop, stream, classic ? StoryScope.Party : StoryScope.World, request["opener"].IsNil ? null : request["opener"].AsText(),
+            new Dictionary<StoryKey, string>(), null, new Dictionary<StoryKey, string>(), [], false)
+        {
+            Found = true,
+            Drops = drops,
+        };
+        Log.Write($"replay: a battle's drops go to {stream} as entry {id}, the found items {string.Join(", ", drops.Select(drop => $"{drop.Key} x{drop.Value}"))}");
+        return entry.Write();
+    }
+
+    /// <summary>
+    /// Reads the found items a run gave or used up, but a Raid World's Makina, which every player
+    /// gets by level instead (Makina by level, answer 9).
+    /// </summary>
+    /// <param name="value">[[item, change], ...], nil for none.</param>
+    /// <param name="classic">Whether the world is a Classic world.</param>
+    /// <returns>The items, each once.</returns>
+    private IEnumerable<int> FoundOf(RubyValue value, bool classic) => FoundChanges(value, classic).Select(change => change.Key).Distinct();
+
+    /// <summary>
+    /// Reads the changes of found items a run or a battle's drops made, but a Raid World's Makina's.
+    /// </summary>
+    /// <param name="value">[[item, change], ...], nil for none.</param>
+    /// <param name="classic">Whether the world is a Classic world.</param>
+    /// <returns>Each item with its change, those that changed nothing left out, in their order.</returns>
+    private IEnumerable<KeyValuePair<int, int>> FoundChanges(RubyValue value, bool classic)
+    {
+        if (value.IsNil)
+        {
+            return [];
+        }
+
+        HashSet<int> makina = classic ? [] : [.. Catchup?.Makina.Select(row => row.Item) ?? []];
+        return value.AsArray().Select(pair => pair.AsArray()).Where(pair => pair.Count == 2 && pair[1].AsLong() != 0)
+            .Select(pair => new KeyValuePair<int, int>(pair[0].AsInt(), pair[1].AsInt())).Where(change => !makina.Contains(change.Key));
     }
 
     /// <summary>
@@ -475,6 +571,13 @@ internal sealed partial class StoryTopics
     /// <param name="site">The page.</param>
     /// <returns>Whether it is; false before the story mapping came.</returns>
     private bool IsPickSite(ReplaySite site) => Catchup?.Scope.IsPickSite(site.ToString()) == true;
+
+    /// <summary>
+    /// Tells whether a run is the Medal King's, see <see cref="MedalKingGift"/>.
+    /// </summary>
+    /// <param name="site">Where the run started.</param>
+    /// <returns>Whether it is; false without an events database.</returns>
+    private bool IsMedalKing(ReplaySite site) => Events().Store is { IsUsable: true } store && MedalKingGift.IsRun(site, new PageMatch(store));
 
     /// <summary>
     /// Tells whether a run's page gives, by the events database and who keeps each key.
@@ -539,6 +642,12 @@ internal sealed partial class StoryTopics
             return new RubyHash { { "do", "pending" }, { "why", "it waits until one of the player's own things it read changes" } };
         }
 
+        if (entry.Site.IsDrop)
+        {
+            Log.Write($"replay: entry {entry.Id} gives the player the battle drops {string.Join(", ", entry.Drops.Select(drop => $"{drop.Key} x{drop.Value}"))}");
+            return new RubyHash { { "do", "gain" }, { "items", new RubyArray(entry.Drops.Select(drop => (RubyValue)new RubyArray { drop.Key, drop.Value })) } };
+        }
+
         EventStore store = Events().Store;
         if (!store.IsUsable)
         {
@@ -579,8 +688,12 @@ internal sealed partial class StoryTopics
     /// <summary>
     /// Finds the inputs a replay takes from the opener's record: all but the answers of the choices
     /// that are the receiver's (rule 4, answer 11), whose answers do different things to the
-    /// receiver's own things by the scopes read last.
+    /// receiver's own things by the scopes read last; a derived entry's answers all.
     /// </summary>
+    /// <remarks>
+    /// A derived entry's answers are the branch the player's history or the world's took, so a
+    /// player caught up past a trade gets its item without being asked (user decision 2026-11-05).
+    /// </remarks>
     /// <param name="entry">The run's entry.</param>
     /// <param name="match">The events database's pages.</param>
     /// <param name="shapes">The shapes of the player's lists of the choices, by site.</param>
@@ -588,7 +701,7 @@ internal sealed partial class StoryTopics
     private IReadOnlyList<ReplayInput>? OpenersInputs(ReplayEntry entry, PageMatch match, IReadOnlyDictionary<string, int> shapes)
     {
         string[] choices = [.. entry.Inputs.Where(input => input.Kind == ChoiceInput).Select(input => input.At).Distinct(StringComparer.Ordinal)];
-        if (choices.Length == 0)
+        if (choices.Length == 0 || entry.Derived)
         {
             return entry.Inputs;
         }

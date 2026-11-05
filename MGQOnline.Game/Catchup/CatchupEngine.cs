@@ -157,10 +157,10 @@ public sealed class CatchupEngine
     /// Answers whether a companion the player's game hands out is left out, as one of the Alice and
     /// Ilias choice the player has no right to (<see cref="CompanionScope.AllowsAt"/>), or waits for
     /// the gate of a join of theirs in the player's part, the latter only for the player's own story
-    /// event.
+    /// event and a replay that went the player's own way.
     /// </summary>
     /// <param name="tables">The tables.</param>
-    /// <param name="request">"actor" (the companion's main persona), "site" (the page or common event that runs, nil for none), "scope_only" (true for a join no own story event of the player hands out, such as a replay's) and the snapshot.</param>
+    /// <param name="request">"actor" (the companion's main persona), "site" (the page or common event that runs, nil for none), "scope_only" (true for a join no own story event of the player hands out, such as a replay's), "replay" (true for a replay's join), "own_way" (true for a replay the player answered their own way), "sharing", "start" and the snapshot.</param>
     /// <returns>"gate" (nil when the game's own join goes ahead), "refused" (true when it is left out), "actions" and "ledger".</returns>
     public RubyHash HoldJoin(CatchupTables tables, RubyHash request) => new CatchupLook(this, tables, request).HoldJoin();
 

@@ -43,7 +43,6 @@ left for the user to decide.
 | World | [settings](#settings) | 95 |
 | World | [vehicles](#vehicles) | 23 |
 | World | [makina](#makina) | 29 |
-| World | [prize_variables](#prize_variables) | 88 |
 | World | [prize_switches](#prize_switches) | 5 |
 | World | [side_events](#side_events) | 19 |
 | Keys | [keys](#keys) | 3,754 |
@@ -640,8 +639,9 @@ Every skill Luka learns and every item, weapon and armor the story and its side 
 items aside (`REWARDS` of world_catchup_data.rbx). The catch-up gives a row when a story laid over
 the player's (the world's) carries them past the row's place, and only when `ran` is true; a row
 with `ran` false is only noted as done once the player's own story passes it, and gives nothing.
-A prize row (a count of `prize_variables` or a switch of `prize_switches` among its marks) also
-gives when the player's own story is past it and they hold none of the prize.
+A Medal King row (a switch of `prize_switches` among its marks) also gives when the player's own
+story is past it and they hold none of the prize. Every other prize row gives only as history from
+before the world's log: later, the replay of the world's run that won the prize hands it over.
 
 Checked against the game's own data in the TEST install
 (`Desktop\Monster Girl Quest Paradox\MGQ Paradox Test\Data`, untranslated 3.06), read with Ruby 3.3
@@ -1636,56 +1636,18 @@ hand.
   None of the rows' levels changed because of it (725 is held at its cap). A later game update
   could expose it.
 
-### prize_variables
+### prize_variables (retired 2026-11-05)
 
-These are the counts of prizes handed out once, outside the story's range of variables. A Raid
-World shares each count, so once any player claims a prize it is past for everyone. The rewards
-table holds each prize as a reward of the count past its step (`world_catchup_data.rbx`
-`PRIZE_VARIABLES`). Reviewed on 2026-10-28 against the game data of the TEST install.
-
-| | Rows |
-|---|---|
-| Candidates (`fixtures/catchup/generated/prize_variables.json`) | 29 |
-| Confirmed in bulk | 29 |
-| Checked by hand | 0 |
-| Fixed | 0 |
-| Dropped | 0 |
-| Added | 59 (by the user's decision) |
-| Written (`Relay/seed/story/prize_variables.json`) | 88 |
-
-### How the rows were checked
-
-Running the Event Checker's `raid_data.rb` over the TEST install gives exactly the 29 candidates.
-A separate script went through every list of the game for a prize branch: "if the variable equals
-a step" (code 111), holding a set of the variable to the next step and a gift of an item, weapon
-or armor. It found such branches for every row's variable, each with the variable's own name:
-
-- 83 Survival 1 Item Get (7 prize branches, CE 188);
-- 87 Challenge Prize (10, CE 148), the Reaper's Battle Challenge;
-- 701 Colosseum Rank (6, CE 158);
-- 703 to 728, the Colosseum's cups by race, "Yoma Only" to "Roids Only" (4 each, CE 161 to 186).
-
-### Missing rows
-
-The same scan finds such branches on other variables too. All of them are each player's own: the
-companions' "Ally: Presents" (4000 and up), the affection range, and the event variant (129). Or
-they are scratch variables. None belongs in this table, so nothing was added by the review.
-
-### Added by the user's decision (59)
-
-- **v801-858 and v907**, the battlefucks' progress and wins (user decision of 2026-10-28,
-  "recommended as long as every player gets it"). They are no counts of a prize branch: each
-  battlefuck's victory sets its counter (2, or 3 for 854-857), and CE 6999 gives its prizes at 15,
-  35 and 40 wins. But battlefuck progress and rewards are world-wide (user decision 2026-10-24),
-  and the 57 rewards rows they mark are the battlefucks' prizes, so they count as prize variables:
-  a player whose story holds the world's counter and who holds none of a prize gets it. Each
-  carries a `note`.
+The counts of prizes handed out once (83, 87, 701-728, the battlefucks' 801-858 and 907) are gone
+as a table. They are shared story keys, so the run that wins a prize changes the world's story and
+the story replay hands it to every player (user decision 2026-11-04). Their prizes stay rewards
+rows, which give only as history from before the world's log.
 
 ### prize_switches
 
 The switches of prizes handed out once, such as the Medal King's one-of-a-kind exchanges, which
 the rewards hold as rewards of the switch on. A prize row with such a switch among its marks gives
-when the player's own story is past it and they hold none of the prize, as for `prize_variables`.
+when the player's own story is past it and they hold none of the prize (`MedalKingGift`).
 A new table of 2026-10-28 (`Relay/core/story_catchup.js`, `CatchupTables.PrizeSwitches`), by the
 user's decision "once anyone buys, distributed to everyone".
 

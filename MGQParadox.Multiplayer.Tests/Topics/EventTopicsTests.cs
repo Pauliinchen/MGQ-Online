@@ -2,6 +2,7 @@
 //  EventTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Checked that the battlefuck events are read once and stay while the common events differ
 //      Paulinchen  2026-10-30: Kept the database fingerprint format in the differing game data
 //      Paulinchen  2026-10-28: Checked the command index of a map's pages at once
 //                            - Sorted over the events database of a tiny game, by length and shape, and checked its gate
@@ -16,6 +17,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using MGQOnline.Bridge.Ruby;
 using MGQOnline.Data.Events;
 using MGQOnline.Game.Tests.Events;
@@ -128,6 +130,33 @@ public sealed class EventTopicsTests
 
         _topics.Call(EventTopics.Open, new RubyHash { { "fingerprint", RubyNil.Value } });
         Assert.Equal(new RubyHash { { "unknown", true } }, _topics.Call(EventTopics.Sort, TinyEvents.Page(_events, 1, 2)));
+    }
+
+    /// <summary>
+    /// Asserts that the battlefuck events the generator listed, the count of a win (6999) and a
+    /// battlefucker's talk that calls it (7001), are read once for every sort, and that a page that
+    /// calls the talk still plays alone while the game data differs in the common events, which
+    /// leaves the common events themselves unknown.
+    /// </summary>
+    [Fact]
+    public void Sort_ReadsTheBattlefuckEventsOnceWhateverTheGate()
+    {
+        GameEvents events = TinyEvents.Of(new TinyGame()
+            .Event(4, C(101, "", 0, 0, 2), C(401, "Fight me."), C(121, 60, 60, 0), C(117, 7001))
+            .Common(6999, C(121, 61, 61, 0))
+            .Common(7001, C(117, 6999)));
+        var topics = new TopicCaller(context => EventTopics.Register(context, () => events));
+        string[] halves = events.Store.Meta!.Build.Fingerprint.Split(':');
+        string[] sums = halves[1].Split('.');
+        sums[9] = "ffffffff";
+        topics.Call(EventTopics.Open, new RubyHash { { "fingerprint", halves[0] + ":" + string.Join(".", sums) } });
+
+        string kind = topics.Call(EventTopics.Sort, With(TinyEvents.Page(events, 1, 4), "values", Values(0)))!.AsHash()["kind"].AsText();
+
+        Assert.Equal("own", kind);
+        Assert.Equal(new long[] { 6999, 7001 }, events.Source.Battlefucks.Order());
+        Assert.Same(events.Source.Battlefucks, events.Source.Battlefucks);
+        Assert.Empty(events.Source.CommonIds);
     }
 
     /// <summary>

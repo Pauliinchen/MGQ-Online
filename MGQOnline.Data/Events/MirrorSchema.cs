@@ -2,6 +2,7 @@
 //  MirrorSchema.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Dropped the counts of prizes
 //      Paulinchen  2026-10-31: Dropped the maps where warping is free, which the relay no longer keeps
 //      Paulinchen  2026-10-28: Kept every catch-up table of the relay, and the rows of a table it has none for
 //                            - Created
@@ -58,7 +59,6 @@ public static class MirrorSchema
         new("rules", ["rule"], null, [new MirrorColumn("value", "value", MirrorValue.Json)]),
         new("counts", ["variable"], null, [Whole("variable"), new MirrorColumn("done_switch", "doneSwitch", MirrorValue.Whole), new MirrorColumn("done_value", "doneValue", MirrorValue.Whole)]),
         new("actor_changes", [], "site", [Whole("actor"), Whole("gate"), .. Place(), Whole("ran")]),
-        new("prize_variables", ["variable"], null, [Whole("variable")]),
         new("prize_switches", ["switch"], null, [new MirrorColumn("switch_id", "switch", MirrorValue.Whole)]),
         new("event_rewards", ["kind", "id"], null, [Text("kind"), Whole("id"), Whole("most"), Whole("sided"), Whole("route"), Whole("final")]),
         new("side_events", ["site"], "site", [Whole("choice")]),

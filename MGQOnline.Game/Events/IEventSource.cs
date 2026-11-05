@@ -2,6 +2,7 @@
 //  IEventSource.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Named the battlefuck events
 //      Paulinchen  2026-10-28: Created
 //
 //----------------------------------------------------------------
@@ -13,8 +14,8 @@ namespace MGQOnline.Game.Events;
 
 /// <summary>
 /// The game's events as the rules read them: the lists of the map events' pages and of the common
-/// events, what each list reads and writes, which common events call one, and the switches and
-/// variables the game uses as scratch.
+/// events, what each list reads and writes, which common events call one, the battlefuck events,
+/// and the switches and variables the game uses as scratch.
 /// </summary>
 public interface IEventSource
 {
@@ -81,6 +82,12 @@ public interface IEventSource
     /// <param name="id">The common event called.</param>
     /// <returns>The callers, each once, by id.</returns>
     IReadOnlyList<long> CallersOf(long id);
+
+    /// <summary>
+    /// Gets the battlefuck events, found once (<see cref="BattlefuckEvents.Walk"/>), whose pages play
+    /// in the player's own game alone.
+    /// </summary>
+    IReadOnlySet<long> Battlefucks { get; }
 
     /// <summary>
     /// Reports whether the game uses a switch as scratch while an event runs.

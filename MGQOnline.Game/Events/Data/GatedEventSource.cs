@@ -2,6 +2,7 @@
 //  GatedEventSource.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Kept the battlefuck events whatever the gate reads
 //      Paulinchen  2026-10-28: Created
 //
 //----------------------------------------------------------------
@@ -56,6 +57,12 @@ public sealed class GatedEventSource(IEventSource source, EventDataGate gate) : 
 
     /// <inheritdoc />
     public IReadOnlyList<long> CallersOf(long id) => ReadsCommons ? source.CallersOf(id) : [];
+
+    /// <summary>
+    /// Gets the battlefuck events, read whatever the gate lets through, so a page that calls one plays
+    /// alone though the common events differ from the game data.
+    /// </summary>
+    public IReadOnlySet<long> Battlefucks => source.Battlefucks;
 
     /// <inheritdoc />
     public bool IsScratchSwitch(long id) => source.IsScratchSwitch(id);

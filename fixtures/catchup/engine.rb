@@ -2,6 +2,12 @@
 #  engine.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Gave a prize from its row only as history before the world's log, but the Medal King's free gift, as the C# engine does
+#                            - Played the orbs' event only as history before the world's log, as the C# engine does
+#                            - Never gave back in the repair an item an event of the game takes away, as the C# engine does
+#                            - Held a companion a replay hands out by the world's companion sharing and the join's level, as the C# engine does
+#                            - Let a companion of a replay that went the player's own way join as the player's own, waiting for the join's gate, as the C# engine does
+#                            - Left found key items and their uses to the story replay, and kept the found marks for the Makina alone, as the C# engine does
 #      Paulinchen  2026-11-01: Handed out found key items too, each once per save, as the C# engine does
 #                            - Took a copy of each key item another player's event used up, once per use and save, as the C# engine does
 #                            - Gave the companions of the Alice and Ilias choice only to the players who took that side along or played a route that gives them, as the C# engine does
@@ -72,17 +78,12 @@ module CatchupEngine
   GROWTH_CHECKS = 10
 
   # The rewards the story trades away again, which the repair of old notes never gives.
-  TRADED_REWARDS = [[:w, 4112]]
 
-  # The map and letter of the self switches that tell which items a player of the world found.
+  # The map and letter of the self switches that tell which Makina a player of the world found.
   FOUND_MAP = 0
 
   # See FOUND_MAP.
   FOUND_LETTER = "F"
-
-  # The start of the letter of the self switches of FOUND_MAP that tell which items an event of a
-  # player of the world used up, one for each use.
-  USED_PREFIX = "U"
 
   # The switches and variables the engine reads besides the rows' marks.
   ENGINE_SWITCHES = [ALICE_CHOSEN, ILIAS_CHOSEN] + CLEAR_SWITCHES
@@ -104,7 +105,7 @@ module CatchupEngine
   # The tables read, with what is worked out of them once.
   class Tables
     attr_accessor :parts, :joins, :removals, :key_items, :chests, :rewards, :lessons, :class_levels, :actor_changes, :settings, :vehicles,
-                  :makina, :prize_variables, :rules, :counts, :companion_values, :side_events
+                  :makina, :prize_switches, :taken_items, :rules, :counts, :companion_values, :side_events
 
     # Keeps what a block builds from the tables once.
     #
@@ -167,7 +168,8 @@ module CatchupEngine
     end.compact
 
     t.makina = rows.call("makina").map { |row| whole?(row, "item", "level") && row["site"].to_s != "" ? Makina.new(row["item"], row["level"], row["site"]) : nil }.compact
-    t.prize_variables = rows.call("prize_variables").map { |row| row["variable"] }.select { |id| id.is_a?(Integer) }
+    t.prize_switches = rows.call("prize_switches").map { |row| row["switch"] }.select { |id| id.is_a?(Integer) }
+    t.taken_items = rows.call("taken_items").map { |row| row["item"].to_s }
     t.rules = {}
     rows.call("rules").each { |row| t.rules[row["rule"]] = row["value"] if row.key?("value") }
     t.counts = rows.call("counts").map do |row|
@@ -368,9 +370,6 @@ module CatchupEngine
       @items = (request["items"] || {}).dup
       @worn = Array(request["worn"])
       @unlock_ids = Array(request["unlocks"])
-      @key_ids = Array(request["key_items"])
-      @got = Array(request["got"])
-      @spent = Array(request["spent"])
       choices = ChoicesStandIn.personal("raid" => true, "own" => nil)
       @choice_switches = Array(choices["s"])
       @choice_variables = Array(choices["v"])
@@ -389,7 +388,7 @@ module CatchupEngine
     # Answers catchup.check.
     #
     # @return [Hash] "actions", "ledger" (nil while unchanged), "visiting", "ask_side", "orbs",
-    #   "sharable", "got", "given", "take" and "spent".
+    #   and "sharable".
     def check
       answer = {}
       note_route
@@ -410,7 +409,6 @@ module CatchupEngine
         answer["orbs"] = @mode == "world" && orbs_due?
         check_makina
         missed_companions
-        answer["got"], answer["given"], answer["take"], answer["spent"] = check_found_items
         check_counts
       end
       answer["visiting"] = @roster.map { |entry| entry[0] }.select { |id| visiting?(id, story_now) }
@@ -439,6 +437,20 @@ module CatchupEngine
       unless in_roster?(main) || allowed_at?(main, @request["site"], noted_side)
         log("left out the join of {actor:#{main}} at #{@request['site']}: it is for the players who took the other side along, and the player took #{noted_side || 'no side'} along")
         return finish("gate" => nil, "refused" => true)
+      end
+      if @request["replay"] && !in_roster?(main)
+        first = joins_of(main).first
+        due = first ? first.gate : (@request["start"] || 1)
+        shares = @sharing == "all" || (@sharing == "story" && !first.nil?)
+        if @request["own_way"]
+          unless allowed?(main)
+            log("left out the join of {actor:#{main}} a replay the player answered their own way hands out: the player has no right to them")
+            return finish("gate" => nil, "refused" => true)
+          end
+        elsif !(shares && allowed?(main) && reached?(due))
+          log("left out the join of {actor:#{main}} a replay hands out: the world's companion sharing (#{@sharing}) #{shares && allowed?(main) ? "brings them once the player's level reaches #{due}" : 'brings them to no other player'}")
+          return finish("gate" => nil, "refused" => true)
+        end
       end
       return finish("gate" => gate) if @request["scope_only"]
 
@@ -1080,7 +1092,7 @@ module CatchupEngine
         next if done[key] || (carried && !carries?(row)) || !passed?(row, story)
 
         done[key] = true
-        next unless (carried && before_log?(row)) || unclaimed_prize?(row)
+        next unless (carried && before_log?(row)) || medal_king_owed?(row)
 
         if waits
           waits[key] = ledger["capped"]
@@ -1095,9 +1107,9 @@ module CatchupEngine
       gifts
     end
 
-    # @return [Boolean] Whether a prize row the story passed is another player's claim.
-    def unclaimed_prize?(row)
-      return false unless row.kind != :skill && row.marks.any? { |mark| mark[0] == :v && @t.prize_variables.include?(mark[1]) }
+    # @return [Boolean] Whether a row the story passed is a Medal King gift the player is owed.
+    def medal_king_owed?(row)
+      return false unless row.kind != :skill && row.marks.any? { |mark| mark[0] == :s && @t.prize_switches.include?(mark[1]) }
 
       key = "#{row.kind}#{row.id}"
       @items.key?(key) && !held?(key)
@@ -1204,7 +1216,7 @@ module CatchupEngine
       @t.rewards.each do |row|
         key = key_of("g", row)
         next unless row.kind != :skill && notes["done"][key] && !notes["waits"].key?(key) && carries?(row)
-        next if TRADED_REWARDS.include?([row.kind, row.id])
+        next if @t.taken_items.include?("#{row.kind}#{row.id}")
         next unless row.site.to_s.start_with?("map:") && before_log?(row) && passed?(row, story)
 
         item = "#{row.kind}#{row.id}"
@@ -1264,11 +1276,11 @@ module CatchupEngine
         @items[item] = [@items[item] + amount, 0].max
       else
         @items[item] += amount
-        found(id) if kind.to_s == "i" && (@unlock_ids.include?(id) || makina?(id))
+        found(id) if kind.to_s == "i" && makina?(id)
       end
     end
 
-    # Notes an item as found for the world, as the scripts' gained does for one the player gains.
+    # Notes a Makina as found for the world, as the scripts' gained does for one the player gains.
     #
     # @param id [Integer] The item.
     def found(id)
@@ -1310,6 +1322,7 @@ module CatchupEngine
       gathered = rule("orbs_gathered")
       return false if orbs.nil? || orbs.empty? || gathered.nil? || rule("orb_event").nil?
       return false unless story_now[1][MAIN_PROGRESS].to_i < gathered
+      return false if @log && @log[1][MAIN_PROGRESS].to_i < gathered
 
       orbs.all? { |id| @items.key?("i#{id}") && @items["i#{id}"] > 0 }
     end
@@ -1564,68 +1577,6 @@ module CatchupEngine
     # @return [Boolean] Whether an item is a Makina.
     def makina?(id)
       @t.makina.any? { |row| row.item == id }
-    end
-
-    # Hands out every found key item and item unlocking a job or race the save never held, keeps
-    # one of each item unlocking a job or race, and counts the copies another player's event used
-    # up, as FoundItems does for the C# engine; a Makina waits for its level.
-    #
-    # @return [Array<Array>] Every item the save has held, the items given, the items to take a copy
-    #   of and every use the save counted.
-    def check_found_items
-      held = {}
-      (@unlock_ids + @key_ids).each { |id| held[id] = @items["i#{id}"] if @items.key?("i#{id}") }
-      had = @got | held.keys.select { |id| held[id] > 0 }
-      found = found_ids.reject { |id| makina?(id) }
-      found.each do |id|
-        next unless held.key?(id) && held[id] > 1 && @unlock_ids.include?(id)
-
-        @actions << ["trim", id, held[id] - 1]
-        @items["i#{id}"] -= held[id] - 1
-        held[id] = 1
-      end
-      spent = @spent.dup
-      used = []
-      takes = []
-      used_ids.sort.each do |use|
-        id = use.split(".", 2)[0].to_i
-        used << id
-        next if spent.include?(use)
-
-        spent << use
-        next unless held[id].to_i > 0
-
-        takes << id
-        held[id] -= 1
-      end
-      gives = []
-      found.each do |id|
-        next unless held[id] == 0 && !used.include?(id) && !had.include?(id)
-
-        had << id
-        gives << id
-      end
-      gives.each { |id| give("i", id, 1, "found:#{id}", false) }
-      takes.each { |id| @items["i#{id}"] -= 1 }
-      [had.sort, gives, takes, spent.sort]
-    end
-
-    # @return [Array<Integer>] The items found in the player's story and the world's.
-    def found_ids
-      marks_on.select { |key| key[2] == FOUND_LETTER }.map { |key| key[1] }.uniq
-    end
-
-    # @return [Array<String>] The uses of items by events in the player's story and the world's, as
-    #   "item.mark".
-    def used_ids
-      marks_on.select { |key| key[2].start_with?(USED_PREFIX) }.map { |key| "#{key[1]}.#{key[2]}" }.uniq
-    end
-
-    # @return [Array<Array>] The self switches of FOUND_MAP on in the player's story and the world's.
-    def marks_on
-      stories = [story_now[2]]
-      stories << @told[2] if @told
-      stories.flat_map { |selfs| selfs.keys.select { |key| selfs[key] && key[0] == FOUND_MAP } }
     end
 
     # Plays the recruit page of every story companion the roster lacks once the player's story

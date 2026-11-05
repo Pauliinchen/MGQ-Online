@@ -2,6 +2,7 @@
 //  PageMatch.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Told whether a run's page calls a common event
 //      Paulinchen  2026-11-01: Left what a choice's answers take out of whether the choice is the receiver's, since a replay takes nothing
 //                            - Told whether an extended choice is the receiver's too, each answer by all the branches it runs
 //                            - Found a choice by its place among the kept commands while the player's list has the database's shape, and followed its answers' jumps
@@ -174,6 +175,15 @@ public sealed class PageMatch(EventStore store)
     }
 
     /// <summary>
+    /// Tells whether a run's page, or a common event it calls, calls a common event.
+    /// </summary>
+    /// <param name="site">Where the run started.</param>
+    /// <param name="commonId">The common event.</param>
+    /// <returns>Whether it does; false for a site the database lacks.</returns>
+    public bool Calls(ReplaySite site, int commonId) =>
+        (site.IsCommon && site.CommonId == commonId) || (ListOf(site) is { } listId && CallsFrom(listId, commonId, []));
+
+    /// <summary>
     /// Tells whether a choice a run's player answered is the receiver's to answer (rule 4, answer 11):
     /// its answers do different things to the receiver's own things, the keys a player keeps and
     /// what they hold, where an answer that jumps to a label does what follows the label too. What
@@ -329,6 +339,16 @@ public sealed class PageMatch(EventStore store)
             }
         }
     }
+
+    /// <summary>
+    /// Tells whether a list, or a common event it calls, calls a common event.
+    /// </summary>
+    /// <param name="listId">The list.</param>
+    /// <param name="commonId">The common event.</param>
+    /// <param name="seen">The lists walked already.</param>
+    /// <returns>Whether it does.</returns>
+    private bool CallsFrom(int listId, int commonId, HashSet<int> seen) =>
+        seen.Add(listId) && store.RowsOf(listId).Calls.Any(call => call.CommonId == commonId || (store.Common(call.CommonId) is { } common && CallsFrom(common.ListId, commonId, seen)));
 
     /// <summary>
     /// Finds the keys a page writes, through the common events it calls, whose self switches are

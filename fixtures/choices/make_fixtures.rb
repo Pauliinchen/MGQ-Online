@@ -2,6 +2,8 @@
 #  make_fixtures.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Kept the walk's outcomes of the branch events from the cases it rewrites, and dropped the Navy's maps and self switches, which the reviewed key list keeps
+#                            - Put the Spider Princess's choice at point 31, as C# does
 #      Paulinchen  2026-10-31: Read the old scripts from a commit that feat/refactor holds
 #                            - Wrote the texts C# words anew as C# words them
 #      Paulinchen  2026-10-28: Created
@@ -15,9 +17,14 @@
 # the reply the old rule gave. MGQOnline.Game.Tests replays every case, and the script tests'
 # stand-in (GameScript/Tests/choices_support.rb) is checked against them. The script no longer holds
 # those rules, so hand it the script of commit 40f11e4d, which still kept them, to write the cases
-# again, on Ruby 3.3 (the table of the branch events and the replies on them have since been
-# rewritten from what C# answers with the outcomes the walk of the game's data found, which a new
-# recording would undo):
+# again, on Ruby 3.3. Since 2026-11-01 the outcomes of the branch events come from the walk of the
+# game's data (ChoiceTable.Outcomes.cs), which no old script knows: a new recording keeps the
+# table's branches, Succubus outcomes, choice companions and keys, the branches' hints the table
+# topic answers, and the replies of the outcome, note, prompt and personal topics from the
+# cases.json it rewrites, which MGQOnline.Game.Tests holds to what C# answers, and drops a recorded
+# case of those topics the walk has no outcome for. Since 2026-11-05 the Navy's maps and self
+# switches are in the reviewed key list, so the table and the personal replies hold none, and the
+# Spider Princess's choice stands at point 31, where the game offers her join, not at the old 30:
 #
 #   git show 40f11e4d:GameScript/Multiplayer/Scripts/coop_choices.rbx > old_choices.rbx
 #   ruby fixtures/choices/make_fixtures.rb old_choices.rbx
@@ -80,6 +87,8 @@ Peer = Struct.new(:state)
 
 load(ARGV[0] || abort("Name the coop_choices.rbx of commit 40f11e4d, see the header."))
 CHOICES = MGQ_MpCoopChoices
+# At point 30 the game plays only the first meeting; a catch-up there must not hand her over yet.
+CHOICES.branch(:spider).point = 31
 
 # The switches, variables and companions the rules read, in the order the requests name them.
 READS = { "s" => [4, 5, 2090, 2096, 2097, 2148, 2149, 2210, 2211, 2212, 2213, 2280, 2281, 7096, 7097], "v" => [912, 1001, 1050, 1051, 1061], "roster" => [153, 163, 167] }
@@ -467,7 +476,24 @@ record("choices.table", nil,
          "great_decision" => CHOICES::GREAT_DECISION, "routes" => CHOICES::ROUTES, "chaos_start" => CHOICES::CHAOS_START, "decision" => decision,
          "offer_frames" => CHOICES::OFFER_FRAMES })
 
+# The parts the walk of the game's data answers since 2026-11-01, kept from the cases rewritten.
+WALKED_TABLE = %w(branches succubus choice_companions keys)
+WALKED_TOPICS = %w(choices.outcome choices.note choices.prompts choices.personal)
+path = File.join(__dir__, "cases.json")
+walked = JSON.parse(File.read(path))
+table.delete("succubus_switches")
+table.delete("navy_maps")
+table.delete("navy_self_switches")
+WALKED_TABLE.each { |key| table[key] = walked["table"].fetch(key) }
+table["branches"].each { |branch| branch["point"] = CHOICES.branch(branch["key"].to_sym).point }
+replies = {}
+walked["cases"].each { |entry| replies[[entry["topic"], JSON.generate(entry["request"])]] = entry["reply"] if WALKED_TOPICS.include?(entry["topic"]) }
+CASES.select! { |entry| !WALKED_TOPICS.include?(entry["topic"]) || replies.key?([entry["topic"], JSON.generate(entry["request"])]) }
+CASES.each { |entry| entry["reply"] = replies[[entry["topic"], JSON.generate(entry["request"])]] if WALKED_TOPICS.include?(entry["topic"]) }
+CASES.each { |entry| entry["reply"]["branches"] = table["branches"].map { |branch| branch.values_at("key", "title", "point", "hint") } if entry["topic"] == "choices.table" }
+
 lines = CASES.map { |entry| "    " + JSON.generate(entry) }
-text = "{\n  \"source\": \"coop_choices.rbx at 40f11e4d, Ruby #{RUBY_VERSION}\",\n  \"table\": #{JSON.generate(table)},\n  \"cases\": [\n#{lines.join(",\n")}\n  ]\n}\n"
-File.write(File.join(__dir__, "cases.json"), text)
+source = "coop_choices.rbx at 40f11e4d, Ruby #{RUBY_VERSION}; the outcomes of the branch events from the walk of the game data (ChoiceTable.Outcomes.cs) since 2026-11-01"
+text = "{\n  \"source\": \"#{source}\",\n  \"table\": #{JSON.generate(table)},\n  \"cases\": [\n#{lines.join(",\n")}\n  ]\n}\n"
+File.write(path, text)
 puts "wrote #{CASES.size} cases"

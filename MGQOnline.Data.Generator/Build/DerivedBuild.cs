@@ -2,6 +2,7 @@
 //  DerivedBuild.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Flagged the battlefuck events the sorter reads
 //      Paulinchen  2026-11-01: Derived the branches of each extended choice too
 //      Paulinchen  2026-10-31: Derived the pairs the one-time repair of stuck saves completes
 //                            - Derived the lists that give and the branches of each choice
@@ -66,7 +67,7 @@ internal static class DerivedBuild
             rows.Switches.Where(row => row.Scratch).Select(row => (long)row.Id).ToHashSet(),
             rows.Variables.Where(row => row.Scratch).Select(row => (long)row.Id).ToHashSet());
 
-        SortedSet<long> battlefucks = CommonFlags.Battlefucks(game);
+        IReadOnlySet<long> battlefucks = game.Battlefucks;
         for (int index = 0; index < rows.CommonEvents.Count; index++)
         {
             CommonEventRow common = rows.CommonEvents[index];

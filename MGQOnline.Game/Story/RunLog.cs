@@ -2,6 +2,7 @@
 //  RunLog.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Counted a battle's drops done only once their own entry claimed them
 //      Paulinchen  2026-10-31: Kept the cursor of each stream of a track
 //                            - Created
 //
@@ -161,13 +162,23 @@ public sealed class RunLog
     /// <summary>
     /// Decides whether a run handed to the player is done already, and takes the step that makes it
     /// so: one this entry claimed before, any entry behind the start place, or the first standing
-    /// step of its site no entry of its stream claimed yet.
+    /// step of its site no entry of its stream claimed yet. A battle's drops are done only once
+    /// their own entry claimed them, in any stream.
     /// </summary>
+    /// <remarks>
+    /// Every battle's drops share one site, so a step of the player's own drops must not claim
+    /// another player's, and a track hands an entry back under the stream it came on.
+    /// </remarks>
     /// <param name="entry">The run's entry.</param>
     /// <returns>Whether it is done, so nothing happens.</returns>
     public bool Claims(ReplayEntry entry)
     {
         ArgumentNullException.ThrowIfNull(entry);
+        if (entry.Site.IsDrop)
+        {
+            return _steps.Exists(step => step.Claims.ContainsValue(entry.Id));
+        }
+
         if (_steps.Exists(step => step.Claims.TryGetValue(entry.Stream, out string? id) && id == entry.Id)
             || (StartPlace is not null && entry.Place is not null && entry.Place.Behind(StartPlace)))
         {

@@ -2,6 +2,7 @@
 //  CatchupTablesTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Dropped the check of the prize counts, which the story replay hands over
 //      Paulinchen  2026-10-31: Covered a world chest read without the chest flags released builds still get
 //      Paulinchen  2026-10-28: Read the free order rule
 //                            - Created
@@ -46,7 +47,6 @@ public sealed class CatchupTablesTests
         Assert.Equal((StoryKey.SelfSwitch(127, 81, "A"), 511), (tables.Chests[0].Key, tables.Chests[0].Items[0]));
         Assert.Contains(tables.Settings, setting => setting.Kind == "encounters" && !setting.On && setting.Place.Site == "map:545:1:1");
         Assert.Equal((540, 1009, 2L), (tables.CompanionValues[0].Actor, tables.CompanionValues[0].Variable, tables.CompanionValues[0].AtLeast));
-        Assert.Contains(87, tables.PrizeVariables);
     }
 
     /// <summary>

@@ -2,6 +2,7 @@
 //  DatabaseSource.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Read the battlefuck events the database lists
 //      Paulinchen  2026-10-28: Read the rows and commands of a list as the event store source does
 //                            - Read the folder rule of transfers from the game data paths
 //                            - Created
@@ -93,6 +94,7 @@ internal sealed class DatabaseSource : IEventSource
         _scratchSwitches = [.. switches.Where(row => row.Scratch).Select(row => (long)row.Id)];
         _scratchVariables = [.. store.All(EventTables.Variables).Where(row => row.Scratch).Select(row => (long)row.Id)];
         ChestFlags = [.. switches.Where(row => row.ChestFlag).Select(row => row.Id).Order()];
+        Battlefucks = new HashSet<long>(Commons.Where(common => common.Battlefuck).Select(common => (long)common.Id));
 
         Dictionary<int, long> commonOfList = Commons.ToDictionary(common => common.ListId, common => (long)common.Id);
         _callers = _rows
@@ -166,6 +168,9 @@ internal sealed class DatabaseSource : IEventSource
 
     /// <inheritdoc />
     public IReadOnlyList<long> CallersOf(long id) => _callers.GetValueOrDefault(id) ?? [];
+
+    /// <inheritdoc />
+    public IReadOnlySet<long> Battlefucks { get; }
 
     /// <inheritdoc />
     public bool IsScratchSwitch(long id) => _scratchSwitches.Contains(id);

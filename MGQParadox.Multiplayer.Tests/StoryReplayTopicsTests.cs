@@ -2,6 +2,9 @@
 //  StoryReplayTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Covered a talk that gave a key item handed over in both world types, a Makina never, and the Medal King's run never
+//                            - Covered a chest's trade played the way its own letter shut it, without asking the player
+//                            - Covered a battle's drop of a key item reaching the other players in both world types, once, and never the player who won it
 //      Paulinchen  2026-11-01: Covered a choice named by its place among the kept commands, with the shapes of the receiver's lists, and the side pick never handed over
 //      Paulinchen  2026-10-31: Read a Classic party's scopes from a reviewed list that shares the story's progress and map 1
 //                            - Covered story runs handed to the leader's story and the choices a receiver is asked
@@ -32,13 +35,14 @@ public sealed class StoryReplayTopicsTests
     /// <summary>
     /// The reviewed list of a Classic world: switch 2045 a chest's, variable 57 a work key, the
     /// story's progress, the switches 300 to 305 and the self switches of map 1 the world's, the chest
-    /// 1:7 a party chest, and 1:11 where the player takes a side along.
+    /// 1:7 a party chest, 1:11 where the player takes a side along, and the Makina 700.
     /// </summary>
     private const string Mapping = """
         {"rev": 4, "tables": {"keys": [{"key": "s2045", "kind": "chest"}, {"key": "v57", "kind": "personal", "work": true}, {"key": "v1001", "kind": "shared"},
                     {"key": "s300", "kind": "shared"}, {"key": "s301", "kind": "shared"}, {"key": "s303", "kind": "shared"}, {"key": "s304", "kind": "shared"}, {"key": "s305", "kind": "shared"}],
          "events": [{"key": "ss1.*.*", "share": "shared"}], "party_chests": [{"key": "ss1.7.A"}],
-         "side_events": [{"site": "map:1:11", "alice": {"skills": [], "companions": [5]}, "ilias": {"skills": [], "companions": []}, "choice": true, "marks": []}]}, "index": null}
+         "side_events": [{"site": "map:1:11", "alice": {"skills": [], "companions": [5]}, "ilias": {"skills": [], "companions": []}, "choice": true, "marks": []}],
+         "makina": [{"item": 700, "level": 6, "site": "map:215:23:1"}]}, "index": null}
         """;
 
     /// <summary>
@@ -57,7 +61,9 @@ public sealed class StoryReplayTopicsTests
     /// that turns the world's switch 300 on and gives a potion, one that only turns 301 on, and one
     /// with two choices: the first one's answers turn on the player's own switch 1001 or 1002, the
     /// second one's the world's 303 or 304, each with the player's own 1003; and where the player
-    /// takes a side along, which turns 300 on and gives a potion.
+    /// takes a side along, which turns 300 on and gives a potion; the Medal King, whose common event
+    /// 140 turns 300 on and gives a potion; and a trade like the Fortune Teller's, whose first
+    /// answer takes a wrist, gives the permit and turns B on.
     /// </summary>
     public StoryReplayTopicsTests()
     {
@@ -79,9 +85,17 @@ public sealed class StoryReplayTopicsTests
                 C(102, "Yes", 2), C(402, 0, "Yes"), At(121, 1, 1001, 1001, 0), At(0, 1), C(402, 1, "No"), At(121, 1, 1002, 1002, 0), At(0, 1), C(404),
                 C(102, "Yes", 2), C(402, 0, "Yes"), At(121, 1, 303, 303, 0), At(121, 1, 1003, 1003, 0), At(0, 1),
                 C(402, 1, "No"), At(121, 1, 304, 304, 0), At(121, 1, 1003, 1003, 0), At(0, 1), C(404), C(121, 305, 305, 0)]))
-            .MapEvent(1, 11, 4, 0, new TinyPage([C(121, 300, 300, 0), C(126, 1, 0, 0, 1)])));
+            .MapEvent(1, 11, 4, 0, new TinyPage([C(121, 300, 300, 0), C(126, 1, 0, 0, 1)]))
+            .Common(140, C(121, 300, 300, 0), C(126, 1, 0, 0, 1))
+            .MapEvent(1, 12, 5, 0, new TinyPage([C(117, 140)]))
+            .MapEvent(1, 13, 6, 0, new TinyPage([
+                C(102, "Trade", 2), C(402, 0, "Trade"), At(126, 1, 1734, 1, 0, 1), At(126, 1, 610, 0, 0, 1), At(123, 1, "B", 0), At(0, 1), C(402, 1, "Decline"), At(0, 1), C(404)])));
         topics.Events = () => events;
-        _shapes = new RubyHash { { "map:1:10:1", events.Store.List(events.Store.Page(1, 10, 0)!.Value.ListId)!.Value.Shape } };
+        _shapes = new RubyHash
+        {
+            { "map:1:10:1", events.Store.List(events.Store.Page(1, 10, 0)!.Value.ListId)!.Value.Shape },
+            { "map:1:13:1", events.Store.List(events.Store.Page(1, 13, 0)!.Value.ListId)!.Value.Shape },
+        };
         Call(StoryTopics.MappingTopic, "w1");
         Drain(1);
         Drain(2);
@@ -346,6 +360,112 @@ public sealed class StoryReplayTopicsTests
     }
 
     /// <summary>
+    /// Asserts that a chest of the player's history with a trade plays the way its own letter shut
+    /// it: the trade is answered, not asked, so a player caught up past the Fortune Teller gets the
+    /// permit (user decision 2026-11-05).
+    /// </summary>
+    [Fact]
+    public void Derive_AnswersAChestsTradeTheWayItsLetterShutIt()
+    {
+        RubyArray traded = [new RubyArray { "map:1:13:1@0", 0, "choice", 0 }];
+        Call(StoryTopics.ReplayScopesTopic, new RubyHash { { "party", true } });
+
+        RubyHash derived = Call(StoryTopics.ReplayDeriveTopic, new RubyHash { { "chest", "ss1.13.B" }, { "party", true } }).AsHash();
+        RubyHash taken = Take(derived, new RubyHash { { "ss1.13.B", "0" } });
+
+        Assert.Equal(traded, derived["inputs"]);
+        Assert.Equal(("replay", traded), (taken["do"].AsText(), taken["inputs"]));
+    }
+
+    /// <summary>
+    /// Asserts that a talk that gave a key item, and changed only the player's own keys, still goes to
+    /// the party, and is replayed by a member who lacks it (user decision 2026-11-04).
+    /// </summary>
+    [Fact]
+    public void Ran_HandsATalkThatGaveAKeyItemToTheParty()
+    {
+        RubyHash entry = Ran(new RubyHash { { "v9", Pair("n0", "n1") } }, site: "map:1:9:1", found: [new RubyArray { 613, 1 }]).AsHash();
+
+        Assert.Equal(("party", "party:1", true), (entry["scope"].AsText(), entry["stream"].AsText(), entry["found"] is RubyBool { Flag: true }));
+        Assert.Equal(new RubyHash(), entry["keys"]);
+        Assert.Equal("done", Take(entry, new RubyHash())["do"].AsText());
+        Assert.Equal("replay", Take(OtherMembers(entry), new RubyHash())["do"].AsText());
+    }
+
+    /// <summary>
+    /// Asserts that in a Raid World a talk that gave a key item goes to the player's track as the
+    /// world's, while one that gave a Makina, which every player gets by level, goes nowhere.
+    /// </summary>
+    [Fact]
+    public void Ran_HandsARaidTalkThatGaveAKeyItemToTheWorldButNoMakina()
+    {
+        RubyHash entry = RaidRan([new RubyArray { 613, 1 }]).AsHash();
+
+        Assert.Equal(("world", "t2", true), (entry["scope"].AsText(), entry["stream"].AsText(), entry["found"] is RubyBool { Flag: true }));
+        Assert.True(RaidRan([new RubyArray { 700, 1 }]).IsNil);
+    }
+
+    /// <summary>
+    /// Asserts that the Medal King's run is never handed over, though it changed a world key and
+    /// gives: his free gift reaches every player by its own rule.
+    /// </summary>
+    [Fact]
+    public void Ran_NeverHandsOverTheMedalKingsRun()
+    {
+        Assert.True(Ran(new RubyHash { { "s300", Pair("0", "1") } }, site: "map:1:12:1").IsNil);
+    }
+
+    /// <summary>
+    /// Asserts that a battle's drop of a key item reaches the other members of a Classic party like a
+    /// found item's run (user decision 2026-11-05): the player who won it never takes it back, another
+    /// member's game gets the item once with its notice, and a save made after it knows it as done.
+    /// </summary>
+    [Fact]
+    public void Drop_HandsAKeyItemFromABattleToTheParty()
+    {
+        RubyHash entry = Call(StoryTopics.ReplayDropTopic, Drop(true, [new RubyArray { 613, 1 }])).AsHash();
+        RubyHash other = OtherMembers(entry);
+        other["opener"] = "Ana";
+        RubyHash crossed = Call(StoryTopics.ReplayUnwireTopic, Call(StoryTopics.ReplayWireTopic, other)).AsHash();
+        crossed["opener"] = "Ana";
+
+        RubyHash gain = Take(crossed, []);
+        RubyHash done = Call(StoryTopics.ReplayDoneTopic, new RubyHash
+        {
+            { "entry", crossed }, { "reached", true }, { "before", new RubyHash() }, { "reads", new RubyHash() },
+            { "had", new RubyArray() }, { "has", new RubyArray { new RubyArray { "i613", 1, "Colosseum Pass", false } } },
+        }).AsHash();
+        Call(StoryTopics.ReplayLogTopic, new RubyHash { { "log", Call(StoryTopics.ReplayLogSaveTopic, RubyNil.Value) }, { "place", RubyNil.Value } });
+
+        Assert.Equal(("party", "party:1", "game:drop"), (entry["scope"].AsText(), entry["stream"].AsText(), entry["site"].AsText()));
+        Assert.Equal("done", Take(entry, [])["do"].AsText());
+        Assert.Equal(("gain", new RubyArray { new RubyArray { 613, 1 } }), (gain["do"].AsText(), gain["items"]));
+        Assert.Equal("Ana won a battle drop for everyone: Colosseum Pass.", done["notice"].AsText());
+        Assert.Equal("done", Take(crossed, [])["do"].AsText());
+    }
+
+    /// <summary>
+    /// Asserts that in a Raid World a battle's drop of a key item goes to the player's track as the
+    /// world's; another player's drop that the world's track hands on gives its item, though the
+    /// player's own drop stands at the same site, and the player's own comes back as done; a drop of
+    /// a Makina, which every player gets by level, goes nowhere.
+    /// </summary>
+    [Fact]
+    public void Drop_HandsARaidDropToTheWorldButNoMakina()
+    {
+        RubyHash entry = Call(StoryTopics.ReplayDropTopic, Drop(false, [new RubyArray { 613, 1 }])).AsHash();
+        RubyHash others = OtherMembers(entry);
+        others["stream"] = "world";
+        RubyHash back = OtherMembers(others);
+        back["id"] = entry["id"];
+
+        Assert.Equal(("world", "t2"), (entry["scope"].AsText(), entry["stream"].AsText()));
+        Assert.Equal("gain", Take(others, [])["do"].AsText());
+        Assert.Equal("done", Take(back, [])["do"].AsText());
+        Assert.True(Call(StoryTopics.ReplayDropTopic, Drop(false, [new RubyArray { 700, 1 }])).IsNil);
+    }
+
+    /// <summary>
     /// Makes the entry of a run another member's game made of the chest.
     /// </summary>
     /// <returns>The entry.</returns>
@@ -364,11 +484,52 @@ public sealed class StoryReplayTopicsTests
     /// <param name="site">The page it ran.</param>
     /// <param name="owner">Whether the player owns the story's stream, as its leader.</param>
     /// <returns>The answer.</returns>
-    private RubyValue Ran(RubyHash changed, string? party = "party:1", string site = "map:1:7:1", bool owner = true) => Call(StoryTopics.ReplayRanTopic, new RubyHash
+    private RubyValue Ran(RubyHash changed, string? party = "party:1", string site = "map:1:7:1", bool owner = true, RubyArray? found = null) => Call(StoryTopics.ReplayRanTopic, new RubyHash
     {
         { "site", site }, { "party", true }, { "stream", "story:lead" }, { "party_stream", party is null ? RubyNil.Value : party }, { "owner", owner },
-        { "changed", changed }, { "start", new RubyHash { { "v1001", "n5" } } }, { "place", new RubyArray { 5, 0, 0, 0 } }, { "inputs", new RubyArray() }, { "opener", "Ana" },
+        { "changed", changed }, { "found", found is null ? RubyNil.Value : found }, { "start", new RubyHash { { "v1001", "n5" } } }, { "place", new RubyArray { 5, 0, 0, 0 } },
+        { "inputs", new RubyArray() }, { "opener", "Ana" },
     });
+
+    /// <summary>
+    /// Ends a run of a Raid World player's talk on their own track that changed no shared key.
+    /// </summary>
+    /// <param name="found">The found items it gave: [[item, change], ...].</param>
+    /// <returns>The answer.</returns>
+    private RubyValue RaidRan(RubyArray found) => Call(StoryTopics.ReplayRanTopic, new RubyHash
+    {
+        { "site", "map:1:9:1" }, { "party", false }, { "stream", "t2" }, { "party_stream", RubyNil.Value }, { "owner", false }, { "changed", new RubyHash() },
+        { "found", found }, { "start", new RubyHash() }, { "place", new RubyArray { 5, 0, 0, 0 } }, { "inputs", new RubyArray() }, { "opener", "Ana" },
+    });
+
+    /// <summary>
+    /// Hands over the drops of a battle the player won, as a member of a Classic party or on their own
+    /// track of a Raid World.
+    /// </summary>
+    /// <param name="classic">Whether the world is a Classic world.</param>
+    /// <param name="found">The found items the drops gave: [[item, change], ...].</param>
+    /// <returns>The request.</returns>
+    private static RubyHash Drop(bool classic, RubyArray found) => new()
+    {
+        { "party", classic }, { "stream", classic ? RubyNil.Value : "t2" }, { "party_stream", classic ? "party:1" : RubyNil.Value }, { "found", found }, { "opener", RubyNil.Value },
+    };
+
+    /// <summary>
+    /// Makes an entry as another member's game would hand it: the same run under another id.
+    /// </summary>
+    /// <param name="entry">The entry.</param>
+    /// <returns>The other member's entry.</returns>
+    private static RubyHash OtherMembers(RubyHash entry)
+    {
+        var other = new RubyHash();
+        foreach ((RubyValue key, RubyValue value) in entry)
+        {
+            other.Add(key, value);
+        }
+
+        other["id"] = "x9";
+        return other;
+    }
 
     /// <summary>
     /// Hands the player's game an entry.

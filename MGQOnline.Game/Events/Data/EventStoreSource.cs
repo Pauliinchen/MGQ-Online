@@ -2,6 +2,7 @@
 //  EventStoreSource.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Read the battlefuck events the generator listed
 //      Paulinchen  2026-10-28: Created
 //
 //----------------------------------------------------------------
@@ -61,6 +62,9 @@ public sealed class EventStoreSource(EventStore store) : IEventSource
 
     /// <inheritdoc />
     public IReadOnlyList<long> CallersOf(long id) => id is > 0 and <= int.MaxValue ? [.. store.CallersOf((int)id).Select(caller => (long)caller)] : [];
+
+    /// <inheritdoc />
+    public IReadOnlySet<long> Battlefucks => store.Battlefucks();
 
     /// <inheritdoc />
     public bool IsScratchSwitch(long id) => id is > 0 and <= int.MaxValue && store.SwitchFlags((int)id) is { Scratch: true };

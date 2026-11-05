@@ -2,6 +2,7 @@
 #  relay_rows.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Wrote the Medal King's switches and the items an event takes away instead of the prize counts
 #      Paulinchen  2026-10-31: Dropped the maps where warping is free
 #      Paulinchen  2026-10-28: Wrote the rewards a party member catches up with as the DLL hands them to the scripts
 #                            - Created
@@ -29,7 +30,7 @@ module CatchupRelayRows
   TABLES = {
     :PARTS => "parts", :JOINS => "joins", :REMOVALS => "removals", :KEY_ITEMS => "key_items", :CHESTS => "chests", :REWARDS => "rewards",
     :LESSONS => "lessons", :CLASS_LEVELS => "class_levels", :ACTOR_CHANGES => "actor_changes", :SETTINGS => "settings", :VEHICLES => "vehicles",
-    :MAKINA => "makina", :PRIZE_VARIABLES => "prize_variables",
+    :MAKINA => "makina", :PRIZE_SWITCHES => "prize_switches", :TAKEN_ITEMS => "taken_items",
   }
 
   # Writes a mark as the relay takes it: its kind as text.
@@ -155,10 +156,16 @@ module CatchupRelayRows
     rows.map { |row| { "item" => row.item, "level" => row.level, "site" => row.site } }
   end
 
-  # @param ids [Array<Integer>] PRIZE_VARIABLES.
+  # @param ids [Array<Integer>] PRIZE_SWITCHES.
   # @return [Array<Hash>] The relay's rows.
-  def self.prize_variables_rows(ids)
-    ids.map { |id| { "variable" => id } }
+  def self.prize_switches_rows(ids)
+    ids.map { |id| { "switch" => id } }
+  end
+
+  # @param items [Array<Array>] TAKEN_ITEMS, each [kind, id] such as [:w, 4112].
+  # @return [Array<Hash>] The rows the DLL reads from the events database instead.
+  def self.taken_items_rows(items)
+    items.map { |kind, id| { "item" => "#{kind}#{id}" } }
   end
 
   # Writes the rewards a party member catches up with as the DLL hands them to the scripts

@@ -2,6 +2,9 @@
 #  story_replay_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Checked that a replay takes a key item it uses up, and dropped the copy got as found
+#                            - Checked that a member ahead keeps the route's key items when the leader returns to the Great Decision
+#                            - Checked that another player's battle drop gives its item with its notice
 #      Paulinchen  2026-11-01: Checked that a choice the record lacks is asked with what its cancel answers
 #                            - Covered a replay that costs nothing and follows the opener through the checks of what the party holds
 #                            - Covered a replay done with the receiver's own answer only when it differs from the opener's
@@ -19,8 +22,8 @@
 # commands as the game's scripts 042, 148 and 167 do. The receiver's own keys decide, a world key
 # reads its start value and never reaches the save, the page stays bound to its map and event, the
 # presentation and the opener's play stay shut, the record answers the inputs, a replay keeps
-# nothing until it finished and reached its step, and the codes and functions the replay leaves out
-# are those the generator's gate closes.
+# nothing until it finished and reached its step, the codes and functions the replay leaves out
+# are those the generator's gate closes, and another player's battle drop gives its item.
 
 require_relative "support"
 
@@ -688,19 +691,32 @@ check("a receiver who answers as the opener did and fails a later check of their
       [done.last["reached"], $game_party.item_number(612), $game_self_switches[[51, 25, "B"]]], [false, 0, false])
 fake.answer("story.replay_take") { |_request| { "do" => "replay", "page" => 1 } }
 
-# A member who got the Fortune Teller Permit as found, from the leader's find, replays the leader's
-# trade, which gives it, and still holds one.
-$data_items[610] = Item.new(610, "Fortune Teller Permit", 6, true)
-module MGQ_MpCoop; def self.route(_field); end; def self.tell(*_fields); true; end; end
-module MGQ_MpCoopStory; def self.lending?; false; end; end
-load_script "story_found"
+# A replay of a run that used up a key item takes the receiver's too, though a replay costs nothing
+# else (user decision 2026-11-04), so a later page that asks for the item, as the World Seed's for
+# Lucretia, does not open early; a plain item it uses up stays theirs.
+$data_items[610] = Item.new(610, "World Seed", 6, true)
+$data_items[611] = Item.new(611, "Herb", 6, false)
+page(51, 24, [c(126, 610, 1, 0, 1), c(126, 611, 1, 0, 1), c(123, "B", 0)])
 new_game
-$game_system = Object.new
-MGQ_MpStoryFound.apply("give" => [610])
-MGQ_MpStoryReplay.receive(entry.merge("id" => "e9", "site" => "map:51:23:1", "keys" => { "ss51.23.B" => "0" }, "inputs" => TRADED))
+$game_party.gain_item($data_items[610], 1)
+$game_party.gain_item($data_items[611], 1)
+MGQ_MpStoryReplay.receive(entry.merge("id" => "e9", "site" => "map:51:24:1", "keys" => { "ss51.24.B" => "0" }, "inputs" => []))
 MGQ_MpStoryReplay.update
-check("a member who got a key item as found and replays the run that found it holds one, and the next gain gives one again",
-      [$game_self_switches[[51, 23, "B"]], $game_party.item_number(610), MGQ_MpStoryFound.given?($data_items[610])], [true, 1, false])
+check("a replay that uses up a key item takes the receiver's, a plain item it uses up not",
+      [$game_self_switches[[51, 24, "B"]], $game_party.item_number(610), $game_party.item_number(611)], [true, 0, 1])
+
+# The leader returns to the Great Decision (map 889, event 3), whose page calls the Final Chapter's
+# reset (common event 154): it turns switches 2444 to 2484 off and takes the route's key items 568
+# to 580. A Classic member ahead of the leader replays it and keeps their own.
+(568..580).each { |id| $data_items[id] = Item.new(id, "Route key #{id}", 6, true) }
+$data_common_events[154] = RPG::CommonEvent.new([c(121, 2444, 2484, 1)] + (568..580).map { |id| c(126, id, 1, 0, 1) } + [c(0)])
+page(889, 3, [c(117, 154), c(123, "A", 0)])
+new_game
+(568..580).each { |id| $game_party.gain_item($data_items[id], 1) }
+MGQ_MpStoryReplay.receive(entry.merge("id" => "e10", "site" => "map:889:3:1", "keys" => { "ss889.3.A" => "0" }, "inputs" => []))
+MGQ_MpStoryReplay.update
+check("a Classic member ahead of the leader keeps the route key items when the leader returns to the Great Decision",
+      [$game_self_switches[[889, 3, "A"]], (568..580).map { |id| $game_party.item_number(id) }.uniq], [true, [1]])
 
 # The save keeps the DLL's log; a loaded save hands it back with its place.
 logs = []
@@ -883,3 +899,16 @@ check("a run's take names the shapes of the player's lists of its choices",
 schema = File.read(File.expand_path("../../MGQOnline.Data/Events/EventSchema.cs", __dir__))
 check("the codes an input's place counts are those the events database keeps",
       MGQ_MpStoryReplay::KEPT_CODES, schema[/KeptCodes =\s*\[([^\]]*)\]/m, 1].scan(/\d+/).map(&:to_i))
+
+# Another player's battle drop of a key item gives the receiver the item, with no event to replay,
+# and the DLL tells the notice from what they held before and after (user decision 2026-11-05).
+fake.answer("story.replay_take") { |_request| { "do" => "gain", "items" => [[511, 1]] } }
+fake.answer("story.replay_done") { |request| done << request; { "notice" => "Ana won a battle drop for everyone: Silver Key." } }
+new_game
+$notices = []
+MGQ_MpStoryReplay.receive("id" => "d1", "site" => "game:drop", "stream" => "party:p1", "scope" => "party", "opener" => "Ana", "keys" => {}, "place" => nil,
+                          "start" => {}, "inputs" => [], "derived" => false, "found" => true, "drops" => [[511, 1]])
+MGQ_MpStoryReplay.update
+check("another player's battle drop gives the receiver its key item, and the DLL its notice",
+      [$game_party.item_number(511), done.last["reached"], done.last["had"].assoc("i511"), done.last["has"].assoc("i511"), $notices, MGQ_MpStoryReplay.waiting],
+      [1, true, nil, ["i511", 1, "Silver Key", false], ["Ana won a battle drop for everyone: Silver Key."], []])

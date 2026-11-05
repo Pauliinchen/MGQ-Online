@@ -2,6 +2,7 @@
 //  EventSorterTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Found the battlefuck events the page calls in the game's own common events
 //      Paulinchen  2026-10-31: Checked that a weapon's pedestal that hands out a medal by script is a chest
 //      Paulinchen  2026-10-28: Sorted the game cases and the tiny game from the events database
 //                            - Classified the hand-made lists
@@ -60,7 +61,7 @@ public sealed class EventSorterTests
     [Fact]
     public void KindOf_SortsAPageThatCallsABattlefuckAsThePlayersOwn()
     {
-        var sorter = new EventSorter(EventDatabases.SourceOf(new TinyGame()));
+        var sorter = new EventSorter(EventDatabases.SourceOf(new TinyGame().Common(6999).Common(7001, TinyGame.C(EventCodes.CallCommonEvent, 6999))));
         var state = new QuietState();
         EventCommand[] battlefuck = CommandClassifier.Classify([Command(EventCodes.ShowText, 0, "", 0, 0, 2), Command(EventCodes.ControlSwitches, 0, 60, 60, 0), Command(EventCodes.CallCommonEvent, 0, 7001)]);
         EventCommand[] other = CommandClassifier.Classify([Command(EventCodes.CallCommonEvent, 0, 6998), Command(EventCodes.ControlSwitches, 0, 60, 60, 0)]);

@@ -2,6 +2,9 @@
 #  story_keys.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Noted the found items a run gave or used up, but none a story reset takes, so a run that changed no shared key is handed over too
+#                            - Dropped the names of the commands running, which only the found items' rule read
+#                            - Handed the found items a battle's drops gave to the DLL, and their entry on like a run's
 #      Paulinchen  2026-11-01: Noted a run's checks of what the party holds and of the event's own self switches as inputs, which a replay follows
 #                            - Named every command running now, which tells one use of an item from another
 #                            - Told whether a command runs inside a story reset, whose losses use nothing up
@@ -73,11 +76,13 @@ module MGQ_MpStoryKeys
   WRITES_TOPIC = "story.writes"
 
   # The topics of runs handed over by replay, see StoryTopics.Replay.cs in the DLL: who keeps each
-  # key, the keys whose start values a run carries, a run's end and the resets of the player's runs.
+  # key, the keys whose start values a run carries, a run's end, the resets of the player's runs and
+  # a battle's drops.
   SCOPES_TOPIC = "story.replay_scopes"
   READS_TOPIC = "story.replay_reads"
   RAN_TOPIC = "story.replay_ran"
   RESET_TOPIC = "story.replay_reset"
+  DROP_TOPIC = "story.replay_drop"
 
   # Who keeps a key, as story.replay_scopes names it: each player, the game's work, the Classic
   # party, the world's story, or the whole world.
@@ -104,8 +109,14 @@ module MGQ_MpStoryKeys
   # A run of the player's own game: its site and place; the party, world and work keys it wrote,
   # each with its scope and value before its first write; the world and work keys anything wrote
   # while it ran, each with its value before; its inputs, counted by command and kind; the keys
-  # scripts read during it; its resets; the self switches object it started with.
-  Run = Struct.new(:site, :place, :before, :starts, :inputs, :counts, :reads, :resets, :self_switches)
+  # scripts read during it; its resets; the self switches object it started with; and how many of
+  # each found item it gave or used up, by the item's id.
+  Run = Struct.new(:site, :place, :before, :starts, :inputs, :counts, :reads, :resets, :self_switches, :found)
+
+  # The tag at the start of the description of an item the game files with the key items but tags as
+  # a plain item, in the translation and the untranslated game: the Small and Large Medals, which stay
+  # each player's own.
+  PLAIN_ITEM_TAG = /\A\s*(\[Item\]|【道具】)/
 
   # What an event's place in a table's index is made of: map * EVENT_SPAN + event.
   EVENT_SPAN = 1_000_000
@@ -185,6 +196,10 @@ module MGQ_MpStoryKeys
 
   # What a write outside every interpreter is told as, nil for the game itself.
   @origin = nil
+
+  # The found items a battle's drops gave, by the item's id, while the game hands the drops out; nil
+  # otherwise.
+  @drops = nil
 
   # Reads a table the DLL built.
   #
@@ -703,7 +718,7 @@ module MGQ_MpStoryKeys
     return unless site.start_with?("map:") || site.start_with?("ce:")
 
     place = PLACE_MARKERS.map { |id| $game_variables[id].to_i }
-    @runs[interpreter.object_id] = Run.new(site, place, {}, {}, [], Hash.new(0), {}, [], $game_self_switches)
+    @runs[interpreter.object_id] = Run.new(site, place, {}, {}, [], Hash.new(0), {}, [], $game_self_switches, Hash.new(0))
   rescue => e
     log_once([:run_set_up, e.class], "opening a run failed: #{e.class}: #{e.message}")
   end
@@ -853,16 +868,6 @@ module MGQ_MpStoryKeys
 
     interpreter = @running.last
     MGQ_MpStoryReplay.choice_at(site_of(interpreter), MGQ_MpGame.get(interpreter, :list), MGQ_MpGame.get(interpreter, :index).to_i)
-  end
-
-  # Names every command running now, the outermost first, as input_place names one: a common
-  # event's command with the command that called it.
-  #
-  # @return [String, nil] Such as "map:88:4:1@40>ce:153@28", nil outside every command.
-  def self.command_places
-    return nil if @running.empty?
-
-    @running.each_with_index.map { |interpreter, at| place_of(interpreter, @indexes[at]) }.join(">")
   end
 
   # Reports whether a command runs inside a story reset: one of the lists running now writes a range
@@ -1058,7 +1063,7 @@ module MGQ_MpStoryKeys
     run.resets << ["ss", 0, ALL_MAPS, "0"] unless $game_self_switches.equal?(run.self_switches)
     MGQ_Multiplayer::Bridge.call(RESET_TOPIC, run.resets) unless run.resets.empty?
     changed = changed_keys(run)
-    return if changed.empty?
+    return if changed.empty? && run.found.values.all? { |change| change == 0 }
 
     party = changed.keys.select { |name| run.before[name][0] == SCOPE_PARTY }
     hand_over(run, party, ran_request(run, changed))
@@ -1085,7 +1090,8 @@ module MGQ_MpStoryKeys
   # Writes the request that logs a run's end, see StoryTopics.ReplayRan in the DLL: a run that
   # changed a world key goes to its story's stream, whose owner keeps it: the player while they lead
   # their Classic story, else the leader or the relay's track; one that changed only party keys to
-  # the party's stream, whose entry claims the player's own step at once.
+  # the party's stream, whose entry claims the player's own step at once. One that only gave or used
+  # up a found item goes to a Raid World's track or a Classic party's stream.
   #
   # @param run [Run] The run.
   # @param changed [Hash] The keys it changed, see changed_keys.
@@ -1096,10 +1102,11 @@ module MGQ_MpStoryKeys
     leader = classic ? story_leader : nil
     stream = classic ? story_stream(leader) : raid_track
     world = changed.keys.any? { |name| run.before[name][0] == SCOPE_WORLD }
-    sent = world ? stream : party_id
+    found = run.found.select { |_id, change| change != 0 }.to_a
+    sent = world || (changed.empty? && !classic) ? stream : party_id
     { "site" => run.site, "party" => classic, "stream" => stream, "party_stream" => party_id ? "party:#{party_id}" : nil,
-      "owner" => classic && !leader.respond_to?(:state), "changed" => changed, "start" => sent ? start_values(run, classic) : {},
-      "place" => run.place, "inputs" => run.inputs, "opener" => nil }
+      "owner" => classic && !leader.respond_to?(:state), "changed" => changed, "found" => found.empty? ? nil : found,
+      "start" => sent ? start_values(run, classic) : {}, "place" => run.place, "inputs" => run.inputs, "opener" => nil }
   end
 
   # Finds the leader whose story the player keeps in a Classic world.
@@ -1163,7 +1170,7 @@ module MGQ_MpStoryKeys
     answer = MGQ_Multiplayer::Bridge.call(RAN_TOPIC, request)
     return @unsent << [Graphics.frame_count, request] if answer.is_a?(Hash) && answer["unknown"]
 
-    log("the run of #{run.site} changed #{request['changed'].size} shared keys#{answer.is_a?(Hash) ? ", its entry #{answer['id']} goes to #{answer['stream']}" : ''}")
+    log("the run of #{run.site} changed #{request['changed'].size} shared keys#{request['found'] ? " and #{request['found'].size} found items" : ''}#{answer.is_a?(Hash) ? ", its entry #{answer['id']} goes to #{answer['stream']}" : ''}")
     hand_entry(answer, request["party"])
   end
 
@@ -1196,6 +1203,71 @@ module MGQ_MpStoryKeys
     end
   rescue => e
     log_once([:send_unsent, e.class], "logging a run again failed: #{e.class}: #{e.message}")
+  end
+
+  # Lets the game hand out a battle's drops, and hands the found items they gave to the DLL, whose
+  # entry reaches every player as a found item's run does (user decision 2026-11-05).
+  #
+  # @yield The game's handing out of the drops.
+  # @return [Object] What it returns.
+  def self.dropping
+    @drops = Hash.new(0)
+    result = yield
+    hand_drops(@drops.select { |_id, change| change != 0 }.to_a)
+    result
+  ensure
+    @drops = nil
+  end
+
+  # Hands the found items a battle's drops gave to the DLL, and their entry on to the players who
+  # keep its stream, as hand_over does a run's.
+  #
+  # @param found [Array<Array>] Each item's id and how many the drops gave.
+  def self.hand_drops(found)
+    return if found.empty?
+
+    classic = !(defined?(MGQ_MpCoop::Scope) && MGQ_MpCoop::Scope.raid?)
+    party_id = classic && defined?(MGQ_MpCoop) && MGQ_MpCoop.in_party? ? MGQ_MpCoop::Party.id : nil
+    entry = MGQ_Multiplayer::Bridge.call(DROP_TOPIC, "party" => classic, "stream" => classic ? nil : raid_track,
+                                                     "party_stream" => party_id ? "party:#{party_id}" : nil, "found" => found, "opener" => nil)
+    log("a battle's drops gave #{found.size} found items#{entry.is_a?(Hash) ? ", their entry #{entry['id']} goes to #{entry['stream']}" : ''}")
+    hand_entry(entry, classic)
+  rescue => e
+    log_once([:hand_drops, e.class], "handing a battle's drops over failed: #{e.class}: #{e.message}")
+  end
+
+  # Reports whether an item is a found item, which a run that gives or uses it up hands over even
+  # where it changed no shared key: a key item the game does not tag as a plain item, ores and CDs
+  # among them, or an item unlocking a job or a race.
+  #
+  # @param item [RPG::BaseItem, nil] The item.
+  # @return [Boolean] Whether it is.
+  def self.found_item?(item)
+    return false unless defined?(RPG::Item) && item.is_a?(RPG::Item)
+
+    described = item.respond_to?(:description) ? item.description.to_s : ""
+    (item.key_item? && described !~ PLAIN_ITEM_TAG) || (defined?(MGQ_MpWorldCatchup) && MGQ_MpWorldCatchup.unlock_item?(item)) ? true : false
+  end
+
+  # Lets a change of what the party holds happen, and notes how many of a found item it gave or used
+  # up: in a battle's drops while the game hands them out, else in the run of the player's own game
+  # that makes it; never in a replay, nor in what the multiplayer gives, lends or writes itself, nor
+  # in a story reset, which clears only the player's own items and uses none up.
+  #
+  # @param item [RPG::BaseItem, nil] The item.
+  # @param amount [Integer] The change, below 0 for a loss.
+  # @yield The change.
+  # @return [Object] What the change returns.
+  def self.item_changing(item, amount)
+    run = current_run
+    noted = @drops || (run && run.found)
+    lending = defined?(MGQ_MpCoopStory) && MGQ_MpCoopStory.respond_to?(:lending?) && MGQ_MpCoopStory.lending?
+    return yield unless noted && amount.to_i != 0 && !replaying? && !applying? && !lending && !resetting? && found_item?(item)
+
+    before = $game_party.item_number(item)
+    result = yield
+    noted[item.id] += $game_party.item_number(item) - before
+    result
   end
 
   # Reads a key the player's game holds.
@@ -1337,4 +1409,26 @@ begin
   MGQ_MpHooks.after(Game_Map, :update, "story_keys") { |*_args| MGQ_MpStoryKeys.let_go }
 rescue => e
   MGQ_MpStoryKeys.log("frame hook FAILED: #{e.class}: #{e.message}")
+end
+
+begin
+  # The found items a run of the player's own game gives or uses up, which hand the run over.
+  MGQ_MpHooks.around(Game_Party, :gain_item, "story_keys") do |_party, args, original|
+    MGQ_MpStoryKeys.item_changing(args[0], args[1]) { original.call }
+  end
+rescue => e
+  MGQ_MpStoryKeys.log("party hooks FAILED: #{e.class}: #{e.message}")
+end
+
+begin
+  # The found items a battle's drops give, which reach every player. The game's plugins load after
+  # the Patch folder and a victory screen defines the drops anew, so the hook goes in once every
+  # plugin is in.
+  MGQ_MpHooks.before(SceneManager.singleton_class, :run, "story_keys") do
+    if defined?(BattleManager) && BattleManager.respond_to?(:gain_drop_items)
+      MGQ_MpHooks.around(BattleManager.singleton_class, :gain_drop_items, "story_keys") { |_manager, _args, original| MGQ_MpStoryKeys.dropping { original.call } }
+    end
+  end
+rescue => e
+  MGQ_MpStoryKeys.log("drop hooks FAILED: #{e.class}: #{e.message}")
 end

@@ -2,6 +2,7 @@
 #  choices_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Answered a choice's own keys without the Navy's self switches, which the reviewed key list keeps
 #      Paulinchen  2026-11-01: Dropped the game's window base, which the question's screen no longer builds on
 #                            - Read the outcomes of the branch events, Succubus Village's and their own keys from the table as C# walks them
 #                            - Sent away the companions an outcome sends away on the player's playthrough
@@ -325,7 +326,7 @@ module ChoicesStandIn
   # Lists the keys that are the player's own as choices' outcomes.
   #
   # @param request [Hash] "raid" and "own".
-  # @return [Hash] "s", "v", "maps" and "self_switches".
+  # @return [Hash] "s" and "v".
   def self.personal(request)
     raid = request["raid"]
     switches = []
@@ -339,7 +340,7 @@ module ChoicesStandIn
         variables |= keys[1]
       end
     end
-    { "s" => switches, "v" => variables, "maps" => raid ? TABLE["navy_maps"] : [], "self_switches" => raid ? TABLE["navy_self_switches"] : [] }
+    { "s" => switches, "v" => variables }
   end
 
   # Tells why a leader may not offer a member to sync their story.

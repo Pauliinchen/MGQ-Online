@@ -2,6 +2,8 @@
 //  story_tracks.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Checked that a found item's run goes on the world's track and on every player's own
+//                            - Dropped the check of used up items' marks, whose runs the story replay hands over
 //      Paulinchen  2026-11-01: Checked that an item any player found reaches players behind and the world from them, though the mapping's row of the found marks predates the rule
 //                            - Checked that the mark of an item an event used up reaches players behind and the world from them
 //      Paulinchen  2026-10-31: Checked an admin's keys, pins and route lock acting on the world's story only
@@ -386,17 +388,6 @@ test("an item any player found reaches the whole world, players behind included,
   assert.deepEqual(world.heard(ALICE).filter((frame) => frame.t === "push").at(-1).keys, { "ss0.610.F": "1" }, "the world reads what a player behind found");
 });
 
-test("the mark of an item an event used up reaches the whole world, players behind included", async () => {
-  const world = await startedWorld(10);
-  await write(world, ALICE, 1, [["ss0.508.U1x2y3z", "1", "map:88:4:1"], ["v1001", "n29"]]);
-  await world.enter(CARA, 1);
-  await world.say(CARA, { t: "sync", level: { best: 1, cap: null }, seed: { v1001: "n2" } });
-  assert.equal(world.heard(CARA)[0].keys["ss0.508.U1x2y3z"], "1", "a player behind reads what an event of the world used up");
-
-  await write(world, CARA, 1, [["ss0.508.U9a8b7c", "1", "map:88:4:2"]], "t1");
-  assert.deepEqual(world.heard(ALICE).filter((frame) => frame.t === "push").at(-1).keys, { "ss0.508.U9a8b7c": "1" }, "the world reads what an event of a player behind used up");
-});
-
 test("a repeated batch and one before the sync are answered without applying", async () => {
   const world = await startedWorld(3);
   await write(world, ALICE, 5, [["v50", "n1"]]);
@@ -525,6 +516,23 @@ test("a player who reaches the world's track from their own walks it from their 
   const [moved, page] = world.heard(CARA);
   assert.deepEqual([moved.track, moved.cursor, moved.last], [WORLD_TRACK, 0, 2], "their game's log claims what they played on their own track, not their place");
   assert.deepEqual(page.runs.map((entry) => entry.id), ["early", "later"]);
+});
+
+test("a run that gave a found item and changed no key goes on the world's track and every other player's own, which a later joiner walks", async () => {
+  const world = await startedWorld(10, [BOB]);
+  await write(world, ALICE, 1, [["v1001", "n19"]]);
+  await world.enter(CARA, 1);
+  await world.say(CARA, { t: "sync", level: { best: 10, cap: null }, seed: { v1001: "n2" }, cursors: {} });
+  await write(world, CARA, 1, [["v1001", "n15"]], "t1");
+  world.heard(CARA);
+
+  await world.say(ALICE, { t: "write", seq: 2, track: WORLD_TRACK, run: { ...run("pass", [], 19), found: true } });
+  assert.deepEqual(world.answer(ALICE).run, { id: "pass", n: 1 });
+  assert.deepEqual([world.heard(BOB), world.heard(CARA)].map((frames) => frames.filter((frame) => frame.t === "run").map((frame) => [frame.track, frame.run.id])),
+    [[[WORLD_TRACK, "pass"]], [["t1", "pass"]]], "a player behind gets it on their own track at once");
+
+  await world.say(BOB, { t: "write", seq: 1, track: WORLD_TRACK, run: run("nothing", [], 10) });
+  assert.equal(world.answer(BOB).code, TRACK_CODE.bad, "a run without a key and without a found item is no entry");
 });
 
 test("a world that kept a keyed story starts its tracks from it, with no run entries before", async () => {

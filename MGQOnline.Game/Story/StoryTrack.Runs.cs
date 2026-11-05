@@ -2,6 +2,7 @@
 //  StoryTrack.Runs.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Sent a run that gave or used up a found item without a key, and named each entry received as a stream of the track it came on
 //      Paulinchen  2026-10-31: Created
 //
 //----------------------------------------------------------------
@@ -76,8 +77,8 @@ public sealed partial class StoryTrack
     private TrackRun? handedRun;
 
     /// <summary>
-    /// Hands over a run of the player's own game that changed the track's keys, which goes to the
-    /// relay after the writes recorded before it.
+    /// Hands over a run of the player's own game that changed the track's keys, or gave or used up
+    /// a found item, which goes to the relay after the writes recorded before it.
     /// </summary>
     /// <param name="entry">The run's entry.</param>
     /// <param name="opener">The player's name, which the receivers' notice names.</param>
@@ -277,7 +278,7 @@ public sealed partial class StoryTrack
         try
         {
             string opener = Text(run, "opener");
-            entry = ReplayWire.Read(Text(run, "wire")) with { Opener = opener.Length > 0 ? opener : null, Number = n };
+            entry = ReplayWire.Read(Text(run, "wire")) with { Opener = opener.Length > 0 ? opener : null, Number = n, Stream = StreamOf(runsTrack ?? string.Empty) };
         }
         catch (RubyValueException ex)
         {
@@ -361,12 +362,17 @@ public sealed partial class StoryTrack
                 writer.WriteNull("opener");
             }
 
+            if (entry.Found)
+            {
+                writer.WriteBoolean("found", true);
+            }
+
             writer.WriteString("wire", ReplayWire.Write(entry));
             writer.WriteEndObject();
         }
 
         string json = Encoding.UTF8.GetString(buffer.WrittenSpan);
-        if (json.Length > MaxRunLength || entry.Keys.Count is 0 or > MaxWrites)
+        if (json.Length > MaxRunLength || entry.Keys.Count > MaxWrites || (entry.Keys.Count == 0 && !entry.Found))
         {
             host.Log($"story track: the run of {entry.Site} is too large for the relay, so nobody else gets it ({json.Length} characters, {entry.Keys.Count} keys)");
             return null;

@@ -2,6 +2,7 @@
 #  coop_choices.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Left the self switches of the Navy's and the Pirates' lines to the reviewed key list
 #      Paulinchen  2026-11-01: Kept a screen the Mod Framework refused or lost waiting, telling the player only an offer gone
 #                            - Built the screens of the choices and of a replay's question on the Mod Framework's windows
 #                            - Put off a number, a choice without cancel and a choice of the player's own on cancel
@@ -72,7 +73,7 @@ module MGQ_MpCoopChoices
   NO_OFFER = { "labels" => [], "outcomes" => [] }
 
   # The keys that are the player's own while the DLL does not answer: none.
-  NO_PERSONAL = { "s" => [], "v" => [], "maps" => [], "self_switches" => [] }
+  NO_PERSONAL = { "s" => [], "v" => [] }
 
   # The speaker's code at the start of a message: \n<Name>, or 【Name】 in the untranslated game.
   SPEAKER = /\A(?:\\n<(.+?)>|【(.+?)】)/
@@ -270,15 +271,14 @@ module MGQ_MpCoopChoices
   # World every choice's, while a Classic party's member plays the leader's story those of the
   # choices their own story made.
   #
-  # @return [Hash] "s" and "v", the switches and variables by id; "maps", the maps whose self
-  #   switches are the player's own; "self_switches", those that are.
+  # @return [Hash] "s" and "v", the switches and variables by id.
   def self.personal_keys
     own = !raid? && MGQ_MpCoopStory.guest? ? MGQ_MpCoopStory.own_story_data : nil
     request = { "raid" => raid?, "own" => own ? values_of(own[0], own[1], []) : nil }
     return @personal[1] if @personal && @personal[0] == request
 
     answer = MGQ_Multiplayer::Bridge.call(PERSONAL_TOPIC, request) || NO_PERSONAL
-    keys = { "s" => Hash[answer["s"].map { |id| [id, true] }], "v" => Hash[answer["v"].map { |id| [id, true] }], "maps" => answer["maps"], "self_switches" => answer["self_switches"] }
+    keys = { "s" => Hash[answer["s"].map { |id| [id, true] }], "v" => Hash[answer["v"].map { |id| [id, true] }] }
     @personal = [request, keys]
     keys
   end
@@ -292,21 +292,6 @@ module MGQ_MpCoopChoices
   # @return [Boolean] Whether it is.
   def self.personal?(kind, id)
     personal_keys[kind == :s ? "s" : "v"].key?(id)
-  rescue
-    false
-  end
-
-  # Reports whether a self switch is each Raid World player's own as one of the Navy's or the
-  # Pirates' lines, whose events each player plays for their own side: one pirate's treasure taken
-  # must not empty the next pirate's chest.
-  #
-  # @param key [Array] The self switch: map, event and letter.
-  # @return [Boolean] Whether it is.
-  def self.personal_self_switch?(key)
-    return false unless raid?
-
-    keys = personal_keys
-    keys["maps"].include?(key[0]) || keys["self_switches"].include?(key)
   rescue
     false
   end

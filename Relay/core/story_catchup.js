@@ -2,6 +2,7 @@
 //  story_catchup.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Dropped the counts of prizes, whose prizes the story replay hands over
 //      Paulinchen  2026-10-31: Dropped the maps where warping is free, since a world never bans warping
 //      Paulinchen  2026-10-28: Took the stretches of the story in free order as a rule
 //                            - Kept the switches of prizes handed out once as a table
@@ -313,16 +314,10 @@ export const CATCHUP_TABLES = Object.freeze({
     ordered: true,
     fields: Object.freeze({ actor: ID, calls: listOf(ACTOR_CALL, 1, MAX_IDS), gate: nullable(LEVEL), ...PLACE, ran: FLAG }),
   }),
-  // PRIZE_VARIABLES: the counts of prizes handed out once, outside the story's range, which the
-  // rewards hold as rewards of the count past its step.
-  prize_variables: Object.freeze({
-    store: "story_catchup_prize_variables",
-    key: (row) => String(row.variable),
-    fields: Object.freeze({ variable: ID }),
-  }),
-  // The switches of prizes handed out once, such as the Medal King's one-of-a-kind exchanges, which
-  // the rewards hold as rewards of the switch on: once any player's story turned one on, every
-  // player whose story holds it and who holds none of the prize gets it.
+  // The switches of the Medal King's one-of-a-kind exchanges, which the rewards hold as rewards of
+  // the switch on: once any player's story turned one on, every player whose story holds it and
+  // who holds none of the prize gets it (MedalKingGift in the DLL). Every other prize comes by the
+  // replay of the run that won it.
   prize_switches: Object.freeze({
     store: "story_catchup_prize_switches",
     key: (row) => String(row.switch),

@@ -2,6 +2,8 @@
 //  ReplayWire.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Carried whether a run gave or used up a found item
+//                            - Carried the found items a battle's drops gave
 //      Paulinchen  2026-10-31: Created
 //
 //----------------------------------------------------------------
@@ -45,6 +47,7 @@ public static class ReplayWire
             json.WriteString("stream", entry.Stream);
             json.WriteString("scope", entry.Scope == StoryScope.Party ? "party" : "world");
             json.WriteBoolean("derived", entry.Derived);
+            json.WriteBoolean("found", entry.Found);
             WriteKeys(json, "keys", entry.Keys);
             WriteKeys(json, "start", entry.Start);
             if (entry.Place is { } place)
@@ -70,6 +73,20 @@ public static class ReplayWire
             }
 
             json.WriteEndArray();
+            if (entry.Drops.Count > 0)
+            {
+                json.WriteStartArray("drops");
+                foreach ((int item, int count) in entry.Drops)
+                {
+                    json.WriteStartArray();
+                    json.WriteNumberValue(item);
+                    json.WriteNumberValue(count);
+                    json.WriteEndArray();
+                }
+
+                json.WriteEndArray();
+            }
+
             json.WriteEndObject();
         }
 
@@ -99,9 +116,15 @@ public static class ReplayWire
             ReplayInput[] inputs = [.. root.GetProperty("inputs").EnumerateArray().Select(InputOf)];
             string id = root.GetProperty("id").GetString() is { Length: > 0 } found ? found : throw new RubyValueException("An entry has no id.");
             return new ReplayEntry(id, ReplaySite.Parse(root.GetProperty("site").GetString() ?? string.Empty), root.GetProperty("stream").GetString() ?? string.Empty,
-                scope, null, KeysOf(root.GetProperty("keys")), place, KeysOf(root.GetProperty("start")), inputs, root.GetProperty("derived").GetBoolean());
+                scope, null, KeysOf(root.GetProperty("keys")), place, KeysOf(root.GetProperty("start")), inputs, root.GetProperty("derived").GetBoolean())
+            {
+                Found = root.TryGetProperty("found", out JsonElement gave) && gave.GetBoolean(),
+                Drops = root.TryGetProperty("drops", out JsonElement drops)
+                    ? [.. drops.EnumerateArray().Select(drop => new KeyValuePair<int, int>(drop[0].GetInt32(), drop[1].GetInt32()))]
+                    : [],
+            };
         }
-        catch (Exception ex) when (ex is FormatException or JsonException or InvalidOperationException or KeyNotFoundException or InvalidDataException)
+        catch (Exception ex) when (ex is FormatException or JsonException or InvalidOperationException or KeyNotFoundException or InvalidDataException or IndexOutOfRangeException)
         {
             throw new RubyValueException($"The entry does not read: {ex.Message}");
         }

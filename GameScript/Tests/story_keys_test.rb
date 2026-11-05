@@ -2,6 +2,9 @@
 #  story_keys_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Checked that a talk that gives a key item goes to the DLL with it, though it changed no shared key
+#                            - Checked that a story reset that takes the route's key items notes none of them
+#                            - Checked that a battle's drop of a key item goes to the DLL with it, and its entry on to the world's story
 #      Paulinchen  2026-11-01: Checked which commands run inside a story reset
 #      Paulinchen  2026-10-31: Kept a Classic leader's writes by the scopes of the reviewed list
 #                            - Checked that a run that changed a world key goes to its story's stream, and its entry to the world's or the party's story
@@ -16,8 +19,8 @@
 # game's writes: which writes a story records, with the event that wrote them, which it never
 # records (the multiplayer's own, a lost battle's defeat scene, another object's), one batch a
 # frame for the DLL, the commands that run inside a story reset, the writes before the mapping
-# came, a Classic leader's writes, a Classic party's table built anew once the chest flags came, and
-# the stream a run that changed a world key goes to with where its entry is handed.
+# came, a Classic leader's writes, a Classic party's table built anew once the chest flags came, the
+# stream a run that changed a world key goes to with where its entry is handed, and a battle's drops.
 
 require_relative "support"
 require_relative "story_support"
@@ -72,8 +75,10 @@ end
 class Game_Map; attr_accessor :map_id, :events; end
 # Stands in for the troop, with its interpreter.
 class Game_Troop; attr_accessor :interpreter; end
-# Stands in for the scene manager and the novel scene of a lost battle's defeat.
-module SceneManager; class << self; attr_accessor :scene; end; end
+# Stands in for the scene manager and the novel scene of a lost battle's defeat; its run starts the game.
+module SceneManager; class << self; attr_accessor :scene; def run; end; end; end
+# Stands in for the battle manager: its drops run the block in $drop_items.
+module BattleManager; def self.gain_drop_items; $drop_items.call; end; end
 class Scene_Novel; end
 # Stands in for the frame counter.
 module Graphics; def self.frame_count; 0; end; end
@@ -178,23 +183,6 @@ common.update
 keys.flush
 MGQ_Multiplayer::Bridge.frame
 check("the Final Chapter's reset of 1,885 writes goes as one batch", [staged("story.writes").size, staged("story.writes")[0].size, staged("story.writes")[0][0][2]], [1, 1885, "ce:154"])
-
-# A story reset is a list that writes a range of switches or variables at once, as the Final
-# Chapter's reset (common event 154) turns switches 2444 to 2484 off before it takes the route's key
-# items: its commands and those of a common event it calls run inside it. The Queen Harpy's page
-# (map 88, event 4), which writes single keys and adds to a range of variables, runs inside none.
-command = Struct.new(:code, :indent, :parameters)
-final = Game_Interpreter.new
-final.setup([command.new(121, 0, [2444, 2484, 1]), command.new(126, 0, [568, 1, 0, 1])], 0)
-called = Game_Interpreter.new
-called.setup([command.new(126, 0, [569, 1, 0, 1])], 0)
-harpy = Game_Interpreter.new
-harpy.setup([command.new(121, 0, [5, 5, 0]), command.new(122, 0, [10, 12, 1, 0, 1]), command.new(126, 0, [508, 1, 0, 1])], 4, 88)
-inside = []
-final.run { inside << keys.resetting? }
-final.run { called.run { inside << keys.resetting? } }
-harpy.run { inside << keys.resetting? }
-check("a command of a story reset, or of a common event it calls, runs inside it, the Queen Harpy's not", inside, [true, true, false])
 
 # A wait inside a command leaves the update with the command running: another interpreter's write
 # meanwhile names that one, the rest of the command its own.
@@ -316,3 +304,52 @@ check("a run that changed a world key goes to its story's stream: the player's o
       [["map:7:39:1", "t2", false, ["s300"]], ["map:7:39:1", "story:lead1", false, ["s300"]], ["map:7:39:1", "story:me1", true, ["s300"]]])
 check("and its entry is handed on: a Raid World's to the world's story, a Classic world's to the co-op events",
       [$world_handed.map { |entry| entry["id"] }, $coop_handed.map { |entry| entry["id"] }], [["e1"], ["e2", "e3"]])
+
+# A run that gives a key item and changed no shared key still goes to the DLL with the found item,
+# so the replay hands it to every player (user decision 2026-11-04); a Small Medal, which the game
+# tags as a plain item, makes no run of its own.
+module RPG; class Item < Struct.new(:id, :key, :description); def key_item?; key; end; end; end
+$game_party = Object.new
+def $game_party.item_number(item); ($held ||= Hash.new(0))[item.id]; end
+pass = RPG::Item.new(613, true, "[Key Item] A pass to the Colosseum.")
+medal = RPG::Item.new(32, true, "[Item] Small medals are scattered all over the world.")
+$raid = true
+ran.clear
+[pass, medal].each do |item|
+  keys.instance_variable_set(:@scopes, nil)
+  talk = Game_Interpreter.new
+  talk.setup(pages[0], 39)
+  talk.run { keys.executing(talk); keys.item_changing(item, 1) { $held[item.id] += 1 }; keys.executed(talk) }
+end
+check("a talk that gives a key item goes to the DLL with it and no shared key, one that gives a Small Medal not",
+      ran.map { |request| [request["site"], request["stream"], request["changed"], request["found"]] }, [["map:7:39:1", "t2", {}, [[613, 1]]]])
+
+# The return to the Great Decision runs the Final Chapter's reset (common event 154, which turns
+# switches 2444 to 2484 off and takes the route's key items, as the Warp Stone): the player's own
+# stone goes, but the run notes no found item, so it uses up no other player's.
+command = Struct.new(:code, :indent, :parameters)
+stone = RPG::Item.new(568, true, "[Key Item] Teleports to a place.")
+$held[568] = 1
+ran.clear
+keys.instance_variable_set(:@scopes, nil)
+great = Game_Interpreter.new
+great.setup(pages[0], 39)
+great.run do
+  final = Game_Interpreter.new
+  final.setup([command.new(121, 0, [2444, 2484, 1]), command.new(126, 0, [568, 1, 0, 1])], 0)
+  final.run { keys.item_changing(stone, -1) { $held[568] -= 1 } }
+end
+check("a story reset that takes a route key item notes no found item", [$held[568], ran], [0, []])
+
+# A battle's drop of a key item reaches every player too (user decision 2026-11-05): once the game
+# runs, the drops go to the DLL with the found items alone, the Small Medal left out, and their
+# entry is handed on to the world's story as a run's is.
+drops = []
+fake.answer("story.replay_drop") { |request| drops << request; { "id" => "d1", "site" => "game:drop", "scope" => "world", "stream" => request["stream"] } }
+$raid = true
+$world_handed.clear
+SceneManager.run
+$drop_items = lambda { [pass, medal].each { |item| keys.item_changing(item, 1) { $held[item.id] += 1 } } }
+BattleManager.gain_drop_items
+check("a battle's drop of a key item goes to the DLL with it alone, and its entry to the world's story",
+      [drops.map { |request| [request["party"], request["stream"], request["found"]] }, $world_handed.map { |entry| entry["id"] }], [[[false, "t2", [[613, 1]]]], ["d1"]])

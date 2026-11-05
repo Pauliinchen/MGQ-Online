@@ -2,6 +2,8 @@
 //  ChoiceTable.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Left the self switches of the Navy's and the Pirates' lines to the reviewed key list
+//                            - Put the Spider Princess's choice at point 31, where the game offers her join
 //      Paulinchen  2026-11-01: Took the outcomes of the branch events from the walk of the game's data
 //      Paulinchen  2026-10-28: Created
 //
@@ -197,17 +199,6 @@ public static partial class ChoiceTable
     public static readonly IReadOnlyList<int> NavySides = [2148, 2149];
 
     /// <summary>
-    /// The maps of the Navy's and the Pirates' lines, whose self switches are each Raid World
-    /// player's own, since each plays their own side.
-    /// </summary>
-    public static readonly IReadOnlyList<int> NavyMaps = [231, 232, 233, 667, 680, 685, 696, 701, 703, 708, 709];
-
-    /// <summary>
-    /// The self switches of the MS Fish's Ashel, each Raid World player's own.
-    /// </summary>
-    public static readonly IReadOnlyList<SelfSwitchKey> NavySelfSwitches = [new(376, 53, "A"), new(376, 53, "B")];
-
-    /// <summary>
     /// The outcomes the walk of the game's data found, by the choice's key and the values that tell
     /// each apart.
     /// </summary>
@@ -286,7 +277,7 @@ public static partial class ChoiceTable
             Outcome("Ally with Natasha", string.Empty, []),
             Outcome("Ally with the mayor", string.Empty, []),
         ]),
-        new("spider", "The Spider Princess", 30, "The Secluded Lands: whose side Luka takes, the Spider Princess or the Queen Ants.",
+        new("spider", "The Spider Princess", 31, "The Secluded Lands: whose side Luka takes, the Spider Princess or the Queen Ants.",
         [
             Walked("spider", "s2280", "Side with the Spider Princess", "The Spider Princess joins. On a first playthrough, Miria and Antine Ann leave."),
             Walked("spider", "s2280 s2281", "Side with the Queen Ants", "The Spider Princess still joins. On a first playthrough, Miria and Antine Ann leave."),

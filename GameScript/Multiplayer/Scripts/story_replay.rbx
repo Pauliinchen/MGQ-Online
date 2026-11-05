@@ -2,6 +2,9 @@
 #  story_replay.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Took a found item a replay uses up from the receiver, but none a story reset takes, and dropped the copy got as found, which the story replay replaces
+#                            - Told whether a replay goes the receiver's own way, whose companion joins as their own
+#                            - Gave the player the found items another player's battle drops gave, with their notice
 #      Paulinchen  2026-11-01: Handed the question screen what a choice's cancel answers
 #                            - Let a replay cost the receiver nothing, taking back of the gold and the items only what it gave
 #                            - Followed the opener's path through the checks of what the party holds and of the event's own self switches
@@ -326,7 +329,8 @@ module MGQ_MpStoryReplay
 
   # Tells how much of a change of what the receiver holds the replay that runs makes: all of a gain,
   # and of a loss only what the replay itself gained of the same thing, since a replay costs the
-  # receiver nothing.
+  # receiver nothing, but a found item it uses up outside a story reset, which leaves every player
+  # who holds it.
   #
   # @param what [Object] What changes: :gold, or the item.
   # @param amount [Integer] The change, below 0 for a loss.
@@ -388,6 +392,7 @@ module MGQ_MpStoryReplay
 
   # Takes a run by rule 2: the DLL answers whether it is done, waits, or is replayed on which page
   # with which of the opener's inputs; the choices it leaves out are asked of the player (rule 4).
+  # Another player's battle drops give their found items.
   #
   # @param entry [Hash] The run's entry.
   # @return [Boolean] Whether it was taken; false while the DLL cannot decide yet.
@@ -396,7 +401,25 @@ module MGQ_MpStoryReplay
     return false unless answer.is_a?(Hash) && answer["do"]
 
     start(answer["inputs"] ? entry.merge("inputs" => answer["inputs"]) : entry, answer["page"], entry["inputs"]) if answer["do"] == "replay"
+    gain(entry, answer["items"]) if answer["do"] == "gain"
     true
+  end
+
+  # Gives the player the found items another player's battle drops gave, and tells the DLL, which
+  # answers the notice.
+  #
+  # @param entry [Hash] The drops' entry.
+  # @param items [Array<Array>] Each item's id and how many.
+  def self.gain(entry, items)
+    had = holdings
+    Array(items).each do |id, count|
+      item = $data_items[id.to_i]
+      next log("entry #{entry['id']} names the item #{id}, which this game lacks") unless item
+
+      $game_party.gain_item(item, count.to_i)
+    end
+    answer = MGQ_Multiplayer::Bridge.call(DONE_TOPIC, "entry" => entry, "reached" => true, "before" => {}, "reads" => {}, "had" => had, "has" => holdings)
+    notice(answer, had)
   end
 
   # Hashes the player's own lists of the choices a run's inputs name, by site, by which the DLL
@@ -496,8 +519,16 @@ module MGQ_MpStoryReplay
     reads = replay.reads.merge("holdings" => holdings_digest)
     answer = MGQ_Multiplayer::Bridge.call(DONE_TOPIC, "entry" => state[:entry], "reached" => replay.committed?, "before" => state[:before] || {},
                                                       "reads" => reads, "had" => state[:had] || [], "has" => state[:has] || [])
+    notice(answer, state[:had])
+  end
+
+  # Shows the notice the DLL answered for what the player got.
+  #
+  # @param answer [Hash, nil] The DLL's answer, see story.replay_done.
+  # @param had [Array<Array>, nil] What the player held before, see holdings.
+  def self.notice(answer, had)
     text = answer.is_a?(Hash) ? answer["notice"] : nil
-    MGQ_MpOverworldSync.notice(text, first_icon(state[:had])) if text && defined?(MGQ_MpOverworldSync)
+    MGQ_MpOverworldSync.notice(text, first_icon(had)) if text && defined?(MGQ_MpOverworldSync)
   end
 
   # Shows the player the question a replay waits on, on the choices' screen, with the message's
@@ -1633,7 +1664,6 @@ module MGQ_MpStoryReplay
       @made = []
       @reset = []
       @gained = {}
-      @found_copies = []
       @own_way = false
       @committed = false
       @state = :running
@@ -1684,6 +1714,14 @@ module MGQ_MpStoryReplay
       @record.add(@question["at"], @question["kind"], value)
       @question = nil
       step
+    end
+
+    # Reports whether the receiver answered a question of the replay otherwise than the opener did,
+    # or one the opener's record lacks, so the replay goes the receiver's own way.
+    #
+    # @return [Boolean] Whether they did.
+    def own_way?
+      @own_way
     end
 
     # Reports whether the replay ended.
@@ -1808,31 +1846,32 @@ module MGQ_MpStoryReplay
     end
 
     # Tells how much of a change of what the receiver holds the replay makes, and notes what it
-    # gained: all of a gain, and of a loss only what the replay itself gained of the same thing.
+    # gained: all of a gain, and of a loss only what the replay itself gained of the same thing, but
+    # all of a loss of a found item (MGQ_MpStoryKeys.found_item?), which an event used up for every
+    # player who holds it (user decision 2026-11-04).
     #
-    # A copy the receiver got as found (story_found.rbx) stands for one copy of a gain, which still
-    # counts as gained, so a later loss of the replay takes that copy as the opener's run did.
+    # A story reset clears the opener's own items and uses none up, so a receiver ahead of the
+    # opener keeps the route's key items it takes.
     #
     # @param what [Object] What changes: :gold, or the item.
     # @param amount [Integer] The change, below 0 for a loss.
     # @return [Integer] The change to make.
     def kept_change(what, amount)
       gained = @gained[what].to_i
-      change = amount < 0 ? -[-amount, gained].min : amount
+      change = amount >= 0 || used_up?(what) ? amount : -[-amount, gained].min
       @gained[what] = gained + change
-      change > 0 && found_copy?(what) ? change - 1 : change
+      change
     end
 
-    # Reports whether the receiver got an item as found that the replay has not counted yet, and
-    # counts it; the save forgets it only once the replay is kept.
+    # Reports whether a loss of what the receiver holds uses it up for every player: a found item
+    # lost outside every list of a story reset (MGQ_MpStoryKeys.reset_list?).
     #
     # @param what [Object] What changes: :gold, or the item.
-    # @return [Boolean] Whether they did.
-    def found_copy?(what)
-      return false if @found_copies.include?(what) || !defined?(MGQ_MpStoryFound) || !MGQ_MpStoryFound.given?(what)
+    # @return [Boolean] Whether it does.
+    def used_up?(what)
+      return false unless defined?(MGQ_MpStoryKeys) && MGQ_MpStoryKeys.found_item?(what)
 
-      @found_copies << what
-      true
+      @places.none? { |_site, list, _index, _interpreter| MGQ_MpStoryKeys.reset_list?(list) }
     end
 
     # Resets the self switches of maps, the view's at once and the receiver's own once committed.
@@ -1880,7 +1919,6 @@ module MGQ_MpStoryReplay
     # Applies the staged holdings and the own keys' changes to the receiver's objects.
     def keep_changes
       @stage.commit
-      @found_copies.each { |item| MGQ_MpStoryFound.take_given(item) }
       @journal.each { |change| keep_change(*change) }
       $game_map.need_refresh = true unless @writes.empty?
     end
@@ -2246,7 +2284,8 @@ rescue => e
 end
 
 begin
-  # A replay costs the receiver nothing: it takes back of the gold and the items only what it gave.
+  # A replay costs the receiver nothing: it takes back of the gold and the items only what it gave,
+  # but the found items it uses up.
   MGQ_MpHooks.around(Game_Party, :gain_gold, "story_replay") do |_party, args, original|
     original.call(MGQ_MpStoryReplay.kept_change(:gold, args[0]), *args[1..-1])
   end

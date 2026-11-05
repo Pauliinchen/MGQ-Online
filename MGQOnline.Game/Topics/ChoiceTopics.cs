@@ -2,6 +2,7 @@
 //  ChoiceTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Answered a choice's own keys without the Navy's self switches, which the reviewed key list keeps
 //      Paulinchen  2026-11-01: Dropped the steps on a question, which the framework's list and number field take
 //                            - Handed a question's key line as entries
 //                            - Told the scripts the companions an outcome sends away
@@ -83,8 +84,8 @@ public static class ChoiceTopics
 
     /// <summary>
     /// Lists the keys that are the player's own as choices' outcomes: <c>raid</c> and <c>own</c>
-    /// (the member's own story's values, nil while they play their own) in; <c>s</c>, <c>v</c>,
-    /// <c>maps</c> and <c>self_switches</c> out.
+    /// (the member's own story's values, nil while they play their own) in; <c>s</c> and <c>v</c>
+    /// out.
     /// </summary>
     public const string Personal = "choices.personal";
 
@@ -287,8 +288,6 @@ public static class ChoiceTopics
         {
             { "s", new RubyArray(keys.Switches.Select(id => (RubyValue)id)) },
             { "v", new RubyArray(keys.Variables.Select(id => (RubyValue)id)) },
-            { "maps", new RubyArray(keys.Maps.Select(id => (RubyValue)id)) },
-            { "self_switches", SelfSwitches(keys.SelfSwitches) },
         };
     }
 

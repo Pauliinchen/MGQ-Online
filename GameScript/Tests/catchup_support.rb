@@ -2,6 +2,8 @@
 #  catchup_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Let a test put the Medal King's switches and the items an event takes away in place
+#                            - Stopped loading story_found.rbx, whose items the story replay hands over
 #      Paulinchen  2026-11-01: Dropped the stand-in of the form window no script draws with any more
 #                            - Made the herb no key item and loaded story_found.rbx
 #                            - Answered that the player plays in no party
@@ -398,7 +400,6 @@ $fake = open_rules_bridge
 answer_story($fake)
 load_script "story_state"
 load_script "coop_story"
-load_script "story_found"
 load_script "coop_choices"
 load_script "world_story"
 load_script "world_catchup"
@@ -422,7 +423,7 @@ REAL_ACTOR_CHANGES = DATA::ACTOR_CHANGES
 #
 # @param tables [Hash{Symbol => Array}] The rows by table, the others empty.
 def tables(tables = {})
-  [:JOINS, :REMOVALS, :KEY_ITEMS, :CHESTS, :REWARDS, :LESSONS, :CLASS_LEVELS, :ACTOR_CHANGES, :SETTINGS, :VEHICLES, :MAKINA].each do |name|
+  [:JOINS, :REMOVALS, :KEY_ITEMS, :CHESTS, :REWARDS, :LESSONS, :CLASS_LEVELS, :ACTOR_CHANGES, :SETTINGS, :VEHICLES, :MAKINA, :PRIZE_SWITCHES, :TAKEN_ITEMS].each do |name|
     DATA.send(:remove_const, name)
     DATA.const_set(name, tables[name] || [])
   end

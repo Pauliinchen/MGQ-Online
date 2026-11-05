@@ -2,6 +2,7 @@
 //  EventSorter.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Read the battlefuck events from the game's data
 //      Paulinchen  2026-10-28: Read scripts and jumps by their classified kinds and places
 //                            - Read the common events and scratch flags from an event source
 //                            - Opened the list of the player's own common events
@@ -146,7 +147,7 @@ public sealed class EventSorter(IEventSource source)
 
         // Only what can run now counts, since a town's quest page may hold its battlefuck in one
         // step's branch and story in the others.
-        if (runnable.Any(BattlefuckEvents.Calls))
+        if (runnable.Any(command => BattlefuckEvents.Calls(source, command)))
         {
             return EventKind.Own;
         }

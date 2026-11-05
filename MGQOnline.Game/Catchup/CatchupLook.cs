@@ -2,6 +2,12 @@
 //  CatchupLook.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Gave a prize from its row only as history before the world's log, but the Medal King's free gift
+//                            - Played the orbs' event only as history before the world's log
+//                            - Never gave back in the repair an item an event of the game takes away
+//                            - Left found key items and their uses to the story replay, and kept the found marks for the Makina alone
+//                            - Asked the one companion filter on every path, and held a companion a replay hands out by the world's companion sharing and the join's level
+//                            - Let a companion of a replay that went the player's own way join as the player's own, waiting for the join's gate as an own event does
 //      Paulinchen  2026-11-01: Handed out found key items too, each once per save, by the rule both world types share
 //                            - Named the found items it gave, whose next gain adds nothing
 //                            - Took a copy of each key item another player's event used up, once per use and save
@@ -42,8 +48,7 @@ namespace MGQOnline.Game.Catchup;
 /// load), "mode" ("world", "behind" or nil), "own", "told" and "before" (stories: "s" the switches
 /// on, "v" [id, value] each, "ss" the self switches on), "roster" ([id, persona, base level, cap]
 /// each), "items" (counts by "i", "w" or "a" and the id), "worn", "unlocks" (the items unlocking a
-/// job or race), "key_items", "got" (the items the save has held), "spent" (the uses of items it
-/// counted, see <see cref="FoundItems"/>), "pick" (the side the save notes the player took along in
+/// job or race), "pick" (the side the save notes the player took along in
 /// Iliasville: "alice" or "ilias", "" for a save of another player's starting save, nil while
 /// unknown), "encounters", "summary" (the world's summary),
 /// "sharing", "starts" ([companion, start level] each) and "start" (the story markers where the
@@ -79,7 +84,7 @@ internal sealed class CatchupLook
     private const string StartRule = "start";
 
     /// <summary>
-    /// The map and letter of the self switches that tell which items a player of the world found.
+    /// The map and letter of the self switches that tell which Makina a player of the world found.
     /// </summary>
     private const int FoundMap = 0;
 
@@ -87,12 +92,6 @@ internal sealed class CatchupLook
     /// See <see cref="FoundMap"/>.
     /// </summary>
     private const string FoundLetter = "F";
-
-    /// <summary>
-    /// The start of the letter of the self switches of map <see cref="FoundMap"/> that tell which
-    /// items an event of a player of the world used up, one for each use.
-    /// </summary>
-    private const string UsedPrefix = "U";
 
     /// <summary>
     /// Looks between two looks at the skills, classes and races the story gave the roster, five
@@ -165,22 +164,6 @@ internal sealed class CatchupLook
     /// The items that unlock a job or a race.
     /// </summary>
     private readonly HashSet<long> _unlockIds = [];
-
-    /// <summary>
-    /// The key items, which reach every player once any player found one, as the items unlocking a
-    /// job or a race do.
-    /// </summary>
-    private readonly HashSet<long> _keyIds = [];
-
-    /// <summary>
-    /// The items the save has held before, which a found mark gives none of again.
-    /// </summary>
-    private readonly List<long> _got = [];
-
-    /// <summary>
-    /// The uses of items the save has counted before, as "item.mark".
-    /// </summary>
-    private readonly List<string> _spent = [];
 
     /// <summary>
     /// The switches of every choice's outcomes, each player's own in a Raid World.
@@ -260,9 +243,6 @@ internal sealed class CatchupLook
 
         _worn.UnionWith(Texts(request["worn"]));
         _unlockIds.UnionWith(Numbers(request["unlocks"]));
-        _keyIds.UnionWith(Numbers(request["key_items"]));
-        _got.AddRange(Numbers(request["got"]));
-        _spent.AddRange(Texts(request["spent"]));
         PersonalChoiceKeys choices = StoryChoices.Personal(true, null);
         _choiceSwitches.UnionWith(choices.Switches);
         _choiceVariables.UnionWith(choices.Variables);
@@ -334,11 +314,6 @@ internal sealed class CatchupLook
             answer["orbs"] = _mode == "world" && OrbsDue();
             CheckMakina();
             MissedCompanions();
-            FoundItems found = CheckFoundItems();
-            answer["got"] = new RubyArray(found.Got.Select(id => (RubyValue)id));
-            answer["given"] = new RubyArray(found.Gives.Select(id => (RubyValue)id));
-            answer["take"] = new RubyArray(found.Takes.Select(id => (RubyValue)id));
-            answer["spent"] = new RubyArray(found.Spent.Select(use => (RubyValue)use));
             CheckCounts();
         }
 
@@ -383,6 +358,24 @@ internal sealed class CatchupLook
         {
             Log($"left out the join of {{actor:{main}}} at {site}: it is for the players who took the other side along, and the player took {NotedSide() ?? "no side"} along");
             return Finish(new RubyHash { { "gate", RubyNil.Value }, { "refused", true } });
+        }
+
+        if (_request["replay"] is RubyBool { Flag: true } && !InRoster(main))
+        {
+            long due = _tables.Index.JoinsOf(main).FirstOrDefault()?.Gate ?? (_request["start"] is RubyInteger start ? (long)start.Value : 1);
+            if (_request["own_way"] is RubyBool { Flag: true })
+            {
+                if (!Allowed(main))
+                {
+                    Log($"left out the join of {{actor:{main}}} a replay the player answered their own way hands out: the player has no right to them");
+                    return Finish(new RubyHash { { "gate", RubyNil.Value }, { "refused", true } });
+                }
+            }
+            else if (!Allowed(main, CompanionPath.World) || !Reached(due))
+            {
+                Log($"left out the join of {{actor:{main}}} a replay hands out: the world's companion sharing ({_sharing}) {(Allowed(main, CompanionPath.World) ? $"brings them once the player's level reaches {due}" : "brings them to no other player")}");
+                return Finish(new RubyHash { { "gate", RubyNil.Value }, { "refused", true } });
+            }
         }
 
         if (_request["scope_only"] is RubyBool { Flag: true })
@@ -450,7 +443,7 @@ internal sealed class CatchupLook
     /// <param name="value">"s", "v" and "ss", nil for none.</param>
     /// <returns>The story, <see langword="null"/> for none.</returns>
     /// <exception cref="BridgeRequestException">A self switch is no [map, event, letter].</exception>
-    private static StoryValues? StoryOf(RubyValue value)
+    internal static StoryValues? StoryOf(RubyValue value)
     {
         if (value.IsNil)
         {
@@ -922,12 +915,13 @@ internal sealed class CatchupLook
     }
 
     /// <summary>
-    /// Reports whether a companion of the Alice and Ilias choice may join the player, see
-    /// <see cref="CompanionScope.Allows"/>: by the side they took along, or a route they played.
+    /// Reports whether a companion may join the player by a path, see the one companion filter
+    /// <see cref="CompanionScope.Allows(int, CompanionPath, string, string?, IReadOnlyCollection{string})"/>.
     /// </summary>
     /// <param name="actor">The companion's main persona.</param>
+    /// <param name="path">How the companion comes.</param>
     /// <returns>Whether they may.</returns>
-    private bool Allowed(int actor) => _tables.Scope.Allows(actor, NotedSide(), PlayedRoutes(false));
+    private bool Allowed(int actor, CompanionPath path = CompanionPath.Own) => _tables.Scope.Allows(actor, path, _sharing, NotedSide(), PlayedRoutes(false));
 
     /// <summary>
     /// Takes away the companions of the Alice and Ilias choice the player never had a right to: of the
@@ -1221,7 +1215,7 @@ internal sealed class CatchupLook
             }
 
             done[key] = true;
-            if (!(carried && BeforeLog(row.Place)) && !UnclaimedPrize(row))
+            if (!(carried && BeforeLog(row.Place)) && !MedalKingGift.Owed(row, _tables, _items.ContainsKey, Held))
             {
                 continue;
             }
@@ -1246,36 +1240,6 @@ internal sealed class CatchupLook
 
         Gifts();
     }
-
-    /// <summary>
-    /// Reports whether a prize row the player's story passed is another player's claim: the player
-    /// holds none of it. A prize row has a prize variable or a prize switch among its marks.
-    /// </summary>
-    /// <param name="row">The row.</param>
-    /// <returns>Whether it is.</returns>
-    private bool UnclaimedPrize(CatchupReward row)
-    {
-        if (row.Kind == "skill" || !row.Place.Marks.Any(IsPrize))
-        {
-            return false;
-        }
-
-        string item = KindOf(row) + row.Id;
-        return _items.ContainsKey(item) && !Held(item);
-    }
-
-    /// <summary>
-    /// Reports whether a mark is a prize's: a count of <c>prize_variables</c> or a switch of
-    /// <c>prize_switches</c>.
-    /// </summary>
-    /// <param name="mark">The mark.</param>
-    /// <returns>Whether it is.</returns>
-    private bool IsPrize(StoryMark mark) => mark.Key.Kind switch
-    {
-        StoryKeyKind.Variable => _tables.PrizeVariables.Contains(mark.Key.Id),
-        StoryKeyKind.Switch => _tables.PrizeSwitches.Contains(mark.Key.Id),
-        _ => false,
-    };
 
     /// <summary>
     /// Reports whether the party holds an item, in the bag or worn.
@@ -1456,7 +1420,8 @@ internal sealed class CatchupLook
     }
 
     /// <summary>
-    /// Gives once per save what notes of an earlier version noted done without giving.
+    /// Gives once per save what notes of an earlier version noted done without giving, but an item an
+    /// event of the game takes away, which the player may have given up as the story asked.
     /// </summary>
     /// <param name="story">The player's story.</param>
     private void RepairRewards(StoryValues story)
@@ -1474,7 +1439,7 @@ internal sealed class CatchupLook
         {
             string key = KeyOf(row);
             string item = KindOf(row) + row.Id;
-            if (row.Kind == "skill" || !Truthy(done[key]) || waits.ContainsKey(key) || !row.Ran || item == "w4112" || !row.Place.Site.StartsWith("map:", StringComparison.Ordinal) || !BeforeLog(row.Place) || !Passed(row.Place, story))
+            if (row.Kind == "skill" || !Truthy(done[key]) || waits.ContainsKey(key) || !row.Ran || _tables.TakenItems.Contains(item) || !row.Place.Site.StartsWith("map:", StringComparison.Ordinal) || !BeforeLog(row.Place) || !Passed(row.Place, story))
             {
                 continue;
             }
@@ -1512,7 +1477,7 @@ internal sealed class CatchupLook
         }
 
         _items[item] = count + amount;
-        if (kind == "i" && (_unlockIds.Contains(id) || IsMakina(id)))
+        if (kind == "i" && IsMakina(id))
         {
             _own.SetSelfSwitch(StoryKey.SelfSwitch(FoundMap, (int)id, FoundLetter));
         }
@@ -1561,13 +1526,15 @@ internal sealed class CatchupLook
 
     /// <summary>
     /// Reports whether the player holds every orb before the story moved on to the step the orbs'
-    /// event sets.
+    /// event sets, as history from before the world's log: the world's log started past that step.
+    /// Later, the replay of the run of the orbs' event carries the story on.
     /// </summary>
     /// <returns>Whether they do.</returns>
     private bool OrbsDue()
     {
         CatchupRules rules = _tables.Rules;
-        if (rules.Orbs.Count == 0 || rules.OrbsGathered is not { } gathered || rules.OrbEvent is null || (_own.Variable(StoryValues.MainProgress) ?? 0) >= gathered)
+        if (rules.Orbs.Count == 0 || rules.OrbsGathered is not { } gathered || rules.OrbEvent is null || (_own.Variable(StoryValues.MainProgress) ?? 0) >= gathered
+            || (_log is not null && (_log.Variable(StoryValues.MainProgress) ?? 0) < gathered))
         {
             return false;
         }
@@ -1848,13 +1815,13 @@ internal sealed class CatchupLook
     private List<long> NoteRoster()
     {
         long[] ids = [.. _roster.Select(entry => entry.Id).Where(id => !Visiting(id, _own))];
-        if (_sharing == "off" || _summary is null)
+        if (_sharing == CompanionScope.NoSharing || _summary is null)
         {
             return [];
         }
 
         long[] shared = [.. Numbers(_summary["comps"])];
-        List<long> sharable = [.. ids.Where(id => id != Hero && !shared.Contains(id) && (_sharing == "all" || _tables.Index.JoinsOf((int)id).Count > 0))];
+        List<long> sharable = [.. ids.Where(id => id != Hero && !shared.Contains(id) && _tables.Scope.Shares((int)id, _sharing))];
         ShareIn(shared);
         return sharable;
     }
@@ -1883,7 +1850,7 @@ internal sealed class CatchupLook
             }
 
             CatchupJoin? first = _tables.Index.JoinsOf((int)id).FirstOrDefault();
-            if ((first is null && _sharing != "all") || !Allowed((int)id))
+            if (!Allowed((int)id, CompanionPath.World))
             {
                 continue;
             }
@@ -1962,81 +1929,13 @@ internal sealed class CatchupLook
     private bool IsMakina(long id) => _tables.Makina.Any(row => row.Item == id);
 
     /// <summary>
-    /// Hands out every found key item and item unlocking a job or race the save never held, keeps
-    /// one of each item unlocking a job or race, and counts the copies another player's event used
-    /// up, which the scripts take (<see cref="FoundItems"/>); a Makina waits for its level.
-    /// </summary>
-    /// <remarks>
-    /// A found mark notes a gain wherever it happened, a battle's drop too, which no run hands over.
-    /// </remarks>
-    /// <returns>The decision, whose items held and given go to the save.</returns>
-    private FoundItems CheckFoundItems()
-    {
-        var held = new Dictionary<long, long>();
-        foreach (long id in _unlockIds.Concat(_keyIds))
-        {
-            if (_items.TryGetValue("i" + id, out long count))
-            {
-                held[id] = count;
-            }
-        }
-
-        FoundItems plan = FoundItems.Plan(FoundIds().Where(id => !IsMakina(id)), _got, held, _unlockIds.Contains, UsedIds(), _spent);
-        foreach ((long id, long extra) in plan.Trims)
-        {
-            Act("trim", id, extra);
-            _items["i" + id] -= extra;
-        }
-
-        foreach (long id in plan.Gives)
-        {
-            Give("i", id, 1, $"found:{id}", false);
-        }
-
-        foreach (long id in plan.Takes)
-        {
-            _items["i" + id] -= 1;
-        }
-
-        return plan;
-    }
-
-    /// <summary>
-    /// Lists the items found in the player's story and the world's.
-    /// </summary>
-    /// <returns>The items, each once.</returns>
-    private IEnumerable<long> FoundIds() => MarksOn().Where(key => key.Letter == FoundLetter).Select(key => (long)key.Event).Distinct().ToList();
-
-    /// <summary>
-    /// Lists the uses of items by events in the player's story and the world's.
-    /// </summary>
-    /// <returns>The uses, as "item.mark", each once.</returns>
-    private IEnumerable<string> UsedIds() =>
-        MarksOn().Where(key => key.Letter.StartsWith(UsedPrefix, StringComparison.Ordinal)).Select(key => string.Create(CultureInfo.InvariantCulture, $"{key.Event}.{key.Letter}")).Distinct().ToList();
-
-    /// <summary>
-    /// Lists the self switches of map <see cref="FoundMap"/> on in the player's story and the world's.
-    /// </summary>
-    /// <returns>The self switches.</returns>
-    private IEnumerable<StoryKey> MarksOn()
-    {
-        IEnumerable<StoryKey> keys = _own.SelfSwitchesOn;
-        if (_told is not null)
-        {
-            keys = keys.Concat(_told.SelfSwitchesOn);
-        }
-
-        return keys.Where(key => key.Id == FoundMap);
-    }
-
-    /// <summary>
     /// Plays in the player's game the recruit page of every story companion the roster lacks once
     /// their story finished a route, at the join's gate, once per companion, unless the world shares
     /// no companions.
     /// </summary>
     private void MissedCompanions()
     {
-        if (_sharing == "off" || !StoryParts.Routes.Any(_own.Cleared))
+        if (!StoryParts.Routes.Any(_own.Cleared))
         {
             return;
         }
@@ -2045,7 +1944,7 @@ internal sealed class CatchupLook
         foreach (CatchupJoin row in _tables.Index.StoryJoins)
         {
             string key = $"m:{row.Actor}";
-            if (IsTrue(done[key]) || InRoster(row.Actor) || !StoryRows.PastByRoute(row.Place, _own, NotedSide()) || TakenAwaySince(row, _own, null) || !Reached(row.Gate) || !Allowed(row.Actor))
+            if (IsTrue(done[key]) || InRoster(row.Actor) || !StoryRows.PastByRoute(row.Place, _own, NotedSide()) || TakenAwaySince(row, _own, null) || !Reached(row.Gate) || !Allowed(row.Actor, CompanionPath.World))
             {
                 continue;
             }

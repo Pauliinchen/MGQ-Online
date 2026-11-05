@@ -2,6 +2,7 @@
 //  SorterCases.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Found the battlefuck events among the cases' common events
 //      Paulinchen  2026-10-28: Classified the cases' commands as the reader does
 //                            - Gave the cases' common events and names as an event source
 //      Paulinchen  2026-10-23: Created
@@ -288,6 +289,9 @@ internal static class SorterCases
 
         /// <inheritdoc />
         public IReadOnlyList<long> CallersOf(long id) => [.. CommonIds.Where(caller => CommonKeys(caller)!.Calls.Contains(id))];
+
+        /// <inheritdoc />
+        public IReadOnlySet<long> Battlefucks => field ??= BattlefuckEvents.Walk(this);
 
         /// <inheritdoc />
         public bool IsScratchSwitch(long id) => names.IsScratchSwitch(id);

@@ -2,6 +2,7 @@
 //  BuiltGame.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Found the battlefuck events once, as the events database lists them
 //      Paulinchen  2026-10-28: Created
 //
 //----------------------------------------------------------------
@@ -64,6 +65,11 @@ internal sealed class BuiltGame : IEventSource
     /// The common events that call each, made on the first question.
     /// </summary>
     private Dictionary<long, List<long>>? _callers;
+
+    /// <summary>
+    /// The battlefuck events, found on the first question.
+    /// </summary>
+    private IReadOnlySet<long>? _battlefucks;
 
     /// <summary>
     /// Gathers the lists and rows of a build.
@@ -180,6 +186,9 @@ internal sealed class BuiltGame : IEventSource
             .ToDictionary(group => group.Key, group => group.Select(call => call.Caller).Order().ToList());
         return _callers.GetValueOrDefault(id) ?? [];
     }
+
+    /// <inheritdoc />
+    public IReadOnlySet<long> Battlefucks => _battlefucks ??= CommonFlags.Battlefucks(this);
 
     /// <inheritdoc />
     public bool IsScratchSwitch(long id) => _scratch.Switches.Contains(id);

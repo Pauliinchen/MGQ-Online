@@ -2,12 +2,14 @@
 //  ShippedDatabaseTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Checked the battlefuck events the shipped file lists
 //      Paulinchen  2026-10-30: Pinned the fingerprint of format 2
 //      Paulinchen  2026-10-28: Created
 //
 //----------------------------------------------------------------
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using MGQOnline.Data.Events;
 
@@ -44,6 +46,22 @@ public sealed class ShippedDatabaseTests
         Assert.Equal(EventSchema.Version, meta.SchemaVersion);
         Assert.Equal(GameFingerprint, meta.Build.Fingerprint);
         Assert.Equal(("3.06", "untranslated"), (meta.Build.GameVersion, meta.Build.Source));
+    }
+
+    /// <summary>
+    /// Asserts that the shipped file lists the battlefuck events the hand list held before the
+    /// generator found them: the counts of a win and a loss and the talks of the first and the last
+    /// battlefucker.
+    /// </summary>
+    [Fact]
+    public void ShippedFile_ListsTheKnownBattlefuckEvents()
+    {
+        using EventStore store = EventStore.Open(ShippedFile());
+
+        IReadOnlySet<long> battlefucks = store.Battlefucks();
+
+        Assert.Equal(372, battlefucks.Count);
+        Assert.Superset(new HashSet<long> { 6991, 6999, 7000, 7001, 7567 }, new HashSet<long>(battlefucks));
     }
 
     /// <summary>

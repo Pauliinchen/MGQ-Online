@@ -2,6 +2,8 @@
 //  EventStore.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Listed the items, weapons and armors an event takes away
+//                            - Listed the battlefuck events once per store
 //      Paulinchen  2026-11-01: Read the branches of an extended choice too
 //      Paulinchen  2026-10-31: Added the pairs the one-time repair of stuck saves completes
 //                            - Told whether a list gives and read the branches of a choice
@@ -87,6 +89,11 @@ public sealed class EventStore : IDisposable
     /// The relay mirror's file, <see langword="null"/> while none is attached.
     /// </summary>
     private string? _mirrorPath;
+
+    /// <summary>
+    /// The battlefuck events, <see langword="null"/> until they were read.
+    /// </summary>
+    private IReadOnlySet<long>? _battlefucks;
 
     /// <summary>
     /// Makes a store.
@@ -394,6 +401,19 @@ public sealed class EventStore : IDisposable
     public IReadOnlyList<int> CommonIds() => Ids("SELECT id FROM common_events ORDER BY id");
 
     /// <summary>
+    /// Lists the battlefuck events, as the generator found them (common_events.battlefuck), read at
+    /// the first question and kept.
+    /// </summary>
+    /// <returns>Their ids; none for a foreign store.</returns>
+    public IReadOnlySet<long> Battlefucks()
+    {
+        lock (_gate)
+        {
+            return _battlefucks ??= new HashSet<long>(Ids("SELECT id FROM common_events WHERE battlefuck = 1").Select(id => (long)id));
+        }
+    }
+
+    /// <summary>
     /// Lists the cutscene maps.
     /// </summary>
     /// <returns>Their ids in order.</returns>
@@ -457,6 +477,15 @@ public sealed class EventStore : IDisposable
     /// <param name="listId">The list.</param>
     /// <returns>Whether it does.</returns>
     public bool Gives(int listId) => First(EventTables.Gives, "WHERE list_id = ?", listId) is not null;
+
+    /// <summary>
+    /// Lists the items, weapons and armors an event of the game takes away by a fixed number: a
+    /// Change Items, Weapons or Armors command that lowers them by a constant.
+    /// </summary>
+    /// <returns>Each as "i", "w" or "a" and its id, such as "w4112", in order.</returns>
+    public IReadOnlyList<string> ItemsTaken() =>
+        [.. Ids("SELECT DISTINCT (code - 126) * 1000000 + p0 FROM commands WHERE code BETWEEN 126 AND 128 AND p1 = 1 AND p2 = 0 ORDER BY 1")
+            .Select(code => string.Create(CultureInfo.InvariantCulture, $"{"iwa"[code / 1000000]}{code % 1000000}"))];
 
     /// <summary>
     /// Reads the branches of a Show Choices command or an extended choice's script command.

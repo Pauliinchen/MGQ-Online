@@ -2,6 +2,7 @@
 //  StoryChoices.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Left the self switches of the Navy's and the Pirates' lines to the reviewed key list
 //      Paulinchen  2026-11-01: Took Succubus Village's outcomes and notes from the walk of the game's data
 //      Paulinchen  2026-10-31: Left every choice a stream hands the run of to the replay
 //      Paulinchen  2026-10-28: Created
@@ -68,14 +69,12 @@ public sealed record ChoiceWrites(string Title, string Label, IReadOnlyList<KeyV
     IReadOnlyList<KeyValuePair<int, int>> Least, IReadOnlyList<SelfSwitchKey> SelfSwitches, IReadOnlyList<int> Joins, IReadOnlyList<int> Leaves, ShipPlace? Ship);
 
 /// <summary>
-/// The switches and variables that are the player's own as choices' outcomes, and in a Raid World
-/// the self switches of the Navy's and the Pirates' lines.
+/// The switches and variables that are the player's own as choices' outcomes. The self switches of
+/// the Navy's and the Pirates' lines are each Raid World player's own by the reviewed key list.
 /// </summary>
 /// <param name="Switches">The switches.</param>
 /// <param name="Variables">The variables.</param>
-/// <param name="Maps">The maps whose self switches are each player's own.</param>
-/// <param name="SelfSwitches">The self switches that are.</param>
-public sealed record PersonalChoiceKeys(IReadOnlyList<int> Switches, IReadOnlyList<int> Variables, IReadOnlyList<int> Maps, IReadOnlyList<SelfSwitchKey> SelfSwitches);
+public sealed record PersonalChoiceKeys(IReadOnlyList<int> Switches, IReadOnlyList<int> Variables);
 
 /// <summary>
 /// The rules of the story's choices a player makes for themselves (see
@@ -319,7 +318,7 @@ public static class StoryChoices
 
     /// <summary>
     /// Lists the switches and variables that are the player's own as choices' outcomes: in a Raid
-    /// World every choice's, and the self switches of the Navy's and the Pirates' lines; while a
+    /// World every choice's; while a
     /// Classic party's member plays the leader's story, those of every choice their own story made,
     /// so the leader's story never overwrites them.
     /// </summary>
@@ -330,7 +329,7 @@ public static class StoryChoices
     {
         if (!raid && own is null)
         {
-            return new PersonalChoiceKeys([], [], [], []);
+            return new PersonalChoiceKeys([], []);
         }
 
         var switches = new List<int>();
@@ -347,7 +346,7 @@ public static class StoryChoices
             variables.AddRange(values.Where(id => !variables.Contains(id)));
         }
 
-        return new PersonalChoiceKeys(switches, variables, raid ? ChoiceTable.NavyMaps : [], raid ? ChoiceTable.NavySelfSwitches : []);
+        return new PersonalChoiceKeys(switches, variables);
     }
 
     /// <summary>

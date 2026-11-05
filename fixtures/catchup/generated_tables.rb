@@ -2,6 +2,7 @@
 #  generated_tables.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Left the Medal King's switches and the items an event takes away empty for the tests to fill, and dropped the prize counts
 #      Paulinchen  2026-10-31: Dropped the maps where warping is free
 #      Paulinchen  2026-10-28: Created
 #
@@ -104,5 +105,6 @@ module GeneratedCatchupTables
   VEHICLES = rows("vehicles").map { |row| Vehicle.new(VEHICLE_NAMES.index(row["vehicle"]), *place(row), row["ran"]) }
 
   MAKINA = rows("makina").map { |row| Makina.new(row["item"], row["level"], row["site"]) }
-  PRIZE_VARIABLES = rows("prize_variables").map { |row| row["variable"] }
+  PRIZE_SWITCHES = []
+  TAKEN_ITEMS = []
 end

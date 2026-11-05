@@ -2,6 +2,7 @@
 //  story_catchup.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Dropped the check of the prize counts
 //      Paulinchen  2026-10-31: Checked that a world chest's flags still go to released builds
 //      Paulinchen  2026-10-28: Checked the free order rule
 //                            - Checked a prize by its switch
@@ -155,8 +156,6 @@ test("a count names its switches with their weights and its last value with its 
   assert.equal(code("actor_changes", { ...change, gate: null }), null);
   assert.equal(code("actor_changes", { ...change, calls: [["change_class", [6, 1], false]] }), MAPPING_REFUSAL.field);
   assert.equal(code("actor_changes", { ...change, calls: [["persona_change", [], false]] }), MAPPING_REFUSAL.field);
-  assert.equal(code("prize_variables", { variable: 87 }), null);
-  assert.equal(code("prize_variables", { variable: 0 }), MAPPING_REFUSAL.field);
   assert.equal(code("prize_switches", { switch: 2324 }), null);
   assert.equal(code("prize_switches", { variable: 2324 }), MAPPING_REFUSAL.field);
 });

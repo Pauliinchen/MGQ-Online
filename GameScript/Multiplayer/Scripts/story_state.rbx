@@ -2,6 +2,7 @@
 #  story_state.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Left the self switches of the Navy's and the Pirates' lines to the reviewed key list
 #      Paulinchen  2026-11-01: Noted in the save the side the player took along in Iliasville, which the route's side switches no longer tell
 #                            - Noted that a save came from another player's starting save, whose side is not the player's
 #      Paulinchen  2026-10-31: Kept the warp ban from stopping a player in a world
@@ -397,7 +398,7 @@ module MGQ_MpStoryState
   def self.personal_self_switch?(key)
     return !MGQ_MpStoryKeys.shared?(2, key) if MGQ_MpCoop::Scope.raid?
 
-    !classic_world?(2, key) || choice_self_switch?(key)
+    !classic_world?(2, key)
   end
 
   # Reports whether a switch, variable or self switch is the player's own.
@@ -411,15 +412,6 @@ module MGQ_MpStoryState
     when 1 then personal_variable?(key)
     else personal_self_switch?(key)
     end
-  end
-
-  # Reports whether a self switch is the player's own as one of a choice's lines, see
-  # MGQ_MpCoopChoices.personal_self_switch?.
-  #
-  # @param key [Array] The self switch: map, event and letter.
-  # @return [Boolean] Whether it is.
-  def self.choice_self_switch?(key)
-    defined?(MGQ_MpCoopChoices) && MGQ_MpCoopChoices.personal_self_switch?(key) ? true : false
   end
 
   # Lists the self switches of the chests on the map, through coop_events.rbx.

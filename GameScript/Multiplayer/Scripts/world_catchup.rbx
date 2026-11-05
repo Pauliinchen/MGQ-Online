@@ -2,6 +2,9 @@
 #  world_catchup.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Left found key items and their uses to the story replay, and noted only a Makina as found for the world, which Makina by level reads
+#                            - Told the DLL whether a replay hands out a companion, with the world's companion sharing and the companion's start level
+#                            - Held a companion of a replay that went the player's own way back for the join's gate, as an own event's
 #      Paulinchen  2026-11-01: Noted every key item the player gains as found for the world too, and handed the DLL the items the save held
 #                            - Noted the found items the catch-up gave, whose next gain adds nothing
 #                            - Noted each use of a key item by an event of the player's game for the world, and took a copy of each item another player's event used up
@@ -96,10 +99,8 @@
 # vehicles it gave. The rows give only the history the world's story was past where its log starts;
 # the world's track replays the runs after it. Makina by level and the companions a player missed
 # once a route finished come by playing their page in the player's game (story_replay.rbx). A key
-# item or an item unlocking a job or a race that any player found, in an event or as a battle's
-# drop, comes to every player at once, players behind included, once per save, and leaves every
-# player who holds it, a copy for each use, once an event of any player's game used it up
-# (story_found.rbx).
+# item or an item unlocking a job or a race that any player's event gave or used up comes with the
+# replay of that run (story_keys.rbx).
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpWorldCatchup
@@ -199,9 +200,8 @@ module MGQ_MpWorldCatchup
   # The field of $game_system the save keeps the DLL's notes in, see ledger.
   LEDGER = :@mgq_mp_catchup
 
-  # The map of the self switches [FOUND_MAP, item, FOUND_LETTER] that tell which key items, items
-  # unlocking a job or a race and Makina a player of the world got, and of those [FOUND_MAP, item,
-  # mark] that tell each use of a key item by an event of a player's game (MGQ_MpStoryFound.used).
+  # The map of the self switches [FOUND_MAP, item, FOUND_LETTER] that tell which Makina a player of
+  # the world got, which every player gets by level (check_makina in the DLL).
   #
   # No map has the id 0, so no event reads them, and they go with the world's story as any other
   # self switch.
@@ -341,8 +341,8 @@ module MGQ_MpWorldCatchup
   # Has the DLL look at the player's story once and carries out its answer: everything the story
   # owes once when an audit is due (on entering, after a load, on a level up), the vehicles after a
   # story written into the player's, else the rows new since, the rewards waiting for their gate,
-  # the roster's skills, classes and races, the shared companions, the Makina, the missed companions,
-  # the found items and the counts.
+  # the roster's skills, classes and races, the shared companions, the Makina, the missed companions
+  # and the counts.
   def self.look
     note_held_items if @audit_due
     audit = @audit_due
@@ -547,8 +547,7 @@ module MGQ_MpWorldCatchup
     comps = world ? world["comps"].to_a : []
     {
       "mode" => MGQ_MpWorldStory.mode ? MGQ_MpWorldStory.mode.to_s : nil, "own" => keys ? values(story_now) : nil, "told" => @world_told, "roster" => roster_entries,
-      "items" => item_counts, "worn" => worn_items, "unlocks" => unlock_ids, "key_items" => MGQ_MpStoryFound.item_ids, "got" => MGQ_MpStoryFound.got,
-      "spent" => MGQ_MpStoryFound.spent, "pick" => pick_now,
+      "items" => item_counts, "worn" => worn_items, "unlocks" => unlock_ids, "pick" => pick_now,
       "encounters" => !$game_system.encounter_disabled, "summary" => world, "sharing" => sharing.to_s, "starts" => comps.map { |id| [id, start_level(id)] },
       "log" => (log = MGQ_MpWorldStory.log_story) && keys ? values(log) : nil,
     }
@@ -565,7 +564,7 @@ module MGQ_MpWorldCatchup
   end
 
   # Reads the values of a story the DLL's catch-up reads (see keys): the switches and self switches
-  # on and the variables set to a number, with the self switches of the items found and used up.
+  # on and the variables set to a number, with the self switches of the Makina found.
   #
   # @param story [Array] The switches, variables and self switches.
   # @return [Hash] "s" (the switches on), "v" ([id, value] each) and "ss" (the self switches on).
@@ -615,13 +614,13 @@ module MGQ_MpWorldCatchup
     end.compact
   end
 
-  # Counts the items the DLL's catch-up reads (see keys) and those that reach every player once any
-  # player found one (MGQ_MpStoryFound.item_ids) that the game has.
+  # Counts the items the DLL's catch-up reads (see keys) and those that unlock a job or a race that
+  # the game has.
   #
   # @return [Hash{String => Integer}] The counts by "i<id>", "w<id>" or "a<id>".
   def self.item_counts
     counts = {}
-    ((keys ? keys["items"] : []) + (unlock_ids | MGQ_MpStoryFound.item_ids).map { |id| "i#{id}" }).each do |key|
+    ((keys ? keys["items"] : []) + unlock_ids.map { |id| "i#{id}" }).each do |key|
       next if counts.key?(key)
 
       item = MGQ_MpGame.item(key[0, 1], key[1..-1].to_i)
@@ -688,9 +687,6 @@ module MGQ_MpWorldCatchup
   def self.apply(answer)
     run(answer["actions"])
     @visiting = Array(answer["visiting"]) if answer.key?("visiting")
-    MGQ_MpStoryFound.got = answer["got"] if answer["got"]
-    MGQ_MpStoryFound.given = answer["given"] if answer["given"]
-    MGQ_MpStoryFound.lose_used(answer["take"], answer["spent"]) if answer["spent"]
   end
 
   # Carries out the actions the DLL answered, in their order, each with the game's own grant.
@@ -733,7 +729,6 @@ module MGQ_MpWorldCatchup
     when "switch" then $game_switches[action[1]] = action[2]
     when "setting" then settle(action[1], action[2], action[3], action[4])
     when "vehicles" then place_vehicles(action[1])
-    when "trim" then trim_copies(action[1], action[2])
     when "replay" then MGQ_MpStoryReplay.derive(action[1], action[2])
     end
     nil
@@ -1103,20 +1098,6 @@ module MGQ_MpWorldCatchup
     true
   end
 
-  # Takes back copies of an item beyond the first, as an item unlocking a job or a race counts once.
-  #
-  # @param id [Integer] The item.
-  # @param count [Integer] How many to take back.
-  # @return [nil] Nothing to tell among the gifts.
-  def self.trim_copies(id, count)
-    item = MGQ_MpGame.item("i", id)
-    return nil unless item
-
-    $game_party.lose_item(item, count)
-    log("took #{item.name} x#{count}: it counts once")
-    nil
-  end
-
   # Reports whether a player of the world got an item, as gained notes it.
   #
   # @param id [Integer] The item.
@@ -1125,13 +1106,12 @@ module MGQ_MpWorldCatchup
     $game_self_switches[[FOUND_MAP, id, FOUND_LETTER]] ? true : false
   end
 
-  # Notes a key item or an item unlocking a job or a race the player gained as found for the world,
-  # so every other player gets it too; a Makina only by level.
+  # Notes a Makina the player gained as found for the world, so every other player gets it by level.
   #
   # @param item [RPG::BaseItem, nil] The item.
   # @param amount [Integer] How many.
   def self.gained(item, amount)
-    return unless amount.to_i > 0 && active? && MGQ_MpStoryFound.found_item?(item)
+    return unless amount.to_i > 0 && active? && item.is_a?(RPG::Item) && keys && keys["makina"].include?(item.id)
 
     key = [FOUND_MAP, item.id, FOUND_LETTER]
     return if $game_self_switches[key]
@@ -1142,23 +1122,13 @@ module MGQ_MpWorldCatchup
     log_once(:found, "noting a found item failed: #{e.class}: #{e.message}")
   end
 
-  # Notes a use of a key item by an event of the player's game for the world, so every other player
-  # who holds the item loses a copy too.
-  #
-  # @param item [RPG::Item] The item.
-  # @param mark [String] The use's mark, see MGQ_MpStoryFound.used.
-  def self.used(item, mark)
-    return unless active?
-
-    $game_self_switches[[FOUND_MAP, item.id, mark]] = true
-    log("noted a use of #{item.name} for the world")
-  end
-
-  # Notes every key item and every item unlocking a job or a race the player holds as found for the
-  # world, as gained does for one they get, so one got before the world noted it still reaches the
-  # other players. Runs before every look at everything.
+  # Notes every Makina the player holds as found for the world, as gained does for one they get, so
+  # one got before the world noted it still reaches the other players by level. Runs before every
+  # look at everything.
   def self.note_held_items
-    MGQ_MpStoryFound.item_ids.each { |id| gained($data_items[id], 1) if $game_party.item_number($data_items[id]) > 0 }
+    return unless keys
+
+    keys["makina"].each { |id| gained($data_items[id], 1) if $data_items[id] && $game_party.item_number($data_items[id]) > 0 }
   end
 
   # Reports whether an item unlocks a job or a race.
@@ -1346,6 +1316,9 @@ module MGQ_MpWorldCatchup
   # right to, in a Raid World as the DLL finds it and in a Classic party through coop_story.rbx;
   # and in a Raid World holds back a companion a story event of the player's own hands out before
   # the player's level reaches the join's gate, as the DLL finds it: the join waits for it instead.
+  # A replay's join in a Raid World waits for the world's companion sharing and the join's level,
+  # which the world's shared companions bring later (the one companion filter in the DLL); one of a
+  # replay that went the player's own way is the player's own and waits for its gate.
   # Called before the game adds a companion to the party.
   #
   # @param actor_id [Integer] The companion, in any persona.
@@ -1359,8 +1332,10 @@ module MGQ_MpWorldCatchup
     return false if keys.nil?
 
     replaying = defined?(MGQ_MpStoryReplay) && MGQ_MpStoryReplay.respond_to?(:running?) && MGQ_MpStoryReplay.running?
-    own_event = !replaying && MGQ_MpWorldStory.mode == :world && defined?(MGQ_MpCoopEvents) && MGQ_MpCoopEvents.telling?
-    answer = call(HOLD_TOPIC, "actor" => main, "site" => joining_site, "scope_only" => !own_event, "own" => values(story_now), "roster" => roster_entries)
+    own_way = replaying && MGQ_MpStoryReplay.current.respond_to?(:own_way?) && MGQ_MpStoryReplay.current.own_way? ? true : false
+    own_event = own_way || (!replaying && MGQ_MpWorldStory.mode == :world && defined?(MGQ_MpCoopEvents) && MGQ_MpCoopEvents.telling?)
+    answer = call(HOLD_TOPIC, "actor" => main, "site" => joining_site, "scope_only" => !own_event, "own" => values(story_now), "roster" => roster_entries,
+                              "replay" => replaying ? true : false, "own_way" => own_way, "sharing" => MGQ_MpWorld.companion_sharing.to_s, "start" => start_level(main))
     return false unless answer
 
     run(answer["actions"])
@@ -1516,7 +1491,7 @@ end
 # Game hooks of this script alone, through core_hooks.rbx.
 
 begin
-  # A key item or an item unlocking a job or a race the player gets is found for the world.
+  # A Makina the player gets is found for the world.
   MGQ_MpHooks.after(Game_Party, :gain_item, "world_catchup") { |item, amount, *_| MGQ_MpWorldCatchup.gained(item, amount) }
 
   # A companion a story event of the player's own hands out before the join's gate waits for it.

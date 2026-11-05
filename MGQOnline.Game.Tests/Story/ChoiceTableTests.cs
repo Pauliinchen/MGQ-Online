@@ -2,6 +2,7 @@
 //  ChoiceTableTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Added the case of the Spider Princess's point
 //      Paulinchen  2026-11-01: Created
 //
 //----------------------------------------------------------------
@@ -77,6 +78,18 @@ public sealed class ChoiceTableTests
         Assert.Equal([334], first.Joins);
         Assert.Equal([245, 268], first.Leaves);
         Assert.Empty(again.Leaves);
+    }
+
+    /// <summary>
+    /// Asserts that a catch-up to point 30, where the game plays only the first meeting with the
+    /// Spider Princess, passes her choice by, and one to point 31, where the game offers her join,
+    /// carries the player past it.
+    /// </summary>
+    [Fact]
+    public void Spider_IsPassedOnlyByACatchUpToHerJoinOffer()
+    {
+        Assert.DoesNotContain("spider", StoryChoices.Passed(29, 30, Fresh.Values, null));
+        Assert.Contains("spider", StoryChoices.Passed(30, 31, Fresh.Values, null));
     }
 
     /// <summary>

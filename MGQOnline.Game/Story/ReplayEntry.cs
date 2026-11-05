@@ -2,6 +2,8 @@
 //  ReplayEntry.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Noted whether a run gave or used up a found item
+//                            - Named a battle's drops as a site, and carried the found items they gave
 //      Paulinchen  2026-10-31: Kept the number its track keeps an entry under
 //                            - Wrote inputs apart from their entry
 //                            - Created
@@ -18,8 +20,8 @@ namespace MGQOnline.Game.Story;
 
 /// <summary>
 /// Where a run started, named as story_keys.rbx names a write's site: a map event's page,
-/// <c>map:&lt;map&gt;:&lt;event&gt;:&lt;page from 1&gt;</c>, or an autorun or parallel common event,
-/// <c>ce:&lt;id&gt;</c>.
+/// <c>map:&lt;map&gt;:&lt;event&gt;:&lt;page from 1&gt;</c>, an autorun or parallel common event,
+/// <c>ce:&lt;id&gt;</c>, or a battle's drops, <c>game:drop</c>.
 /// </summary>
 /// <param name="MapId">The page's map, 0 for a common event.</param>
 /// <param name="EventId">The page's event, 0 for a common event.</param>
@@ -28,9 +30,24 @@ namespace MGQOnline.Game.Story;
 public readonly record struct ReplaySite(int MapId, int EventId, int PageNo, int CommonId)
 {
     /// <summary>
+    /// The site of a battle's drops, which no event gives.
+    /// </summary>
+    public static readonly ReplaySite Drop = default;
+
+    /// <summary>
+    /// The text of <see cref="Drop"/>.
+    /// </summary>
+    private const string DropText = "game:drop";
+
+    /// <summary>
     /// Gets whether the site is a common event's.
     /// </summary>
     public bool IsCommon => CommonId > 0;
+
+    /// <summary>
+    /// Gets whether the site is a battle's drops.
+    /// </summary>
+    public bool IsDrop => MapId == 0 && CommonId == 0;
 
     /// <summary>
     /// Makes a page's site.
@@ -44,11 +61,16 @@ public readonly record struct ReplaySite(int MapId, int EventId, int PageNo, int
     /// <summary>
     /// Reads a site as the scripts name it.
     /// </summary>
-    /// <param name="text">The site, such as "map:215:27:1" or "ce:129".</param>
+    /// <param name="text">The site, such as "map:215:27:1", "ce:129" or "game:drop".</param>
     /// <returns>The site.</returns>
-    /// <exception cref="RubyValueException">The text names no page and no common event.</exception>
+    /// <exception cref="RubyValueException">The text names no page, no common event and no battle's drops.</exception>
     public static ReplaySite Parse(string text)
     {
+        if (text == DropText)
+        {
+            return Drop;
+        }
+
         string[] parts = (text ?? string.Empty).Split(':');
         if (parts.Length == 2 && parts[0] == "ce" && Positive(parts[1], out int common))
         {
@@ -60,16 +82,16 @@ public readonly record struct ReplaySite(int MapId, int EventId, int PageNo, int
             return Page(map, eventId, page - 1);
         }
 
-        throw new RubyValueException($"{text} names no page and no common event.");
+        throw new RubyValueException($"{text} names no page, no common event and no battle's drops.");
     }
 
     /// <summary>
     /// Writes the site as the scripts name it.
     /// </summary>
-    /// <returns>Such as "map:215:27:1" or "ce:129".</returns>
+    /// <returns>Such as "map:215:27:1", "ce:129" or "game:drop".</returns>
     public override string ToString() => IsCommon
         ? string.Create(CultureInfo.InvariantCulture, $"ce:{CommonId}")
-        : string.Create(CultureInfo.InvariantCulture, $"map:{MapId}:{EventId}:{PageNo + 1}");
+        : IsDrop ? DropText : string.Create(CultureInfo.InvariantCulture, $"map:{MapId}:{EventId}:{PageNo + 1}");
 
     /// <summary>
     /// Reads a whole number above 0.
@@ -193,6 +215,18 @@ public sealed record ReplayEntry(
     public long? Number { get; init; }
 
     /// <summary>
+    /// Gets whether the run gave or used up a found item, a key item or an item unlocking a job or
+    /// a race, which reaches every player even from a run that changed no shared key.
+    /// </summary>
+    public bool Found { get; init; }
+
+    /// <summary>
+    /// Gets the found items a battle's drops gave the opener, each with how many, in their order;
+    /// empty for a run of an event.
+    /// </summary>
+    public IReadOnlyList<KeyValuePair<int, int>> Drops { get; init; } = [];
+
+    /// <summary>
     /// Makes the entry of a page the player's own history or a feature names, which has no opener
     /// run: it starts from the player's current values, with the keys that close the page read as
     /// off where a replay reads them at its start values, and its step is those keys.
@@ -237,16 +271,28 @@ public sealed record ReplayEntry(
             InputsOf(entry["inputs"]), entry["derived"] is RubyBool { Flag: true })
         {
             Number = entry["n"].IsNil ? null : entry["n"].AsLong(),
+            Found = entry["found"] is RubyBool { Flag: true },
+            Drops = DropsOf(entry["drops"]),
         };
     }
 
     /// <summary>
     /// Writes the entry as the scripts and the save hold it.
     /// </summary>
-    /// <returns>{"id", "site", "stream", "scope" ("party" or "world"), "opener" (nil for none), "keys" (key => value before), "place" ([markers] or nil), "start" (key => value), "inputs" ([[at, occurrence, kind, value], ...]), "derived", and "n" for an entry of a track}.</returns>
+    /// <returns>{"id", "site", "stream", "scope" ("party" or "world"), "opener" (nil for none), "keys" (key => value before), "place" ([markers] or nil), "start" (key => value), "inputs" ([[at, occurrence, kind, value], ...]), "derived", "found" for a found item's run, "drops" ([[item, count], ...]) for a battle's drops, and "n" for an entry of a track}.</returns>
     public RubyHash Write()
     {
         RubyHash written = Fields();
+        if (Found)
+        {
+            written.Add("found", true);
+        }
+
+        if (Drops.Count > 0)
+        {
+            written.Add("drops", new RubyArray(Drops.Select(drop => (RubyValue)new RubyArray { drop.Key, drop.Value })));
+        }
+
         if (Number is { } number)
         {
             written.Add("n", number);
@@ -272,6 +318,20 @@ public sealed record ReplayEntry(
         { "inputs", InputsArray(Inputs) },
         { "derived", Derived },
     };
+
+    /// <summary>
+    /// Reads the found items a battle's drops gave.
+    /// </summary>
+    /// <param name="value">[[item, count], ...], nil for none.</param>
+    /// <returns>Each item with how many, in their order.</returns>
+    /// <exception cref="RubyValueException">A drop is no such pair.</exception>
+    public static IReadOnlyList<KeyValuePair<int, int>> DropsOf(RubyValue value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        return value.IsNil ? [] : [.. value.AsArray().Select(drop => drop.AsArray() is { Count: 2 } pair
+            ? new KeyValuePair<int, int>(pair[0].AsInt(), pair[1].AsInt())
+            : throw new RubyValueException("A drop is [item, count]."))];
+    }
 
     /// <summary>
     /// Writes inputs as an entry holds them.

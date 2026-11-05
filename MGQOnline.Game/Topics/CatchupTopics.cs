@@ -2,6 +2,9 @@
 //  CatchupTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Dropped the topic of the items a Classic party found, which the story replay hands over
+//                            - Registered the topic of a Classic member's catch-up by the frozen rows
+//                            - Registered the topic of the Medal King's gift in a Classic world
 //      Paulinchen  2026-11-01: Registered the topic of the items a Classic party found
 //                            - Registered the topic of which companions of the Alice and Ilias choice may join a player
 //      Paulinchen  2026-10-28: Created
@@ -17,8 +20,7 @@ namespace MGQOnline.Game.Topics;
 /// <summary>
 /// The bridge topics of a Raid World's catch-up (world_catchup.rbx), decided by
 /// <see cref="CatchupEngine"/> over the catch-up's tables of the story mapping the DLL holds, one
-/// engine and its save's notes per context, and the topic of the items a Classic party found
-/// (story_found.rbx), decided by <see cref="FoundItems"/> as a Raid World's catch-up decides them.
+/// engine and its save's notes per context.
 /// </summary>
 public static class CatchupTopics
 {
@@ -56,9 +58,16 @@ public static class CatchupTopics
     public const string ScopeTopic = "catchup.scope";
 
     /// <summary>
-    /// What a player of a Classic party gets of the items the party found, see <see cref="FoundItems.Check"/>.
+    /// What a Classic party's member who starts keeping the leader's story catches up with, see
+    /// <see cref="ClassicCatchup.Answer"/>: nothing while the story mapping has not come.
     /// </summary>
-    public const string FoundTopic = "found.check";
+    public const string ClassicTopic = "catchup.classic";
+
+    /// <summary>
+    /// The Medal King's gifts a Classic world's player is owed, see <see cref="MedalKingGift.Answer"/>:
+    /// nothing while the story mapping has not come.
+    /// </summary>
+    public const string MedalKingTopic = "catchup.medal_king";
 
     /// <summary>
     /// Registers the topics on a context, with an engine of the context's own.
@@ -77,7 +86,8 @@ public static class CatchupTopics
         context.Register(HoldTopic, (_, request) => engine.HoldJoin(tables() ?? CatchupTables.Empty, request.AsHash()));
         context.Register(UnlocksTopic, (_, request) => engine.Unlocks(tables() ?? CatchupTables.Empty, request.AsHash()));
         context.Register(ScopeTopic, (_, request) => (tables() ?? CatchupTables.Empty).Scope.Answer(request.AsHash()));
-        context.Register(FoundTopic, (_, request) => FoundItems.Check(request.AsHash()));
+        context.Register(ClassicTopic, (_, request) => ClassicCatchup.Answer(tables() ?? CatchupTables.Empty, request.AsHash()));
+        context.Register(MedalKingTopic, (_, request) => MedalKingGift.Answer(tables() ?? CatchupTables.Empty, request.AsHash()));
         return engine;
     }
 }

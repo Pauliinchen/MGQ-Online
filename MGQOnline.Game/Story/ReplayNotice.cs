@@ -2,6 +2,7 @@
 //  ReplayNotice.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Told a battle's drops another player won for everyone
 //      Paulinchen  2026-10-31: Created
 //
 //----------------------------------------------------------------
@@ -49,6 +50,11 @@ public static class ReplayNotice
         if (entry.Opener is null || entry.Derived)
         {
             return gains.Length == 0 ? null : $"Caught up: {gains}.{paid}";
+        }
+
+        if (entry.Site.IsDrop)
+        {
+            return gains.Length == 0 ? null : $"{entry.Opener} won a battle drop for everyone: {gains}.";
         }
 
         if (entry.Scope == StoryScope.Party)

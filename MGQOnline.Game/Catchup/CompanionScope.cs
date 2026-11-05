@@ -2,6 +2,7 @@
 //  CompanionScope.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Merged the companion sharing of a Raid World into the one companion filter
 //      Paulinchen  2026-11-01: Told the replay whether a page is where the player takes a side along
 //                            - Created
 //
@@ -16,10 +17,24 @@ using MGQOnline.Game.Story;
 namespace MGQOnline.Game.Catchup;
 
 /// <summary>
-/// Which players a companion of the Alice and Ilias choice may join: a choice companion is one with
-/// a lasting join that asks for the side the player took along in Iliasville, and joins only a
-/// player one of whose lasting joins fits, by that side or by a route they played. Every path that
-/// hands out a companion asks it, in Raid and Classic worlds alike.
+/// How a companion comes to a player.
+/// </summary>
+public enum CompanionPath
+{
+    /// <summary>By the player's own play, or the history of their story the catch-up carries.</summary>
+    Own,
+
+    /// <summary>By another player's play: a replay of their run, the world's shared companions, or a missed companion's recruit page.</summary>
+    World,
+}
+
+/// <summary>
+/// The one companion filter, a named exception of the story replay ("Issue 73 chest effects.md",
+/// E4) that every path handing out a companion asks, in Raid and Classic worlds alike. A companion
+/// of the Alice and Ilias choice, one with a lasting join that asks for the side the player took
+/// along in Iliasville, joins only a player one of whose lasting joins fits, by that side or by a
+/// route they played. A companion that comes by another player's play also needs the Raid World's
+/// companion sharing: off shares none, story the story's companions, all every one.
 /// </summary>
 /// <remarks>
 /// A join on a route asks for a side only where the game reads switches 4 and 5 before the route
@@ -38,11 +53,17 @@ public sealed class CompanionScope
     private readonly HashSet<string> _pickSites;
 
     /// <summary>
+    /// The tables, whose joins tell the story's companions.
+    /// </summary>
+    private readonly CatchupTables _tables;
+
+    /// <summary>
     /// Initializes the scope of the tables' companions.
     /// </summary>
     /// <param name="tables">The tables.</param>
     internal CompanionScope(CatchupTables tables)
     {
+        _tables = tables;
         IReadOnlyList<CatchupJoin> lasting = tables.Index.StoryJoins;
         foreach (int actor in lasting.Where(join => join.Place.Side is not null).Select(join => join.Actor).Distinct())
         {
@@ -51,6 +72,33 @@ public sealed class CompanionScope
 
         _pickSites = new HashSet<string>(tables.SideEvents.Where(side => side.Choice).Select(side => side.Site), StringComparer.Ordinal);
     }
+
+    /// <summary>
+    /// The way of sharing companions that shares none, as a Classic world plays too.
+    /// </summary>
+    public const string NoSharing = "off";
+
+    /// <summary>
+    /// Reports whether a world's companion sharing lets a companion reach a player by another
+    /// player's play.
+    /// </summary>
+    /// <param name="actor">The companion's main persona.</param>
+    /// <param name="sharing">"off", "story" or "all".</param>
+    /// <returns>Whether it does.</returns>
+    public bool Shares(int actor, string sharing) => sharing == "all" || (sharing == "story" && _tables.Index.JoinsOf(actor).Count > 0);
+
+    /// <summary>
+    /// Reports whether a companion may join a player by a path: the choice's side or route, and for
+    /// a companion that comes by another player's play the world's companion sharing too.
+    /// </summary>
+    /// <param name="actor">The companion's main persona.</param>
+    /// <param name="path">How it comes.</param>
+    /// <param name="sharing">The world's companion sharing: "off", "story" or "all".</param>
+    /// <param name="pick">The side the player took along: "alice", "ilias" or <see langword="null"/>.</param>
+    /// <param name="routes">The routes the player played.</param>
+    /// <returns>Whether it may.</returns>
+    public bool Allows(int actor, CompanionPath path, string sharing, string? pick, IReadOnlyCollection<string> routes) =>
+        (path == CompanionPath.Own || Shares(actor, sharing)) && Allows(actor, pick, routes);
 
     /// <summary>
     /// Gets the choice companions.

@@ -2,6 +2,7 @@
 //  CommonFlags.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Found the battlefuck events by the multiplayer's own walk of the callers
 //      Paulinchen  2026-10-28: Created
 //
 //----------------------------------------------------------------
@@ -10,6 +11,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
 using MGQOnline.Data.Events;
+using MGQOnline.Game.Events;
 using MGQOnline.Game.Events.Data;
 
 namespace MGQOnline.Data.Generator.Build;
@@ -31,12 +33,6 @@ internal static partial class CommonFlags
     public const int FadeIn = 222;
 
     /// <summary>
-    /// The game's common events that count a battlefuck's win (6999) and its loss (7000), which
-    /// every battlefucker's own events call.
-    /// </summary>
-    private static readonly long[] BattlefuckEndings = [6999, 7000];
-
-    /// <summary>
     /// The variables of the routes after the Great Decision; a list that branches on one plays in
     /// the Final Chapter.
     /// </summary>
@@ -52,11 +48,7 @@ internal static partial class CommonFlags
     public static SortedSet<long> Battlefucks(BuiltGame game)
     {
         Dictionary<long, long[]> calls = game.CommonIds.ToDictionary(id => id, id => BuiltGame.CallsOf(game.CommonListOf(id)!).ToArray());
-        var found = new HashSet<long>(BattlefuckEndings);
-        while (calls.Where(pair => !found.Contains(pair.Key) && pair.Value.Any(found.Contains)).Select(pair => pair.Key).ToList() is { Count: > 0 } more)
-        {
-            found.UnionWith(more);
-        }
+        var found = new HashSet<long>(BattlefuckEvents.Walk(game));
 
         IEnumerable<long> elsewhere = calls.Where(pair => !found.Contains(pair.Key)).SelectMany(pair => pair.Value)
             .Concat(game.Lists.Where(list => list.Site.Kind != ListKind.Common).SelectMany(BuiltGame.CallsOf));

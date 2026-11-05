@@ -2,6 +2,8 @@
 //  CatchupTables.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Dropped the counts of prizes, which the story replay hands over after the log
+//                            - Kept the items an event of the game takes away, which the reward repair never gives back
 //      Paulinchen  2026-11-01: Kept which players the companions of the Alice and Ilias choice may join
 //      Paulinchen  2026-10-31: Dropped the maps where warping is free, since a world never bans warping
 //                            - Read a world chest without its chest flags, which only released builds read
@@ -16,6 +18,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using MGQOnline.Game.Story;
 using static MGQOnline.Game.Story.JsonFields;
@@ -102,14 +105,16 @@ public sealed class CatchupTables
     public IReadOnlyList<CatchupMakina> Makina { get; private set; } = [];
 
     /// <summary>
-    /// Gets the counts of prizes handed out once.
-    /// </summary>
-    public IReadOnlyList<int> PrizeVariables { get; private set; } = [];
-
-    /// <summary>
-    /// Gets the switches of prizes handed out once.
+    /// Gets the switches of the Medal King's one-of-a-kind exchanges, see <see cref="MedalKingGift"/>.
     /// </summary>
     public IReadOnlyList<int> PrizeSwitches { get; private set; } = [];
+
+    /// <summary>
+    /// Gets the items, weapons and armors an event of the game takes away, such as "w4112", from the
+    /// events database (<see cref="NoteItemsTaken"/>), or from the table <c>taken_items</c> of the
+    /// golden cases.
+    /// </summary>
+    public IReadOnlySet<string> TakenItems { get; private set; } = new HashSet<string>(StringComparer.Ordinal);
 
     /// <summary>
     /// Gets the least a variable holds once a companion is in the roster.
@@ -188,7 +193,6 @@ public sealed class CatchupTables
             Vehicles = Rows(tables, "vehicles", VehicleOf),
 
             Makina = Rows(tables, "makina", MakinaOf),
-            PrizeVariables = IdsOf(tables, "prize_variables", "variable"),
             PrizeSwitches = IdsOf(tables, "prize_switches", "switch"),
             CompanionValues = Rows(tables, "companion_values", CompanionValueOf),
             Counts = Rows(tables, "counts", CountOf),
@@ -198,7 +202,21 @@ public sealed class CatchupTables
             ChestFlags = IdsOf(tables, "chest_flags", "switch"),
         };
         read.Rules = RulesOf(tables);
+        read.TakenItems = new HashSet<string>(RowsOf(tables, "taken_items").Where(row => row.TryGetProperty("item", out JsonElement item) && item.ValueKind == JsonValueKind.String)
+            .Select(row => row.GetProperty("item").GetString()!), StringComparer.Ordinal);
         return read;
+    }
+
+    /// <summary>
+    /// Keeps the items an event of the game takes away, as the events database lists them, once.
+    /// </summary>
+    /// <param name="items">The items, see <see cref="TakenItems"/>.</param>
+    public void NoteItemsTaken(IEnumerable<string> items)
+    {
+        if (TakenItems.Count == 0)
+        {
+            TakenItems = new HashSet<string>(items, StringComparer.Ordinal);
+        }
     }
 
     /// <summary>

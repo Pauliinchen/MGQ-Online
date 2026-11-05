@@ -2,6 +2,7 @@
 //  story_tracks.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Kept a run that gave or used up a found item, and changed no key, on the world's track and on every player's own track
 //      Paulinchen  2026-11-01: Refused an admin's pins of keys the story mapping does not share
 //                            - Kept the found items' marks for the whole world, whatever the mapping's row of them says
 //                            - Kept the marks of the items used up for the whole world too
@@ -165,12 +166,11 @@ const ROUTE_OF_COUNTER = Object.freeze(Object.fromEntries(Object.entries(ROUTE_C
 const ROUTE_OF_CLEAR = Object.freeze(Object.fromEntries(Object.entries(CLEAR_SWITCHES).map(([route, id]) => [`s${id}`, route])));
 
 /**
- * The rules of the found items' marks, the self switches of map 0 (world_catchup.rbx FOUND_MAP):
- * the found marks (letter F) and the marks of the items events used up, which the whole world
- * keeps, players behind included, in place of the mapping's rows: a relay seeded before the rule
- * keeps a row `ss0.*.F` without `wholeWorld`, which comes before `ss0.*.*`.
+ * The rule of the Makina's found marks, the self switches of map 0 (world_catchup.rbx FOUND_MAP,
+ * letter F), which the whole world keeps, players behind included, in place of the mapping's row,
+ * for Makina by level: a relay seeded before the rule keeps the row without `wholeWorld`.
  */
-const FOUND_MARKS = Object.freeze(["ss0.*.F", "ss0.*.*"].map((key) => Object.freeze({ key, share: "shared", wholeWorld: true })));
+const FOUND_MARKS = Object.freeze(["ss0.*.F"].map((key) => Object.freeze({ key, share: "shared", wholeWorld: true })));
 
 /**
  * Reads a variable's value as a whole number, which may be longer than a JavaScript number holds.
@@ -891,12 +891,12 @@ export class StoryTracks {
     }
 
     const track = record.track?.id ?? WORLD_TRACK;
-    const kept = run ? await this.keepRun(record.player, track, run, commit) : null;
+    const kept = run ? await this.keepRun(record.player, track, run, commit) : [];
     await this.store.commit(commit);
     worldChanged.forEach((value, key) => this.world.set(key, value));
     ownChanged?.forEach((value, key) => own.keys.set(key, value));
 
-    this.reply(record.player, { t: "answer", seq, revs: this.revsOf(record), mapping: this.rules.rev, keys: outcomes, ...(run ? { run: { id: run.id, n: kept?.n ?? null } } : {}) });
+    this.reply(record.player, { t: "answer", seq, revs: this.revsOf(record), mapping: this.rules.rev, keys: outcomes, ...(run ? { run: { id: run.id, n: kept.find((one) => one.track === track)?.entry.n ?? null } } : {}) });
 
     if (this.meta.rev !== before.rev) {
       this.pushWorld(before.rev, worldChanged, summaryChanged(before, this.meta));
@@ -906,8 +906,8 @@ export class StoryTracks {
       this.pushTrack(record, record.track.rev - 1, ownChanged);
     }
 
-    if (kept) {
-      this.pushOnTrack(track, { t: "run", track, run: kept });
+    for (const one of kept) {
+      this.pushOnTrack(one.track, { t: "run", track: one.track, run: one.entry });
     }
 
     if (this.meta.part !== partBefore) {
@@ -934,28 +934,42 @@ export class StoryTracks {
   /**
    * Keeps a player's run entry on their track when the run changed the track: a key of its step
    * was last changed there by the player's own write. Every key of its step the player's writes
-   * changed counts once. Called inside exclusive.
+   * changed counts once. A run that gave or used up a found item and changed no key (`found`) goes
+   * on the world's track, which later joiners walk, and on every other player's own track, so a
+   * player behind gets the item at once. Called inside exclusive.
    *
    * @param {string} player The player's id.
    * @param {string} track The player's track.
    * @param {object} run The run entry, see readRun.
-   * @param {object} commit The commit, which takes the entry.
-   * @returns {Promise<object | null>} The entry as kept, with its number `n`; null when the run changed nothing of the track.
+   * @param {object} commit The commit, which takes the entries.
+   * @returns {Promise<{track: string, entry: object}[]>} Each entry as kept, with its number `n`, by track; none when the run changed nothing of the track.
    */
   async keepRun(player, track, run, commit) {
+    if (run.found && run.keys.length === 0) {
+      const own = [...this.players.values()].map((record) => record.track?.id).filter((id) => id && id !== track);
+      return Promise.all([...new Set([WORLD_TRACK, ...own])].map((target) => this.addRun(target, run, commit)));
+    }
+
     const marks = this.marks.get(track) ?? new Map();
     const changed = run.keys.filter((key) => marks.get(key) === player);
     changed.forEach((key) => marks.delete(key));
+    return changed.length === 0 ? [] : [await this.addRun(track, run, commit)];
+  }
 
-    if (changed.length === 0) {
-      return null;
-    }
-
+  /**
+   * Adds a run entry at the end of a track.
+   *
+   * @param {string} track The track.
+   * @param {object} run The run entry, see readRun.
+   * @param {object} commit The commit, which takes the entry.
+   * @returns {Promise<{track: string, entry: object}>} The entry as kept, with its number `n`.
+   */
+  async addRun(track, run, commit) {
     const runs = await this.trackRuns(track);
     const entry = { ...run, n: (runs.at(-1)?.n ?? 0) + 1 };
     runs.push(entry);
     commit.runs = [...(commit.runs ?? []), { track, add: [entry] }];
-    return entry;
+    return { track, entry };
   }
 
   /**
@@ -1776,18 +1790,18 @@ export class StoryTracks {
    * @returns {{run: {id: string, site: string, keys: string[], place: number[] | null, opener: string | null, wire: string}} | {error: string}} The entry, or why it is wrong.
    */
   readRun(run) {
-    const error = { error: `a run entry is id, site, keys (1 to ${this.limits.maxWrites} keys), place (up to 4 whole numbers or null), opener (a name or null) and wire, at most ${this.limits.maxRunLength} characters` };
+    const error = { error: `a run entry is id, site, keys (1 to ${this.limits.maxWrites} keys, none for a found item's run), place (up to 4 whole numbers or null), opener (a name or null), found (true or false) and wire, at most ${this.limits.maxRunLength} characters` };
 
     if (!run || typeof run !== "object" || Array.isArray(run) || JSON.stringify(run).length > this.limits.maxRunLength) {
       return error;
     }
 
-    const { id, site, keys, place = null, opener = null, wire } = run;
-    const fits = typeof id === "string" && RUN_ID.test(id) && typeof site === "string" && SITE.test(site)
-      && Array.isArray(keys) && keys.length >= 1 && keys.length <= this.limits.maxWrites && keys.every((key) => typeof key === "string" && KEY.test(key))
+    const { id, site, keys, place = null, opener = null, found = false, wire } = run;
+    const fits = typeof id === "string" && RUN_ID.test(id) && typeof site === "string" && SITE.test(site) && typeof found === "boolean"
+      && Array.isArray(keys) && keys.length >= (found ? 0 : 1) && keys.length <= this.limits.maxWrites && keys.every((key) => typeof key === "string" && KEY.test(key))
       && (place === null || (Array.isArray(place) && place.length <= PLACE_MARKERS && place.every((marker) => Number.isSafeInteger(marker))))
       && (opener === null || (typeof opener === "string" && opener.length <= 64)) && typeof wire === "string" && RUN_WIRE.test(wire);
-    return fits ? { run: { id, site, keys, place, opener, wire } } : error;
+    return fits ? { run: { id, site, keys, place, opener, ...(found ? { found } : {}), wire } } : error;
   }
 
   /**

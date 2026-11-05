@@ -2,6 +2,10 @@
 #  world_catchup_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Checked that a prize's row gives only as history before the world's log, but the Medal King's free gift
+#                            - Checked that the orbs' event plays only as history before the world's log
+#                            - Checked that the repair never gives back an item an event takes away, read as the events database lists it
+#                            - Checked that a found item's gain notes nothing for the world but a Makina, whose items the story replay hands over
 #      Paulinchen  2026-11-01: Checked that a key item another player found comes once, to a player behind too, and its next gain adds nothing
 #                            - Checked that a Small Medal the player holds is not noted for the world
 #                            - Checked that a key item an event used up leaves every player of the world who holds it, with the Yggdrasil Fruit the Queen Harpy takes
@@ -816,6 +820,16 @@ check("a player the catch-up gives the last orb plays the orbs' event",
 frames(40)
 check("once", $setups.size, 1)
 
+# Past the world's log the replay of the world's run of the orbs' event carries the story on, so
+# the catch-up never plays it.
+new_game({ 1001 => 30 }, [], 40)
+[537, 538, 540, 541, 542].each { |id| $game_party.gain_item($data_items[id], 1) }
+frames(1)
+$setups = []
+relay({ "rev" => 23, "wrev" => 23, "p" => 31, "part" => "2", "start" => [25, 0, 0, 0], "log" => packed({ 1001 => 25 }) }, packed({ 1001 => 31, 1068 => 3 }))
+frames(40)
+check("a player who holds every orb past the world's log leaves the orbs' event to the replay", $setups.size, 0)
+
 # A shared companion the player's own story gave them and took away for a while stays away.
 tables(:REMOVALS => [removal.new(16, 16, "map:50:1:1", "1", 14, nil, [[:v, 1001, 14]], false, 5)],
        :JOINS => [join.new(16, 16, "map:70:1:1", "1", 5, nil, [[:v, 1001, 5]], 10, :start, 3, true)])
@@ -959,108 +973,17 @@ frames(40)
 check("nor one above a cap of another mod the player is held at", $derived, nil)
 $game_actors[1].cap = 9999
 
-# An item unlocking a job or a race any player got is the whole world's.
+# A key item or a job or race item another player's event gave comes by the replay of that run
+# (story_keys.rbx), never by a mark of its own: a gain notes nothing for the world but a Makina,
+# which every player gets by level.
 new_game({ 1001 => 9 }, [], 10)
 frames(1)
 relay({ "rev" => 30, "wrev" => 30, "p" => 9, "part" => "1" }, packed({ 1001 => 9 }))
 frames(40)
-$game_party.gain_item($data_items[600], 1)
 $game_party.gain_item($data_items[616], 1)
-check("a job item the player gains is noted for the world's story, another item not",
-      [$game_self_switches[[0, 616, "F"]], $game_self_switches[[0, 600, "F"]], MGQ_MpStoryState.story_lists([[], [], MGQ_MpStoryState.data_of($game_self_switches)], false)["ss"]],
-      [true, false, "0.616.F"])
-new_game({ 1001 => 9 }, [], 1)
-frames(1)
-relay({ "rev" => 31, "wrev" => 31, "p" => 9, "part" => "1" }, packed({ 1001 => 9 }, [], { [0, 616, "F"] => true }))
-frames(40)
-check("another player gets it with the world's story, whatever their level, without a notice, as a battle's drop no run hands over",
-      [$game_party.items[616], $messages], [1, []])
-$game_party.gain_item($data_items[616], 1)
-frames(40)
-check("the replay of the run that found it, which gives another, leaves one", $game_party.items[616], 1)
-
-# A key item another player found comes once, players behind included: the run that found it,
-# replayed once they reach the world's story, or their own run of it gives no second one, and one
-# an event of the player's took later stays away.
-new_game({ 1001 => 7 }, [], 10)
-frames(1)
-checkpoint("1", packed({ 1001 => 18 }, [], { [0, 557, "F"] => true }), "rev" => 33, "part" => "2", "checkpoints" => "1")
-frames(100)
-given = [story.mode, $game_party.items[557]]
-$game_party.gain_item($data_items[557], 1)
-again = $game_party.items[557]
-$game_party.lose_item($data_items[557], 1)
-frames(40)
-check("a key item another player found comes once to a player behind, the run that found it gives no second one, and one an event took stays away",
-      [given, again, $game_party.items[557]], [[:behind, 1], 1, 0])
-new_game({ 1001 => 9 }, [], 10)
-$game_party.items[616] = 1
-$data_items[32] = RPG::Item.new(32, "Small Medal", "[Item] Small medals are scattered all over the world.")
-$game_party.items[32] = 3
-MGQ_MpWorldCatchup.instance_variable_set(:@unlock_ids, nil)
-MGQ_MpStoryFound.instance_variable_set(:@item_ids, nil)
-frames(1)
-relay({ "rev" => 32, "wrev" => 32, "p" => 9, "part" => "1" }, packed({ 1001 => 9 }))
-frames(40)
-check("one the player held before, as from an earlier version, is noted for the world on entering, a Small Medal not",
-      [$game_self_switches[[0, 616, "F"]], $game_self_switches[[0, 32, "F"]]], [true, false])
-
-# The Queen Harpy event takes the Yggdrasil Fruit (map 88, event 4, page 1, command 63): the use
-# goes to the world, and every player of the world who holds one, as from another player's find,
-# loses it, so Lucretia's page (event 4, page 2), which takes a held Yggdrasil Fruit, does not open
-# early. A player who lacks it loses nothing and gets none from its find.
-fruit = $data_items[508] = RPG::Item.new(508, "Yggdrasil Fruit", "[Key Item] Miraculous medicine capable of purging all diseases.")
-MGQ_MpStoryFound.instance_variable_set(:@item_ids, nil)
-harpy = Game_Interpreter.new
-{ :@map_id => 88, :@event_id => 4, :@list => [], :@index => 63 }.each { |name, value| harpy.instance_variable_set(name, value) }
-new_game({ 1001 => 29, 1011 => 2 }, [], 10)
-$game_party.gain_item(fruit, 1)
-frames(1)
-relay({ "rev" => 34, "wrev" => 34, "p" => 29, "part" => "2" }, packed({ 1001 => 29, 1011 => 2 }))
-frames(40)
-MGQ_MpStoryKeys.executing(harpy)
-$game_party.lose_item(fruit, 1)
-MGQ_MpStoryKeys.executed(harpy)
-marks = $game_self_switches.instance_variable_get(:@data).keys.select { |key| key[0] == 0 && key[1] == 508 && key[2] =~ /\AU[0-9a-z]+\z/ }
-frames(40)
-check("an event of the player's that uses up a key item notes the use for the world once", [marks.size, $game_party.items[508]], [1, 0])
-used = { [0, 508, "F"] => true, marks.first => true }
-new_game({ 1001 => 29, 1011 => 2 }, [], 10)
-frames(1)
-relay({ "rev" => 41, "wrev" => 41, "p" => 29, "part" => "2" }, packed({ 1001 => 29, 1011 => 2 }, [], { [0, 508, "F"] => true }))
-frames(40)
-got = $game_party.items[508]
-relay({ "rev" => 42, "wrev" => 42, "p" => 29, "part" => "2" }, packed({ 1001 => 29, 1011 => 4 }, [], used))
-frames(40)
-check("a player who got the Yggdrasil Fruit from another player's find loses it once that player's event used it up",
-      [got, $game_party.items[508]], [1, 0])
-$game_party.gain_item(fruit, 1)
-frames(40)
-check("the next Yggdrasil Fruit they get stays", $game_party.items[508], 1)
-new_game({ 1001 => 29, 1011 => 4 }, [], 10)
-frames(1)
-relay({ "rev" => 43, "wrev" => 43, "p" => 29, "part" => "2" }, packed({ 1001 => 29, 1011 => 4 }, [], used))
-frames(40)
-check("a player who lacks it loses nothing and gets none from its find", [story.mode, $game_party.items[508]], [:world, 0])
-
-# A job or race item another player found comes to every player of the world at once, though the
-# story gives it further on or on the route the world never took, as the Sealed Orb of Darkness
-# (issue #45); a found Makina still waits for its level.
-$data_items[617] = RPG::Item.new(617, "Battle Permit", "[Job] Allows access to a job.")
-found = { [0, 616, "F"] => true, [0, 617, "F"] => true, [0, 701, "F"] => true }
-tables(:REWARDS => [reward.new(:i, 616, 1, "map:30:2:1", "1", 12, :alice, [[:v, 1001, 12]], true)], :MAKINA => [makina.new(701, 30, "map:218:21:1")])
-new_game({ 1001 => 9 }, [], 10)
-frames(1)
-relay({ "rev" => 35, "wrev" => 35, "p" => 9, "part" => "1" }, packed({ 1001 => 9 }, [], found))
-frames(40)
-check("a found job item comes at once to a player who plays the world's story, a found Makina below its level not",
-      [story.mode, $game_party.items[616], $game_party.items[617], $game_party.items[701]], [:world, 1, 1, 0])
-new_game({ 1001 => 7 }, [], 10)
-frames(1)
-checkpoint("1", packed({ 1001 => 18 }, [], found), "rev" => 36, "part" => "2", "checkpoints" => "1")
-frames(100)
-check("and to a player behind it, whose own track carries what the whole world found",
-      [story.mode, $game_party.items[616], $game_party.items[617]], [:behind, 1, 1])
+$game_party.gain_item($data_items[701], 1)
+check("a job item the player gains notes nothing for the world, a Makina is noted for Makina by level",
+      [$game_self_switches[[0, 616, "F"]] ? true : false, $game_self_switches[[0, 701, "F"]] ? true : false], [false, true])
 
 # A job item an event gives once behind its own self switch comes by the world's story, though the
 # rows' ledger noted it done.
@@ -1083,7 +1006,8 @@ check("and comes once the world's story ran it, its row noted done", $game_party
 # Notes of an earlier version give once what a map event's row noted done but never gave.
 tables(:REWARDS => [reward.new(:i, 600, 2, "map:36:17:1", "1", 6, nil, [[:v, 1001, 6]], true),
                     reward.new(:i, 541, 1, "ce:287", "1", 6, nil, [[:v, 1001, 6]], true),
-                    reward.new(:w, 4112, 1, "map:1583:17:1", "1", 6, nil, [[:v, 1001, 6]], true)])
+                    reward.new(:w, 4112, 1, "map:1583:17:1", "1", 6, nil, [[:v, 1001, 6]], true)],
+       :TAKEN_ITEMS => [[:w, 4112]])
 new_game({ 1001 => 9 }, [], 10)
 frames(1)
 relay({ "rev" => 39, "wrev" => 39, "p" => 9, "part" => "1" }, packed({ 1001 => 9 }))
@@ -1095,7 +1019,7 @@ catchup.hand_ledger
 $data_weapons[4112] = RPG::Item.new(4112, "Fallen Sword Angel Halo")
 catchup.instance_variable_set(:@audit_due, true)
 frames(40)
-check("notes of an earlier version give a map event's reward the player lacks once, a common event's and one the story trades away not",
+check("notes of an earlier version give a map event's reward the player lacks once, a common event's and one an event takes away not",
       [$game_party.items[600], $game_party.items[541], $game_party.items[4112], catchup.ledger["rewards_repaired"]], [2, 0, 0, true])
 $game_party.items[600] = 0
 catchup.instance_variable_set(:@audit_due, true)
@@ -1274,15 +1198,18 @@ $holding = false
 frames(2)
 check("but once it ended", [story.mode, $game_variables[1001]], [:behind, 18])
 
-# A prize of the Reaper's Battle Challenge (87) another player claimed before the catch-up knew
-# prizes reaches a player whose story the world's count got past, unless they hold it, as one they
-# claimed in their own game.
+# A prize of the Reaper's Battle Challenge (87) comes by the replay of the run that won it, never
+# by its row, while the Medal King's free gift reaches every player whose story holds its switch and
+# who holds none of it.
 tables(:REWARDS => [reward.new(:i, 600, 1, "ce:148", nil, nil, nil, [[:v, 87, 1]], true),
-                    reward.new(:i, 700, 1, "ce:148", nil, nil, nil, [[:v, 87, 2]], true)])
-new_game({ 87 => 2 }, [], 10)
-$game_party.gain_item($data_items[700], 1)
+                    reward.new(:i, 700, 1, "ce:140", nil, nil, nil, [[:s, 2324]], true),
+                    reward.new(:i, 701, 1, "ce:140", nil, nil, nil, [[:s, 2325]], true)],
+       :PRIZE_SWITCHES => [2324, 2325])
+new_game({ 87 => 2 }, [2324, 2325], 10)
+$game_party.gain_item($data_items[701], 1)
 catchup.look
-check("a prize another player claimed reaches the player, one they hold stays single", [$game_party.item_number($data_items[600]), $game_party.item_number($data_items[700])], [1, 1])
+check("a prize's row gives nothing, the Medal King's gift comes once to a player who holds none",
+      [$game_party.item_number($data_items[600]), $game_party.item_number($data_items[700]), $game_party.item_number($data_items[701])], [0, 1, 1])
 
 # Classic worlds have no catch-up.
 $raid = false

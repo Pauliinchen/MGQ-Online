@@ -1,61 +1,61 @@
-//----------------------------------------------------------------
-//  BattlefuckEvents.cs
-//
-//  Changelog:
-//      Paulinchen  2026-10-23: Created
-//
-//----------------------------------------------------------------
-
-using System.Collections.Generic;
-
-namespace MGQOnline.Game.Events;
-
-/// <summary>
-/// The battlefuck events: the common events of the battlefucks, from each battlefucker's talk to
-/// the count of a win or a loss. A page that calls one runs in the player's own game alone, with
-/// nobody taken along; what it moves on is the story's like any other.
-/// </summary>
-/// <remarks>
-/// The Event Checker's story_rewards.rb finds them from the common events that count a win or a
-/// loss, 6999 and 7000, and writes the same rows into coop_story_rewards.rbx.
-/// </remarks>
-public static class BattlefuckEvents
-{
-    /// <summary>
-    /// The ids of the common events.
-    /// </summary>
-    public static readonly IReadOnlySet<long> Ids = new HashSet<long>
-    {
-        6991, 6992, 6993, 6994, 6995, 6996, 6997, 6999, 7000, 7001, 7002, 7003, 7004, 7005, 7006, 7007,
-        7011, 7012, 7013, 7014, 7015, 7016, 7021, 7022, 7023, 7024, 7025, 7026, 7031, 7032, 7033, 7034,
-        7035, 7036, 7041, 7042, 7043, 7044, 7045, 7046, 7051, 7052, 7053, 7054, 7055, 7056, 7061, 7062,
-        7063, 7064, 7065, 7066, 7067, 7071, 7072, 7073, 7074, 7075, 7076, 7081, 7082, 7083, 7084, 7085,
-        7086, 7087, 7091, 7092, 7093, 7094, 7095, 7096, 7097, 7101, 7102, 7103, 7104, 7105, 7106, 7107,
-        7111, 7112, 7113, 7114, 7115, 7116, 7117, 7121, 7122, 7123, 7124, 7125, 7126, 7131, 7132, 7133,
-        7134, 7135, 7136, 7141, 7142, 7143, 7144, 7145, 7146, 7147, 7151, 7152, 7153, 7154, 7155, 7161,
-        7162, 7163, 7164, 7165, 7166, 7167, 7171, 7172, 7173, 7174, 7175, 7176, 7177, 7178, 7179, 7180,
-        7181, 7182, 7183, 7184, 7185, 7186, 7191, 7192, 7193, 7194, 7195, 7196, 7201, 7202, 7203, 7204,
-        7205, 7206, 7211, 7212, 7213, 7214, 7215, 7216, 7217, 7221, 7222, 7223, 7224, 7225, 7226, 7231,
-        7232, 7233, 7234, 7235, 7236, 7241, 7242, 7243, 7244, 7245, 7246, 7251, 7252, 7253, 7254, 7255,
-        7256, 7261, 7262, 7263, 7264, 7265, 7266, 7271, 7272, 7273, 7274, 7275, 7276, 7281, 7282, 7283,
-        7284, 7285, 7286, 7287, 7291, 7292, 7293, 7294, 7295, 7296, 7297, 7301, 7302, 7303, 7304, 7305,
-        7306, 7311, 7312, 7313, 7314, 7315, 7316, 7321, 7322, 7323, 7324, 7325, 7326, 7331, 7332, 7333,
-        7334, 7335, 7336, 7341, 7342, 7343, 7344, 7345, 7346, 7351, 7352, 7353, 7354, 7355, 7356, 7361,
-        7362, 7363, 7364, 7365, 7366, 7371, 7372, 7373, 7374, 7375, 7376, 7381, 7382, 7383, 7384, 7385,
-        7386, 7391, 7392, 7393, 7394, 7395, 7396, 7397, 7401, 7402, 7403, 7404, 7405, 7406, 7411, 7412,
-        7413, 7414, 7415, 7416, 7421, 7422, 7423, 7424, 7425, 7426, 7431, 7432, 7433, 7434, 7435, 7436,
-        7437, 7441, 7442, 7443, 7444, 7445, 7446, 7451, 7452, 7453, 7454, 7455, 7456, 7461, 7462, 7463,
-        7464, 7465, 7466, 7471, 7472, 7473, 7474, 7475, 7476, 7477, 7481, 7482, 7483, 7484, 7485, 7486,
-        7487, 7491, 7492, 7493, 7494, 7495, 7496, 7501, 7502, 7503, 7504, 7505, 7506, 7511, 7512, 7513,
-        7514, 7515, 7516, 7517, 7518, 7521, 7522, 7523, 7524, 7525, 7526, 7531, 7532, 7533, 7534, 7535,
-        7536, 7541, 7542, 7543, 7544, 7545, 7546, 7551, 7552, 7553, 7554, 7555, 7556, 7561, 7562, 7563,
-        7564, 7565, 7566, 7567,
-    };
-
-    /// <summary>
-    /// Reports whether a command calls a battlefuck event.
-    /// </summary>
-    /// <param name="command">The command.</param>
-    /// <returns>Whether it does.</returns>
-    public static bool Calls(Data.EventCommand command) => command.Code == Data.EventCodes.CallCommonEvent && Ids.Contains(command.Number(0));
-}
+//----------------------------------------------------------------
+//  BattlefuckEvents.cs
+//
+//  Changelog:
+//      Paulinchen  2026-11-05: Found the battlefuck events in the game's data instead of a hand list, once per game
+//      Paulinchen  2026-10-23: Created
+//
+//----------------------------------------------------------------
+
+using System.Collections.Generic;
+using System.Linq;
+
+namespace MGQOnline.Game.Events;
+
+/// <summary>
+/// The battlefuck events: the common events of the battlefucks, from each battlefucker's talk to
+/// the count of a win or a loss. A page that calls one runs in the player's own game alone, with
+/// nobody taken along; what it moves on is the story's like any other.
+/// </summary>
+public static class BattlefuckEvents
+{
+    /// <summary>
+    /// The game's common events that count a battlefuck's win (6999) and its loss (7000), which
+    /// every battlefucker's own events call.
+    /// </summary>
+    public static readonly IReadOnlyList<long> Endings = [6999, 7000];
+
+    /// <summary>
+    /// Reports whether a command calls a battlefuck event of a game.
+    /// </summary>
+    /// <param name="source">The game's events.</param>
+    /// <param name="command">The command.</param>
+    /// <returns>Whether it does.</returns>
+    public static bool Calls(IEventSource source, Data.EventCommand command) =>
+        command.Code == Data.EventCodes.CallCommonEvent && source.Battlefucks.Contains(command.Number(0));
+
+    /// <summary>
+    /// Finds the battlefuck events of a game: those that count a battlefuck's win or loss, and the
+    /// common events that call one of those, again and again up to each battlefucker's talk. The
+    /// generator writes them into the events database, which the multiplayer reads.
+    /// </summary>
+    /// <param name="source">The game's events.</param>
+    /// <returns>Their ids.</returns>
+    public static IReadOnlySet<long> Walk(IEventSource source)
+    {
+        var found = new HashSet<long>(Endings.Where(id => source.CommonList(id) is not null));
+        var next = new Queue<long>(found);
+        while (next.Count > 0)
+        {
+            foreach (long caller in source.CallersOf(next.Dequeue()))
+            {
+                if (found.Add(caller))
+                {
+                    next.Enqueue(caller);
+                }
+            }
+        }
+
+        return found;
+    }
+}

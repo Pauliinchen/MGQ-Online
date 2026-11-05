@@ -2,6 +2,7 @@
 //  GameDataSource.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Found the battlefuck events once
 //      Paulinchen  2026-10-28: Created
 //
 //----------------------------------------------------------------
@@ -71,6 +72,11 @@ public sealed class GameDataSource : IEventSource
     private readonly ReadOnce<Dictionary<long, List<long>>> _callers;
 
     /// <summary>
+    /// The battlefuck events, found on the first question.
+    /// </summary>
+    private readonly ReadOnce<IReadOnlySet<long>> _battlefucks;
+
+    /// <summary>
     /// Initializes the events of the game's data.
     /// </summary>
     /// <param name="data">The game's data.</param>
@@ -81,6 +87,7 @@ public sealed class GameDataSource : IEventSource
         _keptMaps = Math.Max(1, keptMaps);
         _commonIds = new(() => [.. Enumerable.Range(1, Math.Max(0, data.CommonEvents.Count - 1)).Where(id => data.CommonEvents[id] is not null).Select(id => (long)id)]);
         _callers = new(ReadCallers);
+        _battlefucks = new(() => BattlefuckEvents.Walk(this));
     }
 
     /// <inheritdoc />
@@ -121,6 +128,9 @@ public sealed class GameDataSource : IEventSource
 
     /// <inheritdoc />
     public IReadOnlyList<long> CallersOf(long id) => _callers.Value.GetValueOrDefault(id) ?? [];
+
+    /// <inheritdoc />
+    public IReadOnlySet<long> Battlefucks => _battlefucks.Value;
 
     /// <inheritdoc />
     public bool IsScratchSwitch(long id) => _data.System.IsScratchSwitch(id);

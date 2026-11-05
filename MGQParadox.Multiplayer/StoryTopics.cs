@@ -2,6 +2,7 @@
 //  StoryTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Handed the catch-up the items an event of the game takes away
 //      Paulinchen  2026-11-01: Dropped the topic of the player's telling, which the telling machine holds
 //      Paulinchen  2026-10-31: Told the scripts the routes the Great Decision offers
 //                            - Answered the replay of runs handed over, in StoryTopics.Replay.cs
@@ -96,9 +97,26 @@ internal sealed partial class StoryTopics : IStoryTrackHost
     public const string ClassicTopic = "story.classic_table";
 
     /// <summary>
-    /// Gets the catch-up's tables the story mapping came with, <see langword="null"/> before it came.
+    /// Gets the catch-up's tables the story mapping came with, with the items an event of the game
+    /// takes away from the events database; <see langword="null"/> before the mapping came.
     /// </summary>
-    internal CatchupTables? Catchup => _table?.Catchup;
+    internal CatchupTables? Catchup
+    {
+        get
+        {
+            if (_table?.Catchup is not { } tables)
+            {
+                return null;
+            }
+
+            if (tables.TakenItems.Count == 0 && Events().Store is { IsUsable: true } store)
+            {
+                tables.NoteItemsTaken(store.ItemsTaken());
+            }
+
+            return tables;
+        }
+    }
 
     /// <summary>
     /// The topic that takes an event of the map's interpreter starting: {"telling" (whether it is
