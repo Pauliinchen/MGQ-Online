@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-05: Took a difficulty the relay pushed as the number the DLL reads
+#                            - Told no world type or sharing of a form other than the new world's, which alone sets them
 #                            - Had C# write the game data's fingerprint of the ids the scripts read, keeping none that came back empty
 #                            - Entered and left a world's room, opened a world of the directory and read its list, the player's id and whether the DLL is a development build through topics
 #      Paulinchen  2026-11-01: Dropped the seats, difficulty, required and essential mods and mod path readers that nothing calls
@@ -2087,16 +2088,17 @@ module MGQ_MpWorld
 
     # Tells the world type the page picks.
     #
-    # @return [String] One of TYPES.
+    # @return [String, nil] One of TYPES; nil for a form other than the new world's, which cannot set it.
     def type
-      derived("type") || CLASSIC
+      derived("type")
     end
 
     # Tells how the page has a Raid World share companions.
     #
-    # @return [String] One of SHARING; "off" for a Classic world.
+    # @return [String, nil] One of SHARING, "off" for a Classic world; nil for a form other than the
+    #   new world's, which cannot set it.
     def share
-      derived("share") || SHARING[0]
+      derived("share")
     end
 
     # Tells the difficulty the page picks.

@@ -2,6 +2,7 @@
 //  WorldEntering.Requests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Read the new world's type, sharing and player's choice from what its form sets for good
 //      Paulinchen  2026-10-30: Made a new world without a data scan and without keeping differing games out, since its creator's game sets the scan as they enter
 //      Paulinchen  2026-10-23: Created
 //
@@ -288,16 +289,17 @@ internal sealed partial class WorldEntering
     {
         Form form = FormIn(NewWorldSlot);
         WorldFormValues values = WorldForms.ValuesOf(form, FormTopics.Rules);
+        WorldSetup setup = values.Setup ?? throw new BridgeRequestException("The new world's form sets no world type.");
         string name = form.TextOf("name");
         List<(string Name, string Path)> files = request["start"].IsNil ? [] : [.. request["start"].AsArray().Select(file => (file.AsArray()[0].AsText(), file.AsArray()[1].AsText()))];
-        bool raid = values.Type == WorldType.Raid;
+        bool raid = setup.Type == WorldType.Raid;
         string mods = form.TextOf("mods");
         string? squad = raid ? SquadText(values.Squad) : null;
         int? difficulty = raid ? values.Difficulty ?? WorldDifficulty.Default : null;
-        _creating = new Creating(name, values.Type, values.Share, difficulty, squad, !raid && values.RaidBosses, files, null);
+        _creating = new Creating(name, setup.Type, setup.Share, difficulty, squad, !raid && values.RaidBosses, files, null);
         WorldAbout about = new(form.TextOf("description"), mods, "", false, CreatorHashes(mods), form.IsTicked("shared") ? SharedSettings.WithMarker("") : "");
         int seats = SeatsOf(form);
-        StartRequest("create", () => _directory.Create(name, form.TextOf("password"), seats, form.IsTicked("hidden"), values.Choose, files, about, values.Type, values.Share, difficulty, values.OtherModsOff, squad, raid ? null : values.RaidBosses));
+        StartRequest("create", () => _directory.Create(name, form.TextOf("password"), seats, form.IsTicked("hidden"), setup.Choose, files, about, setup.Type, setup.Share, difficulty, values.OtherModsOff, squad, raid ? null : values.RaidBosses));
     }
 
     /// <summary>

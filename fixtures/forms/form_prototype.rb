@@ -2,6 +2,7 @@
 #  form_prototype.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Wrote the world type, sharing, shared save and player's choice into the new world's view alone, as WorldForms does
 #      Paulinchen  2026-10-30: Dropped Allow data mismatch and Update current data scan, as WorldForms did
 #      Paulinchen  2026-10-23: Created
 #
@@ -699,8 +700,10 @@ module FormPrototype
   # Writes down what a form shows and adds up to.
   #
   # @param form [FormPrototype::Form] The form.
+  # @param kind [String] The form's kind, such as "create"; only the new world's sets the world type,
+  #   the sharing, the shared save and the player's choice.
   # @return [Hash] Its title, fields, values, derived values and first problem.
-  def self.view_of(form)
+  def self.view_of(form, kind)
     fields = form.fields.map do |field|
       { "key" => field.key.to_s, "kind" => field.kind.to_s, "label" => field.label, "row" => field.row, "side" => field.side && field.side.to_s,
         "max_chars" => field.max_chars, "allowed" => field.allowed && ALLOWED.fetch(field.allowed), "optional" => field.optional, "group" => field.group,
@@ -709,9 +712,13 @@ module FormPrototype
     values = {}
     form.instance_variable_get(:@values).each { |key, value| values[key.to_s] = value }
     squad = form.squad
-    derived = { "type" => form.type, "share" => form.share, "difficulty" => form.difficulty, "from_save" => form.from_save?, "choose" => form.choose?,
-                "raid_bosses" => form.raid_bosses?, "other_mods_off" => form.other_mods_off?,
-                "squad" => { "luka" => squad[:luka], "formation" => squad[:formation], "front" => squad[:front], "raid_front" => squad[:raid_front] } }
+    create = kind == "create"
+    derived = {}
+    derived.update("type" => form.type, "share" => form.share) if create
+    derived["difficulty"] = form.difficulty
+    derived.update("from_save" => form.from_save?, "choose" => form.choose?) if create
+    derived.update("raid_bosses" => form.raid_bosses?, "other_mods_off" => form.other_mods_off?,
+                   "squad" => { "luka" => squad[:luka], "formation" => squad[:formation], "front" => squad[:front], "raid_front" => squad[:raid_front] })
     problem = form.problem
     { "title" => form.title, "fields" => fields, "values" => values, "derived" => derived, "problem" => problem && [form.fields[problem[0]].key.to_s, problem[1]] }
   end

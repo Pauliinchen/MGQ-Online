@@ -2,6 +2,7 @@
 //  WorldForms.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Left the world type, sharing, shared save and player's choice out of every form but the new world's, which alone sets them
 //      Paulinchen  2026-10-30: Dropped Allow data mismatch and Update current data scan, since the game data is compared only as the player enters
 //      Paulinchen  2026-10-23: Told whether Enter sends a form
 //                            - Created
@@ -61,17 +62,23 @@ public sealed record WorldFormRules(
 public sealed record EditedWorld(string Name, int Seats, string Mods, string Description, bool Shared, int? Difficulty, bool Raid, bool OtherModsOff, bool RaidBosses, WorldSquad? Squad);
 
 /// <summary>
-/// What a world form's values add up to, as the requests to the directory take them.
+/// What the new world's form sets that no edit changes afterwards.
 /// </summary>
 /// <param name="Type">"classic" or "raid".</param>
 /// <param name="Share">How a Raid World shares companions: "off", "story" or "all"; "off" for a Classic world.</param>
-/// <param name="Difficulty">The difficulty, <see langword="null"/> for <see cref="WorldForms.PerPlayer"/>.</param>
-/// <param name="Squad">The squad rules.</param>
 /// <param name="FromSave">Whether new players start from one of the creator's saves.</param>
 /// <param name="Choose">Whether each new player of a Classic world chooses where to start.</param>
+public sealed record WorldSetup(string Type, string Share, bool FromSave, bool Choose);
+
+/// <summary>
+/// What a world form's values add up to, as the requests to the directory take them.
+/// </summary>
+/// <param name="Setup">What the new world's form sets for good; <see langword="null"/> for every other form, which cannot set it.</param>
+/// <param name="Difficulty">The difficulty, <see langword="null"/> for <see cref="WorldForms.PerPlayer"/>.</param>
+/// <param name="Squad">The squad rules.</param>
 /// <param name="RaidBosses">Whether a Classic world's story bosses fight as raid bosses.</param>
 /// <param name="OtherModsOff">Whether the world turns off every mod it does not name.</param>
-public sealed record WorldFormValues(string Type, string Share, int? Difficulty, WorldSquad Squad, bool FromSave, bool Choose, bool RaidBosses, bool OtherModsOff);
+public sealed record WorldFormValues(WorldSetup? Setup, int? Difficulty, WorldSquad Squad, bool RaidBosses, bool OtherModsOff);
 
 /// <summary>
 /// The forms of the world screen: a new world, an edit, the player's name, a world's password, a
@@ -379,13 +386,25 @@ public static class WorldForms
     /// <returns>The values.</returns>
     public static WorldFormValues ValuesOf(Form form, WorldFormRules rules, string page = Form.MainPage)
     {
+        ArgumentNullException.ThrowIfNull(form);
+        WorldSetup? setup = form.Kind == Create ? SetupOf(form) : null;
+        bool raid = setup?.Type == Raid;
+        return new WorldFormValues(setup, DifficultyOf(form, rules, page), SquadOf(form, rules), !raid && form.IsTicked("raid_bosses"), form.IsTicked("other_mods_off"));
+    }
+
+    /// <summary>
+    /// Tells what the new world's form sets for good.
+    /// </summary>
+    /// <param name="form">The new world's form.</param>
+    /// <returns>The world type, the sharing of companions, the shared save and the player's choice.</returns>
+    private static WorldSetup SetupOf(Form form)
+    {
         int typeIndex = form.ChoiceOf("type");
         string type = typeIndex is >= 0 and < 2 ? Types[typeIndex] : Classic;
         bool raid = type == Raid;
         int shareIndex = form.ChoiceOf("share");
         string share = raid && shareIndex is >= 0 and < 3 ? Sharing[shareIndex] : Sharing[0];
-        return new WorldFormValues(type, share, DifficultyOf(form, rules, page), SquadOf(form, rules), form.IsTicked("from_save"), !raid && form.IsTicked("choose"),
-            !raid && form.IsTicked("raid_bosses"), form.IsTicked("other_mods_off"));
+        return new WorldSetup(type, share, form.IsTicked("from_save"), !raid && form.IsTicked("choose"));
     }
 
     /// <summary>

@@ -2,6 +2,7 @@
 //  WorldRequestsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Gave an edit's values no world type, as its form sets none
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -40,7 +41,7 @@ public sealed class WorldRequestsTests
         {
             JsonElement form = entry.GetProperty("form");
             WorldEdit listed = new(Int(entry, "difficulty"), Squad(entry.GetProperty("squad")), entry.GetProperty("raid_bosses").GetBoolean(), entry.GetProperty("other_mods_off").GetBoolean());
-            WorldFormValues values = new("classic", "off", Int(form, "difficulty"), Squad(form.GetProperty("squad"))!, false, false, form.GetProperty("raid_bosses").GetBoolean(), form.GetProperty("other_mods_off").GetBoolean());
+            WorldFormValues values = new(null, Int(form, "difficulty"), Squad(form.GetProperty("squad"))!, form.GetProperty("raid_bosses").GetBoolean(), form.GetProperty("other_mods_off").GetBoolean());
             JsonElement edited = entry.GetProperty("edited");
             string name = entry.GetProperty("name").GetString()!;
 

@@ -2988,11 +2988,7 @@
           "raid_front": 2
         },
         "derived": {
-          "type": "classic",
-          "share": "off",
           "difficulty": null,
-          "from_save": false,
-          "choose": false,
           "raid_bosses": false,
           "other_mods_off": true,
           "squad": {
@@ -3186,11 +3182,7 @@
           "raid_front": 2
         },
         "derived": {
-          "type": "classic",
-          "share": "off",
           "difficulty": -2,
-          "from_save": false,
-          "choose": false,
           "raid_bosses": false,
           "other_mods_off": true,
           "squad": {
@@ -3350,11 +3342,7 @@
           "raid_front": 0
         },
         "derived": {
-          "type": "classic",
-          "share": "off",
           "difficulty": 0,
-          "from_save": false,
-          "choose": false,
           "raid_bosses": true,
           "other_mods_off": false,
           "squad": {
@@ -3536,11 +3524,7 @@
           "raid_front": 0
         },
         "derived": {
-          "type": "classic",
-          "share": "off",
           "difficulty": 0,
-          "from_save": false,
-          "choose": false,
           "raid_bosses": true,
           "other_mods_off": false,
           "squad": {
@@ -3609,11 +3593,7 @@
           "name": ""
         },
         "derived": {
-          "type": "classic",
-          "share": "off",
           "difficulty": 0,
-          "from_save": false,
-          "choose": false,
           "raid_bosses": false,
           "other_mods_off": false,
           "squad": {
@@ -3683,11 +3663,7 @@
           "name": ""
         },
         "derived": {
-          "type": "classic",
-          "share": "off",
           "difficulty": 0,
-          "from_save": false,
-          "choose": false,
           "raid_bosses": false,
           "other_mods_off": false,
           "squad": {
@@ -3753,11 +3729,7 @@
           "password": ""
         },
         "derived": {
-          "type": "classic",
-          "share": "off",
           "difficulty": 0,
-          "from_save": false,
-          "choose": false,
           "raid_bosses": false,
           "other_mods_off": false,
           "squad": {
@@ -3822,11 +3794,7 @@
           "id": ""
         },
         "derived": {
-          "type": "classic",
-          "share": "off",
           "difficulty": 0,
-          "from_save": false,
-          "choose": false,
           "raid_bosses": false,
           "other_mods_off": false,
           "squad": {
@@ -3898,11 +3866,7 @@
           "id": "0123456789ABCDEF0123456789abcdef"
         },
         "derived": {
-          "type": "classic",
-          "share": "off",
           "difficulty": 0,
-          "from_save": false,
-          "choose": false,
           "raid_bosses": false,
           "other_mods_off": false,
           "squad": {

@@ -2,6 +2,7 @@
 //  FormTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Wrote the world type, sharing, shared save and player's choice into the new world's view alone
 //      Paulinchen  2026-10-23: Handed out the open forms for the world screen's requests
 //                            - Created
 //
@@ -318,18 +319,26 @@ internal sealed class FormTopics
     /// Writes what a form's values add up to.
     /// </summary>
     /// <param name="values">The sums.</param>
-    /// <returns>The sums.</returns>
-    private static RubyHash DerivedOf(WorldFormValues values) => new()
+    /// <returns>The sums; the world type, sharing, shared save and player's choice only for the new world's form.</returns>
+    private static RubyHash DerivedOf(WorldFormValues values)
     {
-        { "type", values.Type },
-        { "share", values.Share },
-        { "difficulty", values.Difficulty is { } difficulty ? difficulty : RubyNil.Value },
-        { "from_save", values.FromSave },
-        { "choose", values.Choose },
-        { "raid_bosses", values.RaidBosses },
-        { "other_mods_off", values.OtherModsOff },
-        { "squad", new RubyHash { { "luka", values.Squad.Luka }, { "formation", values.Squad.Formation }, { "front", values.Squad.Front }, { "raid_front", values.Squad.RaidFront } } },
-    };
+        var derived = new RubyHash
+        {
+            { "difficulty", values.Difficulty is { } difficulty ? difficulty : RubyNil.Value },
+            { "raid_bosses", values.RaidBosses },
+            { "other_mods_off", values.OtherModsOff },
+            { "squad", new RubyHash { { "luka", values.Squad.Luka }, { "formation", values.Squad.Formation }, { "front", values.Squad.Front }, { "raid_front", values.Squad.RaidFront } } },
+        };
+        if (values.Setup is { } setup)
+        {
+            derived["type"] = setup.Type;
+            derived["share"] = setup.Share;
+            derived["from_save"] = setup.FromSave;
+            derived["choose"] = setup.Choose;
+        }
+
+        return derived;
+    }
 
     /// <summary>
     /// Writes a form's value as a plain value.

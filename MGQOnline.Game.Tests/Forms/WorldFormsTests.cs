@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-11-05: Covered every field's hint fitting the world screen's two lines
+//                            - Expected the world type, sharing, shared save and player's choice in the new world's sums alone
 //      Paulinchen  2026-10-23: Covered Enter sending a form
 //                            - Created
 //
@@ -202,21 +203,32 @@ public sealed class WorldFormsTests
     }, Json);
 
     /// <summary>
-    /// Writes what the values add up to as the recorder wrote it.
+    /// Writes what the values add up to as the recorder wrote it, the new world's setup only where the
+    /// form sets it.
     /// </summary>
     /// <param name="values">The sums.</param>
     /// <returns>The JSON.</returns>
-    private static string ValuesJson(WorldFormValues values) => JsonSerializer.Serialize(new Dictionary<string, object?>
+    private static string ValuesJson(WorldFormValues values)
     {
-        ["type"] = values.Type,
-        ["share"] = values.Share,
-        ["difficulty"] = values.Difficulty,
-        ["from_save"] = values.FromSave,
-        ["choose"] = values.Choose,
-        ["raid_bosses"] = values.RaidBosses,
-        ["other_mods_off"] = values.OtherModsOff,
-        ["squad"] = new Dictionary<string, object> { ["luka"] = values.Squad.Luka, ["formation"] = values.Squad.Formation, ["front"] = values.Squad.Front, ["raid_front"] = values.Squad.RaidFront },
-    }, Json);
+        var sums = new Dictionary<string, object?>();
+        if (values.Setup is { } setup)
+        {
+            sums["type"] = setup.Type;
+            sums["share"] = setup.Share;
+        }
+
+        sums["difficulty"] = values.Difficulty;
+        if (values.Setup is { } started)
+        {
+            sums["from_save"] = started.FromSave;
+            sums["choose"] = started.Choose;
+        }
+
+        sums["raid_bosses"] = values.RaidBosses;
+        sums["other_mods_off"] = values.OtherModsOff;
+        sums["squad"] = new Dictionary<string, object> { ["luka"] = values.Squad.Luka, ["formation"] = values.Squad.Formation, ["front"] = values.Squad.Front, ["raid_front"] = values.Squad.RaidFront };
+        return JsonSerializer.Serialize(sums, Json);
+    }
 
     /// <summary>
     /// Writes the first problem as the recorder wrote it.

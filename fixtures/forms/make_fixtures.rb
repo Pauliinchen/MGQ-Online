@@ -2,6 +2,7 @@
 #  make_fixtures.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Recorded the world type, sharing, shared save and player's choice for the new world's form alone
 #      Paulinchen  2026-10-23: Recorded the forms from form_prototype.rb
 #                            - Created
 #
@@ -55,7 +56,7 @@ CHECKS = [
 ]
 
 forms = FORMS.map do |name, request, steps|
-  { "case" => name, "open" => request, "steps" => steps, "view" => FormPrototype.view_of(FormPrototype.act(FormPrototype.open(request), steps)) }
+  { "case" => name, "open" => request, "steps" => steps, "view" => FormPrototype.view_of(FormPrototype.act(FormPrototype.open(request), steps), request["kind"]) }
 end
 checks = CHECKS.flat_map do |request, key, texts|
   form = FormPrototype.open(request)
