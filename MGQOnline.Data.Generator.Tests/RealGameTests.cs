@@ -2,6 +2,7 @@
 //  RealGameTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Dropped the check of the offline sort
 //      Paulinchen  2026-10-31: Covered the story replay's gate over the untranslated copy and the installed game
 //      Paulinchen  2026-10-28: Covered the offline sort over the untranslated copy
 //                            - Shared the game folder settings with the parity tests
@@ -12,10 +13,7 @@
 using System;
 using System.IO;
 using System.Linq;
-using System.Text.Json;
-using MGQOnline.Data.Events;
 using MGQOnline.Data.Generator.Build;
-using MGQOnline.Data.Generator.Tools;
 using MGQOnline.Game.Events;
 using MGQOnline.Game.Events.Data;
 
@@ -75,24 +73,6 @@ public sealed class RealGameTests
         Assert.Equal(
             GameFingerprint.Text(EventBuilder.Fingerprint(new GameFolderFiles(source))),
             GameFingerprint.Text(EventBuilder.Fingerprint(new GameFolderFiles(game))));
-    }
-
-    /// <summary>
-    /// Asserts that the offline sort over the untranslated copy's database, which reads the kept
-    /// commands only, sorts every map page as the build sorted it from the whole lists.
-    /// </summary>
-    [Fact]
-    public void Sort_OfTheUntranslatedCopyKeepsTheKindsOfTheBuild()
-    {
-        string source = FolderOrSkip(SourceSetting);
-        using EventStore store = EventStore.Over(EventDatabaseWriter.Build(EventBuilder.Build(new GameFolderFiles(source), new BuildOptions())));
-        var database = new DatabaseSource(store);
-
-        string[] lines = ToolsTests.SortLines(database, OfflineSort.StateOf(store, database, null));
-
-        string[] sorted = [.. lines.Take(database.Pages.Count).Select(line => JsonDocument.Parse(line).RootElement.GetProperty("kind").GetString()!)];
-        string[] built = [.. database.Pages.Select(page => ((EventKind)page.KindNewGame!.Value).ToString().ToLowerInvariant())];
-        Assert.Empty(Enumerable.Range(0, built.Length).Where(index => built[index] != sorted[index]).Select(index => lines[index]));
     }
 
     /// <summary>

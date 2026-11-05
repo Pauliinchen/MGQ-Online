@@ -6,6 +6,7 @@
 //                            - Answered a sort with the one decision, which tells the player's own lists and the Pocket Castle's residents
 //                            - Read the common events the scripts hand over
 //                            - Told the scripts the maps of the Pocket Castle's residents
+//                            - Found a page of a map that differs from the events database in the game's own data
 //      Paulinchen  2026-10-28: Answered the command index of every page a map names in one call
 //                            - Read the events from the events database, a list found only while its length and shape match
 //                            - Took the game data's fingerprint the database is checked against
@@ -185,11 +186,11 @@ internal static class EventTopics
             int map = IntOf(request["map"], "map");
             return new RubyHash
             {
-                { "indexes", new RubyArray(pages.Select(entry => PageEntryOf(source, events.Store, map, entry.AsArray()) is { } page ? (RubyValue)IndexAnswer(index, page, skip) : RubyNil.Value)) },
+                { "indexes", new RubyArray(pages.Select(entry => PageEntryOf(source, events, map, entry.AsArray()) is { } page ? (RubyValue)IndexAnswer(index, page, skip) : RubyNil.Value)) },
             };
         }
 
-        return ListOf(source, events.Store, request) is { } found ? IndexAnswer(index, found, skip) : new RubyHash { { "unknown", true } };
+        return ListOf(source, events, request) is { } found ? IndexAnswer(index, found, skip) : new RubyHash { { "unknown", true } };
     }
 
     /// <summary>
@@ -219,7 +220,7 @@ internal static class EventTopics
     internal static RubyHash SortOf(GameEvents events, RubyHash request)
     {
         IEventSource source = events.Source;
-        if (ListOf(source, events.Store, request) is not { } found)
+        if (ListOf(source, events, request) is not { } found)
         {
             return new RubyHash { { "unknown", true } };
         }
@@ -274,7 +275,7 @@ internal static class EventTopics
         foreach (RubyValue entry in request["pages"].AsArray())
         {
             RubyArray row = entry.AsArray();
-            FoundList? found = PageEntryOf(source, events.Store, map, row);
+            FoundList? found = PageEntryOf(source, events, map, row);
             PageTexts pageTexts = texts.GetValueOrDefault((IntOf(row[0], "event"), IntOf(row[1], "page")), PageTexts.None);
             kinds.Add(found is null ? RubyNil.Value : NameOf(sorter.Decide(found.Commands, new EventSite(map, null, null, pageTexts), state).ListKind));
         }
@@ -286,11 +287,11 @@ internal static class EventTopics
     /// Finds the list a request names.
     /// </summary>
     /// <param name="source">The game's events as far as they may be read.</param>
-    /// <param name="store">The events database, which tells a list's length and shape.</param>
+    /// <param name="events">The game's events, whose database tells a list's length and shape.</param>
     /// <param name="request">The request.</param>
     /// <returns>The list; <see langword="null"/> when the source lacks it or the database holds another length or shape.</returns>
     /// <exception cref="BridgeRequestException">The request names no list.</exception>
-    internal static FoundList? ListOf(IEventSource source, EventStore store, RubyHash request)
+    internal static FoundList? ListOf(IEventSource source, GameEvents events, RubyHash request)
     {
         if (request["list"] is RubyArray rows)
         {
@@ -300,13 +301,13 @@ internal static class EventTopics
         if (request["common"] is RubyInteger common)
         {
             long id = common.AsLong();
-            return id is > 0 and <= int.MaxValue && source.CommonList(id) is { } list && store.CommonList((int)id) is { } row
+            return id is > 0 and <= int.MaxValue && source.CommonList(id) is { } list && events.Store.CommonList((int)id) is { } row
                 && Fits(row, request["size"], request["shape"]) && source.CommonKeys(id) is { } keys
                 ? new FoundList(list, null, keys, row.ListId)
                 : null;
         }
 
-        return PageOf(source, store, IntOf(request["map"], "map"), IntOf(request["event"], "event"), IntOf(request["page"], "page"), request["size"], request["shape"]);
+        return PageOf(source, events, IntOf(request["map"], "map"), IntOf(request["event"], "event"), IntOf(request["page"], "page"), request["size"], request["shape"]);
     }
 
     /// <summary>
@@ -314,14 +315,14 @@ internal static class EventTopics
     /// [event, page from 0, commands] for one the scripts hand over.
     /// </summary>
     /// <param name="source">The game's events as far as they may be read.</param>
-    /// <param name="store">The events database.</param>
+    /// <param name="events">The game's events.</param>
     /// <param name="map">The map.</param>
     /// <param name="site">The page's entry.</param>
     /// <returns>Its list, <see langword="null"/> as <see cref="ListOf"/> tells.</returns>
-    private static FoundList? PageEntryOf(IEventSource source, EventStore store, int map, RubyArray site) =>
+    private static FoundList? PageEntryOf(IEventSource source, GameEvents events, int map, RubyArray site) =>
         site.Count == 3 && site[2] is RubyArray rows
             ? Inline(rows, null)
-            : PageOf(source, store, map, IntOf(site[0], "event"), IntOf(site[1], "page"), site.Count > 2 ? site[2] : RubyNil.Value, site.Count > 3 ? site[3] : RubyNil.Value);
+            : PageOf(source, events, map, IntOf(site[0], "event"), IntOf(site[1], "page"), site.Count > 2 ? site[2] : RubyNil.Value, site.Count > 3 ? site[3] : RubyNil.Value);
 
     /// <summary>
     /// Tells whether a list the database holds is the one the scripts hold: as many commands and the
@@ -331,8 +332,17 @@ internal static class EventTopics
     /// <param name="size">The scripts' length, an Integer.</param>
     /// <param name="shape">The scripts' shape, an Integer.</param>
     /// <returns>Whether both match; <see langword="false"/> when either is missing.</returns>
-    internal static bool Fits(ListRow row, RubyValue size, RubyValue shape) =>
-        size is RubyInteger length && shape is RubyInteger hash && row.CountAll == length.Value && row.Shape == hash.Value;
+    internal static bool Fits(ListRow row, RubyValue size, RubyValue shape) => Fits(new ListFit(row.CountAll, row.Shape), size, shape);
+
+    /// <summary>
+    /// Tells whether a list is the one the scripts hold: as many commands and the same shape.
+    /// </summary>
+    /// <param name="fit">The list's length and shape.</param>
+    /// <param name="size">The scripts' length, an Integer.</param>
+    /// <param name="shape">The scripts' shape, an Integer.</param>
+    /// <returns>Whether both match; <see langword="false"/> when either is missing.</returns>
+    private static bool Fits(ListFit fit, RubyValue size, RubyValue shape) =>
+        size is RubyInteger length && shape is RubyInteger hash && fit.Size == length.Value && fit.Shape == hash.Value;
 
     /// <summary>
     /// Reads a whole number field of a request.
@@ -373,18 +383,28 @@ internal static class EventTopics
     /// Finds a map event's page.
     /// </summary>
     /// <param name="source">The game's events as far as they may be read.</param>
-    /// <param name="store">The events database.</param>
+    /// <param name="events">The game's events: the database, and the maps read from the game's own data.</param>
     /// <param name="map">The map.</param>
     /// <param name="eventId">The event.</param>
     /// <param name="page">The page's place, from 0.</param>
     /// <param name="size">The scripts' length of its list.</param>
     /// <param name="shape">The scripts' shape of its list.</param>
-    /// <returns>Its list, <see langword="null"/> as <see cref="ListOf"/> tells.</returns>
-    private static FoundList? PageOf(IEventSource source, EventStore store, int map, int eventId, int page, RubyValue size, RubyValue shape) =>
-        source.Page(map, eventId, page) is { } found && store.ListOf(map, eventId, page) is { } row && Fits(row, size, shape)
+    /// <returns>Its list, <see langword="null"/> as <see cref="ListOf"/> tells; a page of a map read from the game's own data without a database list.</returns>
+    private static FoundList? PageOf(IEventSource source, GameEvents events, int map, int eventId, int page, RubyValue size, RubyValue shape)
+    {
+        if (events.OwnMaps is { } maps && maps.Differs(map))
+        {
+            return maps.FitOf(map, eventId, page) is { } fit && Fits(fit, size, shape)
+                && source.Page(map, eventId, page) is { } own && source.PageKeys(map, eventId, page) is { } ownKeys
+                ? new FoundList(own.List, own.Trigger, ownKeys, null)
+                : null;
+        }
+
+        return source.Page(map, eventId, page) is { } found && events.Store.ListOf(map, eventId, page) is { } row && Fits(row, size, shape)
             && source.PageKeys(map, eventId, page) is { } keys
             ? new FoundList(found.List, found.Trigger, keys, row.ListId)
             : null;
+    }
 
     /// <summary>
     /// Reads a list the scripts hand over.

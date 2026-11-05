@@ -2,7 +2,10 @@
 //  Program.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Dropped the review aids, the sort and the export commands
 //      Paulinchen  2026-11-05: Added the story-ids command, which writes the relay's copy of the story's ids
+//                            - Added the story-rewards and choice-outcomes commands, the event checker's generators as review aids
+//                            - Added the catchup-data command, the event checker's generator of the catch-up tables' candidates
 //      Paulinchen  2026-10-31: Printed the game data's proposals of work keys after a build
 //      Paulinchen  2026-10-28: Added the ordinals command, which rewrites the relay's join and removal indexes into ords
 //                            - Added the sort, names and export commands of the tools
@@ -29,9 +32,8 @@ namespace MGQOnline.Data.Generator;
 /// <summary>
 /// The generator's commands: build the events database from a game folder, check a file against
 /// one, print a game's fingerprint, and compare another copy of the game with a file; for the
-/// tools, sort every page of a file, write the names of the story's keys and export a table; and
-/// for the relay, rewrite the command indexes of its join and removal rows into ords and write its
-/// copy of the story's ids.
+/// website, write the names of the story's keys; and for the relay, rewrite the command indexes of
+/// its join and removal rows into ords and write its copy of the story's ids.
 /// </summary>
 internal static class Program
 {
@@ -59,9 +61,7 @@ internal static class Program
           check <game folder> <events.db> [--game-version 3.06] [--source untranslated]
           fingerprint <game folder>
           compare <events.db> <other game folder>
-          sort <events.db> <out.jsonl> [--state new|<values.json>]
           names <translated game folder> <out.json>
-          export <events.db> <table> <out.json>
           ordinals <events.db> <game folder the indexes were read from> <rows.json> <out.json>
           story-ids <out.json>
         """;
@@ -81,11 +81,7 @@ internal static class Program
                 ["check", string game, string file, .. string[] rest] when OptionsOf(rest) is { } options => Check(game, file, options),
                 ["fingerprint", string game] => PrintFingerprint(game),
                 ["compare", string file, string other] => Compare(file, other),
-                ["sort", string file, string output] => Sort(file, output, null),
-                ["sort", string file, string output, "--state", "new"] => Sort(file, output, null),
-                ["sort", string file, string output, "--state", string values] => Sort(file, output, values),
                 ["names", string game, string output] => WriteNames(game, output),
-                ["export", string file, string table, string output] => Export(file, table, output),
                 ["ordinals", string file, string game, string rows, string output] => Ordinals(file, game, rows, output),
                 ["story-ids", string output] => WriteStoryIds(output),
                 _ => Fail(UsageText),
@@ -216,35 +212,6 @@ internal static class Program
     }
 
     /// <summary>
-    /// Sorts every map page and common event of a database as the mod sorts them in a Classic
-    /// party's game, and writes their kinds and marks for the event checker.
-    /// </summary>
-    /// <param name="file">The database.</param>
-    /// <param name="output">The JSON lines file to write.</param>
-    /// <param name="values">A file of the switches and variables set, <see langword="null"/> for a new game.</param>
-    /// <returns>The exit code.</returns>
-    private static int Sort(string file, string output, string? values)
-    {
-        using EventStore store = EventStore.Open(file);
-        if (store.Problem is { } problem)
-        {
-            return Fail(problem);
-        }
-
-        var clock = Stopwatch.StartNew();
-        var source = new DatabaseSource(store);
-        IEventState state = OfflineSort.StateOf(store, source, values);
-        int count;
-        using (FileStream stream = File.Create(output))
-        {
-            count = OfflineSort.Write(source, state, stream);
-        }
-
-        Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"{count:N0} pages and common events sorted into {Path.GetFullPath(output)} in {clock.Elapsed.TotalSeconds:F1} s"));
-        return Done;
-    }
-
-    /// <summary>
     /// Writes the names of the story's keys a game's data gives them, for the website.
     /// </summary>
     /// <param name="game">The game folder, a translated copy for the names a player reads.</param>
@@ -259,28 +226,6 @@ internal static class Program
         }
 
         Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"wrote {Path.GetFullPath(output)}: {names.Switches.Count:N0} switches, {names.Variables.Count:N0} variables, {names.Maps.Count:N0} maps, {names.Events.Count:N0} events, {names.Companions:N0} companions"));
-        return Done;
-    }
-
-    /// <summary>
-    /// Writes one table or view of a database as JSON.
-    /// </summary>
-    /// <param name="file">The database.</param>
-    /// <param name="table">The table or view.</param>
-    /// <param name="output">The JSON file to write.</param>
-    /// <returns>The exit code.</returns>
-    private static int Export(string file, string table, string output)
-    {
-        using (EventStore store = EventStore.Open(file))
-        {
-            if (store.Problem is { } problem)
-            {
-                return Fail(problem);
-            }
-        }
-
-        int count = TableExport.Write(file, table, output);
-        Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"wrote {count:N0} rows of {table} to {Path.GetFullPath(output)}"));
         return Done;
     }
 

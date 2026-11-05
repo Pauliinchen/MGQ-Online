@@ -2,7 +2,8 @@
 //  StoryIdsTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Created
+//      Paulinchen  2026-11-05: Left out the generator's review aids, which keep the retired event checker's tables as it wrote them
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -53,7 +54,8 @@ public sealed partial class StoryIdsTests
     /// the story's band, the route clears, the castle's bosses or the areas' progress, as a number or
     /// a key such as "v1001", "s7096" or the counter "r1141"; or a common event of the routes' rules
     /// where it is called, such as "ce:154" or a common event's index. Comments, tests, fixtures and
-    /// data are left out.
+    /// data are left out, and so are the generator's review aids, whose tables are the retired event
+    /// checker's own, kept so they write what it wrote.
     /// </summary>
     [Fact]
     public void Code_WritesNoStoryIdOutsideTheTable()
@@ -82,16 +84,18 @@ public sealed partial class StoryIdsTests
 
     /// <summary>
     /// Lists the code files the table's ids must not be written in: every script, relay module and
-    /// C# file of the repository but the table itself, the tests, the generated and the native ones.
+    /// C# file of the repository but the table itself, the tests, the generated, the native ones and
+    /// the generator's review aids.
     /// </summary>
     /// <returns>Their full paths.</returns>
     private static IEnumerable<string> CodeFiles()
     {
         string table = Path.GetFullPath(Path.Combine(Repository.Root, "MGQOnline.Game", "Story", "StoryIds.cs"));
+        string reviewAids = Path.GetFullPath(Path.Combine(Repository.Root, "MGQOnline.Data.Generator", "Review")) + Path.DirectorySeparatorChar;
         string[] skipped = ["Tests", "bin", "obj", "native", "node_modules", "fixtures", "Shipping", "TestResults"];
         return CodeFolders.SelectMany(folder => Directory.EnumerateFiles(Path.Combine(Repository.Root, folder.Folder), "*" + folder.Ending, SearchOption.AllDirectories))
             .Select(Path.GetFullPath).Distinct(StringComparer.OrdinalIgnoreCase)
-            .Where(file => file != table && !file.EndsWith(".test.js", StringComparison.Ordinal)
+            .Where(file => file != table && !file.EndsWith(".test.js", StringComparison.Ordinal) && !file.StartsWith(reviewAids, StringComparison.OrdinalIgnoreCase)
                 && !Path.GetRelativePath(Repository.Root, file).Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
                     .Any(part => skipped.Contains(part) || part.EndsWith(".Tests", StringComparison.Ordinal)));
     }

@@ -2,6 +2,7 @@
 //  CopyComparison.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Took the lists' shape from RawListShape
 //      Paulinchen  2026-10-28: Created
 //
 //----------------------------------------------------------------
@@ -147,7 +148,7 @@ internal sealed class CopyComparison
         ListMatch match = mine switch
         {
             null => ListMatch.Missing,
-            { } row when row.Shape == ListBuild.ShapeOf(list) => row.CountAll == list.Count ? ListMatch.Same : ListMatch.TextOnly,
+            { } row when row.Shape == RawListShape.Of(list) => row.CountAll == list.Count ? ListMatch.Same : ListMatch.TextOnly,
             { } row => row.CountAll == list.Count ? ListMatch.NumbersOnly : ListMatch.Changed,
         };
         if (match == ListMatch.Same)

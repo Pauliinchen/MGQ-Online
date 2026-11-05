@@ -43,7 +43,7 @@ public sealed record DecisionRoute(int Route, int? Side, int? Return, int? Map);
 
 /// <summary>
 /// What the walk of the game's data found an outcome of a branch event writes (see
-/// ChoiceTable.Outcomes.cs and Tools/choice_outcomes.rb of the event checker).
+/// ChoiceTable.Outcomes.cs, committed data).
 /// </summary>
 /// <param name="Branch">The choice's key.</param>
 /// <param name="Sign">The values that tell the outcome apart, such as <c>v1061=3</c> or <c>s2280 s2281</c>.</param>

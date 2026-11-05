@@ -2,31 +2,29 @@
 //  ClassicGameState.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Held a new game's values only
 //      Paulinchen  2026-10-28: Created
 //
 //----------------------------------------------------------------
 
-using System.Collections.Generic;
 using MGQOnline.Game.Events;
 using MGQOnline.Game.Story;
 
 namespace MGQOnline.Data.Generator.Build;
 
 /// <summary>
-/// The values a Classic party's game holds for the sorter: the switches on and the variables set,
-/// a new game's by default, and the player's own switches and variables of a Classic party's table,
-/// the side switches among them while the sides still get other rewards.
+/// The values a new game of a Classic party holds for the sorter: every switch off, every variable
+/// 0, and the player's own switches and variables of a Classic party's table, the side switches
+/// among them while the sides still get other rewards.
 /// </summary>
 /// <param name="table">The Classic party's table.</param>
-/// <param name="switchesOn">The switches that are on, none for a new game.</param>
-/// <param name="variables">The variables that are not 0, none for a new game.</param>
-internal sealed class ClassicGameState(StoryTable table, IReadOnlySet<long>? switchesOn = null, IReadOnlyDictionary<long, long>? variables = null) : IEventState
+internal sealed class ClassicGameState(StoryTable table) : IEventState
 {
     /// <inheritdoc />
-    public bool Switch(long id) => switchesOn?.Contains(id) == true;
+    public bool Switch(long id) => false;
 
     /// <inheritdoc />
-    public long? Variable(long id) => variables?.GetValueOrDefault(id) ?? 0;
+    public long? Variable(long id) => 0;
 
     /// <inheritdoc />
     public bool PersonalSwitch(long id) => IsPersonal(table.Switches, id);

@@ -2,6 +2,7 @@
 //  GameDataPruner.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Shared the reading of a page's conditions with the check of the player's maps
 //      Paulinchen  2026-10-28: Classified each list of commands as it finished
 //      Paulinchen  2026-10-23: Created
 //
@@ -141,7 +142,7 @@ internal sealed class GameDataPruner : MarshalPruner
     /// </summary>
     /// <param name="value">The RPG::Event::Page::Condition.</param>
     /// <returns>The conditions it checks.</returns>
-    private static PageCondition ConditionOf(RubyObject value) => new(
+    internal static PageCondition ConditionOf(RubyObject value) => new(
         IsOn(value["switch1_valid"]) ? Int(value["switch1_id"]) : null,
         IsOn(value["switch2_valid"]) ? Int(value["switch2_id"]) : null,
         IsOn(value["variable_valid"]) ? Int(value["variable_id"]) : null,

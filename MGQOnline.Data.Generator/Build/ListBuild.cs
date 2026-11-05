@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-11-05: Read the side switches from StoryIds
+//                            - Took the lists' shape from RawListShape, which the DLL shares
 //      Paulinchen  2026-11-01: Handed on each list's extended choices
 //      Paulinchen  2026-10-31: Handed each list's script roots on
 //                            - Handed on what each list's scripts do to self switches
@@ -42,25 +43,6 @@ internal static class ListBuild
     private static readonly IReadOnlySet<long> SideSwitches = StoryIds.SideSwitches.Select(side => (long)side).ToHashSet();
 
     /// <summary>
-    /// Finds the shape of a list, see <see cref="ListShape"/>.
-    /// </summary>
-    /// <param name="list">The commands as the game runs them.</param>
-    /// <returns>The shape.</returns>
-    public static int ShapeOf(IReadOnlyList<RawCommand> list)
-    {
-        int shape = 0;
-        foreach (RawCommand command in list)
-        {
-            if (EventSchema.Keeps(command.Code))
-            {
-                shape = ListShape.AddCommand(shape, command.Code, command.Indent, IntegersOf(command.Parameters));
-            }
-        }
-
-        return shape;
-    }
-
-    /// <summary>
     /// Adds a list's rows.
     /// </summary>
     /// <param name="rows">The rows to add to.</param>
@@ -75,7 +57,7 @@ internal static class ListBuild
         int[] ords = OrdsOf(list);
         int[] owners = OwnersOf(list);
         int listId = site.ListId;
-        rows.Lists.Add(site with { CountAll = list.Count, CountKept = ords.Count(ord => ord >= 0), Shape = ShapeOf(list) });
+        rows.Lists.Add(site with { CountAll = list.Count, CountKept = ords.Count(ord => ord >= 0), Shape = RawListShape.Of(list) });
         AddCommands(rows, listId, commands, ords);
 
         ListRows found = condition is null ? ListRows.Of(commands) : ListRows.Of(new EventPage(condition, 0, commands));
@@ -291,24 +273,4 @@ internal static class ListBuild
     /// <param name="index">The parameter's place.</param>
     /// <returns>Whether it is; <see langword="false"/> for a parameter that is missing.</returns>
     private static bool IsTrue(RubyArray parameters, int index) => index < parameters.Count && parameters[index] is not (RubyNil or RubyBool { Flag: false });
-
-    /// <summary>
-    /// Picks the parameters that are Integers in Ruby, as the shape hashes them; one too large for 64
-    /// bits by the low bits the shape keeps of it.
-    /// </summary>
-    /// <param name="parameters">The parameters.</param>
-    /// <returns>The whole numbers, in order.</returns>
-    private static long[] IntegersOf(RubyArray parameters)
-    {
-        var integers = new List<long>(parameters.Count);
-        foreach (RubyValue value in parameters)
-        {
-            if (value is RubyInteger integer)
-            {
-                integers.Add(integer.Value >= long.MinValue && integer.Value <= long.MaxValue ? (long)integer.Value : (long)(integer.Value & ListShape.Mask));
-            }
-        }
-
-        return [.. integers];
-    }
 }

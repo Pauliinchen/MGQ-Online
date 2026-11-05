@@ -2,6 +2,7 @@
 //  GameEvents.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Read the maps that differ from the events database from the game's own data
 //      Paulinchen  2026-10-28: Opened the relay mirror beside the events database
 //                            - Created
 //
@@ -19,7 +20,8 @@ namespace MGQParadox.Multiplayer.Topics;
 /// <summary>
 /// The game's events as the DLL reads them: the events database the mod ships, opened at the first
 /// question and kept for the session, checked against the fingerprint of the game data the scripts
-/// hand over; and the game folder's files, for whether one exists.
+/// hand over, each map read from the game folder's files instead once it differs; and the game
+/// folder's files, for whether one exists.
 /// </summary>
 internal sealed class GameEvents
 {
@@ -42,6 +44,11 @@ internal sealed class GameEvents
     /// The game folder's files, whose archive index is read at the first question.
     /// </summary>
     private readonly Lazy<IGameDataFiles> _files;
+
+    /// <summary>
+    /// The check of the game folder's maps against the events database, made on first use.
+    /// </summary>
+    private readonly Lazy<LocalMaps> _localMaps;
 
     /// <summary>
     /// Writes a line into the log.
@@ -74,6 +81,7 @@ internal sealed class GameEvents
         _store = new Lazy<EventStore>(open);
         _files = new Lazy<IGameDataFiles>(files);
         _log = log;
+        _localMaps = new Lazy<LocalMaps>(() => new LocalMaps(Store, Files, _log));
     }
 
     /// <summary>
@@ -149,9 +157,26 @@ internal sealed class GameEvents
 
     /// <summary>
     /// Gets the game's events the database may be read for: the tables of the parts in which it
-    /// matches the game data, nothing before the scripts handed the fingerprint over.
+    /// matches the game data, each map from the game folder's files once it differs from the
+    /// database's, nothing before the scripts handed the fingerprint over.
     /// </summary>
-    public IEventSource Source => new GatedEventSource(new EventStoreSource(Store), Gate());
+    public IEventSource Source
+    {
+        get
+        {
+            EventDataGate gate = Gate();
+            var stored = new EventStoreSource(Store);
+            var gated = new GatedEventSource(stored, gate);
+            return gate.Problem is null ? new LocalMapsSource(gated, stored, _localMaps.Value) : gated;
+        }
+    }
+
+    /// <summary>
+    /// Gets the check of the game folder's maps against the events database, which tells the maps
+    /// <see cref="Source"/> reads from the game's own data; <see langword="null"/> while the database
+    /// is not read at all.
+    /// </summary>
+    public LocalMaps? OwnMaps => Gate().Problem is null ? _localMaps.Value : null;
 
     /// <summary>
     /// Compares the events database with the game data, logging the outcome once.

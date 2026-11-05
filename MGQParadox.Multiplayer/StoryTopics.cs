@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-11-05: Left reading a frozen fight back to the frozen fights' own topics, which read every fight they take
+//                            - Handed the game's events to the list lookup, which reads the maps that differ from the game's own data
 //                            - Took and handed the story's keys and values as plain values, see StoryPlain
 //                            - Answered a frozen fight as another game reads it back, see FrozenFightText
 //                            - Took and handed sites as plain values, and read the sites of an earlier release's save once
@@ -498,7 +499,7 @@ internal sealed partial class StoryTopics : IStoryTrackHost
     {
         GameEvents game = Events();
         IEventSource events = game.Source;
-        if (EventTopics.ListOf(events, game.Store, request) is not { } found)
+        if (EventTopics.ListOf(events, game, request) is not { } found)
         {
             return new RubyHash { { "unknown", true } };
         }
@@ -535,7 +536,7 @@ internal sealed partial class StoryTopics : IStoryTrackHost
         if (!moves && (request["list"] is RubyArray || request["common"] is RubyInteger || request["page"] is RubyInteger))
         {
             GameEvents game = Events();
-            if (EventTopics.ListOf(game.Source, game.Store, request) is not { } found)
+            if (EventTopics.ListOf(game.Source, game, request) is not { } found)
             {
                 return new RubyHash { { "unknown", true } };
             }

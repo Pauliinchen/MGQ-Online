@@ -4,6 +4,7 @@
 //  Changelog:
 //      Paulinchen  2026-11-05: Checked the castle's maps and a map's chests and pages without the events database, and a resumed fight's page as story
 //                            - Checked that a sort answers the one decision of where its list runs
+//                            - Checked that a map a mod changed is read from the game's own data
 //                            - Expected the Library's switch among the values a sort needs
 //                            - Checked that the battlefuck events are read once and stay while the common events differ
 //      Paulinchen  2026-10-30: Kept the database fingerprint format in the differing game data
@@ -19,10 +20,12 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using MGQOnline.Bridge.Ruby;
 using MGQOnline.Data.Events;
+using MGQOnline.Data.Generator.Build;
 using MGQOnline.Game.Tests.Events;
 using MGQParadox.Multiplayer.Tests.Network.World;
 using MGQParadox.Multiplayer.Topics;
@@ -33,8 +36,8 @@ namespace MGQParadox.Multiplayer.Tests.Topics;
 /// <summary>
 /// Covers the event sorter's topics as the scripts call them, over the events database of a tiny
 /// game: the values a sort names it needs, a page found only while the scripts hold it as the
-/// database does, the gate of the game data's fingerprint, the map's pages at once, and a read
-/// ahead that fails.
+/// database does, the gate of the game data's fingerprint, a map a mod changed read from the
+/// game's own data, the map's pages at once, and a read ahead that fails.
 /// </summary>
 public sealed class EventTopicsTests
 {
@@ -192,6 +195,43 @@ public sealed class EventTopicsTests
     }
 
     /// <summary>
+    /// Asserts that a map a mod changed is read from the player's own game data: its changed page
+    /// and its new event sort from the player's commands, the map is logged once, a map whose page
+    /// only shows on another switch counts as changed too, and a map the mod left alone still sorts
+    /// from the database.
+    /// </summary>
+    [Fact]
+    public void Sort_OfAMapAModChanged_ReadsThePlayersOwnMap()
+    {
+        TinyPage farewell = new([C(101, "", 0, 0, 2), C(401, "Bye."), C(121, 60, 60, 0)]);
+        TinyGame shipped = new TinyGame()
+            .Event(2, C(101, "", 0, 0, 2), C(401, "Hello."), C(121, 60, 60, 0))
+            .MapEvent(2, 1, 0, 0, farewell)
+            .MapEvent(3, 1, 0, 0, farewell);
+        TinyGame modded = new TinyGame()
+            .Event(2, C(126, 5, 0, 0, 1), C(123, "A", 0))
+            .Event(5, C(101, "", 0, 0, 2), C(401, "New."), C(121, 60, 60, 0))
+            .MapEvent(2, 1, 0, 0, farewell)
+            .MapEvent(3, 1, 0, 0, farewell with { Switch1 = 70 });
+        EventStore store = StoreOf(shipped);
+        EventStore own = StoreOf(modded);
+        var lines = new List<string>();
+        var events = new GameEvents(() => store, modded.Files, lines.Add);
+        var topics = new TopicCaller(context => EventTopics.Register(context, () => events));
+        topics.Call(EventTopics.Open, new RubyHash { { "fingerprint", store.Meta!.Build.Fingerprint } });
+        string KindOf(int map, int eventId)
+        {
+            ListRow list = own.ListOf(map, eventId, 0)!.Value;
+            var request = new RubyHash { { "map", map }, { "event", eventId }, { "page", 0 }, { "size", list.CountAll }, { "shape", list.Shape }, { "values", Values(0) } };
+            return topics.Call(EventTopics.Sort, request)!.AsHash()["kind"].AsText();
+        }
+
+        Assert.Equal(("chest", "story", "chest"), (KindOf(1, 2), KindOf(1, 5), KindOf(1, 2)));
+        Assert.Equal(("story", "story"), (KindOf(2, 1), KindOf(3, 1)));
+        Assert.Equal([1, 3], lines.Where(line => line.EndsWith("differ from the events database, so they are read from the game's own data", StringComparison.Ordinal)).Select(line => int.Parse(line.Split(' ')[5], CultureInfo.InvariantCulture)));
+    }
+
+    /// <summary>
     /// Asserts that a mod folder without the events database answers why and names the castle's
     /// maps, still sorts the lists the scripts hand over, and knows no chest or page flags of a map.
     /// </summary>
@@ -281,6 +321,13 @@ public sealed class EventTopicsTests
 
         Assert.Equal(["events: could not open the events database: DllNotFoundException: e_sqlite3"], lines);
     }
+
+    /// <summary>
+    /// Builds the events database of a tiny game, as the generator writes it.
+    /// </summary>
+    /// <param name="game">The game.</param>
+    /// <returns>The database, in memory.</returns>
+    private static EventStore StoreOf(TinyGame game) => EventStore.Over(EventDatabaseWriter.Build(EventBuilder.Build(game.Files(), new BuildOptions())));
 
     /// <summary>
     /// Writes a command as the scripts hand it over.
