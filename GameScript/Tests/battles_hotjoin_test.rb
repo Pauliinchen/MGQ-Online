@@ -2,6 +2,8 @@
 #  battles_hotjoin_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Checked that a guest enters its own troop in the Library as its battle starts
+#                            - Checked that a guest builds the enemies it adds through the one factory, started once as the game starts them
 #      Paulinchen  2026-11-01: Read the waiting box's lines from its box of the Mod Framework
 #      Paulinchen  2026-10-30: Checked that the battle server places joining enemies by the widths of the troop its setup carried
 #                            - Read the players taken in from the joins stand-in
@@ -1070,33 +1072,35 @@ check("a troop of seven, six of them fallen, has room for one more enemy, not tw
       [hotjoin.place_anew([[50, 0, 300, 0]], "b").size, hotjoin.place_anew([[50, 0, 300, 0], [52, 0, 300, 0]], "b").map(&:first)], [1, [50]])
 reset
 
-# A guest adds the host's new enemies as the host's add_enemies does, through
-# battles_raid_pool.rbx and the game's Library, which stand in here.
+# A guest enters its own troop in the Library as its battle starts, as the game's start enters the
+# host's (user decision 2026-11-05), and adds the host's new enemies through the one factory, as the
+# host's add_enemies does: the game's own start of each, since the guest's start already ran, and
+# the game's Library.
 
-# An enemy that notes its battle start.
-class Game_Enemy; def on_battle_start; @battle_started = true; end; end
 # The Library's enemy entries, noting the ids found.
 Discovery = Struct.new(:found) do
   def set_discovery(ids); found.concat(ids); end
 end
 # The game's Library.
 Library = Struct.new(:enemy)
-# Stands in for the raid boss's pools, counting rescales in $rescaled.
+# Stands in for the raid boss's pools, which a guest's grown troop leaves alone.
 module MGQ_MpRaidPool
-  def self.rescale; $rescaled = ($rescaled || 0) + 1; end
   def self.note_invite(_message); end
   def self.invite_fields(_troop_id = nil); {}; end
   def self.won_already?(_troop_id); false; end
 end
 library = $game_library
 $game_library = Library.new(Discovery.new([]))
-$rescaled = 0
 sync.join_world(:guest, "own22", [0], "Me")
 own_troop
+$game_party.in_battle = false
+$battle_starts = []
+MGQ_MpBattlers.start_guest
 coop::Mode.take("coop_troop", scene, sync::Wire.line([[[31, 320, 300, 0], [50, 160, 300, 0]], nil]))
 grown = $game_troop.members.last
-check("a guest starts the battle of an enemy it adds, enters it in the Library and rescales the raid boss's pools",
-      [grown.enemy_id, grown.instance_variable_get(:@battle_started), $game_library.enemy.found, $rescaled], [50, true, [50], 1])
+check("a guest enters its own troop in the Library as it starts, and an enemy it adds too, with the game's own start, every enemy started once",
+      [grown.enemy_id, $game_troop.members.map { |enemy| $battle_starts.count(enemy) }, $game_library.enemy.found], [50, [1, 1], [31, 50]])
+$game_party.in_battle = false
 $game_library = library
 reset
 

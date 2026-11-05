@@ -2,7 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Loaded coop_flow.rbx after coop_scene.rbx
+#      Paulinchen  2026-11-05: Loaded battles_battlers.rbx after battles.rbx
+#                            - Loaded coop_flow.rbx after coop_scene.rbx
 #                            - Loaded story_ids.rbx after core_async.rbx
 #                            - Dropped story_found.rbx, whose items the story replay hands over
 #      Paulinchen  2026-11-01: Stopped loading ui_boxes.rbx, whose boxes the Mod Framework's components replaced
@@ -203,7 +204,7 @@ module MGQ_Multiplayer
     core_log core_hooks core_game_access core_hotkeys ui_online core_actors core_async story_ids overworld_sync ui_actions ui_chat ui_emotes overworld
     coop coop_scope coop_squad coop_events coop_gather coop_teleport coop_scene coop_flow coop_npcs story_state story_keys story_replay coop_story coop_castle
     world world_mods world_story world_catchup world_catchup_exp world_opening world_difficulty world_gates world_save_distribution world_screen world_save_export coop_choices
-    battles battles_raid_bosses battles_coop battles_coop_hotjoin battles_coop_join battles_raid_pool battles_raid_freeze world_freeze battles_raid_tiers battles_coop_level_sync
+    battles battles_battlers battles_raid_bosses battles_coop battles_coop_hotjoin battles_coop_join battles_raid_pool battles_raid_freeze world_freeze battles_raid_tiers battles_coop_level_sync
     battles_sync battles_sync_wire battles_sync_recorder battles_sync_playback battles_sync_live battles_served
     battles_balance_pvp battles_pvp battles_pvp_backline battles_duel battles_team
     trade ui_trade

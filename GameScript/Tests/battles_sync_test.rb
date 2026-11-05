@@ -2,6 +2,7 @@
 #  battles_sync_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Checked that the guest gives a state the host added or took away its counters through the game's own reset and erase
 #      Paulinchen  2026-11-01: Read the waiting box from its box of the Mod Framework, its leave offer naming the bound cancel key and taking a click
 #      Paulinchen  2026-10-31: Answered the leave question a frame later, as the Mod Framework collects it at the wait's frame
 #                            - Checked that the numpad's 0 with Num Lock off asks before leaving, the offer naming the keys that cancel
@@ -273,8 +274,13 @@ target = Game_Actor.new(6)
 target.instance_variable_set(:@cnt, { :defense_wall => [] })
 playback.values(target, 50, 5, 0, [4], [3], [0] * 8, 2)
 check("the guest takes them", [target.hp, MGQ_MpGame.get(target, :states), MGQ_MpGame.get(target, :state_turns)], [50, [4], { 4 => 3 }])
+# A state without the counters the game keeps per state ended a guest's game at a turn's end on
+# the map (the crash of 2026-10-07): the game's own reset of a state's counts gives them.
 check("with the counters the game keeps per state, which a turn's end on the map reads", [target.instance_variable_get(:@state_turn_counts), target.instance_variable_get(:@state_steps)], [{ 4 => 0 }, { 4 => 0 }])
 check("with the barriers", target.instance_variable_get(:@cnt)[:defense_wall], [true, true])
+playback.values(target, 50, 5, 0, [], [], [0] * 8, 2)
+check("a state the host took away loses its counters through the game's own erase",
+      [MGQ_MpGame.get(target, :states), target.instance_variable_get(:@state_turn_counts), target.instance_variable_get(:@state_steps)], [[], {}, {}])
 
 # The host's HP above this game's own maximum, which the game's refresh holds a character below.
 

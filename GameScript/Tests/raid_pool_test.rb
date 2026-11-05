@@ -2,6 +2,9 @@
 #  raid_pool_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Checked that a boss takes its pool's HP once the game's own events before the battle ran
+#                            - Started a battle's events and start skills as the game's battle scene does
+#                            - Checked that a boss whose pool is below a phase's share switches phase before anyone acts
 #      Paulinchen  2026-10-30: Ran the fights' turns through the stand-in of the fight in C#
 #                            - Told the pools through the stand-in of the pools' ledger in C#, which counts the own reports
 #                            - Checked that the stats' factors are kept per battle
@@ -205,8 +208,21 @@ class Game_Troop
   end
   # Answers the troop of the database.
   def troop; $data_troops[@troop_id]; end
-  # Runs the troop's battle event pages, noting each in $pages_run.
-  def setup_battle_event(_timing = nil); troop.pages.each { |page| $pages_run << page } if troop; end
+  # Runs the troop's battle event pages the battle meets the conditions of, each once a battle as
+  # the game's span "battle" does, noting each in $pages_run: a page [name, share] once the first
+  # enemy's HP is at most that share of its max, any other at once.
+  def setup_battle_event(_timing = nil)
+    return unless troop
+
+    @ran = [] unless @ran && @ran_of == @troop_id
+    @ran_of = @troop_id
+    troop.pages.each do |page|
+      next if @ran.include?(page) || (page.is_a?(Array) && @members.first.hp > @members.first.mhp * page[1])
+
+      @ran << page
+      $pages_run << page
+    end
+  end
   # Answers whether every enemy is dead.
   def all_dead?; @members.all? { |enemy| enemy.dead? }; end
 end
@@ -239,8 +255,14 @@ module BattleManager
   def self.event_proc=(proc); @event_proc = proc; end
   # Ends the battle, handing its result to the event.
   def self.battle_end(result); @event_proc.call(result) if @event_proc; @event_proc = nil; $game_party.in_battle = false; end
-  # Sets the lost battle up again.
-  def self.retry_battle; setup(@troop_id); $game_party.in_battle = true; true; end
+  # Sets the lost battle up again, and starts it as the game's battle scene does.
+  def self.retry_battle; setup(@troop_id); start_battle; $game_party.in_battle = true; true; end
+  # Runs the skills of the battle's start, $start_skills, which the game runs once the events
+  # before the battle ran.
+  def self.set_battle_start_skill; $start_skills.call if $start_skills; end
+  # Starts the battle as the game's battle scene does: its events, $battle_start_events, then its
+  # start skills.
+  def self.start_battle; $battle_start_events.call if $battle_start_events; set_battle_start_skill; end
   # Wins the battle once its troop is all dead, noting the troop in $won.
   #
   # @return [Boolean] Whether it won.
@@ -263,6 +285,8 @@ class Scene_Battle
   def process_action; end
   # Stands in for a frame of the battle, doing nothing.
   def update_basic; end
+  # Checks the troop's pages as the game does between its events and its actions.
+  def process_event; $game_troop.setup_battle_event; end
 end
 # Stands in for the game's scenes, the running one in $scene and those called in $called.
 module SceneManager
@@ -270,8 +294,8 @@ module SceneManager
   def self.run; end
   # Answers the running scene: $scene.
   def self.scene; $scene; end
-  # Notes the scene called in $called.
-  def self.call(klass); $called << klass; end
+  # Notes the scene called in $called, a battle scene starting its battle as the game's does.
+  def self.call(klass); $called << klass; BattleManager.start_battle if klass == Scene_Battle; end
 end
 # Stands in for the title screen.
 class Scene_Title; def start; end; end
@@ -335,6 +359,7 @@ class Game_Interpreter
     return if $game_party.in_battle
 
     BattleManager.setup(@params[1], @params[2], @params[3])
+    BattleManager.start_battle
     BattleManager.event_proc = Proc.new { |n| $branch = n }
     $game_party.in_battle = true
     Fiber.yield
@@ -1043,6 +1068,34 @@ next_turn
 check("a boss whose max HP halves under its HP reports nothing, and takes the pool's share of the new max", [reports, enemy.hp], [[], 2250])
 $data_enemies[1].params[0] = 800
 
+# The boss takes its pool's HP once the game's own events before the battle ran, such as the
+# higher difficulties' boss rate that halves its max HP, and before the party's start skills,
+# whose damage the first report counts.
+reset
+push("Queen Harpy", "0.5")
+$battle_start_events = lambda { $data_enemies[1].params[0] = 400 }
+$start_skills = lambda { enemy.hp -= 300 }
+start([[:battle, 71], [:mark, :after]])
+$battle_start_events = $start_skills = nil
+check("the boss takes its pool's share of the max HP the events before the battle left", [enemy.mhp, enemy.hp + 300], [3000, 1500])
+$scene.start_party_command_selection
+check("and the first report counts the damage of the start skills", reports.map { |_key, _battle, text| text }, ["1	0.1000000000	3000	0"])
+$data_enemies[1].params[0] = 800
+
+# A boss whose pool is below a phase's share of its HP switches phase before anyone acts: the
+# troop's pages are checked once more right after the pool's HP, before the start skills, where the
+# game would check them next at the first turn's end (user decision 2026-11-05).
+reset
+push("Queen Harpy", "0.4")
+$data_troops[71].pages = [:harpy_taunts, [:harpy_rages, 0.5]]
+$battle_start_events = lambda { $game_troop.setup_battle_event }
+phases = nil
+$start_skills = lambda { phases = $pages_run.dup }
+start([[:battle, 71], [:mark, :after]])
+$battle_start_events = $start_skills = nil
+$data_troops[71].pages = [:harpy_taunts]
+check("a boss whose pool is below a phase's share switches phase before the start skills", [enemy.hp, phases], [2400, [:harpy_taunts, [:harpy_rages, 0.5]]])
+
 # A small change the relay tells counts as it is: the ledger takes each word once, so nothing
 # tells a pool twice.
 reset
@@ -1100,6 +1153,7 @@ BattleManager.battle_end(1)
 pool.note_rewarded("Queen Harpy")
 pool.note_invite("troop" => "71", "pool" => "1", "side" => "1")
 $role = :guest
+$pages_run.clear
 BattleManager.setup(71)
 $game_troop.setup_battle_event
 check("a guest of a side battle fights a side battle too: no troop pages, no rewards again",
@@ -1132,7 +1186,8 @@ reset
 BattleManager.setup(71)
 check("on the server, a battle no event started fights no pool by itself", pool.fight, nil)
 pool.serve_fight(71, fields)
-check("the server fights the starter's pools as host, its enemy at the pool's HP",
+BattleManager.start_battle
+check("the server fights the starter's pools as host, its enemy at the pool's HP once its battle started",
       [pool.fight.key, pool.fight.guest, enemy.mhp, enemy.hp], ["Queen Harpy", false, 6000, 3000])
 $scene.start_party_command_selection
 enemy.hp = 2400

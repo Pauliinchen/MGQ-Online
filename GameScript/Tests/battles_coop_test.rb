@@ -2,6 +2,9 @@
 #  battles_coop_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Checked that other players' characters, the host's troop and a guest's start go through the game's own battle start
+#                            - Checked that a guest taking a battle over goes on from the battlers its start made whole, each started once
+#                            - Checked that a guest following its host to another battle starts that battle's troop once
 #      Paulinchen  2026-11-01: Named the Mod Framework's interface by its own name
 #      Paulinchen  2026-10-31: Took a player's color from MGQ_MpPlayerColor
 #      Paulinchen  2026-10-30: Handed invites, requests and stand-stills over through the matchmaking's routes
@@ -405,8 +408,12 @@ check("a troop that holds the host's enemies at other places keeps them, at the 
       [$game_troop.members[0].equal?(challenge[0]), challenge[0].screen_x, challenge[0].screen_y], [true, 320, 480])
 MGQ_MpBattlesCoop.take_troop(troop_scene, [[31, 320, 480, 1]])
 check("one the host hides is rebuilt", [$game_troop.members[0].equal?(challenge[0]), $game_troop.members[0].hidden?], [false, true])
+$battle_starts = []
+MGQ_MpBattlers.start_guest
 MGQ_MpBattlesCoop.take_troop(troop_scene, [[31, 320, 480, 0], [32, 100, 300, 0]])
-check("a rebuilt troop makes its enemies of the kind its battle needs", $game_troop.members.map(&:class), [ChallengeEnemy, ChallengeEnemy])
+check("a troop rebuilt after the guest's start makes its enemies of the kind its battle needs, each started once as the game starts its own",
+      [$game_troop.members.map(&:class), $game_troop.members.map { |enemy| $battle_starts.count(enemy) }], [[ChallengeEnemy, ChallengeEnemy], [1, 1]])
+$game_party.in_battle = false
 class << $game_troop; remove_method :enemy_class; end
 $game_troop.members = own_enemies
 
@@ -939,7 +946,7 @@ check("the same states only change its values", [$cleared, MGQ_MpGame.get(guest_
 # The host logs where a rebuilt character differs from what its owner's game showed, its counter
 # rate among them.
 # A rebuilt character whose differences are $differences.
-class Game_MpActor; def differences; $differences || []; end; def on_battle_start; end; end
+class Game_MpActor; def differences; $differences || []; end; end
 $log.clear
 $differences = ["counter 0 (sent 500)"]
 MGQ_MpBattlesCoop.check(Game_MpAlly.allocate.tap { |ally| ally.define_singleton_method(:name) { "Actor9 (Mate)" } })
@@ -981,11 +988,11 @@ whole = MGQ_MpBattlesCoop.new_ally(MGQ_MpActors::Builds::Member.new(13), "Mate",
 check("another player's fallen character is rebuilt fallen", [fallen.hp, fallen.mp, whole.hp], [0, 3, 100])
 
 # Another player's character starts the battle at the HP it came with, which the game's states of a
-# trait for low HP go by.
-class Game_MpActor; attr_reader :started_at; def on_battle_start; @started_at = [hp, mp]; end; end
+# trait for low HP go by (issue #31), through the game's own start, which gives it its counters and
+# clears its actions before a spell before the battle reads them (the crash of 2026-09-30).
 pinched = MGQ_MpBattlesCoop.new_ally(MGQ_MpActors::Builds::Member.new(14), "Mate", 2, 2, [3, 1])
-check("another player's character starts the battle at the HP and MP sent", pinched.started_at, [3, 1])
-class Game_MpActor; def on_battle_start; end; end
+check("another player's character starts the battle through the game's own start, at the HP and MP sent",
+      [pinched.start_hp, pinched.mp, pinched.counters_set], [3, 1, true])
 
 # Forms a guest's co-op battle with the host at seat 0 and the player's four characters at seat 2,
 # two of them on the Backline.
@@ -997,6 +1004,7 @@ def form_guest_battle(scene, bid)
   MGQ_MpBattlesSync.join_world(:guest, bid, [0], "Host")
   MGQ_MpBattlesSync.battle_started
   MGQ_MpBattles.begin(:coop)
+  MGQ_MpBattlers.start_guest
   MGQ_MpBattlesCoop.own_build
   MGQ_MpBattlesCoop.form(scene, [[0, "Host", "4,5", [[80, 8], [90, 9]], 8, [0, 1], 2, 0], [2, "Me", "1,2,3,4", [[100, 10]] * 4, 8, [0, 1, 2, 3], 2, 2]])
 end
@@ -1065,36 +1073,59 @@ check("and never puts the rules' switches into the save loaded next", $game_swit
 MGQ_MpBattlesSync.finish
 
 # A guest whose host leaves takes the battle over: one before the host's party came starts it as
-# its own, one later sets the counters the start sets and picks a defeat scene.
-# A battler that notes when its counters are set.
-class Game_Battler; attr_reader :counters_set; def set_counter; @counters_set = true; end; end
+# its own, without starting its party and troop a second time; one later goes on from the battlers
+# its start made whole and picks a defeat scene.
+$game_party.in_battle = false
 $my_seat = 2
 MGQ_MpBattlesSync.join_world(:guest, "g32", [0], "Host")
 MGQ_MpBattlesSync.battle_started
 MGQ_MpBattles.begin(:coop)
+$battle_starts = []
+MGQ_MpBattlers.start_guest
+started = $game_party.all_members + $game_troop.members
 $battle_started = false
 $turn_ends = 0
 $commands_phase = false
 MGQ_MpBattlesCoop.take_over(scene)
-check("a guest whose host left before the party came starts the battle as its own",
-      [$battle_started, $turn_ends, $commands_phase, MGQ_MpBattlesSync.role, MGQ_MpBattles.running?], [true, 0, true, nil, false])
+check("a guest whose host left before the party came starts the battle as its own, each battler started once",
+      [$battle_started, $turn_ends, $commands_phase, MGQ_MpBattlesSync.role, MGQ_MpBattles.running?, started.map { |battler| $battle_starts.count(battler) }.uniq],
+      [true, 0, true, nil, false, [1]])
+$game_party.in_battle = false
+$battle_starts = []
 form_guest_battle(scene, "g33")
 $battle_started = false
 $data_common_events = [nil] * 6000
 $data_common_events[6031] = $data_common_events[6032] = $data_common_events[6099] = :scene
 $game_temp.lose_event_id = 6099
 MGQ_MpBattlesCoop.take_over(scene)
-check("one whose host left later goes on with the counters the start sets",
-      [$battle_started, $turn_ends, ($game_party.battle_members + $game_troop.members).all?(&:counters_set)], [false, 1, true])
+check("one whose host left later goes on from the battlers the game's start gave, each started once",
+      [$battle_started, $turn_ends, ($game_party.battle_members + $game_troop.members).map { |battler| $battle_starts.count(battler) }.uniq], [false, 1, [1]])
 check("and a defeat scene of its enemies instead of a former battle's",
       [[6031, 6032].include?($game_temp.lose_event_id), $game_temp.lose_event_enemy_id == $game_temp.lose_event_id - 6000], [true, true])
 $data_common_events = known_events
 
-# A guest's start sets the counters the game's start sets, the EXP rate among them.
-$game_party.all_members.each { |actor| actor.instance_variable_set(:@counters_set, nil) }
-MGQ_MpBattlesSync::Live.ready_counters
-check("a guest's start sets the counters of every character of the party",
-      [$game_party.all_members.size > 1, $game_party.all_members.all?(&:counters_set)], [true, true])
+# A guest's start gives every character of its party and every enemy the game's own start, whose
+# counters the EXP rate is among (issue #24), and marks the party as fighting.
+$game_party.in_battle = false
+$battle_starts = []
+MGQ_MpBattlers.start_guest
+check("a guest's start gives every character of the party and every enemy the game's start",
+      [$game_party.all_members.size > 1, ($game_party.all_members + $game_troop.members).map { |battler| $battle_starts.count(battler) }.uniq, $game_party.in_battle],
+      [true, [1], true])
+# A guest whose game lacks every enemy of the battle's troop keeps the troop empty, whose start in
+# the game reads a random enemy and failed.
+troop = $game_troop.members
+$game_troop.members = []
+$game_party.in_battle = false
+failure =
+  begin
+    MGQ_MpBattlers.start_guest
+    nil
+  rescue => e
+    e
+  end
+check("a guest whose troop is empty starts its party without failing", [failure, $game_party.in_battle, $log.grep(/starting the guest's battle failed/)], [nil, true, []])
+$game_troop.members = troop
 
 # A guest the host's party leaves out, since it joined after the host stopped waiting.
 $my_seat = 7
@@ -1525,6 +1556,31 @@ coop_deliver(early, a_invite)
 check("a guest of an event's battle turns other invites down at once", [waiting_bid, declines], [nil, [[14, "a1"]]])
 MGQ_MpBattlesCoop.ended
 MGQ_MpBattlesSync.finish
+$scene_now = Scene_Map.new
+
+# A guest that follows its host to another battle after its own start takes that battle's troop,
+# which the game's start never reached, keeps it as the host's troop matches, and takes the battle
+# over once its host leaves.
+$scene_now = scene
+$game_party.in_battle = false
+$my_seat = 2
+MGQ_MpBattlesSync.join_world(:guest, "b2", [0], "Host")
+MGQ_MpBattlesSync.battle_started
+MGQ_MpBattles.begin(:coop)
+MGQ_MpBattlers.start_guest
+$battle_starts = []
+MGQ_MpBattlesCoop.follow("seat" => 14, "label" => "Early", "fields" => a_invite)
+followed = $game_troop.members.dup
+MGQ_MpBattlesCoop.own_build
+MGQ_MpBattlesCoop.form(scene, [[14, "Early", "4,5", [[80, 8], [90, 9]], 8, [0, 1], 2, 0], [2, "Me", "1,2,3,4", [[100, 10]] * 4, 8, [0, 1, 2, 3], 2, 2]])
+MGQ_MpBattlesCoop.take_troop(scene, MGQ_MpBattlesCoop.troop_entries)
+MGQ_MpBattlesCoop.take_over(scene)
+check("a guest that follows its host to another battle gives its troop the game's start once, through keeping it and taking the battle over",
+      [$game_troop.troop_id, $game_troop.members == followed, followed.map { |enemy| [enemy.counters_set, $battle_starts.count(enemy)] }], [93, true, [[true, 1]]])
+MGQ_MpBattlesCoop.ended
+MGQ_MpBattlesSync.finish
+$game_party.in_battle = false
+$my_seat = 0
 $scene_now = Scene_Map.new
 
 # The player yields to a rival: its enemy rates and pools, and the player's own rates back as the

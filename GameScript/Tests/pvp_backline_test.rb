@@ -2,6 +2,7 @@
 #  pvp_backline_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Checked that the other side's Backline gets the game's start with the troop once, and a swap none again
 #      Paulinchen  2026-11-01: Checked the option's row in Options > Mods, which the Mod Framework keeps
 #      Paulinchen  2026-10-31: Took the mod's prefix from ui_online.rbx
 #      Paulinchen  2026-10-30: Opened the bridge to the stand-in of the DLL, which checks the Frontlines and names the stream's kinds
@@ -13,8 +14,8 @@
 #
 #----------------------------------------------------------------
 
-# Covers battles_pvp_backline.rbx: the option, the other side's characters outside its Frontline,
-# the Frontline each game tells the other, what a swap costs the character swapped in, and the
+# Covers battles_pvp_backline.rbx: the option, the other side's characters outside its Frontline
+# and their start, the Frontline each game tells the other, what a swap costs the character swapped in, and the
 # characters outside both Frontlines in the host's stream.
 
 require_relative "bridge_support"
@@ -34,6 +35,9 @@ end
 load_bridge
 $fake = FakeBridge.new
 answer_live($fake)
+# The plans of the battlers the scripts build.
+require_relative "battlers_support"
+answer_battlers($fake)
 MGQ_Multiplayer::Bridge.open($fake)
 # Stands in for the world's sync, as far as coop.rbx, through which the option registers, asks it.
 module MGQ_MpOverworldSync
@@ -122,11 +126,20 @@ class Game_Battler
   def inputable?; true; end
   # Gives the character an attack as its action.
   def make_actions; @actions = [:attack]; end
+  # Stands in for the game's start of the character, noting it in $battle_starts.
+  def on_battle_start; ($battle_starts ||= []) << self; end
 end
 # A character of the player's own.
 class Game_Actor < Game_Battler; end
-# A side of the battle, whose skills reach all its members.
-class Game_Unit; def item_target_members(_item); members; end; end
+# A side of the battle, whose skills reach all its members and whose start starts them.
+class Game_Unit
+  # Whether the side fights, which the game marks at the battle start.
+  attr_reader :in_battle
+  # Answers whom a skill reaches: every member.
+  def item_target_members(_item); members; end
+  # Starts every member, as the game's battle start does.
+  def on_battle_start; members.each(&:on_battle_start); end
+end
 # The player's party: the first two characters are its Frontline, the rest its Backline.
 class Game_Party < Game_Unit
   attr_reader :all_members
@@ -206,6 +219,7 @@ module MGQ_MpBattlesPvp; extend MGQ_MpLog; LOG_TAG = "pvp battle"; end
 # The first words of the mod's settings in Options > Mods.
 load_script "ui_online"
 load_script "coop"
+load_script "battles_battlers"
 load_script "battles_pvp_backline"
 SceneManager.run
 backline = MGQ_MpBattlesPvp::Backline
@@ -246,6 +260,10 @@ check("the other side's characters past its Frontline wait in reserve", [backlin
 check("a skill that reaches the Backline reaches the other side's too", backline.troop_targets(item.new(true, false), $game_troop.members), others)
 check("a skill for the Backline alone reaches only it", backline.troop_targets(item.new(false, true), $game_troop.members), [others[2]])
 check("any other skill reaches the troop alone", backline.troop_targets(item.new(false, false), $game_troop.members), others.first(2))
+# The game's start of the troop reaches its Frontline alone, so the Backline gets the same start with it.
+$battle_starts = []
+$game_troop.on_battle_start
+check("the game's start of the troop starts the other side's Frontline and its Backline, each once", others.map { |other| $battle_starts.count(other) }, [1, 1, 1])
 
 # The player's own swap.
 own.each(&:make_actions)
@@ -274,6 +292,7 @@ others[2].make_actions
 mode.take_order(nil, [5, 7])
 check("the other side's Frontline is put in the troop and drawn anew", [$game_troop.members.map(&:id), $stood, $scene.instance_variable_get(:@spriteset).drawn, backline.reserve], [[5, 7], [5, 7], 1, [others[1]]])
 check("the character swapped in loses the actions it had left", [others[2].actions, others[0].actions], [[], []])
+check("and is not started again, keeping its TP, counters and states", others.map { |other| $battle_starts.count(other) }, [1, 1, 1])
 others[2].make_actions
 mode.share_order
 check("and the commands a guest sent for it", others[2].actions, [])

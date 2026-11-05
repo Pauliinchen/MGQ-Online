@@ -2,6 +2,9 @@
 #  battles_coop.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Built other players' characters and the host's troop through MGQ_MpBattlers
+#                            - Started a rival's troop taken after the battle's start through MGQ_MpBattlers
+#                            - Let a guest that takes a battle over go on from the battlers its start made whole, started once
 #      Paulinchen  2026-11-01: Named the Mod Framework's interface by its own name
 #      Paulinchen  2026-10-31: Took a player's color from MGQ_MpPlayerColor
 #                            - Checked a rebuilt character before its battle start states, as its owner's game measured it
@@ -1098,7 +1101,8 @@ module MGQ_MpBattlesCoop
   end
 
   # Sets the rival's battle up in place of the player's own, as joining an invite does: its enemy
-  # rates (see borrow_rates), its troop, drawn anew, its chance to escape, and whether it allows
+  # rates (see borrow_rates), its troop, started when the battle's start already ran (see
+  # MGQ_MpBattlers.start_troop) and drawn anew, its chance to escape, and whether it allows
   # escaping and losing; no first strike or surprise.
   #
   # @param scene [Scene_Battle] The battle.
@@ -1106,12 +1110,13 @@ module MGQ_MpBattlesCoop
   def self.adopt_troop(scene, message)
     borrow_rates(message)
     $game_troop.setup(message["troop"].to_i)
+    MGQ_MpBattlers.start_troop
     BattleManager.make_escape_ratio if BattleManager.respond_to?(:make_escape_ratio)
     MGQ_MpGame.set(BattleManager, :can_escape, message["escape"] == "1")
     MGQ_MpGame.set(BattleManager, :can_lose, message["lose"] == "1")
     MGQ_MpGame.set(BattleManager, :preemptive, false)
     MGQ_MpGame.set(BattleManager, :surprise, false)
-    redraw_enemies(scene)
+    MGQ_MpBattlers.redraw(scene)
     log("took troop #{message['troop']} of the rival's battle: #{$game_troop.members.map { |enemy| "#{enemy.enemy_id} #{enemy.name}" }.join(', ')}")
   rescue => e
     log("taking the rival's troop failed: #{e.class}: #{e.message}")
@@ -1124,17 +1129,6 @@ module MGQ_MpBattlesCoop
   # @param message [Hash] The invite.
   def self.take_pool(message)
     MGQ_MpRaidPool.set_up(message["troop"].to_i) if defined?(MGQ_MpRaidPool)
-  end
-
-  # Draws the troop's enemies anew in the battle, as they changed.
-  #
-  # @param scene [Scene_Battle] The battle.
-  def self.redraw_enemies(scene)
-    spriteset = MGQ_MpGame.get(scene, :spriteset)
-    return unless spriteset
-
-    spriteset.dispose_enemies
-    spriteset.create_enemies
   end
 
   # Takes a host's word that their battle is off, since the host joined a rival's battle, or that
@@ -1576,7 +1570,7 @@ module MGQ_MpBattlesCoop
     log("taking the host's troop failed: #{e.class}: #{e.message}")
   end
 
-  # Fights the host's enemies once repaired, see take_troop.
+  # Fights the host's enemies once repaired, see take_troop, built through MGQ_MpBattlers.
   #
   # @param scene [Scene_Battle] The battle.
   # @param enemies [Array<Array>, nil] The host's enemies, see repaired_enemies.
@@ -1584,28 +1578,7 @@ module MGQ_MpBattlesCoop
     return if enemies.nil? || enemies.empty?
     return keep_troop(enemies) if same_enemies?(enemies)
 
-    rebuilt = enemies.each_with_index.map do |(id, x, y, hidden), index|
-      enemy = new_enemy(index, id.to_i)
-      enemy.screen_x = x.to_i
-      enemy.screen_y = y.to_i
-      enemy.hide if hidden.to_i == 1
-      enemy
-    end
-    MGQ_MpGame.set($game_troop, :enemies, rebuilt)
-    MGQ_MpRaidPool.rescale if defined?(MGQ_MpRaidPool)
-    MGQ_MpRaidTiers.rescale if defined?(MGQ_MpRaidTiers)
-    # The game counts each name's enemies for their letters, so the count starts over as in setup.
-    MGQ_MpGame.set($game_troop, :names_count, {})
-    MGQ_MpGame.call($game_troop, :make_unique_names)
-    # The game letters only the living, and the host's fallen got theirs before they fell.
-    rebuilt.each_with_index do |enemy, index|
-      MGQ_MpBattlesHotjoin.lay_down(enemy) if enemies[index][3].to_i == MGQ_MpBattlesHotjoin::FALLEN
-    end
-    spriteset = MGQ_MpGame.get(scene, :spriteset)
-    if spriteset
-      spriteset.dispose_enemies
-      spriteset.create_enemies
-    end
+    rebuilt = MGQ_MpBattlers.fill_troop(scene, enemies)
     log("took the host's troop of #{rebuilt.size} enemies in place of this game's own: #{rebuilt.map { |enemy| "#{enemy.enemy_id} #{enemy.name}#{' (hidden)' if enemy.hidden?}#{' (fallen)' if enemy.dead?}" }.join(', ')}")
   rescue => e
     log("taking the host's troop failed: #{e.class}: #{e.message}")
@@ -1632,17 +1605,6 @@ module MGQ_MpBattlesCoop
       enemy.screen_y = y
     end
     log("the host's troop of #{enemies.size} enemies matches this game's own")
-  end
-
-  # Makes an enemy of the troop as the game's troop setup makes it, of the kind the troop's battle
-  # needs, such as a Challenge Battle's enemy that takes damage without falling.
-  #
-  # @param index [Integer] The enemy's place in the troop.
-  # @param enemy_id [Integer] The enemy's id.
-  # @return [Game_Enemy] The enemy.
-  def self.new_enemy(index, enemy_id)
-    kind = $game_troop.respond_to?(:enemy_class) ? $game_troop.enemy_class : Game_Enemy
-    kind.new(index, enemy_id)
   end
 
   # Both sides.
@@ -1879,28 +1841,18 @@ module MGQ_MpBattlesCoop
     end
   end
 
-  # Rebuilds another player's character for the battle, with the HP and MP it has in their game, a
-  # fallen one fallen.
-  #
-  # The game starts a battle only for the characters of its own party, which leaves the counters of
-  # a rebuilt one unset; its start goes after the vitals, as the states of a trait for low HP come
-  # only at the start and at a turn's end. The check goes before the start, whose states its owner's
-  # game did not measure on the map.
+  # Rebuilds another player's character for the battle through MGQ_MpBattlers, checked before its
+  # start, whose states its owner's game did not measure on the map.
   #
   # @param member [MGQ_MpActors::Builds::Member] The character's build.
   # @param name [String] Its owner's name.
   # @param seat [Integer] Its owner's world seat.
   # @param place [Integer] Its place among its owner's characters.
   # @param vitals [Array, nil] Its HP and MP, none for a character at full HP and MP.
-  # @return [Game_MpAlly] The character.
+  # @return [Game_MpAlly, nil] The character, nil when it could not be built.
   def self.new_ally(member, name, seat, place, vitals)
-    ally = Game_MpAlly.new(member, name, seat, place)
-    hp, mp = Array(vitals)
-    ally.hp = hp if hp.is_a?(Integer) && hp >= 0
-    ally.mp = mp if mp.is_a?(Integer)
-    check(ally)
-    ally.on_battle_start
-    log_rebuild(ally, member, place, vitals)
+    ally = MGQ_MpBattlers.ally(member, name, seat, place, vitals) { |built| check(built) }
+    log_rebuild(ally, member, place, vitals) if ally
     ally
   end
 
@@ -2019,9 +1971,10 @@ module MGQ_MpBattlesCoop
   # the battle over from where the host's stream left it, as a battle of their own (in a Raid World
   # their squad).
   #
-  # The guest's battle never started as the game starts one, since the host's stream stood in for
-  # it: one the host left before its party came starts now, one it left later gets the counters
-  # the start sets.
+  # The guest's battle never ran the rest of the game's battle start, since the host's stream stood
+  # in for it: one the host left before its party came starts now, without starting its party and
+  # troop a second time; one it left later goes on from the battlers its start and MGQ_MpBattlers
+  # made whole.
   #
   # @param scene [Scene_Battle] The battle.
   def self.take_over(scene)
@@ -2030,30 +1983,16 @@ module MGQ_MpBattlesCoop
     stand_alone(scene)
     MGQ_MpRaidPool.taken_over if defined?(MGQ_MpRaidPool) && MGQ_MpRaidPool.respond_to?(:taken_over)
     if formed
-      resume_alone
+      MGQ_MpBattlesSync::Live.pick_defeat_scene(false)
       BattleManager.turn_end
     else
-      BattleManager.battle_start
+      MGQ_MpBattlers.start_taken_over
       scene.process_event if scene.respond_to?(:process_event)
     end
     scene.start_party_command_selection
   rescue => e
     log("taking the battle over failed: #{e.class}: #{e.message}")
     BattleManager.process_abort
-  end
-
-  # Readies the battle a guest takes over from the host's stream: the counters the game sets for
-  # every battler at a battle's start, keeping the barriers the stream gave, and a defeat scene of
-  # its enemies, which the game picks at the start and with each enemy's action.
-  def self.resume_alone
-    ($game_party.battle_members + $game_troop.members).each do |battler|
-      next unless battler.respond_to?(:set_counter)
-
-      walls = battler.respond_to?(:defence_wall) ? battler.defence_wall : nil
-      battler.set_counter
-      MGQ_MpBattlesSync::Playback.set_walls(battler, walls) if walls
-    end
-    MGQ_MpBattlesSync::Live.pick_defeat_scene(false)
   end
 
   # Ends the co-op side of the battle, which goes on as the player's own: their own full team, the

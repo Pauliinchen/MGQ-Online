@@ -2,6 +2,7 @@
 #  battles_sync_live.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Started a guest's party and troop as the game starts them, through MGQ_MpBattlers
 #      Paulinchen  2026-10-30: Kept the host's waits for its guests and the battle's endings in the DLL
 #      Paulinchen  2026-10-23: Deleted the action and turn end events only the recording on file kept
 #                            - Went back to the host's own commands on Cancel during the wait for the guests' commands
@@ -553,10 +554,7 @@ module MGQ_MpBattlesSync
     def self.guest_start(scene)
       Playback.reset
       clear_translation_log(scene)
-      # The game marks the party as fighting in on_battle_start, which the guest leaves out with the
-      # rest of the battle's logic. Skills usable only in battle check it, and the end clears it.
-      MGQ_MpGame.set($game_party, :in_battle, true)
-      ready_counters
+      MGQ_MpBattlers.start_guest
       joined = MGQ_MpBattlesSync.mode.guest_start(scene)
       return end_early(scene, joined) if joined.is_a?(Symbol)
 
@@ -569,13 +567,6 @@ module MGQ_MpBattlesSync
       Names.setup(names)
       MGQ_MpBattlesSync.log("#{MGQ_MpBattlesSync.player}'s battle is ready, playing its start")
       play_until_commands(scene)
-    end
-
-    # Sets the counters the game sets for the party at a battle's start, which the guest leaves out.
-    #
-    # Without them a character that never had a battle start of its own keeps an EXP rate of 0.
-    def self.ready_counters
-      $game_party.all_members.each { |actor| actor.set_counter if actor.respond_to?(:set_counter) }
     end
 
     # Starts the battle log of the newer translation's Log command anew.

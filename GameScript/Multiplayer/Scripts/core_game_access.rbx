@@ -2,7 +2,8 @@
 #  core_game_access.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Named the frames left of the screen's fade in
+#      Paulinchen  2026-11-05: Dropped the counters of a state, which the game's own reset and erase give
+#                            - Named the frames left of the screen's fade in
 #      Paulinchen  2026-10-31: Named the interpreter a map event or common event holds and the map's parallel common events
 #                            - Gave the game's frame counter a base of 0 while no New Game or load set one
 #      Paulinchen  2026-10-30: Named the features and effects a database entry's file holds
@@ -70,8 +71,6 @@ module MGQ_MpGame
     :tp => :@tp,
     :states => :@states,
     :state_turns => :@state_turns,
-    :state_turn_counts => :@state_turn_counts,
-    :state_steps => :@state_steps,
     :buffs => :@buffs,
     :actions => :@actions,
     :result => :@result,

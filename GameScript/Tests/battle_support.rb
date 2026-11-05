@@ -2,6 +2,8 @@
 #  battle_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Answered the plans of the battlers the scripts build and loaded their factory
+#                            - Stood in for the game's start of a battler, of the party, of the troop and of the battle, and for a state's counts
 #      Paulinchen  2026-11-01: Gave the pictures a font, which the Mod Framework measures texts in
 #                            - Read the waiting box's lines from its box of the Mod Framework
 #                            - Stopped loading the deleted ui_boxes.rbx
@@ -157,8 +159,16 @@ class Tone; end
 class Game_ActionResult; end
 # Stands in for the game's item of an action.
 class Game_BaseItem; end
-# Stands in for the base of characters and enemies.
-class Game_Battler; end
+# Stands in for the base of characters and enemies: the game's start of a battler counts its
+# starts in $battle_starts and gives it the counters, and a state's counts and erase keep
+# the counters the game keeps per state.
+class Game_Battler
+  attr_reader :counters_set
+  def on_battle_start; @counters_set = true; ($battle_starts ||= []) << self; end
+  def set_counter; @counters_set = true; end
+  def reset_state_counts(id); (@state_turns ||= {})[id] = 9; (@state_turn_counts ||= {})[id] = 0; (@state_steps ||= {})[id] = 0; end
+  def erase_state(id); [@state_turns, @state_turn_counts, @state_steps].each { |counts| counts.delete(id) if counts }; end
+end
 # Stands in for a character's action, its item kept as [kind, id], and the skill chained after it.
 class Game_Action
   attr_accessor :item, :target_index, :chain_action
@@ -179,7 +189,9 @@ end
 class Game_Actor < Game_Battler
   attr_accessor :id, :hp, :mp, :actions, :turn_hit_damage_count
   def initialize(id); @id = id; @hp = 100; @mp = 10; @actions = []; end
-  def on_battle_start; @turn_hit_damage_count = 0; end
+  def on_battle_start; super; @turn_hit_damage_count = 0; @start_hp = @hp; clear_actions; end
+  # The HP the character had as the game started it, which a trait's states for low HP read.
+  attr_reader :start_hp
   def on_turn_start; end
   def name; "Actor#{@id}"; end
   def exist?; true; end
@@ -234,6 +246,8 @@ class Game_Party
   attr_accessor :own, :party_member_max, :in_battle
   def initialize; @party_member_max = 8; end
   def all_members; @own; end
+  def members; @in_battle ? battle_members : all_members; end
+  def on_battle_start; members.each(&:on_battle_start); @in_battle = true; end
   def max_battle_members; 4; end
   def battle_members; @own.first(max_battle_members); end
   def bench_members; @own[max_battle_members..-1] || []; end
@@ -254,6 +268,9 @@ class Game_Troop
   def members; @enemies; end
   def members=(enemies); @enemies = enemies; end
   def make_actions; $troop_actions = ($troop_actions || 0) + 1; end
+  # Starts the enemies as the game does, which reads a random one's defeat scene and so fails for
+  # an empty troop.
+  def on_battle_start; members.each(&:on_battle_start); members.sample.enemy_id; end
   def all_dead?; Array(members).all? { |enemy| enemy.hidden? || enemy.dead? }; end
   def setup(troop_id); @troop_id = troop_id; @enemies = [Game_Enemy.new(0, troop_id)]; end
   attr_reader :troop_id
@@ -321,7 +338,7 @@ module BattleManager
   def self.clear_actor; $actor_cleared = true; end
   def self.shift_change?; $shift; end
   def self.bind?; false; end
-  def self.battle_start; $battle_started = true; end
+  def self.battle_start; $battle_started = true; $game_party.on_battle_start; $game_troop.on_battle_start; end
   def self.battle_end?; $ending ? true : false; end
   def self.battle_end(_result); $game_party.battle_members.each { |actor| $game_library.count_up_actor_data(actor.id, :battle) }; end
 end
@@ -483,6 +500,7 @@ end
 load_script "coop_scope"
 load_script "coop_squad"
 load_script "battles"
+load_script "battles_battlers"
 load_script "battles_raid_bosses"
 load_script "battles_coop"
 load_script "battles_coop_hotjoin"
@@ -521,3 +539,6 @@ $data_enemies = [nil] + Array.new(99) { Object.new }
 # The co-op battles' rules in C# on the same bridge.
 require_relative "coop_support"
 answer_coop($world_bridge)
+# The plans of the battlers the scripts build, in C# on the same bridge.
+require_relative "battlers_support"
+answer_battlers($world_bridge)

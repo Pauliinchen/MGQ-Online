@@ -2,6 +2,7 @@
 #  battles_coop_hotjoin.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Built the enemies added to the troop through MGQ_MpBattlers
 #      Paulinchen  2026-10-31: Left the battle server out of the count of its battle's players
 #      Paulinchen  2026-10-30: Kept the widths of a served battle's troop its starter measured for the placements on the battle server
 #                            - Placed an encounter's enemies and checked requests to join through the rules in C#
@@ -965,34 +966,22 @@ module MGQ_MpBattlesHotjoin
     coop.tell_joined(joined.keys)
   end
 
-  # Adds the enemies of the encounters whose player joined to the troop, as the game's troop setup
-  # makes them, and starts their battle. Their places are found anew with the troop as it stands
-  # now (see place_anew), since enemies may have fallen or been added after take_request placed
-  # them.
+  # Adds the enemies of the encounters whose player joined to the troop through MGQ_MpBattlers. Their
+  # places are found anew with the troop as it stands now (see place_anew), since enemies may have
+  # fallen or been added after take_request placed them.
   #
   # @param scene [Scene_Battle] The battle.
   # @param seats [Array<Integer>] The seats of the players who joined.
   # @return [Array<Game_Enemy>] The enemies added.
   def self.add_enemies(scene, seats)
-    enemies = MGQ_MpGame.get($game_troop, :enemies)
     added = []
     # One encounter after the other, each placed with those before it in the troop.
     while (entries = pending("next_added", "seats" => seats))
-      place_anew(Array(entries), MGQ_MpBattlesSync.battle_id.to_s).each do |id, x, y, _hidden|
-        enemy = MGQ_MpBattlesCoop.new_enemy(enemies.size, id)
-        enemy.screen_x = x
-        enemy.screen_y = y
-        enemies << enemy
-        enemy.on_battle_start if enemy.respond_to?(:on_battle_start)
-        added << enemy
-      end
+      added.concat(MGQ_MpBattlers.add_to_troop(scene, place_anew(Array(entries), MGQ_MpBattlesSync.battle_id.to_s)))
     end
     return added if added.empty?
 
-    MGQ_MpGame.call($game_troop, :make_unique_names)
     escape_anew
-    discover(added)
-    MGQ_MpBattlesCoop.redraw_enemies(scene)
     log("added #{added.map { |enemy| "#{MGQ_MpBattlesSync.named(enemy)} at x #{enemy.screen_x}" }.join(', ')} to the troop")
     added
   end
@@ -1038,21 +1027,8 @@ module MGQ_MpBattlesHotjoin
     log("computing the chance to escape failed: #{e.class}: #{e.message}")
   end
 
-  # Enters added enemies in the game's monster library, as the game's battle start does for the
-  # troop's own.
-  #
-  # @param enemies [Array<Game_Enemy>] The enemies.
-  def self.discover(enemies)
-    library = $game_library
-    return unless library && library.respond_to?(:enemy) && library.enemy.respond_to?(:set_discovery)
-
-    library.enemy.set_discovery(enemies.map(&:enemy_id))
-  rescue => e
-    log("entering the added enemies in the library failed: #{e.class}: #{e.message}")
-  end
-
   # Describes the troop's enemies for players who join the battle late, or guests whose troop
-  # differs: as the guests rebuild them, the fallen ones fallen (see lay_down).
+  # differs: as the guests rebuild them, the fallen ones fallen (see MGQ_MpBattlers.lay_down).
   #
   # @return [Array<Array>] Each enemy's id, screen x and y, and its mark (see mark).
   def self.late_entries
@@ -1070,18 +1046,6 @@ module MGQ_MpBattlesHotjoin
     return FALLEN if fallen?(enemy)
 
     enemy.hidden? ? 1 : 0
-  end
-
-  # Gives an enemy a guest rebuilds the death it has on the host, before its sprite is made, so it
-  # stands invisible as the fallen do and comes back should the host's stream revive it.
-  #
-  # @param enemy [Game_Enemy] The enemy.
-  def self.lay_down(enemy)
-    death = enemy.respond_to?(:death_state_id) ? enemy.death_state_id : 1
-    MGQ_MpBattlesSync::Playback.values(enemy, 0, MGQ_MpGame.get(enemy, :mp).to_i, MGQ_MpGame.get(enemy, :tp).to_i,
-                                       [death], [0], MGQ_MpGame.get(enemy, :buffs), 0)
-  rescue => e
-    log("laying a fallen enemy down failed: #{e.class}: #{e.message}")
   end
 
   # Sends a battle message to some of the battle's players alone, numbered for each as every message
@@ -1180,30 +1144,14 @@ module MGQ_MpBattlesHotjoin
         changed.map { |enemy, _| "#{MGQ_MpBattlesSync.named(enemy)} #{enemy.enemy_id}#{' hidden' if enemy.hidden?}" }.join(', '))
   end
 
-  # Adds the host's new enemies after this game's own, see take_troop, starting their battle,
-  # entering them in the Library and giving a raid boss's pools their max HP, as the host's
-  # add_enemies does.
+  # Adds the host's new enemies after this game's own through MGQ_MpBattlers, see take_troop, as
+  # the host's add_enemies does.
   #
   # @param scene [Scene_Battle] The battle.
-  # @param entries [Array<Array>] The new enemies: each one's id, screen x and y, and 1 when hidden,
-  #   FALLEN when fallen.
+  # @param entries [Array<Array>] The new enemies: each one's id, screen x and y, and mark (see
+  #   mark).
   def self.grow_troop(scene, entries)
-    enemies = MGQ_MpGame.get($game_troop, :enemies)
-    added = entries.map do |id, x, y, hidden|
-      enemy = MGQ_MpBattlesCoop.new_enemy(enemies.size, id.to_i)
-      enemy.screen_x = x.to_i
-      enemy.screen_y = y.to_i
-      enemy.hide if hidden.to_i == 1
-      enemies << enemy
-      enemy.on_battle_start if enemy.respond_to?(:on_battle_start)
-      enemy
-    end
-    MGQ_MpGame.call($game_troop, :make_unique_names)
-    # The game letters only the living, and the host's fallen got theirs before they fell.
-    added.zip(entries) { |enemy, entry| lay_down(enemy) if entry[3].to_i == FALLEN }
-    discover(added)
-    MGQ_MpRaidPool.rescale if defined?(MGQ_MpRaidPool) && MGQ_MpRaidPool.respond_to?(:rescale)
-    MGQ_MpBattlesCoop.redraw_enemies(scene)
+    added = MGQ_MpBattlers.add_to_troop(scene, entries)
     log("added the host's #{entries.size} new enemies to the troop: #{added.map { |enemy| MGQ_MpBattlesSync.named(enemy) }.join(', ')}")
   end
 

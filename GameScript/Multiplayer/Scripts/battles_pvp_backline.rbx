@@ -2,6 +2,7 @@
 #  battles_pvp_backline.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Started the other side's Backline with the troop through MGQ_MpBattlers
 #      Paulinchen  2026-11-01: Added the option's row through the Mod Framework's options
 #      Paulinchen  2026-10-31: Took the group of its row from MGQ_Multiplayer::OPTION_PREFIX
 #      Paulinchen  2026-10-30: Left the Frontline's message among the stream's kinds to the battle modes' defaults
@@ -173,7 +174,9 @@ module MGQ_MpBattlesPvp
 
     # Puts the other side's Frontline in the troop as the other game tells it, once the DLL found it
     # fits the other side's team: as many characters as the troop, each of the team once. A
-    # character swapped in loses the actions it had left from an earlier round.
+    # character swapped in loses the actions it had left from an earlier round, and keeps its TP,
+    # counters and states, since the Backline got the game's start with the troop (see
+    # MGQ_MpBattlers.start_reserve).
     #
     # @param ids [Array<Integer>, nil] The actor ids on the other side's Frontline, by place.
     def self.take_front(ids)
@@ -267,6 +270,9 @@ module MGQ_MpBattlesPvp
       end
       MGQ_MpHooks.around(Game_Troop, :item_target_members, "battles_pvp_backline") do |_troop, args, original|
         MGQ_MpBattlesPvp::Backline.troop_targets(args[0], original.call)
+      end
+      MGQ_MpHooks.after(Game_Troop, :on_battle_start, "battles_pvp_backline") do
+        MGQ_MpBattlers.start_reserve(MGQ_MpBattlesPvp::Backline.reserve) if MGQ_MpBattlesPvp::Backline.on?
       end
     rescue => e
       MGQ_MpBattlesPvp.log("Backline hooks FAILED: #{e.class}: #{e.message}")

@@ -2,7 +2,9 @@
 #  battles_raid_pool.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Named the story's ids in the milestones' markers by the story's table
+#      Paulinchen  2026-11-05: Took the pools' HP once the game's own events before the battle ran
+#                            - Checked the troop's pages once more right after the pools' HP, so a phase the pools' HP meets begins before anyone acts
+#                            - Named the story's ids in the milestones' markers by the story's table
 #      Paulinchen  2026-10-30: Handed a served fight's pools to the battle server and took them there through C#
 #                            - Reported and synced a fight's turns in C#, keeping the slots' time compares
 #                            - Read the pools from the ledger the DLL and the battle server keep in C#, which counts the own reports and the pushes
@@ -290,7 +292,8 @@ module MGQ_MpRaidPool
   # @!attribute members [Array<Member>] The troop's own enemies, each with its pool.
   # @!attribute side [Boolean] Whether it is a side battle, see start_side.
   # @!attribute guest [Boolean] Whether a host's stream governed it when C# last looked, see turn.
-  Fight = Struct.new(:key, :name, :troop, :battle, :own, :members, :side, :guest)
+  # @!attribute took_hp [Boolean] Whether its enemies took the pools' HP yet, see take_pools_hp.
+  Fight = Struct.new(:key, :name, :troop, :battle, :own, :members, :side, :guest, :took_hp)
 
   # One of the troop's own enemies in a battle that fights a boss's pools.
   #
@@ -829,12 +832,47 @@ module MGQ_MpRaidPool
   end
 
   # Readies a battle's own enemies to fight their pools: their tier's stats, keeping the share of
-  # their max HP they had, then their pools' HP.
+  # their max HP they had. Their pools' HP comes once the game's own events before the battle ran,
+  # see take_pools_hp.
   #
   # @param fight [Fight] The battle.
   def self.take_on(fight)
     scale_enemies(fight)
+  end
+
+  # Gives the battle's own enemies their pools' HP once, after the game's own events before the
+  # battle, such as the battle's start common event and its troop's first page, which may change
+  # the boss's max HP, and before its start skills, whose damage the first report counts. Called
+  # before BattleManager.set_battle_start_skill, where the troop's pages are checked once more
+  # right after (see check_pages), and at a command phase for a battle whose start never reached it.
+  #
+  # @param at_start [Boolean] Whether the battle's start calls it, before its start skills.
+  def self.take_pools_hp(at_start = false)
+    fight = @fight
+    return unless fight && !fight.took_hp
+
+    fight.took_hp = true
+    scale_enemies(fight)
     turn(fight, "start")
+    log("battle #{fight.battle} took the pools' HP after the events before it: #{fight.members.map { |member| enemy_text(member) }.join(', ')}")
+    check_pages(fight) if at_start
+  rescue => e
+    log("taking the pools' HP failed: #{e.class}: #{e.message}")
+  end
+
+  # Runs the troop's pages whose conditions the pools' HP meets now, as the game runs its pages
+  # between the events before the battle and its start skills (Scene_Battle#process_event).
+  #
+  # The game checks the pages next at the first turn's end, so a boss whose pool is below a phase's
+  # share of its HP would act a whole turn in its first phase.
+  #
+  # @param fight [Fight] The battle.
+  def self.check_pages(fight)
+    scene = SceneManager.scene
+    return unless scene.is_a?(Scene_Battle) && scene.respond_to?(:process_event, true)
+
+    scene.send(:process_event)
+    log("battle #{fight.battle} checked its troop's pages at the pools' HP")
   end
 
   # Gives a battle's own enemies their tier's stats (see Stats), each new one keeping the share of
@@ -926,7 +964,10 @@ module MGQ_MpRaidPool
   # otherwise fold the damage of that start into the base.
   def self.taken_over
     fight = @fight
-    turn(fight, "take_over") if fight
+    return unless fight
+
+    fight.took_hp = true
+    turn(fight, "take_over")
   rescue => e
     log("taking the battle over for its reports failed: #{e.class}: #{e.message}")
   end
@@ -954,6 +995,7 @@ module MGQ_MpRaidPool
     fight = @fight
     return unless fight
 
+    take_pools_hp
     scale_enemies(fight)
     BattleManager.judge_win_loss if turn(fight, "phase")["killed"] && $game_troop.all_dead?
   rescue => e
@@ -1422,6 +1464,10 @@ module MGQ_MpRaidPool
     MGQ_MpHooks.around(Scene_Battle, :start_party_command_selection, "battles_raid_pool") do |scene, _args, original|
       MGQ_MpRaidPool.command_phase unless scene.scene_changing?
       original.call
+    end
+
+    if BattleManager.respond_to?(:set_battle_start_skill)
+      MGQ_MpHooks.before(BattleManager.singleton_class, :set_battle_start_skill, "battles_raid_pool") { MGQ_MpRaidPool.take_pools_hp(true) }
     end
 
     MGQ_MpHooks.after(Scene_Battle, :process_action, "battles_raid_pool") { MGQ_MpRaidPool.action_done } if Scene_Battle.method_defined?(:process_action)
