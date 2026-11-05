@@ -2,7 +2,9 @@
 //  CatchupEngine.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Read the story's ids from StoryIds
+//      Paulinchen  2026-11-05: Answered the catch-up of a Classic party's member as one look in the Classic settings, with the closures of their own keys and the party chests that gave their key items
+//                            - Left out of what the scripts read the companion each side brings, which the side's rule answers
+//                            - Read the story's ids from StoryIds
 //      Paulinchen  2026-11-01: Left out a join of a companion of the Alice and Ilias choice the player has no right to, and noted the side the player answered they take along
 //      Paulinchen  2026-10-31: Left the warp ban out of what a snapshot reads
 //                            - Left the chest flags out of what a snapshot reads
@@ -20,12 +22,13 @@ using MGQOnline.Game.Story;
 namespace MGQOnline.Game.Catchup;
 
 /// <summary>
-/// A Raid World's catch-up as world_catchup.rbx decided it: what the story owes a player by its
-/// place, over the relay's catch-up tables and the snapshot the scripts hand of the player's story,
-/// party and items, answered as actions the scripts carry out with the game's own grants. It owns
-/// the save's notes (the ledger), which the scripts hand it after a load and keep in the save
-/// whenever an answer brings them. The golden cases of fixtures/catchup/engine.json were recorded
-/// from the script's decisions (fixtures/catchup/engine.rb).
+/// The one catch-up of both world types: what the story owes a player by its place, over the
+/// relay's catch-up tables and the snapshot the scripts hand of the player's story, party and items,
+/// answered as actions the scripts carry out with the game's own grants. A Raid World's catch-up
+/// owns the save's notes (the ledger), which the scripts hand it after a load and keep in the save
+/// whenever an answer brings them; a Classic party's member catches up in the engine's Classic
+/// settings (<see cref="CatchupSettings.Classic"/>). The golden cases of
+/// fixtures/catchup/engine.json and classic.json were recorded from fixtures/catchup/engine.rb.
 /// </summary>
 public sealed class CatchupEngine
 {
@@ -49,11 +52,10 @@ public sealed class CatchupEngine
 
     /// <summary>
     /// Lists what the scripts hand the engine of the game: every switch, variable and self switch a
-    /// row or rule reads, the items whose counts it reads, the Makina, the parts, the companion each
-    /// side brings along and the orbs' event.
+    /// row or rule reads, the items whose counts it reads, the Makina, the parts and the orbs' event.
     /// </summary>
     /// <param name="tables">The tables.</param>
-    /// <returns>{"switches", "variables", "selves" ([map, event, letter] each), "items" (each "i", "w" or "a" and the id), "makina", "parts" ([id, name, gate] each), "side_companions" ({"alice", "ilias"} or nil), "orb_event"}.</returns>
+    /// <returns>{"switches", "variables", "selves" ([map, event, letter] each), "items" (each "i", "w" or "a" and the id), "makina", "parts" ([id, name, gate] each), "orb_event"}.</returns>
     public static RubyHash Keys(CatchupTables tables)
     {
         ArgumentNullException.ThrowIfNull(tables);
@@ -128,7 +130,6 @@ public sealed class CatchupEngine
             { "items", new RubyArray(items.Select(key => (RubyValue)key)) },
             { "makina", new RubyArray(tables.Makina.Select(row => (RubyValue)row.Item)) },
             { "parts", new RubyArray(tables.Parts.Select(part => (RubyValue)new RubyArray { part.Id, part.Name, part.Gate })) },
-            { "side_companions", rules is { AliceCompanion: { } alice, IliasCompanion: { } ilias } ? new RubyHash { { "alice", alice }, { "ilias", ilias } } : RubyNil.Value },
             { "orb_event", rules.OrbEvent is { } orbEvent ? orbEvent : RubyNil.Value },
         };
     }
@@ -142,6 +143,22 @@ public sealed class CatchupEngine
     /// <param name="request">The snapshot, see <see cref="CatchupLook"/>.</param>
     /// <returns>"actions", "ledger" (nil while unchanged), "visiting", and for a look every half second "ask_side", "growth", "sharable", "orbs", "got" (every item the save has held), "given" (the found items given, whose next gain adds nothing), "take" (the items another player's event used up, a copy each) and "spent" (every use of an item the save counted).</returns>
     public RubyHash Check(CatchupTables tables, RubyHash request) => new CatchupLook(this, tables, request).Check();
+
+    /// <summary>
+    /// Answers the one catch-up of a Classic party's member who starts keeping the leader's story from
+    /// behind it, the leader's history from before the member followed it: the rows the leader's
+    /// story is past and the member's own is not, of the member's own side and choices, the world
+    /// chests the leader's story opened, the party chests that gave the key items the member lacks
+    /// and the closures of the member's own keys, in the Classic settings, with notes of the
+    /// catch-up's own, never the save's. A second look with those notes gives only what the first did
+    /// not, such as the rows of a side or a choice the member answered since.
+    /// </summary>
+    /// <param name="tables">The tables.</param>
+    /// <param name="request">"before" (the member's own story) and "leader" (the leader's), as the snapshot holds a story; "pick" (the save's note of the side the member took along: "alice", "ilias", "" for none of their own, nil while unknown), "roster", "items" (the counts the bag holds), "lent" ({id => count} of the key items the leader lent), "selves" ({"leader", "own"}, every self switch on in each story, [map, event, letter] each) and "ledger" (the notes the catch-up's last answer brought, nil for a first).</param>
+    /// <param name="party">What the catch-up reads of the party beyond its tables.</param>
+    /// <returns>"actions" (as <see cref="Check"/> answers them; a "replay" of a closure names the leader's "letters" of its event) and "ledger".</returns>
+    public static RubyHash Classic(CatchupTables tables, RubyHash request, ClassicParty party) =>
+        new CatchupLook(new CatchupEngine(), tables, request, CatchupSettings.Classic, party).Classic();
 
     /// <summary>
     /// Writes a note of the world's story into the save's notes: the checkpoint the player took

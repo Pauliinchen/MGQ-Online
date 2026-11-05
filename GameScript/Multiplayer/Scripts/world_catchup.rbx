@@ -2,7 +2,8 @@
 #  world_catchup.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Read the story's ids from story_ids.rbx
+#      Paulinchen  2026-11-05: Took the side switches and the companion of the side the player answered from the DLL's one rule of the side
+#                            - Read the story's ids from story_ids.rbx
 #                            - Settled a variable the game uses as a place only on the map of the event that sets it, by the one place rule
 #                            - Left found key items and their uses to the story replay, and noted only a Makina as found for the world, which Makina by level reads
 #                            - Told the DLL whether a replay hands out a companion, with the world's companion sharing and the companion's start level
@@ -244,7 +245,7 @@ module MGQ_MpWorldCatchup
   # Lists what a snapshot reads, as the DLL wrote it from the story mapping's catch-up tables, once
   # per revision of the mapping: "switches", "variables" and "selves" (the keys of the story),
   # "items" (each "i<id>", "w<id>" or "a<id>"), "makina" (their items), "parts" ([id, name, gate]
-  # each), "side_companions" ({"alice", "ilias"}) and "orb_event".
+  # each) and "orb_event".
   #
   # @return [Hash, nil] The keys; nil before the story mapping came.
   def self.keys
@@ -1168,24 +1169,27 @@ module MGQ_MpWorldCatchup
     $game_message.choice_proc = Proc.new { |index| take_side(index == 0 ? :alice : :ilias) }
   end
 
-  # Keeps the side the player chose in the save's notes and, before the Great Decision, sets its
-  # switch and brings its companion along, as the choice in Iliasville does; the next look gives
-  # what the side's rows owe, as the Pocket Castle. On a route the switches tell the route, so they
-  # stay.
+  # Keeps the side the player chose in the save's notes and sets the side switches and brings the
+  # companion the DLL's rule of the side names, as the choice in Iliasville does before the Great
+  # Decision; the next look gives what the side's rows owe, as the Pocket Castle.
   #
   # @param side [Symbol] :alice or :ilias.
   def self.take_side(side)
     @asking_side = false
     name = side == :alice ? "Alice" : "Ilias"
     log("the player took #{name} along")
+    story = story_now
+    answer = MGQ_MpStoryState.side_answer("own" => MGQ_MpStoryState.side_story(story[0], story[1]), "chose" => side.to_s)
     MGQ_MpStoryState.note_pick(side)
     note("side" => side.to_s)
     @audit_due = true
-    return log("the player's story is on a route, whose side switches stay") if MGQ_MpStoryIds.route_variables.any? { |id| $game_variables[id].to_i > 0 }
+    return log("set no side switches: the DLL answered nothing about the side") unless answer
 
-    MGQ_MpStoryIds.side_switches.each { |id| $game_switches[id] = id == (side == :alice ? MGQ_MpStoryIds.alice_chosen : MGQ_MpStoryIds.ilias_chosen) }
-    companion = keys && (keys["side_companions"] || {})[side.to_s]
-    bring_in(companion, nil, "you took #{name} along") if companion
+    switches = Array(answer["switches"])
+    return log("the player's story is on a route, whose side switches stay") if switches.empty?
+
+    switches.each { |id, on| $game_switches[id] = on }
+    bring_in(answer["companion"], nil, "you took #{name} along") if answer["companion"]
   rescue => e
     log("taking a side failed: #{e.class}: #{e.message}")
   end

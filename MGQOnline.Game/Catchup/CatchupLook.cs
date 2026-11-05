@@ -2,7 +2,12 @@
 //  CatchupLook.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Read the story's ids from StoryIds
+//      Paulinchen  2026-11-05: Ran the catch-up of a Classic party's member as one look in the engine's Classic settings
+//                            - Kept every choice's outcome a Classic member's own, so a row behind a choice waits for their answer
+//                            - Read a Classic member's side from the save's note alone
+//                            - Played the closures of a Classic member's own keys and the party chests that gave the key items they lack
+//                            - Asked the one rule of the side the player took along whether to ask them
+//                            - Read the story's ids from StoryIds
 //                            - Gave a prize from its row only as history before the world's log, but the Medal King's free gift
 //                            - Played the orbs' event only as history before the world's log
 //                            - Never gave back in the repair an item an event of the game takes away
@@ -90,14 +95,19 @@ internal sealed class CatchupLook
     private const int GrowthChecks = 10;
 
     /// <summary>
-    /// The parts before the Great Decision, whose sides the player chose themselves.
+    /// The letters of an event's self switches.
     /// </summary>
-    private static readonly string[] SidedParts = ["1", "2", "3"];
+    private static readonly string[] Letters = ["A", "B", "C", "D"];
 
     /// <summary>
     /// The engine, which holds the save's notes.
     /// </summary>
     private readonly CatchupEngine _engine;
+
+    /// <summary>
+    /// How the engine runs in the world type.
+    /// </summary>
+    private readonly CatchupSettings _settings;
 
     /// <summary>
     /// The tables.
@@ -125,12 +135,14 @@ internal sealed class CatchupLook
     private readonly string? _mode;
 
     /// <summary>
-    /// The player's story, which the actions change.
+    /// The player's story, which the actions change: in the Classic settings the leader's story with
+    /// the member's own choices and side.
     /// </summary>
     private readonly StoryValues _own;
 
     /// <summary>
-    /// The world's story last written into the player's, <see langword="null"/> for none.
+    /// The world's story last written into the player's, in the Classic settings the leader's;
+    /// <see langword="null"/> for none.
     /// </summary>
     private readonly StoryValues? _told;
 
@@ -197,21 +209,46 @@ internal sealed class CatchupLook
     private readonly RubyArray _actions = [];
 
     /// <summary>
+    /// What the catch-up reads of a Classic party beyond its tables.
+    /// </summary>
+    private readonly ClassicParty _party;
+
+    /// <summary>
+    /// The key items a Classic member lacks, owed once per row, for the party chests that gave them first.
+    /// </summary>
+    private readonly List<(int Item, long Amount)> _owed = [];
+
+    /// <summary>
     /// The roster read for this look, kept until the roster changes; <see langword="null"/> before.
     /// </summary>
     private RosterView? _rosterView;
+
+    /// <summary>
+    /// Starts a call of a Raid World's catch-up.
+    /// </summary>
+    /// <param name="engine">The engine.</param>
+    /// <param name="tables">The tables.</param>
+    /// <param name="request">The request.</param>
+    public CatchupLook(CatchupEngine engine, CatchupTables tables, RubyHash request)
+        : this(engine, tables, request, CatchupSettings.Raid, ClassicParty.None)
+    {
+    }
 
     /// <summary>
     /// Starts a call.
     /// </summary>
     /// <param name="engine">The engine.</param>
     /// <param name="tables">The tables.</param>
-    /// <param name="request">The request.</param>
-    public CatchupLook(CatchupEngine engine, CatchupTables tables, RubyHash request)
+    /// <param name="request">The request; in the Classic settings "before" (the member's own story) and "leader" (the leader's) stand for "own" and "told".</param>
+    /// <param name="settings">How the engine runs in the world type.</param>
+    /// <param name="party">What the catch-up reads of a Classic party beyond its tables.</param>
+    public CatchupLook(CatchupEngine engine, CatchupTables tables, RubyHash request, CatchupSettings settings, ClassicParty party)
     {
         _engine = engine;
         _tables = tables;
         _request = request;
+        _settings = settings;
+        _party = party;
         if (request.TryGetValue("ledger", out RubyValue? handed))
         {
             engine.Ledger = handed;
@@ -220,8 +257,20 @@ internal sealed class CatchupLook
         _before = RubyMarshal.Write(engine.Ledger);
         _worldId = request["world"].IsNil ? "" : request["world"].AsText();
         _mode = request["mode"].IsNil ? null : request["mode"].AsText();
-        _own = StoryOf(request["own"]) ?? new StoryValues([], [], []);
-        _told = StoryOf(request["told"]);
+        PersonalChoiceKeys choices = StoryChoices.Personal(true, null);
+        _choiceSwitches.UnionWith(choices.Switches);
+        _choiceVariables.UnionWith(choices.Variables);
+        if (!settings.RaidWorld && StoryOf(request["leader"]) is { } leader)
+        {
+            _told = leader;
+            _own = Followed(leader, StoryOf(request["before"]) ?? new StoryValues([], [], []));
+        }
+        else
+        {
+            _own = StoryOf(request["own"]) ?? new StoryValues([], [], []);
+            _told = StoryOf(request["told"]);
+        }
+
         _roster = request["roster"].IsNil ? [] : [.. request["roster"].AsArray().Select(RosterEntry.Of)];
         if (!request["items"].IsNil)
         {
@@ -231,11 +280,20 @@ internal sealed class CatchupLook
             }
         }
 
+        if (request["lent"] is RubyHash lent)
+        {
+            foreach ((RubyValue id, RubyValue count) in lent)
+            {
+                string key = "i" + id.AsLong();
+                if (_items.TryGetValue(key, out long held))
+                {
+                    _items[key] = Math.Max(held - count.AsLong(), 0);
+                }
+            }
+        }
+
         _worn.UnionWith(Texts(request["worn"]));
         _unlockIds.UnionWith(Numbers(request["unlocks"]));
-        PersonalChoiceKeys choices = StoryChoices.Personal(true, null);
-        _choiceSwitches.UnionWith(choices.Switches);
-        _choiceVariables.UnionWith(choices.Variables);
 
 
         _encounters = request["encounters"] is RubyBool { Flag: true };
@@ -400,6 +458,102 @@ internal sealed class CatchupLook
     public RubyHash Unlocks() => new() { { "unlocks", new RubyArray([.. StoryUnlocks(), .. CompanionUnlocks(_own, _told), .. MakinaUnlocks()]) } };
 
     /// <summary>
+    /// Answers <see cref="CatchupEngine.Classic"/>: the leader's story laid over the member's own, as
+    /// a Raid World's story is laid over a player's, with the companions' skills and classes the
+    /// leader's story is past and the member's is not, the party chests that gave the key items the
+    /// member lacks, and the closures of the member's own keys the leader's story holds.
+    /// </summary>
+    /// <returns>The answer.</returns>
+    public RubyHash Classic()
+    {
+        StoryValues before = StoryOf(_request["before"]) ?? new StoryValues([], [], []);
+        if (SavePick is { Length: > 0 } pick)
+        {
+            Ledger()["side"] = pick;
+        }
+
+        Ledger()["routes"] = new RubyArray(ClassicStory.Routes(before, _own).Select(route => (RubyValue)route));
+        Carried(before);
+        MissingLessons(_own, null, before);
+        MissingClassLevels(_own, null, before);
+        RubyHash selves = _request["selves"] as RubyHash ?? [];
+        List<StoryKey> leaderSelves = SelvesOf(selves["leader"]);
+        OwedKeyItems(leaderSelves);
+        Closures(leaderSelves, [.. SelvesOf(selves["own"])]);
+        Gifts();
+        return Finish([]);
+    }
+
+    /// <summary>
+    /// Hands a Classic member the key items the leader's story owes them: those a party chest the
+    /// leader's story opened gave come by playing that chest in the member's own game, the whole chest
+    /// with them, the others as the rows give them.
+    /// </summary>
+    /// <param name="leaderSelves">The self switches on in the leader's story.</param>
+    private void OwedKeyItems(List<StoryKey> leaderSelves)
+    {
+        if (_owed.Count == 0)
+        {
+            return;
+        }
+
+        HashSet<StoryKey> on = [.. leaderSelves];
+        var covered = new HashSet<int>();
+        foreach (KeyItemChest chest in _party.KeyItemChests([.. _tables.PartyChests.Where(on.Contains)], [.. _owed.Select(owed => owed.Item)]))
+        {
+            Act("replay", new RubyHash { { "chest", chest.Key.ToString() } }, "o:" + chest.Key);
+            covered.UnionWith(chest.Items);
+        }
+
+        foreach ((int item, long amount) in _owed.Where(owed => !covered.Contains(owed.Item)))
+        {
+            Give("i", item, amount, $"k:owed:{item}");
+        }
+    }
+
+    /// <summary>
+    /// Plays in a Classic member's game the closures of their own keys the leader's story holds, which
+    /// ran in the leader's game before the member followed it: each self switch on in the leader's
+    /// story and off in theirs that the reviewed list keeps each member's own, a party chest's aside,
+    /// played from the page that turns it on with its choices answered by the leader's letters of the
+    /// event. Each plays once per catch-up.
+    /// </summary>
+    /// <remarks>
+    /// A party chest comes with the key items it gave (<see cref="OwedKeyItems"/>), and a choice's
+    /// line with the member's own answer to it.
+    /// </remarks>
+    /// <param name="leaderSelves">The self switches on in the leader's story.</param>
+    /// <param name="ownSelves">Those on in the member's own story.</param>
+    private void Closures(List<StoryKey> leaderSelves, HashSet<StoryKey> ownSelves)
+    {
+        HashSet<StoryKey> chests = [.. _tables.PartyChests];
+        HashSet<StoryKey> on = [.. leaderSelves];
+        RubyHash done = Done();
+        foreach (StoryKey key in leaderSelves.Where(key => !ownSelves.Contains(key) && !chests.Contains(key) && _party.IsOwn(key)))
+        {
+            string mark = "d:" + key;
+            if (Truthy(done[mark]))
+            {
+                continue;
+            }
+
+            done[mark] = true;
+            var letters = new RubyArray(Letters.Where(letter => on.Contains(StoryKey.SelfSwitch(key.Id, key.Event, letter))).Select(letter => (RubyValue)letter));
+            Act("replay", new RubyHash { { "chest", key.ToString() }, { "letters", letters } }, mark);
+        }
+    }
+
+    /// <summary>
+    /// Reads self switches the scripts list.
+    /// </summary>
+    /// <param name="value">[map, event, letter] each, nil for none.</param>
+    /// <returns>The self switches, in their order.</returns>
+    /// <exception cref="BridgeRequestException">One is no [map, event, letter].</exception>
+    private static List<StoryKey> SelvesOf(RubyValue value) => value.IsNil ? [] : [.. value.AsArray().Select(key => key.AsArray() is { Count: 3 } fields
+        ? StoryKey.SelfSwitch(fields[0].AsInt(), fields[1].AsInt(), fields[2].AsText())
+        : throw new BridgeRequestException("A self switch is [map, event, letter]."))];
+
+    /// <summary>
     /// Tells whether a value counts as true, as Ruby reads it.
     /// </summary>
     /// <param name="value">The value.</param>
@@ -457,6 +611,31 @@ internal sealed class CatchupLook
             story["s"].AsArray().Select(id => id.AsInt()),
             story["v"].AsArray().Select(pair => new KeyValuePair<int, long>(pair.AsArray()[0].AsInt(), pair.AsArray()[1].AsLong())),
             selves);
+    }
+
+    /// <summary>
+    /// Makes the story a Classic member keeps of the leader's: the leader's, with the outcomes of every
+    /// choice as the member's own story holds them, so a row behind a choice the member has not
+    /// answered waits for their answer, and the side switch of the side the save notes they took
+    /// along, none while it notes none.
+    /// </summary>
+    /// <param name="leader">The leader's story.</param>
+    /// <param name="before">The member's own story.</param>
+    /// <returns>The story.</returns>
+    private StoryValues Followed(StoryValues leader, StoryValues before)
+    {
+        int? side = SavePick switch
+        {
+            "alice" => StoryIds.SideSwitches[0],
+            "ilias" => StoryIds.SideSwitches[1],
+            _ => null,
+        };
+        bool Choice(int id) => _choiceSwitches.Contains(id) && !StoryIds.SideSwitches.Contains(id);
+        return new StoryValues(
+            leader.SwitchesOn.Where(id => !Choice(id) && !StoryIds.SideSwitches.Contains(id))
+                .Concat(before.SwitchesOn.Where(Choice)).Concat(side is { } on ? [on] : []),
+            leader.Variables.Where(pair => !_choiceVariables.Contains(pair.Key)).Concat(before.Variables.Where(pair => _choiceVariables.Contains(pair.Key))),
+            leader.SelfSwitchesOn);
     }
 
     /// <summary>
@@ -788,17 +967,7 @@ internal sealed class CatchupLook
     /// side is unknown.
     /// </summary>
     /// <returns>Whether it did.</returns>
-    private bool LostSide()
-    {
-        bool ownSave = Ledger()["side"].IsNil && !OtherStart && _own.Side is not null;
-        if (_tables.Rules.SideStep is not { } step || NotedSide() is not null || ownSave)
-        {
-            return false;
-        }
-
-        long progress = _own.Variable(StoryIds.MainProgress) ?? 0;
-        return StoryParts.Routes.Contains(_own.Part) || (Array.IndexOf(SidedParts, _own.Part) >= 0 && progress >= step && progress <= StoryIds.BeforeDecision);
-    }
+    private bool LostSide() => SidePick.Lost(Ledger()["side"] is RubyString noted ? noted.Text : null, OtherStart, _own, _own, _tables.Rules.SideStep);
 
     /// <summary>
     /// Notes the side the player took along in Iliasville: the one the save notes, else before the
@@ -821,7 +990,7 @@ internal sealed class CatchupLook
             return;
         }
 
-        if (Array.IndexOf(SidedParts, story.Part) < 0)
+        if (!_settings.SideFromSwitches || !SidePick.SidedParts.Contains(story.Part))
         {
             return;
         }
@@ -1012,9 +1181,10 @@ internal sealed class CatchupLook
     /// </summary>
     /// <param name="story">The player's story.</param>
     /// <param name="told">The world's story while the player plays it.</param>
-    private void MissingLessons(StoryValues story, StoryValues? told)
+    /// <param name="already">A story whose rows count as given, <see langword="null"/> for none.</param>
+    private void MissingLessons(StoryValues story, StoryValues? told, StoryValues? already = null)
     {
-        foreach (CatchupLesson row in _tables.Lessons.Where(row => row.Ran && InRoster(row.Actor) && BeforeLog(row.Place) && PassedAny(row.Place, story, told)))
+        foreach (CatchupLesson row in _tables.Lessons.Where(row => row.Ran && InRoster(row.Actor) && BeforeLog(row.Place) && PassedAny(row.Place, story, told) && (already is null || !Passed(row.Place, already))))
         {
             Act("teach", row.Actor, row.Skill);
         }
@@ -1025,9 +1195,10 @@ internal sealed class CatchupLook
     /// </summary>
     /// <param name="story">The player's story.</param>
     /// <param name="told">The world's story while the player plays it.</param>
-    private void MissingClassLevels(StoryValues story, StoryValues? told)
+    /// <param name="already">A story whose rows count as given, <see langword="null"/> for none.</param>
+    private void MissingClassLevels(StoryValues story, StoryValues? told, StoryValues? already = null)
     {
-        foreach (CatchupClassLevel row in _tables.ClassLevels.Where(row => row.Ran && (row.Actor == Hero || InRoster(row.Actor)) && BeforeLog(row.Place) && PassedAny(row.Place, story, told)))
+        foreach (CatchupClassLevel row in _tables.ClassLevels.Where(row => row.Ran && (row.Actor == Hero || InRoster(row.Actor)) && BeforeLog(row.Place) && PassedAny(row.Place, story, told) && (already is null || !Passed(row.Place, already))))
         {
             Act("class", row.Actor, row.Class, row.Level);
         }
@@ -1199,7 +1370,7 @@ internal sealed class CatchupLook
         foreach (CatchupReward row in _tables.Rewards)
         {
             string key = KeyOf(row);
-            if (Truthy(done[key]) || (carried && !row.Ran) || !Passed(row.Place, story))
+            if (Truthy(done[key]) || (carried && !row.Ran) || !Passed(row.Place, story) || (!_settings.MedalKingFromRows && MedalKingGift.IsGift(row, _tables)))
             {
                 continue;
             }
@@ -1222,8 +1393,12 @@ internal sealed class CatchupLook
 
         WorldItems(story, carried, done);
         Companions(story, carried, done);
-        ActorChanges(story, carried, done);
-        if (carried)
+        if (_settings.ActorChanges)
+        {
+            ActorChanges(story, carried, done);
+        }
+
+        if (carried && _settings.SettlesValues)
         {
             Settle(story, PlayedWorldStory);
         }
@@ -1296,7 +1471,7 @@ internal sealed class CatchupLook
             }
 
             done[key] = true;
-            if (row.Amount < 0 && row.Ran && (carried || !mine) && BeforeLog(row.Place))
+            if (_settings.TakesUsedUpKeyItems && row.Amount < 0 && row.Ran && (carried || !mine) && BeforeLog(row.Place))
             {
                 Give("i", row.Item, row.Amount, key);
             }
@@ -1318,7 +1493,7 @@ internal sealed class CatchupLook
             }
 
             done[key] = true;
-            if ((!carried && mine) || !(_log is null || _log.Holds(opened)))
+            if ((!carried && mine) || !(_log is null || _log.Holds(opened)) || (!_settings.ChestsPastOwnStep && !mine && PastStep(row, story)))
             {
                 continue;
             }
@@ -1327,22 +1502,58 @@ internal sealed class CatchupLook
         }
 
         RestockKeyItems(story, told);
-        RestockUnlockItems(story, told);
+        if (_settings.UnlockItems)
+        {
+            RestockUnlockItems(story, told);
+        }
     }
 
     /// <summary>
-    /// Hands out every key item the story's place owes the player and they hold fewer of.
+    /// Reports whether a story is past the step of a world chest, which a player whose own story got
+    /// there without opening it keeps shut.
+    /// </summary>
+    /// <param name="row">The chest.</param>
+    /// <param name="story">The story.</param>
+    /// <returns>Whether it is; false for a chest of no known step.</returns>
+    private bool PastStep(CatchupChest row, StoryValues story)
+    {
+        if (row.Step is not { } step)
+        {
+            return false;
+        }
+
+        int route = row.Part is null ? -1 : StoryParts.Routes.ToList().IndexOf(row.Part);
+        var mark = new StoryMark(StoryKey.Variable(route < 0 ? StoryIds.MainProgress : StoryIds.RouteVariables[route]), step);
+        return Passed(new StoryPlace(row.Key.ToString(), row.Part, step, null, [mark]), story);
+    }
+
+    /// <summary>
+    /// Hands out every key item the story's place owes the player and they hold fewer of; in the
+    /// Classic settings owes it once per row, for the scripts to hand over by the party chests that
+    /// gave it first.
     /// </summary>
     /// <param name="story">The player's story.</param>
     /// <param name="told">The world's story.</param>
     private void RestockKeyItems(StoryValues story, StoryValues? told)
     {
         var owed = new List<(int Item, int Amount)>();
+        RubyHash done = Done();
         foreach (CatchupKeyItem row in _tables.KeyItems)
         {
             if (row.Amount <= 0 || !BeforeLog(row.Place) || !PassedAny(row.Place, story, told) || TakenSince(row, story, story) || (told is not null && TakenSince(row, told, story)))
             {
                 continue;
+            }
+
+            if (_settings.KeyItemsByPartyChests)
+            {
+                string mark = "o:" + KeyOf(row);
+                if (Truthy(done[mark]))
+                {
+                    continue;
+                }
+
+                done[mark] = true;
             }
 
             int at = owed.FindIndex(entry => entry.Item == row.Item);
@@ -1359,7 +1570,17 @@ internal sealed class CatchupLook
         foreach ((int item, int amount) in owed)
         {
             long missing = _items.TryGetValue("i" + item, out long count) ? amount - count : 0;
-            if (missing > 0)
+            if (missing <= 0)
+            {
+                continue;
+            }
+
+            if (_settings.KeyItemsByPartyChests)
+            {
+                _owed.Add((item, missing));
+                _items["i" + item] = count + missing;
+            }
+            else
             {
                 Give("i", item, missing, $"k:owed:{item}");
             }
@@ -1573,7 +1794,8 @@ internal sealed class CatchupLook
                     continue;
                 }
 
-                if (row.Place.Part is null || (carried && !BeforeLog(row.Place)) || !Allowed(row.Actor))
+                if (row.Place.Part is null || (carried && !BeforeLog(row.Place)) || !Allowed(row.Actor)
+                    || (!_settings.ChoiceCompanionsFromRows && ChoiceTable.ChoiceCompanions.Contains(row.Actor)))
                 {
                     done[key] = true;
                     continue;
@@ -1593,7 +1815,7 @@ internal sealed class CatchupLook
             NoteJoin(row, carried, removed, done);
         }
 
-        if (carried)
+        if (carried && _settings.TakesCompanionsAway)
         {
             TakeAway(removed, removedOrder, fresh);
         }
@@ -1621,7 +1843,7 @@ internal sealed class CatchupLook
 
         if (InRoster(row.Actor))
         {
-            done[key] = carried && (row.Rule != StartRule || row.Actor != row.Persona) ? "c" : true;
+            done[key] = _settings.LevelGates && carried && (row.Rule != StartRule || row.Actor != row.Persona) ? "c" : true;
         }
         else if (carried)
         {
@@ -1688,13 +1910,13 @@ internal sealed class CatchupLook
                 continue;
             }
 
-            if (!Reached(row.Gate) || !Allowed(row.Actor))
+            if ((_settings.LevelGates && !Reached(row.Gate)) || !Allowed(row.Actor))
             {
                 continue;
             }
 
             done[key] = true;
-            int? level = row.Rule == StartRule ? null : row.Gate;
+            int? level = row.Rule == StartRule || !_settings.LevelGates ? null : row.Gate;
             if (!present)
             {
                 BringIn(row.Persona, row.Actor, level, $"level {row.Gate} reached");
@@ -1755,7 +1977,10 @@ internal sealed class CatchupLook
         Act("join", persona, level is { } floor ? floor : RubyNil.Value, reason);
         _roster.Add(new RosterEntry(main, persona, level ?? 0, null));
         RosterChanged();
-        CompanionValues();
+        if (_settings.SettlesValues)
+        {
+            CompanionValues();
+        }
     }
 
     /// <summary>

@@ -1878,7 +1878,7 @@ module MGQ_MpCoopEvents
   # changed a world key, which every member who follows the player's story takes (see take_entry);
   # never in a Raid World, whose parties share no chests and whose story is the world's. A member's
   # run of the leader's story goes to the leader with their requests, whose story keeps it when it
-  # changed it (MGQ_MpCoopStory.keep_runs). Called by story_keys.rbx once the DLL logged the run.
+  # changed it (MGQ_MpCoopStory.keep_run). Called by story_keys.rbx once the DLL logged the run.
   #
   # @param entry [Hash] The run's entry, see ReplayEntry.Write in the DLL.
   def self.hand_entry(entry)
@@ -1896,7 +1896,7 @@ module MGQ_MpCoopEvents
   end
 
   # As leader, hands the party a member's run the player's story kept, named by the member who ran
-  # it, and plays it in the player's own game too, see MGQ_MpCoopStory.keep_runs.
+  # it, and plays it in the player's own game too, see MGQ_MpCoopStory.keep_run.
   #
   # @param entry [Hash] The run's entry, in the stream of the player's story.
   def self.hand_kept(entry)

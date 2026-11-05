@@ -2,7 +2,9 @@
 #  coop_choices.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Read the story's ids from story_ids.rbx
+#      Paulinchen  2026-11-05: Caught a Classic member up again once they answered a choice the leader's story is past
+#                            - Asked the DLL the route of the leader's story an offer brings the player to
+#                            - Read the story's ids from story_ids.rbx
 #                            - Left the self switches of the Navy's and the Pirates' lines to the reviewed key list
 #      Paulinchen  2026-11-01: Kept a screen the Mod Framework refused or lost waiting, telling the player only an offer gone
 #                            - Built the screens of the choices and of a replay's question on the Mod Framework's windows
@@ -315,7 +317,8 @@ module MGQ_MpCoopChoices
   # values it raises and the self switches it turns on, also in their own story kept aside, the
   # companions it sends away and brings, and the ship it puts on the field. In a Raid World the
   # catch-up then follows the outcome as a story carrying the player past it, so its items and return
-  # point come.
+  # point come; in a Classic party a member who catches up with the leader's story gets the rows that
+  # waited for their outcome.
   #
   # @param key [Symbol] The choice.
   # @param index [Integer] The answer, its place among the labels offered.
@@ -361,7 +364,9 @@ module MGQ_MpCoopChoices
       MGQ_MpOverworldSync.notice("#{name} joined you.") if name
     end
     place_ship(outcome["ship"]) if outcome["ship"]
-    MGQ_MpWorldCatchup.carried(before) if raid? && defined?(MGQ_MpWorldCatchup)
+    return MGQ_MpWorldCatchup.carried(before) if raid? && defined?(MGQ_MpWorldCatchup)
+
+    MGQ_MpCoopStory.choice_answered unless raid?
   end
 
   # Sends away a companion an outcome sends away, as the game's own branch does.
@@ -469,7 +474,8 @@ module MGQ_MpCoopChoices
     keys = passed(own[0], theirs[0], MGQ_MpStoryState.data_of($game_switches), MGQ_MpStoryState.data_of($game_variables), MGQ_MpStoryState.roster_ids)
     log("accepted #{MGQ_MpOverworldSync.who(peer)}'s offer: own #{MGQ_MpCoopStory.markers_text(own)}, theirs #{MGQ_MpCoopStory.markers_text(theirs)}; " \
         "choices to make: #{keys.empty? ? 'none' : keys.join(', ')}")
-    route = theirs[0] >= MGQ_MpStoryIds.great_decision ? MGQ_MpCoopStory.route_of(theirs) : nil
+    sync = MGQ_MpCoopStory.sync_of(own, theirs)
+    route = sync ? sync["route"] : nil
     show_screen("Sync story with #{peer.state['name']}", keys, ["Bring me there", "Cancel"], peer, route,
                 lambda { |answers| confirm_offer(peer, theirs, route, answers) }, lambda { valid_offer?(peer) })
   end

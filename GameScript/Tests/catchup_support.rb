@@ -2,7 +2,8 @@
 #  catchup_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Let a test put the Medal King's switches and the items an event takes away in place
+#      Paulinchen  2026-11-05: Answered the side a player takes along by engine.rb's rule of the side
+#                            - Let a test put the Medal King's switches and the items an event takes away in place
 #                            - Stopped loading story_found.rbx, whose items the story replay hands over
 #      Paulinchen  2026-11-01: Dropped the stand-in of the form window no script draws with any more
 #                            - Made the herb no key item and loaded story_found.rbx
@@ -474,6 +475,7 @@ answer_catchup_topic("catchup.check") { |read, request| $catchup.check(read, req
 answer_catchup_topic("catchup.note") { |read, request| $catchup.note(read, request) }
 answer_catchup_topic("catchup.hold_join") { |read, request| $catchup.hold_join(read, request) }
 answer_catchup_topic("catchup.unlocks") { |read, request| $catchup.unlocks(read, request) }
+answer_catchup_topic("catchup.side") { |read, request| CatchupEngine.side(read, request) }
 
 # Starts a game: a new story with some values, a party of Luka at a level and the save's notes, with
 # nothing recorded yet.

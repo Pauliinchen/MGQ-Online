@@ -2,7 +2,9 @@
 //  StoryTopics.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Handed the catch-up the items an event of the game takes away
+//      Paulinchen  2026-11-05: Answered what a Classic leader's story keeps of a member's writes and runs, and which of its changes a member takes, by ClassicMerge
+//                            - Told a Classic member's catch-up who keeps each self switch and which party chests gave key items
+//                            - Handed the catch-up the items an event of the game takes away
 //      Paulinchen  2026-11-01: Dropped the topic of the player's telling, which the telling machine holds
 //      Paulinchen  2026-10-31: Told the scripts the routes the Great Decision offers
 //                            - Answered the replay of runs handed over, in StoryTopics.Replay.cs
@@ -97,6 +99,18 @@ internal sealed partial class StoryTopics : IStoryTrackHost
     public const string ClassicTopic = "story.classic_table";
 
     /// <summary>
+    /// The topic of what a Classic leader's story keeps of a member's writes and runs, see
+    /// <see cref="ClassicMergeOf"/>.
+    /// </summary>
+    public const string ClassicMergeTopic = "story.classic_merge";
+
+    /// <summary>
+    /// The topic of which of a Classic leader's story's changes a member who follows it takes, see
+    /// <see cref="ClassicFollowOf"/>.
+    /// </summary>
+    public const string ClassicFollowTopic = "story.classic_follow";
+
+    /// <summary>
     /// Gets the catch-up's tables the story mapping came with, with the items an event of the game
     /// takes away from the events database; <see langword="null"/> before the mapping came.
     /// </summary>
@@ -117,6 +131,15 @@ internal sealed partial class StoryTopics : IStoryTrackHost
             return tables;
         }
     }
+
+    /// <summary>
+    /// Gets what a Classic member's catch-up reads of the party beyond its tables: who keeps each self
+    /// switch by the reviewed list held, and the party chests that gave key items by the events
+    /// database; nothing of either before they came.
+    /// </summary>
+    internal ClassicParty ClassicParty => new(
+        key => ScopesOf(true) is { } scopes && scopes.ScopeOf(key) != StoryScope.World,
+        (opened, items) => Events().Store is { IsUsable: true } store ? PartyRewards.KeyItemChests(store, opened, items) : []);
 
     /// <summary>
     /// The topic that takes an event of the map's interpreter starting: {"telling" (whether it is
@@ -367,6 +390,8 @@ internal sealed partial class StoryTopics : IStoryTrackHost
         context.Register(TakeTopic, (_, _) => topics._track.Take() is { } take ? TakeOf(take) : null);
         context.Register(ClassesTopic, (_, _) => topics._table is { } table ? TableOf(table) : null);
         context.Register(ClassicTopic, (_, _) => topics.ClassicOf());
+        context.Register(ClassicMergeTopic, (_, request) => topics.ClassicMergeOf(request.AsHash()));
+        context.Register(ClassicFollowTopic, (_, request) => topics.ClassicFollowOf(request.AsHash()));
         context.Register(TellingStartTopic, (_, request) => topics.TellingStart(request.AsHash()));
         context.Register(TellingCommandTopic, (_, _) => topics.TellingCommandOf());
         context.Register(TellingEndTopic, (_, _) =>
@@ -558,6 +583,100 @@ internal sealed partial class StoryTopics : IStoryTrackHost
     /// </remarks>
     /// <returns>The table, see <see cref="TableOf"/>; nil without an events database to read.</returns>
     private RubyValue ClassicOf() => ClassicTable() is { } table ? TableOf(table) : RubyNil.Value;
+
+    /// <summary>
+    /// Answers <see cref="ClassicMergeTopic"/> by <see cref="ClassicMerge"/>, over the reviewed list
+    /// held.
+    /// </summary>
+    /// <param name="request">"writes" ([kind (0 switch, 1 variable, 2 self switch), key (an id, or [map, event, letter]), held, written] each, the values as the tracks write them) and "runs" ([the keys a member's run wrote, as the tracks name them; its site] each).</param>
+    /// <returns>"takes" (whether the story takes each write, in their order) and "keeps" (whether it keeps each run in its stream); nil before the list came.</returns>
+    /// <exception cref="BridgeRequestException">A write or a run is no such list.</exception>
+    private RubyValue ClassicMergeOf(RubyHash request)
+    {
+        if (_table is not { } list || ScopesOf(true) is not { } scopes)
+        {
+            return RubyNil.Value;
+        }
+
+        var takes = new RubyArray();
+        var changed = new HashSet<StoryKey>();
+        foreach (RubyValue write in request["writes"].AsArray())
+        {
+            RubyArray fields = write.AsArray();
+            if (fields.Count != 4)
+            {
+                throw new BridgeRequestException("A write is [kind, key, held, written].");
+            }
+
+            StoryKey key = WrittenKey(fields[0], fields[1]);
+            bool taken = ClassicMerge.Takes(scopes.ScopeOf(key), list.ClassOf(key), fields[2].AsText(), fields[3].AsText());
+            takes.Add(taken);
+            if (taken && fields[2].AsText() != fields[3].AsText())
+            {
+                changed.Add(key);
+            }
+        }
+
+        var keeps = new RubyArray();
+        foreach (RubyValue run in request["runs"].IsNil ? [] : request["runs"].AsArray())
+        {
+            RubyArray fields = run.AsArray();
+            if (fields.Count != 2)
+            {
+                throw new BridgeRequestException("A run is [keys, site].");
+            }
+
+            string? site = fields[1].IsNil ? null : fields[1].AsText();
+            IEnumerable<StoryKey> keys = fields[0].AsArray().Select(name => StoryKey.TryParse(name.AsText(), out StoryKey key) ? key : (StoryKey?)null)
+                .Where(key => key is { Kind: StoryKeyKind.Switch or StoryKeyKind.Variable or StoryKeyKind.SelfSwitch }).Select(key => key!.Value);
+            keeps.Add(ClassicMerge.KeepsRun(keys, changed.Contains, key => scopes.ScopeOf(key, site)));
+        }
+
+        return new RubyHash { { "takes", takes }, { "keeps", keeps } };
+    }
+
+    /// <summary>
+    /// Answers <see cref="ClassicFollowTopic"/> by <see cref="ClassicMerge.Follows"/>, over the
+    /// reviewed list held: which of the leader's changes a member who follows the leader's story takes.
+    /// </summary>
+    /// <param name="request">"keys" ([kind (0 switch, 1 variable, 2 self switch), key (an id, or [map, event, letter])] each), "choices" ({"s", "v"}, the switches and variables the member's own story keeps as choices' outcomes, see choices.personal) and "sizes" ([switches, variables] the member's game has).</param>
+    /// <returns>Whether the member takes each change, in their order; none of a switch or variable beyond the member's game; nil before the list came.</returns>
+    /// <exception cref="BridgeRequestException">A key is no such list.</exception>
+    private RubyValue ClassicFollowOf(RubyHash request)
+    {
+        if (ScopesOf(true) is not { } scopes)
+        {
+            return RubyNil.Value;
+        }
+
+        HashSet<long> switches = request["choices"] is RubyHash { } choices && choices["s"] is RubyArray s ? [.. s.Select(id => id.AsLong())] : [];
+        HashSet<long> variables = request["choices"] is RubyHash { } held && held["v"] is RubyArray v ? [.. v.Select(id => id.AsLong())] : [];
+        RubyArray sizes = request["sizes"].AsArray();
+        var follows = new RubyArray();
+        foreach (RubyValue entry in request["keys"].AsArray())
+        {
+            RubyArray fields = entry.AsArray();
+            StoryKey key = WrittenKey(fields[0], fields[1]);
+            bool known = key.Kind == StoryKeyKind.SelfSwitch || (key.Id > 0 && key.Id < sizes[key.Kind == StoryKeyKind.Switch ? 0 : 1].AsLong());
+            bool choice = key.Kind == StoryKeyKind.Switch ? switches.Contains(key.Id) : key.Kind == StoryKeyKind.Variable && variables.Contains(key.Id);
+            follows.Add(known && ClassicMerge.Follows(scopes.ScopeOf(key), choice));
+        }
+
+        return follows;
+    }
+
+    /// <summary>
+    /// Reads a key the scripts name by its kind.
+    /// </summary>
+    /// <param name="kind">0 for a switch, 1 for a variable, 2 for a self switch.</param>
+    /// <param name="key">The id, or [map, event, letter].</param>
+    /// <returns>The key.</returns>
+    private static StoryKey WrittenKey(RubyValue kind, RubyValue key) => kind.AsInt() switch
+    {
+        0 => StoryKey.Switch(key.AsInt()),
+        1 => StoryKey.Variable(key.AsInt()),
+        _ => StoryKey.SelfSwitch(key.AsArray()[0].AsInt(), key.AsArray()[1].AsInt(), key.AsArray()[2].AsText()),
+    };
 
     /// <summary>
     /// Builds a Classic party's table, see <see cref="ClassicOf"/>.

@@ -2,7 +2,8 @@
 //  CatchupEngineTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Checked that a prize counted by a variable comes by its row no more, the Medal King's gift still
+//      Paulinchen  2026-11-05: Replayed the calls of the side's rule too, and shared reading a golden case's tables
+//                            - Checked that a prize counted by a variable comes by its row no more, the Medal King's gift still
 //                            - Checked that a companion a replay hands out follows the world's companion sharing and the join's level
 //                            - Dropped the found job item's case, whose items the story replay hands over
 //                            - Checked that the companion of a replay the player answered their own way joins once their level reaches the join's gate
@@ -58,6 +59,7 @@ public sealed class CatchupEngineTests
                 "catchup.check" => engine.Check(tables, request),
                 "catchup.note" => engine.Note(tables, request),
                 "catchup.hold_join" => engine.HoldJoin(tables, request),
+                "catchup.side" => SidePick.Answer(tables, request),
                 _ => engine.Unlocks(tables, request),
             };
             RubyValue expected = ValueOf(entry.GetProperty("answer"));
@@ -374,7 +376,7 @@ public sealed class CatchupEngineTests
     /// </summary>
     /// <param name="set">The set.</param>
     /// <returns>The tables.</returns>
-    private static CatchupTables TablesOf(JsonElement set)
+    internal static CatchupTables TablesOf(JsonElement set)
     {
         var text = new StringBuilder("{");
         foreach (JsonProperty table in set.EnumerateObject())

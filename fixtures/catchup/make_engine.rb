@@ -2,6 +2,7 @@
 #  make_engine.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Kept one call of the side's rule per kind of request and answer
 #      Paulinchen  2026-10-28: Created
 #
 #----------------------------------------------------------------
@@ -45,7 +46,7 @@ $catchup_record.each do |call|
   tables = Hash[call["tables"].sort.map { |table, rows| [table, generated[table] == rows ? "generated" : rows] }]
   set = sets.index(tables) || (sets << tables).size - 1
   entry = { "topic" => call["topic"], "tables" => set, "ledger" => plain_json(call["ledger"]), "request" => plain_json(call["request"]), "answer" => plain_json(call["answer"]) }
-  key = JSON.generate(entry)
+  key = call["topic"] == "catchup.side" ? JSON.generate([call["request"].keys.sort, entry["answer"]]) : JSON.generate(entry)
   next if seen[key]
 
   seen[key] = true

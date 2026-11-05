@@ -2,6 +2,8 @@
 #  story_state_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Answered the side the player took along by the DLL's rule as engine.rb stands in for it
+#                            - Answered what a Classic member takes of a joined story by the DLL's rule
 #      Paulinchen  2026-11-01: Covered the side the save notes the player took along in Iliasville
 #      Paulinchen  2026-10-31: Covered a Classic party's join of stories by the reviewed list's scopes
 #                            - Covered the one-time repair of a save the 0.6.9.2 chest path left stuck
@@ -86,13 +88,20 @@ check("a chest the player opened stays open, also one the story has shut, and th
 check("a chest the player holds shut stays shut, as a key of its own", [mixed[2].key?(kept_shut), mixed[2][kept_shut]], [true, false])
 check("and a chest the player never opened is left out, not written as an empty key", [mixed[2].key?(others), mixed[2].size], [false, 4])
 
-# In a Classic party the reviewed list's scopes decide what a join of stories keeps: the leader's
-# world keys come, while the self switches the list keeps each player's own stay the player's.
-$classic = true
+# In a Classic party the DLL's rule of what a member takes of the leader's story decides what a
+# join of stories keeps (ClassicMerge.Follows, which stands in here by the keys the leader's story
+# holds): the leader's world keys come, while the rest stays the player's.
+require_relative "bridge_support"
+fake = FakeBridge.new
+MGQ_Multiplayer::Bridge.open(fake)
+$data_system = Struct.new(:switches, :variables).new(Array.new(5000), Array.new(5000))
 world_keys = { [1, 1001] => true, [2, [3, 1, "A"]] => true }
-MGQ_MpStoryKeys.define_singleton_method(:scope_of) do |kind, key, _site = nil|
-  world_keys[[kind, key]] ? MGQ_MpStoryKeys::SCOPE_WORLD : MGQ_MpStoryKeys::SCOPE_PLAYER
+$follow_asks = []
+fake.answer("story.classic_follow") do |request|
+  $follow_asks << request["keys"]
+  request["keys"].map { |kind, key| world_keys[[kind, key]] ? true : false }
 end
+$classic = true
 leaders = [[], [nil, nil], { [3, 1, "A"] => true, [3, 2, "B"] => true }]
 leaders[1][1001] = 30
 leaders[1][1050] = 7
@@ -102,6 +111,7 @@ members[1][1050] = 2
 joined = state.mix(leaders, members, [])
 check("a Classic member joining the leader's story gets its world keys and keeps their own: values, and self switches set or never set",
       [joined[1][1001], joined[1][1050], joined[2]], [30, 2, { [3, 1, "A"] => true, [3, 3, "C"] => true }])
+check("asking the DLL once for every key either story holds", [$follow_asks.size, $follow_asks[0].size], [1, 5])
 $classic = false
 
 # A skipped grant answers nil whatever writing the log returns, and a granted one answers its name.
@@ -157,8 +167,6 @@ check("a story that turns the second accessory slot on refits every character on
 
 # The one-time repair of a save the 0.6.9.2 chest path left stuck: the DLL names the switches to
 # turn on (StoryTopics.Repair), which the script turns on once per save.
-require_relative "bridge_support"
-MGQ_Multiplayer::Bridge.open(FakeBridge.new)
 # Stands in for the replay's asking of the DLL: each ask in $repair_asks, the answer $repair_answer.
 module MGQ_MpStoryReplay; def self.ask_with_values(topic, request); $repair_asks << [topic, request]; $repair_answer; end; end
 class Game_Switches; def []=(id, value); @data[id] = value; end; end
@@ -191,10 +199,14 @@ state.repair_check(true)
 state.repair
 check("a new game needs no repair", [$repair_asks.size, $game_system.instance_variable_get(state::REPAIRED_FIELD)], [3, true])
 
-# The side the player took along in Iliasville: their switches tell it before the Great Decision,
+# The side the player took along in Iliasville, as the DLL's rule of the side decides it
+# (fixtures/catchup/engine.rb stands in for it): their switches tell it before the Great Decision,
 # and the save notes it; past it, where the route's reset turned switch 4 on for the Angelic
 # Dominion (map 432), the note tells it, and nothing while the save noted none. A save of another
 # player's starting save holds that player's side, so the player has not picked.
+require_relative "../../fixtures/catchup/engine"
+side_tables = CatchupEngine.read("rules" => [{ "rule" => "side_step", "value" => 7 }])
+fake.answer("catchup.side") { |request| CatchupEngine.side(side_tables, request) }
 ilias = []
 ilias[5] = true
 dominion = []

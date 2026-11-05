@@ -2,7 +2,8 @@
 //  StoryTopicsTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Expected no rule of used up items' marks, which the story replay hands over
+//      Paulinchen  2026-11-05: Expected no companion of each side among what the catch-up reads, which the side's rule answers
+//                            - Expected no rule of used up items' marks, which the story replay hands over
 //      Paulinchen  2026-11-01: Expected the found items' marks to be the whole world's
 //                            - Expected the marks of the items used up to be the whole world's too
 //      Paulinchen  2026-10-28: Checked the relay mirror at the next start, with the relay unreachable, of another relay and without a place to write
@@ -136,7 +137,7 @@ public sealed class StoryTopicsTests
         Drain(2);
         RubyHash keys = Call(CatchupTopics.KeysTopic, RubyNil.Value).AsHash();
 
-        Assert.Equal((330L, new RubyHash { { "alice", 5 }, { "ilias", 26 } }), (keys["orb_event"].AsLong(), keys["side_companions"]));
+        Assert.Equal(330L, keys["orb_event"].AsLong());
     }
 
     /// <summary>

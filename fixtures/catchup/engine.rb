@@ -2,7 +2,10 @@
 #  engine.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Gave a prize from its row only as history before the world's log, but the Medal King's free gift, as the C# engine does
+#      Paulinchen  2026-11-05: Answered a Classic party's member's catch-up as one look in the Classic settings, the side a player takes along and the Classic key item loan, as the C# engine does
+#                            - Answered how a Classic member plays the leader's story, as ClassicStory in the DLL does
+#                            - Took a used-up key item, kept every choice's outcome the member's own, read the side from the save's note alone and played the closures and key item chests in a Classic member's catch-up, as the C# engine does
+#                            - Gave a prize from its row only as history before the world's log, but the Medal King's free gift, as the C# engine does
 #                            - Played the orbs' event only as history before the world's log, as the C# engine does
 #                            - Never gave back in the repair an item an event of the game takes away, as the C# engine does
 #                            - Held a companion a replay hands out by the world's companion sharing and the join's level, as the C# engine does
@@ -23,12 +26,13 @@
 #
 #----------------------------------------------------------------
 
-# The catch-up of a Raid World as world_catchup.rbx decided it in the game, before the decisions
-# moved to MGQOnline.Game's CatchupEngine: the same rules, read over what the DLL holds (the relay's
-# catch-up tables and the save's notes) and the snapshot the scripts hand it, answering the actions
-# the scripts carry out. The script tests answer the DLL's catch-up topics with it
-# (GameScript/Tests/catchup_support.rb), make_engine.rb records its answers as golden cases, and
-# MGQOnline.Game.Tests replays them against the C# engine.
+# The catch-up of both world types as MGQOnline.Game's CatchupEngine decides it, with the side a
+# player takes along (SidePick) and the Classic key item loan (KeyItemLoan): the same rules, read
+# over what the DLL holds (the relay's catch-up tables and the save's notes) and the snapshot the
+# scripts hand it, answering the actions the scripts carry out. The script tests answer the DLL's
+# catch-up topics with it (GameScript/Tests/catchup_support.rb and coop_events_test.rb),
+# make_engine.rb and make_classic.rb record its answers as golden cases, and MGQOnline.Game.Tests
+# replays them against the C# engine.
 
 # The catch-up's decisions.
 module CatchupEngine
@@ -105,7 +109,7 @@ module CatchupEngine
   # The tables read, with what is worked out of them once.
   class Tables
     attr_accessor :parts, :joins, :removals, :key_items, :chests, :rewards, :lessons, :class_levels, :actor_changes, :settings, :vehicles,
-                  :makina, :prize_switches, :taken_items, :rules, :counts, :companion_values, :side_events
+                  :makina, :prize_switches, :taken_items, :rules, :counts, :companion_values, :side_events, :party_chests
 
     # Keeps what a block builds from the tables once.
     #
@@ -178,6 +182,7 @@ module CatchupEngine
     end
     t.companion_values = rows.call("companion_values").map { |row| [row["actor"], row["variable"], row["atLeast"]] }
     t.side_events = rows.call("side_events")
+    t.party_chests = rows.call("party_chests").map { |row| self_switch(row["key"]) }.compact
     t
   end
 
@@ -248,7 +253,7 @@ module CatchupEngine
 
   # Lists what the scripts hand the engine of the game's story and party (StoryTopics' catchup.keys
   # in the DLL): every switch, variable and self switch a row or rule reads, the items whose counts
-  # it reads, the Makina, the parts and the companion each side brings along.
+  # it reads, the Makina and the parts.
   #
   # @param t [Tables] The tables.
   # @return [Hash] The keys.
@@ -283,7 +288,7 @@ module CatchupEngine
     {
       "switches" => switches.uniq.sort, "variables" => variables.uniq.sort, "selves" => selves.uniq.sort_by { |key| [key[0], key[1], key[2]] },
       "items" => items.uniq.sort, "makina" => t.makina.map { |row| row.item }, "parts" => t.parts.map { |part| [part.id, part.name, part.gate] },
-      "side_companions" => t.rules["side_companions"], "orb_event" => t.rules["orb_event"],
+      "orb_event" => t.rules["orb_event"],
     }
   end
 
@@ -302,6 +307,220 @@ module CatchupEngine
     selves = {}
     values["ss"].each { |key| selves[key] = true }
     [switches, variables, selves]
+  end
+
+  # What a Classic member's catch-up reads of the party beyond its tables (ClassicParty in the DLL):
+  # whether a self switch is each member's own, and the party chests that gave key items.
+  Party = Struct.new(:own, :key_chests) do
+    # @param key [Array] A self switch.
+    # @return [Boolean] Whether it is each member's own.
+    def own?(key)
+      own.call(key) ? true : false
+    end
+
+    # @param opened [Array<Array>] The party chests opened.
+    # @param items [Array<Integer>] The key items.
+    # @return [Array<Array>] [chest, items] each, the chests that gave some of them.
+    def chests(opened, items)
+      key_chests.call(opened, items)
+    end
+  end
+
+  # A party of which nothing is known (ClassicParty.None).
+  NO_PARTY = Party.new(lambda { |_key| false }, lambda { |_opened, _items| [] })
+
+  # Answers catchup.classic: the one catch-up of a Classic party's member, with notes of its own.
+  #
+  # @param t [Tables] The tables.
+  # @param request [Hash] "before", "leader", "pick", "roster", "items", "lent", "selves" and "ledger".
+  # @param party [Party] What it reads of the party.
+  # @return [Hash] "actions" and "ledger".
+  def self.classic(t, request, party = NO_PARTY)
+    Look.new(Host.new, t, request, :classic, party).classic
+  end
+
+  # @param markers [Array<Integer>] A place: the main story and each route.
+  # @return [Integer, nil] The route it plays, its place among ROUTES.
+  def self.route_of(markers)
+    markers[1..-1].index { |value| value > 0 }
+  end
+
+  # @return [String] Whether two players play one story, as ClassicStory.SyncState decides it.
+  def self.sync_state(own, other)
+    past = own[0] >= BEFORE_DECISION + 1
+    return "decision" unless past == (other[0] >= BEFORE_DECISION + 1)
+    return (own[0] - other[0]).abs <= 2 ? "synced" : "apart" unless past
+
+    route = route_of(own)
+    return "route" unless route == route_of(other)
+    return "synced" if route.nil?
+
+    (own[route + 1] - other[route + 1]).abs <= 5 ? "synced" : "apart"
+  end
+
+  # Answers catchup.classic_sync.
+  #
+  # @param request [Hash] "own", "other", "kept" and "offer".
+  # @return [Hash] "state" and "route".
+  def self.classic_sync(request)
+    other = request["other"]
+    state = request["kept"] == true || request["offer"] == true ? "synced" : other.nil? ? "unknown" : sync_state(request["own"], other)
+    { "state" => state, "route" => other && other[0] >= BEFORE_DECISION + 1 ? route_of(other) : nil }
+  end
+
+  # Answers catchup.classic_followers.
+  #
+  # @param request [Hash] "own", "members" and "told".
+  # @return [Hash] "tell" and "told".
+  def self.classic_followers(request)
+    before = request["told"] || {}
+    told = {}
+    tell = []
+    request["members"].each do |id, follows, theirs|
+      if before.key?(id) && before[id] == follows
+        told[id] = follows
+        next
+      end
+      state = follows ? "synced" : theirs.nil? ? "unknown" : sync_state(request["own"], theirs)
+      if !follows && %w(synced unknown).include?(state)
+        told[id] = before[id] if before.key?(id)
+        next
+      end
+      told[id] = follows
+      tell << [id, follows, state]
+    end
+    { "tell" => tell, "told" => told }
+  end
+
+  # Answers catchup.classic_mode.
+  #
+  # @param request [Hash] "own" and "leader".
+  # @return [Hash] "mode", "keeps", "progress" and "ahead".
+  def self.classic_mode(request)
+    own = request["own"]
+    leader = request["leader"]
+    ahead = []
+    own.each_with_index { |value, at| ahead << [([MAIN_PROGRESS] + ROUTE_VARIABLES)[at], value, leader[at]] if value > leader[at] }
+    mode = own == leader ? "keep" : ahead.empty? ? "catch_up" : "borrow"
+    { "mode" => mode, "keeps" => mode != "borrow", "progress" => mode == "borrow" ? "aside" : "played", "ahead" => ahead }
+  end
+
+  # Answers catchup.classic_restore.
+  #
+  # @param request [Hash] "mode" and "partial".
+  # @return [Hash] "steps".
+  def self.classic_restore(request)
+    steps = case request["mode"]
+            when "keep" then [%w(start own), %w(recorded recorded), %w(changed played), %w(personal played)]
+            when "catch_up" then [%w(start played), %w(fill own), %w(chests own), %w(personal played)]
+            else [%w(start own), %w(personal played), %w(sides own)]
+            end
+    steps -= [%w(fill own)] if request["partial"] == true
+    { "steps" => steps }
+  end
+
+  # @return [Array<String>] The routes a Classic member played, as ClassicStory.Routes finds them.
+  def self.classic_routes(own, played)
+    ROUTES.each_with_index.select do |route, at|
+      played[1][ROUTE_VARIABLES[at]].to_i > 0 || own[1][ROUTE_VARIABLES[at]].to_i > 0 || own[0][CLEAR_SWITCHES[at]]
+    end.map(&:first)
+  end
+
+  # Answers catchup.side: the side a player took along and whether to ask them, or what an answer
+  # sets and brings.
+  #
+  # @param t [Tables] The tables.
+  # @param request [Hash] "own", "played", "note", "leader" and "chose".
+  # @return [Hash] "side", "note", "ask", "took", "switches" and "companion".
+  def self.side(t, request)
+    own = story_of(request["own"]) || [[], [], {}]
+    played = story_of(request["played"]) || own
+    note = request["note"].is_a?(String) ? request["note"] : nil
+    leader = %w(alice ilias).include?(request["leader"]) ? request["leader"] : nil
+    chose = %w(alice ilias).include?(request["chose"]) ? request["chose"] : nil
+    if chose
+      before = sides_differ?(own) && sides_differ?(played)
+      companion = before ? (t.rules["side_companions"] || {})[chose] : nil
+      return { "side" => chose, "note" => chose, "ask" => false, "unknown" => t.rules["side_step"].nil?, "took" => nil, "switches" => before ? side_switches(chose) : [], "companion" => companion }
+    end
+    side, write = side_taken(own, note)
+    follows = leader && !sides_differ?(played) && (played[0][ALICE_CHOSEN] ? true : false) != (leader == "alice") ||
+              leader && !sides_differ?(played) && (played[0][ILIAS_CHOSEN] ? true : false) != (leader == "ilias")
+    gates = request["gates"]
+    ask = side.nil? && (!gates.is_a?(Hash) || may_ask?(gates)) && side_lost?(note, false, own, played, t.rules["side_step"], !leader.nil?)
+    { "side" => side, "note" => write, "ask" => ask, "unknown" => t.rules["side_step"].nil?,
+      "took" => leader && sides_differ?(played) ? leader : nil, "switches" => follows ? side_switches(leader) : [], "companion" => nil }
+  end
+
+  # @return [Boolean] Whether a Classic world's player may be asked whom they take along now.
+  def self.may_ask?(gates)
+    return false unless gates["classic"] == true && gates["asking"] != true && gates["mirroring"] != true
+
+    gates["guest"] != true || (gates["holdings"] == true && gates["led"] == true && gates["telling"] != true)
+  end
+
+  # @param own [Array] The player's own story.
+  # @param note [String, nil] The save's note.
+  # @return [Array] The side taken along, nil while unknown, and the note to write, nil to leave it.
+  def self.side_taken(own, note)
+    return [note.to_s.empty? ? nil : note, nil] unless sides_differ?(own)
+    return [nil, nil] if note == ""
+
+    side = side_of_story(own)
+    [side, side && note.nil? ? side : nil]
+  end
+
+  # @return [Boolean] Whether to ask the player whom they take along.
+  def self.side_lost?(noted, other_start, own, played, step, leader_sided = false)
+    return false if step.nil? || (noted.is_a?(String) && !noted.empty?) || (noted.nil? && !other_start && side_of_story(own))
+
+    part = story_part_of(played)
+    progress = played[1][MAIN_PROGRESS].to_i
+    leader_sided || ROUTES.include?(part) || (SIDED_PARTS.include?(part) && progress.between?(step, BEFORE_DECISION))
+  end
+
+  # @return [Boolean] Whether the sides still differ in a story: no route has progress.
+  def self.sides_differ?(story)
+    ROUTE_VARIABLES.all? { |id| story[1][id].to_i == 0 }
+  end
+
+  # @return [String, nil] The side a story's switches tell.
+  def self.side_of_story(story)
+    story[0][ALICE_CHOSEN] ? "alice" : story[0][ILIAS_CHOSEN] ? "ilias" : nil
+  end
+
+  # @return [String] The part a story is in, as StoryParts in the DLL.
+  def self.story_part_of(story)
+    route = ROUTE_VARIABLES.index { |id| story[1][id].to_i > 0 }
+    return ROUTES[route] if route
+
+    progress = [story[1][MAIN_PROGRESS].to_i, 0].max
+    progress < 19 ? "1" : progress < 34 ? "2" : "3"
+  end
+
+  # @return [Array<Array>] The side switches of a side, [id, on] each.
+  def self.side_switches(side)
+    [[ALICE_CHOSEN, side == "alice"], [ILIAS_CHOSEN, side == "ilias"]]
+  end
+
+  # Answers catchup.key_loan: what the loan of each key item whose loan changes becomes.
+  #
+  # @param request [Hash] "keeps", "guest", "leader", "held", "lent" and "key_items".
+  # @return [Hash] "lent", "why" and "skipped".
+  def self.key_loan(request)
+    return { "lent" => [], "why" => "keeps", "skipped" => [] } if request["keeps"] == true
+    return { "lent" => [], "why" => "own", "skipped" => [] } unless request["guest"] == true
+
+    leader = request["leader"] || {}
+    held = request["held"] || {}
+    lent = request["lent"] || {}
+    key_items = Array(request["key_items"])
+    ids = (leader.keys | lent.keys).sort
+    changes = (ids & key_items).map do |id|
+      wanted = [leader[id].to_i - (held[id].to_i - lent[id].to_i), 0].max
+      wanted == lent[id].to_i ? nil : [id, wanted]
+    end.compact
+    { "lent" => changes, "why" => nil, "skipped" => ids - key_items }
   end
 
   # The engine as the DLL holds it per bridge context: the save's notes, which the scripts hand it
@@ -356,23 +575,33 @@ module CatchupEngine
     # @param host [Host] The holder of the notes.
     # @param t [Tables] The tables.
     # @param request [Hash] The request.
-    def initialize(host, t, request)
+    def initialize(host, t, request, world = :raid, party = NO_PARTY)
       @host = host
       @t = t
       @request = request
+      @classic = world == :classic
+      @party = party
+      @owed = []
       @host.ledger = request["ledger"] if request.key?("ledger")
       @before_notes = Marshal.dump(@host.ledger)
       @world_id = request["world"].to_s
       @mode = request["mode"]
-      @own = CatchupEngine.story_of(request["own"])
-      @told = CatchupEngine.story_of(request["told"])
-      @roster = Array(request["roster"]).map { |entry| entry.dup }
-      @items = (request["items"] || {}).dup
-      @worn = Array(request["worn"])
-      @unlock_ids = Array(request["unlocks"])
       choices = ChoicesStandIn.personal("raid" => true, "own" => nil)
       @choice_switches = Array(choices["s"])
       @choice_variables = Array(choices["v"])
+      leader = @classic ? CatchupEngine.story_of(request["leader"]) : nil
+      if leader
+        @told = leader
+        @own = followed(leader, CatchupEngine.story_of(request["before"]) || [[], [], {}])
+      else
+        @own = CatchupEngine.story_of(request["own"])
+        @told = CatchupEngine.story_of(request["told"])
+      end
+      @roster = Array(request["roster"]).map { |entry| entry.dup }
+      @items = (request["items"] || {}).dup
+      (request["lent"] || {}).each { |id, count| @items["i#{id}"] = [@items["i#{id}"] - count, 0].max if @items.key?("i#{id}") }
+      @worn = Array(request["worn"])
+      @unlock_ids = Array(request["unlocks"])
 
       @encounters = request["encounters"]
       @summary = request["summary"]
@@ -383,6 +612,75 @@ module CatchupEngine
       @actions = []
       @looking = true
       new_look
+    end
+
+    # Answers catchup.classic: the leader's story laid over the member's own, with the companions'
+    # skills and classes the leader's story is past and the member's is not.
+    #
+    # @return [Hash] "actions" and "ledger".
+    def classic
+      before = CatchupEngine.story_of(@request["before"]) || [[], [], {}]
+      pick = @request["pick"]
+      ledger["side"] = pick if pick.is_a?(String) && !pick.empty?
+      ledger["routes"] = CatchupEngine.classic_routes(before, story_now)
+      carried(before)
+      missing_lessons(story_now, nil, before)
+      missing_class_levels(story_now, nil, before)
+      selves = @request["selves"] || {}
+      leader_selves = Array(selves["leader"])
+      owed_key_items(leader_selves)
+      closures(leader_selves, Array(selves["own"]))
+      gifts
+      finish({})
+    end
+
+    # Hands a Classic member the key items they lack by the party chests that gave them, the others
+    # as the rows give them.
+    #
+    # @param leader_selves [Array<Array>] The self switches on in the leader's story.
+    def owed_key_items(leader_selves)
+      return if @owed.empty?
+
+      covered = []
+      @party.chests(@t.party_chests.select { |key| leader_selves.include?(key) }, @owed.map(&:first)).each do |chest, items|
+        @actions << ["replay", { "chest" => "ss#{chest.join('.')}" }, "o:ss#{chest.join('.')}"]
+        covered |= items
+      end
+      @owed.each { |id, amount| give("i", id, amount, "k:owed:#{id}") unless covered.include?(id) }
+    end
+
+    # Plays the closures of a Classic member's own keys the leader's story holds.
+    #
+    # @param leader_selves [Array<Array>] The self switches on in the leader's story.
+    # @param own_selves [Array<Array>] Those on in the member's own story.
+    def closures(leader_selves, own_selves)
+      done = ledger["done"]
+      leader_selves.each do |key|
+        next if own_selves.include?(key) || @t.party_chests.include?(key) || !@party.own?(key)
+
+        mark = "d:ss#{key.join('.')}"
+        next if done[mark]
+
+        done[mark] = true
+        letters = %w(A B C D).select { |letter| leader_selves.include?([key[0], key[1], letter]) }
+        @actions << ["replay", { "chest" => "ss#{key.join('.')}", "letters" => letters }, mark]
+      end
+    end
+
+    # @param leader [Array] The leader's story.
+    # @param before [Array] The member's own story.
+    # @return [Array] The leader's story with every choice's outcome as the member's own story holds
+    #   it and the side switch of the side the save notes.
+    def followed(leader, before)
+      side = { "alice" => ALICE_CHOSEN, "ilias" => ILIAS_CHOSEN }[@request["pick"]]
+      switches = []
+      leader[0].each_with_index { |on, id| switches[id] = true if on && !@choice_switches.include?(id) && ![ALICE_CHOSEN, ILIAS_CHOSEN].include?(id) }
+      before[0].each_with_index { |on, id| switches[id] = true if on && @choice_switches.include?(id) && ![ALICE_CHOSEN, ILIAS_CHOSEN].include?(id) }
+      switches[side] = true if side
+      variables = []
+      leader[1].each_with_index { |value, id| variables[id] = value unless value.nil? || @choice_variables.include?(id) }
+      before[1].each_with_index { |value, id| variables[id] = value if !value.nil? && @choice_variables.include?(id) }
+      [switches, variables, leader[2].dup]
     end
 
     # Answers catchup.check.
@@ -740,7 +1038,7 @@ module CatchupEngine
       unnoted = ledger["side"].nil? || ledger["side"] == ""
       pick = @request["pick"]
       return ledger["side"] = (unnoted ? pick : ledger["side"]) if pick.is_a?(String) && !pick.empty?
-      return unless SIDED_PARTS.include?(story_part(story))
+      return if @classic || !SIDED_PARTS.include?(story_part(story))
 
       side = side_of(story[0])
       if side
@@ -839,13 +1137,7 @@ module CatchupEngine
     #   the save notes no side they took along themselves, before the Great Decision or on a route: a
     #   story the world's carried past it, or a save of another player's starting save.
     def lost_side?
-      step = rule("side_step")
-      story = story_now
-      return false unless step && noted_side.nil?
-      return false if ledger["side"].nil? && !other_start? && side_of(story[0])
-
-      part = part_of(story)
-      ROUTES.include?(part) || (SIDED_PARTS.include?(part) && story[1][MAIN_PROGRESS].to_i.between?(step, BEFORE_DECISION))
+      CatchupEngine.side_lost?(ledger["side"], other_start?, story_now, story_now, rule("side_step"))
     end
 
     # @param story [Array] The story.
@@ -990,10 +1282,11 @@ module CatchupEngine
 
     # @param story [Array] The player's story.
     # @param told [Array, nil] The world's story.
-    def missing_lessons(story, told)
+    def missing_lessons(story, told, already = nil)
       @t.lessons.each do |row|
         next unless carries?(row) && in_roster?(row.actor)
         next unless before_log?(row) && passed_any?(row, story, told)
+        next if already && passed?(row, already)
 
         @actions << ["teach", row.actor, row.skill]
       end
@@ -1001,10 +1294,11 @@ module CatchupEngine
 
     # @param story [Array] The player's story.
     # @param told [Array, nil] The world's story.
-    def missing_class_levels(story, told)
+    def missing_class_levels(story, told, already = nil)
       @t.class_levels.each do |row|
         next unless carries?(row) && (row.actor == HERO || in_roster?(row.actor))
         next unless before_log?(row) && passed_any?(row, story, told)
+        next if already && passed?(row, already)
 
         @actions << ["class", row.actor, row.class_id, row.level]
       end
@@ -1089,7 +1383,7 @@ module CatchupEngine
       waits = carried && rewards_wait? ? ledger["waits"] : nil
       @t.rewards.each do |row|
         key = key_of("g", row)
-        next if done[key] || (carried && !carries?(row)) || !passed?(row, story)
+        next if done[key] || (carried && !carries?(row)) || !passed?(row, story) || (@classic && medal_king_gift?(row))
 
         done[key] = true
         next unless (carried && before_log?(row)) || medal_king_owed?(row)
@@ -1102,14 +1396,19 @@ module CatchupEngine
       end
       world_items(story, carried, done)
       companions(story, carried, done)
-      actor_changes(story, carried, done)
-      settle(story, played_world_story) if carried
+      actor_changes(story, carried, done) unless @classic
+      settle(story, played_world_story) if carried && !@classic
       gifts
+    end
+
+    # @return [Boolean] Whether a row is the Medal King's free gift.
+    def medal_king_gift?(row)
+      row.kind != :skill && row.marks.any? { |mark| mark[0] == :s && @t.prize_switches.include?(mark[1]) }
     end
 
     # @return [Boolean] Whether a row the story passed is a Medal King gift the player is owed.
     def medal_king_owed?(row)
-      return false unless row.kind != :skill && row.marks.any? { |mark| mark[0] == :s && @t.prize_switches.include?(mark[1]) }
+      return false unless medal_king_gift?(row)
 
       key = "#{row.kind}#{row.id}"
       @items.key?(key) && !held?(key)
@@ -1163,26 +1462,51 @@ module CatchupEngine
 
         done[key] = true
         next unless (carried || !mine) && (!@log || @log[2][row.key])
+        next if @classic && !mine && past_step?(row, story)
 
         @actions << ["replay", { "chest" => "ss#{row.key.join('.')}" }, key]
       end
       restock_key_items(story, told)
-      restock_unlock_items(story, told)
+      restock_unlock_items(story, told) unless @classic
+    end
+
+    # @return [Boolean] Whether a story is past the step of a world chest.
+    def past_step?(row, story)
+      return false if row.step.nil?
+
+      route = row.part ? ROUTES.index(row.part) : nil
+      mark = [:v, route ? ROUTE_VARIABLES[route] : MAIN_PROGRESS, row.step]
+      place = Reward.new(:i, 0, 0, row.key.join("."), row.part, row.step, nil, [mark], true)
+      passed?(place, story)
     end
 
     # Hands out every key item the story's place owes the player and they hold fewer of.
     def restock_key_items(story, told)
       owed = {}
+      done = ledger["done"]
       @t.key_items.each do |row|
         next unless row.amount > 0 && before_log?(row) && passed_any?(row, story, told)
         next if taken_since?(row, story, story) || (told && taken_since?(row, told, story))
 
+        if @classic
+          mark = "o:#{key_of('k', row)}"
+          next if done[mark]
+
+          done[mark] = true
+        end
         owed[row.item] = [owed[row.item].to_i, row.amount].max
       end
       owed.each do |id, amount|
         key = "i#{id}"
         missing = @items.key?(key) ? amount - @items[key] : 0
-        give("i", id, missing, "k:owed:#{id}") if missing > 0
+        next unless missing > 0
+
+        if @classic
+          @owed << [id, missing]
+          @items[key] += missing
+        else
+          give("i", id, missing, "k:owed:#{id}")
+        end
       end
     end
 
@@ -1344,7 +1668,8 @@ module CatchupEngine
         if state.nil?
           next if carried && !carries?(row)
           next unless passed?(row, story)
-          next done[key] = true if row.part.nil? || (carried && !before_log?(row)) || !allowed?(row.actor)
+          next done[key] = true if row.part.nil? || (carried && !before_log?(row)) || !allowed?(row.actor) ||
+                                   (@classic && ChoicesStandIn::TABLE["choice_companions"].include?(row.actor))
 
           fresh << row
         elsif state != true && removed[row.actor]
@@ -1353,7 +1678,7 @@ module CatchupEngine
         end
       end
       fresh.each { |row| note_join(row, carried, removed, done) }
-      take_away(removed, fresh) if carried
+      take_away(removed, fresh) if carried && !@classic
       bring_waiting(done)
     end
 
@@ -1365,7 +1690,7 @@ module CatchupEngine
 
       present = in_roster?(row.actor)
       done[key] = if present
-                    carried && (row.rule != START_RULE || form?(row)) ? "c" : true
+                    !@classic && carried && (row.rule != START_RULE || form?(row)) ? "c" : true
                   elsif carried
                     "c"
                   else
@@ -1402,10 +1727,10 @@ module CatchupEngine
 
         present = in_roster?(row.actor)
         next done[key] = true if present && state == "o"
-        next unless reached?(row.gate) && allowed?(row.actor)
+        next unless (@classic || reached?(row.gate)) && allowed?(row.actor)
 
         done[key] = true
-        level = row.rule == START_RULE ? nil : row.gate
+        level = row.rule == START_RULE || @classic ? nil : row.gate
         next bring_in(row.persona, row.actor, level, "level #{row.gate} reached") unless present
 
         take_form(row) unless form_changed_since?(row, done)
@@ -1439,7 +1764,7 @@ module CatchupEngine
       @actions << ["join", persona, level, reason]
       @roster << [main, persona, level.to_i, nil]
       roster_changed
-      companion_values
+      companion_values unless @classic
     end
 
     # Raises a companion of the roster to a level.

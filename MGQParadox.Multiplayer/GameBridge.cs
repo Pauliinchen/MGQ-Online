@@ -2,6 +2,7 @@
 //  GameBridge.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Handed a Classic member's catch-up what the story's topics know of the party
 //      Paulinchen  2026-10-31: Opened the registration of the topics to the tests
 //                            - Left the interface's models, the keyboard and the window to the Mod Framework, keeping the bug report's screenshot
 //                            - Registered the topics of the bug report's request
@@ -97,7 +98,7 @@ internal static unsafe class GameBridge
         EnteringTopics.Register(context, services, local.Worlds, local.Lists, forms);
         WorldRoomTopics.Register(context);
         StoryTopics story = StoryTopics.Register(context);
-        CatchupTopics.Register(context, () => story.Catchup);
+        CatchupTopics.Register(context, () => story.Catchup, () => story.ClassicParty);
         ServedTopics.Register(context, BattleSession.Current);
         context.Register(SnapTopic, (_, request) => Snap(request.AsArray()));
         ReportTopics.Register(context, BugReports.Current);

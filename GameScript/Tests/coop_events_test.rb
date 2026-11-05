@@ -2,7 +2,16 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Caught a member behind the leader up by the frozen rows the DLL answers, and checked that the leader tells only their side
+#      Paulinchen  2026-11-05: Answered the Classic catch-up, the side and the key item loan by the DLL's rules as engine.rb stands in for them, recorded by make_classic.rb
+#                            - Answered how a Classic member plays the leader's story, which of its changes they take and which of their runs it keeps by the DLL's rules as engine.rb and the checks stand in for them
+#                            - Checked that a member behind loses the World Seed the leader's story used up, with no notice
+#                            - Checked that a member from another player's starting save catches up with neither side before they answer, then with the side they answer
+#                            - Checked that a reward behind a choice the member has not answered waits, and comes once they answer it
+#                            - Checked that a member on a route whose save notes no side gets no row of a side
+#                            - Checked that a player whom the side's rule could not judge before its rules came is asked once they came
+#                            - Left the checks of the rule of who plays one story to the DLL's tests
+#                            - Checked that a world chest the leader's story opened plays in the member's game unless their own story is past its step
+#                            - Caught a member behind the leader up by the frozen rows the DLL answers, and checked that the leader tells only their side
 #                            - Checked that a party member gets the Noble Orb the leader bought from the Medal King, once
 #      Paulinchen  2026-11-01: Dropped the stand-in of a lapse after a frame count, which no script asks for any more
 #                            - Kept the screen of choices open as asked, since the framework without its DLL refuses its window
@@ -450,6 +459,72 @@ load_script "coop_gather"
 load_script "coop_castle"
 answer_telling(open_rules_bridge)
 
+# The DLL's rules of how a Classic party's member plays the leader's story (ClassicStory), of the
+# Classic catch-up, the side and the key item loan, as fixtures/catchup/engine.rb stands in for them;
+# make_classic.rb records each answer as a golden case of the C# rules.
+require_relative "../../fixtures/catchup/engine"
+# The answers make_classic.rb records; nil while nothing records.
+$classic_record ||= nil
+# The tables the Classic catch-up reads, nil until the checks of the catch-up set them.
+$classic_rows = nil
+# The requests of the Classic catch-up, newest last.
+classic_asks = []
+answer_classic = lambda do |topic, &rule|
+  $world_bridge.answer(topic) do |request|
+    asked = Marshal.load(Marshal.dump(request))
+    classic_asks << asked if topic == "catchup.classic"
+    answer, party = rule.call(request)
+    if $classic_record
+      $classic_record << { "topic" => topic, "tables" => topic.start_with?("catchup.classic_") ? nil : $classic_rows, "request" => asked, "party" => party,
+                           "answer" => Marshal.load(Marshal.dump(answer)) }
+    end
+    answer
+  end
+end
+answer_classic.call("catchup.classic_sync") { |request| CatchupEngine.classic_sync(request) }
+answer_classic.call("catchup.classic_followers") { |request| CatchupEngine.classic_followers(request) }
+answer_classic.call("catchup.classic_mode") { |request| CatchupEngine.classic_mode(request) }
+answer_classic.call("catchup.classic_restore") { |request| CatchupEngine.classic_restore(request) }
+
+# Stands in for the DLL's rule of which of the leader's changes a member takes (ClassicMerge.Follows):
+# a key of the leader's story by the scopes above, but a choice's outcome the member's own story
+# keeps and an id beyond this game's data.
+$world_bridge.answer("story.classic_follow") do |request|
+  request["keys"].map do |kind, key|
+    known = kind == 2 || (key > 0 && key < request["sizes"][kind])
+    choice = kind < 2 && request["choices"][kind == 0 ? "s" : "v"].include?(key)
+    known && !choice && MGQ_MpStoryState.classic_world?(kind, key)
+  end
+end
+
+# Stands in for what the Classic catch-up reads of the party (ClassicParty in the DLL): a self
+# switch is a member's own by the scopes the scripts hold, and a party chest gave the key items
+# $key_chests names ({[map, event, letter] => [item, ...]}). Each answer is noted, for make_classic.rb.
+$key_chests = {}
+def classic_party(noted)
+  own = lambda do |key|
+    scope = MGQ_MpStoryKeys.scope_of(2, key)
+    found = !scope.nil? && scope != MGQ_MpStoryKeys::SCOPE_WORLD
+    (noted["own"] ||= []) << key if found
+    found
+  end
+  chests = lambda do |opened, items|
+    found = opened.map { |key| (given = Array($key_chests[key]) & items).empty? ? nil : [key, given] }.compact
+    (noted["chests"] ||= []) << [opened, items, found]
+    found
+  end
+  CatchupEngine::Party.new(own, chests)
+end
+
+# Stands in for the DLL's one companion filter (CompanionScope) by a check's rule, which lets every
+# companion join a player who plays their own story, as the DLL does.
+#
+# @yieldparam request [Hash] The request of a member who plays the leader's story.
+# @yieldreturn [Hash] The answer.
+def answer_scope(&rule)
+  $world_bridge.answer("catchup.scope") { |request| request["guest"] ? rule.call(request) : { "allowed" => request["actors"] } }
+end
+
 # Stands in for the DLL's scopes of a Classic party (story.replay_scopes), which KeyScopes.Classic
 # builds from the reviewed list: the keys the Classic party's stand-in table shares (support.rb)
 # are the world's, its chest flags the party's, the side switches each player's own as the list
@@ -684,9 +759,27 @@ $game_map.interpreter.run
 check("a chest a member opens is theirs for good, in their own story kept aside too", MGQ_MpCoopStory.own_story_aside[2][[3, 5, "A"]], true)
 
 # A member's writes of the leader's story go to the leader as requests (A4); the leader's story is
-# the one truth, takes them by the list's merge kinds (variable 1020 one way) and sends back what it
-# keeps by value.
+# the one truth, takes them by the list's merge kinds (variable 1020 one way), as the DLL's
+# ClassicMerge decides over the list's scopes and classes, and sends back what it keeps by value.
 $world_bridge.answer("story.classes") { story_table_hash([[0, 9999, 1]], [[0, 1019, 1], [1020, 1020, 3], [1021, 4999, 1]], 1) }
+$world_bridge.answer("story.classic_merge") do |request|
+  list = MGQ_MpStoryKeys.table_of(story_table_hash([[0, 9999, 1]], [[0, 1019, 1], [1020, 1020, 3], [1021, 4999, 1]], 1))
+  changed = {}
+  takes = request["writes"].map do |kind, key, held, value|
+    found = MGQ_MpStoryKeys.class_of(kind, key, nil, list)
+    lower = held =~ /\An(-?\d+)\z/ && value =~ /\An(-?\d+)\z/ && value[1..-1].to_i < held[1..-1].to_i
+    taken = MGQ_MpStoryState.classic_world?(kind, key) && found & MGQ_MpStoryKeys::COUNT == 0 && !(found & MGQ_MpStoryKeys::ONE_WAY != 0 && lower) ? true : false
+    changed[MGQ_MpStoryKeys.key_text(kind, key)] = true if taken && held != value
+    taken
+  end
+  keeps = request["runs"].map do |names, site|
+    names.any? do |name|
+      kind, key = MGQ_MpStoryKeys.key_of(name)
+      changed[name] || (kind && kind < 3 && MGQ_MpStoryKeys.scope_of(kind, key, site) == MGQ_MpStoryKeys::SCOPE_PARTY) ? true : false
+    end
+  end
+  { "takes" => takes, "keeps" => keeps }
+end
 MGQ_MpCoopStory.update
 MGQ_MpCoopStory.take(leader, { "story" => "full", "party" => "p1", "s" => "", "v" => "", "ss" => "" })
 $sent.clear
@@ -1291,6 +1384,43 @@ MGQ_MpCoopEvents.finished($game_map.interpreter)
 check("the end of the map's main event ends the telling, so a later message, such as a PvP battle's result, is not told",
       MGQ_MpCoopEvents.instance_variable_get(:@telling), false)
 
+# The DLL's one catch-up engine in its Classic settings, its rule of the side and its rule of the
+# key item loan (fixtures/catchup/engine.rb), over a Classic party's tables: at step 35 of part 3, a
+# skill (13), a weapon (Sword) and a key item (Basement Key) both sides get, a companion (4) both
+# sides get, a skill (11) and a companion (5) of Alice's side, a skill (12) and two companions (6,
+# 7) of Ilias's side, and a world chest (41:1:A); the World Seed (610), got at step 20 and used up
+# at step 36; a skill (14) of Alice's side on the Angelic Dominion at its step 4; a skill (15) at
+# step 16 for defeating Lucia in Magistea Village (switch 2097, a choice's outcome); the party chests
+# 40:1:A and 40:2:A; taking Alice along brings Little Alice (8), taking Ilias Little Ilias (9).
+classic_place = lambda { |site, side| { "site" => site, "part" => "3", "step" => 35, "side" => side, "marks" => [["v", 1001, 35]] } }
+classic_join = lambda { |actor, side, index| classic_place.call("map:50:#{actor}:1", side).merge("actor" => actor, "persona" => actor, "gate" => 1, "rule" => "start", "index" => index, "ran" => true) }
+CLASSIC_ROWS = {
+  "rewards" => [classic_place.call("map:50:1:1", nil).merge("kind" => "skill", "id" => 13, "amount" => 1, "ran" => true),
+                classic_place.call("map:50:2:1", nil).merge("kind" => "weapon", "id" => 1, "amount" => 1, "ran" => true),
+                classic_place.call("map:50:3:1", "alice").merge("kind" => "skill", "id" => 11, "amount" => 1, "ran" => true),
+                classic_place.call("map:50:4:1", "ilias").merge("kind" => "skill", "id" => 12, "amount" => 1, "ran" => true),
+                { "site" => "map:432:9:1", "part" => "ad", "step" => 4, "side" => "alice", "marks" => [["v", 1141, 4]], "kind" => "skill", "id" => 14, "amount" => 1, "ran" => true },
+                { "site" => "map:16:1:1", "part" => "1", "step" => 16, "side" => nil, "marks" => [["v", 1001, 16], ["s", 2097]], "kind" => "skill", "id" => 15, "amount" => 1, "ran" => true }],
+  "key_items" => [classic_place.call("map:50:5:1", nil).merge("item" => 3, "amount" => 1, "ran" => true),
+                  { "site" => "map:20:1:1", "part" => "2", "step" => 20, "side" => nil, "marks" => [["v", 1001, 20]], "item" => 610, "amount" => 1, "ran" => true },
+                  { "site" => "map:36:1:1", "part" => "3", "step" => 36, "side" => nil, "marks" => [["v", 1001, 36]], "item" => 610, "amount" => -1, "ran" => true }],
+  "joins" => [classic_join.call(4, nil, 1), classic_join.call(5, "alice", 2), classic_join.call(6, "ilias", 3), classic_join.call(7, "ilias", 4)],
+  "chests" => [{ "key" => "ss41.1.A", "items" => [501], "part" => "3", "step" => 35 }],
+  "party_chests" => [{ "key" => "ss40.1.A" }, { "key" => "ss40.2.A" }],
+  "rules" => [{ "rule" => "side_step", "value" => 7 }, { "rule" => "side_companions", "value" => { "alice" => 8, "ilias" => 9 } }],
+}
+classic_tables = CatchupEngine.read(CLASSIC_ROWS)
+$classic_rows = CLASSIC_ROWS
+$data_items[610] = RPG::Item.new(610, "World Seed")
+$data_items[610].key = true
+answer_classic.call("catchup.classic") do |request|
+  noted = {}
+  [CatchupEngine.classic(classic_tables, request, classic_party(noted)), noted]
+end
+answer_classic.call("catchup.side") { |request| CatchupEngine.side(classic_tables, request) }
+answer_classic.call("catchup.key_loan") { |request| CatchupEngine.key_loan(request) }
+answer_classic_keys = lambda { $world_bridge.answer("catchup.keys") { |_request| CatchupEngine.keys(classic_tables) } }
+
 # Plays a member's game until the party ends, from their own story to the leader's.
 #
 # @param own_progress [Integer] The member's main story progress, variable 1001.
@@ -1552,6 +1682,8 @@ $data_skills = Array.new(14)
 $data_skills[11] = Skill.new(11, "Demon Decapitation")
 $data_skills[12] = Skill.new(12, "Angel Dance")
 $data_skills[13] = Skill.new(13, "Sylph")
+$data_skills[14] = Skill.new(14, "Death Sword Chaos Star")
+$data_skills[15] = Skill.new(15, "Thunder Thrust")
 { 5 => "Ilias", 6 => "Alicetroemeria", 7 => "Eden", 8 => "Little Alice", 9 => "Little Ilias" }.each { |id, name| $data_actors[id] = Actor.new(name) }
 # Luka, who learns skills.
 class Hero < Game_Actor
@@ -1574,6 +1706,7 @@ def member_game(progress, side = nil)
   $game_self_switches = Game_SelfSwitches.new
   $game_message = Game_Message.new
   $game_map = Game_Map.new
+  $game_system = Object.new
   $game_variables[1001] = progress
   $game_switches[side] = true if side
   $party = "p1"
@@ -1596,47 +1729,45 @@ SceneManager.scene = Scene_Map.new
 holdings = { "side" => "a" }
 behind_story = { "story" => "full", "party" => "p1", "s" => "120", "v" => "1001:n40,1076:n5", "ss" => "" }.merge(holdings)
 
-# The DLL's catch-up by the frozen rows (ClassicCatchup), standing in for its decisions over rows
-# both sides pass and rows of one side: a skill, a companion, a weapon and a key item for every
-# member behind; a skill and companions of each side; a side's rows alone once the member chose it.
-classic_asks = []
-$world_bridge.answer("catchup.keys") { |_request| { "switches" => [4, 5, 120], "variables" => [1001, 1076, 1141, 1143], "selves" => [[40, 1, "A"]], "items" => [] } }
-$world_bridge.answer("catchup.classic") do |request|
-  classic_asks << request
-  sided = { "alice" => { "skills" => [11], "joins" => [5] }, "ilias" => { "skills" => [12], "joins" => [6, 7] } }[request["side"]] || { "skills" => [], "joins" => [] }
-  next sided if request["sided"]
-
-  { "skills" => [13] + sided["skills"], "joins" => [4] + sided["joins"], "items" => [["w", 1, 1]], "key_items" => [[3, 1]] }
-end
-
+# The DLL's catch-up by the frozen rows, its engine in the Classic settings over the tables above.
+answer_classic_keys.call
 check("the side each player chose is their own as the reviewed list keeps it, before the Great Decision and after it",
       [4, 5].map { |id| [MGQ_MpStoryState.personal_switch?(id, []), MGQ_MpStoryState.personal_switch?(id, [0] * 1141 + [2])] }, [[true, true], [true, true]])
 # A key item a party chest gave the leader comes by playing that chest in the member's own game.
-$world_bridge.answer("story.replay_key_chests") do |request|
-  found = request["opened"] == [[40, 1, "A"]] && request["items"] == [3]
-  { "entries" => found ? [{ "id" => "derived:map:40:1:1", "site" => "map:40:1:1" }] : [], "items" => found ? [3] : [] }
-end
+$key_chests = { [40, 1, "A"] => [3] }
+$world_bridge.answer("story.replay_derive") { |request| { "id" => "derived:#{request['chest']}", "site" => request["chest"] == "ss40.1.A" ? "map:40:1:1" : request["chest"] } }
 member_game(30)
 MGQ_MpCoopStory.take(leader, behind_story.merge("ss" => "40.1.A"))
 check("a key item the leader's chest gave comes by playing that chest in the member's game, not as a gift",
       [held("Basement Key"), MGQ_MpStoryReplay.waiting.map { |entry| entry["site"] }, $notices.include?("You got Sword to catch up with Leader's story.")], [0, ["map:40:1:1"], true])
 MGQ_MpStoryReplay.waiting.clear
-$world_bridge.answer("story.replay_key_chests") { |_request| nil }
+$key_chests = {}
+$world_bridge.answer("story.replay_derive") { |_request| nil }
+
+# The World Seed the leader's story used up (step 36) goes from a member behind who holds it, with no
+# notice; one who never held it loses nothing (user answer 2026-11-01).
+member_game(30)
+$game_party.gain_item($data_items[610], 1)
+MGQ_MpCoopStory.take(leader, behind_story)
+check("a member behind who holds the World Seed the leader's story used up loses it, with no notice of it",
+      [held("World Seed"), $notices.grep(/World Seed/)], [0, []])
 
 member_game(30)
-MGQ_MpCoopStory.take(leader, behind_story)
+MGQ_MpCoopStory.take(leader, behind_story.merge("ss" => "41.1.A"))
 check("a member behind without a side catches up with the rows both sides pass, as the DLL finds them from both stories",
-      [$game_actors[1].skills, $game_party.include_actors, classic_asks.last["own"]["v"], classic_asks.last["leader"]["v"], classic_asks.last["side"]],
-      [[13], [4], [[1001, 30]], [[1001, 40], [1076, 5]], ""])
+      [$game_actors[1].skills, $game_party.include_actors, classic_asks.last["before"]["v"], classic_asks.last["leader"]["v"], classic_asks.last["pick"]],
+      [[13], [4], [[1001, 30]], [[1001, 40]], nil])
+check("and the world chest the leader's story opened plays in the member's own game",
+      $world_bridge.calls.select { |topic, _| topic == "story.replay_derive" }.map { |_, bytes| Marshal.load(bytes)["chest"] }.include?("ss41.1.A"), true)
 check("and with the rows' items and key items, never a copy of what the leader holds", [held("Sword"), held("Basement Key"), held("Potion")], [1, 1, 0])
 check("with notices", $notices.include?("Luka learned Sylph to catch up with Leader's story.") && $notices.include?("You got Sword and Basement Key to catch up with Leader's story."), true)
 MGQ_MpCoopStory.update
-check("once free on the map, the member chooses a side", [$game_message.texts.last, $game_message.choices, $game_message.choice_cancel_type],
-      ["Leader took Alice along. Whom do you take along on your own journey?", ["Alice", "Ilias"], 0])
+check("once free on the map, the member without a side chooses one, as soon as their own story is past Iliasville", [$game_message.texts.last, $game_message.choices, $game_message.choice_cancel_type],
+      ["Your story went past the choice of whom you take along. Whom do you take along on your journey?", ["Alice", "Ilias"], 0])
 $game_message.choice_proc.call(1)
 check("taking Ilias brings the companion the choice brings into the party", [$game_switches[5], $game_switches[4], $game_party.actors], [true, false, [9]])
-check("and the rows of Ilias's side the leader's story got past", [$game_actors[1].skills, $game_party.include_actors, classic_asks.last.values_at("side", "sided")],
-      [[13, 12], [4, 9, 6, 7], ["ilias", true]])
+check("and the rows of Ilias's side the leader's story got past, nothing of the first catch-up twice", [$game_actors[1].skills, $game_party.include_actors, classic_asks.last["pick"], held("Sword")],
+      [[13, 12], [4, 9, 6, 7], "ilias", 1])
 MGQ_MpCoopStory.take(leader, behind_story)
 check("hearing it again gives nothing more", [$game_actors[1].skills, $game_party.include_actors, held("Sword")], [[13, 12], [4, 9, 6, 7], 1])
 check("the leader's story never takes the member's side", [$game_switches[5], $game_switches[4]], [true, false])
@@ -1646,6 +1777,12 @@ MGQ_MpCoopStory.take(leader, behind_story)
 check("a member on the leader's side gets what the leader got", [$game_actors[1].skills.sort, $game_party.include_actors], [[11, 13], [4, 5]])
 check("and is not asked", ($game_message.choices || []).empty?, true)
 
+derives = lambda { $world_bridge.calls.count { |topic, bytes| topic == "story.replay_derive" && Marshal.load(bytes)["chest"] == "ss41.1.A" } }
+before = derives.call
+member_game(36)
+MGQ_MpCoopStory.take(leader, behind_story.merge("v" => "1001:n40", "ss" => "41.1.A"))
+check("a member whose own story is past a world chest's step without opening it keeps it shut", derives.call, before)
+
 # A member whose save came from another player's starting save past Iliasville holds that player's
 # side, so they are asked whom they take along; the save notes the answer, and the companion of the
 # other side the starting save brought leaves them, as the DLL finds it.
@@ -1653,8 +1790,10 @@ $game_system = Object.new
 member_game(30, 4)
 MGQ_MpStoryState.note_other_start
 $game_party.add_stand_actor(8)
-$world_bridge.answer("catchup.scope") { |request| { "allowed" => request["pick"] == "ilias" ? request["actors"] - [8] : request["actors"] } }
+answer_scope { |request| { "allowed" => request["pick"] == "ilias" ? request["actors"] - [8] : request["actors"] } }
 MGQ_MpCoopStory.take(leader, behind_story)
+check("a member from another player's starting save catches up with neither side's rows before they answer, not with the side their switches hold",
+      [$game_actors[1].skills, $game_party.include_actors.sort, classic_asks.last["pick"]], [[13], [4, 8], ""])
 MGQ_MpCoopStory.update
 check("a member from another player's starting save is asked whom they take along", [$game_message.texts.last, $game_message.choices],
       ["Leader took Alice along. Whom do you take along on your own journey?", ["Alice", "Ilias"]])
@@ -1662,6 +1801,8 @@ $game_message.choice_proc.call(1)
 check("and taking Ilias is noted in the save, turns their side switch to Ilias and lets the Alice side's companion go",
       [MGQ_MpStoryState.pick_note, $game_switches[4], $game_switches[5], $game_party.include_actors.include?(8), $game_party.include_actors.include?(9), $notices.include?("Little Alice left you.")],
       ["ilias", false, true, false, true, true])
+check("and catches up with Ilias's rows the leader's story is past, never Alice's",
+      [$game_actors[1].skills.sort, ($game_party.include_actors & [5, 6, 7]).sort], [[12, 13], [6, 7]])
 $world_bridge.answer("catchup.scope") { |_request| nil }
 
 # A member from another player's starting save who joins a leader on the Chaos route has no side of
@@ -1672,7 +1813,7 @@ $game_system = Object.new
 member_game(30, 4)
 MGQ_MpStoryState.note_other_start
 scope_held = []
-$world_bridge.answer("catchup.scope") { |request| scope_held << request; { "allowed" => request["pick"] == "" && request["held"] == "alice" ? request["actors"] : [] } }
+answer_scope { |request| scope_held << request; { "allowed" => request["pick"] == "" && request["held"] == "alice" ? request["actors"] : [] } }
 MGQ_MpCoopStory.take(leader, behind_story.merge("s" => "4,120", "v" => "1001:n40,1143:n1"))
 refused = MGQ_MpCoopStory.refuses_join?(26, "map:437:11:1")
 check("a member without a side of their own on the Chaos route gets the conference's companions by the side switches of the story played",
@@ -1698,6 +1839,37 @@ check("a player alone from another player's starting save is asked whom they tak
       ["Your story went past the choice of whom you take along. Whom do you take along on your journey?", ["Alice", "Ilias"]])
 $game_message.choice_proc.call(1)
 check("and taking Ilias turns their side switch to Ilias", [MGQ_MpStoryState.pick_note, $game_switches[4], $game_switches[5]], ["ilias", false, true])
+$game_system = nil
+
+# A player alone whose own story is before the choice in Iliasville is not asked.
+$game_system = Object.new
+member_game(5)
+$party = nil
+$leader = nil
+$members = []
+MGQ_MpCoopStory.update
+check("a player alone before the choice in Iliasville is not asked whom they take along", ($game_message.choices || []).empty?, true)
+$game_system = nil
+
+# The side's rules come with the story mapping: a player alone whom the rule could not judge before
+# they came is asked once they came, though nothing the rule reads changed.
+member_game(30, 4)
+MGQ_MpStoryState.note_other_start
+$party = nil
+$leader = nil
+$members = []
+$classic_rows = {}
+answer_classic.call("catchup.side") { |request| CatchupEngine.side(CatchupEngine.read({}), request) }
+MGQ_MpCoopStory.update
+check("a player alone from another player's starting save is not asked while the side's rules have not come", ($game_message.choices || []).empty?, true)
+$classic_rows = CLASSIC_ROWS
+answer_classic.call("catchup.side") { |request| CatchupEngine.side(classic_tables, request) }
+$frame_count += MGQ_MpCoopStory::SIDE_RETRY_FRAMES
+MGQ_MpCoopStory.update
+$frame_count -= MGQ_MpCoopStory::SIDE_RETRY_FRAMES
+check("but within a second once they came, though nothing the rule reads changed", [$game_message.texts.last, $game_message.choices],
+      ["Your story went past the choice of whom you take along. Whom do you take along on your journey?", ["Alice", "Ilias"]])
+$game_message.choice_proc.call(0)
 $game_system = nil
 
 # The leader bought the Noble Orb (job item 662) from the Medal King, whose exchange turns switch
@@ -1727,28 +1899,30 @@ $game_party.gain_item($data_items[662], -1)
 look_for_gifts.call
 check("and does not get it again once it is used", [held("Noble Orb"), gift_asks.size], [0, asked + 1])
 $game_system = nil
+answer_classic_keys.call
 
 # A companion of the Alice and Ilias choice the DLL finds the member has no right to stays away; it
 # is asked with the side the member took along and the routes they played.
 scope_asks = []
-$world_bridge.answer("catchup.scope") { |request| scope_asks << request; { "allowed" => request["actors"] - [5] } }
+answer_scope { |request| scope_asks << request; { "allowed" => request["actors"] - [5] } }
 member_game(30, 4)
 MGQ_MpCoopStory.take(leader, behind_story)
-check("the rows are read with the side the member took along and the routes they played", classic_asks.last.values_at("side", "routes"), ["alice", []])
+check("the rows are read with the side the member took along", classic_asks.last["pick"], "alice")
 
 # A member on the Angelic Dominion, whose switch 4 the route's reset turned on (map 432), and whose
 # save notes no side taken along in Iliasville, is asked about with no side: Groys and Lilith &
 # Lilim, whom only Alice pickers get, stay away.
 $data_actors[406] = Actor.new("Groys")
 $data_actors[341] = Actor.new("Lilith & Lilim")
-$world_bridge.answer("catchup.scope") do |request|
+answer_scope do |request|
   scope_asks << request
   { "allowed" => request["pick"] == "alice" ? request["actors"] : request["actors"] - [406, 341] }
 end
 member_game(40, 4)
 $game_variables[1141] = 2
 MGQ_MpCoopStory.take(leader, behind_story.merge("s" => "4,120", "v" => "1001:n40,1076:n5,1141:n5"))
-check("a member on a route whose save notes no side taken along has the rows read with no side", classic_asks.last.values_at("side", "routes"), ["", ["ad"]])
+check("a member on a route whose save notes no side taken along has the rows read with no side: no row of Alice's side the leader's route passed, though their switch 4 is on",
+      [classic_asks.last["pick"], $game_actors[1].skills], [nil, []])
 $world_bridge.answer("catchup.scope") { |_request| nil }
 
 member_game(30, 5)
@@ -1965,21 +2139,6 @@ $party = nil
 $leader = nil
 $members = []
 MGQ_MpCoopStory.update
-
-# Who plays the leader's story: before the Great Decision both at most two steps apart in the main
-# story, after it both on the same route at most five steps apart.
-story = MGQ_MpCoopStory
-check("just behind or ahead within two steps is synced, three behind is not",
-      [story.sync_state([28, 0, 0, 0], [30, 0, 0, 0]), story.sync_state([32, 0, 0, 0], [30, 0, 0, 0]), story.sync_state([27, 0, 0, 0], [30, 0, 0, 0])],
-      [:synced, :synced, :apart])
-check("across the Great Decision is not, nor a player reset to it against one on a route",
-      [story.sync_state([39, 0, 0, 0], [40, 3, 0, 1]), story.sync_state([40, 0, 0, 1], [39, 0, 0, 0])], [:decision, :decision])
-check("different routes are not", story.sync_state([40, 3, 0, 1], [40, 0, 5, 1]), :route)
-check("route counters five apart are synced, six apart are not",
-      [story.sync_state([40, 3, 0, 1], [40, 8, 0, 1]), story.sync_state([40, 3, 0, 1], [40, 9, 0, 1])], [:synced, :apart])
-check("the Chaos route, which the Great Decision itself starts, counts as a route",
-      [story.sync_state([40, 0, 0, 4], [40, 0, 0, 6]), story.sync_state([40, 0, 0, 4], [40, 2, 0, 1])], [:synced, :route])
-check("at the end of the same route, as in the postgame, both are synced", story.sync_state([40, 76, 0, 1], [40, 76, 0, 1]), :synced)
 
 # The real decision in a party: the member decides from both players' progress, which each game
 # tells in its state.
@@ -2202,7 +2361,9 @@ check("nor do the leader's later changes of it reach the member", [$game_switche
 choices.forget("next check")
 member_game(15, 5)
 $scenes = []
-MGQ_MpCoopStory.take(leader, behind_story.merge("v" => "1001:n17"))
+MGQ_MpCoopStory.take(leader, behind_story.merge("v" => "1001:n17", "s" => "120,2097"))
+check("a reward behind the leader's outcome of a choice the member has not answered waits for their own answer",
+      $game_actors[1].skills.include?(15), false)
 SceneManager.scene = Scene_Map.new
 $game_map.interpreter.busy = false
 $game_message.busy = false
@@ -2213,6 +2374,8 @@ screen[:answers][:magistea] = 1
 screen[:confirmed] = true
 choices.screen_closed(screen, :button)
 check("and keeps it", [$game_switches[2097], $game_party.include_actors.include?(163), choices.instance_variable_get(:@prompts)], [true, true, []])
+MGQ_MpCoopStory.choice_answered
+check("and the reward behind that outcome comes once they answered it, once", $game_actors[1].skills.count(15), 1)
 MGQ_MpCoopStory.take(leader, { "story" => "delta", "party" => "p1", "s" => "2280:1", "v" => "", "ss" => "" })
 check("a choice the leader resolves after the member followed is left to the replay of its run", choices.instance_variable_get(:@prompts), [])
 choices.forget("test")

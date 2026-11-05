@@ -2,7 +2,8 @@
 //  StoryValues.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Read the story's ids from StoryIds
+//      Paulinchen  2026-11-05: Listed the switches on and the variables set
+//                            - Read the story's ids from StoryIds
 //      Paulinchen  2026-10-28: Changed the values as the catch-up's actions change the game's, and kept the self switches in their order
 //                            - Created
 //
@@ -76,6 +77,16 @@ public sealed class StoryValues
     /// Gets the self switches on, in the order they came.
     /// </summary>
     public IReadOnlyList<StoryKey> SelfSwitchesOn => _selfOrder;
+
+    /// <summary>
+    /// Gets the switches on.
+    /// </summary>
+    public IEnumerable<int> SwitchesOn => _switches;
+
+    /// <summary>
+    /// Gets the variables set, each with its value.
+    /// </summary>
+    public IEnumerable<KeyValuePair<int, long>> Variables => _variables;
 
     /// <summary>
     /// Gets the side the story took along: <c>alice</c>, <c>ilias</c> or <see langword="null"/> for

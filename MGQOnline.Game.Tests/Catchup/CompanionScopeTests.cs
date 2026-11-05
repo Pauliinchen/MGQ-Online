@@ -2,6 +2,7 @@
 //  CompanionScopeTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Handed the companion filter the story played in place of the routes
 //      Paulinchen  2026-11-01: Created
 //
 //----------------------------------------------------------------
@@ -11,6 +12,7 @@ using System.Linq;
 using System.Text.Json;
 using MGQOnline.Bridge.Ruby;
 using MGQOnline.Game.Catchup;
+using MGQOnline.Game.Story;
 
 namespace MGQOnline.Game.Tests.Catchup;
 
@@ -317,7 +319,7 @@ public sealed class CompanionScopeTests
         RubyArray Allowed(string pick, params string[] routes) => Tables.Scope.Answer(new RubyHash
         {
             { "actors", new RubyArray { Alice, Ilias } }, { "site", RubyNil.Value }, { "pick", pick },
-            { "routes", new RubyArray(routes.Select(route => (RubyValue)route)) },
+            { "own", RoutesPlayed(routes) }, { "guest", true },
         })["allowed"].AsArray();
 
         Assert.Equal(new RubyArray { Alice }, Allowed("alice"));
@@ -338,7 +340,7 @@ public sealed class CompanionScopeTests
         RubyArray Allowed(string? site, string held, params string[] routes) => Tables.Scope.Answer(new RubyHash
         {
             { "actors", new RubyArray { Ilias, Heinrich } }, { "site", site is null ? RubyNil.Value : site }, { "pick", "" },
-            { "routes", new RubyArray(routes.Select(route => (RubyValue)route)) }, { "held", held },
+            { "own", RoutesPlayed(routes) }, { "guest", true }, { "held", held },
         })["allowed"].AsArray();
 
         Assert.Equal(new RubyArray { Ilias, Heinrich }, Allowed("map:437:11:1", "alice"));
@@ -348,6 +350,18 @@ public sealed class CompanionScopeTests
         Assert.Equal(new RubyArray { Ilias, Heinrich }, Allowed(null, "alice", "chaos"));
         Assert.Equal(new RubyArray(), Allowed(null, "alice"));
     }
+
+    /// <summary>
+    /// Makes a story that played some routes, as the scripts hand a story.
+    /// </summary>
+    /// <param name="routes">The routes.</param>
+    /// <returns>The story, each route's progress at 1.</returns>
+    private static RubyHash RoutesPlayed(string[] routes) => new()
+    {
+        { "s", new RubyArray() },
+        { "v", new RubyArray(routes.Select(route => (RubyValue)new RubyArray { StoryIds.RouteVariables[StoryIds.Routes.ToList().IndexOf(route)], 1 })) },
+        { "ss", new RubyArray() },
+    };
 
     /// <summary>
     /// Builds a look's request in world w1.

@@ -2,7 +2,9 @@
 #  story_state.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Read the story's ids from story_ids.rbx
+#      Paulinchen  2026-11-05: Asked the DLL's one rule which side the player took along in Iliasville
+#                            - Asked the DLL's rule which keys of the leader's story a Classic party member takes as stories are joined
+#                            - Read the story's ids from story_ids.rbx
 #                            - Left the self switches of the Navy's and the Pirates' lines to the reviewed key list
 #      Paulinchen  2026-11-01: Noted in the save the side the player took along in Iliasville, which the route's side switches no longer tell
 #                            - Noted that a save came from another player's starting save, whose side is not the player's
@@ -92,6 +94,13 @@ module MGQ_MpStoryState
 
   # The topic of the one-time repair of a save the 0.6.9.2 chest path left stuck, see StoryTopics.Repair in the DLL.
   REPAIR_TOPIC = "story.repair"
+
+  # The topic of the side a player takes along in Iliasville, see SidePick in the DLL.
+  SIDE_TOPIC = "catchup.side"
+
+  # The topic of which of the leader's keys a Classic party member takes, see ClassicMerge.Follows
+  # in the DLL.
+  FOLLOW_TOPIC = "story.classic_follow"
 
   # The field of $game_system that keeps the side the player took along in Iliasville, which the
   # route sets anew in the side switches past the Great Decision: "alice" or "ilias"; "" while the
@@ -263,12 +272,13 @@ module MGQ_MpStoryState
   #   on the map by default; a self switch of the player's own the player never set is left out.
   # @return [Array] The joined switches, variables and self switches.
   def self.mix(story, personal, chests = chest_keys)
+    own = own_rule(story, personal)
     switches = story[0].dup
     variables = story[1].dup
-    [personal[0].size, switches.size].max.times { |id| switches[id] = personal[0][id] if personal_switch?(id, story[1]) }
-    [personal[1].size, variables.size].max.times { |id| variables[id] = personal[1][id] if personal_variable?(id) }
+    [personal[0].size, switches.size].max.times { |id| switches[id] = personal[0][id] if own.call(0, id) }
+    [personal[1].size, variables.size].max.times { |id| variables[id] = personal[1][id] if own.call(1, id) }
     self_switches = story[2].dup
-    (chests | (story[2].keys | personal[2].keys).select { |key| personal_self_switch?(key) }).each do |key|
+    (chests | (story[2].keys | personal[2].keys).select { |key| own.call(2, key) }).each do |key|
       if personal[2].key?(key)
         self_switches[key] = personal[2][key]
       else
@@ -276,6 +286,42 @@ module MGQ_MpStoryState
       end
     end
     [switches, variables, self_switches]
+  end
+
+  # Finds which keys of two stories being joined stay the player's own: in a Raid World by the story
+  # mapping, see personal_switch?; in a Classic party every key the DLL's rule of what a member takes
+  # of the leader's story leaves out (classic_follows), asked once for every key either story holds.
+  #
+  # @param story [Array] The switches, variables and self switches of the story.
+  # @param personal [Array] Those of the player.
+  # @return [Proc] Takes a kind (0 switch, 1 variable, 2 self switch) and a key; answers whether it
+  #   stays the player's own.
+  def self.own_rule(story, personal)
+    return lambda { |kind, key| kind == 0 ? personal_switch?(key, story[1]) : personal_key?(kind, key) } if MGQ_MpCoop::Scope.raid?
+
+    keys = []
+    2.times do |kind|
+      [story[kind].size, personal[kind].size].max.times { |id| keys << [kind, id] unless story[kind][id].nil? && personal[kind][id].nil? }
+    end
+    (story[2].keys | personal[2].keys).each { |key| keys << [2, key] }
+    taken = {}
+    classic_follows(keys).each_with_index { |follows, index| taken[keys[index]] = true if follows }
+    lambda { |kind, key| !taken[[kind, key]] }
+  end
+
+  # Asks the DLL which of the leader's keys a Classic party member takes (ClassicMerge.Follows): those
+  # of the leader's story, but the outcomes of the choices the player's own story keeps and what
+  # this game's data lacks.
+  #
+  # @param keys [Array<Array>] [kind, key] each: 0 for a switch, 1 for a variable, 2 for a self switch.
+  # @return [Array<Boolean>] Whether the player takes each; none while the DLL answers nothing.
+  def self.classic_follows(keys)
+    return [] if keys.empty?
+
+    choices = defined?(MGQ_MpCoopChoices) ? MGQ_MpCoopChoices.personal_keys : { "s" => {}, "v" => {} }
+    answer = MGQ_Multiplayer::Bridge.call(FOLLOW_TOPIC, "keys" => keys, "choices" => { "s" => choices["s"].keys, "v" => choices["v"].keys },
+                                                        "sizes" => [$data_system.switches.size, $data_system.variables.size])
+    answer.is_a?(Array) ? answer : []
   end
 
   # Reports whether a switch is the player's own: in a Raid World by its story mapping
@@ -455,24 +501,39 @@ module MGQ_MpStoryState
     log("noted in the save that the player took #{side} along in Iliasville")
   end
 
-  # Finds the side the player took along in Iliasville by their own story: the one its switches
-  # tell before the Great Decision, which the save notes unless it noted one already, but none while
-  # they hold the side of another player's starting save; past it, the one the save noted, since the
-  # route's reset of the switches tells the route.
+  # Finds the side the player took along in Iliasville by their own story, as the DLL decides it,
+  # and notes it in the save when the DLL says so.
   #
   # @param switches [Array] The player's own switches.
   # @param variables [Array] The player's own variables.
-  # @return [Symbol, nil] :alice, :ilias, or nil while it is unknown.
+  # @return [Symbol, nil] :alice, :ilias, or nil while it is unknown or the DLL answers nothing.
   def self.own_pick(switches, variables)
-    noted = pick_note
-    if sides_differ?(variables)
-      return nil if noted == ""
+    answer = side_answer("own" => side_story(switches, variables))
+    return nil unless answer
 
-      side = side_of(switches)
-      note_pick(side) if side && noted.nil?
-      return side
-    end
-    noted.to_s.empty? ? nil : noted.to_sym
+    note_pick(answer["note"].to_sym) if answer["note"]
+    answer["side"] ? answer["side"].to_sym : nil
+  end
+
+  # Asks the DLL about the side the player takes along, with the save's note.
+  #
+  # @param fields [Hash] "own" (see side_story) and what else SidePick in the DLL reads: "played",
+  #   "leader" and "chose".
+  # @return [Hash, nil] The answer, nil while the DLL answers none.
+  def self.side_answer(fields)
+    answer = MGQ_Multiplayer::Bridge.call(SIDE_TOPIC, { "note" => pick_note }.merge(fields))
+    answer.is_a?(Hash) ? answer : nil
+  end
+
+  # Reads what the side's rule reads of a story: the side switches, the routes' clear switches and
+  # how far the story is, as the catch-up's snapshot holds a story.
+  #
+  # @param switches [Array] The story's switches.
+  # @param variables [Array] The story's variables.
+  # @return [Hash] "s", "v" and "ss".
+  def self.side_story(switches, variables)
+    ids = MGQ_MpStoryIds
+    { "s" => (ids.side_switches + ids.clear_switches).select { |id| switches[id] }, "v" => ids.markers.map { |id| [id, variables[id].to_i] }, "ss" => [] }
   end
 
   # Notes the side the player took along from the story they play, while it is their own: never
@@ -509,7 +570,7 @@ module MGQ_MpStoryState
 
   # Writes a whole story, leaving out what is the player's own. What the story turned off or set to
   # zero is written too, apart from what it never set, which a member who catches up keeps of their
-  # own, see MGQ_MpCoopStory.caught_up_story. The lists are packed, see pack; one still too large
+  # own, see MGQ_MpCoopStory.own_with_values. The lists are packed, see pack; one still too large
   # for a message leaves out what the story turned off or set to zero, and says so.
   #
   # @param story [Array] The switches, variables and self switches.
