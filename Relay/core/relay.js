@@ -2,6 +2,9 @@
 //  relay.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Dropped the Raid World feature, which every game the relay serves plays
+//                            - Took a world room's player key and auth key from the headers only, never from the address
+//                            - Dropped the PvP rooms, which only older games opened
 //      Paulinchen  2026-10-14: Dropped the dev feature
 //      Paulinchen  2026-10-12: Added the rate limit per address for downloading starting saves and mod files
 //      Paulinchen  2026-10-10: Added the dev feature
@@ -20,27 +23,17 @@
 //
 //----------------------------------------------------------------
 
-// The relay's rules, the same on every server: which requests it takes, who may join a room, how
-// fast and how large messages may be, and when a room ends. It keeps no state and touches no
-// socket, so a thin layer per platform (Cloudflare, Node) can store the peers its own way. A room
-// pairs a host and a guest for a PvP battle; a world room seats the games of one world.
+// The relay's rules, the same on every server: which requests it takes, who may take a seat in a
+// world room, how fast and how large messages may be, and when a connection ends. It keeps no
+// state and touches no socket, so a thin layer per platform (Cloudflare, Node) can store the games
+// its own way. A world room seats the games of one world.
 
 import { CONTROL_CHARACTERS, cleanText, isHash, isId } from "./ids.js";
 
 /**
- * The protocol version the relay speaks, the first part of every room's path.
+ * The protocol version the relay speaks, the first part of every world room's path.
  */
 export const VERSION = "v1";
-
-/**
- * The two sides of a room.
- */
-export const ROLES = ["host", "guest"];
-
-/**
- * What the relay sends as text once both sides are in the room.
- */
-export const PAIRED = "paired";
 
 /**
  * What a client may send as text to keep an idle connection open, and what it gets back.
@@ -101,7 +94,7 @@ export const MAX_CHAT_LENGTH = 200;
 export const WORLD_SEATS = Object.freeze({ min: 2, max: 32 });
 
 /**
- * The limits every room keeps.
+ * The limits every world room and battle keeps.
  */
 export const LIMITS = Object.freeze({
   // A frame of the mod is at most 256 KB, plus encryption.
@@ -109,9 +102,6 @@ export const LIMITS = Object.freeze({
   // Messages a peer may send per second over time, and at once after a quiet spell.
   messagesPerSecond: 60,
   burst: 240,
-  // How long a peer may wait alone, and how long a room may last at all.
-  aloneWaitMs: 30 * 60 * 1000,
-  roomLifetimeMs: 2 * 60 * 60 * 1000,
   // How long one connection to a world room may last. Games come and go there, so each connection
   // ends on its own, and the game connects again.
   worldConnectionMs: 2 * 60 * 60 * 1000,
@@ -123,12 +113,8 @@ export const LIMITS = Object.freeze({
 export const CLOSE = Object.freeze({
   normal: 1000,
   badRequest: 4000,
-  roleTaken: 4001,
   tooLarge: 4002,
   tooFast: 4003,
-  waitedTooLong: 4004,
-  roomExpired: 4005,
-  peerLeft: 4006,
   worldFull: 4007,
   connectionExpired: 4008,
   removed: 4009,
@@ -153,15 +139,10 @@ export const PLAYER_HEADER = "X-MGQ-Player";
 export const AUTH_HEADER = "X-MGQ-Auth";
 
 /**
- * The request header in which a game names what it can play, such as FEATURE.raid, separated by
- * commas; games before 0.6.0 send none.
+ * The request header in which a game names what it can play, separated by commas, and the website
+ * and the World Admin tool name themselves; games before 0.6.0 send none.
  */
 export const FEATURES_HEADER = "X-MGQ-Features";
-
-/**
- * What a game names in FEATURES_HEADER: Raid Worlds.
- */
-export const FEATURE = Object.freeze({ raid: "raid" });
 
 /**
  * The response header that names why the relay turned a game away from a world room, since a
@@ -173,7 +154,7 @@ export const REFUSAL_HEADER = "X-MGQ-Refusal";
  * How often one address may do something: `burst` at once, then one more every `refillMs`.
  */
 export const RATE_LIMITS = Object.freeze({
-  // Entering rooms and world rooms; games connect again after every break.
+  // Entering world rooms; games connect again after every break.
   joins: Object.freeze({ burst: 30, refillMs: 2 * 1000 }),
   // Making worlds, ten an hour.
   creates: Object.freeze({ burst: 5, refillMs: 6 * 60 * 1000 }),
@@ -249,64 +230,42 @@ export function parseFeatures(header) {
 const MAX_PLAYER_NAME = 32;
 
 /**
- * Reads the room a request asks for: a room with its role, or a world room with the player's key,
- * name and auth key. The room id is the start of a hash the client made from its join code or the
- * world's token, never the join code or token itself.
+ * Reads the world room a request asks for, with the player's key, name and auth key. The room id
+ * is the start of a hash the game made from the world's token, never the token itself.
  *
- * @param {URL} url The request's address, such as /v1/room/<room id>?role=host or /v1/world/<world id>?name=…&auth=….
- * @param {string | null} [playerHeader] The PLAYER_HEADER of the request, which wins over the address's `player`, which released games send.
- * @param {string | null} [authHeader] The AUTH_HEADER of the request, which wins over the address's `auth`, which released games send.
- * @returns {{kind: "room", roomId: string, role: string} | {kind: "world", roomId: string, player: string, name: string, auth: string} | {error: string}} The room, or why the request is refused.
+ * @param {URL} url The request's address, such as /v1/world/<world id>?name=….
+ * @param {string | null} [playerHeader] The PLAYER_HEADER of the request.
+ * @param {string | null} [authHeader] The AUTH_HEADER of the request.
+ * @returns {{kind: "world", roomId: string, player: string, name: string, auth: string} | {error: string}} The world room, or why the request is refused.
  */
 export function parseRoute(url, playerHeader = null, authHeader = null) {
   const parts = url.pathname.split("/").filter((part) => part.length > 0);
 
-  if (parts.length !== 3 || parts[0] !== VERSION || (parts[1] !== "room" && parts[1] !== "world")) {
-    return { error: `the address must be /${VERSION}/room/<room id> or /${VERSION}/world/<room id>` };
+  if (parts.length !== 3 || parts[0] !== VERSION || parts[1] !== "world") {
+    return { error: `the address must be /${VERSION}/world/<room id>` };
   }
 
   if (!isId(parts[2])) {
     return { error: "the room id must be 32 lowercase hexadecimal characters" };
   }
 
-  if (parts[1] === "world") {
-    const player = playerHeader || (url.searchParams.get("player") ?? "");
-    const auth = authHeader || (url.searchParams.get("auth") ?? "");
-    const name = (url.searchParams.get("name") ?? "").replace(CONTROL_CHARACTERS, "").trim();
+  const player = playerHeader ?? "";
+  const auth = authHeader ?? "";
+  const name = (url.searchParams.get("name") ?? "").replace(CONTROL_CHARACTERS, "").trim();
 
-    if (!isId(player) || !isHash(auth)) {
-      return { error: "a world room needs the player's key and an auth key" };
-    }
-
-    if (name.length === 0 || [...name].length > MAX_PLAYER_NAME) {
-      return { error: `the player's name must be 1 to ${MAX_PLAYER_NAME} characters` };
-    }
-
-    return { kind: "world", roomId: parts[2], player, name, auth };
+  if (!isId(player) || !isHash(auth)) {
+    return { error: "a world room needs the player's key and an auth key" };
   }
 
-  const role = url.searchParams.get("role");
-
-  if (!ROLES.includes(role)) {
-    return { error: "the role must be host or guest" };
+  if (name.length === 0 || [...name].length > MAX_PLAYER_NAME) {
+    return { error: `the player's name must be 1 to ${MAX_PLAYER_NAME} characters` };
   }
 
-  return { kind: "room", roomId: parts[2], role };
+  return { kind: "world", roomId: parts[2], player, name, auth };
 }
 
 /**
- * Decides whether a peer may join a room.
- *
- * @param {string[]} present The roles of the peers already in the room.
- * @param {string} role The role that asks to join.
- * @returns {{code: number, reason: string} | null} Why it may not, or null when it may.
- */
-export function admit(present, role) {
-  return present.includes(role) ? { code: CLOSE.roleTaken, reason: `the room has a ${role} already` } : null;
-}
-
-/**
- * Makes the record a peer carries while it is in a room.
+ * Makes the record a player carries while it is in a battle.
  *
  * @param {string} role The peer's role.
  * @param {number} now The current time in milliseconds.
@@ -338,50 +297,6 @@ export function takeMessage(peer, bytes, now, limits = LIMITS) {
   }
 
   return { peer: { ...peer, allowance: refilled - 1, refilledAt: now }, refusal: null };
-}
-
-/**
- * Finds the peers whose time is up: a host or guest that waited alone too long, or everyone in a
- * room that lasted too long.
- *
- * @param {{role: string, joinedAt: number}[]} peers The records of the peers in the room.
- * @param {number} now The current time in milliseconds.
- * @param {typeof LIMITS} [limits] The limits.
- * @returns {{index: number, code: number, reason: string}[]} The peers to close, by their place in peers.
- */
-export function overdue(peers, now, limits = LIMITS) {
-  if (peers.length === 0) {
-    return [];
-  }
-
-  const openedAt = Math.min(...peers.map((peer) => peer.joinedAt));
-
-  if (now - openedAt >= limits.roomLifetimeMs) {
-    return peers.map((_, index) => ({ index, code: CLOSE.roomExpired, reason: "the room lasted too long" }));
-  }
-
-  if (peers.length === 1 && now - peers[0].joinedAt >= limits.aloneWaitMs) {
-    return [{ index: 0, code: CLOSE.waitedTooLong, reason: "nobody joined in time" }];
-  }
-
-  return [];
-}
-
-/**
- * Tells when the relay has to look at a room's deadlines next.
- *
- * @param {{role: string, joinedAt: number}[]} peers The records of the peers in the room.
- * @param {typeof LIMITS} [limits] The limits.
- * @returns {number | null} The time in milliseconds of the next deadline, or null for an empty room.
- */
-export function nextDeadline(peers, limits = LIMITS) {
-  if (peers.length === 0) {
-    return null;
-  }
-
-  const roomEnds = Math.min(...peers.map((peer) => peer.joinedAt)) + limits.roomLifetimeMs;
-
-  return peers.length === 1 ? Math.min(roomEnds, peers[0].joinedAt + limits.aloneWaitMs) : roomEnds;
 }
 
 /**

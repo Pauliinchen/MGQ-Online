@@ -2,7 +2,8 @@
 //  story_tracks.js
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Kept every variable the game uses as a place each player's own, whatever its row says
+//      Paulinchen  2026-11-05: Dropped the tracks feature, as every game the relay serves plays on tracks
+//                            - Kept every variable the game uses as a place each player's own, whatever its row says
 //                            - Read the story's ids from the table story.js hands on, the routes' counters too
 //                            - Kept a run that gave or used up a found item, and changed no key, on the world's track and on every player's own track
 //      Paulinchen  2026-11-01: Refused an admin's pins of keys the story mapping does not share
@@ -34,11 +35,6 @@ import {
   CLEAR_SWITCHES, FIRST_COUNTERS, FREEZE, FREEZE_ENDED, GREAT_DECISION, MAIN_PROGRESS, ROUTE, ROUTE_COUNTERS, STORY_IDS, VALUE as STORY_VALUE, activeRoute, compareKeys, countersOf, everyRouteDone, listsOf,
   partOf, storyKey,
 } from "./story.js";
-
-/**
- * What a game names in X-MGQ-Features once it plays a Raid World's story on tracks.
- */
-export const TRACKS_FEATURE = "tracks";
 
 /**
  * The word every text frame of the tracks starts with, both ways, as `track <JSON>`.

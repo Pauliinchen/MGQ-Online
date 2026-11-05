@@ -2,7 +2,10 @@
 //  gate.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Tested that a released 0.6.9.2 game gets the update answer on every route under the default lowest 0.7.0
+//      Paulinchen  2026-11-05: Tested that a 0.6.9.2 game gets the update answer on the story mapping, the boss pools, the battles and the published Raid designs too
+//                            - Tested that only the website and the World Admin tool read the list with the worlds' mods
+//                            - Tested that every request to a PvP room gets the update answer
+//                            - Tested that a released 0.6.9.2 game gets the update answer on every route under the default lowest 0.7.0
 //                            - Tested 0.7.0 as the lowest version while the setting names none
 //      Paulinchen  2026-10-30: Tested that a GET of the mod catalog and its files asks nothing, as the Mod Framework reads them
 //      Paulinchen  2026-10-22: Tested that a relay admin passes on the format route
@@ -18,7 +21,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  DESIGNER_RULE, GATE, UPDATE_NEEDED, UPDATE_STATUS, WORLD_ROOM_UPDATE_CODE, WORLD_ROOM_UPDATE_STATUS, compareVersions, designFormatOf, designerRefusal, designerRuleOf, gateOf, holdsLongMods,
+  DESIGNER_RULE, GATE, UPDATE_NEEDED, UPDATE_STATUS, WORLD_ROOM_UPDATE_CODE, WORLD_ROOM_UPDATE_STATUS, compareVersions, designFormatOf, designerRefusal, designerRuleOf, gateOf,
   listsWorldMods, minVersionOf, parseVersion, tooOld, updateRefusal,
 } from "./gate.js";
 
@@ -37,7 +40,7 @@ function at(path) {
   return new URL(`https://relay.test${path}`);
 }
 
-test("the routes games and the World Admin tool use and the world rooms ask for X-MGQ-Features, the PvP rooms only for a version", () => {
+test("the routes games and the World Admin tool use and the world rooms ask for X-MGQ-Features", () => {
   for (const path of [
     `/v1/worlds/${WORLD}/story`, `/v1/worlds/${WORLD}/bosses/Lilith`, "/v1/trades", `/v1/trades/${WORLD}/commit`, "/v1/reports", `/v1/world/${WORLD}`,
     "/v1/worlds", `/v1/worlds/${WORLD}/edit`, `/v1/worlds/${WORLD}/start`, `/v1/worlds/${WORLD}/chat`, `/v1/worlds/${WORLD}/raid`, `/v1/worlds/${WORLD}/raid/route/clear`, "/v1/mods", "/v1/mods/levelcap/file",
@@ -45,10 +48,14 @@ test("the routes games and the World Admin tool use and the world rooms ask for 
     assert.equal(gateOf(at(path)), GATE.features, path);
   }
 
-  assert.equal(gateOf(at(`/v1/room/${WORLD}`)), GATE.version);
-
   for (const path of ["/internal/admit", "/v1/worldsx", "/"]) {
     assert.equal(gateOf(at(path)), null, path);
+  }
+});
+
+test("every request to a PvP room gets 426 with the update text as its code, whatever version it names", () => {
+  for (const [features, version] of [[null, null], ["raid,keys,tracks,settings", "0.7.0"], ["admin", "0.0.0-dev"]]) {
+    assert.deepEqual(updateRefusal(at(`/v1/room/${WORLD}?role=host`), features, version), { status: UPDATE_STATUS, reason: UPDATE_NEEDED, socket: true, code: UPDATE_NEEDED }, String(version));
   }
 });
 
@@ -100,24 +107,18 @@ test("a game is too old without the features a route asks for, or with a version
   assert.equal(tooOld(GATE.features, "raid", "0.0.0-dev+abc", "0.7.0"), false);
   assert.equal(tooOld(GATE.features, "raid", "0.6.9-dev", "0.7.0"), true, "another suffixed version is held to its numbers");
   assert.equal(tooOld(GATE.features, "raid", "0.7.0-beta", "0.7.0"), false);
-  assert.equal(tooOld(GATE.version, null, "0.7.0-beta", "0.7.1"), true);
+  assert.equal(tooOld(GATE.features, "raid", "0.7.0-beta", "0.7.1"), true);
   assert.equal(tooOld(GATE.features, "raid", "unknown"), true);
-  assert.equal(tooOld(GATE.version, null, null, "0.6.0"), false, "a released game's PvP room");
-  assert.equal(tooOld(GATE.version, null, "0.5.3"), true);
   assert.equal(tooOld(null, null, "0.1.0"), false, "a route that asks nothing");
 });
 
 test("a game that names no version counts as 0.6.4, so it is turned away only once the lowest is above 0.6.4", () => {
-  for (const gate of [GATE.features, GATE.version]) {
-    assert.equal(tooOld(gate, "raid", null, "0.6.4"), false, gate);
-    assert.equal(tooOld(gate, "raid", " ", "0.6.4"), false, `${gate}: an empty header counts as none`);
-    assert.equal(tooOld(gate, "raid", null, "0.6.4.1"), true, gate);
-    assert.equal(tooOld(gate, "raid", null, "0.6.5"), true, gate);
-  }
-
-  assert.equal(tooOld(GATE.version, null, null, "0.6.5"), true, "a released game's PvP room");
-  assert.equal(tooOld(GATE.version, null, null), true, "a request naming no version under the default lowest");
-  assert.equal(tooOld(GATE.version, "admin", "0.0.0-dev", "0.9.0"), false, "the World Admin tool names 0.0.0-dev");
+  assert.equal(tooOld(GATE.features, "raid", null, "0.6.4"), false);
+  assert.equal(tooOld(GATE.features, "raid", " ", "0.6.4"), false, "an empty header counts as none");
+  assert.equal(tooOld(GATE.features, "raid", null, "0.6.4.1"), true);
+  assert.equal(tooOld(GATE.features, "raid", null, "0.6.5"), true);
+  assert.equal(tooOld(GATE.features, "raid", null), true, "a request naming no version under the default lowest");
+  assert.equal(tooOld(GATE.features, "admin", "0.0.0-dev", "0.9.0"), false, "the World Admin tool names 0.0.0-dev");
 });
 
 test("a world room refuses with 400 and the update code, a PvP room with 426 and the text as its code, any other route with 426", () => {
@@ -143,7 +144,8 @@ test("a world room refuses with 400 and the update code, a PvP room with 426 and
 });
 
 test("under the default lowest 0.7.0, a released 0.6.9.2 game gets the update answer on every route it uses, and 0.7.0 passes", () => {
-  const routes = [`/v1/worlds`, `/v1/worlds/${WORLD}/raid`, `/v1/worlds/${WORLD}/story`, "/v1/trades", "/v1/mods", "/v1/reports"];
+  const routes = [`/v1/worlds`, `/v1/worlds/${WORLD}/raid`, `/v1/worlds/${WORLD}/story`, `/v1/worlds/${WORLD}/bosses`, `/v1/worlds/${WORLD}/battles`, "/v1/trades", "/v1/mods", "/v1/reports", "/v1/story-mapping",
+    `/v1/raid-design/${"ab".repeat(32)}`];
   for (const path of routes) {
     assert.deepEqual(updateRefusal(at(path), "raid,keys,tracks,settings", "0.6.9.2"), { status: UPDATE_STATUS, reason: UPDATE_NEEDED, socket: false, code: null }, path);
     assert.equal(updateRefusal(at(path), "raid,keys,tracks,settings", "0.7.0"), null, path);
@@ -155,13 +157,11 @@ test("under the default lowest 0.7.0, a released 0.6.9.2 game gets the update an
   assert.equal(updateRefusal(at(`/v1/world/${WORLD}`), "raid,keys,tracks,settings", "0.7.0"), null, "0.7.0's world room");
 });
 
-test("games from 0.6.8 and development builds hold long mods, and only they read the list without them but for the website and the World Admin tool", () => {
-  assert.deepEqual(["0.6.7.7", "0.6.8", "0.6.8.1+abc", "0.7", "0.0.0-dev", "0.6.8-beta", null, "no version"].map(holdsLongMods), [false, true, true, true, true, true, false, false]);
-  assert.equal(listsWorldMods("raid,keys", "0.6.7.7"), true, "a released game");
-  assert.equal(listsWorldMods("raid", null), true, "a game naming no version");
-  assert.equal(listsWorldMods("raid,keys", "0.6.8"), false);
-  assert.equal(listsWorldMods("web", "0.0.0-dev"), true, "the website");
-  assert.equal(listsWorldMods("admin", "0.0.0-dev"), true, "the World Admin tool");
+test("only the website and the World Admin tool read the world list with every world's mods", () => {
+  assert.equal(listsWorldMods("raid,keys,tracks,settings"), false, "a game");
+  assert.equal(listsWorldMods(null), false);
+  assert.equal(listsWorldMods("web"), true, "the website");
+  assert.equal(listsWorldMods("admin"), true, "the World Admin tool");
 });
 
 test("the Raid Designer's routes go through the designer gate, which the game gate lets pass, and the game's design routes ask for X-MGQ-Features", () => {

@@ -2,6 +2,7 @@
 //  DirectoryClient.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Read every world of the list without its mods, mod hashes and settings
 //      Paulinchen  2026-10-31: Named the world's mod settings taken from the relay in the X-MGQ-Features header
 //      Paulinchen  2026-10-30: Dropped the download of an uploaded mod, which the Mod Framework installs
 //      Paulinchen  2026-10-23: Moved the squad settings into MGQOnline.Game
@@ -208,7 +209,7 @@ internal sealed partial class DirectoryClient
 
         foreach (var world in document.RootElement.GetProperty("worlds").EnumerateArray())
         {
-            worlds.Add(WorldOf(world));
+            worlds.Add(WorldOf(world, false));
         }
 
         return new WorldListing(worlds, Flag(document.RootElement, "admin"));
@@ -216,7 +217,7 @@ internal sealed partial class DirectoryClient
 
     /// <summary>
     /// Reads one world as the list names it, with its mods, mod hashes and settings, which the list
-    /// leaves out for this version, under the same rules as the list: a hidden one by its id too.
+    /// leaves out, under the same rules as the list: a hidden one by its id too.
     /// </summary>
     /// <param name="id">The world.</param>
     /// <param name="playerKey">The player's key, or <see langword="null"/> for none.</param>
@@ -226,15 +227,16 @@ internal sealed partial class DirectoryClient
     {
         using var document = Send(HttpMethod.Get, new Uri($"{_worlds}/{Uri.EscapeDataString(id)}"), $"world {Log.Short(id)}", null, playerKey, $"world {id}");
         var root = document.RootElement;
-        return WorldOf(root.TryGetProperty("world", out var world) && world.ValueKind == JsonValueKind.Object ? world : root);
+        return WorldOf(root.TryGetProperty("world", out var world) && world.ValueKind == JsonValueKind.Object ? world : root, true);
     }
 
     /// <summary>
     /// Reads a world of the directory's answer.
     /// </summary>
     /// <param name="world">The world as the relay describes it.</param>
-    /// <returns>The world; without <c>mods</c> in it, its mods, mod hashes and settings are unread.</returns>
-    private static ListedWorld WorldOf(JsonElement world)
+    /// <param name="withMods">Whether the answer names its mods, mod hashes and settings, which only the world's own route does.</param>
+    /// <returns>The world; one read from the list has its mods, mod hashes and settings unread.</returns>
+    private static ListedWorld WorldOf(JsonElement world, bool withMods)
     {
         var members = new List<ListedMember>();
 
@@ -258,7 +260,9 @@ internal sealed partial class DirectoryClient
             Flag(world, "choose"),
             Flag(world, "open"),
             Flag(world, "featured"),
-            new WorldAbout(Text(world, "description"), Text(world, "mods"), Text(world, "data"), Flag(world, "strict"), Text(world, "modHashes"), Text(world, "settings")),
+            withMods
+                ? new WorldAbout(Text(world, "description"), Text(world, "mods"), Text(world, "data"), Flag(world, "strict"), Text(world, "modHashes"), Text(world, "settings"))
+                : new WorldAbout(Text(world, "description"), string.Empty, Text(world, "data"), Flag(world, "strict"), string.Empty, string.Empty),
             members,
             type,
             Text(world, "share") is { Length: > 0 } share ? share : CompanionSharing.Off,
@@ -266,7 +270,7 @@ internal sealed partial class DirectoryClient
             world.TryGetProperty("otherModsOff", out var otherModsOff) && otherModsOff.ValueKind is JsonValueKind.True or JsonValueKind.False ? otherModsOff.GetBoolean() : type == WorldType.Raid,
             world.TryGetProperty(RaidSquad.Name, out var squad) ? RaidSquad.TextOf(squad) : string.Empty,
             Flag(world, "raidBosses"),
-            !world.TryGetProperty("mods", out _));
+            !withMods);
     }
 
     /// <summary>
@@ -998,7 +1002,7 @@ internal sealed record WorldListing(IReadOnlyList<ListedWorld> Worlds, bool Admi
 /// <param name="OtherModsOff">Whether the world turns off every mod of its players it does not name and the catalog does not mark personal.</param>
 /// <param name="Squad">A Raid World's squad settings as text, see <see cref="RaidSquad"/>; empty for a world that keeps none.</param>
 /// <param name="RaidBosses">Whether a Classic world's players meet raid bosses.</param>
-/// <param name="ModsUnread">Whether the list left out its mods, mod hashes and settings, which <see cref="DirectoryClient.World"/> reads.</param>
+/// <param name="ModsUnread">Whether it comes from the list, which leaves out its mods, mod hashes and settings that <see cref="DirectoryClient.World"/> reads.</param>
 internal sealed record ListedWorld(string Id, string Name, int Seats, string CreatorId, string CreatorName, int Online, long Active, string Start, bool Hidden, bool Choose, bool Open, bool Featured, WorldAbout About, IReadOnlyList<ListedMember> Members, string Type, string Share, int? Difficulty = null, bool OtherModsOff = false, string Squad = "", bool RaidBosses = false, bool ModsUnread = false);
 
 /// <summary>

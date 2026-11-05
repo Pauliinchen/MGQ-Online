@@ -2,6 +2,7 @@
 //  KeyScopesTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Listed the chest without the flags only older games needed
 //      Paulinchen  2026-10-31: Checked that a Classic party keeps its keys by the reviewed list
 //                            - Created
 //
@@ -28,7 +29,7 @@ public sealed class KeyScopesTests
                    {"key": "s2045", "kind": "chest"}, {"key": "s60", "kind": "shared", "work": true}, {"key": "s70", "kind": "shared"}],
           "events": [{"key": "ss215.*.*", "share": "shared"}],
           "party_chests": [{"key": "ss215.27.A"}, {"key": "ss588.9.A"}],
-          "chests": [{"key": "ss588.9.A", "items": [606], "part": "1", "step": 7, "flags": [], "order": 10}]}, "index": null}
+          "chests": [{"key": "ss588.9.A", "items": [606], "part": "1", "step": 7, "order": 10}]}, "index": null}
         """;
 
     /// <summary>

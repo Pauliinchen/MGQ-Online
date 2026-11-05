@@ -2,6 +2,7 @@
 //  WorldSession.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Dropped the refusal of a Raid World to a game without its features, which the relay no longer sends
 //      Paulinchen  2026-10-31: Worded what the player reads plainly, leaving causes and internals to the log
 //                            - Handed the world's mod settings the relay tells to the game script as a mod_settings entry
 //      Paulinchen  2026-10-30: Handed a changed boss pool to RaidBosses alone, whose ledger the game script reads
@@ -302,11 +303,6 @@ internal sealed class WorldSession
     private const string MembersFull = "The world has as many players as it may.";
 
     /// <summary>
-    /// Why a Raid World cannot be entered by a game the relay finds without the features it needs.
-    /// </summary>
-    private const string RaidUnsupported = "Update MGQ Online to play this Raid World.";
-
-    /// <summary>
     /// Why the game waits while the world's creator still uploads its starting save.
     /// </summary>
     private const string StartPending = "The world's starting save is still on its way. The game keeps trying.";
@@ -335,11 +331,6 @@ internal sealed class WorldSession
     /// The refusal code of a world whose starting save is still on its way.
     /// </summary>
     private const string PendingCode = "pending";
-
-    /// <summary>
-    /// The refusal code of a Raid World entered without naming it in the features header.
-    /// </summary>
-    private const string RaidCode = "raid_unsupported";
 
     /// <summary>
     /// The refusal code of a world room turning a game away as too old for the relay.
@@ -914,7 +905,6 @@ internal sealed class WorldSession
         HttpStatusCode.Forbidden when code == MembersCode => MembersFull,
         HttpStatusCode.Forbidden => Removed,
         HttpStatusCode.Unauthorized => TokenMismatch,
-        HttpStatusCode.BadRequest when code == RaidCode => RaidUnsupported,
         HttpStatusCode.BadRequest when code == UpdateCode => Relays.UpdateNeeded,
         HttpStatusCode.BadRequest => "Update MGQ Online to enter this world.",
         HttpStatusCode.UpgradeRequired => string.IsNullOrWhiteSpace(code) ? Relays.UpdateNeeded : code,

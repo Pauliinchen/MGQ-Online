@@ -2,7 +2,8 @@
 //  designs_socket.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Named the version of a current game on the game's room
+//      Paulinchen  2026-11-05: Tested a world room's address beside the designer socket, as the PvP rooms are gone
+//                            - Named the version of a current game on the game's room
 //      Paulinchen  2026-10-22: Tested the design epoch of the greeting
 //      Paulinchen  2026-10-21: Created
 //
@@ -18,6 +19,7 @@ import { WebSocket } from "ws";
 import { memoryDesignStore } from "../core/design_store_memory.js";
 import { DesignerReleases } from "../core/designer_releases.js";
 import { VERSION_HEADER } from "../core/gate.js";
+import { FEATURES_HEADER } from "../core/relay.js";
 import { DESIGNERS, EPOCH, fixtureBook, fixtureReleases } from "../core/test_designs.js";
 import { createRelay } from "./server.js";
 
@@ -165,9 +167,9 @@ test("an unlisted key and an outdated designer are closed with 4403 and 4426", a
   assert.equal(unlisted.frames.length + outdated.frames.length + oldFormat.frames.length, 0, "no hello");
 });
 
-test("another design path refuses the upgrade, and the game's rooms still open as before", async () => {
+test("another design path refuses the upgrade, and the game's world rooms still answer as before", async () => {
   await assert.rejects(connect(headersOf(DESIGNERS.A), "/v1/designs/me"), /refused with 404/);
-  await assert.rejects(connect({ [VERSION_HEADER]: "0.7.0" }, "/v1/room/not-a-room"), /refused with 400/);
+  await assert.rejects(connect({ [FEATURES_HEADER]: "raid,keys", [VERSION_HEADER]: "0.7.0" }, "/v1/world/not-a-room"), /refused with 400/);
 });
 
 test("a removed designer's socket closes with 4403", async () => {

@@ -2,6 +2,7 @@
 //  relay_e2e.mjs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Sent the admin's key of the mod upload in its header only
 //      Paulinchen  2026-10-15: Made a Raid World with WORLD_TYPE=raid and printed its boss pools
 //                            - Uploaded a mod to the catalog with MOD_FILE
 //                            - Created
@@ -101,7 +102,7 @@ if (process.env.MOD_FILE) {
   const hash = createHash("sha256").update(bytes.filter((byte) => byte !== 13)).digest("hex");
   const body = Buffer.concat([Buffer.from(`${name}\t${hash}\n\n`), storedZip(name, bytes)]);
   const label = name.replace(/\.rb$/i, "");
-  const uploaded = await fetch(`${relay}/v1/mods/${encodeURIComponent(label)}/upload?name=${encodeURIComponent(label)}&version=1.0&player=${keyOf(1)}`, {
+  const uploaded = await fetch(`${relay}/v1/mods/${encodeURIComponent(label)}/upload?name=${encodeURIComponent(label)}&version=1.0`, {
     method: "POST", headers: { ...game, "X-MGQ-Player": keyOf(1) }, body,
   });
   console.log(`mod upload: ${uploaded.status} ${(await uploaded.text()).slice(0, 120)}`);

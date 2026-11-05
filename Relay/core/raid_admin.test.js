@@ -2,6 +2,7 @@
 //  raid_admin.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Kept the stories the tests start from as older games wrote them, as games write no story over HTTP
 //      Paulinchen  2026-11-01: Covered the pins refused for keys the story mapping does not share
 //      Paulinchen  2026-10-31: Covered the admin view, keys, pins and route lock of a world whose story runs on tracks
 //      Paulinchen  2026-10-21: Created
@@ -81,7 +82,7 @@ function makeWorld() {
     put: async (next) => void (kept.story = structuredClone(next)),
     getCheckpoint: async () => undefined,
     remove: async () => void (kept.story = undefined),
-  }, { limits: { ...STORY_LIMITS, writes: { burst: 1000, refillMs: 1 } } });
+  }, { limits: STORY_LIMITS });
   const bosses = new WorldBosses({
     get: async (key) => structuredClone(kept.pools.get(key)),
     put: async (pool) => void kept.pools.set(pool.key, structuredClone(pool)),
@@ -122,9 +123,24 @@ function counters(values = {}) {
   return { p: 0, r1141: 0, r1142: 0, r1143: 0, clear: [], ...values };
 }
 
+/**
+ * Keeps a story as an older game wrote it key by key, at revision 1, which the relay keeps as
+ * world data.
+ *
+ * @param {{story: object | undefined}} kept What the story's store keeps.
+ * @param {object} lists The story's lists.
+ * @param {object} values The counters that differ from 0.
+ */
+function keepKeyed(kept, lists, values) {
+  kept.story = {
+    rev: 1, wrev: 1, counters: counters(values), part: "1", route: "none", done: [], end: null, comps: [], caps: [], checkpoints: [], at: 1000, by: ALICE,
+    lists: { s: "", sf: "", v: "", ss: "", ssf: "", a: "", f: "", ...lists }, log: [], logBase: 1,
+  };
+}
+
 test("the admin view leaves a keyed story's keys out unless the request asks for them", async () => {
-  const { world, ask } = makeWorld();
-  await world.story.write(ALICE, { base: 0, counters: counters({ p: 10 }), set: { s: "5", v: "1001:n10" } });
+  const { kept, ask } = makeWorld();
+  keepKeyed(kept, { s: "5", v: "1001:n10" }, { p: 10 });
 
   const plain = await ask("GET", "");
   assert.deepEqual([plain.status, plain.body.story.rev, plain.body.story.p, plain.body.story.keys, plain.body.story.keyed], [200, 1, 10, undefined, undefined]);
@@ -133,9 +149,9 @@ test("the admin view leaves a keyed story's keys out unless the request asks for
 });
 
 test("an admin sets switches, variables and self switches by id as a revision every game takes, and the counters follow", async () => {
-  const { world, ask } = makeWorld();
+  const { kept, ask } = makeWorld();
   assert.deepEqual(await ask("POST", "/keys", { s: { 5: true } }).then((answer) => [answer.status, answer.body.code]), [409, "none"], "a story nobody wrote has no keys yet");
-  await world.story.write(ALICE, { base: 0, counters: counters({ p: 10 }), set: { s: "5", v: "1001:n10,30:n1", ss: "12.3.A" } });
+  keepKeyed(kept, { s: "5", v: "1001:n10,30:n1", ss: "12.3.A" }, { p: 10 });
 
   const set = await ask("POST", "/keys", { s: { 5: false, 6: true }, v: { 1001: 18, 30: 1, 31: "Lime", 32: 1.5, 33: true }, ss: { "12.3.A": false } });
   assert.equal(set.status, 200, JSON.stringify(set.body));
@@ -143,10 +159,6 @@ test("an admin sets switches, variables and self switches by id as a revision ev
   assert.deepEqual(set.push.delta, { s: "6", sf: "5", v: "31:sTGltZQ==,32:f1.5,33:T,1001:n18", ss: "", ssf: "12.3.A", a: "", f: "" }, "a key that holds the value already is no change");
   assert.deepEqual([set.push.rev, set.push.prev], [2, 1]);
   assert.equal(set.audit, `admin ${ADMIN_ID} set keys of rev 2: ${JSON.stringify(set.push.delta)}`, "the log names who set what");
-
-  const late = await world.story.write(ALICE, { base: 1, counters: counters({ p: 18 }), set: { s: "5" } });
-  assert.equal(late.body.kept.s, "", "the admin's key is kept against a game that wrote on an older revision");
-  assert.equal(late.body.kept.sf, "5");
 
   assert.equal((await ask("POST", "/keys", { v: { 1: null } })).status, 400);
   assert.equal((await ask("POST", "/keys", { s: { 0: true } })).status, 400);
@@ -156,8 +168,8 @@ test("an admin sets switches, variables and self switches by id as a revision ev
 });
 
 test("an admin pins keys at values, which sets them for every game and keeps them against writes, and takes pins off again", async () => {
-  const { world, kept, ask } = makeWorld();
-  await world.story.write(ALICE, { base: 0, counters: counters({ p: 10 }), set: { s: "12", v: "1001:n10,1201:n2" } });
+  const { kept, ask } = makeWorld();
+  keepKeyed(kept, { s: "12", v: "1001:n10,1201:n2" }, { p: 10 });
   kept.story.pins = ["v1300-1310"];
 
   const pinned = await ask("POST", "/pins", { keys: { s12: true, v1201: 5, "ss858.139.A": false, v1202: "Lime" } });
@@ -168,16 +180,13 @@ test("an admin pins keys at values, which sets them for every game and keeps the
 
   const view = await ask("GET", "");
   assert.deepEqual(view.body.pins, pinned.body.pins, "the admin view shows the pins");
-  assert.deepEqual((await world.story.write(ALICE, { base: 2, counters: counters({ p: 10 }), set: { v: "1201:n6" } })).restore.delta.v, "1201:n5", "a write keeps a pinned key's value");
   assert.deepEqual(await ask("POST", "/keys", { v: { 1201: 6 } }).then((answer) => [answer.status, answer.body.code, answer.body.keys]), [409, "pinned", ["v1201"]]);
 
   const again = await ask("POST", "/pins", { keys: { v1201: 5 } });
-  assert.deepEqual([again.body.rev, again.push], [4, undefined], "pinning a key at the value it holds makes no revision");
+  assert.deepEqual([again.body.rev, again.push], [2, undefined], "pinning a key at the value it holds makes no revision");
 
   const cleared = await ask("POST", "/pins/clear", { keys: ["v01201", "v1300-1310", "s99"] });
   assert.deepEqual(cleared.body, { cleared: ["v1201", "v1300-1310"], pins: { keys: { s12: true, "ss858.139.A": false, v1202: "Lime" }, rules: [] } });
-  const free = await world.story.write(ALICE, { base: 4, counters: counters({ p: 10 }), set: { v: "1201:n6,1305:n1" } });
-  assert.deepEqual([free.push.delta.v, free.restore], ["1201:n6,1305:n1", undefined], "the keys taken off are written again");
 
   assert.equal((await ask("POST", "/pins", { keys: { s12: 1 } })).status, 400);
   assert.equal((await ask("POST", "/pins", { keys: { x12: true } })).status, 400);

@@ -2,7 +2,8 @@
 //  story_catchup.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Dropped the check of the prize counts
+//      Paulinchen  2026-11-05: Tested a world chest without chest flags, and one kept before read without them
+//                            - Dropped the check of the prize counts
 //      Paulinchen  2026-10-31: Checked that a world chest's flags still go to released builds
 //      Paulinchen  2026-10-28: Checked the free order rule
 //                            - Checked a prize by its switch
@@ -94,7 +95,7 @@ test("each catch-up row needs every field its Ruby row holds, and its fields mus
 
 test("a world chest and its self switch go in one batch, and keyed catch-up rows keep their key", async () => {
   const mapping = makeMapping();
-  const chest = { key: "ss127.81.A", items: [511], part: "1", step: 7, flags: [], order: 0 };
+  const chest = { key: "ss127.81.A", items: [511], part: "1", step: 7, order: 0 };
   const done = await mapping.edit({ edits: [{ table: "chests", op: "add", row: chest }, { table: "events", op: "add", row: { key: "ss127.81.A", share: "shared" } }] }, ADMIN);
   assert.deepEqual(done.body, { rev: 1, changed: [{ table: "chests", id: "ss127.81.A", op: "add" }, { table: "events", id: "ss127.81.A", op: "add" }] });
 
@@ -105,13 +106,17 @@ test("a world chest and its self switch go in one batch, and keyed catch-up rows
   assert.equal((await mapping.edit({ edits: [{ table: "makina", op: "add", row: { item: 700, level: 6, site: "map:215:23:1" } }, { table: "makina", op: "add", row: { item: 700, level: 7, site: "map:215:23:1" } }] }, ADMIN)).body.code, MAPPING_REFUSAL.twice);
 });
 
-test("a world chest keeps the chest flags it turns on, which released builds still read", async () => {
+test("a world chest keeps no chest flags, and one kept before is read without them", async () => {
   const mapping = makeMapping();
-  const chest = { key: "ss588.9.A", items: [606], part: "chaos", step: 12, flags: [7102], order: 0 };
-  await mapping.edit({ edits: [{ table: "chests", op: "add", row: chest }] }, ADMIN);
+  const chest = { key: "ss588.9.A", items: [606], part: "chaos", step: 12, order: 0 };
+  assert.equal(readRow(CATCHUP_TABLES.chests, { ...chest, flags: [7102] }).code, MAPPING_REFUSAL.field);
 
-  assert.deepEqual((await mapping.forGames(null)).body.tables.chests[0].flags, [7102]);
-  assert.equal(readRow(CATCHUP_TABLES.chests, { ...chest, flags: undefined }).code, MAPPING_REFUSAL.field, "a released build reads the flags of every chest");
+  // A row an older relay kept with the chest's flags.
+  await mapping.edit({ edits: [{ table: "chests", op: "add", row: chest }] }, ADMIN);
+  const kept = (await mapping.store.all(CATCHUP_TABLES.chests.store))[0];
+  await mapping.store.commit({ meta: await mapping.store.getMeta(), puts: [{ table: CATCHUP_TABLES.chests.store, entry: { ...kept, row: { ...kept.row, flags: [7102] } } }], removes: [], changes: [] }, 10);
+  assert.deepEqual((await mapping.forGames(null)).body.tables.chests, [chest]);
+  assert.deepEqual((await mapping.rows("chests")).body.rows.map((entry) => entry.row), [chest]);
 });
 
 test("a party member's own chests are rows by their self switch, the chest flags by their switch", async () => {

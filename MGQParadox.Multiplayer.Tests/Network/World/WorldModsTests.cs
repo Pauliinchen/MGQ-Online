@@ -2,7 +2,8 @@
 //  WorldModsTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Handed an option's default and choices as values, whose type the DLL names
+//      Paulinchen  2026-11-05: Read every list without the worlds' mods
+//                            - Handed an option's default and choices as values, whose type the DLL names
 //                            - Took the Mod Config options as the scripts hand them over and read the list as values
 //      Paulinchen  2026-10-30: Dropped the installs, which the Mod Framework does
 //      Paulinchen  2026-10-23: Checked the catalog as the game script takes it through the bridge, a link not read yet left out
@@ -224,13 +225,13 @@ public sealed class WorldModsTests
         var hashes = $"Some Mod={new string('a', 64)}";
 
         var made = Act(creator, directory => directory.Create("Modded", "secret", 4, false, false, [], new WorldAbout(string.Empty, "!Some Mod", string.Empty, false, hashes, "key=i:1")));
-        Assert.Contains(List(creator), world => world.Id == made["world"] && world.About.ModHashes == hashes && world.About.Settings == "key=i:1" && world.Type == "classic" && world.Share == "off" && world.Difficulty == null && !world.OtherModsOff && world.Squad == "" && !world.RaidBosses);
+        Assert.Contains(ReadList(creator, made["world"]), world => world.Id == made["world"] && world.About.ModHashes == hashes && world.About.Settings == "key=i:1" && world.Type == "classic" && world.Share == "off" && world.Difficulty == null && !world.OtherModsOff && world.Squad == "" && !world.RaidBosses);
 
         Assert.Equal("done", Act(adminDirectory, directory => directory.Edit(made["world"], 6, "Edited.", "!Some Mod"))["state"]);
-        Assert.Contains(List(creator), world => world.Id == made["world"] && world.Seats == 6 && world.About.ModHashes == hashes && world.About.Settings == "key=i:1" && world.Type == "classic" && world.Share == "off" && world.Difficulty == null && !world.OtherModsOff && world.Squad == "" && !world.RaidBosses);
+        Assert.Contains(ReadList(creator, made["world"]), world => world.Id == made["world"] && world.Seats == 6 && world.About.ModHashes == hashes && world.About.Settings == "key=i:1" && world.Type == "classic" && world.Share == "off" && world.Difficulty == null && !world.OtherModsOff && world.Squad == "" && !world.RaidBosses);
 
         Assert.Equal("done", Act(creator, directory => directory.Edit(made["world"], 6, "Edited.", "!Some Mod", string.Empty))["state"]);
-        Assert.Contains(List(creator), world => world.Id == made["world"] && world.About.ModHashes == "" && world.About.Settings == "key=i:1" && world.Type == "classic" && world.Share == "off" && world.Difficulty == null && !world.OtherModsOff && world.Squad == "" && !world.RaidBosses);
+        Assert.Contains(ReadList(creator, made["world"]), world => world.Id == made["world"] && world.About.ModHashes == "" && world.About.Settings == "key=i:1" && world.Type == "classic" && world.Share == "off" && world.Difficulty == null && !world.OtherModsOff && world.Squad == "" && !world.RaidBosses);
     }
 
     /// <summary>
@@ -240,7 +241,7 @@ public sealed class WorldModsTests
     [Fact]
     public void Open_CarriesTheOpenedWorldsModsInTheList()
     {
-        using var relay = new TestRelay { ListsMods = false };
+        using var relay = new TestRelay();
         var creator = NewDirectory(relay, CreatorKey, "Creator");
         var hashes = $"Some Mod={new string('a', 64)}";
         var made = Act(creator, directory => directory.Create("Modded", "secret", 4, false, false, [], new WorldAbout(string.Empty, "!Some Mod", string.Empty, false, hashes, "key=i:1")));
@@ -264,7 +265,7 @@ public sealed class WorldModsTests
     [Fact]
     public void Read_LeavesTheWorldsModsInTheList()
     {
-        using var relay = new TestRelay { ListsMods = false };
+        using var relay = new TestRelay();
         var creator = NewDirectory(relay, CreatorKey, "Creator");
         var made = Act(creator, directory => directory.Create("Modded", "secret", 4, false, false, [], new WorldAbout(string.Empty, "!Some Mod", string.Empty, false)));
         List(creator);
@@ -288,10 +289,10 @@ public sealed class WorldModsTests
 
         var made = Act(creator, directory => directory.Create("Modded", "secret", 4, false, false, [], new WorldAbout(string.Empty, "!Some Mod", string.Empty, false, string.Empty, string.Empty)));
         Assert.Equal("done", Act(creator, directory => directory.SetSettings(made["world"], "key=i:1"))["state"]);
-        Assert.Contains(List(creator), world => world.Id == made["world"] && world.About.Settings == "key=i:1" && world.Type == "classic" && world.Share == "off" && world.Difficulty == null && !world.OtherModsOff && world.Squad == "" && !world.RaidBosses);
+        Assert.Contains(ReadList(creator, made["world"]), world => world.Id == made["world"] && world.About.Settings == "key=i:1" && world.Type == "classic" && world.Share == "off" && world.Difficulty == null && !world.OtherModsOff && world.Squad == "" && !world.RaidBosses);
 
         Assert.Equal("done", Act(adminDirectory, directory => directory.SetSettings(made["world"], "key=i:2"))["state"]);
-        Assert.Contains(List(creator), world => world.Id == made["world"] && world.About.Settings == "key=i:2" && world.Type == "classic" && world.Share == "off" && world.Difficulty == null && !world.OtherModsOff && world.Squad == "" && !world.RaidBosses);
+        Assert.Contains(ReadList(creator, made["world"]), world => world.Id == made["world"] && world.About.Settings == "key=i:2" && world.Type == "classic" && world.Share == "off" && world.Difficulty == null && !world.OtherModsOff && world.Squad == "" && !world.RaidBosses);
         Assert.Equal("failed", Act(guest, directory => directory.SetSettings(made["world"], "key=i:3"))["state"]);
     }
 

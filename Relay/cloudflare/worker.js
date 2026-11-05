@@ -2,6 +2,10 @@
 //  worker.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Dropped the games' story writes, checkpoint reads and route locks over HTTP, which only games without story tracks used
+//                            - Let every game the version gate passes into a Raid World and told every game the world's mod settings
+//                            - Listed the worlds without their mods for games, as the Node relay does
+//                            - Dropped the rooms' Durable Object, as only older games opened PvP rooms
 //      Paulinchen  2026-10-31: Turned every game that keeps no keys away from a Raid World
 //                            - Told a game that takes a world's mod settings from the relay the world's settings as it enters, and every such game once an edit changed them
 //      Paulinchen  2026-10-30: Handed the request's method to the update gate
@@ -58,7 +62,7 @@
 //
 //----------------------------------------------------------------
 
-// The relay on Cloudflare: a Worker that sends each room's requests to a Durable Object of its own,
+// The relay on Cloudflare: a Worker that sends each world room's requests to a Durable Object of its own,
 // the world directory's to the one directory object and the bug reports to the one report object.
 // The rules come from the core, so the Node server keeps the same ones. The directory and the world
 // rooms talk to each other under /internal, which the Worker never passes on from outside.
@@ -67,9 +71,9 @@ import { DurableObject } from "cloudflare:workers";
 import { BATTLE_LIMITS, BATTLE_REFUSAL, battleRouteOf } from "../core/battles.js";
 import { DownloadGate, drainLimited, piecesStream, readLimited } from "../core/bodies.js";
 import { BOSS_LIMITS, WorldBosses, bossRouteOf, bossText, handleBossRequest } from "../core/bosses.js";
-import { DIRECTORY_LIMITS, Directory as WorldDirectory, SETTINGS_BY, SETTINGS_FEATURE, WORLD_TYPE, difficultyText, handleDirectoryRequest, modSettingsText, modsRuleText, parseAdmins, playerIdOf, raidBossesText, sha256Hex, squadText } from "../core/directory.js";
+import { DIRECTORY_LIMITS, Directory as WorldDirectory, SETTINGS_BY, WORLD_TYPE, difficultyText, handleDirectoryRequest, modSettingsText, modsRuleText, parseAdmins, playerIdOf, raidBossesText, sha256Hex, squadText } from "../core/directory.js";
 import { DESIGN_LIMITS, noDesigns } from "../core/designs.js";
-import { DESIGN_ROUTE, DRAIN_LIMITS, GAME_DESIGN_ROUTE, UPDATE_NEEDED, VERSION_HEADER, WORLD_ROOM_UPDATE_CODE, WORLD_ROOM_UPDATE_STATUS, updateRefusal } from "../core/gate.js";
+import { DESIGN_ROUTE, DRAIN_LIMITS, GAME_DESIGN_ROUTE, VERSION_HEADER, listsWorldMods, updateRefusal } from "../core/gate.js";
 import { badRequest, notFound, routeIs } from "../core/http.js";
 import { isHash, isId } from "../core/ids.js";
 import { MIGRATION_ROUTE, adminCheck, exportWorldData, handleMigrationRequest, migrationRouteOf } from "../core/migration.js";
@@ -77,11 +81,11 @@ import { MOD_LIMITS, ModCatalog, handleModRequest } from "../core/mods.js";
 import { handleRaidAdminRequest, raidAdminRouteOf } from "../core/raid_admin.js";
 import { RELEASE_REPO, ReleaseWatch, UPDATE_NAME, updateLine } from "../core/releases.js";
 import { ReportDesk, handleReportRequest, reportSettingsOf } from "../core/reports.js";
-import { STORY_LIMITS, WorldStory, handleStoryRequest, keylessGame, keylessGameRefusal, noRaidWorld, storyPushText, storyRouteOf } from "../core/story.js";
+import { STORY_LIMITS, WorldStory, handleStoryRequest, noRaidWorld, storyPushText, storyRouteOf } from "../core/story.js";
 import { TradeBook, handleTradeRequest } from "../core/trades.js";
 import {
-  AUTH_HEADER, CHAT_SLOW, CLOSE, FEATURES_HEADER, IN, OUT, PAIRED, PING, PLAYER_HEADER, PONG, RATE_LIMITS, REFUSAL_HEADER, RateLimiter, admit, chatLineOf, chatText,
-  newPeer, newWorldPeer, nextDeadline, nextWorldDeadline, overdue, parseFeatures, parseRoute, presenceOf, replacedBy, routeWorldMessage, seatChangeText, seatText,
+  AUTH_HEADER, CHAT_SLOW, CLOSE, FEATURES_HEADER, IN, OUT, PING, PLAYER_HEADER, PONG, REFUSAL_HEADER, chatLineOf, chatText,
+  newWorldPeer, nextWorldDeadline, parseRoute, presenceOf, replacedBy, routeWorldMessage, seatChangeText, seatText,
   VERSION, takeChatLine, takeMessage, takeSeat, worldOverdue,
 } from "../core/relay.js";
 
@@ -150,22 +154,15 @@ const MAX_ACCESS_PLAYERS = 500;
 const ACCESS_TTL_MS = 10 * 60 * 1000;
 
 /**
- * Counts how often each address enters a room. Each Worker instance keeps its own count, so it
- * only slows down an address that keeps reaching the same instance; world rooms are counted by
- * the directory instead.
- */
-const roomJoins = new RateLimiter(RATE_LIMITS.joins);
-
-/**
- * Sends a WebSocket request to its room or world room, a directory request to the directory, and
- * refuses anything else.
+ * Sends a WebSocket request to its world room, a directory request to the directory, and refuses
+ * anything else.
  */
 export default {
   /**
    * Handles a request to the relay.
    *
    * @param {Request} request The request.
-   * @param {{ROOMS: DurableObjectNamespace, WORLDS: DurableObjectNamespace, DIRECTORY: DurableObjectNamespace, REPORTS: DurableObjectNamespace, MIN_VERSION?: string}} env The Worker's bindings.
+   * @param {{WORLDS: DurableObjectNamespace, DIRECTORY: DurableObjectNamespace, REPORTS: DurableObjectNamespace, MIN_VERSION?: string}} env The Worker's bindings.
    * @returns {Promise<Response>} The answer, or why the request is refused.
    */
   async fetch(request, env) {
@@ -217,12 +214,7 @@ export default {
       return new Response("the relay only takes WebSockets", { status: 426 });
     }
 
-    if (route.kind === "room" && !roomJoins.take(request.headers.get(ADDRESS_HEADER))) {
-      return new Response("too many requests from this address, try again later", { status: 429 });
-    }
-
-    const rooms = route.kind === "world" ? env.WORLDS : env.ROOMS;
-    return rooms.get(rooms.idFromName(route.roomId)).fetch(request);
+    return worldOf(env, route.roomId).fetch(request);
   },
 
   /**
@@ -324,7 +316,7 @@ async function forwardWhole(request, stub) {
     return stub.fetch(request);
   }
 
-  const body = await readBytes(request, STORY_LIMITS.maxBodyLength);
+  const body = await readBytes(request, STORY_LIMITS.maxAdminBodyLength);
 
   if (!body) {
     return json(413, { error: "the request is too long" });
@@ -642,8 +634,8 @@ export class Directory extends DurableObject {
     }
 
     if (url.pathname === "/internal/admit") {
-      const { id, player, auth, address, features } = await request.json();
-      return json(200, await this.directory.admit(id, player, auth, address ?? null, Array.isArray(features) ? features : []));
+      const { id, player, auth, address } = await request.json();
+      return json(200, await this.directory.admit(id, player, auth, address ?? null));
     }
 
     if (url.pathname === "/internal/member") {
@@ -776,7 +768,10 @@ export class Directory extends DurableObject {
    * @returns {Promise<{status: number, body: object, bytes?: ReadableStream<Uint8Array>, close?: boolean, kick?: string, say?: object, difficulty?: number, squad?: object, raidBosses?: boolean, modsRule?: object, id?: string}>} The directory's answer, see handleDirectoryRequest.
    */
   answerDirectory(request, url) {
-    const client = { player: request.headers.get(PLAYER_HEADER), auth: request.headers.get(AUTH_HEADER), address: request.headers.get(ADDRESS_HEADER) };
+    const client = {
+      player: request.headers.get(PLAYER_HEADER), auth: request.headers.get(AUTH_HEADER), address: request.headers.get(ADDRESS_HEADER),
+      modsListed: listsWorldMods(request.headers.get(FEATURES_HEADER)),
+    };
     return handleDirectoryRequest(this.directory, request.method, url, () => readText(request), (limit) => readBytes(request, limit), client);
   }
 }
@@ -828,195 +823,12 @@ function respond(answer) {
 }
 
 /**
- * Marks a peer left and closes its socket, so the room stops counting it at once, not only once
- * Cloudflare reports the socket closed.
- *
- * @param {WebSocket} socket The peer's socket.
- * @param {number} code The close code.
- * @param {string} reason The close reason.
- */
-function closeSocket(socket, code, reason) {
-  try {
-    const record = socket.deserializeAttachment();
-
-    if (record) {
-      socket.serializeAttachment({ ...record, left: true });
-    }
-
-    socket.close(code, reason);
-  } catch {
-    // The socket is closed already, which is all this wants.
-  }
-}
-
-/**
- * One room: a host and a guest, whose binary messages it passes on to each other.
- *
- * It uses Cloudflare's WebSocket hibernation, so a host waiting alone costs no run time; Cloudflare
- * may then drop the object's memory, which is why each peer's record rides on its socket.
- */
-export class Room extends DurableObject {
-  /**
-   * Creates the room and has Cloudflare answer keep-alives itself.
-   *
-   * @param {DurableObjectState} ctx The object's state.
-   * @param {object} env The Worker's bindings.
-   */
-  constructor(ctx, env) {
-    super(ctx, env);
-    // Answered without waking the room, so a peer's keep-alives while it waits alone cost nothing;
-    // they never reach the message allowance, which only a woken room can count.
-    ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair(PING, PONG));
-  }
-
-  /**
-   * Lets a peer into the room, unless its role is taken.
-   *
-   * @param {Request} request The WebSocket request, already checked by the Worker.
-   * @returns {Promise<Response>} The WebSocket, or why the peer may not join.
-   */
-  async fetch(request) {
-    const { role } = parseRoute(new URL(request.url));
-    const refusal = admit(this.peers().map((peer) => peer.record.role), role);
-
-    if (refusal) {
-      return new Response(refusal.reason, { status: 409 });
-    }
-
-    const [client, server] = Object.values(new WebSocketPair());
-    this.ctx.acceptWebSocket(server);
-    server.serializeAttachment(newPeer(role, Date.now()));
-
-    const peers = this.peers();
-
-    if (peers.length === 2) {
-      for (const peer of peers) {
-        peer.socket.send(PAIRED);
-      }
-    }
-
-    await this.schedule(peers);
-    return new Response(null, { status: 101, webSocket: client });
-  }
-
-  /**
-   * Passes a peer's binary message on to the other peer. A message sent before the other peer
-   * arrived is dropped, which the mod never does.
-   *
-   * @param {WebSocket} socket The peer's socket.
-   * @param {ArrayBuffer | string} message The message.
-   */
-  async webSocketMessage(socket, message) {
-    const record = socket.deserializeAttachment();
-
-    // A peer the relay closed passes nothing on while its connection closes.
-    if (!record || record.left) {
-      return;
-    }
-
-    if (typeof message === "string") {
-      // Keep-alives are answered by Cloudflare before they get here, so any other text is wrong.
-      this.leave(socket, CLOSE.badRequest, "only binary messages are passed on");
-      return;
-    }
-
-    const { peer, refusal } = takeMessage(record, message.byteLength, Date.now());
-    socket.serializeAttachment(peer);
-
-    if (refusal) {
-      this.leave(socket, refusal.code, refusal.reason);
-      return;
-    }
-
-    this.peers().find((other) => other.socket !== socket)?.socket.send(message);
-  }
-
-  /**
-   * Ends the room for the other peer once one leaves.
-   *
-   * @param {WebSocket} socket The peer's socket.
-   */
-  async webSocketClose(socket) {
-    this.leave(socket);
-  }
-
-  /**
-   * Ends the room for the other peer once one's connection breaks.
-   *
-   * @param {WebSocket} socket The peer's socket.
-   */
-  async webSocketError(socket) {
-    this.leave(socket);
-  }
-
-  /**
-   * Closes the peers whose time is up, and looks again at the next deadline.
-   */
-  async alarm() {
-    const peers = this.peers();
-    const closed = overdue(peers.map((peer) => peer.record), Date.now());
-
-    for (const { index, code, reason } of closed) {
-      closeSocket(peers[index].socket, code, reason);
-    }
-
-    await this.schedule(this.peers());
-  }
-
-  /**
-   * Closes a leaving peer's socket and every other peer's, which ends the room, once.
-   *
-   * @param {WebSocket} socket The leaving peer's socket.
-   * @param {number} [code] The leaving peer's close code.
-   * @param {string} [reason] The leaving peer's close reason.
-   */
-  leave(socket, code = CLOSE.normal, reason = "closed") {
-    // A peer the relay closed already ended the room then, and a newer peer may sit in it since.
-    if (socket.deserializeAttachment()?.left) {
-      return;
-    }
-
-    const others = this.peers().filter((other) => other.socket !== socket);
-    closeSocket(socket, code, reason);
-
-    for (const other of others) {
-      closeSocket(other.socket, CLOSE.peerLeft, "the other side left");
-    }
-  }
-
-  /**
-   * Lists the peers in the room, with their records, leaving out those the relay closed.
-   *
-   * @returns {{socket: WebSocket, record: object}[]} The peers.
-   */
-  peers() {
-    return this.ctx.getWebSockets()
-      .map((socket) => ({ socket, record: socket.deserializeAttachment() }))
-      .filter((peer) => peer.record && !peer.record.left);
-  }
-
-  /**
-   * Sets the alarm to the room's next deadline, or clears it for an empty room.
-   *
-   * @param {{record: object}[]} peers The peers that stay.
-   */
-  async schedule(peers) {
-    const at = nextDeadline(peers.map((peer) => peer.record));
-
-    if (at === null) {
-      await this.ctx.storage.deleteAlarm();
-    } else {
-      await this.ctx.storage.setAlarm(at);
-    }
-  }
-}
-
-/**
  * One world room: up to 32 games in the same world, each on a seat of its own, whose binary
  * messages it passes on to one or all of the others with the sender's seat in front.
  *
- * Like a room, it hibernates and keeps each game's record on its socket. It asks the directory
- * before seating a game, and tells it who is in the room after every change.
+ * It uses Cloudflare's WebSocket hibernation, which may drop the object's memory, so each game's
+ * record rides on its socket. It asks the directory before seating a game, and tells it who is in
+ * the room after every change.
  */
 export class World extends DurableObject {
   /**
@@ -1091,7 +903,7 @@ export class World extends DurableObject {
 
     if (url.pathname === "/internal/mod-settings") {
       const { by, settings } = await request.json();
-      this.tell(modSettingsText(typeof by === "string" ? by : SETTINGS_BY.creator, typeof settings === "string" ? settings : ""), (record) => record.settings === true);
+      this.tell(modSettingsText(typeof by === "string" ? by : SETTINGS_BY.creator, typeof settings === "string" ? settings : ""));
       return json(200, {});
     }
 
@@ -1119,15 +931,10 @@ export class World extends DurableObject {
 
     const route = parseRoute(url, request.headers.get(PLAYER_HEADER), request.headers.get(AUTH_HEADER));
     const address = request.headers.get(ADDRESS_HEADER);
-    const features = parseFeatures(request.headers.get(FEATURES_HEADER));
-    const answer = await internal(directoryOf(this.env), "admit", { id: route.roomId, player: route.player, auth: route.auth, address, features });
+    const answer = await internal(directoryOf(this.env), "admit", { id: route.roomId, player: route.player, auth: route.auth, address });
 
     if (answer.status !== 200) {
       return new Response(answer.body.error, { status: answer.status, headers: answer.body.code ? { [REFUSAL_HEADER]: answer.body.code } : {} });
-    }
-
-    if (answer.type === WORLD_TYPE.raid && keylessGame(features)) {
-      return new Response(UPDATE_NEEDED, { status: WORLD_ROOM_UPDATE_STATUS, headers: { [REFUSAL_HEADER]: WORLD_ROOM_UPDATE_CODE } });
     }
 
     if (!this.world) {
@@ -1152,13 +959,9 @@ export class World extends DurableObject {
 
     const [client, server] = Object.values(new WebSocketPair());
     this.ctx.acceptWebSocket(server);
-    const takesSettings = features.includes(SETTINGS_FEATURE);
-    server.serializeAttachment({ ...newWorldPeer(seat, { player: answer.player, name: route.name }, Date.now()), settings: takesSettings });
+    server.serializeAttachment(newWorldPeer(seat, { player: answer.player, name: route.name }, Date.now()));
     server.send(seatText(seat, records.map((record) => record.seat)));
-
-    if (takesSettings) {
-      server.send(modSettingsText(SETTINGS_BY.entering, answer.settings ?? ""));
-    }
+    server.send(modSettingsText(SETTINGS_BY.entering, answer.settings ?? ""));
 
     for (const other of present) {
       other.socket.send(seatChangeText(IN, seat));
@@ -1332,17 +1135,13 @@ export class World extends DurableObject {
       return json(noRaidWorld().status, noRaidWorld().body);
     }
 
-    if (keylessGame(parseFeatures(request.headers.get(FEATURES_HEADER)))) {
-      return json(keylessGameRefusal().status, keylessGameRefusal().body);
-    }
-
     const known = new URL(request.url).searchParams.get("known");
-    const answer = await handleStoryRequest(this.storyOf(), request.method, route.rest, () => readText(request, STORY_LIMITS.maxBodyLength), access.player,
+    const answer = await handleStoryRequest(this.storyOf(), request.method, route.rest, () => readText(request, STORY_LIMITS.maxSmallBodyLength), access.player,
       known !== null && /^\d+$/.test(known) ? Number(known) : null);
     await this.tidyDeleted();
 
-    for (const push of [answer.push, answer.restore].filter(Boolean)) {
-      this.tell(storyPushText(push));
+    if (answer.push) {
+      this.tell(storyPushText(answer.push));
     }
 
     return json(answer.status, answer.body);

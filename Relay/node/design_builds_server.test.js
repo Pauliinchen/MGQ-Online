@@ -2,7 +2,8 @@
 //  design_builds_server.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Named the version of a current game with the game
+//      Paulinchen  2026-11-05: Sent the auth key in its header
+//                            - Named the version of a current game with the game
 //      Paulinchen  2026-10-31: Named keys with the game in the world room, as a Raid World asks
 //      Paulinchen  2026-10-22: Created
 //
@@ -20,7 +21,7 @@ import { memoryDesignStore } from "../core/design_store_memory.js";
 import { DesignBook } from "../core/designs.js";
 import { Directory, sha256Hex } from "../core/directory.js";
 import { VERSION_HEADER } from "../core/gate.js";
-import { FEATURES_HEADER, PLAYER_HEADER } from "../core/relay.js";
+import { AUTH_HEADER, FEATURES_HEADER, PLAYER_HEADER } from "../core/relay.js";
 import { DESIGNERS, NOW } from "../core/test_designs.js";
 import { createRelay, memoryStore, openStores } from "./server.js";
 import { removeStubCompilers, stubCompiler } from "./test_design_compiler.js";
@@ -144,7 +145,7 @@ async function raidWorld(relay, address, room) {
   await relay.bossesOf(room).report("watcher", "Lilith", { battle: "b1", seq: 1, delta: 0.5, max: 900 });
 
   const heard = [];
-  const socket = new WebSocket(`ws://${address}/v1/world/${room}?name=Watcher&auth=${AUTH}`, { headers: { [PLAYER_HEADER]: "57".repeat(16), [FEATURES_HEADER]: "raid,keys", [VERSION_HEADER]: "0.7.0" } });
+  const socket = new WebSocket(`ws://${address}/v1/world/${room}?name=Watcher`, { headers: { [PLAYER_HEADER]: "57".repeat(16), [AUTH_HEADER]: AUTH, [FEATURES_HEADER]: "raid,keys", [VERSION_HEADER]: "0.7.0" } });
   socket.on("message", (data) => heard.push(data.toString()));
   await new Promise((resolve, reject) => {
     socket.once("open", resolve);

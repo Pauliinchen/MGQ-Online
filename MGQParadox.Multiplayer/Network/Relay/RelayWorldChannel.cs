@@ -102,7 +102,7 @@ internal sealed class RelayWorldChannel : IDisposable
     /// <param name="timeout">How long connecting may take.</param>
     /// <param name="stop">Gives up connecting at once, as when the world was left meanwhile.</param>
     /// <param name="refusal">The HTTP status the relay refused the game with, such as 409 when every seat is taken.</param>
-    /// <param name="refusalCode">The code the relay named why with, such as "members", "pending" or "raid_unsupported", or for 426 the text to show; <see langword="null"/> for none.</param>
+    /// <param name="refusalCode">The code the relay named why with, such as "members" or "pending", or for 426 the text to show; <see langword="null"/> for none.</param>
     /// <returns>The channel, or <see langword="null"/> when the relay refused the game.</returns>
     /// <exception cref="WebSocketException">The relay could not be reached.</exception>
     /// <exception cref="OperationCanceledException">Connecting took too long, or was stopped.</exception>

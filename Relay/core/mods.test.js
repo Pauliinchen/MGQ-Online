@@ -2,6 +2,7 @@
 //  mods.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Took the uploading player's key from the header only
 //      Paulinchen  2026-10-30: Covered the tags and the requirements of the catalog's mods
 //                            - Left the mod keys to the golden keys
 //      Paulinchen  2026-10-23: Checked modKey against the golden keys the game's ModKey passes too
@@ -406,7 +407,8 @@ test("handleModRequest routes the catalog's requests", async () => {
   assert.equal((await handleModRequest(catalog, "POST", url("/v1/mods/check"), body({ player: OTHER }), none)).status, 403);
 
   const pack = await packed([["Pack/a.luka", "A"]]);
-  assert.equal((await handleModRequest(catalog, "POST", url(`/v1/mods/pack/upload?player=${ADMIN}&name=Pack&version=2`), body({}), async () => pack.upload)).status, 200);
+  assert.notEqual((await handleModRequest(catalog, "POST", url(`/v1/mods/pack/upload?player=${ADMIN}&name=Pack&version=2`), body({}), async () => pack.upload)).status, 200, "a key in the address counts for nothing");
+  assert.equal((await handleModRequest(catalog, "POST", url("/v1/mods/pack/upload?name=Pack&version=2"), body({}), async () => pack.upload, ADMIN)).status, 200);
   assert.deepEqual((await handleModRequest(catalog, "GET", url("/v1/mods/pack/file"), body({}), none)).bytes, pack.zip);
   assert.equal((await handleModRequest(catalog, "POST", url("/v1/mods/pack/delete"), body({ player: ADMIN }), none)).status, 200);
   assert.equal((await handleModRequest(catalog, "PUT", url("/v1/mods"), body({}), none)).status, 404);

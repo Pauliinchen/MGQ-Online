@@ -2,7 +2,8 @@
 //  story_catchup.js
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Dropped the counts of prizes, whose prizes the story replay hands over
+//      Paulinchen  2026-11-05: Dropped the chest flags of a world chest, which only older games read
+//                            - Dropped the counts of prizes, whose prizes the story replay hands over
 //      Paulinchen  2026-10-31: Dropped the maps where warping is free, since a world never bans warping
 //      Paulinchen  2026-10-28: Took the stretches of the story in free order as a rule
 //                            - Kept the switches of prizes handed out once as a table
@@ -226,15 +227,14 @@ export const CATCHUP_TABLES = Object.freeze({
     ordered: true,
     fields: Object.freeze({ item: ID, amount: amount(999), ...PLACE, ran: FLAG }),
   }),
-  // CHESTS: the chests that hold key items, which open once for the whole world, with the chest
-  // flags they turn on for each player; each by the self switch that shuts it, or the switch of a
-  // chest the game shuts by a switch. Only released builds read the flags: the newer play the chest
-  // in the player's game, which turns them on.
+  // CHESTS: the chests that hold key items, which open once for the whole world; each by the self
+  // switch that shuts it, or the switch of a chest the game shuts by a switch. The player's game
+  // plays the chest, which turns its chest flags on.
   chests: Object.freeze({
     store: "story_catchup_chests",
     ordered: true,
     key: (row) => row.key,
-    fields: Object.freeze({ key: CHEST_KEY, items: listOf(ID, 1, MAX_IDS), part: nullable(PART_FIELD), step: nullable(STEP), flags: listOf(ID, 0, MAX_IDS) }),
+    fields: Object.freeze({ key: CHEST_KEY, items: listOf(ID, 1, MAX_IDS), part: nullable(PART_FIELD), step: nullable(STEP) }),
   }),
   // REWARDS: every skill Luka learns and item the story and its side quests give, key items
   // aside (Ruby's :skill, :i, :w and :a).

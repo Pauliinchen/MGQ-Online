@@ -2,7 +2,8 @@
 #  generated_tables.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Left the Medal King's switches and the items an event takes away empty for the tests to fill, and dropped the prize counts
+#      Paulinchen  2026-11-05: Read the chests without the flags only older games needed
+#                            - Left the Medal King's switches and the items an event takes away empty for the tests to fill, and dropped the prize counts
 #      Paulinchen  2026-10-31: Dropped the maps where warping is free
 #      Paulinchen  2026-10-28: Created
 #
@@ -30,8 +31,8 @@ module GeneratedCatchupTables
   # A key item the story gives or takes.
   KeyItem = Struct.new(:item, :amount, :site, :part, :step, :side, :marks, :ran)
 
-  # A chest that holds key items: its self switch, items, place and the chest flags it turns on.
-  Chest = Struct.new(:key, :items, :part, :step, :flags)
+  # A chest that holds key items: its self switch, items and place.
+  Chest = Struct.new(:key, :items, :part, :step)
 
   # A skill or item the story and its side quests give.
   Reward = Struct.new(:kind, :id, :amount, :site, :part, :step, :side, :marks, :ran)
@@ -93,7 +94,7 @@ module GeneratedCatchupTables
   KEY_ITEMS = rows("key_items").map { |row| KeyItem.new(row["item"], row["amount"], *place(row), row["ran"]) }
   CHESTS = rows("chests").map do |row|
     map, event, letter = row["key"][2..-1].split(".")
-    Chest.new([map.to_i, event.to_i, letter], row["items"], row["part"], row["step"], row["flags"])
+    Chest.new([map.to_i, event.to_i, letter], row["items"], row["part"], row["step"])
   end
   REWARDS = rows("rewards").map { |row| Reward.new(REWARD_KINDS.fetch(row["kind"]), row["id"], row["amount"], *place(row), row["ran"]) }
   LESSONS = rows("lessons").map { |row| Lesson.new(row["actor"], row["skill"], *place(row), row["ran"]) }

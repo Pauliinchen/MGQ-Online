@@ -2,6 +2,7 @@
 //  admin.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Took an admin's key on the routes that read from the X-MGQ-Player header only
 //      Paulinchen  2026-10-23: Answered the story mapping's admin routes
 //      Paulinchen  2026-10-22: Handed out and set the release games should run and the lowest one the relay serves
 //      Paulinchen  2026-10-21: Said an admin's line in every world with players online
@@ -67,11 +68,11 @@ export async function handleAdminRequest(relay, method, url, rest, readBody, hea
   }
 
   if (rest.length === 1 && rest[0] === "stats" && method === "GET") {
-    return (await isAdmin(header || url.searchParams.get("player"))) ? { status: 200, body: await relay.stats() } : refused;
+    return (await isAdmin(header)) ? { status: 200, body: await relay.stats() } : refused;
   }
 
   if (rest.length === 1 && rest[0] === "release" && method === "GET") {
-    return (await isAdmin(header || url.searchParams.get("player"))) ? { status: 200, body: relay.release.adminView() } : refused;
+    return (await isAdmin(header)) ? { status: 200, body: relay.release.adminView() } : refused;
   }
 
   if (rest.length === 1 && rest[0] === "release" && method === "POST") {

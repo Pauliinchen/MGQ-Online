@@ -2,6 +2,7 @@
 //  sqlite_store.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Kept the story the store test starts from as older games wrote it, as games write no story over HTTP
 //      Paulinchen  2026-10-31: Covered the story tracks' run entries kept over a restart and dropped with their track
 //                            - Covered the place a world's log starts at kept over a restart
 //                            - Wrote the story kept over a restart key by key
@@ -172,22 +173,21 @@ test("openStores opens the database the environment names, and memory without on
 
 test("a Raid World's story and its checkpoints outlast a restart, and each world keeps its own until removed", async () => {
   const first = openSqliteStores(path);
-  const story = new WorldStory(first.stories(WORLD), { clock: () => 5000 });
   const counters = (p) => ({ p, r1141: 0, r1142: 0, r1143: 0, clear: [] });
-
-  assert.equal((await story.write("a1".repeat(16), { base: 0, counters: counters(18), set: { v: "1001:n18" } })).status, 200);
-  assert.equal((await story.write("a1".repeat(16), { base: 1, counters: counters(19), set: { v: "1001:n19" } })).status, 200);
+  const lists = (v) => ({ s: "", sf: "", v, ss: "", ssf: "", a: "", f: "" });
+  const kept = { ...new WorldStory(first.stories(WORLD)).first(), rev: 2, wrev: 2, counters: counters(19), part: "2", checkpoints: ["1"], lists: lists("1001:n19"), log: [], logBase: 2 };
+  await first.stories(WORLD).put(kept, { rev: 1, wrev: 1, counters: counters(18), part: "1", lists: lists("1001:n18") });
   first.close();
 
   const second = openSqliteStores(path);
   const reopened = new WorldStory(second.stories(WORLD));
   assert.deepEqual(await reopened.get().then((answer) => [answer.body.rev, answer.body.p, answer.body.keys.v, answer.body.checkpoints]), [2, 19, "1001:n19", ["1"]]);
-  assert.equal((await reopened.checkpoint("1")).body.keys.v, "1001:n18");
+  assert.equal((await second.stories(WORLD).getCheckpoint("1")).lists.v, "1001:n18");
   assert.equal((await new WorldStory(second.stories("f".repeat(32))).get()).body.rev, 0, "another world has a story of its own");
 
   await reopened.remove();
   assert.equal((await reopened.get()).body.rev, 0);
-  assert.equal((await reopened.checkpoint("1")).status, 404);
+  assert.equal(await second.stories(WORLD).getCheckpoint("1"), undefined);
   second.close();
 });
 

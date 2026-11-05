@@ -2,7 +2,8 @@
 //  WorldDirectoryTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Read the list as the directory's topic hands it to the scripts, in place of its text
+//      Paulinchen  2026-11-05: Read a world before checking its mods in the list
+//                            - Read the list as the directory's topic hands it to the scripts, in place of its text
 //      Paulinchen  2026-10-31: Expected the plainer texts the player reads
 //                            - Expected the mod settings among the features the game names
 //      Paulinchen  2026-10-30: Cut the squad settings read from text and from JSON to one of each kind
@@ -433,7 +434,7 @@ public sealed class WorldDirectoryTests
         var guest = NewDirectory(relay, PlayerKey(2), "Guest");
 
         var made = Act(creator, directory => directory.Create("Modded Run", "secret", 4, false, false, [], new WorldAbout("A slow\trun.", "Some Mod 1.2", "1:0a1b2c3d.ffffffff", true)));
-        var listed = Assert.Single(List(guest), world => world.Id == made["world"] && world.Start == "none" && !world.Hidden && !world.Choose && !world.Open && !world.Featured && world.About.Strict && world.About.Data == "1:0a1b2c3d.ffffffff" && world.About.Mods == "Some Mod 1.2" && world.About.ModHashes == "" && world.About.Settings == "" && world.Type == "classic" && world.Share == "off" && world.Difficulty == null && !world.OtherModsOff && world.Squad == "" && !world.RaidBosses);
+        var listed = Assert.Single(ReadList(guest, made["world"]), world => world.Id == made["world"] && world.Start == "none" && !world.Hidden && !world.Choose && !world.Open && !world.Featured && world.About.Strict && world.About.Data == "1:0a1b2c3d.ffffffff" && world.About.Mods == "Some Mod 1.2" && world.About.ModHashes == "" && world.About.Settings == "" && world.Type == "classic" && world.Share == "off" && world.Difficulty == null && !world.OtherModsOff && world.Squad == "" && !world.RaidBosses);
         Assert.Equal("A slow run.", ScreenTopics.ListedValue(listed)["description"].AsText());
     }
 
@@ -451,7 +452,7 @@ public sealed class WorldDirectoryTests
 
         Assert.Equal("failed", Act(admin, directory => directory.SetData(made["world"], "1:ffffffff"))["state"]);
         Assert.Equal("done", Act(creator, directory => directory.SetData(made["world"], "1:ffffffff"))["state"]);
-        Assert.Contains(List(admin), world => world.Id == made["world"] && world.About.Strict && world.About.Data == "1:ffffffff" && world.About.Mods == "Some Mod" && world.About.Description == "" && world.About.ModHashes == "" && world.About.Settings == "" && world.Type == "classic" && world.Share == "off" && world.Difficulty == null && !world.OtherModsOff && world.Squad == "" && !world.RaidBosses);
+        Assert.Contains(ReadList(admin, made["world"]), world => world.Id == made["world"] && world.About.Strict && world.About.Data == "1:ffffffff" && world.About.Mods == "Some Mod" && world.About.Description == "" && world.About.ModHashes == "" && world.About.Settings == "" && world.Type == "classic" && world.Share == "off" && world.Difficulty == null && !world.OtherModsOff && world.Squad == "" && !world.RaidBosses);
     }
 
     /// <summary>
@@ -493,10 +494,10 @@ public sealed class WorldDirectoryTests
 
         Assert.Contains("creator", Act(guest, directory => directory.Edit(made["world"], 8, "New text.", "New Mod"))["error"]);
         Assert.Equal("done", Act(creator, directory => directory.Edit(made["world"], 8, "New text.", "New Mod"))["state"]);
-        Assert.Contains(List(guest), world => world.Id == made["world"] && world.Seats == 8 && world.About.Strict && world.About.Data == "1:0a1b2c3d" && world.About.Mods == "New Mod" && world.About.Description == "New text." && world.About.ModHashes == "" && world.About.Settings == "" && world.Type == "classic" && world.Share == "off" && world.Difficulty == null && !world.OtherModsOff && world.Squad == "" && !world.RaidBosses);
+        Assert.Contains(ReadList(guest, made["world"]), world => world.Id == made["world"] && world.Seats == 8 && world.About.Strict && world.About.Data == "1:0a1b2c3d" && world.About.Mods == "New Mod" && world.About.Description == "New text." && world.About.ModHashes == "" && world.About.Settings == "" && world.Type == "classic" && world.Share == "off" && world.Difficulty == null && !world.OtherModsOff && world.Squad == "" && !world.RaidBosses);
 
         Assert.Equal("done", Act(admin, directory => directory.Edit(made["world"], 6, string.Empty, string.Empty))["state"]);
-        Assert.Contains(List(guest), world => world.Id == made["world"] && world.Seats == 6 && world.About.Strict && world.About.Data == "1:0a1b2c3d" && world.About.Mods == "" && world.About.Description == "" && world.About.ModHashes == "" && world.About.Settings == "" && world.Type == "classic" && world.Share == "off" && world.Difficulty == null && !world.OtherModsOff && world.Squad == "" && !world.RaidBosses);
+        Assert.Contains(ReadList(guest, made["world"]), world => world.Id == made["world"] && world.Seats == 6 && world.About.Strict && world.About.Data == "1:0a1b2c3d" && world.About.Mods == "" && world.About.Description == "" && world.About.ModHashes == "" && world.About.Settings == "" && world.Type == "classic" && world.Share == "off" && world.Difficulty == null && !world.OtherModsOff && world.Squad == "" && !world.RaidBosses);
     }
 
     /// <summary>
@@ -732,6 +733,18 @@ public sealed class WorldDirectoryTests
     /// <param name="directory">The directory.</param>
     /// <returns>The list's worlds.</returns>
     internal static IReadOnlyList<ListedWorld> List(WorldDirectory directory) => ListState(directory).Worlds;
+
+    /// <summary>
+    /// Reads a world, whose mods the list then carries, and fetches the list.
+    /// </summary>
+    /// <param name="directory">The directory.</param>
+    /// <param name="id">The world.</param>
+    /// <returns>The list's worlds.</returns>
+    internal static IReadOnlyList<ListedWorld> ReadList(WorldDirectory directory, string id)
+    {
+        Assert.Equal("done", Act(directory, directory => directory.Read(id))["state"]);
+        return List(directory);
+    }
 
     /// <summary>
     /// Fetches the list and waits for it.

@@ -2,7 +2,8 @@
 #  world_catchup_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Handed and expected the story's keys as [kind, key] with values, and the sites a replay plays as plain values
+#      Paulinchen  2026-11-05: Built the story chest without the flags only older games needed
+#                            - Handed and expected the story's keys as [kind, key] with values, and the sites a replay plays as plain values
 #                            - Expected the shared companions added through the DLL's topic, their ids as numbers
 #                            - Checked that a prize's row gives only as history before the world's log, but the Medal King's free gift
 #                            - Checked that the orbs' event plays only as history before the world's log
@@ -239,7 +240,7 @@ tables(:KEY_ITEMS => [key_item.new(502, 1, "map:6:33:1", "1", 5, nil, [[:v, 1001
                       key_item.new(503, 1, "map:7:24:2", "2", 22, nil, [[:v, 1001, 22]]),
                       key_item.new(503, -1, "map:7:25:1", "2", 24, nil, [[:v, 1001, 24]]),
                       key_item.new(504, 1, "map:8:1:1", "2", 30, nil, [[:v, 1001, 30]])],
-       :CHESTS => [chest.new([30, 4, "A"], [501], "2", 22, [7102])])
+       :CHESTS => [chest.new([30, 4, "A"], [501], "2", 22)])
 new_game({ 1001 => 5 }, [], 5)
 check("a story chest is the world's: the mapping keeps its self switch", MGQ_MpStoryKeys.shared?(2, [30, 4, "A"]), true)
 frames(1)

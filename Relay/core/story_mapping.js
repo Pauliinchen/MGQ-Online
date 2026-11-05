@@ -2,7 +2,9 @@
 //  story_mapping.js
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Named a key outside the story's ids in the example of a refused key
+//      Paulinchen  2026-11-05: Left the fields a table names no more out of the rows kept before, as games and admins read them
+//                            - Took an admin's key on the mapping's reads from the X-MGQ-Player header only
+//                            - Named a key outside the story's ids in the example of a refused key
 //      Paulinchen  2026-11-01: Let shared self switches be the whole world's, players behind included
 //      Paulinchen  2026-10-31: Let a personal key be one of the game's working values
 //      Paulinchen  2026-10-28: Filled each table that holds no rows from seed rows, once
@@ -99,7 +101,7 @@ const MAX_MAP = 9999;
 const MAX_EVENT = 99_999;
 
 /**
- * The highest story step a row names, as the story's counters take (story.js `maxCounter`).
+ * The highest story step a row names.
  */
 const MAX_STEP = 1_000_000;
 
@@ -574,14 +576,17 @@ function compareIds(a, b) {
 }
 
 /**
- * Sorts a table's entries as games read them: by `order` in an ordered table, else by id.
+ * Sorts a table's entries as games read them: by `order` in an ordered table, else by id; each
+ * row without the fields its table names no more, which rows kept before still hold.
  *
  * @param {TableSpec} spec The table.
  * @param {object[]} entries The entries.
  * @returns {object[]} The entries, sorted.
  */
 function sorted(spec, entries) {
-  return [...entries].sort((a, b) => (spec.ordered ? a.row.order - b.row.order : 0) || compareIds(a.id, b.id));
+  const named = (name) => Object.hasOwn(spec.fields, name) || (spec.ordered && name === "order");
+  return [...entries].sort((a, b) => (spec.ordered ? a.row.order - b.row.order : 0) || compareIds(a.id, b.id))
+    .map((entry) => ({ ...entry, row: Object.fromEntries(Object.entries(entry.row).filter(([name]) => named(name))) }));
 }
 
 /**
@@ -1191,7 +1196,7 @@ export async function handleMappingAdminRequest(mapping, method, url, rest, read
   }
 
   if (method === "GET") {
-    if (!(await isAdmin(header || url.searchParams.get("player")))) {
+    if (!(await isAdmin(header))) {
       return refused;
     }
 

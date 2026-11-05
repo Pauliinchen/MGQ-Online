@@ -2,6 +2,8 @@
 //  bosses.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Kept the story the admin test starts from with its route lock, as games lock no route over HTTP
+//                            - Took the admin's key on the story view from the header only
 //      Paulinchen  2026-10-31: Wrote the Raid World's story key by key
 //      Paulinchen  2026-10-21: Covered an admin defeating every pool of a troop at once
 //      Paulinchen  2026-10-10: Covered boss pools that keep the share of a raid max HP left
@@ -334,7 +336,7 @@ test("the routes are read from the address, and the router answers each", async 
  * Makes a Raid World's story and boss pools for the admin routes, and a directory answer for keys.
  *
  * @param {string} [type] The world's type.
- * @returns {{world: {story: WorldStory, bosses: WorldBosses}, adminOf: (key: unknown) => Promise<object>, asked: unknown[], time: {now: number}}} The world, the directory's answer, the keys it was asked about, and the pools' clock.
+ * @returns {{world: {story: WorldStory, bosses: WorldBosses}, kept: {story: object | undefined}, adminOf: (key: unknown) => Promise<object>, asked: unknown[], time: {now: number}}} The world, what its story's store keeps, the directory's answer, the keys it was asked about, and the pools' clock.
  */
 function makeAdminWorld(type = WORLD_TYPE.raid) {
   const kept = { story: undefined };
@@ -351,29 +353,28 @@ function makeAdminWorld(type = WORLD_TYPE.raid) {
   };
   const { bosses, time } = makeBosses();
 
-  return { world: { story, bosses }, adminOf, asked, time };
+  return { world: { story, bosses }, kept, adminOf, asked, time };
 }
 
 test("admins read a Raid World's counters and pools, fill a pool up and take the route lock back; nobody else may", async () => {
-  const { world, adminOf, asked, time } = makeAdminWorld();
+  const { world, kept, adminOf, asked, time } = makeAdminWorld();
   const url = (path) => new URL(`https://relay/v1/worlds/${WORLD}/raid${path}`);
   const body = (value) => async () => JSON.stringify(value);
   const none = async () => "";
 
-  await world.story.write(ALICE, { base: 0, counters: { p: 40, r1141: 0, r1142: 0, r1143: 0, clear: [] }, set: { v: "1001:n40" } });
-  await world.story.lockRoute("mr");
+  kept.story = { ...world.story.first(), rev: 2, wrev: 1, counters: { p: 40, r1141: 0, r1142: 0, r1143: 0, clear: [] }, part: "3", route: "mr" };
   await world.bosses.report(ALICE, "Morrigan", { battle: "b1", seq: 1, delta: 0.25, max: MAX }, "Luka");
   await world.bosses.report(BOB, "Lilith", { battle: "b2", seq: 1, delta: 0, max: 900, killed: true }, "Alice");
 
-  const read = await handleRaidAdminRequest(world, "GET", url("?player=admin"), [], none, null, adminOf);
+  const read = await handleRaidAdminRequest(world, "GET", url(""), [], none, "admin", adminOf);
   assert.equal(read.status, 200);
   assert.deepEqual([read.body.story.p, read.body.story.route, read.body.story.keys, read.body.regenPerMinute], [40, "mr", undefined, 0.03]);
   assert.deepEqual(read.body.bosses, [
     { key: "Lilith", left: 0, max: 900, defeated: true, at: time.now, by: "Alice", hp: 0, reports: 1, byPlayer: BOB },
     { key: "Morrigan", left: 0.75, max: MAX, defeated: false, at: time.now, by: null, hp: 3_750_000, reports: 1, byPlayer: null },
   ]);
-  assert.equal((await handleRaidAdminRequest(world, "GET", url("?player=other"), [], none, null, adminOf)).status, 403);
-  assert.equal((await handleRaidAdminRequest(world, "GET", url("?player=other"), [], none, "admin", adminOf)).status, 200, "the header wins over the address");
+  assert.equal((await handleRaidAdminRequest(world, "GET", url(""), [], none, "other", adminOf)).status, 403);
+  assert.equal((await handleRaidAdminRequest(world, "GET", url("?player=admin"), [], none, null, adminOf)).status, 403, "a key in the address counts for nothing");
 
   const killed = await handleRaidAdminRequest(world, "POST", url("/bosses/kill"), ["bosses", "kill"], body({ keys: ["Morrigan"] }), "admin", adminOf);
   assert.deepEqual([killed.status, killed.bosses], [200, [{ key: "Morrigan", left: 0, max: MAX, defeated: true }]]);
@@ -383,10 +384,9 @@ test("admins read a Raid World's counters and pools, fill a pool up and take the
   assert.deepEqual([reset.status, reset.body.left, reset.body.reset, reset.boss], [200, 1, true, { key: "Lilith", left: 1, max: 900, defeated: false }]);
 
   const cleared = await handleRaidAdminRequest(world, "POST", url("/route/clear"), ["route", "clear"], body({ player: "admin" }), null, adminOf);
-  assert.deepEqual([cleared.status, cleared.body.route, cleared.body.cleared, cleared.push.rev], [200, "none", true, 3]);
+  assert.deepEqual([cleared.status, cleared.body.route, cleared.body.cleared, cleared.push], [200, "none", true, 3]);
   const again = await handleRaidAdminRequest(world, "POST", url("/route/clear"), ["route", "clear"], body({}), "admin", adminOf);
   assert.deepEqual([again.body.cleared, again.push], [false, undefined]);
-  assert.equal((await world.story.lockRoute("ad")).status, 200, "another route may be chosen once the lock is taken back");
 
   assert.equal((await handleRaidAdminRequest(world, "POST", url("/route/clear"), ["route", "clear"], body({ player: "other" }), null, adminOf)).status, 403);
   assert.equal((await handleRaidAdminRequest(world, "POST", url("/route/clear"), ["route", "clear"], body(5), null, adminOf)).status, 400);

@@ -164,7 +164,7 @@ Each fixed row carries a `note` with its reason.
 
 ### Part and step
 
-The game reads only `key`, `items` and `flags` of these rows (`CatchupLook.WorldItems`,
+The game reads only `key` and `items` of these rows (`CatchupLook.WorldItems`,
 `CatchupEngine`). `part` and `step` only give the rows their order. They were checked like this:
 
 - Every Final Chapter row's part was compared with the route variables its map's events read

@@ -2,7 +2,8 @@
 //  raid_admin.js
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Named the routes' counters by the story's ids
+//      Paulinchen  2026-11-05: Took an admin's key on the story view from the X-MGQ-Player header only
+//                            - Named the routes' counters by the story's ids
 //      Paulinchen  2026-11-01: Refused pins of keys the story mapping does not share on a world whose story runs on tracks
 //      Paulinchen  2026-10-31: Left the sealed story out, which the relay keeps no more
 //                            - Showed, set and pinned the world's track of a world whose story runs on tracks, with its part and routes
@@ -88,7 +89,7 @@ export async function handleRaidAdminRequest(world, method, url, rest, readBody,
   const trackState = async (view) => trackStateOf(view, await keyedState());
 
   if (rest.length === 0 && method === "GET") {
-    return asAdmin(header || url.searchParams.get("player"), async () => {
+    return asAdmin(header, async () => {
       // A late story's keys run to a megabyte, which only a view of the keys needs.
       const withKeys = url.searchParams.get("keys") === "1";
       const view = world.tracks ? await world.tracks.view(withKeys) : null;

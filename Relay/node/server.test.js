@@ -2,7 +2,12 @@
 //  server.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Sent the version of a current game, and served released games only on a relay that names a lower lowest version
+//      Paulinchen  2026-11-05: Read the story mapping as a current game and tested a 0.6.9.2 game sent to update there
+//                            - Tested the story read and the shared companions over HTTP alone, every Raid World game on tracks and every game hearing the world's mod settings
+//                            - Sent the player's key and auth key in the headers only, admins' too
+//                            - Tested the list without mods for games and a long mods rule reaching every game, as released games need no limits
+//                            - Dropped the tests of the PvP rooms and tested their 426 instead
+//                            - Sent the version of a current game, and served released games only on a relay that names a lower lowest version
 //      Paulinchen  2026-10-31: Wrote every Raid World story key by key and tested that games that keep no keys are turned away
 //                            - Tested an admin's keys reaching the games of a Raid World that plays on tracks
 //                            - Tested the world's mod settings told to the games that take them from the relay
@@ -67,7 +72,7 @@ import { BOSS_LIMITS } from "../core/bosses.js";
 import { DIRECTORY_LIMITS, Directory, playerIdOf, sha256Hex } from "../core/directory.js";
 import { UPDATE_NEEDED, VERSION_HEADER } from "../core/gate.js";
 import { ModCatalog, zipHashes } from "../core/mods.js";
-import { AUTH_HEADER, CHAT_LIMITS, CHAT_SLOW, CLOSE, EVERYONE, FEATURES_HEADER, LIMITS, PAIRED, PING, PLAYER_HEADER, PONG, REFUSAL_HEADER, REPLACED } from "../core/relay.js";
+import { AUTH_HEADER, CHAT_LIMITS, CHAT_SLOW, CLOSE, EVERYONE, FEATURES_HEADER, LIMITS, PING, PLAYER_HEADER, PONG, REFUSAL_HEADER, REPLACED } from "../core/relay.js";
 import { RELEASE_REPO, ReleaseWatch } from "../core/releases.js";
 import { REPORT_LIMITS, ReportDesk } from "../core/reports.js";
 import { STORY_LIMITS } from "../core/story.js";
@@ -123,11 +128,6 @@ const LOG = { info: (line) => logged.info.push(line), error: (line) => logged.er
 const GAME = Object.freeze({ [FEATURES_HEADER]: "raid,keys", [VERSION_HEADER]: "0.7.0" });
 
 /**
- * The header a current game sends on a PvP room, which asks for no features.
- */
-const PVP = Object.freeze({ [VERSION_HEADER]: GAME[VERSION_HEADER] });
-
-/**
  * The header a released game that names no version sends, which counts as 0.6.4.
  */
 const UNNAMED = Object.freeze({ [FEATURES_HEADER]: GAME[FEATURES_HEADER] });
@@ -165,11 +165,6 @@ let latestTag = "v0.6.4";
 let relay;
 
 /**
- * The address of the relay's rooms.
- */
-let base;
-
-/**
  * The address of the relay's world rooms.
  */
 let worldBase;
@@ -185,7 +180,6 @@ before(async () => {
   const releases = new ReleaseWatch(memoryReleaseStore(), { fetch: latestPage });
   relay = createRelay({ limits: TEST_LIMITS, clock: () => now, checkEveryMs: 3_600_000, sweepEveryMs: 3_600_000, directory, log: LOG, releases });
   await new Promise((resolve) => relay.server.listen(0, "127.0.0.1", resolve));
-  base = `ws://127.0.0.1:${relay.server.address().port}/v1/room/`;
   worldBase = `ws://127.0.0.1:${relay.server.address().port}/v1/world/`;
   directoryBase = `http://127.0.0.1:${relay.server.address().port}/v1/worlds`;
 });
@@ -203,25 +197,15 @@ function roomId(number) {
 }
 
 /**
- * Connects a peer and collects what it receives.
- *
- * @param {string} room The room id.
- * @param {string} role "host" or "guest".
- * @returns {Promise<{socket: WebSocket, next: () => Promise<any>, closed: Promise<{code: number}>}>} The peer, its next message and its close.
- */
-async function connect(room, role) {
-  return open(`${base}${room}?role=${role}`, PVP);
-}
-
-/**
  * Makes a world in the directory, with the tests' auth key.
  *
  * @param {string} room The world's id.
  * @param {number} seats Its seats.
+ * @param {string} [directory] The directory's address, the relay under test's unless given.
  * @returns {Promise<number>} The directory's HTTP status.
  */
-async function makeWorld(room, seats) {
-  const response = await gameFetch(directoryBase, {
+async function makeWorld(room, seats, directory = directoryBase) {
+  const response = await gameFetch(directory, {
     method: "POST",
     body: JSON.stringify({
       id: room,
@@ -255,7 +239,7 @@ function playerKey(number) {
  * @returns {Promise<{socket: WebSocket, next: () => Promise<any>, closed: Promise<{code: number}>}>} The game, its next message and its close.
  */
 async function sit(room, player, auth = AUTH) {
-  return open(`${worldBase}${room}?player=${playerKey(player)}&name=Player%20${player}&auth=${auth}`);
+  return open(`${worldBase}${room}?name=Player%20${player}`, { ...GAME, [PLAYER_HEADER]: playerKey(player), [AUTH_HEADER]: auth });
 }
 
 /**
@@ -288,7 +272,8 @@ async function until(condition) {
 }
 
 /**
- * Opens a WebSocket and collects what it receives.
+ * Opens a WebSocket and collects what it receives, but for the world's mod settings every game
+ * hears in a world room, which the test of the settings reads itself.
  *
  * @param {string} address The address.
  * @param {object} [headers] The request's headers, GAME unless given.
@@ -299,8 +284,9 @@ async function open(address, headers = GAME) {
   socket.binaryType = "arraybuffer";
   const inbox = [];
   const waiting = [];
+  const settings = (data) => typeof data === "string" && data.startsWith("mod_settings ");
 
-  socket.addEventListener("message", (event) => (waiting.length > 0 ? waiting.shift()(event.data) : inbox.push(event.data)));
+  socket.addEventListener("message", (event) => settings(event.data) || (waiting.length > 0 ? waiting.shift()(event.data) : inbox.push(event.data)));
   const closed = new Promise((resolve) => socket.addEventListener("close", (event) => resolve({ code: event.code, reason: event.reason })));
 
   await new Promise((resolve, reject) => {
@@ -315,62 +301,13 @@ async function open(address, headers = GAME) {
   };
 }
 
-test("a host and a guest are told they are paired, and their binary messages pass both ways", async () => {
-  const host = await connect(roomId(1), "host");
-  const guest = await connect(roomId(1), "guest");
-
-  assert.equal(await host.next(), PAIRED);
-  assert.equal(await guest.next(), PAIRED);
-
-  guest.socket.send(new Uint8Array([1, 2, 3]));
-  assert.deepEqual([...new Uint8Array(await host.next())], [1, 2, 3]);
-
-  host.socket.send(new Uint8Array([4, 5]));
-  assert.deepEqual([...new Uint8Array(await guest.next())], [4, 5]);
-
-  host.socket.close();
-  guest.socket.close();
-});
-
-test("a second host is turned away before its WebSocket opens", async () => {
-  const host = await connect(roomId(2), "host");
-
-  await assert.rejects(connect(roomId(2), "host"));
-  host.socket.close();
-});
-
-test("the guest is closed once the host leaves", async () => {
-  const host = await connect(roomId(3), "host");
-  const guest = await connect(roomId(3), "guest");
-
-  host.socket.close();
-  assert.equal((await guest.closed).code, CLOSE.peerLeft);
-});
-
-test("a keep-alive is answered, and other text closes the connection", async () => {
-  const host = await connect(roomId(4), "host");
-
-  host.socket.send("ping");
-  assert.equal(await host.next(), PONG);
-
-  host.socket.send("hello");
-  assert.equal((await host.closed).code, CLOSE.badRequest);
-});
-
 test("a message over the size limit closes its sender", async () => {
-  const host = await connect(roomId(5), "host");
-  await connect(roomId(5), "guest");
+  await makeWorld(roomId(220), 2);
+  const game = await sit(roomId(220), 1);
+  assert.equal(await game.next(), "seat 0");
 
-  host.socket.send(new Uint8Array(TEST_LIMITS.maxMessageBytes + 1));
-  assert.equal((await host.closed).code, CLOSE.tooLarge);
-});
-
-test("a host that waited alone too long is closed", async () => {
-  const host = await connect(roomId(6), "host");
-
-  now += TEST_LIMITS.aloneWaitMs;
-  relay.check();
-  assert.equal((await host.closed).code, CLOSE.waitedTooLong);
+  game.socket.send(new Uint8Array(TEST_LIMITS.maxMessageBytes + 1));
+  assert.equal((await game.closed).code, CLOSE.tooLarge);
 });
 
 test("games in a world room get seats, each learns who comes and goes, and the directory knows who is online", async () => {
@@ -594,7 +531,7 @@ test("the admins edit the story mapping, the relay logs each batch, and every ga
   const edit = (key, edits) => fetch(`${relayBase}/admin/story/edit`, { method: "POST", headers: { [PLAYER_HEADER]: key }, body: JSON.stringify({ edits }) });
 
   assert.equal((await edit(CREATOR, [{ table: "keys", op: "add", row: { key: "s2029", kind: "scene" } }])).status, 403);
-  assert.equal((await fetch(`${relayBase}/admin/story?player=${CREATOR}`)).status, 403);
+  assert.equal((await fetch(`${relayBase}/admin/story`, { headers: { [PLAYER_HEADER]: CREATOR } })).status, 403);
 
   const done = await edit(ADMIN, [{ table: "keys", op: "add", row: { key: "s2029", kind: "scene" } }]);
   const { rev } = await done.json();
@@ -602,9 +539,10 @@ test("the admins edit the story mapping, the relay logs each batch, and every ga
   assert.ok(logged.info.some((line) => line.endsWith(`admin ${admin} changed the story mapping to rev ${rev}: add keys s2029`)));
   assert.equal((await (await fetch(`${relayBase}/admin/story/keys/s2029/history`, { headers: { [PLAYER_HEADER]: ADMIN } })).json()).history[0].rev, rev);
 
-  const read = await (await fetch(`${relayBase}/story-mapping`)).json();
+  const read = await (await gameFetch(`${relayBase}/story-mapping`)).json();
   assert.deepEqual([read.rev, read.tables.keys], [rev, [{ key: "s2029", kind: "scene" }]]);
-  assert.deepEqual(await (await fetch(`${relayBase}/story-mapping?known=${rev}`)).json(), { rev, same: true });
+  assert.deepEqual(await (await gameFetch(`${relayBase}/story-mapping?known=${rev}`)).json(), { rev, same: true });
+  assert.equal((await fetch(`${relayBase}/story-mapping`, { headers: { ...GAME, [VERSION_HEADER]: "0.6.9.2" } })).status, 426, "a game older than the lowest version");
 });
 
 test("a rolled back current release stays while the same latest release is out and goes once a newer one is", async () => {
@@ -658,7 +596,7 @@ test("the directory hands out a world's lock and refuses what is no directory ro
   assert.equal((await gameFetch(`${directoryBase}/${roomId(109)}/lock`)).status, 404);
   assert.equal((await gameFetch(`${directoryBase}/${roomId(108)}/elsewhere`)).status, 404);
   assert.equal((await gameFetch(directoryBase.replace("/v1/worlds", "/elsewhere"))).status, 400);
-  assert.equal((await fetch(`${base.replace("ws:", "http:")}${roomId(108)}?role=host`)).status, 426, "a room's address needs its WebSocket");
+  assert.equal((await gameFetch(`${worldBase.replace("ws:", "http:")}${roomId(108)}?name=Player%201`, { headers: { [PLAYER_HEADER]: playerKey(1), [AUTH_HEADER]: AUTH } })).status, 426, "a world room's address needs its WebSocket");
 });
 
 
@@ -681,14 +619,14 @@ test("the creator uploads a starting save as bytes, which the world's players fe
   assert.equal(response.status, 201);
   await assert.rejects(sit(room, 7));
 
-  const uploaded = await gameFetch(`${directoryBase}/${room}/start?player=${CREATOR}`, { method: "POST", body: save });
+  const uploaded = await gameFetch(`${directoryBase}/${room}/start`, { method: "POST", headers: { [PLAYER_HEADER]: CREATOR }, body: save });
   assert.equal(uploaded.status, 200);
   assert.equal((await listed(room)).start, "ready");
 
-  const fetched = await gameFetch(`${directoryBase}/${room}/start?player=${playerKey(7)}&auth=${AUTH}`);
+  const fetched = await gameFetch(`${directoryBase}/${room}/start`, { headers: { [PLAYER_HEADER]: playerKey(7), [AUTH_HEADER]: AUTH } });
   assert.equal(fetched.status, 200);
   assert.deepEqual(new Uint8Array(await fetched.arrayBuffer()), save);
-  assert.equal((await gameFetch(`${directoryBase}/${room}/start?player=${playerKey(7)}&auth=${"cd".repeat(32)}`)).status, 401);
+  assert.equal((await gameFetch(`${directoryBase}/${room}/start`, { headers: { [PLAYER_HEADER]: playerKey(7), [AUTH_HEADER]: "cd".repeat(32) } })).status, 401);
 });
 
 test("two players of a world commit a trade over HTTP, which each finds again until done", async () => {
@@ -708,12 +646,12 @@ test("two players of a world commit a trade over HTTP, which each finds again un
 
   assert.deepEqual(await commit(21, 22, "A".repeat(60_000)), { state: "pending" });
   assert.deepEqual(await commit(22, 21, "Qg=="), { state: "committed" });
-  assert.deepEqual(await (await fetch(`${tradesBase}/${trade}?player=${playerKey(21)}`, { headers: GAME })).json(), { state: "committed" });
-  assert.deepEqual(await (await fetch(`${tradesBase}?player=${playerKey(22)}&world=${room}`, { headers: GAME })).json(), { trades: [{ id: trade, hash: "ab".repeat(32), sealed: "Qg==" }] });
+  assert.deepEqual(await (await fetch(`${tradesBase}/${trade}`, { headers: { ...GAME, [PLAYER_HEADER]: playerKey(21) } })).json(), { state: "committed" });
+  assert.deepEqual(await (await fetch(`${tradesBase}?world=${room}`, { headers: { ...GAME, [PLAYER_HEADER]: playerKey(22) } })).json(), { trades: [{ id: trade, hash: "ab".repeat(32), sealed: "Qg==" }] });
 
   const done = await fetch(`${tradesBase}/${trade}/done`, { method: "POST", headers: GAME, body: JSON.stringify({ player: playerKey(22) }) });
   assert.equal(done.status, 200);
-  assert.deepEqual(await (await fetch(`${tradesBase}?player=${playerKey(22)}&world=${room}`, { headers: GAME })).json(), { trades: [] });
+  assert.deepEqual(await (await fetch(`${tradesBase}?world=${room}`, { headers: { ...GAME, [PLAYER_HEADER]: playerKey(22) } })).json(), { trades: [] });
 
   first.socket.close();
   second.socket.close();
@@ -743,50 +681,24 @@ function openWithHeaders(address, headers) {
 test("a stopping relay closes every connection as a service restart, so the games connect again, and logs it", async () => {
   const stopping = createRelay({ clock: () => now, checkEveryMs: 3_600_000, sweepEveryMs: 3_600_000, log: LOG });
   await new Promise((resolve) => stopping.server.listen(0, "127.0.0.1", resolve));
-  const host = await open(`ws://127.0.0.1:${stopping.server.address().port}/v1/room/${roomId(211)}?role=host`, PVP);
+  const at = `127.0.0.1:${stopping.server.address().port}`;
+  assert.equal(await makeWorld(roomId(211), 2, `http://${at}/v1/worlds`), 201);
+  const game = await open(`ws://${at}/v1/world/${roomId(211)}?name=Player%201`, { ...GAME, [PLAYER_HEADER]: playerKey(1), [AUTH_HEADER]: AUTH });
 
   await stopping.stop();
-  assert.deepEqual(await host.closed, { code: 1012, reason: "service restart" });
+  assert.deepEqual(await game.closed, { code: 1012, reason: "service restart" });
   assert.ok(logged.info.some((line) => line.includes("relay stopping") && line.endsWith("closing 1 connection(s) with 1012 service restart")));
 });
 
-test("a guest that waited alone too long is closed too", async () => {
-  const guest = await connect(roomId(7), "guest");
-
-  now += TEST_LIMITS.aloneWaitMs;
-  relay.check();
-  assert.equal((await guest.closed).code, CLOSE.waitedTooLong);
-});
-
 test("keep-alives count against the message allowance", async () => {
-  const host = await connect(roomId(8), "host");
+  await makeWorld(roomId(221), 2);
+  const game = await sit(roomId(221), 1);
 
   for (let sent = 0; sent <= TEST_LIMITS.burst; sent++) {
-    host.socket.send(PING);
+    game.socket.send(PING);
   }
 
-  assert.equal((await host.closed).code, CLOSE.tooFast);
-});
-
-test("a room the relay ended takes new peers at once, whom the closed ones leave alone", async () => {
-  const host = await connect(roomId(9), "host");
-  const guest = await connect(roomId(9), "guest");
-  await host.next();
-  await guest.next();
-
-  host.socket.send(new Uint8Array(TEST_LIMITS.maxMessageBytes + 1));
-  const newHost = await connect(roomId(9), "host");
-  const newGuest = await connect(roomId(9), "guest");
-
-  assert.equal((await host.closed).code, CLOSE.tooLarge);
-  assert.equal((await guest.closed).code, CLOSE.peerLeft);
-  assert.equal(await newHost.next(), PAIRED);
-  newGuest.socket.send(new Uint8Array([3]));
-  await newGuest.next();
-  assert.deepEqual([...new Uint8Array(await newHost.next())], [3]);
-
-  newHost.socket.close();
-  newGuest.socket.close();
+  assert.equal((await game.closed).code, CLOSE.tooFast);
 });
 
 test("a player who enters a world room again replaces the earlier connection, which gives up its seat", async () => {
@@ -820,7 +732,7 @@ test("the player key may come in the X-MGQ-Player header, for the directory and 
   assert.equal(await hidden({}), false);
   assert.equal(await hidden({ [PLAYER_HEADER]: CREATOR }), true);
 
-  const game = await openWithHeaders(`${worldBase}${room}?name=Player%2042&auth=${AUTH}`, { ...GAME, [PLAYER_HEADER]: playerKey(42) });
+  const game = await openWithHeaders(`${worldBase}${room}?name=Player%2042`, { [AUTH_HEADER]: AUTH, ...GAME, [PLAYER_HEADER]: playerKey(42) });
   assert.equal(await game.first, "seat 0");
   await until(async () => (await (await gameFetch(directoryBase, { headers: { [PLAYER_HEADER]: CREATOR } })).json()).worlds.find((world) => world.id === room).online === 1);
   game.socket.close();
@@ -831,10 +743,10 @@ test("a world room names why it turned a game away", async () => {
   await makeWorld(room, 4);
   await gameFetch(`${directoryBase}/${room}/ban`, { method: "POST", body: JSON.stringify({ player: CREATOR, target: await playerIdOf(playerKey(51)) }) });
 
-  assert.deepEqual(await openWithHeaders(`${worldBase}${room}?player=${playerKey(51)}&name=Banned&auth=${AUTH}`, GAME), { status: 403, refusal: "removed" });
+  assert.deepEqual(await openWithHeaders(`${worldBase}${room}?name=Banned`, { ...GAME, [PLAYER_HEADER]: playerKey(51), [AUTH_HEADER]: AUTH }), { status: 403, refusal: "removed" });
 });
 
-test("a world room lets into a Raid World only the games that name it in X-MGQ-Features", async () => {
+test("a world room lets every game the version gate passes into a Raid World", async () => {
   const room = roomId(123);
   const created = await gameFetch(directoryBase, {
     method: "POST",
@@ -844,16 +756,12 @@ test("a world room lets into a Raid World only the games that name it in X-MGQ-F
   assert.equal(created.status, 201);
   assert.deepEqual([(await listed(room)).type, (await listed(room)).share], ["raid", "story"]);
 
-  const address = `${worldBase}${room}?name=Player%2052&auth=${AUTH}`;
-  assert.deepEqual(await openWithHeaders(address, { ...PVP, [PLAYER_HEADER]: playerKey(52), [FEATURES_HEADER]: "other" }), { status: 400, refusal: "raid_unsupported" });
-
-  assert.deepEqual(await openWithHeaders(address, { ...PVP, [PLAYER_HEADER]: playerKey(52), [FEATURES_HEADER]: "raid" }), { status: 400, refusal: "update" }, "a game that keeps the story sealed");
-  const game = await openWithHeaders(address, { [PLAYER_HEADER]: playerKey(52), ...GAME });
+  const game = await openWithHeaders(`${worldBase}${room}?name=Player%2052`, { ...GAME, [PLAYER_HEADER]: playerKey(52), [AUTH_HEADER]: AUTH, [FEATURES_HEADER]: "raid" });
   assert.equal(await game.first, "seat 0");
   game.socket.close();
 });
 
-test("a Raid World's players write its story over HTTP, every game in the room hears of each change, and deleting the world forgets it", async () => {
+test("a Raid World's players read its story and share companions over HTTP, write none of it there, every game hears of each change, and deleting the world forgets it", async () => {
   const room = roomId(124);
   const created = await gameFetch(directoryBase, {
     method: "POST",
@@ -861,39 +769,26 @@ test("a Raid World's players write its story over HTTP, every game in the room h
     body: JSON.stringify({ id: room, name: "Raid Story", seats: 4, playerName: "Creator", authHash: await sha256Hex(AUTH), lock: { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(40) }, type: "raid" }),
   });
   assert.equal(created.status, 201);
-  const watcher = await openWithHeaders(`${worldBase}${room}?name=Watcher&auth=${AUTH}`, { [PLAYER_HEADER]: playerKey(54), ...GAME });
+  const watcher = await openWithHeaders(`${worldBase}${room}?name=Watcher`, { [AUTH_HEADER]: AUTH, [PLAYER_HEADER]: playerKey(54), ...GAME });
   assert.equal(await watcher.first, "seat 0");
   const heard = [];
   watcher.socket.on("message", (data) => heard.push(data.toString()));
 
   const story = (path, init = {}, key = playerKey(53), auth = AUTH) => gameFetch(`${directoryBase}/${room}/story${path}`, { ...init, headers: { ...GAME, [PLAYER_HEADER]: key, [AUTH_HEADER]: auth } });
-  const write = (body) => story("", { method: "POST", body: JSON.stringify(body) });
-  const counters = (p) => ({ p, r1141: 0, r1142: 0, r1143: 0, clear: [] });
-
   assert.equal((await story("")).status, 200);
   assert.equal((await story("", {}, playerKey(53), "cd".repeat(32))).status, 401);
   assert.equal((await story("", {}, "zz")).status, 400);
 
-  const pushed = (rev) => heard.some((text) => text.startsWith("storyd ") && JSON.parse(text.slice(7)).rev === rev);
-  const first = await write({ base: 0, counters: counters(18), set: { v: "1001:n18" } });
-  assert.equal(first.status, 200);
-  assert.equal((await first.json()).rev, 1);
-  await until(async () => pushed(1));
-
-  const second = await write({ base: 1, counters: { ...counters(19), end: { map: 2, x: 148, y: 243 } }, set: { v: "1001:n19" } });
-  assert.deepEqual(await second.json().then((body) => [body.rev, body.part, body.checkpoints, body.end]), [2, "2", ["1"], { map: 2, x: 148, y: 243 }]);
-
-  const conflict = await write({ base: 3, counters: counters(20), set: { v: "1001:n20" } });
-  assert.equal(conflict.status, 409);
-  assert.deepEqual(await conflict.json().then((body) => [body.code, body.rev, body.keys.v]), ["rev", 2, "1001:n19"], "a revision the relay never had");
-
-  const checkpoint = await (await story("/checkpoint/1")).json();
-  assert.deepEqual([checkpoint.part, checkpoint.p, checkpoint.keys.v], ["1", 18, "1001:n18"]);
-  assert.equal((await story("/route", { method: "POST", body: JSON.stringify({ route: "mr" }) })).status, 200);
   assert.deepEqual((await (await story("/companions", { method: "POST", body: JSON.stringify({ ids: [382] }) })).json()).comps, [382]);
-  await until(async () => pushed(4));
-  assert.equal((await write({ base: 2, counters: { ...counters(40), r1142: 1 }, set: { v: "1001:n40,1142:n1" } })).status, 200, "a write on the revision before a lock and a companion is taken");
-  assert.equal((await story("", { method: "POST", body: "x".repeat(STORY_LIMITS.maxBodyLength + 10) })).status, 413);
+  await until(async () => heard.includes("story 1"));
+  assert.equal((await story("/companions", { method: "POST", body: "x".repeat(STORY_LIMITS.maxSmallBodyLength + 10) })).status, 413);
+
+  const write = { base: 1, counters: { p: 18, r1141: 0, r1142: 0, r1143: 0, clear: [] }, set: { v: "1001:n18" }, route: "mr" };
+  for (const path of ["", "/route"]) {
+    assert.equal((await story(path, { method: "POST", body: JSON.stringify(write) })).status, 404, `POST story${path}`);
+  }
+  assert.equal((await story("/checkpoint/1")).status, 404);
+  assert.deepEqual(await (await story("")).json().then((body) => [body.rev, body.p, body.route]), [1, 0, "none"], "no game writes the story over HTTP");
 
   await gameFetch(`${directoryBase}/${room}/ban`, { method: "POST", body: JSON.stringify({ player: CREATOR, target: await playerIdOf(playerKey(55)) }) });
   assert.equal((await story("", {}, playerKey(55))).status, 403);
@@ -903,53 +798,7 @@ test("a Raid World's players write its story over HTTP, every game in the room h
   assert.equal((await relay.storyOf(room).get()).body.rev, 0, "the deleted world's story is gone");
 });
 
-test("a keyed Raid World's games hear what each write changed, and games that keep no keys are sent to update", async () => {
-  const room = roomId(190);
-  const created = await gameFetch(directoryBase, {
-    method: "POST",
-    headers: { [PLAYER_HEADER]: playerKey(65) },
-    body: JSON.stringify({ id: room, name: "Raid Keys", seats: 4, playerName: "Creator", authHash: await sha256Hex(AUTH), lock: { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(40) }, type: "raid" }),
-  });
-  assert.equal(created.status, 201);
-  const keys = GAME;
-  const watcher = await openWithHeaders(`${worldBase}${room}?name=Watcher&auth=${AUTH}`, { [PLAYER_HEADER]: playerKey(61), ...keys });
-  assert.equal(await watcher.first, "seat 0");
-  const heard = [];
-  watcher.socket.on("message", (data) => heard.push(data.toString()));
-  const story = (path, init = {}, features = keys) => gameFetch(`${directoryBase}/${room}/story${path}`, { ...init, headers: { ...GAME, ...features, [PLAYER_HEADER]: playerKey(62), [AUTH_HEADER]: AUTH } });
-  const counters = { p: 18, r1141: 0, r1142: 0, r1143: 0, clear: [] };
-
-  const written = await story("", { method: "POST", body: JSON.stringify({ base: 0, counters, set: { s: "5", v: "1001:n18" } }) });
-  assert.equal(written.status, 200);
-  await until(async () => heard.some((text) => text.startsWith("storyd ")));
-  const push = JSON.parse(heard.find((text) => text.startsWith("storyd ")).slice(7));
-  assert.deepEqual([push.rev, push.prev, push.delta.s, push.delta.v, push.state.p], [1, 0, "5", "1001:n18", 18]);
-  assert.deepEqual(await (await story("?known=1")).json().then((body) => [body.same, body.keys]), [true, undefined]);
-  assert.equal(await (await story("")).json().then((body) => body.keys.v), "1001:n18");
-
-  assert.equal((await story("", {}, { [FEATURES_HEADER]: "raid" })).status, 426, "a game that keeps no keys reads none of it");
-  assert.deepEqual(await openWithHeaders(`${worldBase}${room}?name=Old&auth=${AUTH}`, { [PLAYER_HEADER]: playerKey(63), [FEATURES_HEADER]: "raid" }), { status: 400, refusal: "update" });
-  const newer = await openWithHeaders(`${worldBase}${room}?name=New&auth=${AUTH}`, { [PLAYER_HEADER]: playerKey(64), ...keys });
-  assert.equal(await newer.first, "seat 1 0");
-
-  const set = await gameFetch(`${directoryBase}/${room}/raid/keys`, { method: "POST", headers: { [PLAYER_HEADER]: ADMIN }, body: JSON.stringify({ s: { 5: false } }) });
-  assert.equal(set.status, 200);
-  await until(async () => heard.some((text) => text.startsWith("storyd ") && JSON.parse(text.slice(7)).delta.sf === "5"));
-  const admin = await playerIdOf(ADMIN);
-  assert.ok(logged.info.some((line) => line.includes(`world ${room}: admin ${admin} set keys of rev 2`)), "the relay logs what an admin set");
-
-  const pinned = await gameFetch(`${directoryBase}/${room}/raid/pins`, { method: "POST", headers: { [PLAYER_HEADER]: ADMIN }, body: JSON.stringify({ keys: { s5: false } }) });
-  assert.deepEqual(await pinned.json().then((body) => body.pins.keys), { s5: false });
-  const pinnedWrite = await story("", { method: "POST", body: JSON.stringify({ base: 2, counters, set: { s: "5,6" } }) });
-  assert.deepEqual(await pinnedWrite.json().then((body) => [body.rev, body.accepted]), [3, true]);
-  await until(async () => heard.some((text) => text.startsWith("storyd ") && JSON.parse(text.slice(7)).rev === 4));
-  const pushes = heard.filter((text) => text.startsWith("storyd ")).map((text) => JSON.parse(text.slice(7))).slice(-2);
-  assert.deepEqual(pushes.map((push) => [push.rev, push.prev, push.delta.s, push.delta.sf]), [[3, 2, "6", ""], [4, 3, "", "5"]], "every game hears the write without the pinned key, then the pinned value");
-  watcher.socket.close();
-  newer.socket.close();
-});
-
-test("games that name tracks play a Raid World's story over the world room: writes reach every game, a teller who leaves frees the map, and the mapping's revision reaches them", async () => {
+test("every game plays a Raid World's story over the world room: writes reach every game, a teller who leaves frees the map, and the mapping's revision reaches them", async () => {
   const room = roomId(191);
   const created = await gameFetch(directoryBase, {
     method: "POST",
@@ -961,7 +810,7 @@ test("games that name tracks play a Raid World's story over the world room: writ
   assert.equal(mapped.status, 200);
 
   const game = async (number) => {
-    const opened = await openWithHeaders(`${worldBase}${room}?name=Player${number}&auth=${AUTH}`, { ...GAME, [PLAYER_HEADER]: playerKey(number), [FEATURES_HEADER]: "raid,keys,tracks" });
+    const opened = await openWithHeaders(`${worldBase}${room}?name=Player${number}`, { [AUTH_HEADER]: AUTH, ...GAME, [PLAYER_HEADER]: playerKey(number) });
     const heard = [];
     opened.socket.on("message", (data) => data.toString().startsWith("track ") && heard.push(JSON.parse(data.toString().slice(6))));
     await opened.first;
@@ -999,12 +848,6 @@ test("games that name tracks play a Raid World's story over the world room: writ
   viewer.say({ t: "tell", telling: "v2", map: 7, event: "map:7:39:1" });
   assert.equal((await viewer.hears((frame) => frame.t === "tell")).granted, true);
 
-  const plain = await openWithHeaders(`${worldBase}${room}?name=Plain&auth=${AUTH}`, { [PLAYER_HEADER]: playerKey(73), ...GAME });
-  await plain.first;
-  const closed = new Promise((resolve) => plain.socket.on("close", (code) => resolve(code)));
-  plain.socket.send(`track ${JSON.stringify({ t: "sync" })}`);
-  assert.equal(await closed, CLOSE.badRequest, "a game that names no tracks sends no track frames");
-
   const admin = (path, body) => gameFetch(`${directoryBase}/${room}/raid${path}`, { method: body ? "POST" : "GET", headers: { [PLAYER_HEADER]: ADMIN }, ...(body ? { body: JSON.stringify(body) } : {}) });
   const set = await admin("/keys", { v: { 1001: 5 } });
   assert.deepEqual(await set.json().then((body) => [set.status, body.tracks, body.p, body.set.v]), [200, true, 5, "1001:n5"]);
@@ -1013,7 +856,7 @@ test("games that name tracks play a Raid World's story over the world room: writ
   viewer.socket.close();
 });
 
-test("a story write whose body comes after the world was deleted leaves no story behind", async () => {
+test("a shared companion whose body comes after the world was deleted leaves no story behind", async () => {
   const room = roomId(132);
   const created = await gameFetch(directoryBase, {
     method: "POST",
@@ -1022,24 +865,24 @@ test("a story write whose body comes after the world was deleted leaves no story
   });
   assert.equal(created.status, 201);
 
-  const body = JSON.stringify({ base: 0, counters: { p: 18, r1141: 0, r1142: 0, r1143: 0, clear: [] }, set: { v: "1001:n18" } });
+  const body = JSON.stringify({ ids: [382] });
   const answered = new Promise((resolve, reject) => {
-    const request = http.request(`${directoryBase}/${room}/story`, { method: "POST", headers: { ...GAME, [PLAYER_HEADER]: playerKey(60), [AUTH_HEADER]: AUTH, "Content-Length": Buffer.byteLength(body) } }, (response) => {
+    const request = http.request(`${directoryBase}/${room}/story/companions`, { method: "POST", headers: { ...GAME, [PLAYER_HEADER]: playerKey(60), [AUTH_HEADER]: AUTH, "Content-Length": Buffer.byteLength(body) } }, (response) => {
       response.resume();
       response.on("end", () => resolve(response.statusCode));
     });
     request.on("error", reject);
-    request.write(body.slice(0, 10));
+    request.write(body.slice(0, 5));
     // The member check passes while the body is still on its way; the world goes before the rest.
     setTimeout(async () => {
       const deleted = await gameFetch(`${directoryBase}/${room}/delete`, { method: "POST", body: JSON.stringify({ player: CREATOR }) });
       assert.equal(deleted.status, 200);
-      request.end(body.slice(10));
+      request.end(body.slice(5));
     }, 50);
   });
 
   assert.equal(await answered, 200);
-  assert.equal((await relay.storyOf(room).get()).body.rev, 0, "the late write is removed again");
+  assert.equal((await relay.storyOf(room).get()).body.rev, 0, "the late companion is removed again");
 });
 
 test("a Classic world keeps no story", async () => {
@@ -1057,7 +900,7 @@ test("a Raid World's players wear its boss pools down over HTTP, every game hear
     body: JSON.stringify({ id: room, name: "Raid Bosses", seats: 4, playerName: "Creator", authHash: await sha256Hex(AUTH), lock: { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(40) }, type: "raid" }),
   });
   assert.equal(created.status, 201);
-  const watcher = await openWithHeaders(`${worldBase}${room}?name=Watcher&auth=${AUTH}`, { [PLAYER_HEADER]: playerKey(57), ...GAME });
+  const watcher = await openWithHeaders(`${worldBase}${room}?name=Watcher`, { [AUTH_HEADER]: AUTH, [PLAYER_HEADER]: playerKey(57), ...GAME });
   assert.equal(await watcher.first, "seat 0");
   const heard = [];
   watcher.socket.on("message", (data) => heard.push(data.toString()));
@@ -1082,8 +925,9 @@ test("a Raid World's players wear its boss pools down over HTTP, every game hear
   await until(async () => heard.includes("boss 0 900 1 Lilith"));
 
   const admin = (path, init = {}) => gameFetch(`${directoryBase}/${room}/raid${path}`, init);
-  assert.equal((await admin(`?player=${CREATOR}`)).status, 403, "the creator is no admin");
-  const view = await (await admin(`?player=${ADMIN}`)).json();
+  assert.equal((await admin("", { headers: { [PLAYER_HEADER]: CREATOR } })).status, 403, "the creator is no admin");
+  assert.equal((await admin(`?player=${ADMIN}`)).status, 403, "an admin's key in the address counts for nothing");
+  const view = await (await admin("", { headers: { [PLAYER_HEADER]: ADMIN } })).json();
   assert.deepEqual([view.story.rev, view.bosses.map((pool) => [pool.key, pool.hp, pool.max, pool.defeated, pool.by, pool.reports]), view.regenPerMinute],
     [0, [["Lilith", 0, 900, true, "Watcher", 1], ["Queen Harpy#1", 3_750_000, 5_000_000, false, null, 1]], 0.03]);
 
@@ -1095,8 +939,9 @@ test("a Raid World's players wear its boss pools down over HTTP, every game hear
   assert.deepEqual(await reset.json().then((body) => [body.left, body.reset]), [1, true]);
   await until(async () => heard.includes("boss 1 900 0 Lilith"));
 
-  const story = (path, init = {}) => gameFetch(`${directoryBase}/${room}/story${path}`, { ...init, headers: { ...GAME, [PLAYER_HEADER]: playerKey(58), [AUTH_HEADER]: AUTH } });
-  assert.equal((await story("/route", { method: "POST", body: JSON.stringify({ route: "ad" }) })).status, 200);
+  // A route lock an older game took over HTTP, which the keyed story keeps as world data.
+  const kept = relay.storyOf(room);
+  await kept.store.put({ ...kept.first(), rev: 1, wrev: 1, counters: { p: 40, r1141: 0, r1142: 0, r1143: 0, clear: [] }, part: "3", route: "ad" }, null);
   const cleared = await admin("/route/clear", { method: "POST", headers: { [PLAYER_HEADER]: ADMIN }, body: "{}" });
   assert.deepEqual(await cleared.json().then((body) => [body.cleared, body.route, body.rev]), [true, "none", 2]);
   await until(async () => heard.includes("story 2"));
@@ -1111,9 +956,9 @@ test("a Classic world keeps no boss pools and has no admin routes", async () => 
   await makeWorld(roomId(127), 4);
   const answer = await gameFetch(`${directoryBase}/${roomId(127)}/bosses`, { headers: { ...GAME, [PLAYER_HEADER]: playerKey(59), [AUTH_HEADER]: AUTH } });
   assert.deepEqual([answer.status, (await answer.json()).code], [404, "classic"]);
-  const admin = await gameFetch(`${directoryBase}/${roomId(127)}/raid?player=${ADMIN}`);
+  const admin = await gameFetch(`${directoryBase}/${roomId(127)}/raid`, { headers: { [PLAYER_HEADER]: ADMIN } });
   assert.deepEqual([admin.status, (await admin.json()).code], [404, "classic"]);
-  assert.equal((await gameFetch(`${directoryBase}/${roomId(128)}/raid?player=${ADMIN}`)).status, 404);
+  assert.equal((await gameFetch(`${directoryBase}/${roomId(128)}/raid`, { headers: { [PLAYER_HEADER]: ADMIN } })).status, 404);
   // Deleted, so the creator stays below the worlds a creator may have for the tests after this one.
   assert.equal((await gameFetch(`${directoryBase}/${roomId(127)}/delete`, { method: "POST", body: JSON.stringify({ player: CREATOR }) })).status, 200);
 });
@@ -1130,26 +975,27 @@ test("a starting save over the limit is refused with its status, not a cut conne
   assert.equal(uploaded.status, 413);
 });
 
-test("entering rooms and making worlds are limited per address", async () => {
+test("entering world rooms and making worlds are limited per address", async () => {
   const once = { burst: 1, refillMs: 3_600_000 };
   const directory = new Directory(memoryStore(), { clock: () => now, rates: { joins: once, creates: once, starts: once } });
   const limited = createRelay({ limits: TEST_LIMITS, clock: () => now, checkEveryMs: 3_600_000, directory, log: LOG });
   await new Promise((resolve) => limited.server.listen(0, "127.0.0.1", resolve));
   const port = limited.server.address().port;
 
-  const host = await open(`ws://127.0.0.1:${port}/v1/room/${roomId(10)}?role=host`);
-  assert.equal((await openWithHeaders(`ws://127.0.0.1:${port}/v1/room/${roomId(11)}?role=host`, PVP)).status, 429);
-
-  const world = (id) => JSON.stringify({ id, name: "Limited", seats: 2, player: CREATOR, playerName: "Creator", authHash: "ab".repeat(32), lock: { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(40) } });
+  const authHash = await sha256Hex(AUTH);
+  const world = (id) => JSON.stringify({ id, name: "Limited", seats: 2, player: CREATOR, playerName: "Creator", authHash, lock: { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(40) } });
   assert.equal((await gameFetch(`http://127.0.0.1:${port}/v1/worlds`, { method: "POST", body: world(roomId(116)) })).status, 201);
   const refused = await gameFetch(`http://127.0.0.1:${port}/v1/worlds`, { method: "POST", body: world(roomId(117)) });
   assert.deepEqual([refused.status, (await refused.json()).code], [429, "rate"]);
 
-  host.socket.close();
+  const game = await open(`ws://127.0.0.1:${port}/v1/world/${roomId(116)}?name=Player%201`, { ...GAME, [PLAYER_HEADER]: playerKey(1), [AUTH_HEADER]: AUTH });
+  assert.equal((await openWithHeaders(`ws://127.0.0.1:${port}/v1/world/${roomId(116)}?name=Player%202`, { ...GAME, [PLAYER_HEADER]: playerKey(2), [AUTH_HEADER]: AUTH })).status, 429);
+
+  game.socket.close();
   await limited.stop();
 });
 
-test("the auth key may come in the X-MGQ-Auth header, for the world rooms and the starting save", async () => {
+test("the auth key comes in the X-MGQ-Auth header only, for the world rooms and the starting save", async () => {
   const room = roomId(118);
   const created = await gameFetch(directoryBase, {
     method: "POST",
@@ -1162,12 +1008,12 @@ test("the auth key may come in the X-MGQ-Auth header, for the world rooms and th
   const fetched = await gameFetch(`${directoryBase}/${room}/start`, { headers });
   assert.equal(fetched.status, 200);
   assert.deepEqual(new Uint8Array(await fetched.arrayBuffer()), Uint8Array.of(4, 2));
-  assert.equal((await gameFetch(`${directoryBase}/${room}/start?auth=${AUTH}`, { headers: { [PLAYER_HEADER]: playerKey(61), [AUTH_HEADER]: "cd".repeat(32) } })).status, 401, "the header wins over the address");
-  assert.equal((await gameFetch(`${directoryBase}/${room}/start?player=${playerKey(61)}&auth=${AUTH}`)).status, 200, "released games send both in the address");
+  assert.equal((await gameFetch(`${directoryBase}/${room}/start`, { headers: { [PLAYER_HEADER]: playerKey(61), [AUTH_HEADER]: "cd".repeat(32) } })).status, 401);
+  assert.notEqual((await gameFetch(`${directoryBase}/${room}/start?player=${playerKey(61)}&auth=${AUTH}`)).status, 200, "keys in the address count for nothing");
 
   const game = await openWithHeaders(`${worldBase}${room}?name=Player%2061`, headers);
   assert.equal(await game.first, "seat 0");
-  assert.deepEqual(await openWithHeaders(`${worldBase}${room}?name=Player%2062&auth=${AUTH}`, { ...GAME, [PLAYER_HEADER]: playerKey(62), [AUTH_HEADER]: "cd".repeat(32) }), { status: 401, refusal: undefined });
+  assert.deepEqual(await openWithHeaders(`${worldBase}${room}?name=Player%2062`, { [AUTH_HEADER]: AUTH, ...GAME, [PLAYER_HEADER]: playerKey(62), [AUTH_HEADER]: "cd".repeat(32) }), { status: 401, refusal: undefined });
   game.socket.close();
 });
 
@@ -1180,10 +1026,10 @@ test("a game makes a Raid World with a starting save over HTTP and uploads it", 
   assert.equal((await gameFetch(`${directoryBase}/${room}/start`, { method: "POST", headers: { [PLAYER_HEADER]: creator }, body: Uint8Array.of(9) })).status, 200);
 });
 
-test("a game without X-MGQ-Features, or naming a version below the lowest, is turned away, while PvP rooms need no features", async () => {
+test("a game without X-MGQ-Features, or naming a version below the lowest, is turned away, and every PvP room with 426", async () => {
   const room = roomId(132);
   await makeWorld(room, 4);
-  const world = (headers) => openWithHeaders(`${worldBase}${room}?name=Old&auth=${AUTH}`, { [PLAYER_HEADER]: playerKey(80), ...headers });
+  const world = (headers) => openWithHeaders(`${worldBase}${room}?name=Old`, { [AUTH_HEADER]: AUTH, [PLAYER_HEADER]: playerKey(80), ...headers });
   const update = { status: 426, refusal: UPDATE_NEEDED };
   const worldUpdate = { status: 400, refusal: "update" };
 
@@ -1193,22 +1039,20 @@ test("a game without X-MGQ-Features, or naming a version below the lowest, is tu
   assert.equal(await current.first, "seat 0");
   current.socket.close();
 
-  assert.deepEqual(await openWithHeaders(`${base}${roomId(12)}?role=host`, { [VERSION_HEADER]: "0.5.3" }), update, "a PvP room holds a named version against the lowest");
-  const host = await openWithHeaders(`${base}${roomId(12)}?role=host`, PVP);
-  assert.ok(host.socket, "a PvP room takes a game that names no features, as released games open them");
-  host.socket.close();
+  const rooms = directoryBase.replace("/v1/worlds", "/v1/room/");
+  assert.deepEqual(await openWithHeaders(`${rooms}${roomId(12)}?role=host`, GAME), update, "a PvP room, which no game opens any more");
 
   const trades = directoryBase.replace("/v1/worlds", "/v1/trades");
-  const listing = await fetch(`${trades}?player=${playerKey(80)}&world=${room}`);
+  const listing = await fetch(`${trades}?world=${room}`, { headers: { [PLAYER_HEADER]: playerKey(80) } });
   assert.deepEqual([listing.status, await listing.json()], [426, { error: UPDATE_NEEDED }]);
   const posted = await fetch(`${trades}/${"9".repeat(32)}/commit`, { method: "POST", body: "x".repeat(300 * 1024) });
   assert.deepEqual([posted.status, await posted.json()], [426, { error: UPDATE_NEEDED }], "the refusal comes once the body is drained");
 
   const mods = directoryBase.replace("/v1/worlds", "/v1/mods");
   assert.deepEqual([(await fetch(directoryBase)).status, (await fetch(mods)).status], [426, 200], "a game before 0.6.0 or an older World Admin tool build, while the Mod Framework reads the mod catalog without headers");
-  assert.equal((await fetch(`${directoryBase}/${room}/raid?player=${ADMIN}`, { headers: { [VERSION_HEADER]: "0.0.0-dev" } })).status, 426, "the Raid World admin routes ask for X-MGQ-Features too");
+  assert.equal((await fetch(`${directoryBase}/${room}/raid`, { headers: { [PLAYER_HEADER]: ADMIN, [VERSION_HEADER]: "0.0.0-dev" } })).status, 426, "the Raid World admin routes ask for X-MGQ-Features too");
   assert.deepEqual([(await gameFetch(directoryBase)).status, (await gameFetch(mods)).status], [200, 200]);
-  assert.equal((await fetch(`${directoryBase}/${room}/raid?player=${ADMIN}`, { headers: ADMIN_TOOL })).status, 404, "the World Admin tool passes");
+  assert.equal((await fetch(`${directoryBase}/${room}/raid`, { headers: { ...ADMIN_TOOL, [PLAYER_HEADER]: ADMIN } })).status, 404, "the World Admin tool passes");
   // Deleted, so the creator stays below the worlds a creator may have for the tests after this one.
   assert.equal((await gameFetch(`${directoryBase}/${room}/delete`, { method: "POST", body: JSON.stringify({ player: CREATOR }) })).status, 200);
 });
@@ -1217,8 +1061,8 @@ test("the MIN_VERSION setting raises the lowest version a game may name, which o
   const gated = createRelay({ clock: () => now, checkEveryMs: 3_600_000, log: LOG, minVersion: "0.7.0" });
   await new Promise((resolve) => gated.server.listen(0, "127.0.0.1", resolve));
   const at = `127.0.0.1:${gated.server.address().port}`;
-  const trades = `http://${at}/v1/trades?player=${playerKey(81)}&world=${roomId(133)}`;
-  const status = async (address, headers) => (await fetch(address, { headers })).status;
+  const trades = `http://${at}/v1/trades?world=${roomId(133)}`;
+  const status = async (address, headers) => (await fetch(address, { headers: { [PLAYER_HEADER]: playerKey(81), ...headers } })).status;
 
   try {
     assert.deepEqual(
@@ -1231,7 +1075,7 @@ test("the MIN_VERSION setting raises the lowest version a game may name, which o
     assert.deepEqual([await status(`http://${at}/v1/worlds`, { ...GAME, [VERSION_HEADER]: "0.7.0" }), await status(`http://${at}/v1/mods`, { ...GAME, [VERSION_HEADER]: "0.7.1" })], [200, 200]);
     assert.deepEqual([await status(`http://${at}/v1/worlds`, { [VERSION_HEADER]: "0.7.0" }), (await fetch(`http://${at}/v1/mods`, { method: "POST", headers: { [VERSION_HEADER]: "0.7.1" } })).status], [426, 426], "they ask for X-MGQ-Features too, a change of the mod catalog included");
     assert.deepEqual(await openWithHeaders(`ws://${at}/v1/room/${roomId(134)}?role=host`, {}), { status: 426, refusal: UPDATE_NEEDED }, "a released game's PvP room");
-    assert.deepEqual(await openWithHeaders(`ws://${at}/v1/world/${roomId(133)}?name=Old&auth=${AUTH}`, { [PLAYER_HEADER]: playerKey(81), ...UNNAMED }), { status: 400, refusal: "update" }, "a released game's world room");
+    assert.deepEqual(await openWithHeaders(`ws://${at}/v1/world/${roomId(133)}?name=Old`, { [AUTH_HEADER]: AUTH, [PLAYER_HEADER]: playerKey(81), ...UNNAMED }), { status: 400, refusal: "update" }, "a released game's world room");
   } finally {
     await gated.stop();
   }
@@ -1242,13 +1086,11 @@ test("the MIN_VERSION setting raises the lowest version a game may name, which o
 
   try {
     assert.deepEqual(
-      [await status(`http://${open}/v1/trades?player=${playerKey(81)}&world=${roomId(133)}`, UNNAMED), await status(`http://${open}/v1/worlds`, UNNAMED), await status(`http://${open}/v1/mods`, UNNAMED), await status(`http://${open}/v1/worlds`, {})],
+      [await status(`http://${open}/v1/trades?world=${roomId(133)}`, UNNAMED), await status(`http://${open}/v1/worlds`, UNNAMED), await status(`http://${open}/v1/mods`, UNNAMED), await status(`http://${open}/v1/worlds`, {})],
       [200, 200, 200, 426],
       "released games naming no version pass while the lowest is at most 0.6.4, and a request without X-MGQ-Features stays refused",
     );
-    const host = await openWithHeaders(`ws://${open}/v1/room/${roomId(135)}?role=host`, {});
-    assert.ok(host.socket, "a released game's PvP room");
-    host.socket.close();
+    assert.deepEqual(await openWithHeaders(`ws://${open}/v1/room/${roomId(135)}?role=host`, {}), { status: 426, refusal: UPDATE_NEEDED }, "a PvP room, whatever the lowest");
   } finally {
     await released.stop();
   }
@@ -1264,7 +1106,7 @@ test("every request is logged as one line without its query, and a caught error 
   assert.match(lines[0], /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z GET \/v1\/worlds 200 \d+ms 127\.0\.0\.1$/);
   assert.match(lines[1], /^\S+ GET \/v1\/worlds\/[0-9a-f]{32}\/lock 404 \d+ms 127\.0\.0\.1$/);
   assert.ok(!lines.some((line) => line.includes(CREATOR)), "a key in the address stays out of the log");
-  assert.ok(logged.info.some((line) => / GET \/v1\/room\/[0-9a-f]{32} 101 /.test(line)), "an opened WebSocket is logged as 101");
+  assert.ok(logged.info.some((line) => / GET \/v1\/world\/[0-9a-f]{32} 101 /.test(line)), "an opened WebSocket is logged as 101");
   assert.ok(logged.info.some((line) => / GET \/v1\/world\/[0-9a-f]{32} 403 /.test(line)), "a refused WebSocket is logged with its status");
 
   assert.equal(requestLine(new Date(0), "POST", "/v1/mods", 413, 2.6, null), "1970-01-01T00:00:00.000Z POST /v1/mods 413 3ms -");
@@ -1329,7 +1171,7 @@ test("every game of a Raid World hears its new difficulty once its creator chang
   });
   assert.equal(created.status, 201);
   assert.equal((await listed(room)).difficulty, 1);
-  const watcher = await openWithHeaders(`${worldBase}${room}?name=Watcher&auth=${AUTH}`, { [PLAYER_HEADER]: playerKey(72), ...GAME });
+  const watcher = await openWithHeaders(`${worldBase}${room}?name=Watcher`, { [AUTH_HEADER]: AUTH, [PLAYER_HEADER]: playerKey(72), ...GAME });
   assert.equal(await watcher.first, "seat 0");
   const heard = [];
   watcher.socket.on("message", (data) => heard.push(data.toString()));
@@ -1356,7 +1198,7 @@ test("every game of a Raid World hears its new squad settings once its creator c
   });
   assert.equal(created.status, 201);
   assert.deepEqual((await listed(room)).squad, { luka: false, formation: 4, front: 1, raidFront: 1 });
-  const watcher = await openWithHeaders(`${worldBase}${room}?name=Watcher&auth=${AUTH}`, { [PLAYER_HEADER]: playerKey(97), ...GAME });
+  const watcher = await openWithHeaders(`${worldBase}${room}?name=Watcher`, { [AUTH_HEADER]: AUTH, [PLAYER_HEADER]: playerKey(97), ...GAME });
   assert.equal(await watcher.first, "seat 0");
   const heard = [];
   watcher.socket.on("message", (data) => heard.push(data.toString()));
@@ -1383,7 +1225,7 @@ test("every game of a Classic world hears whether it fights raid bosses once its
   });
   assert.equal(created.status, 201);
   assert.equal((await listed(room)).raidBosses, false);
-  const watcher = await openWithHeaders(`${worldBase}${room}?name=Watcher&auth=${AUTH}`, { ...GAME, [PLAYER_HEADER]: playerKey(99) });
+  const watcher = await openWithHeaders(`${worldBase}${room}?name=Watcher`, { [AUTH_HEADER]: AUTH, ...GAME, [PLAYER_HEADER]: playerKey(99) });
   assert.equal(await watcher.first, "seat 0");
   const heard = [];
   watcher.socket.on("message", (data) => heard.push(data.toString()));
@@ -1413,7 +1255,7 @@ test("every game of a world hears that it turns other mods off, with its mods, o
   });
   assert.equal(created.status, 201);
   assert.equal((await listed(room)).otherModsOff, false);
-  const watcher = await openWithHeaders(`${worldBase}${room}?name=Watcher&auth=${AUTH}`, { ...GAME, [PLAYER_HEADER]: playerKey(73) });
+  const watcher = await openWithHeaders(`${worldBase}${room}?name=Watcher`, { [AUTH_HEADER]: AUTH, ...GAME, [PLAYER_HEADER]: playerKey(73) });
   assert.equal(await watcher.first, "seat 0");
   const heard = [];
   watcher.socket.on("message", (data) => heard.push(data.toString()));
@@ -1432,7 +1274,7 @@ test("every game of a world hears that it turns other mods off, with its mods, o
   watcher.socket.close();
 });
 
-test("a game that takes mod settings from the relay hears the world's as it enters and each change over HTTP, a game that does not hears neither", async () => {
+test("every game hears the world's mod settings as it enters and each change over HTTP", async () => {
   const room = roomId(140);
   const creator = playerKey(120);
   const created = await gameFetch(directoryBase, {
@@ -1441,82 +1283,53 @@ test("a game that takes mod settings from the relay hears the world's as it ente
     body: JSON.stringify({ id: room, name: "Shared", seats: 4, playerName: "Creator", authHash: await sha256Hex(AUTH), lock: { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(40) }, settings: "@shared=o:1;a=i:1" }),
   });
   assert.equal(created.status, 201);
-  const heard = { taking: [], other: [] };
+  const heard = { first: [], second: [] };
   // The listeners come before the connection opens, since the world's settings follow the seat at once.
-  const enter = (name, player, headers, texts) => {
-    const socket = new WebSocketClient(`${worldBase}${room}?name=${name}&auth=${AUTH}`, { headers: { ...GAME, ...headers, [PLAYER_HEADER]: playerKey(player) } });
+  const enter = (name, player, texts) => {
+    const socket = new WebSocketClient(`${worldBase}${room}?name=${name}`, { headers: { ...GAME, [PLAYER_HEADER]: playerKey(player), [AUTH_HEADER]: AUTH } });
     socket.on("message", (data) => texts.push(data.toString()));
     return socket;
   };
-  const taking = enter("Taking", 121, { [FEATURES_HEADER]: "raid,settings" }, heard.taking);
-  await until(async () => heard.taking.length >= 2);
-  assert.deepEqual(heard.taking, ["seat 0", "mod_settings \t@shared=o:1;a=i:1"]);
-  const other = enter("Other", 122, {}, heard.other);
-  await until(async () => heard.other.length >= 1);
-  assert.deepEqual(heard.other, ["seat 1 0"]);
+  const first = enter("First", 121, heard.first);
+  await until(async () => heard.first.length >= 2);
+  assert.deepEqual(heard.first, ["seat 0", "mod_settings \t@shared=o:1;a=i:1"]);
+  const second = enter("Second", 122, heard.second);
+  await until(async () => heard.second.length >= 2);
+  assert.deepEqual(heard.second, ["seat 1 0", "mod_settings \t@shared=o:1;a=i:1"]);
 
   const edit = await gameFetch(`${directoryBase}/${room}/edit`, { method: "POST", headers: { [PLAYER_HEADER]: creator }, body: JSON.stringify({ settings: "@shared=o:1;a=i:0" }) });
   assert.equal(edit.status, 200);
-  await until(async () => heard.taking.includes("mod_settings creator\t@shared=o:1;a=i:0"));
-  assert.deepEqual(heard.other.filter((text) => text.startsWith("mod_settings")), [], "a game that does not name the feature hears no settings");
-  taking.close();
-  other.close();
+  await until(async () => heard.first.includes("mod_settings creator\t@shared=o:1;a=i:0") && heard.second.includes("mod_settings creator\t@shared=o:1;a=i:0"));
+  first.close();
+  second.close();
 });
 
-test("games from 0.6.8 read a world's mods by its id, and released ones keep the list but stay out of a world with more mods than they hold", async () => {
-  // Only a relay whose lowest version is below 0.7.0 serves the released games this holds apart.
-  const served = createRelay({ clock: () => now, checkEveryMs: 3_600_000, log: LOG, minVersion: "0.6.0" });
-  await new Promise((resolve) => served.server.listen(0, "127.0.0.1", resolve));
-  const directoryBase = `http://127.0.0.1:${served.server.address().port}/v1/worlds`;
-  const worldBase = `ws://127.0.0.1:${served.server.address().port}/v1/world/`;
+test("games read a world's mods by its id, the list names them only for the website and the World Admin tool, and every game hears a long mods rule", async () => {
   const room = roomId(210);
   const creator = playerKey(110);
-  const newer = { ...GAME, [VERSION_HEADER]: "0.6.8" };
-  const released = { ...GAME, [VERSION_HEADER]: "0.6.7.7" };
   const created = await gameFetch(directoryBase, {
     method: "POST",
     headers: { [PLAYER_HEADER]: creator },
     body: JSON.stringify({ id: room, name: "Many Mods", seats: 4, playerName: "Creator", authHash: await sha256Hex(AUTH), lock: { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(40) }, otherModsOff: true, mods: "!Level Cap", settings: "a=i:1" }),
   });
   assert.equal(created.status, 201);
-  const enter = (player, headers) => openWithHeaders(`${worldBase}${room}?name=P&auth=${AUTH}`, { ...headers, [PLAYER_HEADER]: playerKey(player) });
-  const old = await enter(111, released);
-  const current = await enter(112, newer);
-  assert.deepEqual([await old.first, await current.first], ["seat 0", "seat 1 0"]);
-  const heard = { old: [], current: [] };
-  old.socket.on("message", (data) => heard.old.push(data.toString()));
-  current.socket.on("message", (data) => heard.current.push(data.toString()));
-  const edit = (mods) => gameFetch(`${directoryBase}/${room}/edit`, { method: "POST", headers: { [PLAYER_HEADER]: creator }, body: JSON.stringify({ mods }) });
+  const game = await openWithHeaders(`${worldBase}${room}?name=P`, { [AUTH_HEADER]: AUTH, ...GAME, [PLAYER_HEADER]: playerKey(111) });
+  assert.equal(await game.first, "seat 0");
+  const heard = [];
+  game.socket.on("message", (data) => heard.push(data.toString()));
 
-  const rules = (texts) => texts.filter((text) => text.startsWith("mods_rule"));
   const many = Array.from({ length: 600 }, (_, index) => `Mod ${index}`).join(";");
-  assert.ok(many.length > 4096);
-  assert.equal((await edit(many)).status, 200);
-  await until(async () => rules(heard.current).length === 1);
-  assert.equal(rules(heard.current)[0], `mods_rule 1	${many}`);
-  assert.equal(rules(heard.old).length, 0, "a released game never hears a rule longer than its DLL takes");
-  assert.equal((await edit("x".repeat(400))).status, 200);
-  await until(async () => rules(heard.old).length === 1);
-  assert.deepEqual(rules(heard.old), [`mods_rule 1	${"x".repeat(400)}`]);
+  assert.equal((await gameFetch(`${directoryBase}/${room}/edit`, { method: "POST", headers: { [PLAYER_HEADER]: creator }, body: JSON.stringify({ mods: many }) })).status, 200);
+  await until(async () => heard.includes(`mods_rule 1\t${many}`));
 
   const listedFor = async (headers) => (await (await fetch(directoryBase, { headers })).json()).worlds.find((world) => world.id === room);
-  assert.equal((await listedFor(released)).mods, "x".repeat(400));
-  assert.equal((await listedFor(UNNAMED)).settings, "a=i:1", "a game naming no version");
-  assert.equal((await listedFor({ [FEATURES_HEADER]: "web", [VERSION_HEADER]: "0.0.0-dev" })).mods, "x".repeat(400), "the website");
-  const slim = await listedFor(newer);
-  assert.deepEqual([slim.mods, slim.modHashes, slim.settings, slim.modsCount], [undefined, undefined, undefined, 1]);
-  const opened = await gameFetch(`${directoryBase}/${room}`, { headers: newer });
-  assert.deepEqual([opened.status, (await opened.json()).world.mods], [200, "x".repeat(400)]);
-
-  assert.deepEqual(await enter(113, released), { status: 400, refusal: "update" }, "a released game is sent to update, as when it is too old");
-  const unnamed = await enter(114, UNNAMED);
-  assert.equal(unnamed.status, 400, "a game naming no version too");
-  const later = await enter(115, newer);
-  assert.equal(await later.first, "seat 2 0 1");
-  later.socket.close();
-  current.socket.close();
-  old.socket.close();
-  await served.stop();
+  const slim = await listedFor(GAME);
+  assert.deepEqual([slim.mods, slim.modHashes, slim.settings, slim.modsCount], [undefined, undefined, undefined, 600]);
+  assert.equal((await listedFor({ [FEATURES_HEADER]: "web", [VERSION_HEADER]: "0.0.0-dev" })).mods, many, "the website");
+  assert.equal((await listedFor(ADMIN_TOOL)).settings, "a=i:1", "the World Admin tool");
+  const opened = await gameFetch(`${directoryBase}/${room}`);
+  assert.deepEqual([opened.status, (await opened.json()).world.mods], [200, many]);
+  game.socket.close();
 });
 
 test("the creator or an admin edits a world over HTTP", async () => {
@@ -1534,12 +1347,11 @@ test("the creator or an admin edits a world over HTTP", async () => {
   assert.equal((await gameFetch(`${directoryBase}/${room}/edit`, { method: "POST", headers: { [PLAYER_HEADER]: CREATOR }, body: "x".repeat(300_000) })).status, 413, "a text body over the cap is too large");
 });
 
-test("the admins' stats count the world rooms with their players, the PvP rooms and the game versions in the world rooms", async () => {
+test("the admins' stats count the world rooms with their players and the game versions in them", async () => {
   const room = roomId(200);
   await makeWorld(room, 4);
-  const newer = await open(`${worldBase}${room}?player=${playerKey(91)}&name=Newer&auth=${AUTH}`, { ...GAME, [VERSION_HEADER]: "0.7.1" });
+  const newer = await open(`${worldBase}${room}?name=Newer`, { ...GAME, [VERSION_HEADER]: "0.7.1", [PLAYER_HEADER]: playerKey(91), [AUTH_HEADER]: AUTH });
   const current = await sit(room, 92);
-  const host = await connect(roomId(201), "host");
   await until(async () => (await listed(room)).online === 2);
   const stats = async (headers) => fetch(`${directoryBase.replace("/worlds", "")}/admin/stats`, { headers });
 
@@ -1548,11 +1360,11 @@ test("the admins' stats count the world rooms with their players, the PvP rooms 
   const body = await answer.json();
   assert.deepEqual(body.worlds.find((world) => world.id === room), { id: room, name: `World ${room.slice(-3)}`, type: "classic", seats: 4, players: 2 });
   assert.deepEqual([body.versions["0.7.1"], body.versions["0.7.0"]], [1, 1]);
-  assert.ok(body.rooms >= 1 && body.players.total === body.players.worlds + body.players.rooms);
+  assert.ok(body.players.worlds >= 2 && body.players.total === body.players.worlds);
   assert.deepEqual([body.battles, body.battleServer, typeof body.memory.rss, body.startedAt], [{ tracked: 0, served: 0 }, null, "number", new Date(1_000_000).toISOString()]);
   assert.equal((await stats({ [PLAYER_HEADER]: CREATOR })).status, 403, "only admins read them");
 
-  for (const each of [newer, current, host]) {
+  for (const each of [newer, current]) {
     each.socket.close();
   }
 });

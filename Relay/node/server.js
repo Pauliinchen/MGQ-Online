@@ -2,6 +2,11 @@
 //  server.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Dropped the games' story writes, checkpoint reads and route locks over HTTP, which only games without story tracks used
+//                            - Played every Raid World on tracks and told every game the world's mod settings, as every game the relay serves does both
+//                            - Took the player's key and auth key from the headers only, the admin routes' too
+//                            - Listed the worlds with their mods for the website and the World Admin tool only, and dropped the mod limits of released games
+//                            - Dropped the PvP rooms, which only older games opened
 //      Paulinchen  2026-10-31: Kept the run entries of the story tracks in memory and started the tracks from the keyed story
 //                            - Turned every game that keeps no keys away from a Raid World
 //                            - Handed the admin routes of a Raid World its story tracks, which act on the world's track
@@ -99,10 +104,9 @@ import { DESIGNER_RELEASE_LIMITS, DesignerReleases, byteRangeOf, designerRelease
 import {
   DESIGN_CLOSE, DESIGN_READER_HEADER, DESIGN_SOCKET, DesignBook, admitDesigner, designRouteOf, gameDesignRouteOf, handleDesignRequest, handleGameDesignRequest, pushedFrame, releaseFrame,
 } from "../core/designs.js";
-import { DIRECTORY_LIMITS, Directory, SETTINGS_BY, SETTINGS_FEATURE, WORLD_TYPE, difficultyText, handleDirectoryRequest, modSettingsText, modsRuleText, parseAdmins, raidBossesText, releasedGamesTakeRule, squadText } from "../core/directory.js";
+import { DIRECTORY_LIMITS, Directory, SETTINGS_BY, WORLD_TYPE, difficultyText, handleDirectoryRequest, modSettingsText, modsRuleText, parseAdmins, raidBossesText, squadText } from "../core/directory.js";
 import {
-  DEFAULT_MIN_VERSION, DESIGN_FORMAT_HEADER, DESIGNER_HEADER, DESIGNER_VERSION_HEADER, DRAIN_LIMITS, UPDATE_NEEDED, VERSION_HEADER, WORLD_ROOM_UPDATE_CODE,
-  WORLD_ROOM_UPDATE_STATUS, holdsLongMods, listsWorldMods, updateRefusal,
+  DEFAULT_MIN_VERSION, DESIGN_FORMAT_HEADER, DESIGNER_HEADER, DESIGNER_VERSION_HEADER, DRAIN_LIMITS, VERSION_HEADER, listsWorldMods, updateRefusal,
 } from "../core/gate.js";
 import { routeIs, withJson } from "../core/http.js";
 import { adminCheck, exportWorldData, handleMigrationRequest, migrationRouteOf } from "../core/migration.js";
@@ -110,20 +114,20 @@ import { ModCatalog, handleModRequest } from "../core/mods.js";
 import { handleRaidAdminRequest, raidAdminRouteOf } from "../core/raid_admin.js";
 import { RELEASE_REPO, RELEASE_ROUTE, ReleaseControl, ReleaseWatch, UPDATE_NAME, handleReleaseRequest, updateLine } from "../core/releases.js";
 import { ReportDesk, handleReportRequest, reportSettingsOf } from "../core/reports.js";
-import { STORY_LIMITS, WorldStory, handleStoryRequest, keylessGame, keylessGameRefusal, noRaidWorld, pinOf, storyPushText, storyRouteOf } from "../core/story.js";
+import { STORY_LIMITS, WorldStory, handleStoryRequest, noRaidWorld, pinOf, storyPushText, storyRouteOf } from "../core/story.js";
 import { STORY_TABLES } from "../core/story_catchup.js";
 import { BATTLE_SERVER_AUTHOR, MAPPING_ADMIN_ROUTE, MAPPING_GAME_ROUTE, MAPPING_REFUSAL, StoryMapping, handleMappingGameRequest } from "../core/story_mapping.js";
-import { StoryTracks, TRACKS_FEATURE, TRACK_FRAME } from "../core/story_tracks.js";
+import { StoryTracks, TRACK_FRAME } from "../core/story_tracks.js";
 import { seedStoryTables } from "./story_seed.js";
 import { TradeBook, handleTradeRequest } from "../core/trades.js";
 import { DesignCompiler, designCompilerSettingsOf } from "./design_compiler.js";
 import {
-  AUTH_HEADER, CHAT_SLOW, CLOSE, FEATURES_HEADER, IN, LIMITS, OUT, PAIRED, PING, PLAYER_HEADER, PONG, REFUSAL_HEADER, admit, chatLineOf, chatText, newPeer, newWorldPeer,
-  overdue, parseFeatures, parseRoute, presenceOf, replacedBy, routeWorldMessage, seatChangeText, seatText, takeChatLine, takeMessage, takeSeat, worldOverdue,
+  AUTH_HEADER, CHAT_SLOW, CLOSE, FEATURES_HEADER, IN, LIMITS, OUT, PING, PLAYER_HEADER, PONG, REFUSAL_HEADER, chatLineOf, chatText, newPeer, newWorldPeer,
+  parseRoute, presenceOf, replacedBy, routeWorldMessage, seatChangeText, seatText, takeChatLine, takeMessage, takeSeat, worldOverdue,
 } from "../core/relay.js";
 
 /**
- * How often the server looks for rooms whose time is up.
+ * How often the server looks for world room connections whose time is up.
  */
 const CHECK_EVERY_MS = 60 * 1000;
 
@@ -240,8 +244,8 @@ export const consoleLog = Object.freeze({
 });
 
 /**
- * Writes the log line of one request. The path comes without its query, since released games put
- * their player key and auth key there.
+ * Writes the log line of one request. The path comes without its query, since older games, which
+ * the relay turns away, put their player key and auth key there.
  *
  * @param {Date} time When the request was answered.
  * @param {string} method The HTTP method.
@@ -747,8 +751,6 @@ export function createRelay({
   /** @type {Map<string, StoryTracks>} */
   const worldTracks = new Map();
   /** @type {Map<string, {socket: import("ws").WebSocket, record: object}[]>} */
-  const rooms = new Map();
-  /** @type {Map<string, {socket: import("ws").WebSocket, record: object}[]>} */
   const worlds = new Map();
   const battles = new BattleTable({ clock, limits: battleLimits });
   /** @type {Map<string, {world: string, battle: string, server: net.Socket, players: Map<number, {socket: import("ws").WebSocket, record: object}>}>} */
@@ -839,32 +841,9 @@ export function createRelay({
       return;
     }
 
-    if (route.kind === "room") {
-      if (!directory.rates.joins.take(address)) {
-        turnAway(429, "too many requests from this address, try again later");
-        return;
-      }
-
-      const refusal = admit((rooms.get(route.roomId) ?? []).map((peer) => peer.record.role), route.role);
-
-      if (refusal) {
-        turnAway(409, refusal.reason);
-        return;
-      }
-
-      accept((webSocket) => join(route, webSocket));
-      return;
-    }
-
-    const features = parseFeatures(headerOf(request, FEATURES_HEADER));
-    directory.admit(route.roomId, route.player, route.auth, address, features, !holdsLongMods(headerOf(request, VERSION_HEADER))).then(async (answer) => {
+    directory.admit(route.roomId, route.player, route.auth, address).then(async (answer) => {
       if (answer.status !== 200) {
         turnAway(answer.status, answer.body.error, answer.body.code);
-        return;
-      }
-
-      if (answer.type === WORLD_TYPE.raid && keylessGame(features)) {
-        turnAway(WORLD_ROOM_UPDATE_STATUS, UPDATE_NEEDED, WORLD_ROOM_UPDATE_CODE);
         return;
       }
 
@@ -877,8 +856,7 @@ export function createRelay({
         return;
       }
 
-      const playsTracks = answer.type === WORLD_TYPE.raid && features.includes(TRACKS_FEATURE);
-      accept((webSocket) => sit(route, answer, webSocket, headerOf(request, VERSION_HEADER)?.slice(0, MAX_VERSION_LENGTH) ?? null, playsTracks, features.includes(SETTINGS_FEATURE)));
+      accept((webSocket) => sit(route, answer, webSocket, headerOf(request, VERSION_HEADER)?.slice(0, MAX_VERSION_LENGTH) ?? null));
     }, (error) => {
       log.error(errorLine(new Date(), `admit ${path}`, error));
       turnAway(500, "the directory failed");
@@ -1011,8 +989,8 @@ export function createRelay({
     const trading = routeIs(url, "trades");
 
     if (!routeIs(url, "worlds") && !catalog && !trading) {
-      // The same answers as the Cloudflare relay gives: a room's address needs its WebSocket.
-      const route = parseRoute(url);
+      // The same answers as the Cloudflare relay gives: a world room's address needs its WebSocket.
+      const route = parseRoute(url, headerOf(request, PLAYER_HEADER), headerOf(request, AUTH_HEADER));
       const [status, reason] = "error" in route ? [400, route.error] : [426, "the relay only takes WebSockets"];
       response.writeHead(status, { "Content-Type": "text/plain" });
       response.end(reason);
@@ -1021,7 +999,7 @@ export function createRelay({
 
     const client = {
       player: headerOf(request, PLAYER_HEADER), auth: headerOf(request, AUTH_HEADER), address: addressOf(request),
-      modsListed: listsWorldMods(headerOf(request, FEATURES_HEADER), headerOf(request, VERSION_HEADER)),
+      modsListed: listsWorldMods(headerOf(request, FEATURES_HEADER)),
     };
     const answer = trading
       ? await handleTradeRequest(trades, request.method, url, () => readText(request), client.player)
@@ -1056,11 +1034,11 @@ export function createRelay({
 
     if (answer.modsRule) {
       const { off, mods } = answer.modsRule;
-      tellWorld(answer.id, modsRuleText(off, mods), (peer) => holdsLongMods(peer.version) || releasedGamesTakeRule(mods));
+      tellWorld(answer.id, modsRuleText(off, mods));
     }
 
     if (answer.modSettings) {
-      tellWorld(answer.id, modSettingsText(answer.modSettings.by, answer.modSettings.settings), (peer) => peer.settings);
+      tellWorld(answer.id, modSettingsText(answer.modSettings.by, answer.modSettings.settings));
     }
 
     if (answer.bytes) {
@@ -1622,17 +1600,13 @@ export function createRelay({
       return noRaidWorld();
     }
 
-    if (keylessGame(parseFeatures(headerOf(request, FEATURES_HEADER)))) {
-      return keylessGameRefusal();
-    }
-
     const known = new URL(request.url, "http://relay").searchParams.get("known");
-    const answer = await handleStoryRequest(storyOf(route.id), request.method, route.rest, () => readText(request, storyLimits.maxBodyLength), access.player,
+    const answer = await handleStoryRequest(storyOf(route.id), request.method, route.rest, () => readText(request, storyLimits.maxSmallBodyLength), access.player,
       known !== null && /^\d+$/.test(known) ? Number(known) : null);
     await tidyDeleted(route.id);
 
-    for (const push of [answer.push, answer.restore].filter(Boolean)) {
-      tellWorld(route.id, storyPushText(push, storyLimits));
+    if (answer.push) {
+      tellWorld(route.id, storyPushText(answer.push, storyLimits));
     }
 
     return answer;
@@ -1867,13 +1841,13 @@ export function createRelay({
    * Seats a game in its world room and passes its messages on.
    *
    * @param {{roomId: string, name: string}} route The world room and the player's name.
-   * @param {{seats: number, player: string, settings?: string}} admission The world's seats, the player's id and its mod settings, from the directory.
+   * @param {{seats: number, player: string, type?: string, settings?: string}} admission The world's seats, the player's id, its type and its mod settings, from the directory.
    * @param {import("ws").WebSocket} socket The game's WebSocket.
    * @param {string | null} version The version the game named in VERSION_HEADER, null for none.
-   * @param {boolean} [playsTracks] Whether the game plays the Raid World's story on tracks, see TRACKS_FEATURE.
-   * @param {boolean} [takesSettings] Whether the game takes the world's mod settings from the relay, see SETTINGS_FEATURE.
    */
-  function sit(route, admission, socket, version, playsTracks = false, takesSettings = false) {
+  function sit(route, admission, socket, version) {
+    // Every game of a Raid World plays its story on tracks.
+    const playsTracks = admission.type === WORLD_TYPE.raid;
     const earlier = worlds.get(route.roomId) ?? [];
 
     for (const { index, code, reason } of replacedBy(earlier.map((other) => other.record), admission.player).reverse()) {
@@ -1889,13 +1863,10 @@ export function createRelay({
       return;
     }
 
-    const peer = { socket, record: newWorldPeer(seat, { player: admission.player, name: route.name }, clock(), limits), version, tracks: playsTracks, settings: takesSettings };
+    const peer = { socket, record: newWorldPeer(seat, { player: admission.player, name: route.name }, clock(), limits), version, tracks: playsTracks };
     worlds.set(route.roomId, peers);
     socket.send(seatText(seat, peers.map((other) => other.record.seat)));
-
-    if (takesSettings) {
-      socket.send(modSettingsText(SETTINGS_BY.entering, admission.settings ?? ""));
-    }
+    socket.send(modSettingsText(SETTINGS_BY.entering, admission.settings ?? ""));
 
     for (const other of peers) {
       other.socket.send(seatChangeText(IN, seat));
@@ -2001,105 +1972,10 @@ export function createRelay({
   }
 
   /**
-   * Takes a peer out of its room at once and closes it, and the other peer with it, which ends the
-   * room; once, however often it is asked.
-   *
-   * @param {string} roomId The room.
-   * @param {{socket: import("ws").WebSocket, record: object}} peer The leaving peer.
-   * @param {number} code The leaving peer's close code.
-   * @param {string} reason The leaving peer's close reason.
-   */
-  function endRoom(roomId, peer, code, reason) {
-    const peers = rooms.get(roomId) ?? [];
-
-    if (!peers.includes(peer)) {
-      return;
-    }
-
-    rooms.delete(roomId);
-    peer.socket.close(code, reason);
-
-    for (const other of peers) {
-      if (other !== peer) {
-        other.socket.close(CLOSE.peerLeft, "the other side left");
-      }
-    }
-  }
-
-  /**
-   * Puts a peer into its room and passes its messages on.
-   *
-   * @param {{roomId: string, role: string}} route The room and role.
-   * @param {import("ws").WebSocket} socket The peer's WebSocket.
-   */
-  function join(route, socket) {
-    // Another peer of the same role may have joined while this one's handshake ran.
-    const taken = admit((rooms.get(route.roomId) ?? []).map((peer) => peer.record.role), route.role);
-
-    if (taken) {
-      socket.close(taken.code, taken.reason);
-      return;
-    }
-
-    const peers = rooms.get(route.roomId) ?? [];
-    const peer = { socket, record: newPeer(route.role, clock(), limits) };
-    rooms.set(route.roomId, peers);
-    peers.push(peer);
-
-    if (peers.length === 2) {
-      for (const each of peers) {
-        each.socket.send(PAIRED);
-      }
-    }
-
-    socket.on("message", (data, isBinary) => {
-      // A room the relay ended passes nothing on while its connections close.
-      if (rooms.get(route.roomId) !== peers) {
-        return;
-      }
-
-      const { peer: record, refusal } = takeMessage(peer.record, data.length, clock(), limits);
-      peer.record = record;
-
-      if (refusal) {
-        endRoom(route.roomId, peer, refusal.code, refusal.reason);
-        return;
-      }
-
-      if (!isBinary) {
-        if (data.toString() === PING) {
-          socket.send(PONG);
-        } else {
-          endRoom(route.roomId, peer, CLOSE.badRequest, "only binary messages are passed on");
-        }
-        return;
-      }
-
-      peers.find((other) => other !== peer)?.socket.send(data, { binary: true });
-    });
-
-    socket.on("close", () => endRoom(route.roomId, peer, CLOSE.normal, "closed"));
-    socket.on("error", () => socket.terminate());
-  }
-
-  /**
-   * Closes the peers whose time is up, in every room and world room; a world room's game whose
-   * player plays in a battle on the battle server stays until the battle ended.
+   * Closes the world room connections whose time is up; a game whose player plays in a battle on
+   * the battle server stays until the battle ended.
    */
   function check() {
-    for (const [roomId, peers] of [...rooms]) {
-      const closed = overdue(peers.map((peer) => peer.record), clock(), limits);
-
-      // The overdue peers are always the whole room: everyone once it lasted too long, or its lone peer.
-      if (closed.length > 0) {
-        rooms.delete(roomId);
-      }
-
-      for (const { index, code, reason } of closed) {
-        peers[index].socket.close(code, reason);
-      }
-    }
-
     for (const [roomId, peers] of [...worlds]) {
       const closed = worldOverdue(peers.map((peer) => peer.record), clock(), limits).map(({ index, code, reason }) => ({ peer: peers[index], code, reason }))
         .filter(({ peer }) => !battles.playing(roomId, peer.record.player));
@@ -2181,8 +2057,8 @@ export function createRelay({
 
   /**
    * Gathers what the relay carries now, for its admins: the world rooms open with their players,
-   * the PvP rooms, the battles, the game versions in the world rooms, the process and the battle
-   * server's answer to a ping.
+   * the battles, the game versions in the world rooms, the process and the battle server's answer
+   * to a ping.
    *
    * @returns {Promise<object>} The stats, see the README's admin routes.
    */
@@ -2202,15 +2078,13 @@ export function createRelay({
       }
     }
 
-    const roomPlayers = [...rooms.values()].reduce((count, peers) => count + peers.length, 0);
     const memory = process.memoryUsage();
     return {
       startedAt: new Date(started).toISOString(),
       uptimeSeconds: Math.floor((now - started) / 1000),
       memory: { rss: memory.rss, heapTotal: memory.heapTotal, heapUsed: memory.heapUsed, external: memory.external },
       worlds: worldRooms,
-      rooms: rooms.size,
-      players: { worlds: worldPlayers, rooms: roomPlayers, total: worldPlayers + roomPlayers },
+      players: { worlds: worldPlayers, total: worldPlayers },
       versions,
       battles: { tracked: battles.battles.size, served: battleLinks.size },
       battleServer: battleServer ? await pingBattleServer() : null,

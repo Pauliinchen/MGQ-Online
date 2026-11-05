@@ -2,6 +2,7 @@
 //  mods.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Took the player's key from the header or the body only, never from the address
 //      Paulinchen  2026-10-30: Let admins tag a mod and set what each version requires, which the games list
 //      Paulinchen  2026-10-22: Downloaded a link mod's file only when its link leads to a new release
 //      Paulinchen  2026-10-12: Stopped reading a release file from GitHub once it passes its size limit
@@ -1213,12 +1214,11 @@ export function cleanOptions(options, limits = MOD_LIMITS) {
  * @param {URL} url The request's address.
  * @param {() => Promise<string | null>} readBody Reads the request's body as text, null when it is too large to read.
  * @param {(limit: number) => Promise<Uint8Array | null>} readBytes Reads the request's body as bytes, null when it is longer than the limit.
- * @param {string | null} [player] The X-MGQ-Player header of the request, which wins over the key in its body or address, which released games send.
+ * @param {string | null} [player] The X-MGQ-Player header of the request, which wins over the key in its body.
  * @returns {Promise<{status: number, body: object, bytes?: Uint8Array | ReadableStream<Uint8Array>}>} The answer, sent as the bytes when there are any.
  */
 export async function handleModRequest(catalog, method, url, readBody, readBytes, player = null) {
   const parts = url.pathname.split("/").filter((part) => part.length > 0);
-  const fromQuery = () => player || url.searchParams.get("player");
   const fromBody = (body) => player || body?.player;
   const json = (handle, maxLength = catalog.limits.maxJsonLength) => withJson(readBody, maxLength, handle);
 
@@ -1236,7 +1236,7 @@ export async function handleModRequest(catalog, method, url, readBody, readBytes
   }
 
   if (parts.length === 2 && method === "GET") {
-    return catalog.list(fromQuery());
+    return catalog.list(player);
   }
 
   if (parts.length === 2 && method === "POST") {
@@ -1253,7 +1253,7 @@ export async function handleModRequest(catalog, method, url, readBody, readBytes
 
   if (parts.length === 4 && parts[3] === "upload" && method === "POST") {
     const params = url.searchParams;
-    return catalog.upload(fromQuery(), params.get("name"), params.get("version"), await readBytes(catalog.limits.maxUploadBytes));
+    return catalog.upload(player, params.get("name"), params.get("version"), await readBytes(catalog.limits.maxUploadBytes));
   }
 
   if (parts.length === 4 && parts[3] === "options" && method === "POST") {

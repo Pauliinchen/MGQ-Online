@@ -2,6 +2,9 @@
 //  directory.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Let every game the version gate passes into a Raid World and dropped the mod settings feature
+//                            - Took the player's key and auth key from the headers only, never from the address
+//                            - Listed the worlds without their mods unless told otherwise and dropped the limits of released games before 0.6.8
 //      Paulinchen  2026-10-31: Told a world room the mod settings an edit changed, and who changed them, and named a world's settings to the world room that admits a game
 //      Paulinchen  2026-10-23: Named the world's type to the world room that admits a game
 //      Paulinchen  2026-10-22: Sent a released game to update at a world whose mod hashes or settings are longer than it holds
@@ -69,7 +72,7 @@
 
 import { badRequest, notFound, withJson } from "./http.js";
 import { CONTROL_CHARACTERS, ID, cleanText, hexOf, isHash, isId } from "./ids.js";
-import { FEATURE, MAX_CHAT_LENGTH, RATE_LIMITS, RateLimiter, VERSION, WORLD_SEATS } from "./relay.js";
+import { MAX_CHAT_LENGTH, RATE_LIMITS, RateLimiter, VERSION, WORLD_SEATS } from "./relay.js";
 
 /**
  * The limits the directory keeps.
@@ -103,13 +106,6 @@ export const DIRECTORY_LIMITS = Object.freeze({
 });
 
 /**
- * What released games before 0.6.8 hold of a world's mods: the texts of its mods, mod hashes and
- * settings, and the text of the frame telling a world room the mods rule, past which their DLL
- * drops the frame.
- */
-export const RELEASED_MOD_LIMITS = Object.freeze({ maxModsLength: 300, maxModHashesLength: 2000, maxSettingsLength: 2000, maxRuleLength: 4096 });
-
-/**
  * The name an admin's line of a world's chat carries when the request names none.
  */
 export const ADMIN_NAME = "Admin";
@@ -128,9 +124,7 @@ export const REFUSAL = Object.freeze({
   pending: "pending",
   rate: "rate",
   storage: "storage",
-  raid: "raid_unsupported",
   raidStart: "raid_start",
-  update: "update",
 });
 
 /**
@@ -195,11 +189,6 @@ export const MODS_RULE_TEXT = "mods_rule";
  * enters, and every game of the world once an edit changed them.
  */
 export const MOD_SETTINGS_TEXT = "mod_settings";
-
-/**
- * What a game names in FEATURES_HEADER when it takes a world's mod settings from the relay.
- */
-export const SETTINGS_FEATURE = "settings";
 
 /**
  * Who changed a world's mod settings, as the frame names it; nobody in the frame a game hears as it
@@ -306,7 +295,7 @@ export class Directory {
    *
    * @param {unknown} [key] The asking player's key; without one, only the public worlds and the named ones.
    * @param {unknown} [ids] The ids of hidden worlds to list too, separated by commas.
-   * @param {boolean} [withMods] Whether each world comes with its mods, mod hashes and settings, as released games read them; else with how many mods it names.
+   * @param {boolean} [withMods] Whether each world comes with its mods, mod hashes and settings, as the website and the World Admin tool read them; else with how many mods it names, as games read it.
    * @returns {Promise<{status: number, body: object}>} The worlds, and whether the player is an admin.
    */
   async list(key, ids, withMods = true) {
@@ -643,11 +632,9 @@ export class Directory {
    * @param {unknown} key The player's key.
    * @param {unknown} auth The auth key the player's game made from the world's token.
    * @param {string | null} [address] The game's address, whose entering a rate limit counts; null for none.
-   * @param {string[]} [features] What the game names in FEATURES_HEADER; released games name nothing.
-   * @param {boolean} [released] Whether the game is a released one before 0.6.8, which holds no longer mods, mod hashes and settings than RELEASED_MOD_LIMITS.
    * @returns {Promise<{status: number, body: object, seats?: number, player?: string, type?: string, settings?: string}>} The world's seats, the player's id, the world's type and its mod settings, or why not.
    */
-  async admit(id, key, auth, address = null, features = [], released = false) {
+  async admit(id, key, auth, address = null) {
     if (!this.rates.joins.take(address)) {
       return tooMany();
     }
@@ -656,17 +643,6 @@ export class Directory {
 
     if (refusal) {
       return refusal;
-    }
-
-    // A game that cannot play a Raid World would play it as a Classic one and spoil its story. 400,
-    // since released games retry a 409 as a full world for as long as they run but stop at a 400.
-    if (entry.type === WORLD_TYPE.raid && !features.includes(FEATURE.raid)) {
-      return { status: 400, body: { error: "the world is a Raid World, which this game cannot play", code: REFUSAL.raid } };
-    }
-
-    // A game that cannot hold the world's mods could neither check nor turn off what it needs.
-    if (released && !releasedGamesHold(entry)) {
-      return { status: 400, body: { error: "the world names more mods, mod hashes or settings than this game holds", code: REFUSAL.update } };
     }
 
     if (entry.start === START.pending) {
@@ -1291,30 +1267,6 @@ export function modSettingsText(by, settings) {
 }
 
 /**
- * Tells whether released games before 0.6.8 hold a world's mods, mod hashes and settings, each
- * counted as the relay counted it when it took no longer ones.
- *
- * @param {object} entry The world's entry.
- * @returns {boolean} Whether they do.
- */
-export function releasedGamesHold(entry) {
-  return [...(entry.mods ?? "")].length <= RELEASED_MOD_LIMITS.maxModsLength
-    && (entry.modHashes ?? "").length <= RELEASED_MOD_LIMITS.maxModHashesLength
-    && [...(entry.settings ?? "")].length <= RELEASED_MOD_LIMITS.maxSettingsLength;
-}
-
-/**
- * Tells whether released games before 0.6.8 take the frame telling a world room its mods rule,
- * whose mods their DLL drops past RELEASED_MOD_LIMITS.maxRuleLength characters.
- *
- * @param {string} mods The world's mods as kept.
- * @returns {boolean} Whether they do.
- */
-export function releasedGamesTakeRule(mods) {
-  return mods.length <= RELEASED_MOD_LIMITS.maxRuleLength;
-}
-
-/**
  * Counts the mods a world names, as the games split them: at each semicolon, without the marks
  * of required and essential mods, and leaving out empty names.
  *
@@ -1364,16 +1316,14 @@ function cleanSettings(text) {
  * @param {URL} url The request's address.
  * @param {() => Promise<string | null>} readBody Reads the request's body as text, null when it is too large to read.
  * @param {(limit: number) => Promise<Uint8Array | null>} readBytes Reads the request's body as bytes, null when it is longer than the limit.
- * @param {{player?: string | null, auth?: string | null, address?: string | null, modsListed?: boolean}} [client] The PLAYER_HEADER and AUTH_HEADER of the request, which win over the key and auth key in its body or address, the address it came from, and whether the list names each world's mods, mod hashes and settings, as it does unless told otherwise.
+ * @param {{player?: string | null, auth?: string | null, address?: string | null, modsListed?: boolean}} [client] The PLAYER_HEADER and AUTH_HEADER of the request, the player's key winning over the one in its body, the address it came from, and whether the list names each world's mods, mod hashes and settings, as it does only when told so.
  * @returns {Promise<{status: number, body: object, bytes?: Uint8Array | ReadableStream<Uint8Array>, close?: boolean, kick?: string, difficulty?: number, squad?: object, raidBosses?: boolean, modsRule?: {off: boolean, mods: string}, modSettings?: {by: string, settings: string}, id?: string}>} The answer, sent as the bytes when there are any, and what the platform layer must do beyond it for the world with that id.
  */
 export async function handleDirectoryRequest(directory, method, url, readBody, readBytes, client = {}) {
   const parts = url.pathname.split("/").filter((part) => part.length > 0);
   const header = client.player || null;
   const address = client.address ?? null;
-  const fromQuery = () => header ?? url.searchParams.get("player");
   const fromBody = (body) => header ?? body?.player;
-  const authOf = () => client.auth || url.searchParams.get("auth");
   const json = (handle) => withJson(readBody, directory.limits.maxJsonLength, handle);
 
   if (parts[0] !== VERSION || parts[1] !== "worlds") {
@@ -1381,11 +1331,11 @@ export async function handleDirectoryRequest(directory, method, url, readBody, r
   }
 
   if (parts.length === 2 && method === "GET") {
-    return directory.list(fromQuery(), url.searchParams.get("ids"), client.modsListed !== false);
+    return directory.list(header, url.searchParams.get("ids"), client.modsListed === true);
   }
 
   if (parts.length === 3 && method === "GET") {
-    return directory.world(parts[2], fromQuery());
+    return directory.world(parts[2], header);
   }
 
   if (parts.length === 2 && method === "POST") {
@@ -1409,15 +1359,15 @@ export async function handleDirectoryRequest(directory, method, url, readBody, r
   }
 
   if (parts.length === 4 && parts[3] === "start" && method === "POST") {
-    return directory.putStart(parts[2], fromQuery(), await readBytes(directory.limits.maxStartBytes), address);
+    return directory.putStart(parts[2], header, await readBytes(directory.limits.maxStartBytes), address);
   }
 
   if (parts.length === 4 && parts[3] === "start" && method === "GET") {
-    return directory.getStart(parts[2], fromQuery(), authOf());
+    return directory.getStart(parts[2], header, client.auth || null);
   }
 
   if (parts.length === 4 && parts[3] === "chat" && method === "GET") {
-    return directory.chat(parts[2], fromQuery(), url.searchParams.get("after"));
+    return directory.chat(parts[2], header, url.searchParams.get("after"));
   }
 
   if (parts.length === 4 && parts[3] === "chat" && method === "POST") {
@@ -1466,7 +1416,7 @@ export function publicView(entry) {
 }
 
 /**
- * Makes the view of a world the list hands games that read its mods from the world's own route:
+ * Makes the view of a world the list hands games, which read its mods from the world's own route:
  * the public view without its mods, mod hashes and settings, which may be long, and with how many
  * mods it names.
  *

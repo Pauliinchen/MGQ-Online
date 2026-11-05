@@ -2,6 +2,7 @@
 //  trades.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Took the player's key from the header or the body only, never from the address
 //      Paulinchen  2026-10-12: Kept the sealed offers beside each trade and dropped them once a trade is cancelled
 //                            - Limited the trades a player opened that ended cancelled within a day
 //      Paulinchen  2026-10-07: Answered an unknown sub-route with 404 and read ids, hashes and bodies through ids.js and http.js
@@ -526,23 +527,22 @@ function answerOf(record) {
  * @param {string} method The HTTP method.
  * @param {URL} url The request's address.
  * @param {() => Promise<string | null>} readBody Reads the request's body as text, null when it is too large to read.
- * @param {string | null} [player] The X-MGQ-Player header of the request, which wins over the key in its body or address, which released games send.
+ * @param {string | null} [player] The X-MGQ-Player header of the request, which wins over the key in its body.
  * @returns {Promise<{status: number, body: object}>} The answer.
  */
 export async function handleTradeRequest(trades, method, url, readBody, player = null) {
   const parts = url.pathname.split("/").filter((part) => part.length > 0);
-  const fromQuery = () => player || url.searchParams.get("player");
 
   if (parts[0] !== VERSION || parts[1] !== "trades") {
     return notFound("route");
   }
 
   if (parts.length === 2 && method === "GET") {
-    return trades.pending(fromQuery(), url.searchParams.get("world"));
+    return trades.pending(player, url.searchParams.get("world"));
   }
 
   if (parts.length === 3 && method === "GET") {
-    return trades.state(parts[2], fromQuery());
+    return trades.state(parts[2], player);
   }
 
   if (parts.length === 4 && method === "POST" && ["commit", "cancel", "done"].includes(parts[3])) {

@@ -2,6 +2,8 @@
 //  TestRelay.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Let every game into a Raid World, as the relay no longer refuses one without its features
+//                            - Listed every world without its mods
 //      Paulinchen  2026-10-31: Dropped the PvP rooms, which no game connects to any more
 //      Paulinchen  2026-10-30: Turned only PvP rooms away with UpdateRefusal, world rooms with WorldRoomRefusal
 //      Paulinchen  2026-10-23: Kept the story tracks' frames games send
@@ -179,13 +181,6 @@ internal sealed partial class TestRelay : IDisposable
     /// Whether the list names whether each world turns other mods off; tests clear it to stand in for a relay from before.
     /// </summary>
     public bool ListsOtherModsOff { get; set; } = true;
-
-    /// <summary>
-    /// Whether the list names each world's mods, mod hashes and settings, as for released games
-    /// before 0.6.8; tests clear it to stand in for the list newer games get, which counts the mods
-    /// instead and leaves them to the world's own route.
-    /// </summary>
-    public bool ListsMods { get; set; } = true;
 
     /// <summary>
     /// How many worlds a player who is no admin may make, as maxWorldsPerCreator in
@@ -986,12 +981,12 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
         var player = key != null ? PlayerIdOf(key) : null;
         var admin = player != null && Admins.Contains(player);
         var seen = _directory.Where(entry => admin || !entry.Value.Hidden || (player != null && entry.Value.Members.ContainsKey(player)) || named.Contains(entry.Key));
-        return new JsonObject { ["worlds"] = new JsonArray(seen.Select(entry => ListsMods ? ListedWorld(entry.Key, entry.Value) : WithoutMods(ListedWorld(entry.Key, entry.Value))).ToArray()), ["admin"] = admin };
+        return new JsonObject { ["worlds"] = new JsonArray(seen.Select(entry => WithoutMods(ListedWorld(entry.Key, entry.Value))).ToArray()), ["admin"] = admin };
     }
 
     /// <summary>
     /// Leaves a listed world's mods, mod hashes and settings out, counting its mods instead, as the
-    /// relay lists worlds for newer games.
+    /// relay lists worlds for games.
     /// </summary>
     /// <param name="world">The world as the list names it.</param>
     /// <returns>The same world.</returns>
@@ -1373,13 +1368,6 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
             if (world.Bans.Contains(playerId))
             {
                 Refuse(context, 403);
-                return;
-            }
-
-            if (world.Type == WorldType.Raid && context.Request.Headers[DirectoryClient.FeaturesHeader]?.Split(',').Contains(WorldType.Raid) != true)
-            {
-                context.Response.Headers["X-MGQ-Refusal"] = "raid_unsupported";
-                Refuse(context, 400);
                 return;
             }
 

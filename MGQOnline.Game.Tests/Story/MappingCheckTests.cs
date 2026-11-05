@@ -2,7 +2,8 @@
 //  MappingCheckTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Created
+//      Paulinchen  2026-11-05: Dropped the check of a world chest's flags, which the table keeps no more
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -275,11 +276,6 @@ public sealed partial class MappingCheckTests : IDisposable
                 foreach (int item in Ints(row, "items").Where(item => !openers.Any(list => Gives(list, GiveCodes["item"], item))))
                 {
                     yield return $"{table} {key}: the chest never gives item {item}";
-                }
-
-                foreach (int flag in Ints(row, "flags").Where(flag => !openers.Any(list => Writes(list, false, flag, null))))
-                {
-                    yield return $"{table} {key}: the chest never turns on switch {flag}";
                 }
             }
         }

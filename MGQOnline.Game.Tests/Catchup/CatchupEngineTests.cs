@@ -2,7 +2,8 @@
 //  CatchupEngineTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Expected the chest a replay plays as [kind, key], and handed and expected sites as plain values
+//      Paulinchen  2026-11-05: Read a chest without the flags only older games needed
+//                            - Expected the chest a replay plays as [kind, key], and handed and expected sites as plain values
 //                            - Replayed the calls of the side's rule too, and shared reading a golden case's tables
 //                            - Checked that a prize counted by a variable comes by its row no more, the Medal King's gift still
 //                            - Checked that a companion a replay hands out follows the world's companion sharing and the join's level
@@ -109,7 +110,7 @@ public sealed class CatchupEngineTests
     public void SwitchChest_PlaysOnceTheWorldOpenedIt()
     {
         CatchupTables tables = Read("""
-            {"chests": [{"key": "s2719", "items": [767], "part": "mr", "step": 51, "flags": []}]}
+            {"chests": [{"key": "s2719", "items": [767], "part": "mr", "step": 51}]}
             """);
         RubyArray Actions(bool opened)
         {

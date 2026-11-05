@@ -2,6 +2,8 @@
 //  relay.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Tested a world room's keys taken from the headers only
+//                            - Dropped the tests of the PvP rooms
 //      Paulinchen  2026-10-30: Dropped the test of the presence list
 //      Paulinchen  2026-10-08: Covered the chat's rate limit and chat frames without a line
 //      Paulinchen  2026-10-07: Covered the auth key header
@@ -15,12 +17,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  CHAT_LIMITS, CLOSE, EVERYONE, IN, LIMITS, REPLACED, RateLimiter, admit, chatLineOf, newPeer, newWorldPeer, nextDeadline, nextWorldDeadline, overdue,
+  CHAT_LIMITS, CLOSE, EVERYONE, IN, LIMITS, REPLACED, RateLimiter, chatLineOf, newPeer, newWorldPeer, nextWorldDeadline,
   parseRoute, replacedBy, routeWorldMessage, seatChangeText, seatText, takeChatLine, takeMessage, takeSeat, worldOverdue,
 } from "./relay.js";
 
 /**
- * A room id as clients make them.
+ * A world room's id as games make them.
  */
 const ROOM = "0123456789abcdef0123456789abcdef";
 
@@ -44,54 +46,42 @@ const WHO = { player: "11".repeat(16), name: "Tester" };
  */
 const T0 = 1_000_000;
 
-test("parseRoute takes a room and a role", () => {
-  assert.deepEqual(parseRoute(new URL(`https://relay.test/v1/room/${ROOM}?role=host`)), { kind: "room", roomId: ROOM, role: "host" });
-  assert.deepEqual(parseRoute(new URL(`https://relay.test/v1/room/${ROOM}?role=guest`)), { kind: "room", roomId: ROOM, role: "guest" });
-});
-
-test("parseRoute takes a world room with the player's key, name and auth key", () => {
+test("parseRoute takes a world room with its name from the address and the player's key and auth key from the headers", () => {
   assert.deepEqual(
-    parseRoute(new URL(`https://relay.test/v1/world/${ROOM}?player=${KEY}&name=Luka%20the%20Hero&auth=${AUTH}`)),
+    parseRoute(new URL(`https://relay.test/v1/world/${ROOM}?name=Luka%20the%20Hero`), KEY, AUTH),
     { kind: "world", roomId: ROOM, player: KEY, name: "Luka the Hero", auth: AUTH },
   );
 });
 
-test("parseRoute refuses other versions, ids, roles and world rooms without key, name or auth", () => {
-  for (const address of [
-    `https://relay.test/v2/room/${ROOM}?role=host`,
-    `https://relay.test/v1/room/${ROOM.toUpperCase()}?role=host`,
-    `https://relay.test/v1/room/${ROOM}0?role=host`,
-    `https://relay.test/v1/room/${ROOM}?role=spectator`,
-    `https://relay.test/v1/room/${ROOM}`,
-    `https://relay.test/v1/room/${ROOM}/extra?role=host`,
-    `https://relay.test/v1/world/${ROOM}`,
-    `https://relay.test/v1/world/${ROOM}?player=${KEY}&name=Luka`,
-    `https://relay.test/v1/world/${ROOM}?player=${KEY}&auth=${AUTH}`,
-    `https://relay.test/v1/world/${ROOM}?player=${KEY}&name=%20%0A&auth=${AUTH}`,
-    `https://relay.test/v1/world/${ROOM}?player=${KEY.toUpperCase()}&name=Luka&auth=${AUTH}`,
-    `https://relay.test/v1/world/${ROOM}?player=${KEY}&name=${"x".repeat(33)}&auth=${AUTH}`,
-    `https://relay.test/v1/hall/${ROOM}?player=${KEY}&name=Luka&auth=${AUTH}`,
+test("parseRoute refuses other versions, routes and ids, world rooms without key, name or auth, and keys in the address", () => {
+  for (const [address, player, auth] of [
+    [`https://relay.test/v2/world/${ROOM}?name=Luka`, KEY, AUTH],
+    [`https://relay.test/v1/world/${ROOM.toUpperCase()}?name=Luka`, KEY, AUTH],
+    [`https://relay.test/v1/world/${ROOM}0?name=Luka`, KEY, AUTH],
+    [`https://relay.test/v1/world/${ROOM}/extra?name=Luka`, KEY, AUTH],
+    [`https://relay.test/v1/room/${ROOM}?role=host`, KEY, AUTH],
+    [`https://relay.test/v1/hall/${ROOM}?name=Luka`, KEY, AUTH],
+    [`https://relay.test/v1/world/${ROOM}?name=Luka`, null, AUTH],
+    [`https://relay.test/v1/world/${ROOM}?name=Luka`, KEY, null],
+    [`https://relay.test/v1/world/${ROOM}`, KEY, AUTH],
+    [`https://relay.test/v1/world/${ROOM}?name=%20%0A`, KEY, AUTH],
+    [`https://relay.test/v1/world/${ROOM}?name=${"x".repeat(33)}`, KEY, AUTH],
+    [`https://relay.test/v1/world/${ROOM}?name=Luka`, KEY.toUpperCase(), AUTH],
+    [`https://relay.test/v1/world/${ROOM}?name=Luka`, KEY, "nope"],
+    [`https://relay.test/v1/world/${ROOM}?player=${KEY}&name=Luka&auth=${AUTH}`, null, null],
   ]) {
-    assert.ok("error" in parseRoute(new URL(address)), address);
+    assert.ok("error" in parseRoute(new URL(address), player, auth), `${address} ${player} ${auth}`);
   }
 });
 
-test("admit lets one host and one guest in, never a second of either", () => {
-  assert.equal(admit([], "host"), null);
-  assert.equal(admit(["host"], "guest"), null);
-  assert.equal(admit([], "guest"), null);
-  assert.equal(admit(["host"], "host").code, CLOSE.roleTaken);
-  assert.equal(admit(["host", "guest"], "guest").code, CLOSE.roleTaken);
-});
-
 test("takeMessage refuses a message larger than the limit", () => {
-  const { refusal } = takeMessage(newPeer("host", T0), LIMITS.maxMessageBytes + 1, T0);
+  const { refusal } = takeMessage(newPeer("player", T0), LIMITS.maxMessageBytes + 1, T0);
 
   assert.equal(refusal.code, CLOSE.tooLarge);
 });
 
 test("takeMessage allows a burst, then refuses until the allowance refills", () => {
-  let peer = newPeer("host", T0);
+  let peer = newPeer("player", T0);
 
   for (let sent = 0; sent < LIMITS.burst; sent++) {
     const result = takeMessage(peer, 100, T0);
@@ -101,28 +91,6 @@ test("takeMessage allows a burst, then refuses until the allowance refills", () 
 
   assert.equal(takeMessage(peer, 100, T0).refusal.code, CLOSE.tooFast);
   assert.equal(takeMessage(peer, 100, T0 + 1000).refusal, null);
-});
-
-test("overdue closes a host that waited alone too long, but not one with a guest", () => {
-  const host = newPeer("host", T0);
-  const later = T0 + LIMITS.aloneWaitMs;
-
-  assert.deepEqual(overdue([host], later - 1), []);
-  assert.equal(overdue([host], later)[0].code, CLOSE.waitedTooLong);
-  assert.deepEqual(overdue([host, newPeer("guest", T0 + 1000)], later), []);
-});
-
-test("overdue closes everyone once the room lasted too long", () => {
-  const peers = [newPeer("host", T0), newPeer("guest", T0 + 1000)];
-  const closed = overdue(peers, T0 + LIMITS.roomLifetimeMs);
-
-  assert.deepEqual(closed.map((entry) => entry.code), [CLOSE.roomExpired, CLOSE.roomExpired]);
-});
-
-test("nextDeadline names the host's wait while alone, the room's end once paired", () => {
-  assert.equal(nextDeadline([]), null);
-  assert.equal(nextDeadline([newPeer("host", T0)]), T0 + LIMITS.aloneWaitMs);
-  assert.equal(nextDeadline([newPeer("host", T0), newPeer("guest", T0 + 1000)]), T0 + LIMITS.roomLifetimeMs);
 });
 
 test("takeSeat gives the lowest free seat, and refuses once every seat is taken", () => {
@@ -168,33 +136,6 @@ test("worldOverdue closes each connection on its own once it lasted too long", (
 test("nextWorldDeadline names the oldest connection's end", () => {
   assert.equal(nextWorldDeadline([]), null);
   assert.equal(nextWorldDeadline([newWorldPeer(1, WHO, T0 + 5000), newWorldPeer(0, WHO, T0)]), T0 + LIMITS.worldConnectionMs);
-});
-
-test("overdue closes a guest that waited alone too long too", () => {
-  const guest = newPeer("guest", T0);
-
-  assert.equal(overdue([guest], T0 + LIMITS.aloneWaitMs)[0].code, CLOSE.waitedTooLong);
-  assert.equal(nextDeadline([guest]), T0 + LIMITS.aloneWaitMs);
-});
-
-test("parseRoute takes a world room's player key from the header before the address", () => {
-  const route = parseRoute(new URL(`https://relay.test/v1/world/${ROOM}?name=Luka&auth=${AUTH}`), KEY);
-  assert.equal(route.player, KEY);
-
-  const other = "0f".repeat(16);
-  assert.equal(parseRoute(new URL(`https://relay.test/v1/world/${ROOM}?player=${other}&name=Luka&auth=${AUTH}`), KEY).player, KEY);
-  assert.equal(parseRoute(new URL(`https://relay.test/v1/world/${ROOM}?player=${other}&name=Luka&auth=${AUTH}`)).player, other);
-  assert.ok("error" in parseRoute(new URL(`https://relay.test/v1/world/${ROOM}?name=Luka&auth=${AUTH}`), "nope"));
-});
-
-test("parseRoute takes a world room's auth key from the header before the address", () => {
-  const other = "cd".repeat(32);
-
-  assert.equal(parseRoute(new URL(`https://relay.test/v1/world/${ROOM}?player=${KEY}&name=Luka`), null, AUTH).auth, AUTH);
-  assert.equal(parseRoute(new URL(`https://relay.test/v1/world/${ROOM}?name=Luka&auth=${other}`), KEY, AUTH).auth, AUTH);
-  assert.equal(parseRoute(new URL(`https://relay.test/v1/world/${ROOM}?player=${KEY}&name=Luka&auth=${other}`)).auth, other);
-  assert.ok("error" in parseRoute(new URL(`https://relay.test/v1/world/${ROOM}?player=${KEY}&name=Luka`), null, "nope"));
-  assert.ok("error" in parseRoute(new URL(`https://relay.test/v1/world/${ROOM}?player=${KEY}&name=Luka&auth=${AUTH}`), null, "nope"), "a header that is no auth key is not helped by the address");
 });
 
 test("RateLimiter lets each address go on a burst, then once per refill, and forgets the least recent addresses", () => {

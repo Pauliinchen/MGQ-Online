@@ -2,7 +2,8 @@
 //  CatchupTablesTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Dropped the check of the prize counts, which the story replay hands over
+//      Paulinchen  2026-11-05: Dropped the check of a world chest read with the chest flags, which no relay serves any more
+//                            - Dropped the check of the prize counts, which the story replay hands over
 //      Paulinchen  2026-10-31: Covered a world chest read without the chest flags released builds still get
 //      Paulinchen  2026-10-28: Read the free order rule
 //                            - Created
@@ -64,23 +65,6 @@ public sealed class CatchupTablesTests
         Assert.Equal((330, 32L, 7L, 5, 26), (rules.OrbEvent, rules.OrbsGathered, rules.SideStep, rules.AliceCompanion, rules.IliasCompanion));
         Assert.Equal([new PartStep("chaos", 21)], rules.FreeOrder);
         Assert.Equal(55, table.Gates["2"]);
-    }
-
-    /// <summary>
-    /// Asserts that a world chest reads with or without the chest flags the relay still serves to
-    /// released builds, and that the catch-up reads none of them: the chest's replay turns them on.
-    /// </summary>
-    [Fact]
-    public void Chest_ReadsNoFlags()
-    {
-        using JsonDocument document = JsonDocument.Parse("""
-            {"chests": [{"key": "ss127.81.A", "items": [511], "part": "1", "step": 7, "flags": [7102]},
-                        {"key": "s2719", "items": [767], "part": "mr", "step": 51}]}
-            """);
-        CatchupTables tables = CatchupTables.Read(document.RootElement);
-
-        Assert.Equal(2, tables.Chests.Count);
-        Assert.DoesNotContain(CatchupEngine.Keys(tables)["switches"].AsArray(), id => id.AsLong() == 7102);
     }
 
     /// <summary>

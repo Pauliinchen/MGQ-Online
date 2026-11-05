@@ -2,7 +2,10 @@
 //  gate.js
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Raised the lowest version served while MIN_VERSION names none to 0.7.0
+//      Paulinchen  2026-11-05: Held the story mapping games read to the lowest version too
+//                            - Listed the worlds with their mods for the website and the World Admin tool only
+//                            - Answered every request to a PvP room with the update refusal
+//                            - Raised the lowest version served while MIN_VERSION names none to 0.7.0
 //      Paulinchen  2026-10-30: Let a GET of the mod catalog and its files pass ungated, as the Mod Framework reads them naming no game version
 //      Paulinchen  2026-10-22: Let a relay admin set the design formats
 //                            - Told which games hold a world's long mods and which read the world list with every world's mods
@@ -26,6 +29,7 @@ import { MOD_LIMITS } from "./mods.js";
 import { parseFeatures } from "./relay.js";
 import { REPORT_LIMITS } from "./reports.js";
 import { storyRouteOf } from "./story.js";
+import { MAPPING_GAME_ROUTE } from "./story_mapping.js";
 
 /**
  * The request header in which a game names its version, such as `0.6.5`, or DEVELOPMENT_VERSION
@@ -44,14 +48,8 @@ export const UNNAMED_VERSION = "0.6.4";
 export const DEVELOPMENT_VERSION = "0.0.0-dev";
 
 /**
- * The first version that holds a world's mods past what released games hold and reads them from
- * the world's own route instead of the list.
- */
-export const LONG_MODS_VERSION = "0.6.8";
-
-/**
  * What the website and the World Admin tool name in X-MGQ-Features: both read the world list with
- * every world's mods, whatever version they name.
+ * every world's mods.
  */
 const FULL_LIST_FEATURES = Object.freeze(["web", "admin"]);
 
@@ -87,11 +85,17 @@ export const WORLD_ROOM_UPDATE_CODE = "update";
 export const UPDATE_NEEDED = "Update MGQ Online to play online.";
 
 /**
- * What a route asks of a game: `features` the X-MGQ-Features header, which every game from 0.6.0
- * sends, and a version new enough; `version` only a version new enough; `designer` what the
- * designer gate asks, which the design routes check themselves, see designerRefusal.
+ * The route of the PvP rooms, which only games older than every version the relay serves open and
+ * which it answers with UPDATE_NEEDED alone.
  */
-export const GATE = Object.freeze({ features: "features", version: "version", designer: "designer" });
+const PVP_ROOM_ROUTE = "room";
+
+/**
+ * What a route asks of a game: `features` the X-MGQ-Features header, which every game from 0.6.0
+ * sends, and a version new enough; `designer` what the designer gate asks, which the design routes
+ * check themselves, see designerRefusal.
+ */
+export const GATE = Object.freeze({ features: "features", designer: "designer" });
 
 /**
  * The route's name after the version of the routes the Raid Designer uses.
@@ -167,7 +171,7 @@ const VERSION_PATTERN = /^(\d+(?:\.\d+)*)(-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?
  *
  * @param {URL} url The request's address.
  * @param {string} [method] The request's HTTP method; none counts as a change.
- * @returns {string | null} GATE.features for the world directory's and the mod catalog's routes, the Raid World admin, story and boss routes included, the trades, the bug reports, the world rooms and the game's design routes; GATE.version for the PvP rooms, which released games open without X-MGQ-Features; GATE.designer for the Raid Designer's routes; null for every other route and a GET of the mod catalog.
+ * @returns {string | null} GATE.features for the world directory's and the mod catalog's routes, the Raid World admin, story and boss routes included, the trades, the bug reports, the world rooms, the game's design routes and the story mapping games read; GATE.designer for the Raid Designer's routes; null for every other route and a GET of the mod catalog.
  */
 export function gateOf(url, method = undefined) {
   if (routeIs(url, "mods") && method === "GET") {
@@ -175,15 +179,11 @@ export function gateOf(url, method = undefined) {
   }
 
   if (storyRouteOf(url) || bossRouteOf(url) || routeIs(url, "trades") || routeIs(url, "reports") || routeIs(url, "world") || routeIs(url, "worlds") || routeIs(url, "mods")
-      || routeIs(url, GAME_DESIGN_ROUTE)) {
+      || routeIs(url, GAME_DESIGN_ROUTE) || routeIs(url, MAPPING_GAME_ROUTE)) {
     return GATE.features;
   }
 
-  if (routeIs(url, DESIGN_ROUTE)) {
-    return GATE.designer;
-  }
-
-  return routeIs(url, "room") ? GATE.version : null;
+  return routeIs(url, DESIGN_ROUTE) ? GATE.designer : null;
 }
 
 /**
@@ -352,32 +352,19 @@ export function tooOld(gate, featuresHeader, versionHeader, minVersion) {
 }
 
 /**
- * Tells whether a game holds a world's mods past what released games hold: one naming
- * LONG_MODS_VERSION or newer, or DEVELOPMENT_VERSION.
- *
- * @param {string | null | undefined} versionHeader The request's VERSION_HEADER, a game naming none counting as UNNAMED_VERSION.
- * @returns {boolean} Whether it does.
- */
-export function holdsLongMods(versionHeader) {
-  const version = parseVersion(sent(versionHeader) ? versionHeader : UNNAMED_VERSION);
-  return version !== null && (version.development || compareVersions(version.parts, parseVersion(LONG_MODS_VERSION).parts) >= 0);
-}
-
-/**
  * Tells whether the world list names each world's mods, mod hashes and settings for a request:
- * for released games before LONG_MODS_VERSION, the website and the World Admin tool, while newer
- * games read them from the world's own route.
+ * for the website and the World Admin tool, while games read them from the world's own route.
  *
  * @param {string | null | undefined} featuresHeader The request's FEATURES_HEADER.
- * @param {string | null | undefined} versionHeader The request's VERSION_HEADER.
  * @returns {boolean} Whether it does.
  */
-export function listsWorldMods(featuresHeader, versionHeader) {
-  return !holdsLongMods(versionHeader) || parseFeatures(featuresHeader).some((feature) => FULL_LIST_FEATURES.includes(feature));
+export function listsWorldMods(featuresHeader) {
+  return parseFeatures(featuresHeader).some((feature) => FULL_LIST_FEATURES.includes(feature));
 }
 
 /**
- * Turns a game too old for the relay away before its request is routed.
+ * Turns a game too old for the relay away before its request is routed, and every request to a PvP
+ * room whatever it names.
  *
  * @param {URL} url The request's address.
  * @param {string | null | undefined} featuresHeader The request's FEATURES_HEADER.
@@ -387,14 +374,15 @@ export function listsWorldMods(featuresHeader, versionHeader) {
  * @returns {{status: number, reason: string, socket: boolean, code: string | null} | null} The refusal, with whether the route is a PvP room's or a world room's, answered as a refused WebSocket, and the code to name in REFUSAL_HEADER, which only a PvP room's and a world room's carry; null when the game may go on.
  */
 export function updateRefusal(url, featuresHeader, versionHeader, minVersion, method = undefined) {
+  if (routeIs(url, PVP_ROOM_ROUTE)) {
+    return { status: UPDATE_STATUS, reason: UPDATE_NEEDED, socket: true, code: UPDATE_NEEDED };
+  }
+
   if (!tooOld(gateOf(url, method), featuresHeader, versionHeader, minVersion)) {
     return null;
   }
 
-  if (routeIs(url, "world")) {
-    return { status: WORLD_ROOM_UPDATE_STATUS, reason: UPDATE_NEEDED, socket: true, code: WORLD_ROOM_UPDATE_CODE };
-  }
-
-  const room = routeIs(url, "room");
-  return { status: UPDATE_STATUS, reason: UPDATE_NEEDED, socket: room, code: room ? UPDATE_NEEDED : null };
+  return routeIs(url, "world")
+    ? { status: WORLD_ROOM_UPDATE_STATUS, reason: UPDATE_NEEDED, socket: true, code: WORLD_ROOM_UPDATE_CODE }
+    : { status: UPDATE_STATUS, reason: UPDATE_NEEDED, socket: false, code: null };
 }

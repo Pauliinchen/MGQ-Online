@@ -2,7 +2,8 @@
 #  relay_rows.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Wrote the Medal King's switches and the items an event takes away instead of the prize counts
+#      Paulinchen  2026-11-05: Wrote the chests without the flags only older games needed
+#                            - Wrote the Medal King's switches and the items an event takes away instead of the prize counts
 #      Paulinchen  2026-10-31: Dropped the maps where warping is free
 #      Paulinchen  2026-10-28: Wrote the rewards a party member catches up with as the DLL hands them to the scripts
 #                            - Created
@@ -108,7 +109,7 @@ module CatchupRelayRows
   # @param rows [Array<Struct>] The Ruby rows of CHESTS.
   # @return [Array<Hash>] The relay's rows.
   def self.chests_rows(rows)
-    ordered(rows.map { |row| { "key" => "ss#{row.key[0]}.#{row.key[1]}.#{row.key[2]}", "items" => row.items, "part" => row.part, "step" => row.step, "flags" => Array(row.flags) } })
+    ordered(rows.map { |row| { "key" => "ss#{row.key[0]}.#{row.key[1]}.#{row.key[2]}", "items" => row.items, "part" => row.part, "step" => row.step } })
   end
 
   # @param rows [Array<Struct>] The Ruby rows of REWARDS.

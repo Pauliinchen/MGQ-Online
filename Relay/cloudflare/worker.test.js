@@ -2,7 +2,10 @@
 //  worker.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Sent the version of a current game on the routes the gate holds to it
+//      Paulinchen  2026-11-05: Tested that every game hears the world's mod settings, as every game the relay serves takes them
+//                            - Sent the player's key and auth key in the headers only
+//                            - Dropped the tests of the PvP rooms and tested their 426 instead
+//                            - Sent the version of a current game on the routes the gate holds to it
 //      Paulinchen  2026-10-31: Tested the world's mod settings told to the games that take them from the relay
 //      Paulinchen  2026-10-30: Tested that a read of the mod catalog passes without headers, as the Mod Framework sends it
 //      Paulinchen  2026-10-21: Tested that every Raid design route answers 404
@@ -30,7 +33,7 @@ import { registerHooks } from "node:module";
 import { DOWNLOAD_LIMITS, concatBytes } from "../core/bodies.js";
 import { playerIdOf, sha256Hex } from "../core/directory.js";
 import { UPDATE_NEEDED, VERSION_HEADER } from "../core/gate.js";
-import { AUTH_HEADER, CHAT_LIMITS, CHAT_SLOW, CLOSE, EVERYONE, FEATURES_HEADER, LIMITS, PAIRED, PLAYER_HEADER, REFUSAL_HEADER, REPLACED } from "../core/relay.js";
+import { AUTH_HEADER, CHAT_LIMITS, CHAT_SLOW, CLOSE, EVERYONE, FEATURES_HEADER, LIMITS, PLAYER_HEADER, REFUSAL_HEADER, REPLACED } from "../core/relay.js";
 import { STORY_LIMITS } from "../core/story.js";
 
 // The Worker's platform module exists on Cloudflare only.
@@ -157,7 +160,7 @@ globalThis.Response = class extends NodeResponse {
   }
 };
 
-const { default: worker, Directory, Reports, Room, World } = await import("./worker.js");
+const { default: worker, Directory, Reports, World } = await import("./worker.js");
 
 /**
  * The auth key the tests' games make from their world's token.
@@ -170,7 +173,7 @@ const AUTH = "ab".repeat(32);
 const WORLD = "d4".repeat(16);
 
 /**
- * The room the tests' peers enter.
+ * The PvP room the tests ask for, which every game is refused.
  */
 const ROOM = "e5".repeat(16);
 
@@ -266,7 +269,7 @@ function objectState(storage = memoryStorage()) {
 /**
  * Ends a socket's close handshake: Cloudflare stops listing it and tells the object.
  *
- * @param {Room | World} object The object.
+ * @param {World} object The object.
  * @param {FakeSocket} socket The socket.
  */
 async function finishClose(object, socket) {
@@ -343,26 +346,20 @@ function newWorld(seats = 32, settings = "") {
  * @param {string} key The player's key.
  * @param {string} name The player's name.
  * @param {object} [headers] More headers the game sends.
+ * @param {boolean} [settings] Whether to keep the world's mod settings every game hears as it enters among what it was sent.
  * @returns {Promise<FakeSocket>} The socket the world room holds for the game.
  */
-async function joinWorld(world, key, name, headers = {}) {
+async function joinWorld(world, key, name, headers = {}, settings = false) {
   const request = new Request(`https://relay.test/v1/world/${WORLD}?name=${encodeURIComponent(name)}`, { headers: { [PLAYER_HEADER]: key, [AUTH_HEADER]: AUTH, ...headers } });
   const response = await world.fetch(request);
   assert.equal(response.status, 101, await response.clone().text());
-  return response.webSocket.server;
-}
+  const socket = response.webSocket.server;
 
-/**
- * Lets a peer into a room.
- *
- * @param {Room} room The room.
- * @param {string} role "host" or "guest".
- * @returns {Promise<FakeSocket>} The socket the room holds for the peer.
- */
-async function joinRoom(room, role) {
-  const response = await room.fetch(new Request(`https://relay.test/v1/room/${ROOM}?role=${role}`));
-  assert.equal(response.status, 101, await response.clone().text());
-  return response.webSocket.server;
+  if (!settings) {
+    socket.sent.splice(socket.sent.findIndex((text) => typeof text === "string" && text.startsWith("mod_settings ")), 1);
+  }
+
+  return socket;
 }
 
 /**
@@ -407,43 +404,6 @@ function lastPresence(directory) {
   return directory.calls.filter((call) => call.route === "presence").at(-1).body.online;
 }
 
-test("a room pairs a host with a guest, passes their binary messages both ways and turns a second host away", async () => {
-  const room = new Room(objectState(), {});
-  const host = await joinRoom(room, "host");
-  const guest = await joinRoom(room, "guest");
-
-  assert.deepEqual([takeSent(host), takeSent(guest)], [[PAIRED], [PAIRED]]);
-
-  await room.webSocketMessage(guest, binary([1, 2, 3]));
-  await room.webSocketMessage(host, binary([4, 5]));
-  assert.deepEqual([takeSent(host), takeSent(guest)], [[[1, 2, 3]], [[4, 5]]]);
-
-  assert.equal((await room.fetch(new Request(`https://relay.test/v1/room/${ROOM}?role=host`))).status, 409);
-});
-
-test("text in a room closes its sender, and the other peer with it", async () => {
-  const room = new Room(objectState(), {});
-  const host = await joinRoom(room, "host");
-  const guest = await joinRoom(room, "guest");
-
-  await room.webSocketMessage(host, "hello");
-  assert.equal(host.closed.code, CLOSE.badRequest);
-  assert.equal(guest.closed.code, CLOSE.peerLeft);
-});
-
-test("a host that waited alone too long is closed", async (t) => {
-  t.mock.timers.enable({ apis: ["Date"], now: START });
-  const state = objectState();
-  const room = new Room(state, {});
-  const host = await joinRoom(room, "host");
-  assert.equal(await state.storage.getAlarm(), START + LIMITS.aloneWaitMs);
-
-  t.mock.timers.tick(LIMITS.aloneWaitMs);
-  await room.alarm();
-  assert.equal(host.closed.code, CLOSE.waitedTooLong);
-  assert.equal(await state.storage.getAlarm(), null);
-});
-
 test("games in a world room get seats, each learns who comes and goes, and the directory knows who is online", async () => {
   const { world, directory } = newWorld();
   const first = await joinWorld(world, playerKey(1), "Player 1");
@@ -453,7 +413,7 @@ test("games in a world room get seats, each learns who comes and goes, and the d
   assert.deepEqual(takeSent(first), ["seat 0", "in 1", "in 2"]);
   assert.deepEqual(takeSent(second), ["seat 1 0", "in 2"]);
   assert.deepEqual(takeSent(third), ["seat 2 0 1"]);
-  assert.deepEqual(directory.calls.find((call) => call.route === "admit").body, { id: WORLD, player: playerKey(1), auth: AUTH, address: null, features: [] });
+  assert.deepEqual(directory.calls.find((call) => call.route === "admit").body, { id: WORLD, player: playerKey(1), auth: AUTH, address: null });
   assert.deepEqual(lastPresence(directory).map((each) => each.name), ["Player 1", "Player 2", "Player 3"]);
 
   await finishClose(world, second);
@@ -464,14 +424,14 @@ test("games in a world room get seats, each learns who comes and goes, and the d
   assert.deepEqual(takeSent(fourth), ["seat 1 0 2"], "the lowest free seat is taken");
 });
 
-test("a game that takes mod settings from the relay hears the world's as it enters and each change, a game that does not hears neither", async () => {
+test("every game hears the world's mod settings as it enters and each change", async () => {
   const { world } = newWorld(32, "@shared=o:1;a=i:1");
-  const taking = await joinWorld(world, playerKey(1), "Player 1", { [FEATURES_HEADER]: "raid,settings" });
-  const other = await joinWorld(world, playerKey(2), "Player 2");
-  assert.deepEqual([takeSent(taking), takeSent(other)], [["seat 0", "mod_settings \t@shared=o:1;a=i:1", "in 1"], ["seat 1 0"]]);
+  const first = await joinWorld(world, playerKey(1), "Player 1", {}, true);
+  const second = await joinWorld(world, playerKey(2), "Player 2", {}, true);
+  assert.deepEqual([takeSent(first), takeSent(second)], [["seat 0", "mod_settings \t@shared=o:1;a=i:1", "in 1"], ["seat 1 0", "mod_settings \t@shared=o:1;a=i:1"]]);
 
   await internalTo(world, "mod-settings", { by: "admin", settings: "" });
-  assert.deepEqual([takeSent(taking), takeSent(other)], [["mod_settings admin\t"], []]);
+  assert.deepEqual([takeSent(first), takeSent(second)], [["mod_settings admin\t"], ["mod_settings admin\t"]]);
 });
 
 test("a world message goes to every other game, or to the one seat it names, with the sender's seat in front", async () => {
@@ -638,39 +598,18 @@ test("a game the relay closed for sending too fast passes nothing on while its c
   assert.deepEqual(fast.deserializeAttachment(), record);
 });
 
-test("peers of a room the relay ended pass nothing on to the peers who joined the room since", async () => {
-  const room = new Room(objectState(), {});
-  const host = await joinRoom(room, "host");
-  const guest = await joinRoom(room, "guest");
-
-  await room.webSocketMessage(host, new ArrayBuffer(LIMITS.maxMessageBytes + 1));
-  assert.deepEqual([host.closed.code, guest.closed.code], [CLOSE.tooLarge, CLOSE.peerLeft]);
-
-  const newHost = await joinRoom(room, "host");
-  const newGuest = await joinRoom(room, "guest");
-  takeSent(newHost);
-  takeSent(newGuest);
-
-  await room.webSocketMessage(guest, binary([1]));
-  await room.webSocketMessage(host, binary([2]));
-  assert.deepEqual([takeSent(newHost), takeSent(newGuest)], [[], []]);
-
-  await room.webSocketMessage(newGuest, binary([3]));
-  assert.deepEqual(takeSent(newHost), [[3]], "the new peers still reach each other");
-});
-
-test("the Worker refuses a story write whose Content-Length is too long before reading it, and reads one without the header to tell", async () => {
+test("the Worker refuses a Raid World request whose Content-Length is too long before reading it, and reads one without the header to tell", async () => {
   const forwarded = [];
   const env = { WORLDS: namespace(() => ({ fetch: async (request) => (forwarded.push(await request.text()), new Response("{}")) })) };
-  const url = `https://relay.test/v1/worlds/${WORLD}/story`;
+  const url = `https://relay.test/v1/worlds/${WORLD}/story/companions`;
   let pulled = false;
   const unread = new ReadableStream({ pull: (controller) => ((pulled = true), controller.close()) }, { highWaterMark: 0 });
 
-  const declared = await worker.fetch(new Request(url, { method: "POST", headers: { ...GAME, "Content-Length": String(STORY_LIMITS.maxBodyLength + 1) }, body: unread, duplex: "half" }), env);
+  const declared = await worker.fetch(new Request(url, { method: "POST", headers: { ...GAME, "Content-Length": String(STORY_LIMITS.maxAdminBodyLength + 1) }, body: unread, duplex: "half" }), env);
   assert.deepEqual([declared.status, pulled, forwarded.length], [413, false, 0], "refused unread");
 
   const chunked = (text) => new Request(url, { method: "POST", headers: GAME, body: new ReadableStream({ start: (controller) => (controller.enqueue(new TextEncoder().encode(text)), controller.close()) }), duplex: "half" });
-  assert.equal((await worker.fetch(chunked("x".repeat(STORY_LIMITS.maxBodyLength + 1)), env)).status, 413, "a body without the header is read to tell");
+  assert.equal((await worker.fetch(chunked("x".repeat(STORY_LIMITS.maxAdminBodyLength + 1)), env)).status, 413, "a body without the header is read to tell");
   assert.equal((await worker.fetch(chunked("{}"), env)).status, 200);
   assert.deepEqual(forwarded, ["{}"], "a body short enough is forwarded whole");
 });
@@ -753,12 +692,12 @@ test("the directory tells the world rooms with players online of a newer release
 test("the Worker turns a game without X-MGQ-Features or below MIN_VERSION away before routing it, and lets the World Admin tool and released games through", async () => {
   const reached = [];
   const answering = (name) => namespace((id) => ({ fetch: async () => (reached.push(`${name}:${id}`), new Response("{}")) }));
-  const env = { DIRECTORY: answering("directory"), REPORTS: answering("reports"), WORLDS: answering("world"), ROOMS: answering("room"), MIN_VERSION: "0.7.0" };
+  const env = { DIRECTORY: answering("directory"), REPORTS: answering("reports"), WORLDS: answering("world"), MIN_VERSION: "0.7.0" };
   const upgrade = { Upgrade: "websocket" };
 
-  const world = await worker.fetch(new Request(`https://relay.test/v1/world/${WORLD}?name=Old&auth=${AUTH}`, { headers: { ...upgrade, [PLAYER_HEADER]: playerKey(1) } }), env);
+  const world = await worker.fetch(new Request(`https://relay.test/v1/world/${WORLD}?name=Old`, { headers: { ...upgrade, [AUTH_HEADER]: AUTH, [PLAYER_HEADER]: playerKey(1) } }), env);
   assert.deepEqual([world.status, world.headers.get(REFUSAL_HEADER), await world.text()], [400, "update", UPDATE_NEEDED], "released games stop at a 400 with a code they do not know");
-  const named = await worker.fetch(new Request(`https://relay.test/v1/world/${WORLD}?name=Old&auth=${AUTH}`, { headers: { ...upgrade, [PLAYER_HEADER]: playerKey(1), [FEATURES_HEADER]: "raid", [VERSION_HEADER]: "0.6.9" } }), env);
+  const named = await worker.fetch(new Request(`https://relay.test/v1/world/${WORLD}?name=Old`, { headers: { ...upgrade, [AUTH_HEADER]: AUTH, [PLAYER_HEADER]: playerKey(1), [FEATURES_HEADER]: "raid", [VERSION_HEADER]: "0.6.9" } }), env);
   assert.deepEqual([named.status, named.headers.get(REFUSAL_HEADER)], [400, "update"]);
 
   const room = await worker.fetch(new Request(`https://relay.test/v1/room/${ROOM}?role=host`, { headers: { ...upgrade, [VERSION_HEADER]: "0.6.9" } }), env);
@@ -768,13 +707,11 @@ test("the Worker turns a game without X-MGQ-Features or below MIN_VERSION away b
   const streamed = new ReadableStream({ pull: (controller) => (++pulled > 3 ? controller.close() : controller.enqueue(new Uint8Array(1024))) }, { highWaterMark: 0 });
   const report = await worker.fetch(new Request("https://relay.test/v1/reports", { method: "POST", headers: { [FEATURES_HEADER]: "raid", [VERSION_HEADER]: "0.6.9" }, body: streamed, duplex: "half" }), env);
   assert.deepEqual([report.status, await report.json(), pulled], [426, { error: UPDATE_NEEDED }, 4], "the body is read to its end before the refusal");
-  const unnamedRoom = await worker.fetch(new Request(`https://relay.test/v1/room/${ROOM}?role=host`, { headers: upgrade }), env);
-  assert.deepEqual([unnamedRoom.status, unnamedRoom.headers.get(REFUSAL_HEADER)], [426, UPDATE_NEEDED], "a game naming no version counts as 0.6.4");
   const listing = await worker.fetch(new Request("https://relay.test/v1/worlds"), env);
   assert.deepEqual([listing.status, await listing.json()], [426, { error: UPDATE_NEEDED }], "a request without headers, as games before 0.6.0 and older World Admin tool builds send");
   const directoryVersion = await worker.fetch(new Request("https://relay.test/v1/worlds", { headers: { [VERSION_HEADER]: "0.7.0" } }), env);
   assert.deepEqual([directoryVersion.status, await directoryVersion.json()], [426, { error: UPDATE_NEEDED }], "the world directory needs X-MGQ-Features on top of a version new enough");
-  const raid = await worker.fetch(new Request(`https://relay.test/v1/worlds/${WORLD}/raid?player=${playerKey(1)}`, { headers: { [FEATURES_HEADER]: "admin", [VERSION_HEADER]: "0.6.9" } }), env);
+  const raid = await worker.fetch(new Request(`https://relay.test/v1/worlds/${WORLD}/raid`, { headers: { [PLAYER_HEADER]: playerKey(1), [FEATURES_HEADER]: "admin", [VERSION_HEADER]: "0.6.9" } }), env);
   assert.equal(raid.status, 426, "the Raid World admin routes hold a named version against the lowest");
   pulled = 0;
   const uploaded = new ReadableStream({ pull: (controller) => (++pulled > 3 ? controller.close() : controller.enqueue(new Uint8Array(1024))) }, { highWaterMark: 0 });
@@ -782,26 +719,26 @@ test("the Worker turns a game without X-MGQ-Features or below MIN_VERSION away b
   assert.deepEqual([upload.status, pulled], [426, 4], "a refused upload is read to its end first");
   assert.deepEqual(reached, [], "nothing too old reaches an object");
 
-  await worker.fetch(new Request(`https://relay.test/v1/room/${ROOM}?role=host`, { headers: { ...upgrade, [VERSION_HEADER]: "0.7.0-beta" } }), env);
-  await worker.fetch(new Request(`https://relay.test/v1/world/${WORLD}?name=New&auth=${AUTH}`, { headers: { ...upgrade, [PLAYER_HEADER]: playerKey(1), [FEATURES_HEADER]: "raid", [VERSION_HEADER]: "0.0.0-dev" } }), env);
+  const current = await worker.fetch(new Request(`https://relay.test/v1/room/${ROOM}?role=host`, { headers: { ...upgrade, [VERSION_HEADER]: "0.7.0-beta" } }), env);
+  assert.deepEqual([current.status, current.headers.get(REFUSAL_HEADER)], [426, UPDATE_NEEDED], "a PvP room, which no game opens any more");
+  await worker.fetch(new Request(`https://relay.test/v1/world/${WORLD}?name=New`, { headers: { ...upgrade, [AUTH_HEADER]: AUTH, [PLAYER_HEADER]: playerKey(1), [FEATURES_HEADER]: "raid", [VERSION_HEADER]: "0.0.0-dev" } }), env);
   await worker.fetch(new Request("https://relay.test/v1/worlds", { headers: { [FEATURES_HEADER]: "raid", [VERSION_HEADER]: "0.7.0" } }), env);
   await worker.fetch(new Request("https://relay.test/v1/mods", { headers: { [FEATURES_HEADER]: "raid", [VERSION_HEADER]: "0.0.0-dev+abc" } }), env);
   await worker.fetch(new Request("https://relay.test/v1/worlds", { headers: { [FEATURES_HEADER]: "admin", [VERSION_HEADER]: "0.0.0-dev" } }), env);
-  assert.deepEqual(reached, [`room:${ROOM}`, `world:${WORLD}`, "directory:directory", "directory:directory", "directory:directory"], "the World Admin tool names 0.0.0-dev");
+  assert.deepEqual(reached, [`world:${WORLD}`, "directory:directory", "directory:directory", "directory:directory"], "the World Admin tool names 0.0.0-dev");
 
   reached.length = 0;
   const released = { ...env, MIN_VERSION: "0.6.4" };
-  await worker.fetch(new Request(`https://relay.test/v1/room/${ROOM}?role=host`, { headers: upgrade }), released);
-  await worker.fetch(new Request(`https://relay.test/v1/world/${WORLD}?name=New&auth=${AUTH}`, { headers: { ...upgrade, [PLAYER_HEADER]: playerKey(1), [FEATURES_HEADER]: "raid" } }), released);
+  await worker.fetch(new Request(`https://relay.test/v1/world/${WORLD}?name=New`, { headers: { ...upgrade, [AUTH_HEADER]: AUTH, [PLAYER_HEADER]: playerKey(1), [FEATURES_HEADER]: "raid" } }), released);
   await worker.fetch(new Request("https://relay.test/v1/worlds"), released);
-  assert.deepEqual(reached, [`room:${ROOM}`, `world:${WORLD}`], "a request without X-MGQ-Features stays refused on the world directory");
+  assert.deepEqual(reached, [`world:${WORLD}`], "a request without X-MGQ-Features stays refused on the world directory");
   await worker.fetch(new Request("https://relay.test/v1/mods"), released);
   await worker.fetch(new Request("https://relay.test/v1/mods/levelcap/file"), env);
-  assert.deepEqual(reached.splice(2), ["directory:directory", "directory:directory"], "a read of the mod catalog and its files passes without headers, as the Mod Framework sends it");
+  assert.deepEqual(reached.splice(1), ["directory:directory", "directory:directory"], "a read of the mod catalog and its files passes without headers, as the Mod Framework sends it");
   await worker.fetch(new Request("https://relay.test/v1/worlds", { headers: { [FEATURES_HEADER]: "raid" } }), released);
   await worker.fetch(new Request("https://relay.test/v1/mods", { headers: { [FEATURES_HEADER]: "raid" } }), released);
-  await worker.fetch(new Request(`https://relay.test/v1/worlds/${WORLD}/raid?player=${playerKey(1)}`, { headers: { [FEATURES_HEADER]: "admin", [VERSION_HEADER]: "0.0.0-dev" } }), released);
-  assert.deepEqual(reached, [`room:${ROOM}`, `world:${WORLD}`, "directory:directory", "directory:directory", `world:${WORLD}`], "released games and requests naming no version pass while the lowest is at most 0.6.4");
+  await worker.fetch(new Request(`https://relay.test/v1/worlds/${WORLD}/raid`, { headers: { [PLAYER_HEADER]: playerKey(1), [FEATURES_HEADER]: "admin", [VERSION_HEADER]: "0.0.0-dev" } }), released);
+  assert.deepEqual(reached, [`world:${WORLD}`, "directory:directory", "directory:directory", `world:${WORLD}`], "released games and requests naming no version pass while the lowest is at most 0.6.4");
 });
 
 test("the reports object answers a report busy while it handles another, after reading its streamed body to the end", async () => {
