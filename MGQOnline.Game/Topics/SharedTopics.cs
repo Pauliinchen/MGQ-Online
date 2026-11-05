@@ -2,7 +2,8 @@
 //  SharedTopics.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Registered the topic of the story's ids
+//      Paulinchen  2026-11-05: Registered the topics of the guard of the game's flow
+//                            - Registered the topic of the story's ids
 //      Paulinchen  2026-10-31: Registered the freeze journal topics, which the scripts call on the battle server too
 //      Paulinchen  2026-10-30: Registered the topics of a served battle's setup
 //                            - Handed the raid pools' topics the host's way to the pools, an outbox of the context's own by default
@@ -75,6 +76,7 @@ public static class SharedTopics
         ChoiceTopics.Register(context);
         GatherTopics.Register(context);
         SceneTopics.Register(context);
+        FlowTopics.Register(context);
         PageTopics.Register(context, random);
         CoopTopics.Register(context, LiveTopics.Register(context));
         PoolTopics.Register(context, pools);

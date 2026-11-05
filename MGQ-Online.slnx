@@ -21,6 +21,7 @@
     <File Path="GameScript/Multiplayer/Scripts/coop_castle.rbx" />
     <File Path="GameScript/Multiplayer/Scripts/coop_choices.rbx" />
     <File Path="GameScript/Multiplayer/Scripts/coop_events.rbx" />
+    <File Path="GameScript/Multiplayer/Scripts/coop_flow.rbx" />
     <File Path="GameScript/Multiplayer/Scripts/coop_gather.rbx" />
     <File Path="GameScript/Multiplayer/Scripts/coop_npcs.rbx" />
     <File Path="GameScript/Multiplayer/Scripts/coop_scene.rbx" />

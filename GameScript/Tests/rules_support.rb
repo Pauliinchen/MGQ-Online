@@ -2,6 +2,7 @@
 #  rules_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Answered the topics of the one guard of the game's flow from its stand-in, checked against the reported cases
 #      Paulinchen  2026-11-01: Dropped the stand-ins of the World overview's story topics and of marking settings shared, which no script calls
 #      Paulinchen  2026-10-30: Dropped the stand-ins of the parking's topics
 #                            - Dropped the stand-in of mods.install, which the Mod Framework does
@@ -808,6 +809,7 @@ def open_rules_bridge
   answer_choices(fake)
   answer_gather(fake)
   answer_scene(fake)
+  answer_flow(fake)
   answer_pages(fake)
   answer_journal(fake)
   answer_party_rewards(fake)
@@ -818,4 +820,5 @@ end
 require_relative "choices_support"
 require_relative "gather_support"
 require_relative "scene_support"
+require_relative "flow_support"
 require_relative "pages_support"

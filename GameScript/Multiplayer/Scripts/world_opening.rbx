@@ -2,6 +2,7 @@
 #  world_opening.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Stopped telling whether the opening's setup runs, which nothing asks any more
 #      Paulinchen  2026-10-23: Ran the opening's setup as the multiplayer's own writes, which never go to the relay as the player's
 #      Paulinchen  2026-10-15: Told whether the opening's setup runs
 #      Paulinchen  2026-10-11: Left the random encounters to world_catchup.rbx
@@ -126,13 +127,6 @@ module MGQ_MpWorldOpening
   rescue => e
     give_up("holding the opening's event failed: #{e.class}: #{e.message}")
     false
-  end
-
-  # Reports whether the opening's setup runs now.
-  #
-  # @return [Boolean] Whether it does.
-  def self.running?
-    @state == :running
   end
 
   # Runs the opening's setup on, which is done once its commands ended; what it writes is the

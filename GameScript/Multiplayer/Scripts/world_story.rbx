@@ -3,6 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-05: Read the story's ids of the route rules from story_ids.rbx
+#                            - Took the player out of their own scene through the one guard of the game's flow
+#                            - Handed a refused start of the collab scenario to that guard
 #                            - Named the routes' counters in the log by the story's ids
 #      Paulinchen  2026-10-31: Offered at the Great Decision the routes the relay grants, in place of a copy of its route rules
 #                            - Told the catch-up whether a lost raid boss battle holds the story
@@ -891,7 +893,7 @@ module MGQ_MpWorldStory
   # Ends the Pocket Castle's collab scenario for a player still on its maps once the world's story
   # cleared its progress, as its own exit does: the collab party goes, the items and equipment its
   # start stored come back, its switches go off and the player returns to the castle, out of the
-  # scenario's scene (see MGQ_MpCoopScene::Own.leave).
+  # scenario's scene (see MGQ_MpFlowGuard.leave).
   #
   # @return [Boolean] Whether it ended it.
   def self.leave_cleared_collab
@@ -900,7 +902,7 @@ module MGQ_MpWorldStory
 
     interpreter = $game_map.interpreter
     interpreter.release_temp_actors if $game_party.respond_to?(:temp_actors_use?) && $game_party.temp_actors_use?
-    MGQ_MpCoopScene::Own.leave("the world's story cleared the collab scenario", true) if defined?(MGQ_MpCoopScene::Own)
+    MGQ_MpFlowGuard.leave("the world's story cleared the collab scenario", true, true) if defined?(MGQ_MpFlowGuard)
     interpreter.take_all_item
     COLLAB_SWITCHES.each { |id| $game_switches[id] = false }
     $game_player.reserve_transfer(*COLLAB_RETURN)
@@ -958,7 +960,7 @@ module MGQ_MpWorldStory
   end
 
   # Plays the commands that wait, once the player is free on the map, taking the player out of a
-  # scene of their own first (see MGQ_MpCoopScene::Own.leave), such as their route's ending walked
+  # scene of their own first (see MGQ_MpFlowGuard.leave), such as their route's ending walked
   # in a temporary party, whose own end the return would cut off.
   #
   # The return plays whether or not such a scene runs: nothing tells an ending's walk from a long
@@ -968,7 +970,7 @@ module MGQ_MpWorldStory
 
     commands = @queued
     @queued = nil
-    MGQ_MpCoopScene::Own.leave("the world went back to the Great Decision", true) if defined?(MGQ_MpCoopScene::Own)
+    MGQ_MpFlowGuard.leave("the world went back to the Great Decision", true, true) if defined?(MGQ_MpFlowGuard)
     log("playing #{commands.map { |entry| entry.code }.join(' ')} now")
     $game_map.interpreter.setup(commands, 0)
   end
@@ -1477,8 +1479,13 @@ end
 begin
   # After the map's update, the world's story.
   MGQ_MpHooks.after(Game_Map, :update, "world_story") { MGQ_MpWorldStory.tick }
-  # The collab scenario's start, which a Raid World turns off.
-  MGQ_MpHooks.around(Game_Event, :start, "world_story") { |event, _args, original| original.call unless MGQ_MpWorldStory.collab_refused?(event) } if defined?(Game_Event)
+  # The collab scenario's start, which a Raid World turns off; the one guard of the game's flow puts
+  # back what it would have.
+  MGQ_MpHooks.around(Game_Event, :start, "world_story") do |event, _args, original|
+    next original.call unless MGQ_MpWorldStory.collab_refused?(event)
+
+    MGQ_MpFlowGuard.skipped(event.list, "event #{event.id} on map #{$game_map.map_id}") if defined?(MGQ_MpFlowGuard)
+  end if defined?(Game_Event)
 
   # Before an event command runs, the Great Decision's choice and the Reaper's reset menu follow the world.
   MGQ_MpHooks.before(Game_Interpreter, :execute_command, "world_story") { MGQ_MpWorldStory.before_command(self) }

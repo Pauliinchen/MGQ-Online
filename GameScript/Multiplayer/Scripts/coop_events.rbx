@@ -2,6 +2,7 @@
 #  coop_events.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Left what an event ended early or kept from starting leaves to the one guard of the game's flow, in place of the fade-ins of a dark screen on frame timers
 #      Paulinchen  2026-11-01: Hashed a list's shape through story_replay.rbx, which names the places of the kept commands by the same codes
 #      Paulinchen  2026-10-31: Stopped telling whether warping is banned where the story plays
 #                            - Stopped telling the party the items and gold the leader's story gives, which the leader's runs bring by replay
@@ -181,24 +182,9 @@ module MGQ_MpCoopEvents
   # three seconds.
   REFUSE_FRAMES = 180
 
-  # Frames the screen takes to fade in for a player who came in the middle of another player's
-  # story, half a second, as the game's own fade.
-  LATE_FADEIN_FRAMES = 30
-
-  # Frames the screen may stay dark while nothing runs that could fade it in, five seconds.
-  DARK_SCREEN_FRAMES = 300
-
-  # Frames the screen may stay dark while the player watches another player's scene on the map and
-  # nothing of it reaches the player's screen, ten seconds.
-  WATCHED_DARK_FRAMES = 600
-
   # Frames after the player's game last kept its own copy of a teller's story event that runs by
   # itself from starting in which it still counts as kept, one second, see keeps_autorun_of?.
   KEPT_AUTORUN_FRAMES = 60
-
-  # The trigger of an event that runs alongside the map, and the command that fades the screen in.
-  PARALLEL_TRIGGER = 4
-  FADEIN_CODE = 222
 
   # The DLL's topics of the telling machine (StoryTopics in the DLL, MGQOnline.Game's
   # TellingMachine): an event of the map's interpreter starting, a command of a telling whose
@@ -1008,16 +994,16 @@ module MGQ_MpCoopEvents
     log("watching a talk failed: #{e.class}: #{e.message}")
   end
 
-  # Ends the event an interpreter runs before its next command, and takes back what the event
-  # changed of the screen, the player's character and the party, see MGQ_MpCoopScene::Own.cut.
+  # Ends the event an interpreter runs before its next command, and puts back what the event's own
+  # flow would have, see MGQ_MpFlowGuard.cut.
   #
   # @param interpreter [Game_Interpreter] The map's interpreter.
   # @param list [Array<RPG::EventCommand>] The commands it runs.
   # @param reason [String] Why, for the log.
   def self.end_event(interpreter, list, reason)
+    MGQ_MpFlowGuard.cut(list, MGQ_MpGame.get(interpreter, :index).to_i, reason) if defined?(MGQ_MpFlowGuard)
     # The list ends with an empty command, which ends the event as its last.
     MGQ_MpGame.set(interpreter, :index, list.size - 1)
-    MGQ_MpCoopScene::Own.cut(reason) if defined?(MGQ_MpCoopScene::Own)
   end
 
   # Tells the player that another player's story keeps theirs from moving on.
@@ -1174,7 +1160,6 @@ module MGQ_MpCoopEvents
       log_once([:autorun, $game_map.map_id, event.id, lead.state["id"].to_s],
                "kept event #{event.id} on map #{$game_map.map_id} that runs by itself from starting: it is story, which #{MGQ_MpOverworldSync.who(lead)}'s game runs")
       @kept_autorun = { :teller => lead.state["id"].to_s, :map => $game_map.map_id, :frame => Graphics.frame_count }
-      fade_in_late(event, lead)
       return true
     end
 
@@ -1197,71 +1182,6 @@ module MGQ_MpCoopEvents
 
     elapsed = Graphics.frame_count - kept[:frame]
     elapsed >= 0 && elapsed <= KEPT_AUTORUN_FRAMES
-  end
-
-  # Fades the screen in once per arrival on a map whose story event that runs by itself another
-  # player's game runs, while the screen is dark.
-  #
-  # The game's scenes fade out, move the player without a fade and fade in with that event, so a
-  # player who came while its teller fought, as at Morrigan, would see black until the story ended.
-  #
-  # @param event [Game_Event] The story event kept from starting.
-  # @param lead [MGQ_MpOverworldSync::Peers::Peer] The teller whose game runs it.
-  def self.fade_in_late(event, lead)
-    screen = $game_map.screen
-    arrival = [$game_map.map_id, MGQ_MpOverworldSync::Me.map_since]
-    return if screen.brightness > 0 || @faded_in_arrival == arrival
-
-    @faded_in_arrival = arrival
-    screen.start_fadein(LATE_FADEIN_FRAMES)
-    log("faded the screen in on map #{$game_map.map_id}: the player came in the middle of #{MGQ_MpOverworldSync.who(lead)}'s story, whose event #{event.id} would have faded it in")
-  rescue => e
-    log("fading the screen in for a story under way failed: #{e.class}: #{e.message}")
-  end
-
-  # Fades the screen in once it stayed dark for DARK_SCREEN_FRAMES while nothing could fade it in,
-  # or for WATCHED_DARK_FRAMES while the player watches another player's scene that shows nothing.
-  #
-  # A story event whose fade-in another game's story already ran, as an arrival after a game over
-  # returned the player to an earlier point, leaves the screen black for good.
-  def self.lift_dark_screen
-    return @dark_frames = 0 unless stuck_dark?
-
-    watching = MGQ_MpCoopScene.watching?
-    limit = watching ? WATCHED_DARK_FRAMES : DARK_SCREEN_FRAMES
-    @dark_frames = @dark_frames.to_i + 1
-    return if @dark_frames < limit
-
-    @dark_frames = 0
-    $game_map.screen.start_fadein(LATE_FADEIN_FRAMES)
-    log("faded the screen in on map #{$game_map.map_id}: it stayed dark for #{limit} frames with no event running that could fade it in" \
-        "#{watching ? ", and nothing of the scene the player watches reached the screen" : ''}")
-  rescue => e
-    log_once(:dark_screen, "fading in a screen left dark failed: #{e.class}: #{e.message}")
-  end
-
-  # Reports whether the screen is dark in a world while the player stands free on the map: no
-  # event runs or starts, no message shows, no transfer waits, no change of another player's scene
-  # the player watches reached the screen a moment ago and no opening's setup runs.
-  #
-  # @return [Boolean] Whether it is.
-  def self.stuck_dark?
-    return false unless MGQ_MpOverworldSync.in_world? && SceneManager.scene_is?(Scene_Map) && $game_map.screen.brightness == 0
-    return false if $game_map.interpreter.running? || $game_message.busy? || $game_player.transfer?
-    return false if $game_map.events.values.any? { |event| event.starting }
-    return false if (MGQ_MpCoopScene.watching? && MGQ_MpCoopScene.just_changed?) || (defined?(MGQ_MpWorldOpening) && MGQ_MpWorldOpening.running?)
-
-    !parallel_fade_in?
-  end
-
-  # Reports whether an event running alongside the map, of the map or a common one, fades the
-  # screen in itself, as the game's dark transitions do.
-  #
-  # @return [Boolean] Whether one does.
-  def self.parallel_fade_in?
-    lists = $game_map.events.values.select { |event| event.trigger == PARALLEL_TRIGGER }.map(&:list)
-    lists += $game_map.parallel_common_events.select { |common| $game_switches[common.switch_id] }.map(&:list)
-    lists.any? { |list| list && list.any? { |command| command.code == FADEIN_CODE } }
   end
 
   # Reports whether the player's story is behind a Raid World's, which keeps their story events that
@@ -1820,7 +1740,6 @@ module MGQ_MpCoopEvents
     flush_say
     forget_former_leader
     show_heard
-    lift_dark_screen
   rescue => e
     log("updating the party's events failed: #{e.class}: #{e.message}")
   end
@@ -1994,20 +1913,24 @@ begin
   MGQ_MpHooks.after(Game_Interpreter, :wait_for_message, "coop_events") { MGQ_MpCoopEvents.shown(self) }
 
   # Before the map starts the event that is starting, every one that is story the leader's game
-  # plays is left out.
+  # plays is left out, and the one guard of the game's flow puts back what it would have.
   MGQ_MpHooks.before(Game_Map, :setup_starting_map_event, "coop_events") do
     @events.values.each do |event|
       next unless event.starting && MGQ_MpCoopEvents.hand_over(event)
 
       event.clear_starting_flag
       event.unlock
+      MGQ_MpFlowGuard.skipped(event.list, "event #{event.id} on map #{@map_id}") if defined?(MGQ_MpFlowGuard)
     end
   end
 
   # A common event that runs by itself starts, unless it is story the leader's game plays.
   MGQ_MpHooks.around(Game_Map, :setup_autorun_common_event, "coop_events") do |_map, _args, original|
     common = $data_common_events.find { |c| c && c.autorun? && $game_switches[c.switch_id] }
-    common && MGQ_MpCoopEvents.leave_to_leader?(common) ? nil : original.call
+    next original.call unless common && MGQ_MpCoopEvents.leave_to_leader?(common)
+
+    MGQ_MpFlowGuard.skipped(common.list, "common event #{$data_common_events.index(common)}") if defined?(MGQ_MpFlowGuard)
+    nil
   end
 rescue => e
   MGQ_MpCoopEvents.log("interpreter hooks FAILED: #{e.class}: #{e.message}")

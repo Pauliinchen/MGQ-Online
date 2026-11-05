@@ -2,6 +2,7 @@
 #  battles_raid_freeze.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Opened the player's own scene as a resume begins, so what it puts back counts as the scene's
 #      Paulinchen  2026-10-28: Read the freeze's tables from the DLL's events database in place of battles_raid_freeze_data.rbx
 #                            - Read whether a page shows only during a scene or runs nothing from the DLL's events database
 #      Paulinchen  2026-10-23: Kept the story's writes in a DLL journal instead of copying the whole story
@@ -1124,7 +1125,7 @@ module MGQ_MpRaidFreeze
     restore_events(record["events"])
     restore_player(record)
     place_vehicles(record["vehicles"], $game_map.map_id)
-    restore_screen(record["screen"])
+    resume_screen(record["screen"], resume[:flow])
     restore_look(record["look"])
     restore_audio(record["audio"])
     clear_starts
@@ -1404,12 +1405,13 @@ module MGQ_MpRaidFreeze
   # @param record [Hash] The record.
   # @return [Boolean] true.
   def self.resume_record(troop, record)
+    flow = defined?(MGQ_MpFlowGuard) ? MGQ_MpFlowGuard.resume_begins : nil
     before = snapshot(record)
     restore_party(record["party"])
     player = record["player"]
     $game_player.reserve_transfer(player[0], player[1], player[2], player[3])
     $game_temp.fade_type = 0
-    @resume = { :troop => troop, :record => record, :stage => :transfer, :target => player[0], :snapshot => before }
+    @resume = { :troop => troop, :record => record, :stage => :transfer, :target => player[0], :snapshot => before, :flow => flow }
     log("resumes the fight against #{record['boss']} (troop #{troop}): to map #{player[0]} at #{player[1]},#{player[2]}")
     true
   end
@@ -1920,6 +1922,20 @@ module MGQ_MpRaidFreeze
     MGQ_MpGame.set(vehicle, :driving, true)
     vehicle.refresh
     log("put the player back on the #{type}")
+  end
+
+  # Puts the screen back as at the battle as part of the player's own scene, which began as the
+  # resume did, before its party and its player were put back: the one guard of the game's flow
+  # puts back what the resume put back once the mod moves the player away from it, as the scene's
+  # own end would (see MGQ_MpFlowGuard.resuming).
+  #
+  # @param text [String, nil] The dump of the record.
+  # @param before [Hash, nil] The state of the game's flow as the resume began, see
+  #   MGQ_MpFlowGuard.state_now.
+  def self.resume_screen(text, before = nil)
+    return restore_screen(text) unless defined?(MGQ_MpFlowGuard)
+
+    MGQ_MpFlowGuard.resuming(before) { restore_screen(text) }
   end
 
   # Puts the screen back as at the battle: tone, weather, flashes and pictures, copied into the live

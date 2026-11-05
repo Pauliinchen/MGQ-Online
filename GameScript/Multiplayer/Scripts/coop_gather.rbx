@@ -2,6 +2,7 @@
 #  coop_gather.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Left what a call, follow or teleport leaves of the player's scene and place to the one guard of the game's flow, the followers a map left hidden among it
 #      Paulinchen  2026-10-31: Stopped carrying the warp ban along with a call, a follow or a teleport
 #      Paulinchen  2026-10-28: Kept the calls, the hold and the follow offers with their frames in the DLL
 #                            - Read a Raid World's tellers from the tellings the relay told of
@@ -826,8 +827,8 @@ module MGQ_MpCoopGather
 
   # Moves the player to the leader once a story scene's frames passed, once the player is free: on
   # the map, with no event, message, transfer or battle of their own in the way. What a scene of the
-  # player's own left under way, such as an ending's walk, is taken back first (see
-  # MGQ_MpCoopScene::Own.leave). Called after the map's update.
+  # player's own left under way, such as an ending's walk, and the place they leave are put back
+  # first (see MGQ_MpFlowGuard.leave). Called after the map's update.
   def self.update
     # The map may have settled since the calls were read earlier this frame.
     refresh
@@ -848,8 +849,8 @@ module MGQ_MpCoopGather
     reason = taken["follow"] ? "the story moved them" : (taken["asked"] ? "the player asked to teleport" : "their story scene called")
     log("#{taken['follow'] ? 'followed' : 'came to'} #{taken['name']} on map #{map_id} #{x},#{y}, from map #{$game_map.map_id} #{$game_player.x},#{$game_player.y}: #{reason}")
     MGQ_MpCoopCastle.arriving(map_id) if defined?(MGQ_MpCoopCastle)
-    MGQ_MpCoopScene::Own.leave("the player went to #{taken['name']}: #{reason}") if defined?(MGQ_MpCoopScene::Own)
     elsewhere = map_id != $game_map.map_id
+    MGQ_MpFlowGuard.leave("the player went to #{taken['name']}: #{reason}", false, elsewhere) if defined?(MGQ_MpFlowGuard)
     if elsewhere
       $game_player.reserve_transfer(map_id, x, y, direction > 0 ? direction : 2)
     else
@@ -857,23 +858,8 @@ module MGQ_MpCoopGather
       $game_player.set_direction(direction) if direction > 0
     end
     taken["bans"].each { |id, banned| $game_switches[id] = banned }
-    show_followers if elsewhere
   rescue => e
     log("coming to the leader failed: #{e.class}: #{e.message}")
-  end
-
-  # Shows the player's followers again as they leave for another map.
-  #
-  # The game shows them again only in the events a player walks through to leave a place that hid
-  # them, such as Hades after a defeat, which a player brought over never touches, and the menu's
-  # Formation stays shut while they are hidden.
-  def self.show_followers
-    followers = $game_player.followers
-    return if followers.visible
-
-    followers.visible = true
-    $game_player.refresh
-    log("showed the player's followers again, which the map they left had hidden")
   end
 
   # Reports whether this game has a map, reading its file once per map.

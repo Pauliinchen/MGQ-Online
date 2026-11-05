@@ -2,6 +2,7 @@
 #  battles_pvp.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Put back through the guard of the game's flow what the duel's snapshot leaves, such as a dark screen
 #      Paulinchen  2026-10-24: Removed the PvP battle screen's hotkey, its exchange and its Discord invites
 #      Paulinchen  2026-10-23: Named the one log of the day where a battle that failed tells why
 #                            - Deleted the mirror match
@@ -861,6 +862,8 @@ module MGQ_MpBattlesPvp
       @snapshot = nil
       @globals = nil
       DataManager.extract_save_contents(contents)
+      # The snapshot holds the screen as the duel began, which a story's call may have faded out.
+      MGQ_MpFlowGuard.restored("a PvP battle put the game back") if defined?(MGQ_MpFlowGuard)
       self.globals = saved_globals
       $game_temp.in_memory_battle = false
       $game_temp.clear_common_event

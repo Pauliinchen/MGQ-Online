@@ -2,7 +2,8 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Answered the Classic catch-up, the side and the key item loan by the DLL's rules as engine.rb stands in for them, recorded by make_classic.rb
+#      Paulinchen  2026-11-05: Checked that an event ended early or kept from starting goes to the one guard of the game's flow, in place of the fade-ins on frame timers
+#                            - Answered the Classic catch-up, the side and the key item loan by the DLL's rules as engine.rb stands in for them, recorded by make_classic.rb
 #                            - Answered how a Classic member plays the leader's story, which of its changes they take and which of their runs it keeps by the DLL's rules as engine.rb and the checks stand in for them
 #                            - Checked that a member behind loses the World Seed the leader's story used up, with no notice
 #                            - Checked that a member from another player's starting save catches up with neither side before they answer, then with the side they answer
@@ -458,6 +459,13 @@ load_script "coop_events"
 load_script "coop_gather"
 load_script "coop_castle"
 answer_telling(open_rules_bridge)
+# Stands in for the one guard of the game's flow (coop_flow.rbx), noting in $flow what the events
+# hand it.
+module MGQ_MpFlowGuard
+  def self.cut(list, index, reason); ($flow ||= []) << [:cut, list.size, index, reason]; end
+  def self.skipped(list, what); ($flow ||= []) << [:skipped, list.size, what]; end
+  def self.leave(reason, whole = false, elsewhere = false); ($flow ||= []) << [:leave, reason, whole, elsewhere]; end
+end
 
 # The DLL's rules of how a Classic party's member plays the leader's story (ClassicStory), of the
 # Classic catch-up, the side and the key item loan, as fixtures/catchup/engine.rb stands in for them;
@@ -1053,38 +1061,18 @@ $game_map.setup_starting_map_event
 check("starting it again at once says nothing more", $notices, [])
 $game_map.events[12].start
 check("a talk runs in the member's own game", $game_map.setup_starting_map_event, $game_map.events[12])
-# The map's screen, faded out by the scene that brought the player.
-class LateScreen
-  attr_accessor :brightness, :fadein
-  def initialize; @brightness = 0; end
-  def start_fadein(duration); @fadein = duration; @brightness = 1; end
-end
-class Game_Map; attr_accessor :screen; end
 # When the player entered the map, from $map_since.
 module MGQ_MpOverworldSync; module Me; def self.map_since; $map_since; end; end; end
-$game_map.screen = LateScreen.new
 $map_since = 1000
 $sent.clear
+$flow = []
 $game_map.events[13].start
 check("a story event that runs by itself is left to the leader's game", [$game_map.setup_starting_map_event, $sent.size], [nil, 0])
 check("which notes it kept the leader's scene from starting, for their follow (issue 61)", [MGQ_MpCoopEvents.keeps_autorun_of?(leader), MGQ_MpCoopEvents.keeps_autorun_of?(far_friend)], [true, false])
 $frame_count += MGQ_MpCoopEvents::KEPT_AUTORUN_FRAMES + 1
 check("only while it keeps it", MGQ_MpCoopEvents.keeps_autorun_of?(leader), false)
-check("which fades in the dark screen of a player who came in the middle of it", $game_map.screen.fadein, MGQ_MpCoopEvents::LATE_FADEIN_FRAMES)
-$game_map.screen = LateScreen.new
-$game_map.events[13].start
-$game_map.setup_starting_map_event
-check("only once per arrival, so the teller's own fade out stays", $game_map.screen.fadein, nil)
-$map_since = 2000
-$game_map.events[13].start
-$game_map.setup_starting_map_event
-check("but again on the next arrival", $game_map.screen.fadein, MGQ_MpCoopEvents::LATE_FADEIN_FRAMES)
-$game_map.screen = LateScreen.new
-$game_map.screen.brightness = 255
-$map_since = 3000
-$game_map.events[13].start
-$game_map.setup_starting_map_event
-check("and never on a screen that is not dark", $game_map.screen.fadein, nil)
+check("and hands its commands to the guard of the game's flow, which puts back what it would have, as the light of a player who came in the middle of it (issue #9)",
+      $flow, [[:skipped, $game_map.events[13].list.size, "event 13 on map 7"]])
 events = $game_map.events
 $game_map.events = { 13 => events[13], 12 => events[12] }
 $game_map.events[13].start
@@ -1271,17 +1259,11 @@ $leader = leader
 $members = [leader]
 interpreter.setup(trader, 0)
 interpreter.instance_variable_set(:@index, 7)
-# Stands in for the player's own scene of coop_scene.rbx, noting in $cuts why an event of theirs
-# ended early, with nothing to take back as the player leaves it.
-module MGQ_MpCoopScene
-  module Own
-    def self.cut(reason); ($cuts ||= []) << reason; end
-    def self.leave(_reason, _whole = false); end
-  end
-end
+$flow = []
 MGQ_MpCoopEvents.guard(interpreter)
 check("a member's talk ends where it would move the story on", [interpreter.instance_variable_get(:@index), $notices.last], [trader.size - 1, "Only Leader can move the story on."])
-check("taking back what the talk showed, such as a companion's portrait", $cuts, ["a talk ended where it would move the story on"])
+check("handing the guard of the game's flow the talk's commands from there, which would erase what it showed, such as a companion's portrait (issue #49)",
+      $flow, [[:cut, trader.size, 7, "a talk ended where it would move the story on"]])
 interpreter.busy = false
 $leader = :me
 $members = [friend]
@@ -2882,37 +2864,11 @@ $party = nil
 $leader = nil
 $members = []
 
-# A screen left dark with nothing running that could fade it in.
-module MGQ_MpCoopScene; def self.watching?; $watching; end; def self.just_changed?; $scene_changed; end; end
-class Game_Map; def parallel_common_events; []; end; end
 SceneManager.scene = Scene_Map.new
-$game_map.events = { 30 => Game_Event.new(30, [RPG::Page.new([c(201, 0, 2, 5, 5, 2), c(0)])], 3) }
 $game_map.interpreter = Game_Interpreter.new
 $game_message.clear
 $game_message.busy = false
 $game_player = Game_Player.new
-$game_map.screen = LateScreen.new
-$watching = true
-$scene_changed = true
-MGQ_MpCoopEvents::WATCHED_DARK_FRAMES.times { MGQ_MpCoopEvents.update }
-check("a dark screen stays while another player's scene plays here and reaches the screen", $game_map.screen.fadein, nil)
-$scene_changed = false
-(MGQ_MpCoopEvents::WATCHED_DARK_FRAMES - 1).times { MGQ_MpCoopEvents.update }
-check("and a while after the scene last reached it", $game_map.screen.fadein, nil)
-MGQ_MpCoopEvents.update
-check("then fades in, as a scene the player cannot follow leaves it dark for good",
-      [$game_map.screen.fadein, $log.grep(/faded the screen in on map \d+: it stayed dark for 600 frames .*nothing of the scene/).size], [MGQ_MpCoopEvents::LATE_FADEIN_FRAMES, 1])
-$game_map.screen = LateScreen.new
-$watching = false
-$game_map.events[31] = Game_Event.new(31, [RPG::Page.new([c(230, 60), c(222), c(0)])], 4)
-MGQ_MpCoopEvents::DARK_SCREEN_FRAMES.times { MGQ_MpCoopEvents.update }
-check("and while an event running alongside the map fades it in itself", $game_map.screen.fadein, nil)
-$game_map.events.delete(31)
-(MGQ_MpCoopEvents::DARK_SCREEN_FRAMES - 1).times { MGQ_MpCoopEvents.update }
-check("nothing else running, it stays dark a while", $game_map.screen.fadein, nil)
-MGQ_MpCoopEvents.update
-check("then fades in, as an arrival whose fade-in another game ran leaves it dark for good",
-      [$game_map.screen.fadein, $log.grep(/faded the screen in on map \d+: it stayed dark for 300 frames/).size], [MGQ_MpCoopEvents::LATE_FADEIN_FRAMES, 1])
 
 # A frozen raid boss fight's resume runs its page as story, whatever it is sorted as otherwise.
 talk_only = RPG::Page.new([c(101, "", 0, 0, 2), c(0)])

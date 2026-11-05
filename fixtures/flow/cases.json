@@ -1,0 +1,194 @@
+{
+  "source": "the reported cases of the game's flow left half done (Open issues causes 2026-11-03, issues #1, #9, #20, #39, #49, #52, #63, #68 and the field tests), each with the state the report shows and, where the report names the event, its commands from the game data of 3.06: only the commands the guard reads, in their order",
+  "cases": [
+    {
+      "name": "a player who came in the middle of another player's story, whose arrival scene the player's game keeps from starting, sees the light again",
+      "issue": "#9",
+      "note": "The ship to Morrigan fades out and moves the player without a fade; map 587's event 5 runs by itself and fades in, but the teller fights Morrigan, so the player's game keeps it from starting.",
+      "request": {
+        "cut": "skip",
+        "before": null,
+        "now": {"map": 587, "brightness": 0, "fading_in": false, "tone": [0, 0, 0, 0], "hidden": false, "followers": true, "temp_party": false, "music": ["Ship", 100, 100], "bans": [], "route": false, "pictures": []},
+        "rest": [[121, 0, [31, 31, 1]], [121, 0, [2055, 2055, 1]], [222, 0, []], [221, 0, []], [222, 0, []], [221, 0, []], [222, 0, []], [121, 0, [2055, 2055, 0]], [231, 0, [5, null, 0, 0, 0, 0, 100, 100, 255, 0]], [121, 0, [22, 22, 0]], [301, 0, [0, 126, false, false]], [121, 0, [22, 22, 1]], [235, 0, [5]], [0, 0, []]]
+      },
+      "plan": {"erase": [], "fade_in": true, "tone": null, "hidden": null, "followers": null, "release_party": false, "music": null, "lift": [], "end_route": false, "clear_effects": false}
+    },
+    {
+      "name": "a game over that returned the player to a scene whose next event another player's game ran leaves no black screen",
+      "issue": "#20",
+      "note": "After dying to Lilith the player is back at map 176, whose event 28 runs by itself and fades in first; the world's story is past it, so the player's game keeps it from starting.",
+      "request": {
+        "cut": "skip",
+        "before": null,
+        "now": {"map": 176, "brightness": 0, "fading_in": false, "tone": [0, 0, 0, 0], "hidden": false, "followers": true, "temp_party": false, "music": null, "bans": [], "route": false, "pictures": []},
+        "rest": [[222, 0, []], [121, 0, [31, 31, 1]], [121, 0, [32, 32, 1]], [121, 0, [33, 33, 1]], [121, 0, [34, 34, 1]], [0, 0, []]]
+      },
+      "plan": {"erase": [], "fade_in": true, "tone": null, "hidden": null, "followers": null, "release_party": false, "music": null, "lift": [], "end_route": false, "clear_effects": false}
+    },
+    {
+      "name": "a watched scene that left the player's screen black and tinted ends, and the screen comes back",
+      "issue": "#39",
+      "note": "The teller's scene faded the viewer's screen out and tinted it; once the viewer no longer sees it, the light and the tint before it come back.",
+      "request": {
+        "cut": "watched",
+        "before": {"map": 936, "brightness": 255, "fading_in": false, "tone": [0, 0, 0, 0], "hidden": false, "followers": true, "temp_party": false, "music": null, "bans": [], "route": false, "pictures": []},
+        "now": {"map": 936, "brightness": 0, "fading_in": false, "tone": [-68, -68, -68, 0], "hidden": false, "followers": true, "temp_party": false, "music": null, "bans": [], "route": false, "pictures": []},
+        "watch": {"screen": true, "hidden": false, "route": false, "pictures": []}
+      },
+      "plan": {"erase": [], "fade_in": true, "tone": [0, 0, 0, 0], "hidden": null, "followers": null, "release_party": false, "music": null, "lift": [], "end_route": false, "clear_effects": true}
+    },
+    {
+      "name": "a Pocket Castle member's talk the mod ends where it would move the story on takes its portrait along",
+      "issue": "#49",
+      "note": "A member who does not lead talks to a castle resident; the talk turns into story and ends there, past the command that would erase her portrait.",
+      "request": {
+        "cut": "cut",
+        "before": {"map": 228, "brightness": 255, "fading_in": false, "tone": [0, 0, 0, 0], "hidden": false, "followers": true, "temp_party": false, "music": ["Castle", 100, 100], "bans": [], "route": false, "pictures": []},
+        "now": {"map": 228, "brightness": 255, "fading_in": false, "tone": [0, 0, 0, 0], "hidden": false, "followers": true, "temp_party": false, "music": ["Castle", 100, 100], "bans": [], "route": false, "pictures": [5]},
+        "owned": [5],
+        "rest": [[121, 0, [2001, 2001, 0]], [235, 0, [5]], [0, 0, []]]
+      },
+      "plan": {"erase": [5], "fade_in": false, "tone": null, "hidden": null, "followers": null, "release_party": false, "music": null, "lift": [], "end_route": false, "clear_effects": false}
+    },
+    {
+      "name": "the world's story returning to the Great Decision takes the player out of their own ending: its party, hidden character and hidden followers go",
+      "issue": "#52",
+      "note": "The player walked their Ilias route's ending in a temporary party with the character and the followers hidden when the world went back to the Great Decision.",
+      "request": {
+        "cut": "leave",
+        "before": {"map": 5, "brightness": 255, "fading_in": false, "tone": [0, 0, 0, 0], "hidden": false, "followers": true, "temp_party": false, "music": null, "bans": [], "route": false, "pictures": []},
+        "now": {"map": 5, "brightness": 255, "fading_in": false, "tone": [0, 0, 0, 0], "hidden": true, "followers": false, "temp_party": true, "music": null, "bans": [], "route": false, "pictures": []},
+        "whole": true,
+        "elsewhere": true
+      },
+      "plan": {"erase": [], "fade_in": false, "tone": null, "hidden": false, "followers": true, "release_party": true, "music": null, "lift": [], "end_route": false, "clear_effects": false}
+    },
+    {
+      "name": "a teleport to the leader out of a place that bans the escape spell lifts its ban, as walking out of it does",
+      "issue": "#1, #63",
+      "note": "#1: inside a cave the harpy feathers stay shut once the game brought the player to the leader. #63: a scene that took the player along left its ban of the place on; the warp ban itself story_state.rbx lifts in every world.",
+      "request": {
+        "cut": "leave",
+        "before": null,
+        "now": {"map": 412, "brightness": 255, "fading_in": false, "tone": [0, 0, 0, 0], "hidden": false, "followers": true, "temp_party": false, "music": null, "bans": ["escape"], "route": false, "pictures": []},
+        "whole": false,
+        "elsewhere": true
+      },
+      "plan": {"erase": [], "fade_in": false, "tone": null, "hidden": null, "followers": null, "release_party": false, "music": null, "lift": ["escape"], "end_route": false, "clear_effects": false}
+    },
+    {
+      "name": "a loaded autosave that shows Chaos's CG with no event running loses it as the player teleports to the story on map 228",
+      "issue": "#68",
+      "note": "The report's path: after F12 the world's autosave loads on map 1951 with picture 5 shown and no event running. Event 34, whose common event 9050 would erase it, starts only by the player's touch (page 0) and never runs. The state at the load without its pictures is the start of the scene the save stopped, so the teleport to map 228 erases the CG.",
+      "request": {
+        "cut": "leave",
+        "before": {"map": 1951, "brightness": 255, "fading_in": false, "tone": [0, 0, 0, 0], "hidden": false, "followers": true, "temp_party": false, "music": null, "bans": [], "route": false, "pictures": []},
+        "now": {"map": 1951, "brightness": 255, "fading_in": false, "tone": [0, 0, 0, 0], "hidden": false, "followers": true, "temp_party": false, "music": null, "bans": [], "route": false, "pictures": [5]},
+        "whole": false,
+        "elsewhere": true
+      },
+      "plan": {"erase": [5], "fade_in": false, "tone": null, "hidden": null, "followers": null, "release_party": false, "music": null, "lift": [], "end_route": false, "clear_effects": false}
+    },
+    {
+      "name": "the same CG goes once the player touches the story event that would end it, which another player's game runs",
+      "issue": "#68",
+      "note": "Event 34 starts by the player's touch and calls common event 9050, whose end erases pictures 5 and 6; another player's game runs the story there, so the event is kept from starting. The DLL first names 9050, whose commands the request then holds.",
+      "request": {
+        "cut": "skip",
+        "before": null,
+        "now": {"map": 1951, "brightness": 255, "fading_in": false, "tone": [0, 0, 0, 0], "hidden": false, "followers": true, "temp_party": false, "music": null, "bans": [], "route": false, "pictures": [5]},
+        "watch": {"screen": false, "hidden": false, "route": false, "pictures": []},
+        "rest": [[117, 0, [9050]], [0, 0, []]],
+        "commons": {"#pairs": [[9050, [[201, 0, [0, 951, 24, 15, 0, 0]], [231, 0, [5, null, 0, 0, 0, 0, 100, 100, 0, 0]], [231, 0, [6, null, 0, 0, 0, 0, 100, 100, 0, 0]], [235, 0, [5]], [121, 0, [22, 22, 0]], [301, 0, [0, 2216, false, false]], [121, 0, [22, 22, 1]], [231, 0, [5, null, 0, 0, 0, 0, 100, 100, 255, 0]], [235, 0, [6]], [301, 0, [0, 2217, false, false]], [231, 0, [6, null, 0, 0, 0, 0, 100, 100, 0, 0]], [221, 0, []], [235, 0, [5]], [235, 0, [6]], [121, 0, [31, 31, 1]], [211, 0, [0]], [201, 0, [0, 843, 0, 0, 8, 2]], [222, 0, []], [0, 0, []]]]]}
+      },
+      "needs": [9050],
+      "plan": {"erase": [5], "fade_in": false, "tone": null, "hidden": null, "followers": null, "release_party": false, "music": null, "lift": [], "end_route": false, "clear_effects": false}
+    },
+    {
+      "name": "while the player watches a telling, the teller's CG and its dark screen stay though the player's own copy of the story is kept from starting",
+      "issue": "#68",
+      "note": "The same kept event while the teller's scene shows its CG on picture 5 and its fade out on the player's screen: those are the watched scene's own, which its end puts back.",
+      "request": {
+        "cut": "skip",
+        "before": null,
+        "now": {"map": 1951, "brightness": 0, "fading_in": false, "tone": [0, 0, 0, 0], "hidden": false, "followers": true, "temp_party": false, "music": null, "bans": [], "route": false, "pictures": [5]},
+        "watch": {"screen": true, "hidden": false, "route": false, "pictures": [5]},
+        "rest": [[117, 0, [9050]], [0, 0, []]],
+        "commons": {"#pairs": [[9050, [[221, 0, []], [235, 0, [5]], [235, 0, [6]], [222, 0, []], [0, 0, []]]]]}
+      },
+      "plan": {"erase": [], "fade_in": false, "tone": null, "hidden": null, "followers": null, "release_party": false, "music": null, "lift": [], "end_route": false, "clear_effects": false}
+    },
+    {
+      "name": "a call to the leader shows the followers a defeat's place left hidden, so Formation opens again",
+      "issue": "field 2026-10-11",
+      "note": "Hades hides the followers after a defeat and only its own way out shows them again; a player brought to the leader never walks it.",
+      "request": {
+        "cut": "leave",
+        "before": null,
+        "now": {"map": 300, "brightness": 255, "fading_in": false, "tone": [0, 0, 0, 0], "hidden": false, "followers": false, "temp_party": false, "music": null, "bans": [], "route": false, "pictures": []},
+        "whole": false,
+        "elsewhere": true
+      },
+      "plan": {"erase": [], "fade_in": false, "tone": null, "hidden": null, "followers": true, "release_party": false, "music": null, "lift": [], "end_route": false, "clear_effects": false}
+    },
+    {
+      "name": "a call to the leader after a duel brings the light back to a screen still black",
+      "issue": "field 2026-10-04",
+      "note": "A member waiting for the leader's call fought a duel and stood on a black screen afterwards.",
+      "request": {
+        "cut": "leave",
+        "before": null,
+        "now": {"map": 7, "brightness": 0, "fading_in": false, "tone": [0, 0, 0, 0], "hidden": false, "followers": true, "temp_party": false, "music": null, "bans": [], "route": false, "pictures": []},
+        "whole": false,
+        "elsewhere": false
+      },
+      "plan": {"erase": [], "fade_in": true, "tone": null, "hidden": null, "followers": null, "release_party": false, "music": null, "lift": [], "end_route": false, "clear_effects": false}
+    },
+    {
+      "name": "a viewer's character still walking the teller's route once the scene ended gets its own back",
+      "issue": "field 2026-10-11",
+      "note": "The relay ended the telling while the viewer's character walked the route the teller's character took, which kept it from moving.",
+      "request": {
+        "cut": "watched",
+        "before": {"map": 7, "brightness": 255, "fading_in": false, "tone": [0, 0, 0, 0], "hidden": false, "followers": true, "temp_party": false, "music": null, "bans": [], "route": false, "pictures": []},
+        "now": {"map": 7, "brightness": 255, "fading_in": false, "tone": [0, 0, 0, 0], "hidden": false, "followers": true, "temp_party": false, "music": null, "bans": [], "route": true, "pictures": []},
+        "watch": {"screen": false, "hidden": false, "route": true, "pictures": []}
+      },
+      "plan": {"erase": [], "fade_in": false, "tone": null, "hidden": null, "followers": null, "release_party": false, "music": null, "lift": [], "end_route": true, "clear_effects": false}
+    },
+    {
+      "name": "a watched scene that gave the viewer's character no route leaves the route the viewer's own game forces as it is",
+      "issue": "field 2026-10-11",
+      "note": "The viewer's own game moves their character by a forced route as the teller's telling ends; the scene's end ends only a route the scene gave.",
+      "request": {
+        "cut": "watched",
+        "before": {"map": 7, "brightness": 255, "fading_in": false, "tone": [0, 0, 0, 0], "hidden": false, "followers": true, "temp_party": false, "music": null, "bans": [], "route": false, "pictures": []},
+        "now": {"map": 7, "brightness": 255, "fading_in": false, "tone": [0, 0, 0, 0], "hidden": false, "followers": true, "temp_party": false, "music": null, "bans": [], "route": true, "pictures": []},
+        "watch": {"screen": false, "hidden": false, "route": false, "pictures": []}
+      },
+      "plan": {"erase": [], "fade_in": false, "tone": null, "hidden": null, "followers": null, "release_party": false, "music": null, "lift": [], "end_route": false, "clear_effects": false}
+    },
+    {
+      "name": "a duel's end that puts the game back from its snapshot with a black screen brings the light back",
+      "issue": "field 2026-10-04",
+      "note": "The duel's snapshot held the screen the leader's call had faded out; nothing of the game's flow runs after the duel to fade it in.",
+      "request": {
+        "cut": "free",
+        "before": null,
+        "now": {"map": 7, "brightness": 0, "fading_in": false, "tone": [0, 0, 0, 0], "hidden": false, "followers": true, "temp_party": false, "music": null, "bans": [], "route": false, "pictures": []}
+      },
+      "plan": {"erase": [], "fade_in": true, "tone": null, "hidden": null, "followers": null, "release_party": false, "music": null, "lift": [], "end_route": false, "clear_effects": false}
+    },
+    {
+      "name": "a move kept out of an area the world has not opened, after the scene faded out, leaves no black screen",
+      "issue": "field 2026-10-24",
+      "note": "The game's scenes fade out before they move the player; the move into the Realm of Chaos is kept back while the world lacks its chains.",
+      "request": {
+        "cut": "refused",
+        "before": null,
+        "now": {"map": 1287, "brightness": 0, "fading_in": false, "tone": [0, 0, 0, 0], "hidden": false, "followers": true, "temp_party": false, "music": null, "bans": [], "route": false, "pictures": []}
+      },
+      "plan": {"erase": [], "fade_in": true, "tone": null, "hidden": null, "followers": null, "release_party": false, "music": null, "lift": [], "end_route": false, "clear_effects": false}
+    }
+  ]
+}

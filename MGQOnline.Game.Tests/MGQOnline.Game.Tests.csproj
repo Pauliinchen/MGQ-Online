@@ -60,6 +60,7 @@
     <None Include="..\fixtures\served\*.json" LinkBase="fixtures\served" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\fixtures\chat\*.json" LinkBase="fixtures\chat" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\fixtures\hud\*.json" LinkBase="fixtures\hud" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\fixtures\flow\*.json" LinkBase="fixtures\flow" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <!-- The seed rows of the relay's story tables and the game scripts' generated tables, which the

@@ -2,6 +2,7 @@
 #  world_gates_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Checked that a move kept back goes to the one guard of the game's flow
 #      Paulinchen  2026-10-24: Created
 #
 #----------------------------------------------------------------
@@ -19,10 +20,8 @@ end
 # Stands in for RGSS graphics, whose frame count is $frame_count.
 module Graphics; def self.frame_count; $frame_count; end; end
 $frame_count = 1000
-# Stands in for the map's screen, keeping its fade-ins.
-class Game_Screen; attr_accessor :brightness, :fadein; def initialize; @brightness = 255; end; def start_fadein(frames); @fadein = frames; end; end
 # Stands in for the map, on $map_id.
-class Game_Map; attr_reader :screen; def initialize; @screen = Game_Screen.new; end; def map_id; $map_id; end; end
+class Game_Map; def map_id; $map_id; end; end
 # Stands in for the player, keeping the moves that went through in $moves.
 class Game_Player; def reserve_transfer(map_id, x, y, d = 2); ($moves ||= []) << map_id; end; end
 # Stands in for the event interpreter of a map's event, running the list it holds.
@@ -35,6 +34,8 @@ end
 module MGQ_MpCoop; module Scope; def self.raid?; $raid; end; end; end
 # Stands in for overworld_sync.rbx, keeping its notices in $notices.
 module MGQ_MpOverworldSync; def self.notice(text, _icon = nil); ($notices ||= []) << text; end; end
+# Stands in for the one guard of the game's flow (coop_flow.rbx), keeping why each move was kept back in $refused.
+module MGQ_MpFlowGuard; def self.refused(why); ($refused ||= []) << why; end; end
 load_script "world_gates"
 
 gates = MGQ_MpWorldGates
@@ -54,9 +55,7 @@ check("and says what the world still has to finish", $notices.last,
       "White Rabbit's Revival, Koron, Ilias's Power-up, Alice's Power-up, Hero of the North, Granberia's Nightmare.")
 $game_player.reserve_transfer(1752, 10, 10)
 check("its deepest map too, as a follow or teleport would reach it, telling it once in a while", [$moves.to_a, $notices.size], [[], 1])
-$game_map.screen.brightness = 0
-$game_player.reserve_transfer(1836, 10, 10)
-check("a move kept back after the scene faded out fades the screen in again", $game_map.screen.fadein, gates::FADEIN_FRAMES)
+check("and hands each move kept back to the guard of the game's flow, which puts back the screen the scene faded out", $refused, ["Central Tartarus is shut"] * 2)
 done.call
 $game_variables[1345] = 4
 $game_player.reserve_transfer(1836, 10, 10)

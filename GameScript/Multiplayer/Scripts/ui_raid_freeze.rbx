@@ -2,6 +2,7 @@
 #  ui_raid_freeze.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Handed a frozen fight's event kept from starting to the one guard of the game's flow
 #      Paulinchen  2026-10-28: Read what a page writes from the DLL's command index and the post-defeat processing's writes from the freeze's tables
 #      Paulinchen  2026-10-17: Created
 #
@@ -680,6 +681,7 @@ module MGQ_MpRaidFreezeUi
 
       event.clear_starting_flag
       event.unlock
+      MGQ_MpFlowGuard.skipped(event.list, "event #{event.id} on map #{map.map_id}") if defined?(MGQ_MpFlowGuard)
       log_once([:blocked, map.map_id, event.id], "kept starting event #{event.id} on map #{map.map_id} from running: #{reason}; " \
                "the fight against #{tableau.name} (troop #{tableau.troop}) waits frozen there")
     end

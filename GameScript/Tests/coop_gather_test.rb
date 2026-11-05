@@ -2,6 +2,7 @@
 #  coop_gather_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Checked that a follow hands the move to the one guard of the game's flow, which shows the followers the map left hidden
 #      Paulinchen  2026-11-01: Dropped the stand-in of a lapse after a frame count, which no script asks for any more
 #      Paulinchen  2026-10-31: Dropped the warp ban a teleport to the story took
 #                            - Expected the plainer texts the player reads
@@ -101,6 +102,8 @@ module MGQ_MpCoopEvents
   def self.tell(seat, kind, fields = {}); ($sent ||= []) << [seat, kind]; true; end
 end
 
+# Stands in for the one guard of the game's flow (coop_flow.rbx), noting each move away in $flow_leaves.
+module MGQ_MpFlowGuard; def self.leave(reason, whole = false, elsewhere = false); ($flow_leaves ||= []) << [reason, whole, elsewhere]; end; end
 load_script "coop_scope"
 load_script "coop_gather"
 open_rules_bridge
@@ -294,7 +297,8 @@ $game_player.followers.visible = false
 gather.update
 check("taken, the follow still names its teller and map while the player is on the way and after they arrived",
       [$game_player.reserved, gather.coming?, gather.followed_id, gather.story_map?(8)], [[8, 1, 2, 2], false, "t", true])
-check("and shows the followers the map left behind hidden, such as Hades after a defeat", $game_player.followers.visible, true)
+check("and hands the move to the guard of the game's flow as one to another map, which shows the followers the map left behind hidden, such as Hades after a defeat",
+      $flow_leaves.last, ["the player went to Teller: the story moved them", false, true])
 $frame_count += GatherStandIn::CALL_LAPSE_FRAMES
 check("until CALL_LAPSE_FRAMES passed", [gather.followed_id, gather.story_map?(8)], [nil, false])
 $game_player.reserved = nil

@@ -2,6 +2,7 @@
 #  world_gates.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Left what a move kept back leaves to the one guard of the game's flow
 #      Paulinchen  2026-10-24: Created
 #
 #----------------------------------------------------------------
@@ -44,9 +45,6 @@ module MGQ_MpWorldGates
   # Frames between two notices of the same refusal, five seconds.
   NOTICE_FRAMES = 300
 
-  # Frames the screen takes to fade in after a move kept back, half a second, as the game's own.
-  FADEIN_FRAMES = 30
-
   extend MGQ_MpLog
 
   # What starts this script's lines in Multiplayer InGame.log.
@@ -87,8 +85,9 @@ module MGQ_MpWorldGates
   end
 
   # Lets a move go unless it enters a shut area, telling the player what the area still needs and
-  # fading the screen in again. Called around Game_Player#reserve_transfer, which the game's
-  # transfers, the relay map and the mod's follows and teleports all go through.
+  # putting back what the move would have, such as the light (see MGQ_MpFlowGuard.refused). Called
+  # around Game_Player#reserve_transfer, which the game's transfers, the relay map and the mod's
+  # follows and teleports all go through.
   #
   # The game's scenes fade the screen out before they move the player, so a move kept back would
   # leave it black.
@@ -101,8 +100,7 @@ module MGQ_MpWorldGates
 
     log_once([:refused, area.name, $game_map.map_id], "kept the player out of map #{map_id} of #{area.name}: the world's story lacks #{needs_text(missing(area))}")
     tell_shut(area)
-    screen = $game_map.screen
-    screen.start_fadein(FADEIN_FRAMES) if screen.brightness < 255
+    MGQ_MpFlowGuard.refused("#{area.name} is shut") if defined?(MGQ_MpFlowGuard)
   rescue => e
     log("checking a move for a gated area failed: #{e.class}: #{e.message}")
     yield

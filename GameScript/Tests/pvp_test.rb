@@ -2,6 +2,7 @@
 #  pvp_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Checked that a duel's end hands the guard of the game's flow what the snapshot left
 #      Paulinchen  2026-10-23: Dropped the checks of the deleted mirror match
 #                            - Checked hit messages left out without a target outside multiplayer battles too
 #      Paulinchen  2026-10-08: Checked messages shown as the game shows them and a missing picture not tried again
@@ -331,6 +332,9 @@ battle_module.singleton_class.send(:alias_method, :message_without_target?, :che
 $targets = [:foe]
 $rules << [:pvp, false]
 
+# Stands in for the guard of the game's flow, noting in $restored_by what put the game back.
+module MGQ_MpFlowGuard; def self.restored(why); ($restored_by ||= []) << why; end; end
+
 # The map puts the game back and drops the game's Retry.
 BattleManager.instance_variable_set(:@retry_data, :retry)
 battle.finished(0)
@@ -341,6 +345,8 @@ check("as the map starts again the battle is over, the save and the shared data 
 check("the replay mode, the troop, the Retry and the medals of the battle are gone", [$game_temp.in_memory_battle, $data_troops.size, BattleManager.instance_variable_get(:@retry_data), $game_temp.instance_variable_get(:@gain_medals)],
       [false, 3, nil, [:old_medal]])
 check("the map is drawn anew and told the result the game ended with", [$player_refreshed, $game_map.need_refresh, $game_message.texts.last], [true, true, "Friend's team won."])
+check("and the guard of the game's flow puts back what the snapshot left, such as a dark screen (the field test of 2026-10-04)",
+      $restored_by, ["a PvP battle put the game back"])
 check("the rules, the balance, the Backline and the live battle are finished", [$rules.last, $balance_finished, $backline_finished, $sync_finished], [:finished, true, true, true])
 check("the troop's totals are the game's again", [$game_troop.exp_total, $game_troop.make_drop_items], [500, [:drop]])
 scene.subject = Targetless.new(Aimed.new(true, false))

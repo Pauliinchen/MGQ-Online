@@ -2,6 +2,7 @@
 #  core_game_access.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Named the frames left of the screen's fade in
 #      Paulinchen  2026-10-31: Named the interpreter a map event or common event holds and the map's parallel common events
 #                            - Gave the game's frame counter a base of 0 while no New Game or load set one
 #      Paulinchen  2026-10-30: Named the features and effects a database entry's file holds
@@ -165,6 +166,9 @@ module MGQ_MpGame
 
     # Game_Character: whether a forced move route moves the character instead of its own.
     :move_route_forcing => :@move_route_forcing,
+
+    # Game_Screen: the frames left of a fade in.
+    :fadein_duration => :@fadein_duration,
 
     # $data_mapinfos: the map lists, the main one and one per further map folder.
     :map_lists => :@data,

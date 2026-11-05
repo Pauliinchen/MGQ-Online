@@ -2,6 +2,7 @@
 #  world_story_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Took the player out of their own scene through the stand-in of the one guard of the game's flow
 #      Paulinchen  2026-11-01: Dropped the stand-in of the form window no script draws with any more
 #      Paulinchen  2026-10-31: Checked that the Great Decision offers the routes the relay grants
 #                            - Checked that a run goes to the relay after its writes and that the track's runs reach the replay one at a time while the player is free
@@ -579,22 +580,23 @@ tell_status(fake, "world" => world_back)
 frames(1)
 $takes << keys_take([["v1142", "n0"], ["v1001", "n39"], ["s7097", "1"]], 8)
 tell_status(fake, "pending" => true, "world" => world_back)
-# Stands in for the co-op scene: nothing of a teller's scene waits to be put back, and each time the
-# player is taken out of their own scene, whether wholly and how many lists were set up by then, is
-# noted in $left.
+# Stands in for the co-op scene: nothing of a teller's scene waits to be put back.
 module MGQ_MpCoopScene
   def self.pending?; false; end
   # Takes a story write for a teller's scene, which no scene of this test shows.
   def self.story_value(*); end
-  module Own; def self.leave(_reason, whole = false); ($left ||= []) << [whole, $setups.size]; end; end
 end
+# Stands in for the one guard of the game's flow (coop_flow.rbx): each time the player is taken out
+# of their own scene, whether wholly, to another map, and how many lists were set up by then, is
+# noted in $left.
+module MGQ_MpFlowGuard; def self.leave(_reason, whole = false, elsewhere = false); ($left ||= []) << [whole, elsewhere, $setups.size]; end; end
 frames(3)
 check("the world's return to the Great Decision reaches the player, and says so", [$game_variables[1001], $game_variables[1142], $notices],
       [39, 0, ["The world's story went back to the Great Decision."]])
 check("whose own half plays once the player is free: the Final Chapter's reset, where a game over returns them and the transfer",
       ($setups.last || []).map { |entry| entry.code }, [117, 122, 122, 201, 0])
 check("after taking the player wholly out of a scene of their own, such as their route's ending walked in a temporary party",
-      $left, [[true, $setups.size - 1]])
+      $left, [[true, true, $setups.size - 1]])
 check("the Great Decision then offers the routes the relay grants", story.decision_routes, [0])
 
 # Event commands may move the world's story on when they set a value that tells how far it is or a
