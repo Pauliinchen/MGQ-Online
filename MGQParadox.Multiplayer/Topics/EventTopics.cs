@@ -2,6 +2,9 @@
 //  EventTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Answered a sort with the one decision, which tells the player's own lists and the Pocket Castle's residents
+//                            - Read the common events the scripts hand over
+//                            - Told the scripts the maps of the Pocket Castle's residents
 //      Paulinchen  2026-10-28: Answered the command index of every page a map names in one call
 //                            - Read the events from the events database, a list found only while its length and shape match
 //                            - Took the game data's fingerprint the database is checked against
@@ -45,8 +48,9 @@ internal static class EventTopics
     /// <summary>
     /// Hands over the game data's fingerprint (<c>fingerprint</c>, as <c>MGQ_MpWorld::GameData.fingerprint</c>
     /// makes it), which the events database is checked against before any of its tables is read.
-    /// Answers <c>usable</c> (whether the database is read at all), <c>problem</c> (why not, else nil)
-    /// and <c>differing</c> (the parts of the game data whose tables are not read).
+    /// Answers <c>usable</c> (whether the database is read at all), <c>problem</c> (why not, else nil),
+    /// <c>differing</c> (the parts of the game data whose tables are not read) and <c>castle_maps</c>
+    /// (the maps of the Pocket Castle's residents, see <see cref="PocketCastle.ResidentMaps"/>).
     /// </summary>
     public const string Open = "events.open";
 
@@ -55,19 +59,23 @@ internal static class EventTopics
     /// (<c>common</c>), each with <c>size</c> and <c>shape</c> of the list the scripts hold (see
     /// <see cref="ListShape"/>), or commands the scripts hand over (<c>list</c>, each [code, indent,
     /// parameters], and <c>trigger</c> for a page's); <c>index</c> asks only whether the command at that
-    /// place of the list moves the story on; <c>resident</c> when the list is a Pocket Castle resident's;
-    /// <c>values</c>, see <see cref="RequestState"/>. Answers <c>{"unknown"=>true}</c> when the database
-    /// lacks the list, may not be read for it or holds another length or shape, <c>needs</c>, see
-    /// <see cref="RequestState.Needs"/>, else <c>kind</c> (the page's, or the list's for a common
-    /// event), <c>list_kind</c>, <c>may_tell</c>, <c>scene</c> and <c>marks</c>, or <c>{"story"=>bool}</c>
-    /// for an <c>index</c>.
+    /// place of the list moves the story on; <c>map</c> and <c>common</c> where it runs, also with a list
+    /// handed over; <c>speaker</c> and <c>goods</c>, what its texts tell (see <see cref="PageTexts"/>);
+    /// <c>resumed</c> for a frozen raid boss fight's page that resumes; <c>values</c>, see
+    /// <see cref="RequestState"/>. Answers <c>{"unknown"=>true}</c> when the database lacks the list,
+    /// may not be read for it or holds another length or shape, <c>needs</c>, see
+    /// <see cref="RequestState.Needs"/>, else the one decision (<see cref="EventSorter.Decide"/>):
+    /// <c>kind</c> (the page's, or the list's for a common event), <c>list_kind</c>, <c>may_tell</c>,
+    /// <c>scene</c>, <c>marks</c> and <c>own</c> (why it runs in the player's own game alone, nil when
+    /// it does not), or <c>{"story"=>bool}</c> for an <c>index</c>.
     /// </summary>
     public const string Sort = "events.sort";
 
     /// <summary>
     /// Sorts every page a list names of a map at once, for its chests: <c>map</c>, <c>pages</c> (each
     /// [event, page from 0, size, shape], or [event, page from 0, commands] for a page the scripts hand
-    /// over), <c>residents</c> (each [event, page] of a Pocket Castle resident) and <c>values</c>.
+    /// over), <c>texts</c> (each [event, page, speaker, goods] of a page whose texts tell something, as
+    /// for <see cref="Sort"/>) and <c>values</c>.
     /// Answers <c>needs</c>, else <c>kinds</c>: each page's list kind, nil for one the database lacks or
     /// holds otherwise.
     /// </summary>
@@ -157,6 +165,7 @@ internal static class EventTopics
             { "usable", gate.Problem is null },
             { "problem", gate.Problem is { } problem ? problem : RubyNil.Value },
             { "differing", new RubyArray(gate.Differing.Select(part => (RubyValue)part)) },
+            { "castle_maps", new RubyArray(PocketCastle.ResidentMaps.Order().Select(map => (RubyValue)map)) },
         };
     }
 
@@ -217,25 +226,25 @@ internal static class EventTopics
 
         var state = new RequestState(request["values"] as RubyHash);
         var sorter = new EventSorter(source);
-        bool resident = request["resident"] is RubyBool { Flag: true };
+        EventSite site = SiteOf(request, found.Trigger);
         RubyHash answer;
         if (request["index"] is RubyInteger index)
         {
             int place = (int)EventCommand.NumberOf(index);
             int? kept = found.ListId is { } listId ? events.Store.OrdOfIdx(listId, place) : place;
-            answer = new RubyHash { { "story", kept is { } ord && sorter.IsStoryCommand(found.Commands, ord, state) } };
+            answer = new RubyHash { { "story", kept is { } ord && sorter.DecideCommand(found.Commands, ord, site, state) } };
         }
         else
         {
-            EventKind listKind = sorter.KindOf(found.Commands, state, resident);
-            EventKind kind = found.Trigger is { } pageTrigger ? sorter.KindOfPage(new EventPage(PageCondition.None, pageTrigger, found.Commands), state, resident) : listKind;
+            EventDecision decision = sorter.Decide(found.Commands, site, state);
             answer = new RubyHash
             {
-                { "kind", NameOf(kind) },
-                { "list_kind", NameOf(listKind) },
-                { "may_tell", sorter.MayTell(found.Commands, state) },
-                { "scene", sorter.IsScene(found.Commands, state, resident) },
-                { "marks", MarksOf(sorter.MarksOf(found.Commands, state)) },
+                { "kind", NameOf(decision.Kind) },
+                { "list_kind", NameOf(decision.ListKind) },
+                { "may_tell", decision.MayTell },
+                { "scene", decision.Scene },
+                { "marks", MarksOf(decision.Marks) },
+                { "own", decision.Own is { } own ? own : RubyNil.Value },
             };
         }
 
@@ -253,21 +262,21 @@ internal static class EventTopics
         IEventSource source = events.Source;
         var sorter = new EventSorter(source);
         int map = IntOf(request["map"], "map");
-        var residents = new HashSet<(long Event, long Page)>();
-        foreach (RubyValue resident in request["residents"] as RubyArray ?? [])
+        var texts = new Dictionary<(long Event, long Page), PageTexts>();
+        foreach (RubyValue entry in request["texts"] as RubyArray ?? [])
         {
-            RubyArray pair = resident.AsArray();
-            residents.Add((pair[0].AsLong(), pair[1].AsLong()));
+            RubyArray row = entry.AsArray();
+            texts[(row[0].AsLong(), row[1].AsLong())] = TextsOf(row[2], row[3]);
         }
 
         var state = new RequestState(request["values"] as RubyHash);
         var kinds = new RubyArray();
         foreach (RubyValue entry in request["pages"].AsArray())
         {
-            RubyArray site = entry.AsArray();
-            FoundList? found = PageEntryOf(source, events.Store, map, site);
-            bool resident = residents.Contains((IntOf(site[0], "event"), IntOf(site[1], "page")));
-            kinds.Add(found is null ? RubyNil.Value : NameOf(sorter.KindOf(found.Commands, state, resident)));
+            RubyArray row = entry.AsArray();
+            FoundList? found = PageEntryOf(source, events.Store, map, row);
+            PageTexts pageTexts = texts.GetValueOrDefault((IntOf(row[0], "event"), IntOf(row[1], "page")), PageTexts.None);
+            kinds.Add(found is null ? RubyNil.Value : NameOf(sorter.Decide(found.Commands, new EventSite(map, null, null, pageTexts), state).ListKind));
         }
 
         return state.Needs() ?? new RubyHash { { "kinds", kinds } };
@@ -336,6 +345,31 @@ internal static class EventTopics
         value is RubyInteger number ? number.AsInt() : throw new BridgeRequestException($"{name} must be a whole number");
 
     /// <summary>
+    /// Reads where a list a request names runs: <c>map</c>, <c>common</c>, the texts
+    /// (<c>speaker</c>, <c>goods</c>, see <see cref="TextsOf"/>) and <c>resumed</c>.
+    /// </summary>
+    /// <param name="request">The request.</param>
+    /// <param name="trigger">The trigger of the page the list is, <see langword="null"/> for none.</param>
+    /// <returns>The site.</returns>
+    internal static EventSite SiteOf(RubyHash request, int? trigger) => new(
+        request["map"] is RubyInteger map ? map.AsLong() : 0,
+        request["common"] is RubyInteger common ? common.AsLong() : null,
+        trigger,
+        TextsOf(request["speaker"], request["goods"]),
+        request["resumed"] is RubyBool { Flag: true });
+
+    /// <summary>
+    /// Reads what a list's texts tell, as the scripts hand it over.
+    /// </summary>
+    /// <param name="speaker">The variables the first line of dialogue shows in its speaker's name, an Array of Integers or nil.</param>
+    /// <param name="goods">Whether a script lists a shop's goods, true or nil.</param>
+    /// <returns>The texts.</returns>
+    private static PageTexts TextsOf(RubyValue speaker, RubyValue goods) =>
+        speaker is not RubyArray && goods is not RubyBool { Flag: true }
+            ? PageTexts.None
+            : new PageTexts(speaker is RubyArray shown ? [.. shown.OfType<RubyInteger>().Select(id => id.AsLong())] : [], goods is RubyBool { Flag: true });
+
+    /// <summary>
     /// Finds a map event's page.
     /// </summary>
     /// <param name="source">The game's events as far as they may be read.</param>
@@ -360,9 +394,16 @@ internal static class EventTopics
     /// <returns>The list.</returns>
     private static FoundList Inline(RubyArray rows, int? trigger)
     {
-        EventCommand[] list = CommandClassifier.Classify([.. rows.Select(CommandOf)]);
+        EventCommand[] list = CommandsOf(rows);
         return new FoundList(list, trigger, ListKeys.Of(list), null);
     }
+
+    /// <summary>
+    /// Reads commands the scripts hand over.
+    /// </summary>
+    /// <param name="rows">The commands, each [code, indent, parameters].</param>
+    /// <returns>The commands, classified.</returns>
+    private static EventCommand[] CommandsOf(RubyArray rows) => CommandClassifier.Classify([.. rows.Select(CommandOf)]);
 
     /// <summary>
     /// Reads a command the scripts handed over.
@@ -405,7 +446,8 @@ internal static class EventTopics
     /// The live values a request hands over, which notes every one the sort read that it lacks:
     /// <c>s</c> (switch id to true or false), <c>v</c> (variable id to its number, nil for none),
     /// <c>ps</c> and <c>pv</c> (switch or variable id to whether it is the player's own), <c>ss</c>
-    /// (self switch "map.event.letter", such as "750.12.A", to true or false).
+    /// (self switch "map.event.letter", such as "750.12.A", to true or false), <c>ce</c> (common event
+    /// id to its commands, each [code, indent, parameters], nil for none in the game).
     /// </summary>
     /// <param name="values">The values, <see langword="null"/> for none.</param>
     internal sealed class RequestState(RubyHash? values) : IPageState
@@ -451,6 +493,13 @@ internal static class EventTopics
         }
 
         /// <summary>
+        /// Reads a common event's commands the scripts handed over, noting it when the request lacks it.
+        /// </summary>
+        /// <param name="id">The common event.</param>
+        /// <returns>Its commands, <see langword="null"/> for none in the game or none handed over yet.</returns>
+        public IReadOnlyList<EventCommand>? HandedCommon(long id) => Read("ce", id) is RubyArray rows ? CommandsOf(rows) : null;
+
+        /// <summary>
         /// Answers the values the sort lacked: <c>{"needs"=>{"s"=>[ids], ...}}</c>, a kind only where
         /// one lacked.
         /// </summary>
@@ -479,8 +528,8 @@ internal static class EventTopics
         /// <summary>
         /// Reads a value, noting it when the request lacks it.
         /// </summary>
-        /// <param name="kind">"s", "v", "ps" or "pv".</param>
-        /// <param name="id">The switch or variable.</param>
+        /// <param name="kind">"s", "v", "ps", "pv" or "ce".</param>
+        /// <param name="id">The switch, variable or common event.</param>
         /// <returns>The value, <see langword="null"/> when the request lacks it.</returns>
         private RubyValue? Read(string kind, long id)
         {

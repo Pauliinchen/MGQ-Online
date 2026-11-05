@@ -2,7 +2,8 @@
 #  world_story.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Read the story's ids of the route rules from story_ids.rbx
+#      Paulinchen  2026-11-05: Left whether a telling moves the world's story on to the DLL's one decision
+#                            - Read the story's ids of the route rules from story_ids.rbx
 #                            - Took the player out of their own scene through the one guard of the game's flow
 #                            - Handed a refused start of the collab scenario to that guard
 #                            - Named the routes' counters in the log by the story's ids
@@ -150,9 +151,6 @@ module MGQ_MpWorldStory
 
   # What the notices call each route.
   ROUTE_NAMES = ["Angelic Dominion", "Monster Realm", "Chaos"]
-
-  # How many common events deep progress_ahead? follows the calls of the commands it reads.
-  PROGRESS_CALL_DEPTH = 3
 
   # The topic that finds the part a story is in.
   PART_TOPIC = "story.part"
@@ -1197,68 +1195,6 @@ module MGQ_MpWorldStory
   # @return [Boolean] Whether it is.
   def self.personal?(kind, key)
     !MGQ_MpStoryKeys.shared?(kind, key)
-  end
-
-  # Lists the variables whose change moves the story on: the story markers, the Great Decision's
-  # progress and the areas' progress the parts are ordered by.
-  #
-  # @return [Array<Integer>] The variables.
-  def self.progress_variables
-    MGQ_MpStoryIds.markers + [MGQ_MpStoryIds.decision_progress] + MGQ_MpStoryIds.area_progress
-  end
-
-  # Lists the switches whose change moves the story on: the bosses of the Monster Lord's Castle and
-  # the route clears.
-  #
-  # @return [Array<Integer>] The switches.
-  def self.progress_switches
-    MGQ_MpStoryIds.castle_bosses + MGQ_MpStoryIds.clear_switches
-  end
-
-  # Reports whether a switch or variable moves the world's story on as it changes: one that tells
-  # how far the story is (progress_switches, progress_variables) or a variable the story mapping
-  # keeps going only up, as a boss beaten or a quest's step.
-  #
-  # @param kind [Integer] 0 for a switch, 1 for a variable.
-  # @param id [Integer] Its id.
-  # @return [Boolean] Whether it does.
-  def self.moves_on?(kind, id)
-    return progress_switches.include?(id) if kind == 0
-
-    progress_variables.include?(id) || MGQ_MpStoryKeys.bit?(1, id, MGQ_MpStoryKeys::ONE_WAY)
-  end
-
-  # Reads the values of the switches and variables that move the world's story on, see moves_on?.
-  #
-  # @return [Array] Their values, in an order that stays the same.
-  def self.progress_now
-    variables = MGQ_MpStoryState.data_of($game_variables)
-    switches = MGQ_MpStoryState.data_of($game_switches)
-    table = MGQ_MpStoryKeys.raid_table
-    one_way = table ? table.kept_variables.select { |id| MGQ_MpStoryKeys.class_of(1, id, nil, table) & MGQ_MpStoryKeys::ONE_WAY != 0 } : []
-    (progress_variables | one_way).map { |id| variables[id].to_i } + progress_switches.map { |id| switches[id] ? true : false }
-  end
-
-  # Reports whether event commands from a place on may move the world's story on: they set a
-  # switch or variable that does (see moves_on?), themselves or in a common event they call, up to
-  # PROGRESS_CALL_DEPTH deep, behind a branch taken or not.
-  #
-  # @param list [Array<RPG::EventCommand>] The commands.
-  # @param from [Integer] The place to read from.
-  # @param depth [Integer] How many common events deep the list is.
-  # @return [Boolean] Whether they may.
-  def self.progress_ahead?(list, from, depth = 0)
-    list[from..-1].to_a.any? do |entry|
-      params = entry.parameters
-      case entry.code
-      when 121 then (params[0]..params[1]).any? { |id| moves_on?(0, id) }
-      when 122 then (params[0]..params[1]).any? { |id| moves_on?(1, id) }
-      when 117
-        common = depth < PROGRESS_CALL_DEPTH && $data_common_events[params[0]]
-        common ? progress_ahead?(common.list || [], 0, depth + 1) : false
-      else false
-      end
-    end
   end
 
   # Makes an event command.

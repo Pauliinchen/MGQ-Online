@@ -2,7 +2,9 @@
 //  EventSorter.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Read the story's band of switches, which are never scratch, from StoryIds
+//      Paulinchen  2026-11-05: Decided in one place how a list runs, whether it is the player's own and a Pocket Castle resident's
+//                            - Kept a resident's talk from turning into story behind a choice
+//                            - Read the story's band of switches, which are never scratch, from StoryIds
 //                            - Read the battlefuck events from the game's data
 //      Paulinchen  2026-10-28: Read scripts and jumps by their classified kinds and places
 //                            - Read the common events and scratch flags from an event source
@@ -13,6 +15,7 @@
 //----------------------------------------------------------------
 
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using MGQOnline.Game.Events.Data;
 using MGQOnline.Game.Story;
@@ -60,9 +63,16 @@ public sealed class EventSorter(IEventSource source)
 
     /// <summary>
     /// Common events that run only in the player's own game, never as the party's story: the game's
-    /// map display, its Pocket Castle call, its processing after every battle and its transfer process.
+    /// map display, its Pocket Castle call, its processing after every battle (which turns Luka Solo
+    /// on) and its transfer process, which runs by itself after a transfer.
     /// </summary>
     public static readonly IReadOnlySet<long> OwnCommonEvents = new HashSet<long> { 2, 3, 5, 114 };
+
+    /// <summary>
+    /// The game's switch that is on while the Library replays a scene, whose every event runs in the
+    /// player's own game.
+    /// </summary>
+    public const long LibraryReplaySwitch = 443;
 
     /// <summary>
     /// The marks a branch of a choice makes story with.
@@ -73,6 +83,40 @@ public sealed class EventSorter(IEventSource source)
     /// The marks an exit has none of.
     /// </summary>
     private const EventMarks NoExitMarks = EventMarks.Story | EventMarks.Says | EventMarks.Battle | EventMarks.Gives | EventMarks.OwnSwitch;
+
+    /// <summary>
+    /// Decides how a list runs, the one decision every script asks: its kind, whether it is the
+    /// player's own, whether a talk of it may turn into story, and whether it is a story scene.
+    /// </summary>
+    /// <param name="list">The commands.</param>
+    /// <param name="site">Where it runs.</param>
+    /// <param name="state">The live values.</param>
+    /// <returns>The decision.</returns>
+    public EventDecision Decide(IReadOnlyList<EventCommand> list, EventSite site, IEventState state)
+    {
+        EventMarks marks = MarksOf(list, state);
+        if (OwnReason(site, state) is { } own)
+        {
+            return new EventDecision(EventKind.Own, EventKind.Own, false, false, marks, own);
+        }
+
+        bool resident = PocketCastle.IsResident(site.Map, list, site.Texts, state);
+        EventKind listKind = site.Resumed ? EventKind.Story : KindOf(list, state, resident);
+        EventKind kind = site.Trigger is { } trigger && !site.Resumed ? KindOfPage(new EventPage(PageCondition.None, trigger, list), state, resident) : listKind;
+        return new EventDecision(kind, listKind, MayTell(list, state, resident), IsScene(list, state, resident), marks, kind == EventKind.Own ? "it can call a battlefuck now" : null);
+    }
+
+    /// <summary>
+    /// Decides whether one command of a list moves the story on, whatever branch it stands in;
+    /// never in the player's own list or a Pocket Castle resident's.
+    /// </summary>
+    /// <param name="list">The commands.</param>
+    /// <param name="index">The command's place.</param>
+    /// <param name="site">Where the list runs.</param>
+    /// <param name="state">The live values.</param>
+    /// <returns>Whether it does.</returns>
+    public bool DecideCommand(IReadOnlyList<EventCommand> list, int index, EventSite site, IEventState state) =>
+        OwnReason(site, state) is null && !PocketCastle.IsResident(site.Map, list, site.Texts, state) && IsStoryCommand(list, index, state);
 
     /// <summary>
     /// Sorts a map event's page, as the game shows it now.
@@ -98,7 +142,7 @@ public sealed class EventSorter(IEventSource source)
         // A scene that runs by itself and hides its story behind a choice, as Alice's recap at the
         // Strategy Conference, plays in the teller's game alone: a viewer's copy, ended at the story
         // as a talk's would be, would start over and over.
-        return sorted == EventKind.Talk && page.Trigger == AutorunTrigger && MayTell(page.List, state) ? EventKind.Story : sorted;
+        return sorted == EventKind.Talk && page.Trigger == AutorunTrigger && MayTell(page.List, state, resident) ? EventKind.Story : sorted;
     }
 
     /// <summary>
@@ -195,10 +239,16 @@ public sealed class EventSorter(IEventSource source)
     /// <summary>
     /// Reports whether a talk turns into story behind one of its choices.
     /// </summary>
+    /// <remarks>
+    /// A resident's talk never does: the maid's menu read as story ended a member's talk with her
+    /// (issue #53).
+    /// </remarks>
     /// <param name="list">The commands.</param>
     /// <param name="state">The live values.</param>
+    /// <param name="resident">Whether the list is a Pocket Castle resident's.</param>
     /// <returns>Whether it does.</returns>
-    public bool MayTell(IReadOnlyList<EventCommand> list, IEventState state) => MarksOf(list, state).HasFlag(EventMarks.ChoiceStory);
+    public bool MayTell(IReadOnlyList<EventCommand> list, IEventState state, bool resident = false) =>
+        !resident && MarksOf(list, state).HasFlag(EventMarks.ChoiceStory);
 
     /// <summary>
     /// Reports whether a list is a story scene: story with its own dialogue or novel scene.
@@ -264,6 +314,30 @@ public sealed class EventSorter(IEventSource source)
     /// <param name="marks">The marks.</param>
     /// <returns>Whether they are.</returns>
     private static bool IsOneTimeTalk(EventMarks marks) => marks == (EventMarks.OwnSwitch | EventMarks.Says);
+
+    /// <summary>
+    /// Tells why a list runs in the player's own game alone whatever its commands do: anything while
+    /// the Library replays a scene, and the game's own common events.
+    /// </summary>
+    /// <param name="site">Where the list runs.</param>
+    /// <param name="state">The live values.</param>
+    /// <returns>The reason, <see langword="null"/> when its commands decide.</returns>
+    private static string? OwnReason(EventSite site, IEventState state)
+    {
+        if (site.Resumed)
+        {
+            return null;
+        }
+
+        if (state.Switch(LibraryReplaySwitch))
+        {
+            return "the Library replays a scene";
+        }
+
+        return site.Common is { } common && OwnCommonEvents.Contains(common)
+            ? $"common event {common.ToString(CultureInfo.InvariantCulture)} is one of the game's own"
+            : null;
+    }
 
     /// <summary>
     /// Reports whether a switch is only scratch, or the player's own.

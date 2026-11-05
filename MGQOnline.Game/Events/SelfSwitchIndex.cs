@@ -2,6 +2,7 @@
 //  SelfSwitchIndex.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Read the player's own common events from EventSorter
 //      Paulinchen  2026-10-28: Derived the index from the events database
 //                            - Derived the index from an event source
 //      Paulinchen  2026-10-23: Created
@@ -53,11 +54,6 @@ public sealed partial record SelfSwitchIndex(IReadOnlyList<(int Map, int Event)>
     public static readonly IReadOnlyList<string> SharedKinds = ["shared", "one_way", "count"];
 
     /// <summary>
-    /// The player's own common events, see the remarks.
-    /// </summary>
-    private static readonly long[] OwnCommonEvents = [2, 3, 5, 114];
-
-    /// <summary>
     /// Derives the index from the mapping's rows and the game's events: every page of every map
     /// event and every common event, every branch counted, through the common events they call.
     /// The rows of <c>events</c> for a whole event, a whole map or a whole common event (letter "*")
@@ -107,7 +103,7 @@ public sealed partial record SelfSwitchIndex(IReadOnlyList<(int Map, int Event)>
         var pending = new Queue<long>();
         foreach (ListRow list in touching)
         {
-            if (list is { Kind: ListKind.Common, CommonId: { } id } && !OwnCommonEvents.Contains(id) && commons.Add(id))
+            if (list is { Kind: ListKind.Common, CommonId: { } id } && !EventSorter.OwnCommonEvents.Contains(id) && commons.Add(id))
             {
                 pending.Enqueue(id);
             }
@@ -117,7 +113,7 @@ public sealed partial record SelfSwitchIndex(IReadOnlyList<(int Map, int Event)>
         {
             foreach (int caller in store.CallersOf((int)id))
             {
-                if (!OwnCommonEvents.Contains(caller) && commons.Add(caller))
+                if (!EventSorter.OwnCommonEvents.Contains(caller) && commons.Add(caller))
                 {
                     pending.Enqueue(caller);
                 }
@@ -178,7 +174,7 @@ public sealed partial record SelfSwitchIndex(IReadOnlyList<(int Map, int Event)>
         var pending = new Queue<long>();
         foreach (long id in source.CommonIds)
         {
-            if (!OwnCommonEvents.Contains(id) && source.CommonKeys(id) is { } keys && keys.Touches(switches, variables) && found.Add(id))
+            if (!EventSorter.OwnCommonEvents.Contains(id) && source.CommonKeys(id) is { } keys && keys.Touches(switches, variables) && found.Add(id))
             {
                 pending.Enqueue(id);
             }
@@ -188,7 +184,7 @@ public sealed partial record SelfSwitchIndex(IReadOnlyList<(int Map, int Event)>
         {
             foreach (long caller in source.CallersOf(id))
             {
-                if (!OwnCommonEvents.Contains(caller) && found.Add(caller))
+                if (!EventSorter.OwnCommonEvents.Contains(caller) && found.Add(caller))
                 {
                     pending.Enqueue(caller);
                 }

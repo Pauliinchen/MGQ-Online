@@ -2,7 +2,8 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Checked that an event ended early or kept from starting goes to the one guard of the game's flow, in place of the fade-ins on frame timers
+#      Paulinchen  2026-11-05: Checked that every caller asks the DLL's one decision, and left the player's own common events and the Library's replay to it
+#                            - Checked that an event ended early or kept from starting goes to the one guard of the game's flow, in place of the fade-ins on frame timers
 #                            - Answered the Classic catch-up, the side and the key item loan by the DLL's rules as engine.rb stands in for them, recorded by make_classic.rb
 #                            - Answered how a Classic member plays the leader's story, which of its changes they take and which of their runs it keeps by the DLL's rules as engine.rb and the checks stand in for them
 #                            - Checked that a member behind loses the World Seed the leader's story used up, with no notice
@@ -851,22 +852,13 @@ check("but not for a talk, or for other interpreters", $sent.size, 0)
 $game_map.interpreter.setup([c(101, "", 0, 0, 2), c(121, 60, 60, 0)])
 check("a common event, set up with its list alone, gathers the party for its story scene too", $sent.map { |seat, f| [seat, f["pevent"], f["map"]] }, [[-1, "gather", "9"]])
 $sent.clear
+$own_commons = [114]
 $data_common_events[114] = RPG::CommonEvent.new([c(101, "", 0, 0, 2), c(121, 60, 60, 0)])
+MGQ_MpCoopEvents.instance_variable_set(:@common_ids, nil)
 $game_map.interpreter.setup($data_common_events[114].list)
-check("the game's transfer process, a common event of the player's own, gathers nobody", [$sent, MGQ_MpCoopEvents.telling?], [[], false])
-[2, 3, 5].each do |id|
-  $data_common_events[id] = RPG::CommonEvent.new([c(101, "", 0, 0, 2), c(121, 7, 7, 0)])
-  $game_map.interpreter.setup($data_common_events[id].list)
-  check("the game's common event #{id} (map display, Pocket Castle call, after every battle) is the player's own, never story",
-        [$sent, MGQ_MpCoopEvents.telling?], [[], false])
-  $data_common_events[id] = nil
-end
-raw($game_switches)[443] = true
-$game_map.interpreter.setup([c(101, "", 0, 0, 2), c(121, 60, 60, 0)])
-$game_map.interpreter.setup([c(101, "", 0, 0, 2), c(121, 60, 60, 0)], 1)
-check("nor does a scene the Library replays, or an event on its map", [$sent, MGQ_MpCoopEvents.telling?], [[], false])
-raw($game_switches)[443] = false
+check("a common event the DLL's decision names the player's own, as the game's transfer process, gathers nobody", [$sent, MGQ_MpCoopEvents.telling?], [[], false])
 $data_common_events[114] = nil
+$own_commons = []
 
 $leader = leader
 $members = [leader]
@@ -1102,7 +1094,10 @@ story_common = $data_common_events[4]
 own_transfer = RPG::CommonEvent.new([c(101, "", 0, 0, 2), c(121, 60, 60, 0)])
 own_transfer.switch_id = 70
 $data_common_events[4], $data_common_events[114] = nil, own_transfer
+MGQ_MpCoopEvents.instance_variable_set(:@common_ids, nil)
+$own_commons = [114]
 check("but the game's transfer process runs in the member's own game", $game_map.setup_autorun_common_event, own_transfer)
+$own_commons = []
 $data_common_events[4], $data_common_events[114] = story_common, nil
 $leader = :me
 $members = [friend]
@@ -2436,9 +2431,6 @@ module MGQ_MpWorldStory
   def self.telling_of(seat); $tellings[seat]; end
   def self.awaits_world?; $await_world ? true : false; end
   def self.awaits_teller?; false; end
-  # No value moves the world's story on, and no commands may.
-  def self.progress_now; []; end
-  def self.progress_ahead?(*); false; end
 end
 $track = "world"
 $tellings = {}
@@ -2724,10 +2716,13 @@ interpreter.busy = false
 $game_map.update
 transfer_process = RPG::CommonEvent.new([c(121, 20, 20, 0)])
 $data_common_events[114] = transfer_process
+MGQ_MpCoopEvents.instance_variable_set(:@common_ids, nil)
+$own_commons = [114]
 interpreter.setup(transfer_process.list)
 interpreter.busy = true
 check("the game's transfer process runs between its events in the player's own game, telling nothing",
       [MGQ_MpCoopEvents.state_fields["telling"], MGQ_MpCoopGather.taken_along], [0, []])
+$own_commons = []
 MGQ_MpCoopEvents.finished(interpreter)
 interpreter.busy = false
 $game_map.update
@@ -2880,7 +2875,47 @@ $log.clear
 $game_map.interpreter.setup(talk_only.list, 12)
 MGQ_MpCoopEvents.as_story { $game_map.interpreter.setup(talk_only.list, 12) }
 $game_map.interpreter.setup(talk_only.list, 12)
-MGQ_MpCoop::Scope.define_singleton_method(:sharing?, sharing)
 check("a talk's page set up as story starts as story, said so, and only inside the block",
       $log.grep(/event 12 \(page 1\) on map \d+ starts as/).map { |line| line[/starts as (\w+)(: resumed as story)?/] },
       ["starts as talk", "starts as story: resumed as story", "starts as talk"])
+# The fight's page may be one its event no longer shows, or of an event the map lacks now.
+greeting = RPG::Page.new([c(101, "", 0, 0, 2), c(401, "Hello")])
+$game_map.events[14] = Game_Event.new(14, [greeting])
+$game_map.events[14].show(1)
+$log.clear
+MGQ_MpCoopEvents.as_story { $game_map.interpreter.setup(greeting.list, 14) }
+MGQ_MpCoopEvents.as_story { $game_map.interpreter.setup(greeting.list, 99) }
+MGQ_MpCoop::Scope.define_singleton_method(:sharing?, sharing)
+check("a fight resumed on a page its event no longer shows, or of an event the map lacks, starts as story too",
+      $log.grep(/starts as/).map { |line| "#{line[/event 14 \(page 0\)|a common event/]} #{line[/starts as \w+/]}" },
+      ["event 14 (page 0) starts as story", "a common event starts as story"])
+
+# Every caller asks the DLL's one decision before it acts on a list: an event that starts, a story
+# event the map would start, a common event that runs by itself, a talk watched before each command,
+# and whom a Raid World's telling takes along, as it starts and as it moves its teller.
+story_list = EVENT_CASES.find { |known| known["call"] == "list" && known["answer"]["kind"] == "story" }["list"].map { |row| Command.new(row[0], row[1], row[2]) }
+watched = EVENT_CASES.find { |known| known["call"] == "command" }
+watched_list = watched["list"].map { |row| Command.new(row[0], row[1], row[2]) }
+asked = lambda do |&caller|
+  MGQ_MpCoopEvents.instance_variable_set(:@answers, {})
+  $world_bridge.calls.clear
+  caller.call
+  $world_bridge.calls.map(&:first).select { |topic| %w(events.sort story.moves).include?(topic) }.uniq
+end
+$await_world = true
+story_event = Game_Event.new(13, [RPG::Page.new(story_list)])
+$game_map.events[13] = story_event
+autorun = RPG::CommonEvent.new(story_list)
+interpreter = $game_map.interpreter
+MGQ_MpGame.set(interpreter, :list, watched_list)
+MGQ_MpGame.set(interpreter, :index, watched["index"])
+check("every caller asks the DLL's one decision",
+      [asked.call { $game_map.interpreter.setup(story_list, 0) },
+       asked.call { MGQ_MpCoopEvents.hand_over(story_event) },
+       asked.call { MGQ_MpCoopEvents.leave_to_leader?(autorun) },
+       asked.call { MGQ_MpCoopEvents.instance_variable_set(:@may_tell, true); MGQ_MpCoopEvents.guard(interpreter) },
+       asked.call { $raid = true; MGQ_MpCoopGather.note_story_progress; $raid = false },
+       asked.call { MGQ_MpCoopGather.moves_story? }],
+      [["events.sort"], ["events.sort"], ["events.sort"], ["events.sort"], ["story.moves"], ["story.moves"]])
+$await_world = false
+$game_map.events.delete(13)

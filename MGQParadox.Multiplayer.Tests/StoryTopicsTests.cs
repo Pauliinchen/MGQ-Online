@@ -2,7 +2,9 @@
 //  StoryTopicsTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Expected no companion of each side among what the catch-up reads, which the side's rule answers
+//      Paulinchen  2026-11-05: Checked whom a Raid World's telling takes along by the world's progress
+//                            - Checked that it reads the common events the scripts hand over
+//                            - Expected no companion of each side among what the catch-up reads, which the side's rule answers
 //                            - Expected no rule of used up items' marks, which the story replay hands over
 //      Paulinchen  2026-11-01: Expected the found items' marks to be the whole world's
 //                            - Expected the marks of the items used up to be the whole world's too
@@ -315,6 +317,55 @@ public sealed class StoryTopicsTests
     }
 
     /// <summary>
+    /// Asserts how a Raid World's telling that moves its teller decides whom it takes along: the
+    /// topic names the world's progress it reads, and a telling moves the world's story on only
+    /// while its commands yet to run set a step of it or the progress changed since it started; a
+    /// scene that moves its teller and sets scratch switches only does not (issue #61).
+    /// </summary>
+    [Fact]
+    public void Moves_OnlyWhereTheWorldsProgressMoves()
+    {
+        using var game = new TempFolder();
+        var events = new GameEvents(() => EventStore.Open(Path.Combine(game.Path, EventSchema.GamePath)), () => new GameFolderFiles(game.Path), _ => { });
+        _topics.Events = () => events;
+        RubyHash needs = Call(StoryTopics.MovesTopic, new RubyHash()).AsHash()["needs"].AsHash();
+        RubyHash Values(long mainProgress) => ProgressValues(needs, mainProgress);
+        RubyValue started = Call(StoryTopics.MovesTopic, new RubyHash { { "values", Values(20) } }).AsHash()["progress"];
+        RubyArray transfer = [201, 0, new RubyArray { 0, 1702, 0, 0, 0, 0 }];
+        RubyArray scene = [new RubyArray { 121, 0, new RubyArray { 31, 31, 0 } }, transfer, new RubyArray { 0, 0, new RubyArray() }];
+        RubyArray route = [transfer, new RubyArray { 122, 0, new RubyArray { 1141, 1141, 0, 0, 75 } }, new RubyArray { 0, 0, new RubyArray() }];
+        bool Moves(RubyArray list, int index, long mainProgress) =>
+            Call(StoryTopics.MovesTopic, new RubyHash { { "list", list }, { "index", index }, { "told", started }, { "values", Values(mainProgress) } }).AsHash()["moves"] is RubyBool { Flag: true };
+
+        Assert.Contains((RubyValue)1001, needs["v"].AsArray());
+        Assert.False(Moves(scene, 1, 20));
+        Assert.True(Moves(route, 1, 20));
+        Assert.False(Moves(route, 2, 20));
+        Assert.True(Moves(scene, 1, 21));
+    }
+
+    /// <summary>
+    /// Asserts that a telling that moves its teller and then calls a common event that sets the
+    /// world's progress moves the world's story on while the events database's common events may
+    /// not be read: the topic names the common event, and once the scripts hand it over it reads it.
+    /// </summary>
+    [Fact]
+    public void Moves_ReadsTheCommonEventsTheScriptsHandOver()
+    {
+        using var game = new TempFolder();
+        var events = new GameEvents(() => EventStore.Open(Path.Combine(game.Path, EventSchema.GamePath)), () => new GameFolderFiles(game.Path), _ => { });
+        _topics.Events = () => events;
+        RubyHash values = ProgressValues(Call(StoryTopics.MovesTopic, new RubyHash()).AsHash()["needs"].AsHash(), 20);
+        RubyValue started = Call(StoryTopics.MovesTopic, new RubyHash { { "values", values } }).AsHash()["progress"];
+        RubyArray list = [new RubyArray { 201, 0, new RubyArray { 0, 1702, 0, 0, 0, 0 } }, new RubyArray { 117, 0, new RubyArray { 77 } }, new RubyArray { 0, 0, new RubyArray() }];
+        RubyHash Ask() => Call(StoryTopics.MovesTopic, new RubyHash { { "list", list }, { "index", 0 }, { "told", started }, { "values", values } }).AsHash();
+
+        Assert.Equal(new RubyArray { 77 }, Ask()["needs"].AsHash()["ce"]);
+        values["ce"] = new RubyHash { { 77, new RubyArray { new RubyArray { 122, 0, new RubyArray { 1001, 1001, 0, 0, 21 } }, new RubyArray { 0, 0, new RubyArray() } } } };
+        Assert.True(Ask()["moves"] is RubyBool { Flag: true });
+    }
+
+    /// <summary>
     /// Asserts that a write that is no three texts is refused.
     /// </summary>
     [Fact]
@@ -389,6 +440,30 @@ public sealed class StoryTopicsTests
     /// <param name="request">The request.</param>
     /// <returns>The value, nil for no reply.</returns>
     private RubyValue Call(string topic, RubyValue request) => Call(_context, topic, request);
+
+    /// <summary>
+    /// Hands over the world's progress a telling reads: the story's main progress (variable 1001) at
+    /// a step, every other value at none.
+    /// </summary>
+    /// <param name="needs">The values <see cref="StoryTopics.MovesTopic"/> named.</param>
+    /// <param name="mainProgress">The main progress.</param>
+    /// <returns>The values, as the scripts hand them over.</returns>
+    private static RubyHash ProgressValues(RubyHash needs, long mainProgress)
+    {
+        var variables = new RubyHash();
+        var switches = new RubyHash();
+        foreach (RubyValue id in needs["v"].AsArray())
+        {
+            variables[id] = id.AsLong() == 1001 ? mainProgress : 0;
+        }
+
+        foreach (RubyValue id in needs["s"].AsArray())
+        {
+            switches[id] = false;
+        }
+
+        return new RubyHash { { "v", variables }, { "s", switches } };
+    }
 
     /// <summary>
     /// Calls a topic of a context and reads the value it answers.

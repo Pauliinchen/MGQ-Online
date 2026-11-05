@@ -2,7 +2,9 @@
 //  EventTopicsTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Checked that the battlefuck events are read once and stay while the common events differ
+//      Paulinchen  2026-11-05: Checked that a sort answers the one decision of where its list runs
+//                            - Expected the Library's switch among the values a sort needs
+//                            - Checked that the battlefuck events are read once and stay while the common events differ
 //      Paulinchen  2026-10-30: Kept the database fingerprint format in the differing game data
 //      Paulinchen  2026-10-28: Checked the command index of a map's pages at once
 //                            - Sorted over the events database of a tiny game, by length and shape, and checked its gate
@@ -74,9 +76,37 @@ public sealed class EventTopicsTests
         RubyValue? held = _topics.Call(EventTopics.Sort, new RubyHash { { "list", list }, { "values", Values(7) } });
         RubyValue? passed = _topics.Call(EventTopics.Sort, new RubyHash { { "list", list }, { "values", Values(12) } });
 
-        Assert.Equal(new RubyHash { { "needs", new RubyHash { { "v", new RubyArray { 1001 } } } } }, first);
+        Assert.Equal(new RubyHash { { "needs", new RubyHash { { "s", new RubyArray { 443 } }, { "v", new RubyArray { 1001 } } } } }, first);
         Assert.Equal("story", held!.AsHash()["kind"].AsText());
         Assert.Equal("talk", passed!.AsHash()["kind"].AsText());
+    }
+
+    /// <summary>
+    /// Asserts that a sort answers the one decision of where its list runs, whatever list it is: a
+    /// list handed over that is the game's transfer process (common event 114) runs in the player's
+    /// own game, and one that calls the maid's party saves is a talk on the Pocket Castle's maps only,
+    /// never turning into story there.
+    /// </summary>
+    [Fact]
+    public void Sort_AnswersWhereTheListRuns()
+    {
+        RubyArray story = [Row(101, 0, ["", 0, 0, 2]), Row(121, 0, [60, 60, 0]), Row(0, 0, [])];
+        RubyArray maid = [Row(101, 0, ["", 0, 0, 2]), Row(102, 0, [new RubyArray { "Save", "Story" }, 1]), Row(402, 0, [0, "Save"]), Row(117, 1, [111]), Row(402, 0, [1, "Story"]), Row(121, 1, [60, 60, 0]), Row(404, 0, []), Row(0, 0, [])];
+        RubyHash Sort(RubyArray list, params (string Field, RubyValue Value)[] fields)
+        {
+            var request = new RubyHash { { "list", list }, { "values", Values(0) } };
+            foreach ((string field, RubyValue value) in fields)
+            {
+                request[field] = value;
+            }
+
+            return _topics.Call(EventTopics.Sort, request)!.AsHash();
+        }
+
+        Assert.Equal(("own", "common event 114 is one of the game's own"), (Sort(story, ("common", 114))["kind"].AsText(), Sort(story, ("common", 114))["own"].AsText()));
+        Assert.Equal(("talk", false), (Sort(maid, ("map", 228))["kind"].AsText(), Sort(maid, ("map", 228))["may_tell"] is RubyBool { Flag: true }));
+        Assert.Equal(new RubyHash { { "story", false } }, _topics.Call(EventTopics.Sort, new RubyHash { { "list", maid }, { "map", 228 }, { "index", 5 }, { "values", Values(0) } }));
+        Assert.Equal(("talk", true), (Sort(maid, ("map", 1))["kind"].AsText(), Sort(maid, ("map", 1))["may_tell"] is RubyBool { Flag: true }));
     }
 
     /// <summary>
@@ -124,7 +154,7 @@ public sealed class EventTopicsTests
 
         RubyHash opened = _topics.Call(EventTopics.Open, new RubyHash { { "fingerprint", halves[0] + ":" + string.Join(".", sums) } })!.AsHash();
 
-        Assert.Equal(new RubyHash { { "usable", true }, { "problem", RubyNil.Value }, { "differing", new RubyArray { "common events" } } }, opened);
+        Assert.Equal((true, new RubyArray { "common events" }), (opened["usable"].AsBool(), opened["differing"].AsArray()));
         Assert.Equal(new RubyHash { { "unknown", true } }, _topics.Call(EventTopics.Sort, common));
         Assert.Equal("story", _topics.Call(EventTopics.Sort, With(TinyEvents.Page(_events, 1, 2), "values", Values(0)))!.AsHash()["kind"].AsText());
 
@@ -175,7 +205,7 @@ public sealed class EventTopicsTests
         Assert.False(opened["usable"].AsBool());
         Assert.StartsWith("no events database at ", opened["problem"].AsText(), StringComparison.Ordinal);
         Assert.Equal(new RubyHash { { "unknown", true } }, topics.Call(EventTopics.Sort, new RubyHash { { "map", 1 }, { "event", 2 }, { "page", 0 }, { "size", 4 }, { "shape", 1 } }));
-        Assert.Equal("talk", topics.Call(EventTopics.Sort, new RubyHash { { "list", new RubyArray { Row(101, 0, ["", 0, 0, 2]), Row(0, 0, []) } } })!.AsHash()["kind"].AsText());
+        Assert.Equal("talk", topics.Call(EventTopics.Sort, new RubyHash { { "list", new RubyArray { Row(101, 0, ["", 0, 0, 2]), Row(0, 0, []) } }, { "values", Values(0) } })!.AsHash()["kind"].AsText());
     }
 
     /// <summary>
@@ -266,12 +296,13 @@ public sealed class EventTopicsTests
 
     /// <summary>
     /// Writes the values a sort of the tiny game names: variable 1001, and switches 60 and 61, no
-    /// one's own.
+    /// one's own, while the Library replays no scene.
     /// </summary>
     /// <param name="progress">Variable 1001.</param>
     /// <returns>The values.</returns>
     private static RubyHash Values(long progress) => new()
     {
+        { "s", new RubyHash { { 443, false } } },
         { "v", new RubyHash { { 1001, progress } } },
         { "ps", new RubyHash { { 60, false }, { 61, false } } },
     };

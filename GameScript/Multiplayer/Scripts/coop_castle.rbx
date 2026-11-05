@@ -2,6 +2,7 @@
 #  coop_castle.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Told the DLL what a page's texts tell, which decides the residents, and read the castle's maps from it
 #      Paulinchen  2026-10-12: Read the map's viewport through MGQ_MpGame
 #      Paulinchen  2026-10-09: Read the player's own variables from story_state.rbx
 #      Paulinchen  2026-10-08: Left the castle's Map Owner to the map's sync host in a Raid World
@@ -15,7 +16,8 @@
 #----------------------------------------------------------------
 
 # The Pocket Castle in a party: the home the party returns to, whose companions, merchants, inn and
-# maids each player talks to in their own game. coop_events.rbx asks it which pages are residents.
+# maids each player talks to in their own game. Which pages are residents the DLL decides
+# (MGQOnline.Game's PocketCastle), from the commands and what texts_of reads of their texts.
 # The castle shows the party leader's residents: the leader moves them as the Map Owner of
 # coop_npcs.rbx, and a resident the member's own game does not show, such as a companion only the
 # leader recruited, stands there as a see-through ghost the member cannot talk to. The member's
@@ -23,18 +25,17 @@
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpCoopCastle
-  # Maps of the Pocket Castle's residents, without the maps of the castle's side stories.
-  MAPS = [227, 228, 229, 230] + (268..278).to_a
-
-  # Common events of the Pocket Castle's services: Vanilla's shop (106), Papi's smithy (107), the
-  # maids' party saves (111), the item storage (144) and Teeny's inn (270).
-  SERVICES = [106, 107, 111, 144, 270]
-
-  # Scripts of the Pocket Castle's coin shop, which lists its goods itself.
+  # Scripts of a shop that lists its goods itself, as the Pocket Castle's coin shop does.
   SHOP_SCRIPTS = /\A\s*@goods\b/
+
+  # Lists whose texts are kept, at most, before they are all forgotten, see texts_of.
+  MAX_KEPT_TEXTS = 4000
 
   # The ghosts of the leader's residents shown, by their event's id.
   @ghosts = {}
+
+  # What the texts of each list tell, by the list object, see texts_of.
+  @texts = {}.compare_by_identity
 
   # A variable shown in a speaker's name, which a companion's name shows for their affection.
   SHOWN_VARIABLE = /\\V\[(\d+)\]/i
@@ -51,18 +52,23 @@ module MGQ_MpCoopCastle
   # What starts this script's lines in the log.
   LOG_TAG = "co-op castle"
 
-  # Reports whether a page on the Pocket Castle's maps is one of its residents: a companion, a
-  # merchant, the inn or a maid, which each player talks to in their own game, whatever the talk
-  # sets. The castle's story events show none of these, though they share the companions' scripts.
+  # Reads what a list's texts tell the DLL's decision of the residents, which the events database
+  # does not hold: the variables its first speaker's name shows, as a companion's shows their
+  # affection, and whether a script lists a shop's goods. Kept per list object.
   #
   # @param list [Array<RPG::EventCommand>] The commands.
-  # @return [Boolean] Whether it is.
-  def self.resident?(list)
-    return false unless $game_map && MAPS.include?($game_map.map_id)
+  # @return [Hash] "speaker" (the variables, when any) and "goods" (true, when so); empty for none.
+  def self.texts_of(list)
+    kept = @texts[list]
+    return kept if kept
 
-    companion_talk?(list) || list.any? do |c|
-      (c.code == 117 && SERVICES.include?(c.parameters[0])) || (c.code == 355 && c.parameters[0].to_s =~ SHOP_SCRIPTS)
-    end
+    @texts.clear if @texts.size >= MAX_KEPT_TEXTS
+    first = list.find { |c| c.code == 401 }
+    shown = first ? first.parameters[0].to_s.scan(SHOWN_VARIABLE).map { |(id)| id.to_i } : []
+    texts = {}
+    texts["speaker"] = shown unless shown.empty?
+    texts["goods"] = true if list.any? { |c| c.code == 355 && c.parameters[0].to_s =~ SHOP_SCRIPTS }
+    @texts[list] = texts
   end
 
   # Notes where the castle's way out returns the player, as the castle's item does, when the party
@@ -80,12 +86,13 @@ module MGQ_MpCoopCastle
     log("noting the castle's way out failed: #{e.class}: #{e.message}")
   end
 
-  # Reports whether a map is the Pocket Castle's: its front gate or one of its residents' maps.
+  # Reports whether a map is the Pocket Castle's: its front gate or one of its residents' maps, as
+  # the DLL names them (MGQ_MpCoopEvents.castle_maps).
   #
   # @param map_id [Integer] The map.
   # @return [Boolean] Whether it is.
   def self.castle_map?(map_id)
-    map_id == FRONT_GATE || MAPS.include?(map_id)
+    map_id == FRONT_GATE || MGQ_MpCoopEvents.castle_maps.include?(map_id)
   end
 
   # Forgets the ghosts, as when the map changes.
@@ -170,18 +177,6 @@ module MGQ_MpCoopCastle
     graphic && (!graphic.character_name.to_s.empty? || graphic.tile_id > 0) ? true : false
   end
 
-  # Reports whether a page is a companion's talk: its first speaker's name shows their affection.
-  #
-  # @param list [Array<RPG::EventCommand>] The commands.
-  # @return [Boolean] Whether it is.
-  def self.companion_talk?(list)
-    first = list.find { |c| c.code == 401 }
-    return false unless first
-
-    first.parameters[0].to_s.scan(SHOWN_VARIABLE).any? do |(id)|
-      id.to_i >= MGQ_MpStoryState::AFFECTION_VARIABLES && MGQ_MpStoryState.personal_variable?(id.to_i)
-    end
-  end
 end
 
 # A resident of the Pocket Castle that only the party leader's game shows: it looks as the leader's

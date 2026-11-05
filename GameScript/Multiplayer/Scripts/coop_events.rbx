@@ -2,7 +2,8 @@
 #  coop_events.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Left what an event ended early or kept from starting leaves to the one guard of the game's flow, in place of the fade-ins of a dark screen on frame timers
+#      Paulinchen  2026-11-05: Asked the DLL's one decision whether a list is the player's own, a Pocket Castle resident's or a resumed raid fight's, and whether a telling moves the world's story on
+#                            - Left what an event ended early or kept from starting leaves to the one guard of the game's flow, in place of the fade-ins of a dark screen on frame timers
 #      Paulinchen  2026-11-01: Hashed a list's shape through story_replay.rbx, which names the places of the kept commands by the same codes
 #      Paulinchen  2026-10-31: Stopped telling whether warping is banned where the story plays
 #                            - Stopped telling the party the items and gold the leader's story gives, which the leader's runs bring by replay
@@ -127,15 +128,18 @@
 #----------------------------------------------------------------
 
 # The events of a party. Every event page is sorted by what its commands that can run now do, before
-# it runs, in the DLL (MGQOnline.Game's EventSorter, over the events database the mod ships):
-# a talk (conversations, shops, the job change menu), travel (a transfer), a chest (items and its
-# own self switch), a battle without dialogue, or story (everything that moves the story on).
+# it runs, by the DLL's one decision (MGQOnline.Game's EventSorter.Decide, over the events database
+# the mod ships), which every caller here asks: a talk (conversations, shops, the job change menu,
+# the Pocket Castle's residents), travel (a transfer), a chest (items and its own self switch), a
+# battle without dialogue, story (everything that moves the story on), or the player's own (a
+# battlefuck, the game's own common events, anything the Library replays). Whom a Raid World's
+# telling takes along is the same decision's, see moves_story?.
 # Chests are the player's own, and opening one opens it for the whole party: the run that opened it
 # goes to every member, whose own game plays the chest again (story_keys.rbx, story_replay.rbx),
 # synced with the leader's story or not. Story is the
 # leader's alone for the members who follow it (see MGQ_MpCoopStory.follows_leader?); a member who
 # does not plays their own. A story scene the leader starts first gathers the members who follow it,
-# see coop_gather.rbx; the Pocket Castle's residents are sorted by coop_castle.rbx. In a Raid World
+# see coop_gather.rbx; coop_castle.rbx reads what the residents' texts tell. In a Raid World
 # the story is told by whoever tells it on the map, to everyone there whose story matches, see
 # MGQ_MpCoop::Scope. The pages of a story, which page a teller tells when and which page a viewer
 # shows when and for how long, are the DLL's (MGQOnline.Game's Telling/StoryPages, behind the
@@ -172,7 +176,15 @@ module MGQ_MpCoopEvents
   MAX_KEPT_SORTS = 4000
 
   # What a sort answers when the DLL cannot sort: the page plays as the player's own talk.
-  UNSORTED = { :kind => :talk, :list_kind => :talk, :may_tell => false, :scene => false, :marks => [] }
+  UNSORTED = { :kind => :talk, :list_kind => :talk, :may_tell => false, :scene => false, :marks => [], :own => nil }
+
+  # The DLL's topic that tells whether a Raid World's telling moves the world's story on, see
+  # StoryTopics.MovesTopic.
+  MOVES_TOPIC = "story.moves"
+
+  # The fields of a request that name the list by its place in the events database, which a list
+  # handed over replaces.
+  SITE_FIELDS = %w(event page size shape)
 
   # Kinds of page that may turn into story behind one of their choices, which guard watches: a
   # talk, and travel whose transfer lies behind the choice with the story, as the Great Decision's.
@@ -226,22 +238,16 @@ module MGQ_MpCoopEvents
   # Messages about gathering for story scenes, which coop_gather.rbx takes.
   GATHER_MESSAGES = %w(gather follow)
 
-  # Common events that run only in the player's own game, never as the party's story: the game's map
-  # display, its Pocket Castle call, its processing after every battle (which turns Luka Solo on)
-  # and its transfer process, which runs by itself after a transfer.
-  OWN_COMMON_EVENTS = [2, 3, 5, 114]
-
   # What a player whose story event waits for the world's story of a telling they watched reads.
   AWAIT_TOLD_TEXT = "Waiting for %s's story . . ."
-
-  # The game's switch that is on while the Library replays a scene, by its id in 3.06.
-  LIBRARY_REPLAY_SWITCH = 443
 
   # The DLL's topic that tells whether a story event would move the player's story past the end of
   # their part, see StoryTopics.LeavesPartTopic.
   LEAVES_PART_TOPIC = "story.leaves_part"
 
-  # The values the DLL named a sort's list needs, by the list's key (see site_key) and kind.
+  # The values the DLL named a sort's list needs, by the list's key (see site_key) and kind; those of
+  # the world's progress under [:progress], and those of a telling's list, the common events it
+  # reaches included, under [:moves, key].
   @needs = {}
   # The last sort of each list, with the values it read, see sorting.
   @answers = {}
@@ -262,8 +268,8 @@ module MGQ_MpCoopEvents
   # What starts this script's lines in the log.
   LOG_TAG = "co-op events"
 
-  # Sorts an event's current page by what of it can run now, in the DLL (MGQOnline.Game's
-  # EventSorter): a talk, travel, a chest, a battle or story.
+  # Sorts an event's current page by what of it can run now, by the DLL's one decision
+  # (MGQOnline.Game's EventSorter.Decide): a talk, travel, a chest, a battle, story or the player's own.
   #
   # @param event [Game_Event] The event.
   # @return [Symbol] :talk, :travel, :chest, :battle, :story or :own, see kind_of; :talk for an
@@ -318,20 +324,20 @@ module MGQ_MpCoopEvents
   # @param list [Array<RPG::EventCommand>] The commands.
   # @param event [Game_Event, nil] The event whose page the list may be, nil for none.
   # @param index [Integer, nil] The command whose story alone is asked, see story_command?.
-  # @return [Hash] :kind, :list_kind, :may_tell and :scene, or :story for an index; UNSORTED when
-  #   the DLL does not answer.
+  # @return [Hash] :kind, :list_kind, :may_tell, :scene, :marks and :own (why the list runs in the
+  #   player's own game alone, nil when it does not), or :story for an index; UNSORTED when the DLL
+  #   does not answer.
   def self.sorting(list, event = nil, index = nil)
     request = request_for(list, event)
     request["index"] = index if index
-    key = [site_key(request, list), index]
+    key = [site_key(request, list), index, @as_story ? true : nil]
     needs = (@needs[key[0]] ||= {})
     kept = @answers[key]
     return kept[1] if kept && kept[2].equal?(list) && kept[0] == values_of(needs)
 
     answer = ask(SORT_TOPIC, request, needs)
     if answer && answer["unknown"] && !request["list"]
-      request = inline_request(list, event).merge(request.select { |field, _value| %w(index resident).include?(field) })
-      answer = ask(SORT_TOPIC, request, needs)
+      answer = ask(SORT_TOPIC, inline_request(list, event).merge(request.reject { |field, _value| SITE_FIELDS.include?(field) }), needs)
     end
     found = answer && !answer["unknown"] ? answer_of(answer) : unsorted(key, index)
     @answers.clear if @answers.size >= MAX_KEPT_SORTS
@@ -342,7 +348,9 @@ module MGQ_MpCoopEvents
   # Names the list a sort asks for: a map event's page or a common event, which the DLL reads from
   # its events database while the database holds the list with the same length and shape, or the
   # commands themselves for any other list. A common event's list and a list handed over name the
-  # running map and event too, inside whose map folder the transfers of an event's list lead.
+  # running map and event too, inside whose map folder the transfers of an event's list lead. Every
+  # request tells what the list's texts tell (MGQ_MpCoopCastle.texts_of), and whether it resumes a
+  # frozen raid boss fight (see as_story).
   #
   # @param list [Array<RPG::EventCommand>] The commands.
   # @param event [Game_Event, nil] The event whose page the list may be, or that runs it; nil for none.
@@ -357,19 +365,24 @@ module MGQ_MpCoopEvents
               else
                 inline_request(list, event)
               end
-    request["resident"] = true if defined?(MGQ_MpCoopCastle) && MGQ_MpCoopCastle.resident?(list)
+    request.merge!(MGQ_MpCoopCastle.texts_of(list)) if defined?(MGQ_MpCoopCastle)
+    request["resumed"] = true if @as_story
     request
   end
 
   # Hands a list to the DLL whole, for a list its events database does not hold as the game shows
-  # it: each command's parameters as plain values, anything else as nil.
+  # it: each command's parameters as plain values, anything else as nil. A common event's list
+  # keeps its id, which the decision reads.
   #
   # @param list [Array<RPG::EventCommand>] The commands.
   # @param event [Game_Event, nil] The event whose current page the list may be, whose trigger counts
   #   then, or that runs it; nil for none.
   # @return [Hash] The request.
   def self.inline_request(list, event)
-    running(event).merge("list" => rows_of(list), "trigger" => event && list.equal?(event.list) ? event.trigger : nil)
+    request = running(event).merge("list" => rows_of(list), "trigger" => event && list.equal?(event.list) ? event.trigger : nil)
+    id = common_id(list)
+    request["common"] = id if id
+    request
   end
 
   # Names the map and the event that run a list, as a request's fields.
@@ -451,7 +464,7 @@ module MGQ_MpCoopEvents
 
   # Asks a topic of the sorter, handing over the values it names it needs until it has them all.
   #
-  # @param topic [String] SORT_TOPIC, KINDS_TOPIC or LEAVES_PART_TOPIC.
+  # @param topic [String] SORT_TOPIC, KINDS_TOPIC, LEAVES_PART_TOPIC or MOVES_TOPIC.
   # @param request [Hash] The request, which takes the values.
   # @param needs [Hash] The values the DLL named for this list, by kind, kept and grown here.
   # @return [Hash, nil] The answer, nil when the DLL did not give one.
@@ -469,7 +482,7 @@ module MGQ_MpCoopEvents
 
   # Hands the DLL the game data's fingerprint once per session, before its first question about
   # events, so it reads only the tables of its events database that match this game's data; logs
-  # what the DLL found.
+  # what the DLL found and the Pocket Castle's maps it names.
   def self.open_events
     return if @events_opened
 
@@ -477,10 +490,21 @@ module MGQ_MpCoopEvents
     fingerprint = defined?(MGQ_MpWorld::GameData) ? MGQ_MpWorld::GameData.fingerprint : ""
     answer = MGQ_Multiplayer::Bridge.call(OPEN_TOPIC, "fingerprint" => fingerprint)
     return log("the DLL did not take the game data's fingerprint") unless answer.is_a?(Hash)
+
+    @castle_maps = Array(answer["castle_maps"])
     return log("the DLL reads no events database: #{answer['problem']}; every list is handed over") unless answer["usable"]
 
     differing = Array(answer["differing"])
     log(differing.empty? ? "the DLL's events database matches this game's data" : "the DLL's events database differs from this game's data in #{differing.join(', ')}")
+  end
+
+  # Lists the maps of the Pocket Castle's residents, as the DLL names them with its events (see
+  # open_events).
+  #
+  # @return [Array<Integer>] The maps; none while the DLL does not answer.
+  def self.castle_maps
+    open_events if MGQ_Multiplayer::Bridge.open?
+    @castle_maps || []
   end
 
   # Adds what the DLL named it needs to the kept needs.
@@ -498,7 +522,8 @@ module MGQ_MpCoopEvents
   end
 
   # Reads the values the DLL named: switches, variables (their whole numbers, nil for none), self
-  # switches and whether switches and variables are the player's own.
+  # switches, whether switches and variables are the player's own, and the commands of common events
+  # its events database cannot read.
   #
   # @param needs [Hash] The kept needs, see add_needs.
   # @return [Hash] The values, by kind and id.
@@ -512,9 +537,10 @@ module MGQ_MpCoopEvents
 
   # Reads one value the DLL named.
   #
-  # @param kind [String] "s", "v", "ss", "ps" or "pv".
-  # @param id [Integer, String] The switch or variable, or the self switch as "map.event.letter".
-  # @return [Boolean, Integer, nil] The value.
+  # @param kind [String] "s", "v", "ss", "ps", "pv" or "ce".
+  # @param id [Integer, String] The switch, variable or common event, or the self switch as "map.event.letter".
+  # @return [Boolean, Integer, Array, nil] The value; a common event's commands as rows_of writes them,
+  #   nil for none.
   def self.value_of(kind, id)
     case kind
     when "s" then $game_switches ? $game_switches[id] == true : false
@@ -522,7 +548,17 @@ module MGQ_MpCoopEvents
     when "v" then $game_variables ? number($game_variables[id]) : 0
     when "ps" then defined?(MGQ_MpStoryState) && MGQ_MpStoryState.personal_switch?(id) ? true : false
     when "pv" then defined?(MGQ_MpStoryState) && MGQ_MpStoryState.personal_variable?(id) ? true : false
+    when "ce" then common_rows(id)
     end
+  end
+
+  # Writes a common event's commands as the DLL reads them.
+  #
+  # @param id [Integer] The common event.
+  # @return [Array<Array>, nil] Its rows, see rows_of; nil for none.
+  def self.common_rows(id)
+    common = $data_common_events && id.is_a?(Integer) && id > 0 ? $data_common_events[id] : nil
+    common && common.list ? rows_of(common.list) : nil
   end
 
   # Reads a self switch's key from the name the DLL gives it.
@@ -547,12 +583,12 @@ module MGQ_MpCoopEvents
   # Takes the DLL's sort.
   #
   # @param answer [Hash] The answer.
-  # @return [Hash] :kind, :list_kind, :may_tell, :scene and :marks, or :story.
+  # @return [Hash] :kind, :list_kind, :may_tell, :scene, :marks and :own, or :story.
   def self.answer_of(answer)
     return { :story => answer["story"] == true } if answer.key?("story")
 
-    { :kind => answer["kind"].to_s.to_sym, :list_kind => answer["list_kind"].to_s.to_sym,
-      :may_tell => answer["may_tell"] == true, :scene => answer["scene"] == true, :marks => Array(answer["marks"]) }
+    { :kind => answer["kind"].to_s.to_sym, :list_kind => answer["list_kind"].to_s.to_sym, :may_tell => answer["may_tell"] == true,
+      :scene => answer["scene"] == true, :marks => Array(answer["marks"]), :own => answer["own"] ? answer["own"].to_s : nil }
   end
 
   # The answer of a sort the DLL could not give, logged once per list: the list plays as the
@@ -739,29 +775,30 @@ module MGQ_MpCoopEvents
   # @return [Hash] Each page's kind by [event, page].
   def self.page_kinds(events)
     lists = {}
-    residents = []
+    texts = []
     events.each do |event|
       event.mgq_mp_pages.each_with_index do |page, place|
         list = page.list || []
         lists[[event.id, place]] = list
-        residents << [event.id, place] if defined?(MGQ_MpCoopCastle) && MGQ_MpCoopCastle.resident?(list)
+        told = defined?(MGQ_MpCoopCastle) ? MGQ_MpCoopCastle.texts_of(list) : {}
+        texts << [event.id, place, told["speaker"], told["goods"]] unless told.empty?
       end
     end
     kinds = {}
-    sort_pages(lists.keys.map { |site| site + size_and_shape(lists[site]).values_at("size", "shape") }, residents, kinds)
+    sort_pages(lists.keys.map { |site| site + size_and_shape(lists[site]).values_at("size", "shape") }, texts, kinds)
     held_otherwise = lists.keys.reject { |site| kinds.key?(site) }
-    sort_pages(held_otherwise.map { |site| site + [rows_of(lists[site])] }, residents, kinds) unless held_otherwise.empty?
+    sort_pages(held_otherwise.map { |site| site + [rows_of(lists[site])] }, texts, kinds) unless held_otherwise.empty?
     kinds
   end
 
   # Sorts pages of the map in one call to the DLL, see page_kinds.
   #
   # @param rows [Array<Array>] The pages: [event, page, size, shape] or [event, page, commands].
-  # @param residents [Array<Array>] The Pocket Castle residents' pages, each [event, page].
+  # @param texts [Array<Array>] What the texts of pages tell, each [event, page, speaker, goods].
   # @param kinds [Hash] The kinds sorted, by [event, page], which takes those of these pages.
-  def self.sort_pages(rows, residents, kinds)
+  def self.sort_pages(rows, texts, kinds)
     request = { "map" => $game_map.map_id, "pages" => rows }
-    request["residents"] = residents unless residents.empty?
+    request["texts"] = texts unless texts.empty?
     answer = ask(KINDS_TOPIC, request, @needs[[:map, $game_map.map_id]] ||= {})
     Array(answer && answer["kinds"]).each_with_index { |kind, place| kinds[rows[place][0, 2]] = kind.to_s.to_sym if kind }
   end
@@ -786,7 +823,7 @@ module MGQ_MpCoopEvents
 
   # Runs a block that sets up an event whose page counts as story, whatever page the event shows: a
   # frozen raid boss fight's resume runs the page of its battle while the event may show a later one
-  # (see battles_raid_freeze.rbx).
+  # (see battles_raid_freeze.rbx). The DLL's decision hears it as "resumed".
   #
   # @return [Object] What the block returns.
   def self.as_story
@@ -808,8 +845,8 @@ module MGQ_MpCoopEvents
     MGQ_MpCoopGather.drop_hold
     @lock_hold = nil
     event = event_id > 0 ? $game_map.events[event_id] : nil
-    sorted = own?(event ? nil : list) ? :own : (event ? kind(event) : kind_of(list || []))
-    sorted = :story if @as_story
+    decision = event && event.mgq_mp_page < 0 && !@as_story ? UNSORTED : sorting(list || [], event)
+    sorted = decision[event || @as_story ? :kind : :list_kind]
     # A page of the leader's story that a scene change cut short must not hold the player's own; the
     # game's transfer process after a battle or a transfer shows nothing and leaves it.
     cut_page unless sorted == :own
@@ -818,7 +855,7 @@ module MGQ_MpCoopEvents
     @may_tell = WATCHED_KINDS.include?(sorted) && (following? || leading_story?) && may_tell?(list || [], event)
     hold = @telling && scene?(list, event) && !MGQ_MpCoopGather.gathered?
     MGQ_MpCoopGather.hold(interpreter) if hold
-    log_start(event, sorted, hold, list) if MGQ_MpCoop::Scope.sharing?
+    log_start(event, sorted, hold, list, decision[:own]) if MGQ_MpCoop::Scope.sharing?
   end
 
   # Tells the DLL's telling machine of an event of the map's interpreter starting, which answers
@@ -943,12 +980,13 @@ module MGQ_MpCoopEvents
   # @param sorted [Symbol] How it is sorted, see kind.
   # @param hold [Boolean] Whether the leader's game holds it for the party to gather.
   # @param list [Array<RPG::EventCommand>, nil] A common event's commands, nil for a map event.
-  def self.log_start(event, sorted, hold, list = nil)
-    common = own_common_id(list)
+  # @param own [String, nil] Why it runs in the player's own game alone, nil when it does not.
+  def self.log_start(event, sorted, hold, list = nil, own = nil)
+    common = event || list.nil? ? nil : common_id(list)
     what = event ? "event #{event.id} (page #{event.mgq_mp_page + 1})" : (common ? "common event #{common}" : "a common event")
     what += " on map #{$game_map.map_id}"
     notes = []
-    notes << "runs only in the player's own game#{library_replay? ? ": the Library's replay of a scene" : ''}" if sorted == :own
+    notes << "runs only in the player's own game#{own ? ": #{own}" : ''}" if sorted == :own
     notes << "resumed as story" if @as_story
     notes << "the leader tells the party this story" if @telling
     notes << "the player plays their own story, not synced with the leader or leading no member who follows it" unless following? || leading_story?
@@ -1141,15 +1179,15 @@ module MGQ_MpCoopEvents
   # @return [Boolean] Whether it is the teller's, so it must not run here.
   def self.hand_over(event)
     return true if defined?(MGQ_MpWorldOpening) && MGQ_MpWorldOpening.holds?(event)
-    return awaits_world_story(event) if defined?(MGQ_MpWorldStory) && MGQ_MpWorldStory.awaits_world? && !own? && kind(event) == :story
-    return true if behind? && !own? && kind(event) == :story && held_behind?(event)
+    return awaits_world_story(event) if defined?(MGQ_MpWorldStory) && MGQ_MpWorldStory.awaits_world? && kind(event) == :story
+    return true if behind? && kind(event) == :story && held_behind?(event)
 
     follow = MGQ_MpCoopGather.follow_taken
-    return held_following(event, follow) if follow && !own? && kind(event) == :story
+    return held_following(event, follow) if follow && kind(event) == :story
 
     lead = MGQ_MpCoop::Scope.teller
     return awaits_told_story?(event) unless lead.is_a?(MGQ_MpOverworldSync::Peers::Peer)
-    return false unless !own? && kind(event) == :story
+    return false unless kind(event) == :story
     unless following?
       log_once([:own_story, $game_map.map_id, event.id, lead.state["id"].to_s], "story event #{event.id} on map #{$game_map.map_id} runs in the player's own game: not synced with #{MGQ_MpOverworldSync.who(lead)}, the player plays their own story")
       return false
@@ -1221,6 +1259,37 @@ module MGQ_MpCoopEvents
     why
   end
 
+  # Reads the world's progress now, as the DLL names it, for a telling that starts, see
+  # moves_story?.
+  #
+  # @return [Array, nil] The progress, nil when the DLL does not answer.
+  def self.story_progress
+    answer = ask(MOVES_TOPIC, {}, @needs[[:progress]] ||= {})
+    answer ? answer["progress"] : nil
+  end
+
+  # Asks the DLL's one decision whether the telling of the map's main event moves a Raid World's
+  # story on, which decides whom it takes along: the world's progress changed since it started
+  # (see story_progress), or the commands its interpreter has yet to run may change it, as a scene
+  # that moves its teller before it sets its progress does. The common events those commands reach
+  # that the DLL's events database cannot read are handed over as it names them (see value_of).
+  #
+  # @param told [Array, nil] The progress as the telling started, nil when unknown.
+  # @return [Boolean] Whether it does; false when the DLL does not answer.
+  def self.moves_story?(told)
+    interpreter = $game_map.interpreter
+    list = MGQ_MpGame.get(interpreter, :list)
+    event_id = MGQ_MpGame.get(interpreter, :event_id).to_i
+    event = event_id > 0 ? $game_map.events[event_id] : nil
+    asked = { "index" => MGQ_MpGame.get(interpreter, :index).to_i }
+    asked["told"] = told if told
+    request = list ? request_for(list, event).merge(asked) : asked
+    needs = (@needs[[:moves, list ? site_key(request, list) : nil]] ||= {})
+    answer = ask(MOVES_TOPIC, request, needs)
+    answer = ask(MOVES_TOPIC, inline_request(list, event).merge(asked), needs) if list && answer && answer["unknown"]
+    answer && answer["moves"] == true ? true : false
+  end
+
   # Keeps a story event from starting while the player's story is behind the world's and the event
   # would move it past the end of their part (see leaving_part): one they start tells the level that
   # moves them on, once per event in REFUSE_FRAMES, and one that runs by itself waits silently, so a
@@ -1278,7 +1347,7 @@ module MGQ_MpCoopEvents
   # @param event [Game_Event] The event.
   # @return [Boolean] Whether it must not run yet.
   def self.awaits_told_story?(event)
-    return false unless defined?(MGQ_MpWorldStory) && MGQ_MpWorldStory.awaits_teller? && !own? && kind(event) == :story
+    return false unless defined?(MGQ_MpWorldStory) && MGQ_MpWorldStory.awaits_teller? && kind(event) == :story
 
     tell_await(event)
     true
@@ -1336,58 +1405,25 @@ module MGQ_MpCoopEvents
     elapsed < 0 || elapsed >= frames
   end
 
-  # Reports whether what starts runs only in the player's own game, never as the party's story:
-  # anything while the Library replays a scene, whose replay the leader's game would otherwise
-  # bring the members over to, and the common events of OWN_COMMON_EVENTS.
-  #
-  # The game sets a common event up with its list alone, so the list is compared with each one's.
-  #
-  # @param list [Array<RPG::EventCommand>, nil] The common event's commands, nil for a map event.
-  # @return [Boolean] Whether it does.
-  def self.own?(list = nil)
-    return true if library_replay?
-    return false unless list
-
-    own_common_id(list) ? true : false
-  rescue => e
-    log_once(:own, "telling the player's own events apart failed: #{e.class}: #{e.message}")
-    false
-  end
-
-  # Finds which of OWN_COMMON_EVENTS a list is.
-  #
-  # @param list [Array<RPG::EventCommand>, nil] The common event's commands, nil for a map event.
-  # @return [Integer, nil] Its id, nil for none of them.
-  def self.own_common_id(list)
-    list && OWN_COMMON_EVENTS.find { |id| (common = $data_common_events[id]) && list.equal?(common.list) }
-  end
-
-  # Reports whether the Library replays a scene now.
-  #
-  # @return [Boolean] Whether it does.
-  def self.library_replay?
-    switch = defined?(NWConst::Sw::LIBRARY_H_MEMORY) ? NWConst::Sw::LIBRARY_H_MEMORY : LIBRARY_REPLAY_SWITCH
-    $game_switches[switch] ? true : false
-  end
-
   # Reports whether a common event that runs by itself is left to the teller's game, or held while
   # the player's story is behind a Raid World's.
   #
   # @param common [RPG::CommonEvent] The common event.
   # @return [Boolean] Whether it is.
   def self.leave_to_leader?(common)
-    if defined?(MGQ_MpWorldStory) && MGQ_MpWorldStory.awaits_world? && !own?(common.list) && kind_of(common.list || []) == :story
+    story = lambda { kind_of(common.list || []) == :story }
+    if defined?(MGQ_MpWorldStory) && MGQ_MpWorldStory.awaits_world? && story.call
       log_once([:await_world_common, common.respond_to?(:id) ? common.id : "?"], "kept common event #{common.respond_to?(:id) ? common.id : '?'} that runs by itself from starting: the world's story has not come yet")
       return true
     end
-    why = behind? && !own?(common.list) && kind_of(common.list || []) == :story ? leaving_part(common.list || []) : nil
+    why = behind? && story.call ? leaving_part(common.list || []) : nil
     if why
       log_once([:behind_common, common.respond_to?(:id) ? common.id : "?"], "kept common event #{common.respond_to?(:id) ? common.id : '?'} that runs by itself from starting: the player's story is behind the world's and #{why}")
       return true
     end
 
     lead = MGQ_MpCoop::Scope.teller
-    left = lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && following? && !own?(common.list) && kind_of(common.list || []) == :story
+    left = lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && following? && story.call
     if left
       id = common.respond_to?(:id) ? common.id : "?"
       log_once([:common, id, lead.state["id"].to_s], "kept common event #{id} that runs by itself from starting: it is story, which #{MGQ_MpOverworldSync.who(lead)}'s game runs")

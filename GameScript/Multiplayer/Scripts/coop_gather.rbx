@@ -2,7 +2,8 @@
 #  coop_gather.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Left what a call, follow or teleport leaves of the player's scene and place to the one guard of the game's flow, the followers a map left hidden among it
+#      Paulinchen  2026-11-05: Asked the DLL's one decision whether a telling moves the world's story on, which decides whom it takes along
+#                            - Left what a call, follow or teleport leaves of the player's scene and place to the one guard of the game's flow, the followers a map left hidden among it
 #      Paulinchen  2026-10-31: Stopped carrying the warp ban along with a call, a follow or a teleport
 #      Paulinchen  2026-10-28: Kept the calls, the hold and the follow offers with their frames in the DLL
 #                            - Read a Raid World's tellers from the tellings the relay told of
@@ -542,25 +543,18 @@ module MGQ_MpCoopGather
   # As teller in a Raid World, notes the values that move the world's story on as the telling
   # starts, see moves_story?. Called by coop_events.rbx as a new telling starts.
   def self.note_story_progress
-    @told_progress = MGQ_MpCoop::Scope.raid? && defined?(MGQ_MpWorldStory) ? MGQ_MpWorldStory.progress_now : nil
+    @told_progress = MGQ_MpCoop::Scope.raid? ? MGQ_MpCoopEvents.story_progress : nil
   rescue => e
     @told_progress = nil
     log("noting the story's progress failed: #{e.class}: #{e.message}")
   end
 
-  # As teller in a Raid World, reports whether the telling moves the world's story on: it changed
-  # a value that does since it started (see note_story_progress), or the commands the map's
-  # interpreter has yet to run may change one, as a scene that moves its teller before it sets its
-  # progress does (see MGQ_MpWorldStory.progress_ahead?).
+  # As teller in a Raid World, asks the DLL's one decision whether the telling moves the world's
+  # story on, see MGQ_MpCoopEvents.moves_story?.
   #
   # @return [Boolean] Whether it does.
   def self.moves_story?
-    return false unless defined?(MGQ_MpWorldStory)
-    return true if @told_progress && MGQ_MpWorldStory.progress_now != @told_progress
-
-    interpreter = $game_map.interpreter
-    list = MGQ_MpGame.get(interpreter, :list)
-    list ? MGQ_MpWorldStory.progress_ahead?(list, MGQ_MpGame.get(interpreter, :index).to_i) : false
+    MGQ_MpCoopEvents.moves_story?(@told_progress)
   end
 
   # As teller in a Raid World, lists the players the story took along who are not on the player's

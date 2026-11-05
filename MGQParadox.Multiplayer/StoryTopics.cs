@@ -2,7 +2,9 @@
 //  StoryTopics.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Answered what a Classic leader's story keeps of a member's writes and runs, and which of its changes a member takes, by ClassicMerge
+//      Paulinchen  2026-11-05: Told whether a Raid World's telling moves the world's story on, which decides whom it takes along
+//                            - Asked the scripts for the common events a telling reaches that the DLL cannot read
+//                            - Answered what a Classic leader's story keeps of a member's writes and runs, and which of its changes a member takes, by ClassicMerge
 //                            - Told a Classic member's catch-up who keeps each self switch and which party chests gave key items
 //                            - Handed the catch-up the items an event of the game takes away
 //      Paulinchen  2026-11-01: Dropped the topic of the player's telling, which the telling machine holds
@@ -189,6 +191,18 @@ internal sealed partial class StoryTopics : IStoryTrackHost
     /// else <c>{"leaves", "why"}</c> (nil while it stays).
     /// </summary>
     public const string LeavesPartTopic = "story.leaves_part";
+
+    /// <summary>
+    /// The topic that tells whether a Raid World's telling moves the world's story on, which decides
+    /// whom it takes along (see <see cref="WorldProgress"/>): <c>told</c>, the <c>progress</c> an earlier
+    /// answer gave as the telling started, nil for none; the list the telling runs, named as for
+    /// <see cref="EventTopics.Sort"/> with <c>index</c>, the command it runs next, or no list; and
+    /// <c>values</c> as there. Answers <c>{"unknown"=>true}</c> or <c>needs</c> as that does, the
+    /// latter with <c>ce</c>, the common events the list reaches that the DLL cannot read, else
+    /// <c>{"moves", "progress"}</c>: whether the progress changed since <c>told</c> or the list's
+    /// commands from <c>index</c> on may change it, and the progress now.
+    /// </summary>
+    public const string MovesTopic = "story.moves";
 
     /// <summary>
     /// The topic that hands a run of the player's own game in a Raid World to the relay, after the
@@ -412,6 +426,7 @@ internal sealed partial class StoryTopics : IStoryTrackHost
         context.Register(MappingTopic, (_, request) => topics.FollowClassic(request.IsNil ? null : request.AsText()));
         context.Register(RewardsTopic, (_, request) => topics._table is { } table && (request.IsNil || request.AsLong() != table.Rev) ? RewardsOf(table) : null);
         context.Register(LeavesPartTopic, (_, request) => topics.LeavesPart(request.AsHash()));
+        context.Register(MovesTopic, (_, request) => topics.Moves(request.AsHash()));
         context.Register(HandEntryTopic, (_, request) =>
         {
             topics._track.Hand(ReplayEntry.Read(request), topics.OpenerName());
@@ -468,6 +483,62 @@ internal sealed partial class StoryTopics : IStoryTrackHost
 
         PartLeave? leave = PartEnd.Leaving(_track.Synced ? _track.Part : null, sets, Kept);
         return new RubyHash { { "leaves", leave is not null }, { "why", leave?.Why() } };
+    }
+
+    /// <summary>
+    /// Answers <see cref="MovesTopic"/> by the story mapping held.
+    /// </summary>
+    /// <param name="request">The request.</param>
+    /// <returns>The answer.</returns>
+    private RubyHash Moves(RubyHash request)
+    {
+        var progress = new WorldProgress(_table);
+        var state = new EventTopics.RequestState(request["values"] as RubyHash);
+        long[] now = progress.Now(state);
+        if (state.Needs() is { } needs)
+        {
+            return needs;
+        }
+
+        bool moves = request["told"] is RubyArray told && !told.Select(value => value.AsLong()).SequenceEqual(now);
+        if (!moves && (request["list"] is RubyArray || request["common"] is RubyInteger || request["page"] is RubyInteger))
+        {
+            GameEvents game = Events();
+            if (EventTopics.ListOf(game.Source, game.Store, request) is not { } found)
+            {
+                return new RubyHash { { "unknown", true } };
+            }
+
+            int place = request["index"] is RubyInteger index ? index.AsInt() : 0;
+            var source = new HandedCommonsSource(game.Source, state.HandedCommon);
+            moves = progress.Ahead(source, found.Commands, found.ListId is { } listId ? FirstKeptFrom(game.Store, listId, place) : place);
+            if (state.Needs() is { } commons)
+            {
+                return commons;
+            }
+        }
+
+        return new RubyHash { { "moves", moves }, { "progress", new RubyArray(now.Select(value => (RubyValue)value)) } };
+    }
+
+    /// <summary>
+    /// Finds the first kept command of a list in the events database at or after a place of the
+    /// game's list, as the database keeps only the commands the rules read.
+    /// </summary>
+    /// <param name="store">The events database.</param>
+    /// <param name="listId">The list.</param>
+    /// <param name="place">The place in the game's list.</param>
+    /// <returns>The kept command's place among the kept ones, their count when none is left.</returns>
+    private static int FirstKeptFrom(EventStore store, int listId, int place)
+    {
+        IReadOnlyList<CommandRow> commands = store.Commands(listId);
+        int found = 0;
+        while (found < commands.Count && commands[found].Idx < place)
+        {
+            found++;
+        }
+
+        return found;
     }
 
     /// <summary>

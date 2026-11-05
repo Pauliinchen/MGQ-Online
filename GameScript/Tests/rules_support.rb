@@ -2,7 +2,8 @@
 #  rules_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Answered the topics of the one guard of the game's flow from its stand-in, checked against the reported cases
+#      Paulinchen  2026-11-05: Stood in for the one decision of the player's own common events, a resumed raid fight and whether a telling moves the world's story on, and named the castle's maps
+#                            - Answered the topics of the one guard of the game's flow from its stand-in, checked against the reported cases
 #      Paulinchen  2026-11-01: Dropped the stand-ins of the World overview's story topics and of marking settings shared, which no script calls
 #      Paulinchen  2026-10-30: Dropped the stand-ins of the parking's topics
 #                            - Dropped the stand-in of mods.install, which the Mod Framework does
@@ -511,20 +512,31 @@ EVENT_CASES = rule_cases("events", "script_cases.json")["cases"]
 # The values a sort's case recorded, by kind.
 SORT_VALUE_KINDS = %w(s v ps pv)
 
+# The common events the stand-in of the DLL's decision answers as the player's own, which a test
+# sets; MGQOnline.Game's EventSorter.Decide holds the game's own list.
+$own_commons = []
+
+# The maps of the Pocket Castle's residents the stand-in of the DLL names, see PocketCastle in
+# MGQOnline.Game.
+CASTLE_MAPS = [227, 228, 229, 230] + (268..278).to_a
+
 # Answers the event sorter's topics from fixtures/events/script_cases.json: a list the scripts hand
 # over is looked up among the cases with its trigger, command and resident flag; the values it lacks
 # are named as the DLL names them, and those it hands over pick the case. A map event's page or a
 # common event is unknown, as the DLL holds no events database in the tests, so the scripts hand
 # the list over; the fingerprint the scripts open the database with is taken and noted. For the
-# same reason the chests, the page flags and the command index of a map's pages answer none.
+# same reason the chests, the page flags and the command index of a map's pages answer none. The
+# decision's own answers stand in: a common event of $own_commons is the player's own, a resumed
+# raid fight's page is story, and no telling moves the world's story on.
 #
 # @param fake [FakeBridge] The bridge.
 def answer_events(fake)
   fake.answer("events.open") do |request|
     raise FakeBridge::BadRequest, "no fingerprint" unless request["fingerprint"].is_a?(String)
 
-    { "usable" => false, "problem" => "no events database at Patch/Multiplayer/Data/events.db", "differing" => [] }
+    { "usable" => false, "problem" => "no events database at Patch/Multiplayer/Data/events.db", "differing" => [], "castle_maps" => CASTLE_MAPS }
   end
+  fake.answer("story.moves") { |_request| { "moves" => false, "progress" => [] } }
   fake.answer("events.sort") { |request| golden_sort(request) }
   fake.answer("events.kinds") { |request| golden_kinds(request) }
   fake.answer("events.chests") { |request| { "letters" => Array(request["rows"]).map { nil } } }
@@ -538,11 +550,10 @@ end
 # @param request [Hash] The request.
 # @return [Hash] The kinds, or the values the pages handed over need.
 def golden_kinds(request)
-  residents = Array(request["residents"])
   answers = Array(request["pages"]).map do |row|
     next nil unless row[2].is_a?(Array)
 
-    golden_sort("list" => row[2], "trigger" => nil, "values" => request["values"], "resident" => residents.include?(row[0, 2]) ? true : nil)
+    golden_sort("list" => row[2], "trigger" => nil, "values" => request["values"])
   end
   needs = {}
   answers.compact.each { |answer| (answer["needs"] || {}).each { |kind, ids| needs[kind] = (needs[kind] || []) | ids } }
@@ -556,6 +567,9 @@ end
 # @param request [Hash] The request.
 # @return [Hash] The case's answer, the values it needs, or unknown.
 def golden_sort(request)
+  if !request["index"] && $own_commons.include?(request["common"])
+    return { "kind" => "own", "list_kind" => "own", "may_tell" => false, "scene" => false, "marks" => [], "own" => "common event #{request['common']} is one of the game's own" }
+  end
   return { "unknown" => true } unless request["list"]
 
   rows = JSON.parse(JSON.generate(request["list"]))
@@ -568,7 +582,7 @@ def golden_sort(request)
 
   values = request["values"] || {}
   held = found.find { |known| SORT_VALUE_KINDS.all? { |kind| (known[kind] || {}).all? { |id, value| (values[kind] || {}).key?(id.to_i) && values[kind][id.to_i] == value } } }
-  return held["answer"] if held
+  return request["resumed"] && !request["index"] ? held["answer"].merge("kind" => "story", "list_kind" => "story") : held["answer"] if held
 
   needs = {}
   found.each do |known|

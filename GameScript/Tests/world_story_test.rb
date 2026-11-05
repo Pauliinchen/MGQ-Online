@@ -2,7 +2,8 @@
 #  world_story_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Took the player out of their own scene through the stand-in of the one guard of the game's flow
+#      Paulinchen  2026-11-05: Left whether commands move the world's story on to the DLL's one decision, checked there
+#                            - Took the player out of their own scene through the stand-in of the one guard of the game's flow
 #      Paulinchen  2026-11-01: Dropped the stand-in of the form window no script draws with any more
 #      Paulinchen  2026-10-31: Checked that the Great Decision offers the routes the relay grants
 #                            - Checked that a run goes to the relay after its writes and that the track's runs reach the replay one at a time while the player is free
@@ -598,16 +599,6 @@ check("whose own half plays once the player is free: the Final Chapter's reset, 
 check("after taking the player wholly out of a scene of their own, such as their route's ending walked in a temporary party",
       $left, [[true, true, $setups.size - 1]])
 check("the Great Decision then offers the routes the relay grants", story.decision_routes, [0])
-
-# Event commands may move the world's story on when they set a value that tells how far it is or a
-# variable the mapping keeps going only up, themselves or in a common event they call.
-$data_common_events[390] = RPG::CommonEvent.new([c(122, [1144, 1144, 0, 0, 2])])
-minigame = [c(122, [845, 845, 0, 0, 1]), c(201, [0, 1886, 55, 11, 2, 0]), c(121, [96, 96, 0])]
-scene = [c(201, [0, 430, 5, 5, 2, 0]), c(117, [390])]
-check("a scene that moves its teller first and moves the story on in a common event after may move it on, a minigame setting values of its own does not",
-      [story.progress_ahead?(scene, 0), story.progress_ahead?(minigame, 0)], [true, false])
-check("nor does a scene whose progress lies behind the place read from", story.progress_ahead?([c(122, [1001, 1001, 0, 0, 40]), c(201, [0, 430, 5, 5, 2, 0])], 1), false)
-$data_common_events[390] = nil
 
 # The shared companions, which the world's state names.
 $comps = "77,80"
