@@ -2,7 +2,8 @@
 //  Sessions.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Created
+//      Paulinchen  2026-11-05: Read a battle's players and state as its host tells them, without a reading for games that tell no state
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -211,25 +212,15 @@ public sealed class Sessions
     public static bool Invited(Peer peer) => Free(peer) || Busy(peer);
 
     /// <summary>
-    /// Reads the battle a host tells in their state: "rb", "rbn" and "rbs".
+    /// Reads the battle a host tells in their state: "rb", "rbn" (its players) and "rbs" (whether
+    /// it takes players in).
     /// </summary>
-    /// <remarks>
-    /// A released game tells no "rbs" and 0 in "rbn" for every battle that takes nobody in, so its 0
-    /// reads as closed, never as full, which would offer a side battle beside one that ends.
-    /// </remarks>
     /// <param name="host">The battle's host.</param>
     /// <returns>The battle.</returns>
     public static BattleSession Battle(Peer host)
     {
         ArgumentNullException.ThrowIfNull(host);
-        int players = host.State.Has("rbn") ? (int)WorldFields.ToI(host.State["rbn"]) : 1;
-        string state = host.State.Text("rbs");
-        if (state.Length == 0)
-        {
-            state = players >= Party.MaxPlayers ? Full : players >= 1 ? Open : Closed;
-        }
-
-        return new BattleSession(host.State.Text("rb"), players, state);
+        return new BattleSession(host.State.Text("rb"), (int)WorldFields.ToI(host.State["rbn"]), host.State.Text("rbs"));
     }
 
     /// <summary>
@@ -251,7 +242,7 @@ public sealed class Sessions
 /// The battle a host tells in their state.
 /// </summary>
 /// <param name="Bid">The battle's id, empty outside a battle.</param>
-/// <param name="Players">Its players, those taken in counted, while it takes players in, else 0; 1 for a host whose state names no count.</param>
+/// <param name="Players">Its players, those taken in counted; 0 when the host hosts no battle or fights none alone.</param>
 /// <param name="State">Whether it takes players in: <see cref="Sessions.Open"/>, <see cref="Sessions.Full"/>,
 /// <see cref="Sessions.Ending"/>, "gathering", "pvp" or <see cref="Sessions.Closed"/>.</param>
 public sealed record BattleSession(string Bid, int Players, string State)

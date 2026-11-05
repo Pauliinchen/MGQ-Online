@@ -2,6 +2,8 @@
 #  world_data_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Checked that a fingerprint the DLL did not answer is measured again
+#                            - Read the directory's list and the player's id through the DLL's topics
 #      Paulinchen  2026-11-01: Checked only the mods of a world as the DLL orders them, whose required and essential readers are gone
 #                            - Dropped the checks that read the old screen prototype instead of the scripts
 #                            - Dropped the checks of the form window no screen draws with any more
@@ -124,7 +126,6 @@ module DataManager; def self.save_system; end; end
 # Stand-ins for the mod's base script and its DLL.
 $sounds = []
 $calls = []
-$dll = {}
 # The mod's base script: always available, never outdated, with a player named Me and an empty
 # world.ini.
 module MGQ_Multiplayer
@@ -142,30 +143,8 @@ module MGQ_Multiplayer
   module Player; def self.share; end; def self.name; "Me"; end; def self.setting(_key); nil; end; end
   # An ini file reader that reads every file as empty.
   module Ini; def self.read(_path); {}; end; def self.load(_path, _quiet = false); {}; end; end
-  # The link to the DLL: records each call in $calls and reads its values from $dll.
-  module Link
-    # Answers the player's id.
-    def self.player_id; "me"; end
-    # A DLL function: a call is checked against its signature, recorded and answered with 1.
-    Function = Struct.new(:name, :signature) do
-      # Checks a call's arguments against the signature, records the call in $calls and answers 1.
-      def call(*args); check_dll_call(name, args); $calls << [name, signature, args]; 1; end
-    end
-    # A DLL function with its signature from the export table of Multiplayer.rb.
-    def self.function(name); Function.new(name, dll_signature(name)); end
-    # The DLL's value of a name, from $dll.
-    def self.read(name, _size); $dll[name].to_s; end
-    # Reads a DLL answer: its name=value lines up to a blank line, and the rest as :payload.
-    #
-    # @param text [String] The answer.
-    # @return [Hash] The values by name, and the payload under :payload.
-    def self.parse(text)
-      head, payload = text.split("\n\n", 2)
-      state = { :payload => payload.to_s }
-      head.to_s.split("\n").each { |line| k, v = line.split("=", 2); state[k] = v if v }
-      state
-    end
-  end
+  # Stands in for the player's id, as the DLL tells it.
+  module Player; def self.id; "me"; end; end
 end
 
 
@@ -262,6 +241,12 @@ game_data([DataUsable.new("Slash", "<power 2>"), DataUsable.new(""), DataUsable.
 plain = MGQ_MpWorld::GameData.fingerprint
 check("the fingerprint names its format and a checksum per part", plain =~ /\A2:[0-9a-f]{8}(\.[0-9a-f]{8}){10}\z/ ? true : false, true)
 check("a game matches itself", MGQ_MpWorld::GameData.differing(plain), [])
+measuring = $world_bridge.instance_variable_get(:@handlers)["worlds.fingerprint"]
+$world_bridge.answer("worlds.fingerprint") { nil }
+MGQ_MpWorld::GameData.instance_variable_set(:@fingerprint, nil)
+silent = MGQ_MpWorld::GameData.fingerprint
+$world_bridge.answer("worlds.fingerprint", &measuring)
+check("a fingerprint the DLL did not answer is measured again at the next ask", [silent, MGQ_MpWorld::GameData.fingerprint], ["", plain])
 game_data([DataUsable.new("Schlag", "<power 2>"), DataUsable.new("Leer", " \r\n"), DataUsable.new("Feuer", "", [], [:damage])], [1, 2])
 check("a translated game matches the untranslated one, even where it names an empty place", MGQ_MpWorld::GameData.differing(plain), [])
 game_data([DataUsable.new("Slash", "<power 2>"), DataUsable.new("Mod Skill", "", [:feature]), DataUsable.new("Fire", "", [], [:damage])], [1, 2, 488])
@@ -373,11 +358,11 @@ $screen_steps = [["buzz"], ["say", "The request could not be started. Try again 
 scene.create_world
 check("a world the DLL refuses leaves the form open at the field it was sent from, with why", [said(scene), scene.form.nil?, $focused.id, scene.busy],
       ["The request could not be started. Try again in a moment.", false, "form:confirm", nil])
-$dll["mp_dir_list"] = "state=ready\n\n" \
-  "world\tw1\t4\t0\tc\t0\tC\tStrict\tnone\t0\t0\t1\t0\t1\t#{plain}\tNo mods\tUnmodded only.\t\t\tclassic\toff\t\t0\t\t0\n" \
-  "world\tw2\t4\t0\tc\t0\tC\tLoose\tnone\t0\t0\t1\t0\t0\t#{plain}\tSome Mod\tA slow run through part one of the story with friends.\t\t\tclassic\toff\t\t0\t\t0\n" \
-  "world\tw3\t4\t0\tc\t0\tC\tSame\tnone\t0\t0\t1\t0\t1\t#{modded}\t\t\t\t\tclassic\toff\t\t0\t\t0\n" \
-  "world\tw4\t4\t0\tc\t0\tC\tOld\tnone\t0\t0\t1\t0\t\t\t\t\t\t\tclassic\toff\t\t0\t\t0\n"
+$directory = directory_list([
+  listed_value("w1", "Strict", "open" => true, "strict" => true, "data" => plain, "mods" => "No mods", "description" => "Unmodded only."),
+  listed_value("w2", "Loose", "open" => true, "data" => plain, "mods" => "Some Mod", "description" => "A slow run through part one of the story with friends."),
+  listed_value("w3", "Same", "open" => true, "strict" => true, "data" => modded),
+  listed_value("w4", "Old", "open" => true)])
 _, _, listed, = MGQ_MpWorld::Directory.list
 check("the list reads which worlds take the same data only", listed.map { |world| world.strict }, [true, false, true, false])
 check("their creators' game data", listed.map { |world| world.data }, [plain, plain, modded, ""])
@@ -532,15 +517,12 @@ unread_world.mods_unread = true
 unread_entry = MGQ_MpWorld::Entry.new("w2", "Loose", unread_world, nil, false, false)
 scene = new_scene
 scene.instance_variable_set(:@entry, unread_entry)
-listed_before = $dll["mp_dir_list"]
-$dll["mp_dir_list"] = "state=ready
-
-world	w2	4	0	c	0	C	Loose	none	0	0	1	0	0	#{plain}	!Mod C	A slow run.
-"
+listed_before = $directory
+$directory = directory_list([listed_value("w2", "Loose", "open" => true, "data" => plain, "mods" => "!Mod C", "description" => "A slow run.")])
 $screen_steps = [["read"]]
 scene.on_enter
 check("once the DLL read its mods, the read step takes the world anew from the list", unread_entry.listed.mods, "!Mod C")
-$dll["mp_dir_list"] = listed_before
+$directory = listed_before
 Dir.mktmpdir do |folder|
   FileUtils.mkdir_p(File.join(folder, "Patch", "Sub"))
   File.write(File.join(folder, "Patch", "Mask_of_Envy.rb"), "")

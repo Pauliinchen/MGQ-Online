@@ -2,7 +2,9 @@
 //  CoopIntakeGoldenTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Read the "rbn" of the battle's state from the fields the topic tells
+//      Paulinchen  2026-11-05: Handed the seats a request brings along as the scripts get them
+//                            - Dropped the check of the "rbn" the old scripts told, which SessionsTests walks by the new rule
+//                            - Read the "rbn" of the battle's state from the fields the topic tells
 //      Paulinchen  2026-10-30: Registered the topics over a live session
 //                            - Gave the placement's enemies their ids and the battle's id
 //                            - Created
@@ -21,8 +23,8 @@ namespace MGQOnline.Game.Tests.Coop;
 /// <summary>
 /// Replays through the co-op topics what battles_coop_hotjoin.rbx and battles_coop_join.rbx answered
 /// before the host's intake moved to C# (fixtures/coop, written by make_fixtures.rb there): the
-/// places of an encounter's enemies, the troop's enemies a request carries, and the refusals, the
-/// players taken in and the "rbn" of a running battle.
+/// places of an encounter's enemies, the troop's enemies a request carries, and the refusals and the
+/// players taken in of a running battle.
 /// </summary>
 public sealed class CoopIntakeGoldenTests
 {
@@ -111,7 +113,6 @@ public sealed class CoopIntakeGoldenTests
         Assert.Equal(Numbers(entry.GetProperty("left")), Numbers(encounter["left"]));
         Assert.Equal(entry.GetProperty("room").GetInt32(), encounter["room"].AsInt());
         Assert.Equal(Pair(entry.GetProperty("pick")), choice["refusal"].IsNil ? null : string.Join("|", choice["refusal"].AsArray().Select(part => part.AsText())));
-        Assert.Equal(entry.GetProperty("rbn").GetInt32(), _context.Ask(CoopTopics.Room, facts)!.AsHash()["rbn"].AsInt());
     }
 
     /// <summary>
@@ -130,7 +131,7 @@ public sealed class CoopIntakeGoldenTests
         { "map", Text(asked.GetProperty("map")) },
         { "troop", Text(asked.GetProperty("troop")) },
         { "boss_troop", asked.GetProperty("boss_troop").GetBoolean() },
-        { "seats", Text(asked.GetProperty("seats")) },
+        { "seats", MessageFields.Read("seats", Text(asked.GetProperty("seats")) ?? string.Empty) },
     })!.AsHash();
 
     /// <summary>

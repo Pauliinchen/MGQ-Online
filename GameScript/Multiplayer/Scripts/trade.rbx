@@ -2,6 +2,9 @@
 #  trade.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Handed the DLL the offers and items as values and took them back so, the DLL writing and reading the offers and the items' tokens
+#                            - Told whether the player invites to a trade as true or false
+#                            - Handed the players a trade invite names to the DLL as a list, which it writes into the state
 #      Paulinchen  2026-10-31: Worded what the player reads plainly, leaving causes and internals to the log
 #      Paulinchen  2026-10-30: Let the DLL ask the relay for the trades to recover, by the save loaded
 #                            - Told the relay of a trade the save holds through the DLL
@@ -78,6 +81,7 @@ module MGQ_MpTrade
   CONFIRM_TOPIC = "trade.confirm"
   CANCEL_TOPIC = "trade.cancel"
   DONE_TOPIC = "trade.done"
+  TOKEN_TOPIC = "trade.token"
 
   # The bridge events of the trade, see the DLL's TradeTopics.
   VIEW_EVENT = "trade.view"
@@ -104,7 +108,7 @@ module MGQ_MpTrade
 
     # Finds the entry of an item.
     #
-    # @param token [String] The item's token, see Entry.
+    # @param token [String] The item's token, see Items.token.
     # @return [Entry, nil] The entry, nil when the offer has none.
     def entry(token)
       entries.find { |entry| entry.token == token }
@@ -113,10 +117,12 @@ module MGQ_MpTrade
 
   # An item of an offer.
   #
-  # @!attribute token [String] The item as text, the same in both games, see Items.token.
+  # @!attribute token [String] The item's name in both games, which the DLL writes, see Items.token.
   # @!attribute item [RPG::BaseItem, nil] This game's item, nil when its data lacks it.
   # @!attribute amount [Integer] How many, one for an enchanted or socketed copy.
-  Entry = Struct.new(:token, :item, :amount)
+  # @!attribute plain [Hash, nil] The values the item was made of, see Items.item_from; nil for an
+  #   item of the player's own bag.
+  Entry = Struct.new(:token, :item, :amount, :plain)
 
   # A trade between the player and one other player, as the DLL's view tells it, with both offers
   # as this game's items.
@@ -126,7 +132,6 @@ module MGQ_MpTrade
   # @!attribute name [String] The other player's name.
   # @!attribute mine [Offer] The player's offer.
   # @!attribute theirs [Offer] The other player's offer, as they sent it.
-  # @!attribute their_text [String] The other player's offer as text.
   # @!attribute my_rev [Integer] How often the player changed their offer.
   # @!attribute their_rev [Integer] How often the other player changed theirs.
   # @!attribute confirmed [Boolean] Whether the player confirmed both offers as they stand.
@@ -140,7 +145,7 @@ module MGQ_MpTrade
   #   again since a message to the other player could not go out; nil while every message went out.
   # @!attribute refusal [String, nil] Why the player cannot confirm as far as the trade goes, the
   #   bag aside; nil while they can.
-  Session = Struct.new(:id, :partner, :name, :mine, :theirs, :their_text, :my_rev, :their_rev, :confirmed,
+  Session = Struct.new(:id, :partner, :name, :mine, :theirs, :my_rev, :their_rev, :confirmed,
                        :their_confirmed, :stage, :relay_id, :leaving, :unsent, :refusal) do
     # Reports whether the other player confirmed the offers as they stand now.
     #
@@ -330,7 +335,7 @@ module MGQ_MpTrade
   #
   # @return [Hash] The fields.
   def self.state_fields
-    { "trading" => inviting? ? 1 : 0, "trading_to" => targets.join(",") }
+    { "trading" => inviting? ? true : false, "trading_to" => targets }
   end
 
   # Tells what the line above a ghost's name says: their trade offer, when it reaches the player.
@@ -425,7 +430,8 @@ module MGQ_MpTrade
   # @param state [Hash] "id", "partner" and "name".
   # @return [Session] The trade.
   def self.begin_session(state)
-    @session = Session.new(state["id"].to_s, state["partner"].to_s, state["name"].to_s, Offer.new(0, []), Offer.new(0, []), "",
+    Items.forget_tokens
+    @session = Session.new(state["id"].to_s, state["partner"].to_s, state["name"].to_s, Offer.new(0, []), Offer.new(0, []),
                            0, 0, false, false, :open, nil, nil, nil, nil)
   end
 
@@ -439,14 +445,13 @@ module MGQ_MpTrade
 
   # Takes the other player's offer as it stands now.
   #
-  # @param event [Hash] "rev" and "text".
+  # @param event [Hash] "rev" and "offer", see Items.read_offer.
   def self.take_their_offer(event)
     session = @session
     return unless session
 
     session.their_rev = event["rev"].to_i
-    session.their_text = event["text"].to_s
-    session.theirs = Items.read_offer(session.their_text)
+    session.theirs = Items.read_offer(event["offer"])
     log("#{session.name}'s offer r#{session.their_rev}: #{Items.summary(session.theirs)}; both confirmations taken back")
   end
 
@@ -542,7 +547,7 @@ module MGQ_MpTrade
   #
   # @param session [Session] The trade.
   def self.offer_changed(session)
-    take_view(MGQ_Multiplayer::Bridge.call(OFFER_TOPIC, Items.write_offer(session.mine)))
+    take_view(MGQ_Multiplayer::Bridge.call(OFFER_TOPIC, Items.plain_offer(session.mine)))
   end
 
   # Tells why the player cannot confirm now.
@@ -591,15 +596,17 @@ module MGQ_MpTrade
   # Completes a trade the relay committed: applies it once, saves, and tells the relay once the
   # save holds it.
   #
-  # @param event [Hash] "id" (the trade's id at the relay), "name", "mine" and "theirs".
+  # @param event [Hash] "id" (the trade's id at the relay), "name", "mine" and "theirs", see
+  #   Items.read_offer.
   def self.complete(event)
     id = event["id"].to_s
     name = event["name"].to_s
     session = @session
     # The trade's own offers keep the items this game picked, so a copy given is the one offered.
-    kept = session && Items.write_offer(session.mine) == event["mine"]
-    mine = kept ? session.mine : Items.read_offer(event["mine"])
-    theirs = session && session.their_text == event["theirs"] ? session.theirs : Items.read_offer(event["theirs"])
+    mine = Items.read_offer(event["mine"])
+    theirs = Items.read_offer(event["theirs"])
+    mine = session.mine if session && Items.key(session.mine) == Items.key(mine)
+    theirs = session.theirs if session && Items.key(session.theirs) == Items.key(theirs)
     closed
     text = if !Recovery.apply_once(id, mine, theirs)
              "The trade with #{name} did not complete in full."
@@ -671,16 +678,31 @@ module MGQ_MpTrade
     # The lists of an enchantment a rolled name prefix comes from, by the letter that names them.
     PREFIX_LISTS = { "r" => :rare_prefix, "p" => :prefix }
 
-    # Writes an item as text, the same in both games: i, w or a and its id for an item of the
-    # database, u and its text from MGQ_MpActors::Items for an enchanted or socketed copy, with the
-    # copy's name prefix after a tilde, see prefix_ref.
+    # Names an item as offers name it, the same in both games, which the DLL writes (TradeItems in
+    # MGQOnline.Game), once per item of a trade.
     #
     # @param item [RPG::BaseItem] The item.
-    # @return [String] The text.
+    # @return [String] The token.
     def self.token(item)
-      return "u#{MGQ_MpActors::Items.write(item)}~#{prefix_ref(item)}" if unique?(item)
+      @tokens = {}.compare_by_identity unless @tokens
+      @tokens[item] ||= MGQ_Multiplayer::Bridge.call(MGQ_MpTrade::TOKEN_TOPIC, plain(item)).to_s
+    end
 
-      ref(item)
+    # Forgets the items' tokens, as a trade begins.
+    def self.forget_tokens
+      @tokens = nil
+    end
+
+    # Turns an item into what the DLL names it by: an item of the database by its kind and id, an
+    # enchanted or socketed copy by its facts (MGQ_MpActors::Items) and where its name prefix comes
+    # from (prefix_ref).
+    #
+    # @param item [RPG::BaseItem] The item.
+    # @return [Hash] The values.
+    def self.plain(item)
+      return { "copy" => MGQ_MpActors.plain(MGQ_MpActors::Items.facts(item)), "prefix" => prefix_ref(item) } if unique?(item)
+
+      { (item.is_a?(RPG::Item) ? "item" : item.is_a?(RPG::Weapon) ? "weapon" : "armor") => item.id }
     end
 
     # Names an item of the database by its kind and id: i, w or a and the id.
@@ -719,76 +741,80 @@ module MGQ_MpTrade
     # the prefix from its own data, in its own language.
     #
     # @param item [RPG::BaseItem] The copy.
-    # @return [String] The name, "" for no prefix or one no enchantment of the copy lists.
+    # @return [Array(Integer, String, Integer), nil] The enchantment, the list's letter and the place;
+    #   nil for no prefix or one no enchantment of the copy lists.
     def self.prefix_ref(item)
       prefix = item.respond_to?(:enchant_item?) && item.enchant_item? ? MGQ_MpGame.get(item, :prefix).to_s : ""
-      return "" if prefix.empty?
+      return nil if prefix.empty?
 
       Array(MGQ_MpGame.get(item, :enchants)).each do |id|
         enchant = $data_classes[id.to_i]
         PREFIX_LISTS.each do |letter, list|
           place = enchant.respond_to?(list) ? Array(enchant.send(list)).index(prefix) : nil
-          return "#{id.to_i}#{letter}#{place}" if place
+          return [id.to_i, letter, place] if place
         end
       end
-      ""
+      nil
     end
 
     # Reads a name prefix from this game's data, see prefix_ref.
     #
-    # @param ref [String] Where the prefix comes from.
+    # @param ref [Array, nil] Where the prefix comes from, as the DLL read it.
     # @return [String] The prefix, "" for none or one this game's data lacks.
     def self.prefix_from(ref)
-      match = /\A(\d{1,6})([rp])(\d{1,3})\z/.match(ref)
-      enchant = match && $data_classes[match[1].to_i]
-      list = match && PREFIX_LISTS[match[2]]
-      return "" unless enchant && enchant.respond_to?(list)
+      id, letter, place = ref
+      enchant = ref && $data_classes[id.to_i]
+      list = ref && PREFIX_LISTS[letter]
+      return "" unless enchant && list && enchant.respond_to?(list)
 
-      Array(enchant.send(list))[match[3].to_i].to_s
+      Array(enchant.send(list))[place.to_i].to_s
     end
 
-    # Makes an item from its text: the database's item, or a new copy of an enchanted or socketed one.
+    # Makes an item from the values the DLL read: the database's item, or a new copy of an
+    # enchanted or socketed one.
     #
-    # @param token [String] The text, see token.
+    # @param plain [Hash, nil] The values, see plain; nil for an item the DLL could not read.
     # @return [RPG::BaseItem, nil] The item, nil when this game's data lacks it.
-    def self.item_of(token)
-      if (match = /\Au([^~]*)~([0-9rp]*)\z/.match(token))
-        item = MGQ_MpActors::Items.read(match[1])
+    def self.item_from(plain)
+      return nil unless plain.is_a?(Hash)
+
+      if plain.key?("copy")
+        item = MGQ_MpActors::Items.make(plain["copy"])
         return nil unless item && unique?(item)
 
-        MGQ_MpGame.set(item, :prefix, prefix_from(match[2])) if item.enchant_item?
+        MGQ_MpGame.set(item, :prefix, prefix_from(plain["prefix"])) if item.enchant_item?
         return item
       end
 
-      match = /\A([iwa])(\d{1,6})\z/.match(token)
-      return nil unless match
-
-      MGQ_MpGame.item(match[1], match[2].to_i)
+      kind, id = plain.first
+      MGQ_MpGame.item({ "item" => "i", "weapon" => "w", "armor" => "a" }[kind], id.to_i)
     end
 
-    # Writes an offer as one line: g and the gold, then each item's token, a star and its amount,
-    # separated by semicolons.
+    # Turns an offer into what the DLL writes: its gold, and each item's token and amount.
     #
     # @param offer [Offer] The offer.
-    # @return [String] The text.
-    def self.write_offer(offer)
-      (["g#{offer.gold.to_i}"] + offer.entries.map { |entry| "#{entry.token}*#{entry.amount}" }).join(";")
+    # @return [Hash] "gold" and "items".
+    def self.plain_offer(offer)
+      { "gold" => offer.gold.to_i, "items" => key(offer)[1] }
     end
 
-    # Reads an offer, keeping the items this game's data lacks without their item.
+    # Names an offer by its gold and each item's token and amount, the same for the same offer in
+    # both games.
     #
-    # @param text [String] The offer, see write_offer.
+    # @param offer [Offer] The offer.
+    # @return [Array] The gold and the [token, amount] pairs.
+    def self.key(offer)
+      [offer.gold.to_i, offer.entries.map { |entry| [entry.token, entry.amount] }]
+    end
+
+    # Makes an offer of the values the DLL read, keeping the items this game's data lacks without
+    # their item.
+    #
+    # @param read [Hash, nil] "gold" and "items", each [token, item values, amount].
     # @return [Offer] The offer.
-    def self.read_offer(text)
-      offer = Offer.new(0, [])
-      text.to_s.split(";").each do |part|
-        if part =~ /\Ag(\d{1,10})\z/
-          offer.gold = $1.to_i
-        elsif (match = /\A(.+)\*(\d{1,3})\z/.match(part))
-          offer.entries << Entry.new(match[1], item_of(match[1]), match[2].to_i)
-        end
-      end
-      offer
+    def self.read_offer(read)
+      read = {} unless read.is_a?(Hash)
+      Offer.new(read["gold"].to_i, Array(read["items"]).map { |token, plain, amount| Entry.new(token.to_s, item_from(plain), amount.to_i, plain) })
     end
 
     # Tells why the player's game cannot take an offer, counting what the player gives away in the
@@ -865,7 +891,7 @@ module MGQ_MpTrade
     #
     # @param entry [Entry] The item.
     def self.take_out(entry)
-      if entry.token.start_with?("u")
+      if entry.item && unique?(entry.item)
         copy = bag.find { |item| unique?(item) && token(item) == entry.token }
         return MGQ_MpTrade.log("gave nothing for #{label(entry.item)}: the copy is no longer in the bag") unless copy
 
@@ -886,7 +912,7 @@ module MGQ_MpTrade
     #
     # @param entry [Entry] The item.
     def self.put_in(entry)
-      item = entry.token.start_with?("u") ? item_of(entry.token) : entry.item
+      item = entry.item && unique?(entry.item) ? item_from(entry.plain) || entry.item : entry.item
       return log_missing(entry) unless item
 
       before = unique?(item) ? 0 : held(item)
@@ -1068,8 +1094,8 @@ module MGQ_MpTrade
     #
     # @param id [String] The trade's id at the relay.
     # @param partner [String] The other player's id.
-    # @param mine [String] The player's offer, see Items.write_offer.
-    # @param theirs [String] The other player's offer.
+    # @param mine [Hash] The player's offer, see Items.read_offer.
+    # @param theirs [Hash] The other player's offer.
     def self.recover(id, partner, mine, theirs)
       if applied?(id)
         if unsaved.include?(id)

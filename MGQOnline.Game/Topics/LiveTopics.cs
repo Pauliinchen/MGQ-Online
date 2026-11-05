@@ -2,6 +2,7 @@
 //  LiveTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Took the recording's events and values, and the Backline's Frontline, as values and gave the stream's lines as values
 //      Paulinchen  2026-10-30: Handed the session to the co-op battles' joins
 //                            - Answered a co-op battle's side and stream kinds
 //                            - Answered what every kind of live battle decides the same way
@@ -18,6 +19,7 @@ using System.Linq;
 using MGQOnline.Bridge;
 using MGQOnline.Bridge.Ruby;
 using MGQOnline.Game.Battles.Live;
+using MGQOnline.Game.Battles.Wire;
 
 namespace MGQOnline.Game.Topics;
 
@@ -39,8 +41,9 @@ public static class LiveTopics
 
     /// <summary>
     /// Takes one send of the host's stream, see <see cref="GuestStream.Take"/>: <c>body</c> and
-    /// <c>seat</c> in; <c>lines</c>, <c>events</c>, <c>unreadable</c>, <c>others_choose</c> and
-    /// <c>logs</c> out.
+    /// <c>seat</c> in; <c>lines</c> (the values of each line the guest plays, see
+    /// <see cref="WireTopics.ValuesOf"/>), <c>events</c>, <c>unreadable</c>, <c>others_choose</c>
+    /// and <c>logs</c> out.
     /// </summary>
     public const string TakeStream = "live.take_stream";
 
@@ -149,7 +152,7 @@ public static class LiveTopics
 
     /// <summary>
     /// The Frontlines of a PvP battle with the Backline, see <see cref="BacklineFront"/>: <c>op</c>
-    /// "begin" with <c>team</c> and <c>front</c>, "finish", "take" with <c>line</c> and <c>troop</c>,
+    /// "begin" with <c>team</c> and <c>front</c>, "finish", "take" with <c>ids</c> and <c>troop</c>,
     /// or "settle" with <c>front</c> in; <c>front</c> (the Frontline taken or to tell, nil for none)
     /// and <c>unfit</c> (the line logged of a Frontline that does not fit) out.
     /// </summary>
@@ -157,7 +160,8 @@ public static class LiveTopics
 
     /// <summary>
     /// The host's recording, see <see cref="RecorderBuffer"/>: <c>op</c> "start", "stop", "event" with
-    /// <c>line</c>, "values" with <c>battlers</c> ([key, reference, values line] each) and <c>full</c>,
+    /// <c>values</c> (the event's kind and values, see <see cref="WireTopics.LineOf"/>), "values" with
+    /// <c>battlers</c> ([key, reference, values] each) and <c>full</c>,
     /// "flush" or "counts" in; <c>sends</c> (the sends due, in order), and <c>events</c> and
     /// <c>sends_counted</c> (of the turn for "counts", of the recording for "stop" and "totals", the
     /// events left unsent for "stop") out. A <see cref="Tick"/> of the check "frame" counts a frame
@@ -205,7 +209,7 @@ public static class LiveTopics
             StreamTake taken = stream.Take(fields["body"].AsBytes().Span, fields["seat"].AsInt());
             return new RubyHash
             {
-                { "lines", new RubyArray(taken.Lines.Select(line => (RubyValue)line)) },
+                { "lines", new RubyArray(taken.Lines.Select(line => WireTopics.ValuesOf(RubyString.Utf8(line)))) },
                 { "events", taken.Events },
                 { "unreadable", taken.Unreadable },
                 { "others_choose", taken.OthersChoose },
@@ -349,7 +353,7 @@ public static class LiveTopics
                 backline.Finish();
                 break;
             case "take":
-                (front, unfit) = backline.Take(fields["line"].AsBytes().Span, Seats(fields["troop"]));
+                (front, unfit) = backline.Take(WirePlain.Of(fields["ids"]), Seats(fields["troop"]));
                 break;
             case "settle":
                 front = backline.Settle(Seats(fields["front"]));
@@ -535,12 +539,12 @@ public static class LiveTopics
             case "stop":
                 return new RubyHash { { "sends", new RubyArray() }, { "events", recorder.Stop() } };
             case "event":
-                return new RubyHash { { "sends", Sends(recorder.Event(fields["line"].AsText())) } };
+                return new RubyHash { { "sends", Sends(recorder.Event(WireTopics.LineOf(fields["values"]))) } };
             case "values":
                 IEnumerable<(long, string, string)> battlers = fields["battlers"].AsArray().Select(entry =>
                 {
                     RubyArray parts = entry.AsArray();
-                    return (parts[0].AsLong(), parts[1].AsText(), parts[2].AsText());
+                    return (parts[0].AsLong(), parts[1].AsText(), WireTopics.LineOf(parts[2]));
                 });
                 return new RubyHash { { "sends", new RubyArray(recorder.Values(battlers, fields["full"].AsBool()).Select(send => (RubyValue)send)) } };
             case "flush":

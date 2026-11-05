@@ -2,11 +2,11 @@
 //  BacklineFrontTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Handed the Frontline over as its value
 //      Paulinchen  2026-10-30: Created
 //
 //----------------------------------------------------------------
 
-using System.Text;
 using MGQOnline.Game.Battles.Live;
 using MGQOnline.Game.Battles.Wire;
 
@@ -91,7 +91,7 @@ public sealed class BacklineFrontTests
     /// <returns>The Frontline taken and the reason to leave it out.</returns>
     private static (int[]? Front, string? Unfit) Take(BacklineFront fronts, WireValue ids, int[] troop)
     {
-        (System.Collections.Generic.List<int>? front, string? unfit) = fronts.Take(Encoding.UTF8.GetBytes(WireWriter.Line(ids)), troop);
+        (System.Collections.Generic.List<int>? front, string? unfit) = fronts.Take(ids, troop);
         return (front?.ToArray(), unfit);
     }
 }

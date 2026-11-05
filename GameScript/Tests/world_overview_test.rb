@@ -2,7 +2,8 @@
 #  world_overview_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Read the scripts' clock from $frame
+#      Paulinchen  2026-11-05: Expected the box's switch kept as true or false
+#                            - Read the scripts' clock from $frame
 #      Paulinchen  2026-11-01: Named the Mod Framework's interface by its own name
 #                            - Checked the overview built of the Mod Framework's window, list, page views and menus through its tree
 #                            - Read the party box from the Mod Framework's components it builds
@@ -375,7 +376,7 @@ overview.close
 check("the party box starts full", MGQ_MpPartyBox.small?, false)
 $pressed = MGQ_MpHotkeys.code(:party_box)
 MGQ_MpPartyBox.on_map
-check("Tab makes it small, which Player.ini keeps", [MGQ_MpPartyBox.small?, $player_ini["party_box_small"]], [true, "1"])
+check("Tab makes it small, which Player.ini keeps", [MGQ_MpPartyBox.small?, $player_ini["party_box_small"]], [true, true])
 MGQ_MpPartyBox.instance_variable_set(:@small, nil)
 check("so it is small again after a restart", MGQ_MpPartyBox.small?, true)
 party_view = MGQ_MpPartyBox::View.new
@@ -393,7 +394,7 @@ check("its key does nothing while the player types", MGQ_MpPartyBox.small?, true
 MGQ_MpChat.stop_typing
 $pressed = MGQ_MpHotkeys.code(:party_box)
 MGQ_MpPartyBox.on_map
-check("then makes it full again", [MGQ_MpPartyBox.small?, $player_ini["party_box_small"]], [false, "0"])
+check("then makes it full again", [MGQ_MpPartyBox.small?, $player_ini["party_box_small"]], [false, false])
 
 # Places are shortened to fit the party box, measured at 10 pixels a letter in 300 pixels.
 ruler = Object.new

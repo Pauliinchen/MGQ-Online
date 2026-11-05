@@ -2,7 +2,8 @@
 #  ui_emotes.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Counted the emote's cooldown by the bridge's frame
+#      Paulinchen  2026-11-05: Read the emote's place as a number
+#                            - Counted the emote's cooldown by the bridge's frame
 #      Paulinchen  2026-11-01: Built the emote wheel as a Mod Framework wheel that follows the player
 #      Paulinchen  2026-10-31: Defined and steered its wheel through the Mod Framework
 #      Paulinchen  2026-10-23: Left the emote wheel's rules to C#, playing the emote in the frame after confirm
@@ -162,9 +163,10 @@ module MGQ_MpEmotes
   # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who played it.
   # @param message [Hash] The message, the emote's place under "emote".
   def self.take(peer, message)
-    emote = EMOTES[message["emote"].to_i]
+    index = message["emote"]
+    emote = index.is_a?(Integer) && index >= 0 ? EMOTES[index] : nil
     who = peer ? MGQ_MpOverworldSync.who(peer) : "a game without a state yet"
-    return log("ignored emote #{message['emote'].inspect} from #{who}: no such emote") unless emote && message["emote"].to_s =~ /\A\d+\z/
+    return log("ignored emote #{message['emote'].inspect} from #{who}: no such emote") unless emote
     return log("ignored #{emote.name} from #{who}: no ghost of theirs on this map") unless peer && peer.ghost
     return log("ignored #{emote.name} from #{who}: played on map #{message['map']}, the player is on #{$game_map.map_id}") unless message["map"].to_i == $game_map.map_id
 

@@ -2,7 +2,8 @@
 #  story_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Handed the scripts no rule of used up items' marks, which the story replay hands over
+#      Paulinchen  2026-11-05: Handed the self switch rules and the takes' keys as the DLL's rows, and read a fixture's key names and sites into plain values
+#                            - Handed the scripts no rule of used up items' marks, which the story replay hands over
 #      Paulinchen  2026-11-01: Dropped the stand-in of the player's telling topic, which no script stages
 #                            - Kept the found items' marks the whole world's in the mapping's table
 #                            - Kept the marks of the items used up the whole world's too
@@ -29,10 +30,35 @@ def classes_fixture_table
      [1354, 1354, 17], [1355, 3004, 0], [3005, 3005, 35]],
     0,
     "rev" => 7,
-    "self" => { "ce154.*" => 1, "ce20.A" => 0, "ss0.*.F" => 33, "ss12.5.A" => 8, "ss231.*.*" => 1, "ss231.4.*" => 0, "ss231.5.B" => 1, "ss40.*.C" => 0 },
+    "self" => [[0, nil, "F", 33], [12, 5, "A", 8], [231, nil, nil, 1], [231, 4, nil, 0], [231, 5, "B", 1], [40, nil, "C", 0]],
+    "common" => [[154, nil, 1], [20, "A", 0]],
     "index" => [7_000_039, 40_000_002],
     "local_steps" => [[1052, [3, 4, 5], 2, [[484, 30], [483, 0]]]],
     "gates" => { "1" => 25, "2" => 55 })
+end
+
+# Reads a key as a fixture shared with the relay names it, such as "ss7.39.A", into the [kind, key]
+# the DLL hands the scripts (StoryPlain).
+#
+# @param name [String] The key's name.
+# @return [Array, nil] Its kind and key, nil for no key.
+def fixture_key(name)
+  case name
+  when /\As(\d+)\z/ then [0, $1.to_i]
+  when /\Av(\d+)\z/ then [1, $1.to_i]
+  when /\Ass(\d+)\.(\d+)\.(\w+)\z/ then [2, [$1.to_i, $2.to_i, $3]]
+  when /\Af(\d+)\z/ then [3, $1.to_i]
+  end
+end
+
+# Reads a site as a fixture shared with the relay names it, such as "ce:154", into the site the DLL
+# hands the scripts (StoryPlain).
+#
+# @param text [String] The site's text.
+# @return [Array] Such as ["ce", 154] or ["map", 7, 39, 1].
+def fixture_site(text)
+  parts = text.split(":")
+  [parts[0]] + parts[1..-1].map(&:to_i)
 end
 
 # Answers the story topics of the DLL on a FakeBridge: the staged ones kept in $story_staged as
@@ -73,17 +99,17 @@ end
 
 # Makes a whole track as the DLL hands it in a take, see StoryTopics.TakeOf.
 #
-# @param keys [Hash{String => String}] The track's keys.
+# @param keys [Array<Array>] The track's keys, each [kind, key, value].
 # @param fields [Hash] The state's fields that differ from the world's track in Part 1.
 # @return [Hash] The take.
 def track_take(keys, fields = {}, rev = 1)
-  { "state" => { "why" => "sync", "track" => "world", "part" => "1", "gate" => nil, "move" => nil, "keys" => keys, "chests" => {}, "held" => [] }.merge(fields),
+  { "state" => { "why" => "sync", "track" => "world", "part" => "1", "gate" => nil, "move" => nil, "keys" => keys, "chests" => [], "held" => [] }.merge(fields),
     "keys" => [], "rev" => rev }
 end
 
 # Makes a take of keys alone, as pushes and answers bring them.
 #
-# @param keys [Array<Array>] Each key and value.
+# @param keys [Array<Array>] Each key's kind, key and value.
 # @param rev [Integer] The revision the take brings the game to.
 # @return [Hash] The take.
 def keys_take(keys, rev = 2)

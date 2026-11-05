@@ -2,7 +2,9 @@
 #  world_catchup.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Took the side switches and the companion of the side the player answered from the DLL's one rule of the side
+#      Paulinchen  2026-11-05: Named and read sites as plain values
+#                            - Added the world's shared companions through a topic, their ids as numbers
+#                            - Took the side switches and the companion of the side the player answered from the DLL's one rule of the side
 #                            - Counted its waits by the bridge's frame
 #                            - Waited with its looks while a screen waits, see MGQ_MpCoop.screens_wait?
 #                            - Read the story's ids from story_ids.rbx
@@ -816,12 +818,12 @@ module MGQ_MpWorldCatchup
   #
   # @param kind [String] "encounters", "v" or "s".
   # @param id [Integer] The variable.
-  # @param site [String] The event that sets it.
+  # @param site [Array] The event that sets it, such as ["map", 6, 30, 2].
   # @return [Boolean] Whether it may.
   def self.at_site?(kind, id, site)
     return true unless kind == "v" && MGQ_MpStoryIds.place?(id)
 
-    site.to_s =~ /\Amap:(\d+):/ && $1.to_i == $game_map.map_id ? true : false
+    site.is_a?(Array) && site[0] == "map" && site[1] == $game_map.map_id ? true : false
   end
 
   # Reports whether an event of the player's map sets random encounters the other way: on the page
@@ -1364,7 +1366,7 @@ module MGQ_MpWorldCatchup
 
   # Names the list a join comes from: the run a replay plays, else the map's page that runs.
   #
-  # @return [String, nil] The site, such as "map:134:34:4" or "ce:380"; nil while none runs.
+  # @return [Array, nil] The site, such as ["map", 134, 34, 4] or ["ce", 380]; nil while none runs.
   def self.joining_site
     replay = defined?(MGQ_MpStoryReplay) && MGQ_MpStoryReplay.respond_to?(:current) ? MGQ_MpStoryReplay.current : nil
     replay ? replay.site : running_page_site
@@ -1374,7 +1376,7 @@ module MGQ_MpWorldCatchup
   #
   # The page is found by its list, which the interpreter keeps while the event's shown page changes.
   #
-  # @return [String, nil] The site, such as "map:134:34:4", nil while no map event runs.
+  # @return [Array, nil] The site, such as ["map", 134, 34, 4], nil while no map event runs.
   def self.running_page_site
     interpreter = $game_map && $game_map.interpreter
     event_id = interpreter ? interpreter.event_id.to_i : 0
@@ -1383,7 +1385,7 @@ module MGQ_MpWorldCatchup
 
     list = MGQ_MpGame.get(interpreter, :list)
     page = event.mgq_mp_pages.index { |candidate| candidate.list.equal?(list) }
-    page ? "map:#{$game_map.map_id}:#{event_id}:#{page + 1}" : nil
+    page ? ["map", $game_map.map_id, event_id, page + 1] : nil
   end
 
   # Notes the companions new in the player's roster that the world's shared list takes, as the DLL
@@ -1405,7 +1407,7 @@ module MGQ_MpWorldCatchup
     return if @share_queue.empty? || @adding || MGQ_Multiplayer::Bridge.frame_number < @share_at
 
     ids = @share_queue.first(SHARE_BATCH)
-    unless Relay.add(MGQ_MpWorldStory.world_id, ids.join(","))
+    unless Relay.add(MGQ_MpWorldStory.world_id, ids)
       @share_at = MGQ_Multiplayer::Bridge.frame_number + START_FRAMES
       return log_once([:share_start, ids.size], "the DLL did not start adding #{ids.size} shared companions, trying again")
     end
@@ -1466,15 +1468,18 @@ module MGQ_MpWorldCatchup
     MGQ_MpOverworldSync.notice(text)
   end
 
-  # Patch/Multiplayer/Multiplayer.dll's shared companions of the world at the relay.
+  # The shared companions of the world at the relay, which the DLL adds to.
   module Relay
+    # The topic that starts adding companions.
+    ADD_TOPIC = "raid.companions.add"
+
     # Starts adding companions to the world's shared list.
     #
     # @param world [String] The world's id.
-    # @param ids [String] The companions' actor ids, separated by commas.
+    # @param ids [Array<Integer>] The companions' actor ids.
     # @return [Boolean] Whether it started.
     def self.add(world, ids)
-      MGQ_Multiplayer::Link.function('mp_raid_companions_add').call(world + "\0", ids + "\0") == 1
+      MGQ_Multiplayer::Bridge.call(ADD_TOPIC, "world" => world.to_s, "ids" => ids) == true
     rescue => e
       MGQ_MpWorldCatchup.log("sharing companions failed: #{e.class}: #{e.message}")
       false

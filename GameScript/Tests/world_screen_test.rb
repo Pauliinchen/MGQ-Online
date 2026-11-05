@@ -2,6 +2,7 @@
 #  world_screen_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Read the directory's list and the player's id through the DLL's topics
 #      Paulinchen  2026-11-01: Created
 #
 #----------------------------------------------------------------
@@ -56,7 +57,6 @@ module DataManager; def self.save_system; end; end
 # Stand-ins for the mod's base script and its DLL.
 $sounds = []
 $calls = []
-$dll = {}
 $outdated = false
 
 # Stands in for the mod's base script: available, and outdated while $outdated.
@@ -140,35 +140,8 @@ module MGQ_Multiplayer
   # Stands in for the mouse, never clicked.
   module Mod_Framework::UI::Mouse; def self.clicked?; false; end; end
 
-  # Stands in for the DLL: each call is checked against its signature and noted in $calls, and what
-  # it reads is in $dll.
-  module Link
-    # A function of the DLL with its signature.
-    Function = Struct.new(:name, :signature) do
-      # Checks the call against the signature, notes it in $calls and answers 1, started.
-      def call(*args); check_dll_call(name, args); $calls << [name, signature, args]; 1; end
-    end
-
-    # Gives the DLL function of a name, with its signature from Multiplayer.rb.
-    def self.function(name); Function.new(name, dll_signature(name)); end
-
-    # Answers the player's id.
-    def self.player_id; "me"; end
-
-    # Reads an export's text from $dll.
-    def self.read(name, _size); $dll[name].to_s; end
-
-    # Splits a DLL answer into its header fields and its payload.
-    #
-    # @param text [String] The answer.
-    # @return [Hash] The fields by name, the payload under :payload.
-    def self.parse(text)
-      head, payload = text.split("\n\n", 2)
-      state = { :payload => payload.to_s }
-      head.to_s.split("\n").each { |line| k, v = line.split("=", 2); state[k] = v if v }
-      state
-    end
-  end
+  # Stands in for the player's id, as the DLL tells it.
+  module Player; def self.id; "me"; end; end
 end
 
 require_relative "world_screen_support"
@@ -183,20 +156,18 @@ open_fake_ui { typed = $typed.to_s; $typed = nil; [typed, typed.size] }
 
 
 ui = Mod_Framework::UI
-LISTED = "state=ready\n\n" \
-         "world\tw1\t4\t1\tc\t0\tCara\tSunset\tnone\t0\t0\t0\t0\t0\t\tLevel Cap;Party Sheet\tA slow run.\t\t\tclassic\toff\t\t0\t\t0\n" \
-         "member\tc\t1\tCara\nmember\tana\t0\tAna\nmember\tme\t0\tMe\n" \
-         "world\tw2\t4\t0\tme\t0\tMe\tIliasburg\tnone\t0\t0\t0\t0\t0\t\t\t\t\t\tclassic\toff\t\t0\t\t0\n" \
-         "member\tme\t1\tMe\n"
+LISTED = [listed_value("w1", "Sunset", "online" => 1, "creator_name" => "Cara", "mods" => "Level Cap;Party Sheet", "description" => "A slow run.",
+                       "members" => [["c", true, "Cara"], ["ana", false, "Ana"], ["me", false, "Me"]]),
+          listed_value("w2", "Iliasburg", "creator_id" => "me", "creator_name" => "Me", "members" => [["me", true, "Me"]])]
 
 # Opening: the commands' box as a whole until the worlds arrive, then the worlds' box.
-$dll["mp_dir_list"] = "state=loading\n\n"
+$directory = directory_list([], "loading")
 scene = world_scene
 commands_box = scene.instance_variable_get(:@commands_box)
 worlds_box = scene.instance_variable_get(:@worlds_box)
 check("the screen opens with the commands' box picked as a whole, the strip naming the player and how the list stands",
       [$focused.equal?(commands_box), strip_text(scene).split("\n").values_at(0, 2)], [true, ["You play as Me.", "The list is being fetched . . ."]])
-$dll["mp_dir_list"] = LISTED
+$directory = directory_list(LISTED)
 screen_changed
 scene.look_at_list
 check("the first worlds to arrive take the pick onto the worlds' box as a whole, the rows as the DLL wrote them",
@@ -386,15 +357,15 @@ check("closing the picker shows the mods in the form", [scene.list_box, form_par
 # A world just made gets the cursor once listed, but not after the player moved on.
 cancel_in(form_part(scene, :mods))
 scene.play("steps" => [["select", "w3"]])
-NEW_DAWN = "world\tw3\t4\t0\tme\t0\tMe\tNew Dawn\tnone\t0\t0\t0\t0\t0\t\t\t\t\t\tclassic\toff\t\t0\t\t0\n"
-$dll["mp_dir_list"] = LISTED + NEW_DAWN
+NEW_DAWN = listed_value("w3", "New Dawn", "creator_id" => "me", "creator_name" => "Me")
+$directory = directory_list(LISTED + [NEW_DAWN])
 screen_changed
 scene.look_at_list
 check("a world just made gets the cursor in the worlds once the list shows it",
       [$focused.equal?(scene.worlds_list), scene.current_entry.name], [true, "New Dawn"])
 scene.play("steps" => [["select", "w4"]])
 scene.commands_list.receive("submit", 2)
-$dll["mp_dir_list"] = LISTED + NEW_DAWN + "world\tw4\t4\t0\tme\t0\tMe\tLater\tnone\t0\t0\t0\t0\t0\t\t\t\t\t\tclassic\toff\t\t0\t\t0\n"
+$directory = directory_list(LISTED + [NEW_DAWN, listed_value("w4", "Later", "creator_id" => "me", "creator_name" => "Me")])
 screen_changed
 scene.look_at_list
 check("but not once the player moved into a form", [scene.form.nil?, scene.current_entry.name == "Later"], [false, false])
@@ -426,7 +397,7 @@ commands_box = scene.instance_variable_get(:@commands_box)
 
 # The last world gone moves the pick to the commands.
 ui::Tree.focus(scene.worlds_list)
-$dll["mp_dir_list"] = "state=ready\n\n"
+$directory = directory_list([])
 screen_changed
 scene.look_at_list
 check("the last world gone picks the commands' box as a whole", $focused.equal?(commands_box), true)
@@ -448,7 +419,7 @@ name = form_part(scene, :name)
 ui::Tree.focus(scene.commands_list)
 check("Left out of the empty name onto the commands keeps the screen and the form, the focus back on the name",
       [$returned, scene.instance_variable_get(:@form_symbol), $focused.equal?(name)], [false, :rename, true])
-$dll["mp_dir_list"] = LISTED
+$directory = directory_list(LISTED)
 screen_changed
 scene.look_at_list
 scene.commands_list.receive("submit", 0)

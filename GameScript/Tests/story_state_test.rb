@@ -2,7 +2,8 @@
 #  story_state_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Answered the side the player took along by the DLL's rule as engine.rb stands in for it
+#      Paulinchen  2026-11-05: Dropped the checks of unpacking a story, which the DLL does
+#                            - Answered the side the player took along by the DLL's rule as engine.rb stands in for it
 #                            - Answered what a Classic member takes of a joined story by the DLL's rule
 #                            - Dropped the stand-in of the game's frame counter, which no script reads
 #      Paulinchen  2026-11-01: Covered the side the save notes the player took along in Iliasville
@@ -15,8 +16,8 @@
 #----------------------------------------------------------------
 
 # Covers story_state.rbx: mixing a story with the player's own chests, the skills and companions a
-# story grants, unpacking a story another game packed, the one-time repair of a stuck save, and the
-# side the save notes the player took along in Iliasville.
+# story grants, the one-time repair of a stuck save, and the side the save notes the player took
+# along in Iliasville.
 
 require_relative "support"
 
@@ -123,30 +124,6 @@ check("and the log tells why", $log.grep(/skipped/).size, 6)
 check("a skill Luka lacks is learned under its name", [state.learn(930), state.knows?($game_actors[1], 930)], ["Angel Dance", true])
 check("a companion joins the roster, or the party while it has room, under their name",
       [state.join(45), state.roster_ids], ["Tamamo", [1, 16, 45]])
-
-# Unpacking a story another game packed reads back what was packed, and refuses a text no story
-# takes before it runs the game out of memory.
-
-# Runs a block and answers the message of the ArgumentError it raises.
-#
-# @return [String, nil] The message, nil when the block raises none.
-refusal = lambda do |&block|
-  begin
-    block.call
-    nil
-  rescue ArgumentError => e
-    e.message
-  end
-end
-check("a packed story unpacks to the lists that were packed",
-      state.unpack(state.pack("s" => "1,2,3", "v" => "5:n7")), { "s" => "1,2,3", "v" => "5:n7" })
-bomb = [Zlib::Deflate.deflate("s=" + "1," * 10_000_000)].pack("m0")
-check("a small text that unpacks far past any story is refused as it unpacks",
-      [bomb.bytesize < state::MAX_PACKED_BYTES, refusal.call { state.unpack(bomb) }.to_s[/unpacked past/]],
-      [true, "unpacked past"])
-check("and so is a whole story written with it", refusal.call { state.decode_full("z" => bomb) }.to_s[/unpacked past/], "unpacked past")
-check("a text longer than any story is refused before it is read",
-      refusal.call { state.unpack("A" * (state::MAX_PACKED_BYTES + 4)) }.to_s[/more than any story/], "more than any story")
 
 # A story written past the game's setter of switches gives the characters the second accessory
 # slot as that setter does, once it turns the slot's switch on, and not again while it stays on.

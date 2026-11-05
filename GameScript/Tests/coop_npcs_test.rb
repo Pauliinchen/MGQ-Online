@@ -2,6 +2,7 @@
 #  coop_npcs_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Expected the events of the map handed over as values
 #      Paulinchen  2026-10-30: Checked the frame told to the DLL, the events handed to it and those it gives to follow, and left its rules to MGQOnline.Game.Tests
 #      Paulinchen  2026-10-23: Handed the Map Owner's events to the route past the DLL's map gate
 #                            - Checked that a follower whose own event runs follows no Map Owner meanwhile
@@ -157,7 +158,7 @@ MGQ_MpCoopNpcs.update
 check("once the player came first, their game moves the events", MGQ_MpCoopNpcs.following?, false)
 check("and tells the DLL when each player sharing the map came onto it",
       $npc_calls.first, ["npcs.update", { "map" => 5, "owner" => -1, "arrivals" => { 2 => "3000", 4 => "9000" } }])
-check("handing it every event of the map when it asks", $npc_calls[1], ["npcs.snapshot", { "map" => 5, "events" => "1:7,9,8,0" }])
+check("handing it every event of the map when it asks", $npc_calls[1], ["npcs.snapshot", { "map" => 5, "events" => [[1, 7, 9, 8, 0]] }])
 check("and naming the pages that changed in what went to everyone", $npc_log.grep(/event 1 on map 5 turned to page 1 from 0, told the others/).size, 1)
 
 # Nobody shares the map any more.

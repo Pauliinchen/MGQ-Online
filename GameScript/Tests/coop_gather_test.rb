@@ -2,7 +2,10 @@
 #  coop_gather_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Checked that whom a telling takes along follows the DLL's one decision, with the progress noted as it started
+#      Paulinchen  2026-11-05: Told whether a telling moves the world's story on as true or false
+#                            - Told the telling of the story as true or false
+#                            - Expected the ids a map message names as a list
+#                            - Checked that whom a telling takes along follows the DLL's one decision, with the progress noted as it started
 #                            - Checked that a follow hands the move to the one guard of the game's flow, which shows the followers the map left hidden
 #                            - Read the scripts' clock from $frame_count and dropped the check of a call from before a loaded save, since the clock never goes back
 #      Paulinchen  2026-11-01: Dropped the stand-in of a lapse after a frame count, which no script asks for any more
@@ -314,7 +317,7 @@ $offers.notice_of(teller)
 $tellings.delete(4)
 check("an offer ends once a telling the relay told of ended", $offers.notice_of(teller), nil)
 $tellings[4] = ["t1", 8, "map:3:1:1"]
-gather.take(teller, follow.merge("moves" => "0"))
+gather.take(teller, follow.merge("moves" => false))
 $offers.notice_of(teller).take.call
 $map_free = false
 $frame_count += 20 * 60
@@ -322,7 +325,7 @@ gather.update
 check("a follow accepted while the player is busy for 20 s still stands", [gather.coming?, gather.followed_id], [true, "t"])
 $frame_count += GatherStandIn::ASKED_LAPSE_FRAMES
 check("until a minute passed", [gather.pending_call, $notices.last], [nil, "Teller's story went on without you."])
-gather.take(teller, follow.merge("moves" => "0"))
+gather.take(teller, follow.merge("moves" => false))
 $frame_count += GatherStandIn::FOLLOW_OFFER_FRAMES
 check("or after a minute", $offers.notice_of(teller), nil)
 $behind = true
@@ -330,12 +333,12 @@ gather.take(teller, follow)
 check("a player behind the world's story is offered to follow too, though their story matches", [gather.coming?, $offers.notice_of(teller).nil?], [false, false])
 $behind = false
 gather.decline_follow(teller)
-gather.take(teller, follow.merge("moves" => "0"))
+gather.take(teller, follow.merge("moves" => false))
 check("a player watching is only offered to follow a telling that does not move the world's story on, as a minigame's that moves its teller",
       [gather.coming?, $offers.notice_of(teller).nil?], [false, false])
 gather.decline_follow(teller)
 $kept_autorun = "t"
-gather.take(teller, follow.merge("moves" => "0"))
+gather.take(teller, follow.merge("moves" => false))
 check("but follows at once when the player's game keeps its own copy of the teller's scene, which runs by itself, from starting (issue 61)",
       [gather.coming?, $offers.notice_of(teller)], [true, nil])
 $kept_autorun = nil
@@ -346,7 +349,7 @@ teller.state.delete("place")
 
 $peers = [behind, teller]
 teller.state["map"] = "3"
-teller.state["telling"] = "0"
+teller.state["telling"] = false
 $telling = true
 $game_player.transfer = true
 gather.before_transfer($game_player)
@@ -355,8 +358,8 @@ $game_map.map_id = 8
 gather.after_transfer
 check("the player telling the story takes everyone on the map along, even one whose story differs",
       $told.map { |seat, fields| [seat, fields["map_pevent"], fields["mmap"], fields["map"]] }, [[-1, "follow", 3, 8]])
-check("in one message that names them", $told.last[1]["mto"], "b,t")
-check("saying that the telling does not move the world's story on while no story of the world runs", $told.last[1]["moves"], 0)
+check("in one message that names them", $told.last[1]["mto"], %w[b t])
+check("saying that the telling does not move the world's story on while no story of the world runs", $told.last[1]["moves"], false)
 
 # Stands in for the world's story's end point.
 module MGQ_MpWorldStory
@@ -374,7 +377,7 @@ moves = lambda do |decided|
   [$told.last[1]["moves"], $told_progress]
 end
 check("whom a telling calls to follow at once is the DLL's one decision, asked with the progress as the telling started",
-      [moves.call(true), moves.call(false)], [[1, [12, 0]], [0, [12, 0]]])
+      [moves.call(true), moves.call(false)], [[true, [12, 0]], [false, [12, 0]]])
 check("and keeps telling them the story on their way", gather.taken_along, [behind, teller])
 $telling = false
 check("none outside a telling", gather.taken_along, [])
@@ -387,7 +390,7 @@ behind.state["map"] = "3"
 $telling = false
 $game_map.map_id = 3
 $peers = [teller, behind]
-teller.state["telling"] = "1"
+teller.state["telling"] = true
 
 gather.forget_story_place
 gather.join_story
@@ -396,7 +399,7 @@ $peers = [teller]
 teller.state["map"] = "6"
 gather.note_story_place
 check("it goes to where the story was told last", gather.story_endpoint, [6, 5, 5, 2])
-teller.state["telling"] = "0"
+teller.state["telling"] = false
 gather.note_story_place
 gather.join_story
 check("even once the telling ended", [gather.coming?, gather.own_doing], [true, "Joining the story once free"])

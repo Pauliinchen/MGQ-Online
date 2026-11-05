@@ -2,7 +2,10 @@
 #  world_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Dropped the stand-in of the game's frame counter, which no script reads; the bridge's frame counts
+#      Paulinchen  2026-11-05: Kept true or false and whole numbers in the stand-in of Player.ini as the DLL hands them back
+#                            - Wrote a state as the DLL writes its fields
+#                            - Stood in for the world room's sending and the player's id through the DLL's topics
+#                            - Dropped the stand-in of the game's frame counter, which no script reads; the bridge's frame counts
 #      Paulinchen  2026-11-01: Fired the Mod Framework's hotkeys after each map frame and gave the message and the player what the free map asks
 #                            - Stopped loading the deleted ui_boxes.rbx
 #                            - Stood in for the DLL's chat model
@@ -198,25 +201,12 @@ module MGQ_Multiplayer
     def self.name; "Me"; end
     # Reads a setting from $player_ini.
     def self.setting(key); $player_ini[key]; end
-    # Keeps a setting in $player_ini as text.
-    def self.store(key, value); $player_ini[key] = value.to_s; true; end
+    # Keeps a setting in $player_ini as the DLL hands it back: true or false and whole numbers as they are, the rest as text.
+    def self.store(key, value); $player_ini[key] = value == true || value == false || value.is_a?(Integer) ? value : value.to_s; true; end
     # Hands out the notice in $player_ini_notice once.
     def self.take_notice; notice = $player_ini_notice; $player_ini_notice = nil; notice; end
-  end
-  # Stands in for the DLL's link: the player's id is always me.
-  module Link
-    # Answers the player's id.
-    def self.player_id; "me"; end
-    # Reads a description as the DLL writes it: key=value lines, an empty line, the payload.
-    #
-    # @param text [String] The description.
-    # @return [Hash] The fields, the payload under :payload.
-    def self.parse(text)
-      head, payload = text.split("\n\n", 2)
-      state = { :payload => payload.to_s }
-      head.to_s.split("\n").each { |line| k, v = line.split("=", 2); state[k] = v if v }
-      state
-    end
+    # Answers the player's id, which the DLL tells: always me.
+    def self.id; "me"; end
   end
 end
 # Stands in for the world: open while $open is set, its new game waiting while $new_game_pending is.
@@ -249,10 +239,10 @@ $fake_chat = FakeChat.new($world_fake)
 # hotkeys of the next frame, which open and close the wheels.
 def map_frame; MGQ_MpActions.on_map; MGQ_MpChat.on_map; ui_frame; Mod_Framework::Hotkeys.fire; end
 
-# Stands in for the world room's link: the messages sent in $sent.
-module MGQ_MpOverworldSync::Link
+# Stands in for the world room's sending: the messages sent in $sent, as the DLL writes them.
+module MGQ_MpOverworldSync::Port
   # Records a message in $sent, which always goes out.
-  def self.send_to(target, text); $sent << [target, text]; true; end
+  def self.send_to(target, fields, body); $sent << [target, encode_message(fields, body)]; true; end
 end
 
 # Lets the tests read the line at the bottom left of the map.
@@ -271,12 +261,12 @@ def entry(kind, seat, payload = "")
   { "kind" => kind, "seat" => seat.to_s, :payload => payload }
 end
 
-# Writes a state as another game sends it.
+# Writes a state as another game sends it, each field as the DLL writes its kind.
 #
 # @param state [Hash] The state's fields.
 # @return [String] The message.
 def told(state)
-  { "state" => 1 }.merge(state).map { |k, v| "#{k}=#{v}" }.join("\n") + "\n\n"
+  encode_message({ "state" => 1 }.merge(state))
 end
 
 # A player standing on map 5 of an open world.

@@ -2,6 +2,8 @@
 #  loader_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Checked that no script builds or reads a format of C#, the network or a store C# reads, naming what stays with why
+#                            - Checked that only the bridge loads exports of the DLL and that no script calls an old export or writes or reads a message's key=value lines
 #      Paulinchen  2026-11-01: Checked that no script or test names the old interface the screens reached the Mod Framework by
 #                            - Checked that none of the HUD's pictures the Mod Framework's components replaced comes back
 #                            - Checked that no script or test names the World overview's own drawing
@@ -178,26 +180,46 @@ left = (swept + csharp).flat_map do |file|
 end
 check("no script, test or C# file names the old dialogs' screens, the parking lists or the question's steps", left, [])
 
-# The DLL's export table: each export once, and every call of the scripts names one of them.
-table_names = source[/    EXPORTS = \{.*?\n    \}\n/m].scan(/^      '(mp_[a-z_]+)' =>/).flatten
-check("every export is in the table once", table_names.select { |name| table_names.count(name) > 1 }.uniq, [])
-check("the table names none of the input's exports, which the Mod Framework took over", table_names & %w[mp_keep_running mp_typing mp_mouse_wheel], [])
-calls = (Dir[File.join(SCRIPTS_DIR, "*.rbx")] + [File.expand_path("../Multiplayer.rb", __dir__)]).flat_map do |file|
-  File.read(file, encoding: "UTF-8").scan(/(function|read)\('(mp_[a-z_]+)'/)
-end.uniq
-check("every export the scripts call is in the table", calls.map { |_way, name| name }.uniq - table_names, [])
-named = (Dir[File.join(SCRIPTS_DIR, "*.rbx")] + [File.expand_path("../Multiplayer.rb", __dir__)]).flat_map do |file|
-  File.read(file, encoding: "UTF-8").sub(/    EXPORTS = \{.*?\n    \}\n/m, "").scan(/'(mp_[a-z_]+)'/).flatten
+# One bridge channel: no script reaches the DLL but through the bridge's four exports, and none
+# writes or reads the key=value lines of a message, which C# writes and reads.
+mod_code = (Dir[File.join(SCRIPTS_DIR, "*.rbx")] + [File.expand_path("../Multiplayer.rb", __dir__)]).map do |file|
+  [File.basename(file), File.read(file, :encoding => "BOM|UTF-8").lines.reject { |line| line.strip.start_with?("#") }.join]
 end
-check("every export of the table is called by a script", table_names - named, [])
-# The game's Win32API refuses an export of more arguments, so the export could not be called at all.
-check("every export takes at most 16 arguments", DLL_EXPORTS.select { |_name, arguments| arguments.size > 16 }.keys, [])
-check("every export read into a buffer takes the buffer and its size",
-      calls.select { |way, name| way == "read" && DLL_EXPORTS[name] != "pl" }.map { |_way, name| name }, [])
-exported = Dir[File.expand_path("../../MGQParadox.Multiplayer/Exports/*.cs", __dir__)].flat_map do |file|
-  File.read(file, encoding: "UTF-8").scan(/EntryPoint = "(mp_[a-z_]+)"/).flatten
+check("only the bridge loads exports of the DLL, the four it names",
+      [mod_code.select { |_, code| code.include?("Win32API.new") }.map(&:first), source[/      SIGNATURES = \{.*?\n      \}/m].scan(/'(mp_[a-z_]+)'/).flatten],
+      [["Multiplayer.rb"], %w[mp_bridge_open mp_call mp_reply mp_drain]])
+check("no script calls an old export of the DLL",
+      mod_code.select { |_, code| code =~ /\bLink\.(function|read|parse|player_id)\b|MGQ_Multiplayer::Link\b|^\s*module Link\b/ }.map(&:first), [])
+check("no script writes or reads the empty line that ends a message's key=value lines", mod_code.select { |_, code| code.include?('\n\n') }.map(&:first), [])
+
+# C# writes and reads every format of the bridge, the network and the stores it reads: no script
+# splits a text, dumps or loads a Marshal, compares a flag as "1" or "0" or escapes a text as %XX
+# for them. What is kept stays inside the game, each named with why.
+format_ways = [/\.split\b/, /\bMarshal\.(dump|load)\b/, /[=!]= "[01]"/, /%3[BD]|%25/, /\.(un)?pack\(/]
+kept_formats = [
+  ["Multiplayer.rb", "Marshal.", "the bridge itself, which hands its plain values across as Marshal"],
+  ["battles_pvp.rbx", "Marshal.", "a snapshot of the game's own objects before a PvP battle, put back after it"],
+  ["battles_raid_freeze.rbx", "Marshal.", "the party and the screen at a frozen fight, game objects the save field keeps for this script alone"],
+  ["battles_raid_pool.rbx", "test.split(\"|\")", "BEATEN, a table of this script's own conditions"],
+  ["battles_sync.rbx", "class.name.split('::')", "the name of a Ruby class, for the log"],
+  ["battles_sync_playback.rbx", "kind.split(\".\", 2)", "a recorded call's name, the game's object and method, which no C# reads"],
+  ["coop_scene.rbx", "call.split(\"_\")", "an Audio call's name, the game's method, which no C# reads"],
+  ["coop_scene.rbx", "kind.split(\".\", 2)", "a screen call's name, the game's object and method, which no C# reads"],
+  ["coop_story.rbx", "Marshal.load(Marshal.dump(party))", "a copy of the game's party"],
+  ["story_replay.rbx", "Marshal.", "copies of the game's switches, variables and self switches for the replay's view"],
+  ["story_replay.rbx", "path.split(\"::\")", "the name of a Ruby class"],
+  ["story_state.rbx", "Marshal.load(Marshal.dump(story))", "a copy of a story's values"],
+  ["world_overview_pages.rbx", "match[2].split(\",\")", "the arguments of a check in the game's own event script"],
+  ["world_save_distribution.rbx", "Marshal.load(file)", "the game's own save files"],
+  ["world_save_distribution.rbx", "name.split(\"::\")", "the name of a Ruby class"],
+]
+format_uses = mod_code.flat_map do |name, code|
+  code.lines.select { |line| format_ways.any? { |way| line =~ way } }.map { |line| [name, line.strip] }
 end
-check("the table names every export of the DLL and no other", [(table_names - exported), (exported - table_names)], [[], []]) unless exported.empty?
+check("no script builds or reads a format of C#, the network or a store C# reads; what stays is the game's own",
+      format_uses.reject { |name, line| kept_formats.any? { |file, part, _| file == name && line.include?(part) } }.map { |name, line| "#{name}: #{line}" }, [])
+check("every format kept is still used, so the list names nothing gone",
+      kept_formats.reject { |file, part, _| format_uses.any? { |name, line| name == file && line.include?(part) } }.map { |file, part, _| "#{file}: #{part}" }, [])
 
 # The parts of Multiplayer.rb that load, taken out of it, so they run without the game.
 harness = Module.new
@@ -378,42 +400,6 @@ check("an error the game's error box shows is written once, though the game's en
 MGQ_Multiplayer.const_set(:MAX_NAME_LENGTH, 32) unless defined?(MGQ_Multiplayer::MAX_NAME_LENGTH)
 MGQ_Multiplayer.module_eval(source[/  def self\.clean\(name.*?\n  end\n/m])
 check("a name someone else chose that is empty still reads A friend", MGQ_Multiplayer.clean("  "), "A friend")
-
-# Reading a text from the DLL: one that grew between asking its size and copying it is asked for
-# again with the size it needs then, READ_TRIES times at most.
-reader = Module.new
-reader.const_set(:READ_TRIES, Integer(source[/    READ_TRIES = (\d+)/, 1]))
-reader.module_eval(source[/    def self\.read\(name, size\)\n.*?\n    end\n/m])
-# An export that answers each call from a list: a text it writes, or the size it needs, negated.
-answers = []
-sizes = []
-export = Object.new
-export.define_singleton_method(:call) do |buffer, size|
-  sizes << size
-  answer = answers.shift
-  if answer.is_a?(Integer)
-    answer
-  else
-    buffer[0, answer.bytesize] = answer
-    answer.bytesize
-  end
-end
-reader.define_singleton_method(:function) { |_name| export }
-answers.replace(["fits"])
-check("a text that fits is read at once", [reader.read("mp_text", 8), sizes], ["fits", [8]])
-answers.replace([-5, "grown"])
-sizes.clear
-check("a larger one with the buffer it asks for", [reader.read("mp_text", 4), sizes], ["grown", [4, 6]])
-answers.replace([-5, -7, -11, "grown again"])
-sizes.clear
-check("one that grew again between asking its size and copying it is asked for again",
-      [reader.read("mp_text", 4), sizes], ["grown again", [4, 6, 8, 12]])
-answers.replace([-5, -6, -7, -8, -9, -10])
-sizes.clear
-check("three more times at most, after which it reads as none", [reader.read("mp_text", 4), sizes, answers], ["", [4, 6, 7, 8, 9], [-10]])
-answers.replace(["0.6.9.2"])
-read = reader.read("mp_newer_version", 64)
-check("a text reads as the text the bridge takes, not as the bytes the DLL wrote", [read, read.encoding.name], ["0.6.9.2", "UTF-8"])
 
 # The bridges: MGQ Online's stays pinned to Multiplayer.dll's version, whatever the Mod Framework's
 # bridge speaks with its own DLL.

@@ -2,7 +2,8 @@
 //  JoinIntake.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Told whether the battle takes players in, is full, ends or is closed, for Sessions
+//      Paulinchen  2026-11-05: Told the battle's players in rbn whether or not it takes players in
+//                            - Told whether the battle takes players in, is full, ends or is closed, for Sessions
 //      Paulinchen  2026-10-30: Created
 //
 //----------------------------------------------------------------
@@ -131,17 +132,18 @@ public static class JoinIntake
     }
 
     /// <summary>
-    /// Tells the battle as its state tells it: "rbn", its players while it takes players in, else 0,
-    /// and "rbs", whether it takes players in or why not, which <see cref="Sessions.Battle"/> reads.
+    /// Tells the battle as its state tells it: "rbn", the players of the battle the player hosts or
+    /// fights alone (0 without one), and "rbs", whether it takes players in or why not, which
+    /// <see cref="Sessions.Battle"/> reads.
     /// </summary>
-    /// <remarks>
-    /// Released games read "rbn" alone and take any count from 1 to 3 as a battle that takes players
-    /// in, so a battle that takes nobody in must tell 0 there whatever its players.
-    /// </remarks>
     /// <param name="facts">The battle's facts.</param>
     /// <returns>The "rbn" and the "rbs", <see cref="Sessions.Open"/> or a refusal's code.</returns>
-    public static (int Rbn, string Rbs) Told(IntakeFacts facts) =>
-        Closed(facts) is { } closed ? (0, closed.Code) : (PlayersIn(facts), Sessions.Open);
+    public static (int Rbn, string Rbs) Told(IntakeFacts facts)
+    {
+        ArgumentNullException.ThrowIfNull(facts);
+        int players = facts.Bid is null || facts.Role == "guest" ? 0 : PlayersIn(facts);
+        return (players, Closed(facts) is { } closed ? closed.Code : Sessions.Open);
+    }
 
     /// <summary>
     /// Keeps of the players a request with an encounter brings the asking player and as many of

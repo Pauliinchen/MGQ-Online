@@ -2,6 +2,7 @@
 #  battles_sync_recorder.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Handed the events and the battlers' values to the DLL as values, which it writes as lines
 #      Paulinchen  2026-10-30: Buffered, counted and sent the host's recording through the DLL, which records a battler's values only when they changed
 #      Paulinchen  2026-10-23: Deleted the recording on file of the mirror match
 #      Paulinchen  2026-10-09: Let the battle's mode act right before each send of the stream
@@ -76,11 +77,11 @@ module MGQ_MpBattlesSync
     # Records an event, unless a call that the guest makes itself is running.
     #
     # @param kind [String] What happened.
-    # @param fields [Array] Its values, see Wire.line.
+    # @param fields [Array] Its values, see Wire.encodable?.
     def self.event(kind, *fields)
       return unless active? && !muted?
 
-      send_all(record("event", "line" => Wire.line([kind] + fields)))
+      send_all(record("event", "values" => Wire.plain([kind] + fields)))
     rescue => e
       stop_after(e)
     end
@@ -95,10 +96,7 @@ module MGQ_MpBattlesSync
     def self.values(full = false)
       return unless active? && !muted?
 
-      entries = battlers.map do |battler|
-        current = value_fields(battler)
-        [battler.object_id, ref(battler), Wire.line(current)]
-      end
+      entries = battlers.map { |battler| [battler.object_id, ref(battler), Wire.plain(value_fields(battler))] }
       send_all(record("values", "battlers" => entries, "full" => full ? true : false))
       time_stop
     rescue => e
@@ -163,7 +161,7 @@ module MGQ_MpBattlesSync
     # Records an event and leaves out what the block does, which the guest does its own way.
     #
     # @param kind [String] What happened.
-    # @param fields [Array] Its values, see Wire.line.
+    # @param fields [Array] Its values, see Wire.encodable?.
     # @yield What the game does, which the guest does its own way.
     # @return [Object] What the block returns.
     def self.instead(kind, *fields)

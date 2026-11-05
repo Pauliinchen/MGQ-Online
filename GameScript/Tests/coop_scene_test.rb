@@ -2,7 +2,10 @@
 #  coop_scene_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Put the viewer's screen back through the one guard of the game's flow, answered by its stand-in, and moved the checks of the player's own scene to flow_guard_test.rb
+#      Paulinchen  2026-11-05: Told the telling of the story as true
+#                            - Wrote the leader's changes through the codec's stand-in
+#                            - Expected the ids a map message names as a list
+#                            - Put the viewer's screen back through the one guard of the game's flow, answered by its stand-in, and moved the checks of the player's own scene to flow_guard_test.rb
 #                            - Read the scripts' clock from $frame_count
 #      Paulinchen  2026-10-31: Checked the escape spell's ban as the one ban of the place a viewer takes
 #      Paulinchen  2026-10-28: Answered the queue and checks of the scene from the stand-in of the DLL
@@ -250,9 +253,9 @@ frame = lambda { |interpreter, work| run.call(interpreter, work); $game_map.upda
 changes = lambda do |messages, field|
   messages.map do |seat, fields|
     if fields[field] == "batch"
-      MGQ_MpBattlesSync::Wire.parse(fields["args"]).map { |kind, args| [seat, kind, args, fields["map"]] }
+      wire_values(fields["args"]).map { |kind, args| [seat, kind, args, fields["map"]] }
     else
-      [[seat, fields[field], MGQ_MpBattlesSync::Wire.parse(fields["args"]), fields["map"]]]
+      [[seat, fields[field], wire_values(fields["args"]), fields["map"]]]
     end
   end.flatten(1)
 end
@@ -374,17 +377,16 @@ check("the changes of one message leave room below the largest world message the
       SceneStandIn::MAX_BATCH_BYTES + 16_000 <= 256 * 1024 - 41, true)
 
 # A member sees them on the leader's map.
-leader = MGQ_MpOverworldSync::Peers::Peer.new(2, { "map" => "7", "telling" => "1" })
+leader = MGQ_MpOverworldSync::Peers::Peer.new(2, { "map" => "7", "telling" => true })
 $leader = leader
 $game_map = Game_Map.new
 $game_player = Game_Player.new
 $game_player.transparent = false
 $game_map.screen.start_tone_change(Tone.new(-34, -34, -34, 0), 0)
 $game_map.screen.done.clear
-wire = MGQ_MpBattlesSync::Wire
 # Stands in for overworld.rbx, knowing only these pictures of this game.
 module MGQ_MpOverworld; def self.graphic?(folder, name); folder == :picture && %w(story_cg ev_aguni._hb1 ahead elsewhere).include?(name); end; end
-take = lambda { |kind, args, map = 7| $routes["pscene"].call(leader, { "pscene" => kind, "map" => map.to_s, "args" => wire.line(args) }) }
+take = lambda { |kind, args, map = 7| $routes["pscene"].call(leader, { "pscene" => kind, "map" => map.to_s, "args" => wire_line(args) }) }
 take.call("picture.show", [3, "story_cg", 0, 0, 0, 100, 100, 255, 0])
 take.call("screen.start_fadeout", [30])
 take.call("screen.start_flash", [Color.new(255, 255, 255, 170), 20])
@@ -410,7 +412,7 @@ take.call("screen.start_flash", ["white", 20])
 take.call("screen.start_fadeout", [30, 1])
 check("a text in place of a tone or color, or an argument too many, is left out",
       [$game_map.screen.pictures[10].done.size, $game_map.screen.done.size], [2, screen_done])
-$routes["pscene"].call(leader, { "pscene" => "picture.move", "map" => "7", "args" => wire.line([12, 0, 0.5, 0, 100, 100, 255, 0, 30]).sub("0.5", "1e400") })
+$routes["pscene"].call(leader, { "pscene" => "picture.move", "map" => "7", "args" => wire_line([12, 0, 0.5, 0, 100, 100, 255, 0, 30]).sub("0.5", "1e400") })
 take.call("picture.move", [12, 0, 0, 0, 100, 100, 255, 0, -1])
 take.call("picture.move", [12, 0, 0, 0, 100, 100, 255, 0, 2.5])
 take.call("picture.rotate", [12, 1_000_000_000])
@@ -545,7 +547,7 @@ $peers = [matching, behind, second]
 $told.clear
 frame.call(main, lambda { $game_map.screen.pictures[3].show("story_cg", 0, 0, 0, 100, 100, 255, 0) })
 check("to several of them in one message that names them",
-      $told.map { |seat, fields| [seat, fields["map_pscene"], fields["mto"]] }, [[-1, "picture.show", "m,s"]])
+      $told.map { |seat, fields| [seat, fields["map_pscene"], fields["mto"]] }, [[-1, "picture.show", %w[m s]]])
 
 $playing = false
 $game_map = Game_Map.new
@@ -553,7 +555,7 @@ teller = MGQ_MpOverworldSync::Peers::Peer.new(2, { "name" => "Teller", "id" => "
 $tellings[2] = ["x1", 7, "map:7:1:1"]
 $peers = [teller, matching]
 show = lambda do |sender, number|
-  take_map("pscene", sender, { "map_pscene" => "picture.show", "mmap" => "7", "map" => "7", "args" => wire.line([number, "story_cg", 0, 0, 0, 100, 100, 255, 0]) })
+  take_map("pscene", sender, { "map_pscene" => "picture.show", "mmap" => "7", "map" => "7", "args" => wire_line([number, "story_cg", 0, 0, 0, 100, 100, 255, 0]) })
 end
 show.call(teller, 3)
 check("a player the relay told of the teller's telling sees the scene",
@@ -687,7 +689,7 @@ $game_self_switches = Game_SelfSwitches.new
 MGQ_MpStoryKeys.instance_variable_set(:@raid, MGQ_MpStoryKeys.table_of(story_table_hash([[0, 9999, 1]], [[0, 9999, 1]], 1, "rev" => 1)))
 MGQ_MpStoryKeys.recording = :raid
 scene = lambda do |kind, args, map = "7"|
-  take_map("pscene", teller, { "map_pscene" => kind, "mmap" => "7", "map" => map, "args" => wire.line(args) })
+  take_map("pscene", teller, { "map_pscene" => kind, "mmap" => "7", "map" => map, "args" => wire_line(args) })
 end
 scene.call("story.values", [[0, 40, true], [0, 4, true], [1, 1001, 41], [0, 2029, true], [2, [7, 12, "A"], true], [1, 9999, 3], [2, [7, 12, "Z"], true]])
 check("a viewer takes the teller's story values, never what is their own or names nothing of this game, but the scene switches",

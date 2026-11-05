@@ -2,7 +2,8 @@
 #  overworld_sync.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Kept the battle server's players away for the grace the DLL's Sessions counts
+#      Paulinchen  2026-11-05: Sent the fields and the body of a message to the DLL, which writes the message, and read the player's id through a topic
+#                            - Kept the battle server's players away for the grace the DLL's Sessions counts
 #      Paulinchen  2026-10-31: Told the game behind other windows by the Mod Framework
 #                            - Named the field of the relay's push of a world's mod settings
 #      Paulinchen  2026-10-23: Left the other players, the inbox, the player's state, ping and status to the DLL, keeping a mirror of the players
@@ -199,11 +200,12 @@ module MGQ_MpOverworldSync
   # Sends a message to one seat or to every other game.
   #
   # @param seat [Integer] The seat, -1 for everyone.
-  # @param fields [Hash] The message's fields, the first of which marks it for its route.
+  # @param fields [Hash] The message's fields, the first of which marks it for its route; a list
+  #   goes as an Array.
   # @param body [String] What follows the fields, such as a team.
   # @return [Boolean] Whether it went out.
   def self.tell(seat, fields, body = "")
-    Link.send_to(seat, Me.encode(fields) + body)
+    Port.send_to(seat, Port.plain(fields), body.to_s)
   end
 
   # The fields the Discord mod publishes about the open world, which Discord shows as its name and
@@ -322,8 +324,7 @@ module MGQ_MpOverworldSync
     tell_routes unless @routes_told
     in_world = in_world?
     state = in_world ? Me.current : nil
-    # As text, as the message carries it, so no script's Float or Symbol stops the frame's batch.
-    state = Hash[state.map { |key, value| [key.to_s, value.to_s] }] if state
+    state = Port.plain(state) if state
     frame = { "in_world" => in_world, "state" => state, "raid" => raid?, "story_map" => in_world ? story_map : nil }
     return if frame == @staged
 
@@ -406,15 +407,41 @@ module MGQ_MpOverworldSync
     true
   end
 
-  # Patch/Multiplayer/Multiplayer.dll's world room: sending.
-  module Link
+  # The world room's sending through the DLL, which writes the message; on the battle server,
+  # through its stand-in.
+  module Port
+    # The bridge topic that sends a message.
+    SEND_TOPIC = "world.send"
+
     # Sends a message to one seat or to every other game.
     #
     # @param target [Integer] The seat, -1 for everyone.
-    # @param text [String] The message.
+    # @param fields [Hash{String => Object}] The message's fields, see plain.
+    # @param body [String] What follows the fields.
     # @return [Boolean] Whether it went out.
-    def self.send_to(target, text)
-      MGQ_Multiplayer::Link.function('mp_world_send').call(target, text + "\0") == 1
+    def self.send_to(target, fields, body)
+      MGQ_Multiplayer::Bridge.call(SEND_TOPIC, "seat" => target, "fields" => fields, "body" => body) == true
+    end
+
+    # Turns a message's fields into values the bridge carries: a key as text, a value as itself
+    # when it is a text, a number, true, false, nil or an Array of these, else as its text, so no
+    # script's Float or Symbol stops the message.
+    #
+    # @param fields [Hash] The fields.
+    # @return [Hash{String => Object}] The fields.
+    def self.plain(fields)
+      Hash[fields.map { |key, value| [key.to_s, value.is_a?(Array) ? value.map { |item| scalar(item) } : scalar(value)] }]
+    end
+
+    # Turns a single value into one the bridge carries.
+    #
+    # @param value [Object] The value.
+    # @return [String, Integer, Boolean, nil] The value, or its text.
+    def self.scalar(value)
+      case value
+      when nil, true, false, Integer, String then value
+      else value.to_s
+      end
     end
   end
 
@@ -455,7 +482,7 @@ module MGQ_MpOverworldSync
     #
     # @return [Array<String>] The id and the name.
     def self.identity
-      @identity ||= [MGQ_Multiplayer::Link.player_id, MGQ_Multiplayer::Player.name.to_s]
+      @identity ||= [MGQ_Multiplayer::Player.id, MGQ_Multiplayer::Player.name.to_s]
     end
 
     # The id everyone sees for the player.
@@ -539,13 +566,6 @@ module MGQ_MpOverworldSync
       $game_player.in_boat? || $game_player.in_ship? ? "sailing" : "map"
     end
 
-    # Writes a state as a message.
-    #
-    # @param state [Hash] The state.
-    # @return [String] The message: key=value lines.
-    def self.encode(state)
-      state.map { |key, value| "#{key}=#{value.to_s.gsub(/[\r\n]/, ' ')}" }.join("\n") + "\n\n"
-    end
   end
 
   # The other games of the world, by seat, mirrored from the DLL's events: the scripts read these

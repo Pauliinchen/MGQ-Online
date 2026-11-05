@@ -2,6 +2,7 @@
 //  design_migration.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Named the version of a current game with the game
 //      Paulinchen  2026-10-22: Tested that the migration carries the design epoch
 //                            - Created
 //
@@ -17,6 +18,7 @@ import { DatabaseSync } from "node:sqlite";
 import { gunzipSync } from "node:zlib";
 import { DesignBook } from "../core/designs.js";
 import { Directory, playerIdOf } from "../core/directory.js";
+import { VERSION_HEADER } from "../core/gate.js";
 import { FEATURES_HEADER, PLAYER_HEADER } from "../core/relay.js";
 import { DESIGNERS, NOW, RELAY_ADMIN_KEY } from "../core/test_designs.js";
 import { openSqliteDesignStore } from "./design_store_sqlite.js";
@@ -48,7 +50,7 @@ const RELAY_ADMIN = { [PLAYER_HEADER]: RELAY_ADMIN_KEY };
 /**
  * The headers of a game that reads compiled format 3.
  */
-const GAME = { [FEATURES_HEADER]: "raid", "X-MGQ-Design-Reader": "3" };
+const GAME = { [FEATURES_HEADER]: "raid", [VERSION_HEADER]: "0.7.0", "X-MGQ-Design-Reader": "3" };
 
 /**
  * A designer the relay admin adds, by a key no fixture uses.

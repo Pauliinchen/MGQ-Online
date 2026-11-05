@@ -2,19 +2,34 @@
 #  make_fixtures.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Read the codec from a commit that still kept it in the script
 #      Paulinchen  2026-10-23: Created
 #
 #----------------------------------------------------------------
 
-# Writes the battle line codec's golden cases next to this file from the real
-# battles_sync_wire.rbx (see wire_harness.rb): encode.json (described values and the line
-# Wire.line writes) and decode.json (a line and the values Wire.parse reads, nil for a refused
+# Writes the battle line codec's golden cases next to this file from battles_sync_wire.rbx as it
+# kept the codec before it moved to C# (commit 508f616e, which this generator reads through git,
+# so it runs again on later commits; see wire_harness.rb): encode.json (described values and the
+# line Wire.line writes) and decode.json (a line and the values Wire.parse reads, nil for a refused
 # one), which MGQOnline.Game.Tests and GameScript/Tests/wire_fixtures_test.rb check. Run it again
 # only when a case changes, on Ruby 3.3:
 #
 #   ruby fixtures/wire/make_fixtures.rb
 
+require "tempfile"
 require_relative "wire_harness"
+
+# The commit whose battles_sync_wire.rbx kept the codec.
+SOURCE_COMMIT = "508f616e"
+
+source = `git -C "#{File.expand_path('../..', __dir__)}" show #{SOURCE_COMMIT}:GameScript/Multiplayer/Scripts/battles_sync_wire.rbx`
+raise "git could not read battles_sync_wire.rbx of #{SOURCE_COMMIT}" if source.empty?
+
+script = Tempfile.new(["battles_sync_wire", ".rbx"])
+script.write(source)
+script.close
+load script.path
+WireHarness.prepare
 
 # Describes an Integer.
 #
@@ -90,10 +105,11 @@ DECODE = {
 
 decode = DECODE.map do |name, line|
   entry = line.is_a?(Hash) ? line : { "line" => line }
-  { "name" => name }.merge(entry).merge("values" => WireHarness.decode(WireHarness.line_of(entry)))
+  read = MGQ_MpBattlesSync::Wire.parse(WireHarness.line_of(entry)) { |ref| Game_Battler.new(ref) }
+  { "name" => name }.merge(entry).merge("values" => read && read.map { |value| WireHarness.describe(value) })
 end
 
-encode = ENCODE.map { |name, values| { "name" => name, "values" => values, "line" => WireHarness.encode(values) } }
+encode = ENCODE.map { |name, values| { "name" => name, "values" => values, "line" => MGQ_MpBattlesSync::Wire.line(values.map { |value| WireHarness.build(value) }) } }
 
 # Writes a fixture file with one case per line.
 #

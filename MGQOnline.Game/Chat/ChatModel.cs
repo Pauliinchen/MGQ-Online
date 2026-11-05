@@ -2,6 +2,7 @@
 //  ChatModel.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Took a map line under a field of its own
 //      Paulinchen  2026-11-01: Dropped the buzz of a refused character, which the Mod Framework's text field plays
 //                            - Named the close keys the scripts hand over in the help tab's last line
 //                            - Told how far a line of the closed log has faded
@@ -627,25 +628,33 @@ public sealed partial class ChatModel
     }
 
     /// <summary>
-    /// Takes another player's line of the global or the map chat, or an admin's that the relay said.
-    /// A line of the map chat said on another map is dropped; the sender's map comes with the line,
-    /// since their last state may lag behind or run ahead of it.
+    /// Takes another player's line of the global chat, or an admin's that the relay said.
     /// </summary>
     /// <param name="peer">Who sent it, <see langword="null"/> before their first state or for the relay.</param>
-    /// <param name="message">The message, the line under "chat", "ch" "say" for the map chat with
-    /// the sender's map under "map".</param>
+    /// <param name="message">The message, the line under "chat".</param>
     /// <param name="relay">Whether the relay pushed it, which marks an admin's line.</param>
     public void Receive(Peer? peer, WorldFields message, bool relay)
     {
         ArgumentNullException.ThrowIfNull(message);
-        string channel = message["ch"] == "say" ? Map : Global;
-        if (channel == Map && !(message.Text("map").Length > 0 && WorldFields.ToI(message["map"]) == room.OwnMap))
+        TakeLine(peer, message["chat"], message["name"], Global, relay);
+    }
+
+    /// <summary>
+    /// Takes another player's line of the map chat. A line said on another map is dropped; the
+    /// sender's map comes with the line, since their last state may lag behind or run ahead of it.
+    /// </summary>
+    /// <param name="peer">Who sent it, <see langword="null"/> before their first state.</param>
+    /// <param name="message">The message, the line under "mchat" and the sender's map under "map".</param>
+    public void ReceiveMap(Peer? peer, WorldFields message)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+        if (!(message.Text("map").Length > 0 && WorldFields.ToI(message["map"]) == room.OwnMap))
         {
             Log($"dropped a map line from {(peer is null ? message.Text("name") : peer.ToString())}, said on map {message["map"] ?? "?"}");
             return;
         }
 
-        TakeLine(peer, message["chat"], message["name"], channel, relay);
+        TakeLine(peer, message["mchat"], message["name"], Map, false);
     }
 
     /// <summary>
@@ -677,6 +686,7 @@ public sealed partial class ChatModel
     public void Listen()
     {
         room.Take("chat", RouteGate.None, (peer, message, _, relay) => Receive(peer, message, relay));
+        room.Take("mchat", RouteGate.None, (peer, message, _) => ReceiveMap(peer, message));
         room.Take("whisper", RouteGate.None, (peer, message, _) => ReceiveWhisper(peer, message));
         room.Take("pchat", RouteGate.Party, ReceiveParty);
     }

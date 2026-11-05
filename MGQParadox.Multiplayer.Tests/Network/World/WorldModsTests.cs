@@ -2,6 +2,8 @@
 //  WorldModsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Handed an option's default and choices as values, whose type the DLL names
+//                            - Took the Mod Config options as the scripts hand them over and read the list as values
 //      Paulinchen  2026-10-30: Dropped the installs, which the Mod Framework does
 //      Paulinchen  2026-10-23: Checked the catalog as the game script takes it through the bridge, a link not read yet left out
 //      Paulinchen  2026-10-22: Covered the list without the worlds' mods, which carries those of the world opened or read
@@ -20,6 +22,7 @@
 //----------------------------------------------------------------
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -173,7 +176,7 @@ public sealed class WorldModsTests
     {
         using var relay = new TestRelay();
         var player = NewDirectory(relay, CreatorKey, "Player");
-        var options = ModOption.Parse("mod_level_cap\tLevel Cap\ti\t1\t1\tOn\t0\tOff\nbroken\n");
+        var options = LevelCapOptions();
 
         Assert.True(player.SendModOptions("levelcap", "1.4.0", options));
         var deadline = System.DateTime.UtcNow.AddSeconds(5);
@@ -200,7 +203,7 @@ public sealed class WorldModsTests
     {
         using var relay = new TestRelay();
         var client = new DirectoryClient(relay.Address);
-        var options = ModOption.Parse("mod_level_cap\tLevel Cap\ti\t1\t1\tOn\t0\tOff\n");
+        var options = LevelCapOptions();
 
         Assert.Equal((true, "1.4.0"), client.SetModOptions("levelcap", CreatorKey, "1.4.0", options));
 
@@ -221,13 +224,13 @@ public sealed class WorldModsTests
         var hashes = $"Some Mod={new string('a', 64)}";
 
         var made = Act(creator, directory => directory.Create("Modded", "secret", 4, false, false, [], new WorldAbout(string.Empty, "!Some Mod", string.Empty, false, hashes, "key=i:1")));
-        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith($"\t{hashes}\tkey=i:1\tclassic\toff\t\t0\t\t0"));
+        Assert.Contains(List(creator), world => world.Id == made["world"] && world.About.ModHashes == hashes && world.About.Settings == "key=i:1" && world.Type == "classic" && world.Share == "off" && world.Difficulty == null && !world.OtherModsOff && world.Squad == "" && !world.RaidBosses);
 
         Assert.Equal("done", Act(adminDirectory, directory => directory.Edit(made["world"], 6, "Edited.", "!Some Mod"))["state"]);
-        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t6\t") && line.EndsWith($"\t{hashes}\tkey=i:1\tclassic\toff\t\t0\t\t0"));
+        Assert.Contains(List(creator), world => world.Id == made["world"] && world.Seats == 6 && world.About.ModHashes == hashes && world.About.Settings == "key=i:1" && world.Type == "classic" && world.Share == "off" && world.Difficulty == null && !world.OtherModsOff && world.Squad == "" && !world.RaidBosses);
 
         Assert.Equal("done", Act(creator, directory => directory.Edit(made["world"], 6, "Edited.", "!Some Mod", string.Empty))["state"]);
-        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\t\tkey=i:1\tclassic\toff\t\t0\t\t0"));
+        Assert.Contains(List(creator), world => world.Id == made["world"] && world.About.ModHashes == "" && world.About.Settings == "key=i:1" && world.Type == "classic" && world.Share == "off" && world.Difficulty == null && !world.OtherModsOff && world.Squad == "" && !world.RaidBosses);
     }
 
     /// <summary>
@@ -243,15 +246,15 @@ public sealed class WorldModsTests
         var made = Act(creator, directory => directory.Create("Modded", "secret", 4, false, false, [], new WorldAbout(string.Empty, "!Some Mod", string.Empty, false, hashes, "key=i:1")));
         var other = Act(creator, directory => directory.Create("Plain", "secret", 4, false, false, []));
 
-        Assert.Equal("unread", LineAfterWorld(List(creator), made["world"]));
+        Assert.True(Unread(List(creator), made["world"]));
 
         creator.Open(made["world"]);
-        var lines = WaitForLines(creator, lines => LineAfterWorld(lines, made["world"]) != "unread");
-        Assert.Contains(lines, line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith($"\t!Some Mod\t\t{hashes}\tkey=i:1\tclassic\toff\t\t0\t\t0"));
-        Assert.Equal("unread", LineAfterWorld(lines, other["world"]));
+        var lines = WaitForList(creator, worlds => !Unread(worlds, made["world"]));
+        Assert.Contains(lines, world => world.Id == made["world"] && world.About.Mods == "!Some Mod" && world.About.Description == "" && world.About.ModHashes == hashes && world.About.Settings == "key=i:1" && world.Type == "classic" && world.Share == "off" && world.Difficulty == null && !world.OtherModsOff && world.Squad == "" && !world.RaidBosses);
+        Assert.True(Unread(lines, other["world"]));
 
         creator.Open(other["world"]);
-        WaitForLines(creator, lines => LineAfterWorld(lines, made["world"]) == "unread" && LineAfterWorld(lines, other["world"]) != "unread");
+        WaitForList(creator, worlds => Unread(worlds, made["world"]) && !Unread(worlds, other["world"]));
     }
 
     /// <summary>
@@ -267,8 +270,8 @@ public sealed class WorldModsTests
         List(creator);
 
         Assert.Equal("done", Act(creator, directory => directory.Read(made["world"]))["state"]);
-        Assert.NotEqual("unread", LineAfterWorld(ListState(creator).Team.Split('\n'), made["world"]));
-        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.Contains("\t!Some Mod\t"));
+        Assert.False(Unread(ListState(creator).Worlds, made["world"]));
+        Assert.Contains(List(creator), world => world.Id == made["world"] && world.About.Mods == "!Some Mod");
     }
 
     /// <summary>
@@ -285,10 +288,10 @@ public sealed class WorldModsTests
 
         var made = Act(creator, directory => directory.Create("Modded", "secret", 4, false, false, [], new WorldAbout(string.Empty, "!Some Mod", string.Empty, false, string.Empty, string.Empty)));
         Assert.Equal("done", Act(creator, directory => directory.SetSettings(made["world"], "key=i:1"))["state"]);
-        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\tkey=i:1\tclassic\toff\t\t0\t\t0"));
+        Assert.Contains(List(creator), world => world.Id == made["world"] && world.About.Settings == "key=i:1" && world.Type == "classic" && world.Share == "off" && world.Difficulty == null && !world.OtherModsOff && world.Squad == "" && !world.RaidBosses);
 
         Assert.Equal("done", Act(adminDirectory, directory => directory.SetSettings(made["world"], "key=i:2"))["state"]);
-        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\tkey=i:2\tclassic\toff\t\t0\t\t0"));
+        Assert.Contains(List(creator), world => world.Id == made["world"] && world.About.Settings == "key=i:2" && world.Type == "classic" && world.Share == "off" && world.Difficulty == null && !world.OtherModsOff && world.Squad == "" && !world.RaidBosses);
         Assert.Equal("failed", Act(guest, directory => directory.SetSettings(made["world"], "key=i:3"))["state"]);
     }
 
@@ -318,34 +321,43 @@ public sealed class WorldModsTests
     };
 
     /// <summary>
-    /// Reads the line that follows a world's line in the list.
+    /// Takes the Level Cap's option as the scripts hand it over.
     /// </summary>
-    /// <param name="lines">The list's lines.</param>
+    /// <returns>The options.</returns>
+    private static IReadOnlyList<ModOption> LevelCapOptions() =>
+    [
+        ModOption.Of(new RubyHash
+        {
+            { "key", "mod_level_cap" }, { "name", "Level Cap" }, { "default", 1 },
+            { "choices", new RubyArray { new RubyArray { 1, "On" }, new RubyArray { 0, "Off" } } },
+        })!,
+    ];
+
+    /// <summary>
+    /// Tells whether the list leaves a world's mods out until it is opened.
+    /// </summary>
+    /// <param name="worlds">The list's worlds.</param>
     /// <param name="id">The world.</param>
-    /// <returns>The next line, such as <c>unread</c>, or <see langword="null"/> for none.</returns>
-    private static string? LineAfterWorld(string[] lines, string id)
-    {
-        var at = Array.FindIndex(lines, line => line.StartsWith($"world\t{id}\t", StringComparison.Ordinal));
-        return at >= 0 && at + 1 < lines.Length ? lines[at + 1] : null;
-    }
+    /// <returns>Whether it does.</returns>
+    private static bool Unread(IReadOnlyList<ListedWorld> worlds, string id) => worlds.Single(world => world.Id == id).ModsUnread;
 
     /// <summary>
     /// Reads the list as it stands until it holds what a test waits for, without fetching it again.
     /// </summary>
     /// <param name="directory">The directory.</param>
-    /// <param name="done">Tells whether the lines hold it.</param>
-    /// <returns>The lines that held it.</returns>
-    private static string[] WaitForLines(WorldDirectory directory, Func<string[], bool> done)
+    /// <param name="done">Tells whether the worlds hold it.</param>
+    /// <returns>The worlds that held it.</returns>
+    private static IReadOnlyList<ListedWorld> WaitForList(WorldDirectory directory, Func<IReadOnlyList<ListedWorld>, bool> done)
     {
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(20);
 
         while (DateTime.UtcNow < deadline)
         {
-            var lines = Message.Decode(directory.DescribeList()).Team.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+            var worlds = directory.ListNow().Worlds;
 
-            if (done(lines))
+            if (done(worlds))
             {
-                return lines;
+                return worlds;
             }
 
             Thread.Sleep(20);

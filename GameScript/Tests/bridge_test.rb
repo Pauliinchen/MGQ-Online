@@ -2,6 +2,9 @@
 #  bridge_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Checked that the events of a topic no script takes yet are held until one does
+#                            - Checked that a DLL that does not load is logged by what happened, never as older
+#                            - Started the mod with the bridge alone, the DLL starting as it shakes hands
 #      Paulinchen  2026-10-31: Checked that the mod runs only beside a Mod Framework of at least the version it requires, with its DLL
 #      Paulinchen  2026-10-23: Stood in for the log's hand-over once the start decided
 #                            - Checked that only a handshake turns the mod on
@@ -23,7 +26,8 @@ load_bridge
 bridge = MGQ_Multiplayer::Bridge
 
 # Stands in for the game's Win32API: the bridge's exports reach $dll through the arguments their
-# signatures name, and loading one fails while $exports_missing, as with an older DLL.
+# signatures name; loading one fails while $exports_missing, as with an older DLL, or while
+# $dll_broken, as with a DLL Windows cannot load.
 class Win32API
   # The export each name reaches on $dll.
   METHODS = { "mp_bridge_open" => :open, "mp_call" => :call, "mp_reply" => :reply, "mp_drain" => :drain }
@@ -36,6 +40,7 @@ class Win32API
   # @param _result [String] Its result.
   def initialize(_path, name, arguments, _result)
     raise "GetProcAddress failed for #{name}" if $exports_missing
+    raise "LoadLibrary failed for #{_path}" if $dll_broken
 
     @name = name
     @arguments = arguments
@@ -60,8 +65,6 @@ module MGQ_Multiplayer
   def self.path(name); "#{MOD_DIR}\\#{name}"; end
   # Stands in for the log's hand-over once the start decided.
   module Log; def self.settle(_open); end; end
-  # Stands in for the DLL's start, noted in $steps.
-  module Link; def self.start; $steps << :mp_start; 1; end; end
   # Stands in for the update check, noted in $steps.
   module UpdateCheck; def self.start; $steps << :update_check; end; end
 end
@@ -95,15 +98,20 @@ Dir.mktmpdir do |game|
     File.write(MGQ_Multiplayer.path(MGQ_Multiplayer::DLL), "")
     $exports_missing = true
     available, line, steps = start_mod(FakeBridge.new)
-    check("an older DLL without the bridge keeps the mod off with one line", [available, line[/\Abridge: the mod stays off, .* lacks the bridge's exports/] ? true : line, steps], [false, true, [:mp_start]])
+    check("an older DLL without the bridge keeps the mod off with one line", [available, line[/\Abridge: the mod stays off, could not load .*GetProcAddress.*, so it is older than these scripts\z/] ? true : line, steps], [false, true, []])
     $exports_missing = false
-    check("a stand-in DLL keeps the mod off", start_mod(stand_in), [false, "bridge: the mod stays off, the DLL answered no handshake, as a stand-in DLL does", [:mp_start]])
+    $dll_broken = true
+    available, line, = start_mod(FakeBridge.new)
+    check("a DLL that does not load keeps the mod off, logged by what happened",
+          [available, line.include?("could not load Patch\\Multiplayer\\Multiplayer.dll or find its bridge exports: RuntimeError: LoadLibrary failed"), line.include?("older")], [false, true, false])
+    $dll_broken = false
+    check("a stand-in DLL keeps the mod off", start_mod(stand_in), [false, "bridge: the mod stays off, the DLL answered no handshake, as a stand-in DLL does", []])
     check("a DLL of another bridge version keeps the mod off",
           start_mod(FakeBridge.new(MGQ_Multiplayer::Bridge::VERSION + 1)),
-          [false, "bridge: the mod stays off, the DLL refused the handshake: The scripts speak bridge version 1, the core version 2.", [:mp_start]])
+          [false, "bridge: the mod stays off, the DLL refused the handshake: The scripts speak bridge version 1, the core version 2.", []])
     Mod_Framework.available = true
     check("a handshake turns the mod on beside the Mod Framework and only then starts the rest",
-          start_mod(FakeBridge.new), [true, "started Patch\\Multiplayer\\Multiplayer.dll", [:mp_start, :update_check]])
+          start_mod(FakeBridge.new), [true, "started Patch\\Multiplayer\\Multiplayer.dll", [:update_check]])
     Mod_Framework.available = false
     check("without the Mod Framework's DLL the mod stays off", MGQ_Multiplayer.available?, false)
     Mod_Framework.available = true
@@ -182,9 +190,20 @@ lines = logged_lines do
     bridge.frame
   end
 end
-check("an event nobody takes and a failing handler are logged once, and the other handlers still run",
-      [lines, got.last(2)], [["bridge: test.nobody failed with no_handler: no script takes its events", "bridge: test.broken failed with handler: RuntimeError: broken handler"], [3, 3]])
-check("the drain passes the bridge's own frame count, one more each frame", fake.frames, [1, 2, 3])
+check("a failing handler is logged once, and the other handlers still run", [lines, got.last(2)], [["bridge: test.broken failed with handler: RuntimeError: broken handler"], [3, 3]])
+late = []
+bridge.on("test.nobody") { |payload| late << payload }
+bridge.frame
+check("the events of a topic nobody took are held until a script takes them, in order", late, [1, 1])
+lines = logged_lines do
+  (MGQ_Multiplayer::Bridge::HELD_EVENTS + 2).times { |n| fake.post("test.unloaded", n) }
+  bridge.frame
+end
+bridge.on("test.unloaded") { |payload| late << payload }
+bridge.frame
+check("past the most held, the newest are kept and the drop is logged once",
+      [lines, late.size - 2, late.last], [["bridge: test.unloaded failed with no_handler: no script takes its events, so only the newest #{MGQ_Multiplayer::Bridge::HELD_EVENTS} are held"], MGQ_Multiplayer::Bridge::HELD_EVENTS, MGQ_Multiplayer::Bridge::HELD_EVENTS + 1])
+check("the drain passes the bridge's own frame count, one more each frame", fake.frames, [1, 2, 3, 4, 5, 6])
 
 # The buffers: a reply or a drain larger than the buffer comes through a grown one, which stays.
 big = "x" * 10_000
@@ -198,7 +217,7 @@ check("a reply larger than the buffer comes through a grown buffer, which the ne
 fake.post("test.push", { "n" => "y" * 20_000 })
 bridge.frame
 check("events larger than the drain buffer come through a grown one in the same frame",
-      [got[-2].is_a?(Hash) && got[-2]["n"].size, fake.frames.last(2)], [20_000, [4, 4]])
+      [got[-2].is_a?(Hash) && got[-2]["n"].size, fake.frames.last(2)], [20_000, [7, 7]])
 
 # Closed: nothing is staged, a frame calls nothing and a call gives nil.
 bridge.close

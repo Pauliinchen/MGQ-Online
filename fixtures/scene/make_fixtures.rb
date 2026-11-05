@@ -2,6 +2,7 @@
 #  make_fixtures.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Read the battle line codec of the same commit, which the scripts no longer keep
 #      Paulinchen  2026-10-31: Read the old scripts from a commit that feat/refactor holds
 #      Paulinchen  2026-10-28: Created
 #
@@ -16,13 +17,15 @@
 # classes, and the script tests' stand-in (GameScript/Tests/scene_support.rb) is checked against
 # them.
 #
-# It runs on the coop_scene.rbx of commit d7bc93af, which still kept the rules, with the
-# stand-ins below, on Ruby 3.3:
+# It runs on the coop_scene.rbx of commit d7bc93af, which still kept the rules, and the
+# battles_sync_wire.rbx of that commit, which it reads through git, with the stand-ins below, on
+# Ruby 3.3:
 #
 #   git show d7bc93af:GameScript/Multiplayer/Scripts/coop_scene.rbx > old_scene.rbx
 #   ruby fixtures/scene/make_fixtures.rb old_scene.rbx
 
 require "json"
+require "tempfile"
 require_relative "../../GameScript/Tests/support"
 
 # The log, whose lines the check cases read the refusals from.
@@ -173,7 +176,11 @@ script = ARGV[0] || abort("Name the coop_scene.rbx of commit d7bc93af, see the h
 load File.join(SCRIPTS_DIR, "core_log.rbx")
 load File.join(SCRIPTS_DIR, "core_hooks.rbx")
 load File.join(SCRIPTS_DIR, "core_game_access.rbx")
-load File.join(SCRIPTS_DIR, "battles_sync_wire.rbx")
+wire = Tempfile.new(["battles_sync_wire", ".rbx"])
+wire.write(`git -C "#{File.expand_path('../..', __dir__)}" show d7bc93af:GameScript/Multiplayer/Scripts/battles_sync_wire.rbx`)
+wire.close
+abort("git could not read battles_sync_wire.rbx of d7bc93af") if File.size(wire.path).zero?
+load wire.path
 load File.expand_path(script)
 SCENE = MGQ_MpCoopScene
 WIRE = MGQ_MpBattlesSync::Wire

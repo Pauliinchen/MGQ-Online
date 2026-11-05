@@ -2,6 +2,8 @@
 #  ui_chat_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Handed the kept size as the width and lines the DLL reads
+#                            - Checked that a scene whose class has no name reaches the chat's model by the class it builds on
 #      Paulinchen  2026-11-01: Checked the chat on the Mod Framework's components against the chat's model
 #                            - Checked the chat box opening over a window that hosts the scene
 #      Paulinchen  2026-10-31: Kept the boxes' places in the Mod Framework's settings
@@ -91,10 +93,10 @@ check("the map shows the log in its own place, at the bottom left above the stat
 check("with no line to show it hides, so the player arranges it only while it shows lines", root.hide_while.call, true)
 check("the three places are listed for Interface Positions before the log shows there",
       [:chat, :battle_chat, :menu_chat].map { |id| registered_box(id) && registered_box(id)[0] }, ["Chat", "Battle chat", "Menu chat"])
-$player_ini["chat_size"] = "450x8"
+$player_ini["chat_size"] = [450, 8]
 check("a size kept in chat_size by earlier builds is its default", chat.default_place(:chat),
       [[8, 480 - 96 - (chat::TAB_ROW + chat::ROW * 8 + chat::BOX_ROW)], [450, chat::TAB_ROW + chat::ROW * 8 + chat::BOX_ROW]])
-$player_ini["chat_size"] = "300x2"
+$player_ini["chat_size"] = [300, 2]
 check("one smaller than the least size starts at the least", chat.default_place(:chat)[1], chat::MIN_SIZE)
 $player_ini.delete("chat_size")
 
@@ -271,6 +273,13 @@ check("a window that hosts the scene, such as the trade screen's, holds the butt
       [ui::Capture.on?, chat.typing?], [true, true])
 chat.stop_typing
 host.close
+staged = []
+$world_fake.answer("chat.scene") { |request| staged << request; nil }
+SceneManager.scene = Class.new(Scene_TestShop).new
+MGQ_MpOverworldSync.tick
+MGQ_Multiplayer::Bridge.frame
+check("a scene whose class has no name, such as one a mod makes, reaches the chat's model by the class it builds on", staged.last["scene"], "Scene_TestShop")
+$world_fake.answer("chat.scene") { |_request| nil }
 SceneManager.scene = Scene_Map.new
 
 # The bubbles.

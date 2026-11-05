@@ -2,7 +2,9 @@
 #  story_keys_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Checked that a talk that gives a key item goes to the DLL with it, though it changed no shared key
+#      Paulinchen  2026-11-05: Handed and expected sites as plain values
+#                            - Expected the writes, the self switch rules and a run's changes as [kind, key] with values
+#                            - Checked that a talk that gives a key item goes to the DLL with it, though it changed no shared key
 #                            - Checked that a story reset that takes the route's key items notes none of them
 #                            - Dropped the stand-in of the game's frame counter, which no script reads
 #                            - Checked that a battle's drop of a key item goes to the DLL with it, and its entry on to the world's story
@@ -110,8 +112,8 @@ end
 table = keys.table_of(classes_fixture_table)
 cases = JSON.parse(File.read(File.join(STORY_FIXTURES, "classes.json")))["cases"]
 found = cases.map do |entry|
-  kind, key = keys.key_of(entry["key"])
-  [entry["key"], entry["site"], names.call(kind, kind == 3 ? 0 : keys.class_of(kind, key, entry["site"], table))]
+  kind, key = fixture_key(entry["key"])
+  [entry["key"], entry["site"], names.call(kind, kind == 3 ? 0 : keys.class_of(kind, key, entry["site"] && fixture_site(entry["site"]), table))]
 end
 check("each key of the mapping's table is shared as the relay's tracks share it", found, cases.map { |entry| [entry["key"], entry["site"], entry["kind"]] })
 check("the table lists the switches and variables kept and the local steps", [table.kept_switches, table.kept_variables, table.local_steps[1052]],
@@ -155,8 +157,8 @@ keys.flush
 MGQ_Multiplayer::Bridge.frame
 check("the frame's writes go to the DLL as one batch, each with where it came from: the map event's page, the common event, the troop or the game",
       staged("story.writes"),
-      [[["s7096", "1", "map:7:39:2"], ["v1001", "n12", "map:7:39:2"], ["ss7.39.A", "1", "map:7:39:2"], ["v1141", "n0", "ce:154"],
-        ["v1052", "n3", "game:troop"], ["v3005", "n40", "game"], ["s7102", "1", "game:catchup"]]])
+      [[[0, 7096, true, ["map", 7, 39, 2]], [1, 1001, 12, ["map", 7, 39, 2]], [2, [7, 39, "A"], true, ["map", 7, 39, 2]], [1, 1141, 0, ["ce", 154]],
+        [1, 1052, 3, ["game", "troop"]], [1, 3005, 40, ["game"]], [0, 7102, true, ["game", "catchup"]]]])
 
 # What the story never records: the multiplayer's own writes, a lost battle's defeat scene, the
 # writes of another object than the game's own.
@@ -182,7 +184,7 @@ end
 common.update
 keys.flush
 MGQ_Multiplayer::Bridge.frame
-check("the Final Chapter's reset of 1,885 writes goes as one batch", [staged("story.writes").size, staged("story.writes")[0].size, staged("story.writes")[0][0][2]], [1, 1885, "ce:154"])
+check("the Final Chapter's reset of 1,885 writes goes as one batch", [staged("story.writes").size, staged("story.writes")[0].size, staged("story.writes")[0][0][3]], [1, 1885, ["ce", 154]])
 
 # A wait inside a command leaves the update with the command running: another interpreter's write
 # meanwhile names that one, the rest of the command its own.
@@ -201,7 +203,7 @@ waiting.update
 keys.flush
 MGQ_Multiplayer::Bridge.frame
 check("a command a wait left running names its own event once it goes on, another's write meanwhile names that one",
-      staged("story.writes"), [[["s30", "1", "ce:154"], ["s31", "1", "map:7:39:1"]]])
+      staged("story.writes"), [[[0, 30, true, ["ce", 154]], [0, 31, true, ["map", 7, 39, 1]]]])
 
 # The writes before the mapping came wait, and the mapping sorts them once it comes.
 $story_staged.clear
@@ -215,7 +217,7 @@ keys.load_raid
 keys.flush
 MGQ_Multiplayer::Bridge.frame
 check("the writes before the story mapping came wait, and go by the mapping once it came",
-      [before, staged("story.writes")], [[], [[["s7096", "1", "map:7:39:2"], ["v1001", "n12", "map:7:39:2"], ["ss7.39.A", "1", "map:7:39:2"]]]])
+      [before, staged("story.writes")], [[], [[[0, 7096, true, ["map", 7, 39, 2]], [1, 1001, 12, ["map", 7, 39, 2]], [2, [7, 39, "A"], true, ["map", 7, 39, 2]]]]])
 
 # A Classic party's leader hands the party's story the writes the reviewed list makes the world's,
 # by the scopes the DLL builds of it.
@@ -226,7 +228,7 @@ fake.answer("story.replay_scopes") do |_request|
   switches.setbyte(7096, keys::SCOPE_WORLD)
   variables = "\0" * 4000
   variables.setbyte(1001, keys::SCOPE_WORLD)
-  { "switches" => switches, "variables" => variables, "keys" => {}, "self" => {}, "index" => [], "self_default" => keys::SCOPE_WORLD }
+  { "switches" => switches, "variables" => variables, "keys" => [], "self" => [], "common" => [], "index" => [], "self_default" => keys::SCOPE_WORLD }
 end
 $story_staged.clear
 keys.recording = :classic
@@ -242,7 +244,7 @@ end
 event.update
 keys.flush
 check("a Classic leader's writes go to the party's story, those each player keeps their own left out",
-      [$recorded, staged("story.writes")], [[[["s7096", "1", "map:7:39:2"], ["v1001", "n15", "map:7:39:2"], ["ss7.39.B", "1", "map:7:39:2"]]], []])
+      [$recorded, staged("story.writes")], [[[[0, 7096, true, ["map", 7, 39, 2]], [1, 1001, 15, ["map", 7, 39, 2]], [2, [7, 39, "B"], true, ["map", 7, 39, 2]]]], []])
 keys.recording = nil
 $game_switches[7096] = false
 keys.flush
@@ -280,7 +282,7 @@ $world_handed = []
 $coop_handed = []
 world_switches = "\0" * 8000
 world_switches.setbyte(300, keys::SCOPE_WORLD)
-fake.answer("story.replay_scopes") { |_request| { "switches" => world_switches, "variables" => "\0" * 4000, "keys" => {}, "self" => {}, "index" => [], "self_default" => 0 } }
+fake.answer("story.replay_scopes") { |_request| { "switches" => world_switches, "variables" => "\0" * 4000, "keys" => [], "self" => [], "common" => [], "index" => [], "self_default" => 0 } }
 fake.answer("story.replay_reads") { |_request| [] }
 fake.answer("story.replay_reset") { |_request| nil }
 ran = []
@@ -300,8 +302,8 @@ story_run.call
 $leader = :me
 story_run.call
 check("a run that changed a world key goes to its story's stream: the player's own track in a Raid World, the leader's story in a Classic party, their own while they lead",
-      ran.map { |request| [request["site"], request["stream"], request["owner"], request["changed"].keys] },
-      [["map:7:39:1", "t2", false, ["s300"]], ["map:7:39:1", "story:lead1", false, ["s300"]], ["map:7:39:1", "story:me1", true, ["s300"]]])
+      ran.map { |request| [request["site"], request["stream"], request["owner"], request["changed"].map { |kind, key, _before, _after| [kind, key] }] },
+      [[["map", 7, 39, 1], "t2", false, [[0, 300]]], [["map", 7, 39, 1], "story:lead1", false, [[0, 300]]], [["map", 7, 39, 1], "story:me1", true, [[0, 300]]]])
 check("and its entry is handed on: a Raid World's to the world's story, a Classic world's to the co-op events",
       [$world_handed.map { |entry| entry["id"] }, $coop_handed.map { |entry| entry["id"] }], [["e1"], ["e2", "e3"]])
 
@@ -322,7 +324,7 @@ ran.clear
   talk.run { keys.executing(talk); keys.item_changing(item, 1) { $held[item.id] += 1 }; keys.executed(talk) }
 end
 check("a talk that gives a key item goes to the DLL with it and no shared key, one that gives a Small Medal not",
-      ran.map { |request| [request["site"], request["stream"], request["changed"], request["found"]] }, [["map:7:39:1", "t2", {}, [[613, 1]]]])
+      ran.map { |request| [request["site"], request["stream"], request["changed"], request["found"]] }, [[["map", 7, 39, 1], "t2", [], [[613, 1]]]])
 
 # The return to the Great Decision runs the Final Chapter's reset (common event 154, which turns
 # switches 2444 to 2484 off and takes the route's key items, as the Warp Stone): the player's own
@@ -345,7 +347,7 @@ check("a story reset that takes a route key item notes no found item", [$held[56
 # runs, the drops go to the DLL with the found items alone, the Small Medal left out, and their
 # entry is handed on to the world's story as a run's is.
 drops = []
-fake.answer("story.replay_drop") { |request| drops << request; { "id" => "d1", "site" => "game:drop", "scope" => "world", "stream" => request["stream"] } }
+fake.answer("story.replay_drop") { |request| drops << request; { "id" => "d1", "site" => ["game", "drop"], "scope" => "world", "stream" => request["stream"] } }
 $raid = true
 $world_handed.clear
 SceneManager.run

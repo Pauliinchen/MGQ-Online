@@ -25,7 +25,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "2"
+                  "rbn": "2",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -203,7 +204,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "2"
+                  "rbn": "2",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -394,7 +396,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "2"
+                  "rbn": "2",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -547,7 +550,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "2"
+                  "rbn": "2",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -685,7 +689,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "2"
+                  "rbn": "2",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -848,7 +853,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "1"
+                  "rbn": "1",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -999,7 +1005,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "1"
+                  "rbn": "1",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -1167,7 +1174,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "1"
+                  "rbn": "1",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -1299,7 +1307,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "1"
+                  "rbn": "1",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -1447,7 +1456,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "2"
+                  "rbn": "2",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -1581,7 +1591,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "2"
+                  "rbn": "2",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -1707,7 +1718,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "2"
+                  "rbn": "2",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -1833,7 +1845,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "2"
+                  "rbn": "2",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -1957,7 +1970,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "2"
+                  "rbn": "2",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -2101,7 +2115,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "2"
+                  "rbn": "2",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -2220,7 +2235,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "2"
+                  "rbn": "2",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -2339,7 +2355,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "4"
+                  "rbn": "4",
+                  "rbs": "full"
                 },
                 "member": false,
                 "away": false
@@ -2458,7 +2475,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "0"
+                  "rbn": "0",
+                  "rbs": "closed"
                 },
                 "member": false,
                 "away": false
@@ -2682,7 +2700,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "2"
+                  "rbn": "2",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -2715,7 +2734,8 @@
                   "since": "50",
                   "rb": "hb2",
                   "rbh": "9",
-                  "rbn": "1"
+                  "rbn": "1",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -2835,7 +2855,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "1"
+                  "rbn": "1",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -3024,7 +3045,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "3"
+                  "rbn": "3",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -3234,7 +3256,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "3"
+                  "rbn": "3",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -3429,7 +3452,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "3"
+                  "rbn": "3",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -3583,7 +3607,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "3"
+                  "rbn": "3",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -3741,7 +3766,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "3"
+                  "rbn": "3",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -3914,7 +3940,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "3"
+                  "rbn": "3",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -4079,7 +4106,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "3"
+                  "rbn": "3",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -4262,7 +4290,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "2"
+                  "rbn": "2",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -4408,7 +4437,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "2"
+                  "rbn": "2",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -4566,7 +4596,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "2"
+                  "rbn": "2",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -4706,7 +4737,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "2"
+                  "rbn": "2",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -4836,7 +4868,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "2"
+                  "rbn": "2",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -4972,7 +5005,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "2"
+                  "rbn": "2",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -5113,7 +5147,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "2"
+                  "rbn": "2",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -5243,7 +5278,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "2"
+                  "rbn": "2",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -5379,7 +5415,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "2"
+                  "rbn": "2",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -5520,7 +5557,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "2"
+                  "rbn": "2",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -5650,7 +5688,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "2"
+                  "rbn": "2",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -5792,7 +5831,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "2"
+                  "rbn": "2",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -5923,7 +5963,8 @@
                   "since": "100",
                   "rb": "hb9",
                   "rbh": "5",
-                  "rbn": "2"
+                  "rbn": "2",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -6065,7 +6106,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "2"
+                  "rbn": "2",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -6196,7 +6238,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "2"
+                  "rbn": "2",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -6343,7 +6386,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "2"
+                  "rbn": "2",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -6474,7 +6518,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "2"
+                  "rbn": "2",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -6617,7 +6662,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "2"
+                  "rbn": "2",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -6748,7 +6794,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "2"
+                  "rbn": "2",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -6891,7 +6938,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "2"
+                  "rbn": "2",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -7022,7 +7070,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "2"
+                  "rbn": "2",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -7161,7 +7210,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "2"
+                  "rbn": "2",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -7298,7 +7348,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "2"
+                  "rbn": "2",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -7433,7 +7484,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "2"
+                  "rbn": "2",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -7565,7 +7617,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "2"
+                  "rbn": "2",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -7704,7 +7757,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "2"
+                  "rbn": "2",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -7835,7 +7889,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "2"
+                  "rbn": "2",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -7984,7 +8039,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "2"
+                  "rbn": "2",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -8115,7 +8171,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "2"
+                  "rbn": "2",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -8257,7 +8314,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "2"
+                  "rbn": "2",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -8405,7 +8463,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "2"
+                  "rbn": "2",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -8553,7 +8612,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "2"
+                  "rbn": "2",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -8701,7 +8761,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "2"
+                  "rbn": "2",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -8849,7 +8910,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "2"
+                  "rbn": "2",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -9018,7 +9080,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "4"
+                  "rbn": "4",
+                  "rbs": "full"
                 },
                 "member": false,
                 "away": false
@@ -9051,7 +9114,8 @@
                   "since": "250",
                   "rb": "hb2",
                   "rbh": "9",
-                  "rbn": "4"
+                  "rbn": "4",
+                  "rbs": "full"
                 },
                 "member": false,
                 "away": false
@@ -9168,7 +9232,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "4"
+                  "rbn": "4",
+                  "rbs": "full"
                 },
                 "member": false,
                 "away": false
@@ -9201,7 +9266,8 @@
                   "since": "250",
                   "rb": "hb2",
                   "rbh": "9",
-                  "rbn": "4"
+                  "rbn": "4",
+                  "rbs": "full"
                 },
                 "member": false,
                 "away": false
@@ -9318,7 +9384,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "4"
+                  "rbn": "4",
+                  "rbs": "full"
                 },
                 "member": false,
                 "away": false
@@ -9351,7 +9418,8 @@
                   "since": "250",
                   "rb": "hb2",
                   "rbh": "9",
-                  "rbn": "4"
+                  "rbn": "4",
+                  "rbs": "full"
                 },
                 "member": false,
                 "away": false
@@ -9472,7 +9540,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "4"
+                  "rbn": "4",
+                  "rbs": "full"
                 },
                 "member": false,
                 "away": false
@@ -9505,7 +9574,8 @@
                   "since": "250",
                   "rb": "hb2",
                   "rbh": "9",
-                  "rbn": "4"
+                  "rbn": "4",
+                  "rbs": "full"
                 },
                 "member": false,
                 "away": false
@@ -9612,7 +9682,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "4"
+                  "rbn": "4",
+                  "rbs": "full"
                 },
                 "member": false,
                 "away": false
@@ -9645,7 +9716,8 @@
                   "since": "250",
                   "rb": "hb2",
                   "rbh": "9",
-                  "rbn": "4"
+                  "rbn": "4",
+                  "rbs": "full"
                 },
                 "member": false,
                 "away": false
@@ -9755,7 +9827,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "4"
+                  "rbn": "4",
+                  "rbs": "full"
                 },
                 "member": false,
                 "away": false
@@ -9788,7 +9861,8 @@
                   "since": "250",
                   "rb": "hb2",
                   "rbh": "9",
-                  "rbn": "4"
+                  "rbn": "4",
+                  "rbs": "full"
                 },
                 "member": false,
                 "away": false
@@ -9903,7 +9977,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "1"
+                  "rbn": "1",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -10039,7 +10114,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "1"
+                  "rbn": "1",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -10163,7 +10239,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "1"
+                  "rbn": "1",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -10287,7 +10364,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "1"
+                  "rbn": "1",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -10417,7 +10495,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "1"
+                  "rbn": "1",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -10537,7 +10616,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "1"
+                  "rbn": "1",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -10667,7 +10747,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "1"
+                  "rbn": "1",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -10806,7 +10887,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "1"
+                  "rbn": "1",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -10930,7 +11012,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "1"
+                  "rbn": "1",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -11050,7 +11133,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "1"
+                  "rbn": "1",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false
@@ -11180,7 +11264,8 @@
                   "since": "100",
                   "rb": "hb1",
                   "rbh": "5",
-                  "rbn": "1"
+                  "rbn": "1",
+                  "rbs": "open"
                 },
                 "member": false,
                 "away": false

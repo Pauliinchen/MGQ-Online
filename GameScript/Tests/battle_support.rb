@@ -2,7 +2,9 @@
 #  battle_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Answered the plans of the battlers the scripts build and loaded their factory
+#      Paulinchen  2026-11-05: Answered the topics that write and read battle lines
+#                            - Stood in for the world room's sending through its port, keeping each message as the DLL writes it
+#                            - Answered the plans of the battlers the scripts build and loaded their factory
 #                            - Stood in for the game's start of a battler, of the party, of the troop and of the battle, and for a state's counts
 #                            - Read the scripts' clock from $frames and stood in for the grace the DLL's Sessions tells
 #                            - Stood in for the chat box being open by $typing
@@ -63,6 +65,7 @@
 
 require_relative "rules_support"
 require_relative "live_support"
+require_relative "wire_support"
 
 
 $sent = []
@@ -81,7 +84,7 @@ module MGQ_MpOverworldSync
   def self.grace_frames; 900; end
   def self.in_world?; true; end
   def self.notice(text); Status.notice(text); end
-  def self.tell(seat, fields, body = ""); Link.send_to(seat, Me.encode(fields) + body); end
+  def self.tell(seat, fields, body = ""); Port.send_to(seat, fields, body); end
   def self.who(peer); peer == :me ? "the player" : (peer ? "#{peer.state['name']} (seat #{peer.seat})" : "an unknown player"); end
   module Peers
     # A player in the room.
@@ -94,16 +97,15 @@ module MGQ_MpOverworldSync
     def self.on_this_map?(peer); peer.state["map"].to_i == $game_map.map_id; end
   end
   module Me
-    def self.encode(state); state.map { |k, v| "#{k}=#{v}" }.join("\n") + "\n\n"; end
     def self.identity; ["id-me", "Me"]; end
     def self.id; identity[0]; end
     def self.seat; $my_seat.to_i; end
     def self.map_since; $my_since.to_i; end
   end
   module Status; def self.notice(text); ($notices ||= []) << text; end; end
-  module Link
-    def self.send_to(seat, text); $sent << [seat, text]; true; end
-    def self.status; { "seat" => $my_seat.to_s }; end
+  # Stands in for the world room's sending, keeping each message in $sent as the DLL writes it.
+  module Port
+    def self.send_to(seat, fields, body); $sent << [seat, encode_message(fields, body)]; true; end
   end
 end
 # The leader's call, which coop_gather_test.rb covers: $gather_call is the calling player's seat and
@@ -476,7 +478,7 @@ module Input; def self.trigger?(button); button == :B && $leave ? true : false; 
 # coop.rbx's tell, sending through the world room stand-in.
 module MGQ_MpCoop
   def self.tell(seat, field, value, fields = {})
-    MGQ_MpOverworldSync::Link.send_to(seat, MGQ_MpOverworldSync::Me.encode({ field => value, "party" => Party.id }.merge(fields)))
+    MGQ_MpOverworldSync::Port.send_to(seat, { field => value, "party" => Party.id }.merge(fields), "")
   end
   def self.route(*); end
 end
@@ -495,6 +497,7 @@ end
 # battle's.
 open_rules_bridge
 $live = answer_live($world_bridge)
+answer_wire($world_bridge)
 load_script "ui_online"
 # Stands in for the Mod Framework's question box: each question lands in $asked, and $confirm
 # answers the open one at the next wait, as the framework collects it at every frame, true for yes,

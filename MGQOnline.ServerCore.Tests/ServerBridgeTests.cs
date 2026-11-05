@@ -2,6 +2,7 @@
 //  ServerBridgeTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Covered the battle channel's lines the core reads of the relay and writes for it
 //      Paulinchen  2026-10-31: Covered the freeze journal the core keeps
 //      Paulinchen  2026-10-28: Covered the SQLite version core.runtime names
 //      Paulinchen  2026-10-23: Covered a battle's players arranged by the core
@@ -14,6 +15,7 @@
 
 using System;
 using System.Text;
+using System.Text.Json;
 using MGQOnline.Bridge;
 using MGQOnline.Bridge.Native;
 using MGQOnline.Bridge.Ruby;
@@ -148,6 +150,52 @@ public sealed unsafe class ServerBridgeTests
 
         Assert.True(taken.IsNil);
         Assert.Equal(new RubyArray { new RubyArray { 0L, 31L, false } }, since["rows"]);
+    }
+
+    /// <summary>
+    /// Asserts that the relay's lines of a battle channel, as Relay/core/battles.js writes them, read
+    /// as the entries the server's scripts take: a player coming, a message with its text, a pool's
+    /// word, a refused report's answer, and the relay's close.
+    /// </summary>
+    [Fact]
+    public void Call_ReadsTheRelaysLines()
+    {
+        int context = Open(BridgeHost.Version).AsHash()["value"].AsHash()["context"].AsInt();
+        string text = Convert.ToBase64String(Encoding.UTF8.GetBytes("battle=ready\n\nアリス"));
+
+        RubyValue Read(string line) => Call(context, RelayLineTopics.Read, RubyString.Binary(Encoding.UTF8.GetBytes(line + "\n"))).AsHash()["value"];
+
+        Assert.Equal(new RubyHash { { "kind", "in" }, { "seat", 3L } }, Read("""{"op":"in","seat":3}"""));
+        Assert.Equal(new RubyHash { { "kind", "message" }, { "seat", 3L }, { "text", "battle=ready\n\nアリス" } }, Read($$"""{"op":"message","seat":3,"text":"{{text}}"}"""));
+        Assert.Equal(
+            new RubyHash { { "kind", "boss" }, { "key", "Sara" }, { "left", "0.25" }, { "max", 900L }, { "defeated", false }, { "by", "Player\t2" }, { "answer", true } },
+            Read("""{"op":"boss","key":"Sara","left":0.25,"max":900,"defeated":false,"by":"Player\t2","answer":true}"""));
+        Assert.True(Read("""{"op":"boss","key":"Sara","answer":true}""").AsHash()["left"].IsNil);
+        Assert.Equal(new RubyHash { { "kind", "closed" }, { "seat", 0L }, { "code", "relay" } }, Read("""{"op":"close"}"""));
+    }
+
+    /// <summary>
+    /// Asserts that the server's lines of a battle channel are written as the relay reads them: a
+    /// message in base64, a boss report from the report's text the core's fight left, and the end.
+    /// </summary>
+    [Fact]
+    public void Call_WritesTheServersLines()
+    {
+        int context = Open(BridgeHost.Version).AsHash()["value"].AsHash()["context"].AsInt();
+
+        JsonElement Write(RubyHash fields) => JsonDocument.Parse(Call(context, RelayLineTopics.Write, fields).AsHash()["value"].AsText()).RootElement;
+
+        JsonElement send = Write(new RubyHash { { "op", "send" }, { "seat", -1L }, { "text", "battle=events\n\nアリス" } });
+        JsonElement report = Write(new RubyHash { { "op", "boss_report" }, { "key", "Sara" }, { "battle", "rp1" }, { "report", "2\t0.2500000000\t900\t1" } });
+        JsonElement end = Write(new RubyHash { { "op", "end" }, { "result", "victory" }, { "turns", 4L } });
+
+        Assert.Equal((-1, "battle=events\n\nアリス"), (send.GetProperty("seat").GetInt32(), Encoding.UTF8.GetString(send.GetProperty("text").GetBytesFromBase64())));
+        Assert.Equal(
+            ("boss_report", "Sara", "rp1", 2L, 0.25, 900.0, true),
+            (report.GetProperty("op").GetString(), report.GetProperty("key").GetString(), report.GetProperty("battle").GetString(), report.GetProperty("seq").GetInt64(),
+             report.GetProperty("delta").GetDouble(), report.GetProperty("max").GetDouble(), report.GetProperty("killed").GetBoolean()));
+        Assert.Equal("""{"op":"end","result":"victory","turns":4}""", end.GetRawText());
+        Assert.True(Call(context, RelayLineTopics.Write, new RubyHash { { "op", "boss_report" }, { "key", "Sara" }, { "battle", "rp1" }, { "report", "x\t0.5\t900\t0" } }).IsNil, "a report of another shape");
     }
 
     /// <summary>

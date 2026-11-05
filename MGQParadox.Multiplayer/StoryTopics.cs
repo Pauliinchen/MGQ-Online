@@ -2,7 +2,11 @@
 //  StoryTopics.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Told whether a Raid World's telling moves the world's story on, which decides whom it takes along
+//      Paulinchen  2026-11-05: Took and handed the story's keys and values as plain values, see StoryPlain
+//                            - Answered a frozen fight as another game reads it back, see FrozenFightText
+//                            - Took and handed sites as plain values, and read the sites of an earlier release's save once
+//                            - Wrote a Classic leader's whole story and what of it changed as message fields, by ClassicStoryLists
+//                            - Told whether a Raid World's telling moves the world's story on, which decides whom it takes along
 //                            - Asked the scripts for the common events a telling reaches that the DLL cannot read
 //                            - Answered what a Classic leader's story keeps of a member's writes and runs, and which of its changes a member takes, by ClassicMerge
 //                            - Told a Classic member's catch-up who keeps each self switch and which party chests gave key items
@@ -66,7 +70,8 @@ internal sealed partial class StoryTopics : IStoryTrackHost
     public const string CloseTopic = "story.close";
 
     /// <summary>
-    /// The topic the scripts stage a frame's writes with: [[key, value, site], ...].
+    /// The topic the scripts stage a frame's writes with: [[kind, key, value, site], ...], see
+    /// <see cref="StoryPlain.WritesOf"/>.
     /// </summary>
     public const string WritesTopic = "story.writes";
 
@@ -76,7 +81,7 @@ internal sealed partial class StoryTopics : IStoryTrackHost
     public const string LevelTopic = "story.level";
 
     /// <summary>
-    /// The topic that hands the player's story the relay asked for: {key => value}.
+    /// The topic that hands the player's story the relay asked for: its keys' rows, see <see cref="StoryPlain"/>.
     /// </summary>
     public const string SeedTopic = "story.seed";
 
@@ -86,7 +91,7 @@ internal sealed partial class StoryTopics : IStoryTrackHost
     public const string WatchTopic = "story.watch";
 
     /// <summary>
-    /// The topic that takes what waits to be written into the game's story, see <see cref="TakeOf"/>.
+    /// The topic that takes what waits to be written into the game's story, see <see cref="StoryPlain.TakeOf"/>.
     /// </summary>
     public const string TakeTopic = "story.take";
 
@@ -111,6 +116,31 @@ internal sealed partial class StoryTopics : IStoryTrackHost
     /// <see cref="ClassicFollowOf"/>.
     /// </summary>
     public const string ClassicFollowTopic = "story.classic_follow";
+
+    /// <summary>
+    /// The topic that writes a Classic leader's whole story for a member, see
+    /// <see cref="ClassicStoryLists.Full"/>: the lists in; the message's fields out.
+    /// </summary>
+    public const string ClassicFullTopic = "story.classic_full";
+
+    /// <summary>
+    /// The topic that writes what of a Classic leader's story changed, see
+    /// <see cref="ClassicStoryLists.Delta"/>: the writes' rows in; the message's fields out.
+    /// </summary>
+    public const string ClassicDeltaTopic = "story.classic_delta";
+
+    /// <summary>
+    /// The topic that answers a frozen fight as another game reads it back from the relay's track,
+    /// see <see cref="FrozenFightText"/>: the fight with its "troop" in; nil out for a fight that is
+    /// none or longer than the relay keeps.
+    /// </summary>
+    public const string FreezeEntryTopic = "story.freeze_entry";
+
+    /// <summary>
+    /// The topic that reads the sites a save of an earlier release keeps as texts, such as
+    /// "map:138:13:1": [text, ...] in; [site, ...] out, see <see cref="StoryPlain.SiteOf"/>.
+    /// </summary>
+    public const string SitesTopic = "story.sites";
 
     /// <summary>
     /// Gets the catch-up's tables the story mapping came with, with the items an event of the game
@@ -145,7 +175,7 @@ internal sealed partial class StoryTopics : IStoryTrackHost
 
     /// <summary>
     /// The topic that takes an event of the map's interpreter starting: {"telling" (whether it is
-    /// story the player tells), "by_itself", "map", "site" (nil for none)}; answers {"telling",
+    /// story the player tells), "by_itself", "map", "site" (see <see cref="StoryPlain"/>, nil for none)}; answers {"telling",
     /// "continued" ("frame", "moved" or nil), "from" (the telling's map before), "hold", "locked"}.
     /// </summary>
     public const string TellingStartTopic = "telling.start";
@@ -223,7 +253,7 @@ internal sealed partial class StoryTopics : IStoryTrackHost
     public const string StatusEvent = "story.status";
 
     /// <summary>
-    /// The event of the requests the relay did not keep as written: [[key, code, value or nil], ...].
+    /// The event of the requests the relay did not keep as written, see <see cref="StoryPlain.RefusalsOf"/>.
     /// </summary>
     public const string RefusedEvent = "story.refused";
 
@@ -385,7 +415,11 @@ internal sealed partial class StoryTopics : IStoryTrackHost
         var topics = new StoryTopics(context, session);
         context.Register(EnterTopic, (_, request) => topics.Enter(request.AsHash()));
         context.Register(CloseTopic, (_, _) => topics.Close());
-        context.Register(WritesTopic, (_, request) => topics.Writes(request.AsArray()));
+        context.Register(WritesTopic, (_, request) =>
+        {
+            topics._track.Write(StoryPlain.WritesOf(request.AsArray()));
+            return null;
+        });
         context.Register(LevelTopic, (_, request) =>
         {
             topics._track.TakeLevel(LevelOf(request));
@@ -393,7 +427,7 @@ internal sealed partial class StoryTopics : IStoryTrackHost
         });
         context.Register(SeedTopic, (_, request) =>
         {
-            topics._track.Seed(SeedOf(request.AsHash()));
+            topics._track.Seed(StoryPlain.TextsOf(request).ToDictionary(pair => pair.Key.ToString(), pair => pair.Value, StringComparer.Ordinal));
             return null;
         });
         context.Register(WatchTopic, (_, request) =>
@@ -401,11 +435,15 @@ internal sealed partial class StoryTopics : IStoryTrackHost
             topics._track.Watch(request.IsNil ? null : request.AsInt());
             return null;
         });
-        context.Register(TakeTopic, (_, _) => topics._track.Take() is { } take ? TakeOf(take) : null);
+        context.Register(TakeTopic, (_, _) => topics._track.Take() is { } take ? StoryPlain.TakeOf(take) : null);
         context.Register(ClassesTopic, (_, _) => topics._table is { } table ? TableOf(table) : null);
         context.Register(ClassicTopic, (_, _) => topics.ClassicOf());
         context.Register(ClassicMergeTopic, (_, request) => topics.ClassicMergeOf(request.AsHash()));
         context.Register(ClassicFollowTopic, (_, request) => topics.ClassicFollowOf(request.AsHash()));
+        context.Register(ClassicFullTopic, (_, request) => ClassicStoryLists.Full(request.AsHash()));
+        context.Register(ClassicDeltaTopic, (_, request) => ClassicStoryLists.Delta(request.AsArray()));
+        context.Register(FreezeEntryTopic, (_, request) => FrozenEntry(request.AsHash()));
+        context.Register(SitesTopic, (_, request) => new RubyArray(request.AsArray().Select(text => StoryPlain.SiteOf(text.AsText()))));
         context.Register(TellingStartTopic, (_, request) => topics.TellingStart(request.AsHash()));
         context.Register(TellingCommandTopic, (_, _) => topics.TellingCommandOf());
         context.Register(TellingEndTopic, (_, _) =>
@@ -446,7 +484,7 @@ internal sealed partial class StoryTopics : IStoryTrackHost
     private RubyHash TellingStart(RubyHash request)
     {
         RubyValue site = request["site"];
-        TellingStart start = _telling.Start(request["telling"].AsBool(), request["by_itself"].AsBool(), request["map"].AsInt(), site.IsNil ? null : site.AsText(), _context.Frame);
+        TellingStart start = _telling.Start(request["telling"].AsBool(), request["by_itself"].AsBool(), request["map"].AsInt(), site.IsNil ? null : StoryPlain.SiteText(site), _context.Frame);
         return new RubyHash
         {
             { "telling", start.Telling },
@@ -577,15 +615,10 @@ internal sealed partial class StoryTopics : IStoryTrackHost
     /// Writes a story table as the scripts look keys up in it.
     /// </summary>
     /// <param name="table">The table.</param>
-    /// <returns>{"rev", "switches" and "variables" (a byte per id, binary), "self" (rule => class), "index" (each event as map * 1,000,000 + event), "local_steps" ([variable, steps, shared as, [[map, from x], ...]]), "gates" (part => level), "self_default"}.</returns>
+    /// <returns>{"rev", "switches" and "variables" (a byte per id, binary), "self" and "common" (the self switch rules' rows with their class, see <see cref="StoryPlain.SelfRules"/>), "index" (each event as map * 1,000,000 + event), "local_steps" ([variable, steps, shared as, [[map, from x], ...]]), "gates" (part => level), "self_default"}.</returns>
     internal static RubyHash TableOf(StoryTable table)
     {
-        var self = new RubyHash();
-        foreach ((string key, StoryClass found) in table.SelfRules.OrderBy(rule => rule.Key, StringComparer.Ordinal))
-        {
-            self.Add(key, (long)found);
-        }
-
+        RubyHash rules = StoryPlain.SelfRules(table.SelfRules, found => (long)found);
         var gates = new RubyHash();
         foreach ((string part, int gate) in table.Gates.OrderBy(entry => entry.Key, StringComparer.Ordinal))
         {
@@ -597,7 +630,8 @@ internal sealed partial class StoryTopics : IStoryTrackHost
             { "rev", table.Rev },
             { "switches", RubyString.Binary(table.Switches) },
             { "variables", RubyString.Binary(table.Variables) },
-            { "self", self },
+            { "self", rules["self"] },
+            { "common", rules["common"] },
             { "index", new RubyArray(table.Index.Order().Select(code => (RubyValue)code)) },
             { "local_steps", new RubyArray(table.LocalSteps.Select(steps => (RubyValue)new RubyArray
                 {
@@ -608,38 +642,6 @@ internal sealed partial class StoryTopics : IStoryTrackHost
                 })) },
             { "gates", gates },
             { "self_default", (long)table.SelfDefault },
-        };
-    }
-
-    /// <summary>
-    /// Writes what waits to be written into the game's story as the scripts apply it.
-    /// </summary>
-    /// <param name="take">The take.</param>
-    /// <returns>{"state" (nil, or {"why", "track", "part", "gate", "move" ({"from", "to", "gate", "by"} or nil), "keys" and "chests" (key => value), "held" ([key, ...]), "log" (key => value of the world's story where its log starts, nil for none)}), "keys" ([[key, value], ...] in order), "rev"}.</returns>
-    internal static RubyHash TakeOf(StoryTake take)
-    {
-        RubyValue state = RubyNil.Value;
-        if (take.State is { } whole)
-        {
-            state = new RubyHash
-            {
-                { "why", whole.Why },
-                { "track", whole.Track },
-                { "part", whole.Part },
-                { "gate", whole.Gate is { } gate ? gate : RubyNil.Value },
-                { "move", whole.Move is { } move ? new RubyHash { { "from", move.From }, { "to", move.To }, { "gate", move.Gate is { } level ? level : RubyNil.Value }, { "by", move.By } } : RubyNil.Value },
-                { "keys", HashOf(whole.Keys) },
-                { "chests", HashOf(whole.Chests) },
-                { "held", new RubyArray(whole.Held.Order(StringComparer.Ordinal).Select(key => (RubyValue)key)) },
-                { "log", whole.Log is { } log ? HashOf(log) : RubyNil.Value },
-            };
-        }
-
-        return new RubyHash
-        {
-            { "state", state },
-            { "keys", new RubyArray(take.Keys.Select(pair => (RubyValue)new RubyArray { pair.Key, pair.Value })) },
-            { "rev", take.Rev },
         };
     }
 
@@ -659,7 +661,7 @@ internal sealed partial class StoryTopics : IStoryTrackHost
     /// Answers <see cref="ClassicMergeTopic"/> by <see cref="ClassicMerge"/>, over the reviewed list
     /// held.
     /// </summary>
-    /// <param name="request">"writes" ([kind (0 switch, 1 variable, 2 self switch), key (an id, or [map, event, letter]), held, written] each, the values as the tracks write them) and "runs" ([the keys a member's run wrote, as the tracks name them; its site] each).</param>
+    /// <param name="request">"writes" ([kind, key, held, written] each, the key and both values as <see cref="StoryPlain"/> names them) and "runs" (the entries of a member's runs, nil for one that does not read).</param>
     /// <returns>"takes" (whether the story takes each write, in their order) and "keeps" (whether it keeps each run in its stream); nil before the list came.</returns>
     /// <exception cref="BridgeRequestException">A write or a run is no such list.</exception>
     private RubyValue ClassicMergeOf(RubyHash request)
@@ -679,10 +681,12 @@ internal sealed partial class StoryTopics : IStoryTrackHost
                 throw new BridgeRequestException("A write is [kind, key, held, written].");
             }
 
-            StoryKey key = WrittenKey(fields[0], fields[1]);
-            bool taken = ClassicMerge.Takes(scopes.ScopeOf(key), list.ClassOf(key), fields[2].AsText(), fields[3].AsText());
+            StoryKey key = StoryPlain.KeyOf(fields[0], fields[1]);
+            string held = StoryPlain.TextOf(key, fields[2]) ?? string.Empty;
+            string written = StoryPlain.TextOf(key, fields[3]) ?? string.Empty;
+            bool taken = ClassicMerge.Takes(scopes.ScopeOf(key), list.ClassOf(key), held, written);
             takes.Add(taken);
-            if (taken && fields[2].AsText() != fields[3].AsText())
+            if (taken && held != written)
             {
                 changed.Add(key);
             }
@@ -691,15 +695,15 @@ internal sealed partial class StoryTopics : IStoryTrackHost
         var keeps = new RubyArray();
         foreach (RubyValue run in request["runs"].IsNil ? [] : request["runs"].AsArray())
         {
-            RubyArray fields = run.AsArray();
-            if (fields.Count != 2)
+            if (run.IsNil)
             {
-                throw new BridgeRequestException("A run is [keys, site].");
+                keeps.Add(false);
+                continue;
             }
 
-            string? site = fields[1].IsNil ? null : fields[1].AsText();
-            IEnumerable<StoryKey> keys = fields[0].AsArray().Select(name => StoryKey.TryParse(name.AsText(), out StoryKey key) ? key : (StoryKey?)null)
-                .Where(key => key is { Kind: StoryKeyKind.Switch or StoryKeyKind.Variable or StoryKeyKind.SelfSwitch }).Select(key => key!.Value);
+            ReplayEntry entry = ReplayEntry.Read(run);
+            string site = entry.Site.ToString();
+            IEnumerable<StoryKey> keys = entry.Keys.Keys.Where(key => key.Kind is StoryKeyKind.Switch or StoryKeyKind.Variable or StoryKeyKind.SelfSwitch);
             keeps.Add(ClassicMerge.KeepsRun(keys, changed.Contains, key => scopes.ScopeOf(key, site)));
         }
 
@@ -710,7 +714,7 @@ internal sealed partial class StoryTopics : IStoryTrackHost
     /// Answers <see cref="ClassicFollowTopic"/> by <see cref="ClassicMerge.Follows"/>, over the
     /// reviewed list held: which of the leader's changes a member who follows the leader's story takes.
     /// </summary>
-    /// <param name="request">"keys" ([kind (0 switch, 1 variable, 2 self switch), key (an id, or [map, event, letter])] each), "choices" ({"s", "v"}, the switches and variables the member's own story keeps as choices' outcomes, see choices.personal) and "sizes" ([switches, variables] the member's game has).</param>
+    /// <param name="request">"keys" ([kind, key] each, see <see cref="StoryPlain"/>), "choices" ({"s", "v"}, the switches and variables the member's own story keeps as choices' outcomes, see choices.personal) and "sizes" ([switches, variables] the member's game has).</param>
     /// <returns>Whether the member takes each change, in their order; none of a switch or variable beyond the member's game; nil before the list came.</returns>
     /// <exception cref="BridgeRequestException">A key is no such list.</exception>
     private RubyValue ClassicFollowOf(RubyHash request)
@@ -727,7 +731,7 @@ internal sealed partial class StoryTopics : IStoryTrackHost
         foreach (RubyValue entry in request["keys"].AsArray())
         {
             RubyArray fields = entry.AsArray();
-            StoryKey key = WrittenKey(fields[0], fields[1]);
+            StoryKey key = StoryPlain.KeyOf(fields[0], fields[1]);
             bool known = key.Kind == StoryKeyKind.SelfSwitch || (key.Id > 0 && key.Id < sizes[key.Kind == StoryKeyKind.Switch ? 0 : 1].AsLong());
             bool choice = key.Kind == StoryKeyKind.Switch ? switches.Contains(key.Id) : key.Kind == StoryKeyKind.Variable && variables.Contains(key.Id);
             follows.Add(known && ClassicMerge.Follows(scopes.ScopeOf(key), choice));
@@ -737,17 +741,12 @@ internal sealed partial class StoryTopics : IStoryTrackHost
     }
 
     /// <summary>
-    /// Reads a key the scripts name by its kind.
+    /// Answers <see cref="FreezeEntryTopic"/>.
     /// </summary>
-    /// <param name="kind">0 for a switch, 1 for a variable, 2 for a self switch.</param>
-    /// <param name="key">The id, or [map, event, letter].</param>
-    /// <returns>The key.</returns>
-    private static StoryKey WrittenKey(RubyValue kind, RubyValue key) => kind.AsInt() switch
-    {
-        0 => StoryKey.Switch(key.AsInt()),
-        1 => StoryKey.Variable(key.AsInt()),
-        _ => StoryKey.SelfSwitch(key.AsArray()[0].AsInt(), key.AsArray()[1].AsInt(), key.AsArray()[2].AsText()),
-    };
+    /// <param name="entry">The fight.</param>
+    /// <returns>The fight as another game reads it, nil for none.</returns>
+    private static RubyValue FrozenEntry(RubyHash entry) =>
+        entry["troop"] is RubyInteger troop && FrozenFightText.Write(entry) is { } text && FrozenFightText.Read(troop.AsInt(), text) is { } read ? read : RubyNil.Value;
 
     /// <summary>
     /// Builds a Classic party's table, see <see cref="ClassicOf"/>.
@@ -776,38 +775,6 @@ internal sealed partial class StoryTopics : IStoryTrackHost
     {
         RubyHash level = request.AsHash();
         return new StoryLevel(level["best"].AsInt(), level["cap"].IsNil ? null : level["cap"].AsInt());
-    }
-
-    /// <summary>
-    /// Reads a seed.
-    /// </summary>
-    /// <param name="request">{key => value}.</param>
-    /// <returns>The keys and their values.</returns>
-    private static Dictionary<string, string> SeedOf(RubyHash request)
-    {
-        var seed = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (KeyValuePair<RubyValue, RubyValue> pair in request)
-        {
-            seed[pair.Key.AsText()] = pair.Value.AsText();
-        }
-
-        return seed;
-    }
-
-    /// <summary>
-    /// Writes texts by key as a Hash.
-    /// </summary>
-    /// <param name="values">The texts.</param>
-    /// <returns>The Hash.</returns>
-    private static RubyHash HashOf(IReadOnlyDictionary<string, string> values)
-    {
-        var hash = new RubyHash();
-        foreach ((string key, string value) in values)
-        {
-            hash.Add(key, value);
-        }
-
-        return hash;
     }
 
     /// <summary>
@@ -855,30 +822,6 @@ internal sealed partial class StoryTopics : IStoryTrackHost
     }
 
     /// <summary>
-    /// Takes the writes of a frame.
-    /// </summary>
-    /// <param name="request">[[key, value, site], ...].</param>
-    /// <returns><see langword="null"/>, no reply.</returns>
-    /// <exception cref="BridgeRequestException">A write is no three texts.</exception>
-    private RubyValue? Writes(RubyArray request)
-    {
-        var writes = new List<StoryWrite>(request.Count);
-        foreach (RubyValue entry in request)
-        {
-            RubyArray write = entry.AsArray();
-            if (write.Count != 3)
-            {
-                throw new BridgeRequestException("A story write is [key, value, site].");
-            }
-
-            writes.Add(new StoryWrite(write[0].AsText(), write[1].AsText(), write[2].AsText()));
-        }
-
-        _track.Write(writes);
-        return null;
-    }
-
-    /// <summary>
     /// Runs the story's frame: the connection, the relay's frames, the mapping, the telling's end of
     /// frame, and the status and refusals the scripts read.
     /// </summary>
@@ -910,10 +853,7 @@ internal sealed partial class StoryTopics : IStoryTrackHost
 
         if (_track.TakeRefusals() is { Count: > 0 } refusals)
         {
-            _context.Events.Post(RefusedEvent, new RubyArray(refusals.Select(refusal => (RubyValue)new RubyArray
-            {
-                refusal.Key, refusal.Code, refusal.Value is { } value ? value : RubyNil.Value,
-            })));
+            _context.Events.Post(RefusedEvent, StoryPlain.RefusalsOf(refusals));
         }
 
         RubyHash status = StatusOf();
@@ -1083,13 +1023,13 @@ internal sealed partial class StoryTopics : IStoryTrackHost
     /// <summary>
     /// Describes how the story on tracks stands, as the scripts read it each frame.
     /// </summary>
-    /// <returns>{"synced", "track", "part", "gate", "rev", "taken", "world" ({"rev", "part", "route", "done", "open", "checkpoints", "start" (the story markers where the world's log starts, or nil)} or nil), "pending", "need_seed", "classes" (the mapping's revision held, nil before), "tellings" (seat => [telling, map, site]), "told" (seat => revision), "await" (the seat whose ended telling the game has yet to take the track of, or nil), "telling" (true, false or nil), "holder", "unanswered"}.</returns>
+    /// <returns>{"synced", "track", "part", "gate", "rev", "taken", "world" ({"rev", "part", "route", "done", "open", "checkpoints", "start" (the story markers where the world's log starts, or nil)} or nil), "pending", "need_seed", "classes" (the mapping's revision held, nil before), "tellings" (seat => [telling, map, site], see <see cref="StoryPlain"/>), "told" (seat => revision), "await" (the seat whose ended telling the game has yet to take the track of, or nil), "telling" (true, false or nil), "holder", "unanswered"}.</returns>
     private RubyHash StatusOf()
     {
         var tellings = new RubyHash();
         foreach ((int seat, StoryTelling telling) in _track.Tellings.OrderBy(entry => entry.Key))
         {
-            tellings.Add(seat, new RubyArray { telling.Telling, telling.Map, telling.Site });
+            tellings.Add(seat, new RubyArray { telling.Telling, telling.Map, StoryPlain.SiteOf(telling.Site) });
         }
 
         var told = new RubyHash();

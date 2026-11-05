@@ -2,7 +2,8 @@
 #  coop_choices.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Caught a Classic member up again once they answered a choice the leader's story is past
+#      Paulinchen  2026-11-05: Told the offers to sync a story and read them as values, the DLL writing them
+#                            - Caught a Classic member up again once they answered a choice the leader's story is past
 #                            - Asked the DLL the route of the leader's story an offer brings the player to
 #                            - Read the story's ids from story_ids.rbx
 #                            - Left the self switches of the Navy's and the Pirates' lines to the reviewed key list
@@ -396,9 +397,9 @@ module MGQ_MpCoopChoices
   # The fields the choices add to the state the player's game tells the others: the members the
   # player, as leader, offers to bring their story up to theirs.
   #
-  # @return [Hash] "ssoffer": each member's id and the offer's number, comma separated.
+  # @return [Hash] "ssoffer": each member's id to the offer's number.
   def self.state_fields
-    { "ssoffer" => @offers.map { |id, offer| "#{id}:#{offer[:nonce]}" }.join(",") }
+    { "ssoffer" => Hash[@offers.map { |id, offer| [id, offer[:nonce]] }] }
   end
 
   # As leader, offers a member to bring their story up to the player's.
@@ -451,13 +452,14 @@ module MGQ_MpCoopChoices
   # Reads the offer of a player, as their state tells it, when it is for the player.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The other player.
-  # @return [String, nil] The offer's number, nil for no offer.
+  # @return [Integer, nil] The offer's number, nil for no offer.
   def self.offer_of(peer)
     return nil unless MGQ_MpCoop.party_leader.equal?(peer)
 
     me = MGQ_MpOverworldSync::Me.id.to_s
-    entry = peer.state["ssoffer"].to_s.split(",").find { |part| part.split(":", 2)[0] == me }
-    entry ? entry.split(":", 2)[1].to_s : nil
+    offers = peer.state["ssoffer"]
+    nonce = offers.is_a?(Hash) ? offers[me] : nil
+    nonce.is_a?(Integer) ? nonce : nil
   end
 
   # As member, accepts the leader's offer: shows the screen of the choices the catch-up carries the

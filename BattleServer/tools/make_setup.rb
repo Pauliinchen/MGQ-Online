@@ -2,6 +2,8 @@
 #  make_setup.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Wrote the commands' battle line through the core
+#                            - Wrote the battle channel's messages through the core
 #      Paulinchen  2026-10-15: Fought a raid boss's pools with RAID_POOL=1
 #                            - Named the first seat the battle's starter
 #                            - Named a world's mod with MOD_FILE
@@ -43,7 +45,7 @@ players = seats.each_with_index.map do |seat, index|
 end
 # The first seat started the battle, which makes it the battle's front.
 MGQ_MpOverworldSync::Me.take_seat(seats.first)
-message = ->(kind, body = "") { MGQ_MpOverworldSync::Me.encode({ "battle" => kind, "bid" => battle_id }) + body }
+message = ->(kind, body = "") { MGQ_Multiplayer::Bridge.call("message.write", "fields" => { "battle" => kind, "bid" => battle_id }, "body" => body) }
 attacks = Array.new(16) { [["skill", 1, -1]] }
 puts JSON.generate(setup: [MGQ_MpBattlesServed.setup_text(players, nil)].pack("m0"), ready: message.("ready"),
-                   commands: message.("commands", MGQ_MpBattlesSync::Wire.line([attacks])))
+                   commands: message.("commands", MGQ_MpBattlesSync::Wire.write([attacks])))

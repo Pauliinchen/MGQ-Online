@@ -2,7 +2,9 @@
 #  battles_raid_freeze.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Opened the player's own scene as a resume begins, so what it puts back counts as the scene's
+#      Paulinchen  2026-11-05: Handed the journal the values written over as the bridge carries them, keeping copies of other values here, instead of Marshal dumps
+#                            - Named sites as plain values, and had the DLL read the sites of an earlier release's records once
+#                            - Opened the player's own scene as a resume begins, so what it puts back counts as the scene's
 #                            - Counted its timers by the bridge's frame, which never goes back as a save loads
 #      Paulinchen  2026-10-28: Read the freeze's tables from the DLL's events database in place of battles_raid_freeze_data.rbx
 #                            - Read whether a page shows only during a scene or runs nothing from the DLL's events database
@@ -91,6 +93,10 @@ module MGQ_MpRaidFreeze
   # The DLL's topic that tells where the story fights troops, see EventTableTopics.Sites.
   SITES_TOPIC = "raid.sites"
 
+  # The DLL's topic that reads the sites a save of an earlier release keeps as texts, see
+  # StoryTopics.SitesTopic.
+  OLD_SITES_TOPIC = "story.sites"
+
   # Frames between two asks for the freeze's tables while the DLL gives none, a second.
   TABLES_FRAMES = 60
 
@@ -110,6 +116,10 @@ module MGQ_MpRaidFreeze
 
   # The writes noted since they last went to the DLL, each [seq, kind, key, before].
   @journal = []
+
+  # Copies of the values written over that the bridge cannot carry, by the write's number, which the
+  # journal names in their stead (see plain_value); dropped as the DLL drops their writes.
+  @objects = {}
 
   # The oldest live mark the DLL last heard, :none before the first.
   @kept = :none
@@ -255,7 +265,10 @@ module MGQ_MpRaidFreeze
     return nil if world.empty? || $game_system.nil?
 
     notes = MGQ_MpGame.get($game_system, :raid_freeze)
-    return notes if notes.is_a?(Hash) && notes["world"] == world && notes["records"].is_a?(Hash)
+    if notes.is_a?(Hash) && notes["world"] == world && notes["records"].is_a?(Hash)
+      read_old_sites(notes["records"])
+      return notes
+    end
 
     if notes.is_a?(Hash) && notes["records"].is_a?(Hash) && !notes["records"].empty?
       log("dropped #{notes['records'].size} frozen fight(s) of the story of world #{notes['world'].inspect}: world #{world} plays now")
@@ -263,6 +276,29 @@ module MGQ_MpRaidFreeze
     notes = { "world" => world, "origin" => nil, "records" => {} }
     MGQ_MpGame.set($game_system, :raid_freeze, notes)
     notes
+  end
+
+  # Has the DLL read the sites the records of a save of an earlier release keep as texts, such as
+  # "map:138:13:1", once.
+  #
+  # @param records [Hash] The records by troop, which take the sites.
+  def self.read_old_sites(records)
+    old = records.values.select { |record| record.is_a?(Hash) && record["site"].is_a?(String) }
+    return if old.empty?
+
+    texts = old.flat_map { |record| [record["site"], record["outer"]] + Array(record["frames"]).map { |frame| frame[0] } }.select { |site| site.is_a?(String) }.uniq
+    sites = MGQ_Multiplayer::Bridge.call(OLD_SITES_TOPIC, texts)
+    return log_once(:old_sites, "the DLL read no sites of the frozen fights a save of an earlier release keeps") unless sites.is_a?(Array) && sites.size == texts.size
+
+    read = Hash[texts.zip(sites)]
+    old.each do |record|
+      record["site"] = read[record["site"]]
+      record["outer"] = read[record["outer"]] if record["outer"].is_a?(String)
+      Array(record["frames"]).each { |frame| frame[0] = read[frame[0]] if frame[0].is_a?(String) }
+    end
+    log("read the sites of #{old.size} frozen fight record(s) a save of an earlier release keeps")
+  rescue => e
+    log_once(:old_sites, "reading the sites of an earlier release's frozen fights failed: #{e.class}: #{e.message}")
   end
 
   # Notes the story's journal mark and the events that show as the map's own event starts, with the
@@ -334,7 +370,7 @@ module MGQ_MpRaidFreeze
     return nil unless resume && resume[:stage] == :event && resume[:frames] && !resume[:frames].empty? && interpreter.equal?(resume[:caller])
 
     frame = resume[:frames][0]
-    return nil unless frame[0] == "ce:#{id}"
+    return nil unless frame[0] == ["ce", id]
 
     resume[:frames].shift
     frame
@@ -349,7 +385,7 @@ module MGQ_MpRaidFreeze
   # @return [Object] What the call returns.
   def self.hand_over(interpreter, frame, original)
     resume = @resume
-    id = frame[0][3..-1].to_i
+    id = frame[0][1].to_i
     common = $data_common_events[id]
     return original.call unless common && common.list
 
@@ -485,10 +521,10 @@ module MGQ_MpRaidFreeze
     page = moved ? moved_page(map, event_id, outer_list) : (event ? event.mgq_mp_pages.index { |candidate| candidate.list.equal?(outer_list) } : nil)
     return "event #{event_id}#{moved ? " of map #{map}" : ''} runs none of its own pages" unless page
 
-    keys = ["map:#{map}:#{event_id}:#{page + 1}"]
+    keys = [["map", map, event_id, page + 1]]
     callees = stack.each_with_index.map do |frame, depth|
       callee = depth + 1 < stack.size ? stack[depth + 1][0] : interpreter
-      keys << "ce:#{(MGQ_MpGame.get(callee, :common_event_id) || frame[4]).to_i}"
+      keys << ["ce", (MGQ_MpGame.get(callee, :common_event_id) || frame[4]).to_i]
       [MGQ_MpGame.get(callee, :map_id).to_i, callee.event_id.to_i]
     end
     frames = stack.each_with_index.map { |frame, depth| [keys[depth], frame[2], frame[3].dup] }
@@ -698,8 +734,8 @@ module MGQ_MpRaidFreeze
   def self.blocked_events(map, ids, frames)
     callers = data(:CALLERS, {})
     siblings = Array(frames).flat_map do |key, _index, _branch|
-      common = key.to_s[/\Ace:(\d+)\z/, 1]
-      common ? Array(callers[common.to_i]).map { |caller| site_parts(caller) }.select { |parts| parts[0] == map }.map { |parts| parts[1] } : []
+      common = key.is_a?(Array) && key[0] == "ce" ? key[1] : nil
+      common ? Array(callers[common]).map { |caller| site_parts(caller) }.select { |parts| parts[0] == map }.map { |parts| parts[1] } : []
     end
     blocked = (ids + siblings).uniq.sort
     others = blocked - ids
@@ -1234,7 +1270,7 @@ module MGQ_MpRaidFreeze
   # @param next_frame [Array] The next frame: site key, index and branches.
   # @return [Integer, nil] The index, nil for none.
   def self.found_call(list, index, next_frame)
-    id = next_frame[0][3..-1].to_i
+    id = next_frame[0][1].to_i
     found_command(list, index, nil) { |command| command.code == CALL_CODE && command.parameters[0].to_i == id }
   end
 
@@ -2046,7 +2082,8 @@ module MGQ_MpRaidFreeze
 
     hand_journal if @journal.size >= MAX_PENDING && @refusals == 0
     trim_journal(MAX_HELD - 1)
-    @journal << [@seq += 1, kind, kind == 2 ? key.dup : key, plain_value(MGQ_MpStoryState.data_of(object)[key])]
+    @seq += 1
+    @journal << [@seq, kind, kind == 2 ? key.dup : key, plain_value(@seq, MGQ_MpStoryState.data_of(object)[key])]
   rescue => e
     log_once([:writing, e.class], "noting a write in the journal failed: #{e.class}: #{e.message}")
   end
@@ -2078,6 +2115,7 @@ module MGQ_MpRaidFreeze
     log("the DLL took the journal's #{@journal.size} write(s) after #{@refusals} refusal(s)") if @refusals > 0
     @journal = []
     @kept = keep
+    drop_objects(keep)
     @refusals = 0
     true
   rescue => e
@@ -2092,6 +2130,7 @@ module MGQ_MpRaidFreeze
   # @param error [Exception] Why the hand-over failed.
   def self.held_back(keep, error)
     @journal.reject! { |entry| keep.nil? || entry[0] <= keep }
+    drop_objects(keep)
     trim_journal(MAX_HELD)
     @refusals += 1
     return unless @refusals == 1 || @refusals % REFUSALS_PER_LOG == 0
@@ -2136,29 +2175,39 @@ module MGQ_MpRaidFreeze
     rows.each_with_index.sort_by { |(kind, key, _, _), at| [kind, kind == 2 ? order.fetch(key, order.size + at) : key, at] }.map(&:first)
   end
 
-  # Writes a story value as the journal carries it: nil, true, false and an Integer as they are, any
-  # other value as its Marshal dump in an Array of one.
+  # Turns a value written over into what the journal carries: nil and the values the story carries
+  # (MGQ_MpStoryState.plain_variable) as the bridge takes them; any other value stays here as a copy
+  # in @objects, the journal naming it by its write's number.
   #
+  # @param seq [Integer] The write's number.
   # @param value [Object] The value.
   # @return [Object] The plain value.
-  def self.plain_value(value)
-    case value
-    when nil, true, false, Integer then value
-    else [Marshal.dump(value)]
-    end
-  rescue => e
-    log_once([:plain_value, e.class], "a story value cannot be kept in the journal (#{e.class}: #{e.message}): it never counts as unchanged")
-    [""]
+  def self.plain_value(seq, value)
+    return nil if value.nil?
+
+    plain = MGQ_MpStoryState.plain_variable(value)
+    return plain unless plain.nil?
+
+    @objects[seq] = (value.dup rescue value)
+    { "object" => seq }
   end
 
-  # Reads a story value back from the journal, see plain_value.
+  # Reads a value written over back from the journal, see plain_value.
   #
   # @param value [Object] The plain value.
-  # @return [Object] The value; a new Object, equal to nothing, for one the journal could not keep.
+  # @return [Object] The value; a new Object, equal to nothing, for a copy dropped since.
   def self.value_of(value)
-    return value unless value.is_a?(Array)
+    return value unless value.is_a?(Hash)
+    return @objects.fetch(value["object"]) { Object.new } if value.key?("object")
 
-    value[0].to_s.empty? ? Object.new : Marshal.load(value[0])
+    MGQ_MpStoryState.variable_value(value)
+  end
+
+  # Drops the copies of values written over whose writes the DLL drops: those no live mark needs.
+  #
+  # @param keep [Integer, nil] The oldest live mark, nil for none.
+  def self.drop_objects(keep)
+    @objects.reject! { |seq, _| keep.nil? || seq <= keep }
   end
 
   # Gives back the items whose count a defeat changed when the journal lost the defeat's start, so
@@ -2233,15 +2282,15 @@ module MGQ_MpRaidFreeze
 
   # Splits a map page's site key.
   #
-  # @param key [String] Such as "map:138:13:1".
+  # @param key [Array] Such as ["map", 138, 13, 1].
   # @return [Array(Integer, Integer, Integer), Array] The map, event and page; empty for another key.
   def self.site_parts(key)
-    key.to_s =~ /\Amap:(\d+):(\d+):(\d+)\z/ ? [$1.to_i, $2.to_i, $3.to_i] : []
+    key.is_a?(Array) && key.size == 4 && key[0] == "map" ? key[1, 3] : []
   end
 
   # Finds the page of a map page's site key.
   #
-  # @param key [String] The key.
+  # @param key [Array] The key.
   # @return [Integer, nil] The page, 1-based; nil for another key.
   def self.page_number(key)
     site_parts(key)[2]
@@ -2318,7 +2367,8 @@ module MGQ_MpRaidFreeze
   def self.tables_of(answer)
     defeat = answer["defeat"].is_a?(Hash) ? answer["defeat"] : {}
     found = {
-      :SITES => answer["sites"], :CALLERS => answer["callers"], :ALTERNATIVES => answer["alternatives"], :SCENES => answer["scenes"],
+      :SITES => answer["sites"], :CALLERS => answer["callers"], :ALTERNATIVES => answer["alternatives"],
+      :SCENES => answer["scenes"].is_a?(Array) ? Hash[answer["scenes"]] : nil,
       :SCENE_MAPS => answer["scene_maps"], :DEFEAT_EVENTS => defeat["events"], :EXCLUDED_MAPS => answer["excluded_maps"],
       :PREAMBLE_CODES => answer["preamble_codes"],
     }

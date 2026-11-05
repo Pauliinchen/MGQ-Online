@@ -2,6 +2,7 @@
 #  ui_party_box_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Expected the box's switch kept as true or false
 #      Paulinchen  2026-11-01: Read the box from the Mod Framework's components it builds, and checked a click on its size hint
 #                            - Stood in for the emote wheel of the Mod Framework
 #      Paulinchen  2026-10-31: Kept the boxes' places in the Mod Framework's settings
@@ -181,7 +182,7 @@ MGQ_MpChat.stop_typing
 check("Tab typed into the chat box changes nothing and stays out of the log", [MGQ_MpPartyBox.small?, typed.grep(/ignored/)], [small_before, []])
 $pressed = MGQ_MpHotkeys.code(:party_box)
 MGQ_MpPartyBox.on_map
-check("Tab makes it small, which Player.ini keeps", [MGQ_MpPartyBox.small?, $player_ini["party_box_small"]], [true, "1"])
+check("Tab makes it small, which Player.ini keeps", [MGQ_MpPartyBox.small?, $player_ini["party_box_small"]], [true, true])
 $pressed = MGQ_MpHotkeys.code(:party_box)
 MGQ_MpPartyBox.on_map
 read.call
@@ -192,7 +193,7 @@ refused = logged_lines { MGQ_MpPartyBox.click_size }
 $overview_open = false
 check("with the hotkey's refusals, logged", [MGQ_MpPartyBox.small?, refused.grep(/World overview/).size], [true, 1])
 MGQ_MpPartyBox.click_size
-check("a click again makes it full", [MGQ_MpPartyBox.small?, $player_ini["party_box_small"]], [false, "0"])
+check("a click again makes it full", [MGQ_MpPartyBox.small?, $player_ini["party_box_small"]], [false, false])
 
 # The map's sprites open the box and close it as they go.
 spriteset = Spriteset_Map.new

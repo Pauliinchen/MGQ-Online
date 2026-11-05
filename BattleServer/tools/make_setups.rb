@@ -2,6 +2,8 @@
 #  make_setups.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Wrote the commands' battle line through the core
+#                            - Wrote the battle channel's messages through the core
 #      Paulinchen  2026-10-15: Created
 #
 #----------------------------------------------------------------
@@ -32,8 +34,8 @@ setups = (0...pairs).map do |pair|
     MGQ_MpBattlesCoop::Player.new(seat, "Player #{index + 1}", build[0], build[1], build[2], [0, 1, 2, 3], 2, 0)
   end
   MGQ_MpOverworldSync::Me.take_seat(seats.first)
-  message = ->(kind, body = "") { MGQ_MpOverworldSync::Me.encode({ "battle" => kind, "bid" => battle_id }) + body }
+  message = ->(kind, body = "") { MGQ_Multiplayer::Bridge.call("message.write", "fields" => { "battle" => kind, "bid" => battle_id }, "body" => body) }
   { battle: battle_id, seats: seats, setup: [MGQ_MpBattlesServed.setup_text(players, nil)].pack("m0"),
-    ready: message.("ready"), commands: message.("commands", MGQ_MpBattlesSync::Wire.line([attacks])) }
+    ready: message.("ready"), commands: message.("commands", MGQ_MpBattlesSync::Wire.write([attacks])) }
 end
 $stdout.puts JSON.generate(setups)

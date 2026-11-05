@@ -2,6 +2,7 @@
 #  actors_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Checked the facts handed to C# and the members made of those it reads instead of the text's fields
 #      Paulinchen  2026-10-31: Checked that a rebuild measured in battle compares as its owner's game measured it
 #      Paulinchen  2026-10-13: Used a placeholder hero key
 #      Paulinchen  2026-10-11: Checked a rebuilt character's owner and its own name
@@ -11,9 +12,10 @@
 #
 #----------------------------------------------------------------
 
-# Covers how core_actors.rbx writes and reads a character's build: the hero of a replaced Luka,
-# lines without a hero, the fingerprint of the databases builds name, and what a rebuilt character
-# leaves of the player's save alone, and how a rebuild compares with its owner's game outside of battle.
+# Covers what core_actors.rbx hands C# of a character's build and makes of what C# reads: the
+# facts of a character and its enchanted equipment, the members this game's data knows, the hero of
+# a replaced Luka, the fingerprint of the databases builds name, what a rebuilt character leaves of
+# the player's save alone, and how a rebuild compares with its owner's game outside of battle.
 
 require_relative "support"
 
@@ -28,17 +30,86 @@ $data_actors = [nil, Named.new("Luka"), Named.new("Alice")]
 $data_classes = [nil] + Array.new(200) { Named.new("Class") }
 $data_skills = [nil] + Array.new(100) { Named.new("Skill") }
 $data_items = [nil]
+$data_weapons = [nil, Named.new("Sword")]
+$data_armors = [nil]
+$data_enemies = [nil]
+$data_states = [nil]
+
+# Stands in for the DLL, answering the builds' topics with the facts in $read and the requests kept.
+require_relative "bridge_support"
+load_bridge
+$actors_fake = FakeBridge.new
+$requests = []
+$actors_fake.answer("builds.write") { |request| $requests << request; "text" }
+$actors_fake.answer("builds.read") { |request| $requests << request; $read }
+$actors_fake.answer("builds.game") { |sizes| $requests << sizes; "3:#{sizes.join(',')}" }
+MGQ_Multiplayer::Bridge.open($actors_fake)
 
 load_script "core_actors"
 builds = MGQ_MpActors::Builds
 
-# A member line of 0.4.1: its fourteen fields.
-OLD = "member=1;5;92;151;92:1,151:1;0,0,0,0,0,0,0,0;10,11;;;;100,10,20,20,20,20,20,20;950,50,40,0,0,0,0;;"
+# The game's database items and equipment: a sword enchanted as the game keeps its rolls.
+module RPG
+  # Stands in for a piece of equipment, enchanted when its stats roll.
+  class EquipItem
+    attr_accessor :id, :base_data, :rarity_num, :plus_num, :socket_num, :enchant_variance_base, :params_variance, :enchants_variance
+    def enchant_item?; params_variance ? true : false; end
+    def socket_item?; false; end
+  end
+  # Stands in for a weapon.
+  class Weapon < EquipItem; end
+end
+# Stands in for a slot of equipment.
+Slot = Struct.new(:object)
+# Stands in for a player's character, its fields as the game keeps them.
+class Sample_Actor
+  attr_reader :id, :base_level, :class_id, :tribe_id, :level_list
+  def initialize
+    @id, @base_level, @class_id, @tribe_id, @level_list = 2, 30, 92, 151, { 92 => 5, 151 => 3 }
+    @param_plus, @skills, @abilities, @equip_abilities = [1, 0], [10, 11], { 1 => [12, nil] }, nil
+    sword = RPG::Weapon.new
+    sword.base_data, sword.rarity_num, sword.plus_num, sword.socket_num, sword.enchant_variance_base = Struct.new(:id).new(1), 2, 1, 1, 40
+    sword.params_variance = [1.05] + [1.0] * 7
+    sword.enchants_variance = { 3 => { 1 => { 2 => 0.5 } } }
+    sword.instance_variable_set(:@enchants, [3])
+    sword.instance_variable_set(:@stones, [nil])
+    @equips = [Slot.new(sword), Slot.new(nil)]
+  end
+  def param(id); 100 + id; end
+  def xparam(id); id * 0.25; end
+  def love; 7; end
+  def auto_state_with_switch; {}; end
+end
+$game_system = Struct.new(:battle_count).new(4)
+builds.write([Sample_Actor.new])
+sword_facts = { "base" => { "weapon" => 1 }, "gems" => [nil],
+                "enchant" => { "rarity" => 2, "plus" => 1, "sockets" => 1, "variance" => 40, "enchants" => [3],
+                               "stats" => [{ "float" => "1.05" }] + [{ "float" => "1.0" }] * 7, "traits" => [[3, 1, 2, { "float" => "0.5" }]] } }
+check("a character's facts go to C# as the game keeps them, its Floats tagged", $requests.last,
+      { "actors" => [{ "actor" => 2, "level" => 30, "class" => 92, "tribe" => 151, "levels" => [[92, 5], [151, 3]], "param_plus" => [1, 0],
+                       "skills" => [10, 11], "abilities" => [[1, [12, nil]]], "equip_abilities" => [], "equips" => [sword_facts, nil],
+                       "params" => (100..107).to_a, "rates" => [0.0, 0.25, 0.5, 1.25, 1.5].map { |rate| { "float" => rate.to_s } },
+                       "counters" => [4, 0, 0, 0, 0, 0, 7], "switches" => [], "hero" => "" }] })
 
-check("a line of 0.4.1 reads, with no hero", [builds.parse(OLD, 4).size, builds.parse(OLD, 4)[0].hero], [1, ""])
-check("a line with a hero reads it", builds.parse(OLD + ";sample_hero", 4)[0].hero, "sample_hero")
-check("a hero that is no key is left out", builds.parse(OLD + ";../x", 4)[0].hero, "")
-check("a line with a field too many is unreadable", builds.parse(OLD + ";sample_hero;more", 4), [])
+# What C# read of another game's builds: a character this game knows, with a skill, a race and a
+# weapon it lacks, and one of an actor it lacks.
+member_facts = { "actor" => 1, "level" => 99_999, "class" => 92, "tribe" => 999, "levels" => [[92, 5], [999, 2]], "param_plus" => [0] * 8,
+                 "skills" => [10, 500], "abilities" => [[1, [12, 500]]], "equip_abilities" => [],
+                 "equips" => [{ "base" => { "weapon" => 1 } }, { "base" => { "weapon" => 9 } }, nil],
+                 "params" => [100, 10, 20, 20, 20, 20, 20, 20], "rates" => [{ "float" => "0.95" }, { "float" => "0.05" }], "counters" => [0] * 7, "switches" => [], "hero" => "" }
+$read = [member_facts, member_facts.merge("actor" => 50)]
+$requests.clear
+members = builds.parse("builds", 4)
+again = builds.parse("builds", 4)
+check("a reading keeps what this game's data knows, asked of C# once for the same text",
+      [members.size, members[0].to_a.first(10), members[0].rates, again.size, $requests],
+      [1, [1, 9999, 92, nil, { 92 => 5 }, [0] * 8, [10], { 1 => [12] }, {}, [$data_weapons[1], nil, nil]], [0.95, 0.05], 1,
+       [{ "text" => "builds", "limit" => 4 }]])
+
+$requests.clear
+first = builds.game
+check("the fingerprint is written by C# once while the databases' sizes stay, as the map asks it every frame",
+      [first, builds.game, $requests], ["3:3,201,101,1,2,1,1,1", first, [[3, 201, 101, 1, 2, 1, 1, 1]]])
 
 # Stands in for Luka Replacer, which names the hero of a replaced Luka.
 module MGQ_LukaReplacer; def self.hero_key(actor); actor == :luka ? "sample_hero" : ""; end; end
@@ -48,18 +119,9 @@ MGQ_LukaReplacer.define_singleton_method(:hero_key) { |_actor| raise "broken" }
 check("a hero that cannot be read is written as none, logged once", [builds.hero_of(:luka), builds.hero_of(:luka), $log],
       ["", "", ["actors: could not read a character's hero, writing none: RuntimeError: broken"]])
 
-# The fingerprint tells the weapons' and armors' databases apart too, since builds carry their ids.
-$data_weapons = [nil, Named.new("Sword")]
-$data_armors = [nil]
-$data_enemies = [nil]
-$data_states = [nil]
-check("the fingerprint counts every database a build names", builds.game, "#{builds::FORMAT}:3,201,101,1,2,1,1,1")
-
 # A rebuilt character: enchanted equipment past the player's switch, and the player's affection.
 # The game's switch that turns enchanted equipment off.
 module NWConst; module Sw; ENCHANT_OFF = 502; end; end
-# Stands in for a piece of enchanted equipment.
-module RPG; class EquipItem; def enchant_item?; true; end; end; end
 # Stands in for the game's switches, counting each time the enchantment switch is turned on.
 class Game_Switches
   attr_reader :unequipped
@@ -75,10 +137,13 @@ class Game_Actor
 end
 $game_switches = Game_Switches.new
 $game_switches[NWConst::Sw::ENCHANT_OFF] = true
+sent = builds::Member.new(1, 5, 92, 151, {}, [0] * 8, [], {}, {}, [], [100, 10, 20, 20, 20, 20, 20, 20], [0.95, 0.05, 0.04, 0.0, 0.0], [0] * 7, [], "")
 rebuilt = Game_MpActor.allocate
-rebuilt.instance_variable_set(:@member, builds.parse(OLD, 4)[0])
+rebuilt.instance_variable_set(:@member, sent)
+enchanted = RPG::Weapon.new
+enchanted.params_variance = [1.0]
 check("enchanted equipment is allowed without the switch's setter, which takes the party's off",
-      [rebuilt.equippable?(RPG::EquipItem.new), $game_switches[NWConst::Sw::ENCHANT_OFF], $game_switches.unequipped], [true, true, 1])
+      [rebuilt.equippable?(enchanted), $game_switches[NWConst::Sw::ENCHANT_OFF], $game_switches.unequipped], [true, true, 1])
 $affection = 7
 rebuilt.love = 9
 check("a won battle leaves the player's affection alone", $affection, 7)
@@ -96,7 +161,6 @@ class Game_Party; def in_battle; @in_battle; end; end
 $game_party = Game_Party.new
 # The game's names of the stats.
 module Vocab; def self.param(id); "Stat#{id}"; end; end
-sent = builds.parse(OLD, 4)[0]
 rebuilt.define_singleton_method(:param) { |id| id == 2 && $game_party.in_battle ? sent.params[id] * 1.4 : sent.params[id] }
 rebuilt.define_singleton_method(:xparam) { |id| sent.rates[builds::RATES.keys.index(id)] }
 MGQ_MpGame.set($game_party, :in_battle, true)

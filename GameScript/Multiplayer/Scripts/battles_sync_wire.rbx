@@ -2,6 +2,7 @@
 #  battles_sync_wire.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Handed the values to C#, which writes and reads the lines, and made the game's objects of the values it reads
 #      Paulinchen  2026-10-12: Limited a line's size and nesting and gave nil for an unreadable line
 #                            - Read an item as one database token and an id only within its table
 #                            - Took only symbols this game already has
@@ -11,45 +12,53 @@
 #
 #----------------------------------------------------------------
 
-# How a live battle's messages are written: values as tab-separated tokens, which both games
-# read back the same. It builds on battles_sync.rbx.
+# The values a live battle's messages carry, which C# writes as lines and reads back for both
+# games. It builds on battles_sync.rbx.
 
 module MGQ_MpBattlesSync
-  # Writes values as one line of tab-separated tokens and reads them back, for the messages
-  # between the two games.
+  # Hands the game's values to C# (MGQOnline.Game's WireTopics), which writes them as a line of a
+  # battle message, and makes this game's objects of the values C# reads of another game's line.
   #
-  # Only plain values travel, never code or Ruby's own formats, since the other game could send
-  # anything.
+  # The bridge carries no Floats, Symbols or game objects, so each of those crosses as a Hash of
+  # one key that names its kind (MGQOnline.Game's WirePlain); a line carries no Hash itself. Only
+  # plain values travel, never code or Ruby's own formats, since the other game could send anything.
   module Wire
-    # Characters a text escapes, which would otherwise end a token or a line.
-    ESCAPES = { "\\" => "\\\\", "\t" => "\\t", "\n" => "\\n", "\r" => "\\r" }
+    # The topic that writes values as a line.
+    WRITE_TOPIC = "wire.write"
 
-    # The escapes turned back.
-    UNESCAPES = ESCAPES.invert
+    # The topic that reads a line's values.
+    READ_TOPIC = "wire.read"
 
-    # The text of a symbol taken from the other game: word characters, at most 40.
-    SYMBOL_PATTERN = /\A\w{1,40}\z/
+    # The kinds of the database's entries.
+    ENTRY_KINDS = %w(skill item state weapon armor)
 
-    # Deepest nesting of lists and action results a line may have. The game's own lines nest 5 deep
-    # at most.
-    MAX_DEPTH = 8
-
-    # Longest line read, the most the relay delivers in one message.
-    MAX_LINE_BYTES = 512 * 1024
-
-    # The token kinds an item of the database takes: skill, item, state, weapon and armor.
-    ITEM_KINDS = %w(k t z w a)
+    # The Floats whose texts to_f reads as 0.0.
+    FLOAT_TEXTS = { "Infinity" => 1.0 / 0, "-Infinity" => -1.0 / 0, "NaN" => 0.0 / 0 }
 
     # What a decoded action offers: its kind, such as :count or :chain_action, which is all the
     # game's display code reads of it.
     ActionKind = Struct.new(:symbol)
 
-    # Writes values.
+    # Writes values as a line.
     #
     # @param values [Array] See encodable?.
-    # @return [String] The line.
-    def self.line(values)
-      values.map { |value| tokens(value) }.flatten.join("\t")
+    # @return [String] The line, empty while the DLL does not answer.
+    def self.write(values)
+      MGQ_Multiplayer::Bridge.call(WRITE_TOPIC, plain(values)).to_s
+    end
+
+    # Reads a line another game sent.
+    #
+    # @param line [String] The line.
+    # @yieldparam ref [String] A battler's reference, such as "a0".
+    # @yieldreturn [Game_Battler, nil] The battler it names.
+    # @return [Array, nil] The values, nil when the line does not read or the DLL does not answer.
+    def self.read(line, &battler)
+      values = MGQ_Multiplayer::Bridge.call(READ_TOPIC, line.to_s)
+      values.is_a?(Array) ? objects(values, &battler) : nil
+    rescue StandardError => e
+      MGQ_MpBattlesSync.log_once([:wire, e.class.name], "a line did not read: #{e.class}: #{e.message[0, 80]}")
+      nil
     end
 
     # Tells whether a value travels as itself rather than as its text.
@@ -69,92 +78,87 @@ module MGQ_MpBattlesSync
       end
     end
 
-    # Reads a line.
+    # Turns a value into what the bridge carries, any other object into its text.
     #
-    # @param line [String] The line.
-    # @yieldparam ref [String] A battler's reference, such as "a0".
-    # @yieldreturn [Game_Battler, nil] The battler it names.
-    # @return [Array, nil] The values, nil when the line is broken, too long or too deep, or fails
-    #   to read.
-    def self.parse(line, &battler)
-      return nil if line.to_s.bytesize > MAX_LINE_BYTES
-
-      stack = [[]]
-      line.split("\t").each do |token|
-        case token
-        when "[", "{"
-          return nil if stack.size > MAX_DEPTH
-
-          stack.push([])
-        when "]"
-          return nil if stack.size < 2
-
-          inner = stack.pop
-          stack.last << inner
-        when "}"
-          return nil if stack.size < 2
-
-          fields = stack.pop
-          stack.last << result(fields)
-        else
-          stack.last << value(token[0, 1], token[1..-1].to_s, &battler)
-        end
-      end
-      stack.size == 1 ? stack[0] : nil
-    rescue StandardError, SystemStackError => e
-      MGQ_MpBattlesSync.log_once([:wire, e.class.name], "a line did not read: #{e.class}: #{e.message[0, 80]}")
-      nil
-    end
-
-    # Turns a value into tokens.
-    #
-    # @param value [Object] A value.
-    # @return [Array<String>] Its tokens.
-    def self.tokens(value)
+    # @param value [Object] A value, see encodable?.
+    # @return [Object] nil, true, false, an Integer, a String, an Array of these, or a Hash of one
+    #   key that names the value's kind.
+    def self.plain(value)
       case value
-      when nil then ["~"]
-      when true then ["+"]
-      when false then ["-"]
-      when Integer then ["i#{value}"]
-      when Float then ["f#{value}"]
-      when Symbol then [":#{escape(value.to_s)}"]
-      when Game_Battler then ["@#{Recorder.ref(value)}"]
-      when Game_Action then ["x#{value.symbol}"]
-      when Game_ActionResult then result_tokens(value)
-      when Game_BaseItem then ["g#{tokens(value.object)[0]}"]
-      when RPG::Skill then ["k#{value.id}"]
-      when RPG::Item then ["t#{value.id}"]
-      when RPG::State then ["z#{value.id}"]
-      when RPG::Weapon then ["w#{value.id}"]
-      when RPG::Armor then ["a#{value.id}"]
-      when Color then ["c#{[value.red, value.green, value.blue, value.alpha].map(&:to_i).join(',')}"]
-      when Tone then ["n#{[value.red, value.green, value.blue, value.gray].map(&:to_i).join(',')}"]
-      when Array then ["["] + value.map { |item| tokens(item) }.flatten + ["]"]
-      else ["s#{escape(value.to_s)}"]
+      when nil, true, false, Integer, String then value
+      when Array then value.map { |item| plain(item) }
+      when Float then { "float" => value.to_s }
+      when Symbol then { "symbol" => value.to_s }
+      when Game_Battler then { "battler" => Recorder.ref(value) }
+      when Game_Action then { "action" => value.symbol && value.symbol.to_s }
+      when Game_ActionResult then { "result" => result_fields_of(value) }
+      when Game_BaseItem then { "base_item" => plain(value.object) }
+      when RPG::Skill then { "skill" => value.id }
+      when RPG::Item then { "item" => value.id }
+      when RPG::State then { "state" => value.id }
+      when RPG::Weapon then { "weapon" => value.id }
+      when RPG::Armor then { "armor" => value.id }
+      when Color then { "color" => [value.red, value.green, value.blue, value.alpha].map(&:to_i) }
+      when Tone then { "tone" => [value.red, value.green, value.blue, value.gray].map(&:to_i) }
+      else value.to_s
       end
     end
 
-    # Turns an action result into tokens: its fields as name and value, those that travel.
+    # Lists the fields of an action result that travel.
     #
     # @param result [Game_ActionResult] The result.
-    # @return [Array<String>] Its tokens.
-    def self.result_tokens(result)
-      fields = result.instance_variables.map do |name|
+    # @return [Array<Array(String, Object)>] Each field's name without "@" and its plain value.
+    def self.result_fields_of(result)
+      result.instance_variables.map do |name|
         field = result.instance_variable_get(name)
-        encodable?(field) ? tokens(name.to_s.delete("@").to_sym) + tokens(field) : []
+        encodable?(field) ? [name.to_s.delete("@"), plain(field)] : nil
+      end.compact
+    end
+
+    # Makes this game's objects of the values C# read.
+    #
+    # @param value [Object] A plain value, see plain.
+    # @yieldparam ref [String] A battler's reference.
+    # @return [Object] The value, nil for anything this game lacks.
+    def self.objects(value, &battler)
+      case value
+      when Array then value.map { |item| objects(item, &battler) }
+      when Hash then object(value.keys[0], value.values[0], &battler)
+      else value
       end
-      ["{"] + fields.flatten + ["}"]
+    end
+
+    # Makes this game's object of a value of one kind.
+    #
+    # @param kind [String] The kind, see plain.
+    # @param content [Object] What the kind holds.
+    # @yieldparam ref [String] A battler's reference.
+    # @return [Object] The object, nil for anything this game lacks.
+    def self.object(kind, content, &battler)
+      return data(table(kind), content) if ENTRY_KINDS.include?(kind)
+
+      case kind
+      when "float" then FLOAT_TEXTS.fetch(content.to_s) { content.to_s.to_f }
+      when "symbol" then symbol(content.to_s)
+      when "battler" then block_given? ? yield(content.to_s) : nil
+      when "action" then ActionKind.new(symbol(content.to_s))
+      when "base_item" then base_item(objects(content))
+      when "color" then Color.new(*objects(content))
+      when "tone" then Tone.new(*objects(content))
+      when "result" then result(content, &battler)
+      end
     end
 
     # Makes an action result of its fields, leaving out names this game's results lack.
     #
-    # @param fields [Array] Names and values, taking turns.
+    # @param fields [Array<Array(String, Object)>] Each field's name and plain value.
+    # @yieldparam ref [String] A battler's reference.
     # @return [Game_ActionResult] The result.
-    def self.result(fields)
+    def self.result(fields, &battler)
       result = Game_ActionResult.new(nil)
-      fields.each_slice(2) do |name, field|
-        ivar = result_fields[name.to_s] if name.is_a?(Symbol)
-        result.instance_variable_set(ivar, field) if ivar
+      fields.each do |name, field|
+        ivar = result_fields[name.to_s]
+        result.instance_variable_set(ivar, objects(field, &battler)) if ivar
       end
       result
     end
@@ -182,8 +186,6 @@ module MGQ_MpBattlesSync
     # @param text [String] The symbol's text.
     # @return [Symbol, nil] The symbol, nil for a text no symbol of this game has.
     def self.symbol(text)
-      return nil unless text =~ SYMBOL_PATTERN
-
       symbols[text]
     end
 
@@ -194,51 +196,27 @@ module MGQ_MpBattlesSync
       @symbols ||= Symbol.all_symbols.each_with_object({}) { |symbol, all| all[symbol.to_s] = symbol }
     end
 
-    # Reads a value back from a token.
+    # Gives the database a kind of entry names an entry of.
     #
-    # @param kind [String] The token's first character.
-    # @param rest [String] The rest of the token.
-    # @yieldparam ref [String] A battler's reference.
-    # @return [Object] The value, nil for anything unknown.
-    def self.value(kind, rest, &battler)
+    # @param kind [String] One of ENTRY_KINDS.
+    # @return [Array, nil] The database.
+    def self.table(kind)
       case kind
-      when "+" then true
-      when "-" then false
-      when "i" then rest.to_i
-      when "f" then rest.to_f
-      when ":" then symbol(unescape(rest))
-      when "s" then unescape(rest)
-      when "@" then block_given? ? yield(rest) : nil
-      when "x" then ActionKind.new(symbol(rest))
-      when "g" then base_item(item(rest))
-      when "k" then data($data_skills, rest)
-      when "t" then data($data_items, rest)
-      when "z" then data($data_states, rest)
-      when "w" then data($data_weapons, rest)
-      when "a" then data($data_armors, rest)
-      when "c" then Color.new(*numbers(rest, 4))
-      when "n" then Tone.new(*numbers(rest, 4))
+      when "skill" then $data_skills
+      when "item" then $data_items
+      when "state" then $data_states
+      when "weapon" then $data_weapons
+      when "armor" then $data_armors
       end
     end
 
     # Finds an entry of the database.
     #
     # @param table [Array, nil] The database.
-    # @param rest [String] The entry's id.
+    # @param id [Object] The entry's id.
     # @return [RPG::BaseItem, nil] The entry, nil for an id the database lacks.
-    def self.data(table, rest)
-      id = rest.to_i
-      table && id > 0 && id < table.size ? table[id] : nil
-    end
-
-    # Reads the database entry an equipped or stolen item's token holds: one skill, item, state,
-    # weapon or armor token, never another kind.
-    #
-    # @param rest [String] The token after its "g".
-    # @return [RPG::BaseItem, nil] The entry, nil for anything else.
-    def self.item(rest)
-      kind = rest[0, 1]
-      ITEM_KINDS.include?(kind) ? value(kind, rest[1..-1].to_s) : nil
+    def self.data(table, id)
+      table && id.is_a?(Integer) && id > 0 && id < table.size ? table[id] : nil
     end
 
     # Wraps a database entry the way the game keeps an equipped or stolen item.
@@ -251,32 +229,6 @@ module MGQ_MpBattlesSync
       wrapped = Game_BaseItem.new
       wrapped.object = item
       wrapped
-    end
-
-    # Reads a list of numbers.
-    #
-    # @param text [String] Numbers joined by ",".
-    # @param count [Integer] How many are needed.
-    # @return [Array<Float>] The numbers, 0 for those missing.
-    def self.numbers(text, count)
-      values = text.split(",").first(count).map(&:to_f)
-      values + [0.0] * (count - values.size)
-    end
-
-    # Escapes a text for a token.
-    #
-    # @param text [String] A text.
-    # @return [String] The text without tabs or line breaks.
-    def self.escape(text)
-      text.gsub(/[\\\t\n\r]/) { |character| ESCAPES[character] }
-    end
-
-    # Reads an escaped text back.
-    #
-    # @param text [String] An escaped text.
-    # @return [String] The text.
-    def self.unescape(text)
-      text.gsub(/\\[\\tnr]/) { |escape| UNESCAPES[escape] }
     end
   end
 end

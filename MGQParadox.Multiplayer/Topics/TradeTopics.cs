@@ -2,6 +2,7 @@
 //  TradeTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Took the player's offer and handed every offer as values, writing and reading the offers and the items' tokens
 //      Paulinchen  2026-10-30: Created
 //
 //----------------------------------------------------------------
@@ -43,9 +44,15 @@ internal sealed class TradeTopics : ITradeScripts
     public const string DeclineTopic = "trade.decline";
 
     /// <summary>
-    /// The topic of the player's offer after a change, as the scripts wrote it: the text in, the view out.
+    /// The topic of the player's offer after a change: {"gold", "items" ([token, amount] each)} in, the view out.
     /// </summary>
     public const string OfferTopic = "trade.offer";
+
+    /// <summary>
+    /// The topic that names an item of the player's bag as offers name it: the item (see
+    /// <see cref="TradeItems.Token"/>) in, its token out.
+    /// </summary>
+    public const string TokenTopic = "trade.token";
 
     /// <summary>
     /// The topic that confirms both offers or takes the confirmation back: why the player's game
@@ -74,7 +81,7 @@ internal sealed class TradeTopics : ITradeScripts
     public const string OpenScreenEvent = "trade.open_screen";
 
     /// <summary>
-    /// The event of the other player's offer: {"rev", "text"}.
+    /// The event of the other player's offer: {"rev", "offer" (see <see cref="OfferOf"/>)}.
     /// </summary>
     public const string TheirOfferEvent = "trade.their_offer";
 
@@ -99,13 +106,13 @@ internal sealed class TradeTopics : ITradeScripts
     public const string DeclinedEvent = "trade.declined";
 
     /// <summary>
-    /// The event of a trade the relay committed, which the scripts apply: {"id" (at the relay), "name", "mine", "theirs"}.
+    /// The event of a trade the relay committed, which the scripts apply: {"id" (at the relay), "name", "mine", "theirs"}, each offer as <see cref="OfferOf"/> gives it.
     /// </summary>
     public const string ApplyEvent = "trade.apply";
 
     /// <summary>
     /// The event of the committed trades a save may lack: {"save" (the one they were asked for),
-    /// "trades" ([[id at the relay, partner, mine, theirs], ...])}.
+    /// "trades" ([[id at the relay, partner, mine, theirs], ...], each offer as <see cref="OfferOf"/> gives it)}.
     /// </summary>
     public const string RecoverEvent = "trade.recover";
 
@@ -178,7 +185,8 @@ internal sealed class TradeTopics : ITradeScripts
             RubyHash decline = request.AsHash();
             machine.Decline(topics.PeerAt(decline["seat"]), decline["reason"].AsText());
         }));
-        context.Register(OfferTopic, (_, request) => topics.Act(() => machine.Offer(ValidOffer(request.AsText()))));
+        context.Register(OfferTopic, (_, request) => topics.Act(() => machine.Offer(ValidOffer(WrittenOffer(request.AsHash())))));
+        context.Register(TokenTopic, (_, request) => TradeItems.Token(request));
         context.Register(ConfirmTopic, (_, request) => topics.Act(() => machine.ToggleConfirm(request.IsNil ? null : request.AsText())));
         context.Register(CancelTopic, (_, _) => topics.Act(machine.Cancel));
         context.Register(DoneTopic, (_, request) =>
@@ -200,7 +208,7 @@ internal sealed class TradeTopics : ITradeScripts
         _context.Events.Post(OpenScreenEvent, new RubyHash { { "id", session.Id }, { "partner", session.Partner }, { "name", session.Name } });
 
     /// <inheritdoc />
-    public void TheirOffer(long revision, string offer) => _context.Events.Post(TheirOfferEvent, new RubyHash { { "rev", revision }, { "text", offer } });
+    public void TheirOffer(long revision, string offer) => _context.Events.Post(TheirOfferEvent, new RubyHash { { "rev", revision }, { "offer", OfferOf(offer) } });
 
     /// <inheritdoc />
     public void Note(string text) => _context.Events.Post(NoteEvent, text);
@@ -217,13 +225,13 @@ internal sealed class TradeTopics : ITradeScripts
 
     /// <inheritdoc />
     public void Apply(string relayId, string name, string mine, string theirs) =>
-        _context.Events.Post(ApplyEvent, new RubyHash { { "id", relayId }, { "name", name }, { "mine", mine }, { "theirs", theirs } });
+        _context.Events.Post(ApplyEvent, new RubyHash { { "id", relayId }, { "name", name }, { "mine", OfferOf(mine) }, { "theirs", OfferOf(theirs) } });
 
     /// <inheritdoc />
     public void Recover(long save, IReadOnlyList<RecoveredTrade> trades) => _context.Events.Post(RecoverEvent, new RubyHash
     {
         { "save", save },
-        { "trades", new RubyArray(trades.Select(trade => (RubyValue)new RubyArray { trade.Id, trade.Partner, trade.Mine, trade.Theirs })) },
+        { "trades", new RubyArray(trades.Select(trade => (RubyValue)new RubyArray { trade.Id, trade.Partner, OfferOf(trade.Mine), OfferOf(trade.Theirs) })) },
     });
 
     /// <summary>
@@ -240,7 +248,26 @@ internal sealed class TradeTopics : ITradeScripts
         request["save"].IsNil ? 0 : request["save"].AsLong());
 
     /// <summary>
-    /// Checks the player's offer as the scripts wrote it.
+    /// Writes the player's offer the scripts hand over.
+    /// </summary>
+    /// <param name="request">{"gold", "items" ([token, amount] each)}.</param>
+    /// <returns>The offer.</returns>
+    private static string WrittenOffer(RubyHash request) =>
+        TradeOffers.Write(request["gold"].AsLong(), request["items"].AsArray().Select(item => (item.AsArray()[0].AsText(), item.AsArray()[1].AsLong())));
+
+    /// <summary>
+    /// Reads an offer as the scripts take it, the same in both games.
+    /// </summary>
+    /// <param name="offer">The offer.</param>
+    /// <returns>{"gold", "items" ([token, item, amount] each, the item as <see cref="TradeItems.Of"/> reads it, nil for one no game of this data makes)}.</returns>
+    internal static RubyHash OfferOf(string offer)
+    {
+        (long gold, List<(string Token, int Amount)> items) = TradeOffers.Read(offer);
+        return new RubyHash { { "gold", gold }, { "items", new RubyArray(items.Select(item => (RubyValue)new RubyArray { item.Token, TradeItems.Of(item.Token), item.Amount })) } };
+    }
+
+    /// <summary>
+    /// Checks the player's offer as written.
     /// </summary>
     /// <param name="offer">The offer.</param>
     /// <returns>The offer.</returns>

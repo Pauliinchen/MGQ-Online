@@ -2,7 +2,8 @@
 //  CatchupLook.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Ran the catch-up of a Classic party's member as one look in the engine's Classic settings
+//      Paulinchen  2026-11-05: Named the chest a replay plays as [kind, key], and the site of a join, a setting and a replay as plain values
+//                            - Ran the catch-up of a Classic party's member as one look in the engine's Classic settings
 //                            - Kept every choice's outcome a Classic member's own, so a row behind a choice waits for their answer
 //                            - Read a Classic member's side from the save's note alone
 //                            - Played the closures of a Classic member's own keys and the party chests that gave the key items they lack
@@ -401,7 +402,7 @@ internal sealed class CatchupLook
     {
         int main = _request["actor"].AsInt();
         RubyValue gate = RubyNil.Value;
-        string? site = _request["site"].IsNil ? null : _request["site"].AsText();
+        string? site = _request["site"].IsNil ? null : StoryPlain.SiteText(_request["site"]);
         if (!InRoster(main) && !_tables.Scope.AllowsAt(main, site, NotedSide()))
         {
             Log($"left out the join of {{actor:{main}}} at {site}: it is for the players who took the other side along, and the player took {NotedSide() ?? "no side"} along");
@@ -501,7 +502,7 @@ internal sealed class CatchupLook
         var covered = new HashSet<int>();
         foreach (KeyItemChest chest in _party.KeyItemChests([.. _tables.PartyChests.Where(on.Contains)], [.. _owed.Select(owed => owed.Item)]))
         {
-            Act("replay", new RubyHash { { "chest", chest.Key.ToString() } }, "o:" + chest.Key);
+            Act("replay", new RubyHash { { "chest", StoryPlain.Plain(chest.Key) } }, "o:" + chest.Key);
             covered.UnionWith(chest.Items);
         }
 
@@ -539,7 +540,7 @@ internal sealed class CatchupLook
 
             done[mark] = true;
             var letters = new RubyArray(Letters.Where(letter => on.Contains(StoryKey.SelfSwitch(key.Id, key.Event, letter))).Select(letter => (RubyValue)letter));
-            Act("replay", new RubyHash { { "chest", key.ToString() }, { "letters", letters } }, mark);
+            Act("replay", new RubyHash { { "chest", StoryPlain.Plain(key) }, { "letters", letters } }, mark);
         }
     }
 
@@ -1317,7 +1318,7 @@ internal sealed class CatchupLook
                 continue;
             }
 
-            Act("setting", row.Kind == "encounters" ? "encounters" : row.Kind == "variable" ? "v" : "s", row.Id, ValueOf(row), row.Place.Site);
+            Act("setting", row.Kind == "encounters" ? "encounters" : row.Kind == "variable" ? "v" : "s", row.Id, ValueOf(row), StoryPlain.SiteOf(row.Place.Site));
         }
     }
 
@@ -1498,7 +1499,7 @@ internal sealed class CatchupLook
                 continue;
             }
 
-            Act("replay", new RubyHash { { "chest", row.Key.ToString() } }, key);
+            Act("replay", new RubyHash { { "chest", StoryPlain.Plain(row.Key) } }, key);
         }
 
         RestockKeyItems(story, told);
@@ -2125,7 +2126,7 @@ internal sealed class CatchupLook
                 continue;
             }
 
-            Act("replay", new RubyHash { { "site", row.Site } }, $"makina:{row.Item} at level {row.Level}");
+            Act("replay", new RubyHash { { "site", StoryPlain.SiteOf(row.Site) } }, $"makina:{row.Item} at level {row.Level}");
         }
     }
 
@@ -2165,7 +2166,7 @@ internal sealed class CatchupLook
             }
 
             done[key] = true;
-            Act("replay", new RubyHash { { "site", row.Place.Site } }, key);
+            Act("replay", new RubyHash { { "site", StoryPlain.SiteOf(row.Place.Site) } }, key);
         }
     }
 

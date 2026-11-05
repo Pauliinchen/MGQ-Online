@@ -2,6 +2,8 @@
 #  server.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Read a co-op battle's mods through ServedMods, which reads them without the game's scripts
+#                            - Had the core write the lines of a hosted battle to the relay, and wrote the line of a battle out of CPU time before it can run out
 #      Paulinchen  2026-10-31: Told a server of MGQ Online's battles by MGQ Online's file, which the Mod Framework loads only as the game runs
 #      Paulinchen  2026-10-30: Read a co-op battle's mods without the core library before its child's sandbox
 #      Paulinchen  2026-10-23: Refused MGQ Online's battles without the core library, telling the relay why
@@ -41,11 +43,13 @@ require_relative "lib/story_index"
 #       answers the event the battle waits on and answers its next event.
 #   {"op":"story_index", "rowsRev":3, "keys":[...], "events":[...]}
 #       derives the story mapping's index for the relay, see StoryIndex.
-# Every answer holds "ok", and "error" when it is false. The game's globals hold one battle per
-# process: where the system can fork (Linux), each connection gets a child process of its own,
-# which shares the loaded game with the others, is sandboxed when the server runs as root, and
-# ends with the connection; elsewhere (Windows) the server plays one battle at a time and turns
-# others away as busy. Saves from clients are checked before they are read (SaveCheck).
+# Every answer holds "ok", and "error" when it is false. These requests and answers stay Ruby's
+# own JSON, since a server of battles by request runs without MGQ Online and its core. The game's
+# globals hold one battle per process: where the system can fork (Linux), each connection gets a
+# child process of its own, which shares the loaded game with the others, is sandboxed when the
+# server runs as root, and ends with the connection; elsewhere (Windows) the server plays one
+# battle at a time and turns others away as busy. Saves from clients are checked before they are
+# read (SaveCheck).
 module BattleServer
   # The port the server listens on unless BATTLE_PORT names another.
   DEFAULT_PORT = 8095
@@ -131,6 +135,7 @@ module BattleServer
         client = server.accept
         children.select!(&:alive?)
         if children.size >= most
+          # The parent never calls the core, see Core.
           client.puts(JSON.generate(busy))
           client.close
           next
@@ -165,6 +170,7 @@ module BattleServer
     #
     # @param seconds [Integer] The CPU seconds it may use.
     def limit_cpu(seconds)
+      @cpu_seconds = seconds
       Process.setrlimit(:CPU, seconds, seconds + CPU_GRACE_SECONDS)
       # A game script takes Kernel's trap away. A trap handler may lock no mutex, which the
       # relay's connection needs, and the system repeats the signal every second past the limit.
@@ -177,7 +183,7 @@ module BattleServer
     # @param seconds [Integer] The CPU seconds it had.
     def end_out_of_cpu(seconds)
       $stderr.puts("battle #{@battle_id || 'none'} used up its #{seconds} CPU seconds and ends")
-      @bridge&.tell(op: "end", result: "failed", error: "the battle used up its #{seconds} CPU seconds")
+      @bridge.put(@out_of_cpu_line) if @bridge && @out_of_cpu_line
     ensure
       Process.exit!(1)
     end
@@ -221,6 +227,7 @@ module BattleServer
       begin
         Sandbox.enter(Boot::GAME_DIR) if Sandbox.available?
       rescue StandardError, SecurityError => e
+        # The core opens only inside the sandbox, so this answer is written here.
         client.puts(JSON.generate(ok: false, error: "the battle could not be sandboxed: #{e.message}"))
         return false
       end
@@ -286,7 +293,8 @@ module BattleServer
     # Hosts a co-op battle MGQ Online's starter handed to the relay, over the relay's connection
     # (see RelayBridge): {"op":"serve","bid":"<battle id>","setup":"<base64>"}. Answers serving
     # once the battle is set up, refused when it cannot be, such as without the core library (see
-    # Core.ready?), and end once it is over.
+    # Core.ready?), and end once it is over. The core writes these lines, but for the refusals sent
+    # while this thread may not call it (RelayBridge#refuse_without_core).
     #
     # @param client [TCPSocket] The relay's connection.
     # @param request [Hash] The serve.
@@ -294,15 +302,16 @@ module BattleServer
     #   before its sandbox, see mods_for; nil to get them now.
     def host(client, request, mods = nil)
       bridge = RelayBridge.new(client)
-      refused = lambda do |code, error|
-        bridge.tell(op: "refused", code: code, error: error)
+      refused = lambda do |code, error, by_core = true|
+        by_core ? bridge.tell("op" => "refused", "code" => code, "error" => error) : bridge.refuse_without_core(code, error)
         $stderr.puts("refused battle #{request['bid'].to_s[0, 32]}: #{code}: #{error}")
       end
-      return refused.call("no_mgq_online", "this battle server hosts no MGQ Online battles") unless @served
-      return refused.call("core", Core.why_missing) unless Core.ready?
+      return refused.call("no_mgq_online", "this battle server hosts no MGQ Online battles", false) unless @served
+      return refused.call("core", Core.why_missing, false) unless Core.ready?
 
       slotted = !forking? && take_slot
-      return refused.call("busy", "another battle runs on this server") unless forking? || slotted
+      # The battle that holds the slot calls the core on its own thread.
+      return refused.call("busy", "another battle runs on this server", false) unless forking? || slotted
 
       battle_id = request["bid"].to_s
       return refused.call("setup", "the battle id is no id") unless battle_id.match?(/\A[0-9a-z]{1,32}\z/)
@@ -314,18 +323,20 @@ module BattleServer
 
       @battles += 1
       started = clock
-      bridge.tell(op: "serving")
+      bridge.tell("op" => "serving")
       @battle_id = battle_id
       @bridge = bridge
+      # The thread the CPU limit's signal starts may not call the core, so its line is written now.
+      @out_of_cpu_line = bridge.line_of("op" => "end", "result" => "failed", "error" => "the battle used up its #{@cpu_seconds} CPU seconds") if @cpu_seconds
       $stderr.puts("battle #{battle_id} started")
       outcome = ServedBattle.run(bridge, battle_id, setup, mods)
       $stderr.puts(format("battle %s: %s after %d turns, %.0f s, %.0f CPU s", battle_id, outcome[:result], outcome[:turns], clock - started, cpu_seconds))
-      bridge.tell(op: "end", result: outcome[:result].to_s, turns: outcome[:turns])
+      bridge.tell("op" => "end", "result" => outcome[:result].to_s, "turns" => outcome[:turns])
     rescue ServedBattle::Refused => e
       refused.call(e.code, e.message)
     rescue StandardError => e
       $stderr.puts("battle #{battle_id} failed: #{e.class}: #{e.message} at #{e.backtrace&.first(3)&.join(' < ')}")
-      bridge.tell(op: "end", result: "failed", error: "#{e.class}: #{e.message}")
+      bridge.tell("op" => "end", "result" => "failed", "error" => "#{e.class}: #{e.message}")
     ensure
       free_slot if slotted
       client.close unless client.closed?
@@ -341,8 +352,10 @@ module BattleServer
       request = line && JSON.parse(line)
       return nil unless @served && request.is_a?(Hash) && request["op"] == "serve"
 
-      # The core library opens only after the sandbox, so the setup's mods are read without it.
-      mods = MGQ_MpBattlesServed.mods_in(request["setup"].to_s.unpack1("m").force_encoding("UTF-8"))
+      # The core's runtime must start under the sandbox's limits (see enter_child), and the sandbox
+      # reaches neither the network nor the cache the mods come from, so the request and the
+      # setup's mods are read without the core.
+      mods = ServedMods.named_in(request["setup"].to_s.unpack1("m").force_encoding("UTF-8"))
       mods && fetch_mods(mods)
     rescue JSON::ParserError
       nil

@@ -2,6 +2,8 @@
 #  battles_duel.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Handed the DLL the player's team as values and took a team duel's sides as values
+#                            - Handed the players a challenge names to the DLL as a list, which it writes into the state
 #      Paulinchen  2026-10-31: Worded what the player reads plainly, leaving causes and internals to the log
 #      Paulinchen  2026-10-30: Left the duel and team duel handshake to the DLL and read its view
 #      Paulinchen  2026-10-23: Started duels without the deleted mirror match flag
@@ -190,7 +192,7 @@ module MGQ_MpBattlesDuel
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The challenger.
   def self.accept(peer)
     free = free?
-    act(ACCEPT_TOPIC, "seat" => peer.seat, "free" => free, "team" => free ? team_line : nil)
+    act(ACCEPT_TOPIC, "seat" => peer.seat, "free" => free, "team" => free ? team_values : nil)
   end
 
   # Turns another player down, telling them why.
@@ -258,7 +260,7 @@ module MGQ_MpBattlesDuel
   #
   # @return [Hash] The fields.
   def self.state_fields
-    { "challenge" => inviting? ? 1 : 0, "challenge_to" => targets.join(","), "challenge_backline" => MGQ_MpBattlesPvp::Backline.wanted? ? 1 : 0 }
+    { "challenge" => inviting? ? 1 : 0, "challenge_to" => targets, "challenge_backline" => MGQ_MpBattlesPvp::Backline.wanted? ? 1 : 0 }
   end
 
   # Words another player's challenge, with the Backline when their duels have it, which a team
@@ -311,7 +313,7 @@ module MGQ_MpBattlesDuel
   def self.own_team(kind, answer)
     case kind
     when "pvp"
-      answer["line"] = team_line
+      answer["line"] = team_values
       answer["backline"] = MGQ_MpBattlesPvp::Team.sent_backline?
     when "coop"
       builds, max = MGQ_MpBattlesCoop.team_build
@@ -335,7 +337,7 @@ module MGQ_MpBattlesDuel
     seat = start["seat"]
     peer = seat && (MGQ_MpOverworldSync::Peers.at(seat) || MGQ_MpOverworldSync::Peers::Peer.new(seat, { "name" => start["name"].to_s }))
     if start["role"] == "team"
-      sides = Array(MGQ_MpBattlesSync::Wire.parse(start["sides"].to_s))
+      sides = Array(start["sides"])
       hosts, others = [sides[0], sides[1]].map { |side| MGQ_MpBattlesCoop::Player.read_all(side) }
       own, other = start["same_side"] ? [hosts, others] : [others, hosts]
       @pending = Pending.new(:team, start["bid"].to_s, peer, nil, own, other, start["same_side"] ? true : false)
@@ -372,11 +374,12 @@ module MGQ_MpBattlesDuel
     log("team duel #{pending.battle_id} as #{host ? 'guest' : 'host'}, #{pending.own.size} against #{pending.other.size}")
   end
 
-  # Writes the player's game fingerprint and team, which the other player's game rebuilds.
+  # Gives the player's game fingerprint and team, which the DLL writes for the other player's game
+  # to rebuild.
   #
-  # @return [String] The line.
-  def self.team_line
-    MGQ_MpBattlesSync::Wire.line([MGQ_MpBattlesPvp::Team.game, MGQ_MpBattlesPvp::Team.build])
+  # @return [Array(String, String)] The fingerprint and the team.
+  def self.team_values
+    [MGQ_MpBattlesPvp::Team.game, MGQ_MpBattlesPvp::Team.build]
   end
 
   # Starts a duel waiting to start, from the map, as an encounter starts, once the DLL lets it

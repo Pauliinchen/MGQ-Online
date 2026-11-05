@@ -2,6 +2,9 @@
 #  battles_raid_tiers.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Kept and read its switch in Player.ini as true or false, which the DLL writes as 1 or 0
+#                            - Took the relay's raid bosses as the flag the DLL reads
+#                            - Told and read the invite's tier as true or false
 #      Paulinchen  2026-10-30: Raised the stats through the pools' wrap with the factors kept per battle
 #      Paulinchen  2026-10-13: Created
 #
@@ -78,7 +81,7 @@ module MGQ_MpRaidTiers
   #
   # @return [Boolean] Whether they did.
   def self.single_player?
-    @single_player = MGQ_Multiplayer::Player.setting(SETTING).to_s == "1" if @single_player.nil?
+    @single_player = MGQ_Multiplayer::Player.setting(SETTING) == true if @single_player.nil?
     @single_player
   end
 
@@ -87,7 +90,7 @@ module MGQ_MpRaidTiers
   # @param on [Boolean] Whether they are on.
   def self.choose(on)
     @single_player = on ? true : false
-    MGQ_Multiplayer::Player.store(SETTING, @single_player ? 1 : 0)
+    MGQ_Multiplayer::Player.store(SETTING, @single_player)
     log("raid bosses in single player are #{@single_player ? 'on' : 'off'}")
   rescue => e
     log("keeping whether raid bosses are on in single player FAILED: #{e.class}: #{e.message}")
@@ -248,7 +251,7 @@ module MGQ_MpRaidTiers
     fight = @fight
     running = fight && fight.troop == troop_id.to_i && SceneManager.scene.is_a?(Scene_Battle)
     tiered = running || kind_of(troop_id)
-    tiered ? { INVITE_FIELD => 1 } : {}
+    tiered ? { INVITE_FIELD => true } : {}
   rescue => e
     log("writing the invite's tier failed: #{e.class}: #{e.message}")
     {}
@@ -260,21 +263,18 @@ module MGQ_MpRaidTiers
   #
   # @param message [Hash] The invite or the request: "troop" and INVITE_FIELD.
   def self.note_invite(message)
-    @invited = !MGQ_MpCoop::Scope.raid? && message[INVITE_FIELD].to_s == "1" ? message["troop"].to_i : nil
+    @invited = !MGQ_MpCoop::Scope.raid? && message[INVITE_FIELD] == true ? message["troop"].to_i : nil
   end
 
   # Takes the relay's word that the open Classic world's creator or an admin changed whether its
   # story bosses fight as raid bosses, from the next boss battle on.
   #
-  # @param message [Hash] The push: MGQ_MpOverworldSync::RAID_BOSSES_FIELD with "1" or "0", marked
-  #   :relay by overworld_sync.rbx.
+  # @param message [Hash] The push: MGQ_MpOverworldSync::RAID_BOSSES_FIELD, true or false as the DLL
+  #   reads it, marked :relay by overworld_sync.rbx.
   def self.pushed(message)
     return log("ignored a raid bosses push not from the relay") unless message[:relay]
 
-    value = message[MGQ_MpOverworldSync::RAID_BOSSES_FIELD].to_s
-    return log("ignored the relay's raid bosses #{value.inspect}") unless %w[0 1].include?(value)
-
-    on = value == "1"
+    on = message[MGQ_MpOverworldSync::RAID_BOSSES_FIELD] == true
     return if on == MGQ_MpWorld.raid_bosses?
     return log("ignored the relay's raid bosses outside a Classic world") unless MGQ_MpWorld.take_raid_bosses(on)
 

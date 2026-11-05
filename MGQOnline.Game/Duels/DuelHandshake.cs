@@ -2,6 +2,7 @@
 //  DuelHandshake.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Read a team's rule of the Backline as the builds' text has it
 //      Paulinchen  2026-10-30: Created
 //
 //----------------------------------------------------------------
@@ -10,6 +11,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using MGQOnline.Game.Actors;
 using MGQOnline.Game.Battles.Wire;
 using MGQOnline.Game.World;
 
@@ -541,7 +543,7 @@ public sealed partial class DuelHandshake
         }
 
         // The challenger hosts, so the rule their team brought holds.
-        var duel = new Pending(Role.Guest, battleId, peer) { Team = team, Backline = BacklineOf(team), Reading = true };
+        var duel = new Pending(Role.Guest, battleId, peer) { Team = team, Backline = BuildText.HasBackline(team), Reading = true };
         pending = duel;
         Need(team, null, null, answer =>
         {
@@ -697,15 +699,6 @@ public sealed partial class DuelHandshake
         IReadOnlyList<WireValue> values = Parse(body) ?? [];
         return DuelText.ToS(values.ElementAtOrDefault(0)) == Game ? DuelText.ToS(values.ElementAtOrDefault(1)) : null;
     }
-
-    /// <summary>
-    /// Reports whether a team says its sender's battles have the Backline, as its first line
-    /// <c>backline=1</c> does.
-    /// </summary>
-    /// <param name="team">The team.</param>
-    /// <returns>Whether it does.</returns>
-    private static bool BacklineOf(string team) =>
-        team.StartsWith("backline=1\n", StringComparison.Ordinal) || team.StartsWith("backline=1\r\n", StringComparison.Ordinal);
 
     /// <summary>
     /// Asks the scripts for what only the game can tell of a team, and keeps what to do with the answer.

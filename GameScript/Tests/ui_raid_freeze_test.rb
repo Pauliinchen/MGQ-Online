@@ -2,7 +2,8 @@
 #  ui_raid_freeze_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Read the scripts' clock from $frame
+#      Paulinchen  2026-11-05: Told the telling of the story as true or false
+#                            - Read the scripts' clock from $frame
 #      Paulinchen  2026-10-28: Stood in for the DLL's command index and the freeze's tables
 #      Paulinchen  2026-10-17: Created
 #
@@ -431,7 +432,7 @@ $game_map.map_id = 139
 $records = [frozen(126, 139, [row(37, 12, 6, "$Morrigan", 1, 0)], [37]).merge("scene" => true)]
 source = Game_Event.new(37, 10, 6)
 $game_map.events = { 37 => source }
-$teller = MGQ_MpOverworldSync::Peers::Peer.new({ "telling" => "1", "map" => "139", "name" => "Player Two" })
+$teller = MGQ_MpOverworldSync::Peers::Peer.new({ "telling" => true, "map" => "139", "name" => "Player Two" })
 source.start
 check("while another player tells the story here the source event stays blocked, as the stand-in steps aside",
       [source.starting, $resumed, $notices], [false, [], []])
@@ -491,16 +492,16 @@ reset
 $records = [frozen(868, 138, sonya_rows, [13])]
 sonya = Game_Event.new(13, 30, 8, 3)
 $game_map.events = { 13 => sonya }
-$teller = MGQ_MpOverworldSync::Peers::Peer.new({ "telling" => "1", "map" => "138", "name" => "Player Two" })
+$teller = MGQ_MpOverworldSync::Peers::Peer.new({ "telling" => true, "map" => "138", "name" => "Player Two" })
 check("another player telling the story on the map hides the stand-ins and shows the live events",
       [ui.tableaux, ui.bar_targets, ui.hidden?(sonya), ui.press_target], [[], [], false, nil])
 check("which is logged", $log.grep(/hides the stand-ins of the frozen fight against Sonya Mazda \(troop 868\) on map 138: Player Two tells the story here/).size, 1)
 sonya.update
 check("its own event still cannot start", sonya.starting, false)
-$teller = MGQ_MpOverworldSync::Peers::Peer.new({ "telling" => "1", "map" => "139", "name" => "Player Two" })
+$teller = MGQ_MpOverworldSync::Peers::Peer.new({ "telling" => true, "map" => "139", "name" => "Player Two" })
 $frame += 1
 check("one telling elsewhere hides nothing, which is logged", [ui.tableaux.size, $log.grep(/shows the stand-ins of the frozen fight against Sonya Mazda \(troop 868\) on map 138 again/).size], [1, 1])
-$teller = MGQ_MpOverworldSync::Peers::Peer.new({ "telling" => "0", "map" => "138", "name" => "Player Two" })
+$teller = MGQ_MpOverworldSync::Peers::Peer.new({ "telling" => false, "map" => "138", "name" => "Player Two" })
 $frame += 1
 check("nor one not telling", ui.tableaux.size, 1)
 $teller = nil

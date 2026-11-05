@@ -2,6 +2,7 @@
 #  core_async.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Read the memory the game uses and the free address space through a topic
 #      Paulinchen  2026-10-24: Handed the live map from one menu to the next
 #                            - Kept the picture of the map while little address space is free
 #      Paulinchen  2026-10-23: Kept the mod's HUD off the live map behind menus
@@ -46,14 +47,8 @@ module MGQ_MpAsync
   # live map behind them.
   PICTURE_SCENES = [:Scene_File]
 
-  # The export that describes the memory and the handles the game uses.
-  MEMORY_USAGE_EXPORT = 'mp_memory_usage'
-
-  # Bytes the description of the memory and the handles fits in at first.
-  MEMORY_USAGE_SIZE = 256
-
-  # The part of that description telling the address space used and the whole, in megabytes.
-  ADDRESS_SPACE = /address space (\d+) of (\d+) MB/
+  # The topic that tells the memory and the handles the game uses.
+  MEMORY_USAGE_TOPIC = "dll.memory"
 
   # Megabytes of free address space below which a menu keeps its picture of the map instead of
   # building a live map.
@@ -216,8 +211,9 @@ module MGQ_MpAsync
   #
   # @return [String] The description after a semicolon, "" when the DLL cannot tell.
   def self.memory_usage
-    usage = MGQ_Multiplayer::Link.read(MEMORY_USAGE_EXPORT, MEMORY_USAGE_SIZE)
-    usage.empty? ? "" : "; #{usage}"
+    usage = MGQ_Multiplayer::Bridge.call(MEMORY_USAGE_TOPIC)
+    line = usage.is_a?(Hash) ? usage["line"].to_s : ""
+    line.empty? ? "" : "; #{line}"
   rescue => e
     log("asking the DLL for the memory the game uses failed: #{e.class}: #{e.message}") unless @memory_usage_failed
     @memory_usage_failed = true
@@ -286,11 +282,9 @@ module MGQ_MpAsync
   # @param scene [Scene_MenuBase] The menu the live map would show behind.
   # @return [Boolean] Whether it has, true when the DLL cannot tell.
   def self.room_for_live_map?(scene)
-    match = MGQ_Multiplayer::Link.read(MEMORY_USAGE_EXPORT, MEMORY_USAGE_SIZE).match(ADDRESS_SPACE)
-    return true unless match
-
-    free = match[2].to_i - match[1].to_i
-    return true if free >= LIVE_MAP_FREE_MB
+    usage = MGQ_Multiplayer::Bridge.call(MEMORY_USAGE_TOPIC)
+    free = usage.is_a?(Hash) ? usage["free_mb"] : nil
+    return true if !free.is_a?(Integer) || free >= LIVE_MAP_FREE_MB
 
     log("kept the picture of the map behind #{scene.class.name}: #{free} MB of address space free, a live map needs #{LIVE_MAP_FREE_MB}")
     false

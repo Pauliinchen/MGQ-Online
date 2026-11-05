@@ -2,7 +2,9 @@
 //  SessionsTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Created
+//      Paulinchen  2026-11-05: Checked the battle a host's state tells, open, full and ending, on the join prompt
+//                            - Dropped the check of a battle state between released and new games, which read alike no more
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -48,6 +50,36 @@ public sealed class SessionsTests
     }
 
     /// <summary>
+    /// Asserts that what a host's battle tells in its state, "rbn" its players and "rbs" whether it
+    /// takes players in, reads on another player's join prompt as an open battle while it has room,
+    /// as full at four players and as ending once it ends.
+    /// </summary>
+    [Fact]
+    public void HostState_ToldByTheIntake_ReadsOpenFullAndEndingOnTheJoinPrompt()
+    {
+        var facts = new IntakeFacts("hb1", 5, 5, "host", [], false, false, false, false, false, false, 1, [], 5);
+        var world = new TestWorld(raid: true);
+        Peer host = world.Add(5, "Host", member: false, ("scene", "battle"), ("rb", "hb1"), ("rbh", "5"), ("x", "11"));
+
+        Assert.Equal("hb1", Tell(host, facts).Frame(Frame(pressed: false, null)).Target?.BattleId);
+        Assert.Equal("1 open", Told(host));
+        Assert.Equal("Host's battle is full.", Tell(host, facts with { Players = 3, Pending = [8] }).Frame(Frame(pressed: true, null)).NotTaken);
+        Assert.Equal("4 full", Told(host));
+        Assert.Equal("Host's battle is ending.", Tell(host, facts with { Ending = true }).Frame(Frame(pressed: true, null)).NotTaken);
+        Assert.Equal("1 ending", Told(host));
+
+        JoinChoice Tell(Peer peer, IntakeFacts told)
+        {
+            (int rbn, string rbs) = JoinIntake.Told(told);
+            peer.State.Set("rbn", rbn.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            peer.State.Set("rbs", rbs);
+            return world.Join;
+        }
+
+        static string Told(Peer peer) => $"{peer.State.Text("rbn")} {peer.State.Text("rbs")}";
+    }
+
+    /// <summary>
     /// Asserts that a Classic party's battle invites a member busy in a menu, who keeps the invite
     /// until free, and stays open for a member who fought a battle of their own, whose join prompt
     /// then offers it (issue 76).
@@ -78,31 +110,6 @@ public sealed class SessionsTests
         JoinPrompt prompt = member.Join.Frame(Frame(pressed: false, null));
 
         Assert.Equal("cb1", prompt.Target?.BattleId);
-    }
-
-    /// <summary>
-    /// Asserts that a battle state reads alike between released games, which tell "rbn" alone, and
-    /// new ones: a released 0 is closed, never full or open, and a new battle that takes nobody in
-    /// tells 0, which a released game reads as closed whatever its players.
-    /// </summary>
-    [Fact]
-    public void BattleState_BetweenReleasedAndNewGames_ReadsAlike()
-    {
-        var world = new TestWorld(raid: true);
-        Peer released = world.Add(5, "Old", member: false, ("scene", "battle"), ("rb", "b1"), ("rbh", "5"), ("rbn", "0"));
-
-        BattleSession closed = Sessions.Battle(released);
-        released.State.Set("rbn", "2");
-
-        Assert.Equal((Sessions.Closed, false, false), (closed.State, closed.Open, closed.Full));
-        Assert.Equal(2, Sessions.Battle(released).Room);
-
-        var ending = new IntakeFacts("b2", 1, 1, "host", [2], true, true, false, true, false, false, 2, [], 5);
-        var open = ending with { Ending = false };
-
-        Assert.Equal((0, Sessions.Ending), JoinIntake.Told(ending));
-        Assert.Equal((2, Sessions.Open), JoinIntake.Told(open));
-        Assert.Equal((0, 2), (ReleasedRoom(JoinIntake.Told(ending).Rbn), ReleasedRoom(JoinIntake.Told(open).Rbn)));
     }
 
     /// <summary>
@@ -192,14 +199,6 @@ public sealed class SessionsTests
 
         return lapsed;
     }
-
-    /// <summary>
-    /// Counts the players a battle takes in as a released game reads its "rbn": any count from 1 to
-    /// 3 takes the rest.
-    /// </summary>
-    /// <param name="rbn">The state's "rbn".</param>
-    /// <returns>The players it takes.</returns>
-    private static int ReleasedRoom(int rbn) => rbn is >= 1 and <= 3 ? 4 - rbn : 0;
 
     /// <summary>
     /// Makes a frame on the map in which the join prompt reads the hotkey.

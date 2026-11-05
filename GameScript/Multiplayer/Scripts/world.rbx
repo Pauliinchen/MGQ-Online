@@ -2,6 +2,9 @@
 #  world.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Took a difficulty the relay pushed as the number the DLL reads
+#                            - Had C# write the game data's fingerprint of the ids the scripts read, keeping none that came back empty
+#                            - Entered and left a world's room, opened a world of the directory and read its list, the player's id and whether the DLL is a development build through topics
 #      Paulinchen  2026-11-01: Dropped the seats, difficulty, required and essential mods and mod path readers that nothing calls
 #                            - Dropped the typing state of a form, which only the old form window kept
 #                            - Named the Mod Framework's interface by its own name
@@ -212,8 +215,8 @@ module MGQ_MpWorld
   # The names of a squad rule in the DLL's answers, by the rule's key in the scripts.
   SQUAD_NAMES = { :luka => "luka", :formation => "formation", :front => "front", :raid_front => "raid_front" }
 
-  # The export that tells a development build from a release.
-  DEV_BUILD_EXPORT = 'mp_dev_build'
+  # The topic that tells a development build from a release.
+  DEV_BUILD_TOPIC = "update.dev_build"
 
 
   # Reports whether the path wraps can be installed.
@@ -256,7 +259,7 @@ module MGQ_MpWorld
   #
   # @return [Boolean] Whether it is; false when the DLL cannot tell.
   def self.dev_build?
-    @dev_build = MGQ_Multiplayer::Link.function(DEV_BUILD_EXPORT).call == 1 if @dev_build.nil?
+    @dev_build = MGQ_Multiplayer::Bridge.call(DEV_BUILD_TOPIC) == true if @dev_build.nil?
     @dev_build
   rescue => e
     log("asking the DLL whether it is a development build failed: #{e.class}: #{e.message}")
@@ -307,12 +310,11 @@ module MGQ_MpWorld
     index ? difficulty_names[index] : nil
   end
 
-  # Reads a difficulty as world.ini or the list writes it.
+  # Takes a difficulty the relay pushed, which the DLL reads as a number.
   #
-  # @param text [String, nil] The text.
-  # @return [Integer, nil] One of difficulties, nil for none or another text.
-  def self.difficulty_of(text)
-    value = text.to_s =~ /\A-?\d\z/ ? text.to_i : nil
+  # @param value [Integer, nil] The difficulty.
+  # @return [Integer, nil] One of difficulties, nil for none or another value.
+  def self.difficulty_of(value)
     difficulties.include?(value) ? value : nil
   end
 
@@ -546,7 +548,7 @@ module MGQ_MpWorld
     System.enter(world.save_folder)
     @world = world
     world.played!
-    Link.open(world.code)
+    Room.open(world.code)
     log("entered world #{world.id} (#{world.name}, directory #{short(world.directory_id)}, #{world.seats} seats)")
   end
 
@@ -559,7 +561,7 @@ module MGQ_MpWorld
 
     MGQ_MpWorldStory.close if defined?(MGQ_MpWorldStory)
     MGQ_MpStoryReplay.forget if defined?(MGQ_MpStoryReplay)
-    Link.close
+    Room.close
     System.leave
     log("left world #{@world.id} (#{@world.name}): #{reason}")
     @world = nil
@@ -825,21 +827,26 @@ module MGQ_MpWorld
     end
   end
 
-  # Patch/Multiplayer/Multiplayer.dll's world functions: the connection to the open world's room.
-  module Link
+  # The connection to the open world's room, which the DLL keeps.
+  module Room
+    # The topic that takes a seat in a world's room.
+    OPEN_TOPIC = "world.open"
+
+    # The topic that leaves the world's room.
+    CLOSE_TOPIC = "world.close"
+
     # Takes a seat in a world's room, again whenever the connection breaks, until the world is closed.
     #
     # @param code [String] The world code.
     def self.open(code)
       MGQ_Multiplayer::Player.share
-      MGQ_MpWorld.log("could not open the world's connection") unless MGQ_Multiplayer::Link.function('mp_world_open').call(code + "\0") == 1
+      MGQ_MpWorld.log("could not open the world's connection") unless MGQ_Multiplayer::Bridge.call(OPEN_TOPIC, code.to_s) == true
     end
 
     # Leaves the world's room.
     def self.close
-      MGQ_Multiplayer::Link.function('mp_world_close').call
+      MGQ_Multiplayer::Bridge.call(CLOSE_TOPIC)
     end
-
   end
 
   # Discord invites into a world: the Discord mod hands over the world code an invite carries, and
@@ -920,8 +927,8 @@ module MGQ_MpWorld
   # What tells one game's data from another's: which entries of the database and which maps exist,
   # so a mod that adds or removes any is noticed.
   module GameData
-    # The fingerprint's format, which both games must share to be compared.
-    FORMAT = 2
+    # The topic that writes the fingerprint of the ids in use of each part, which C# compares.
+    MEASURE_TOPIC = "worlds.fingerprint"
 
     # Most parts a text names before it counts the rest.
     NAMED_PARTS = 4
@@ -944,13 +951,16 @@ module MGQ_MpWorld
     #
     # It reads no name, since translations name entries the untranslated game leaves unnamed.
     #
-    # @return [String] FORMAT, then a checksum per part; empty when the data could not be read.
+    # @return [String] The fingerprint, as C# writes it (DataFingerprint); empty when the data could
+    #   not be read.
     def self.fingerprint
       return @fingerprint if @fingerprint
 
-      @fingerprint = measure
-      MGQ_MpWorld.log("this game's data: #{@fingerprint}")
-      @fingerprint
+      measured = measure
+      MGQ_MpWorld.log("this game's data: #{measured}")
+      # An empty one, while the DLL does not answer, is measured again at the next ask.
+      @fingerprint = measured unless measured.empty?
+      measured
     rescue => e
       MGQ_MpWorld.log_once(:fingerprint, "reading the game data failed: #{e.class}: #{e.message}")
       ""
@@ -986,11 +996,12 @@ module MGQ_MpWorld
       ""
     end
 
-    # Measures this game's data as it is now.
+    # Measures this game's data as it is now: the scripts read the ids in use, C# writes the
+    # fingerprint of them.
     #
-    # @return [String] FORMAT, then a checksum per part.
+    # @return [String] The fingerprint, empty while the DLL does not answer.
     def self.measure
-      "#{FORMAT}:" + ids.map { |list| format("%08x", Zlib.crc32(list.join(","))) }.join(".")
+      MGQ_Multiplayer::Bridge.call(MEASURE_TOPIC, ids).to_s
     end
 
     # Lists the ids that exist of each part.
@@ -1122,8 +1133,11 @@ module MGQ_MpWorld
     # @!attribute name [String] The player's name.
     Member = Struct.new(:id, :online, :name)
 
-    # Bytes the DLL may write the list into at first. A larger list asks for a larger buffer.
-    LIST_SIZE = 65_536
+    # The topic that opens a world, whose mods the list then carries.
+    OPEN_TOPIC = "directory.open"
+
+    # The topic that hands out the list as it stands.
+    LIST_TOPIC = "directory.list"
 
     # Opens a world, whose mods, mod hashes and settings the list then carries: the DLL reads them on
     # a thread of its own whenever the list leaves them out, as the relay does for this version.
@@ -1133,41 +1147,42 @@ module MGQ_MpWorld
       return if id == @opened
 
       @opened = id
-      MGQ_Multiplayer::Link.function('mp_dir_open').call(id.to_s + "\0")
+      MGQ_Multiplayer::Bridge.call(OPEN_TOPIC, id.to_s)
     end
 
     # Reads the list as it stands.
     #
     # @return [Array] The state ("idle", "loading", "ready" or "failed"), why it failed, the worlds, and whether the player is one of the relay's admins, who sees every world and may delete any.
     def self.list
-      state = MGQ_Multiplayer::Link.parse(MGQ_Multiplayer::Link.read('mp_dir_list', LIST_SIZE))
-      worlds = []
+      state = MGQ_Multiplayer::Bridge.call(LIST_TOPIC)
+      return ["idle", nil, [], false] unless state.is_a?(Hash)
 
-      state[:payload].split("\n").each do |line|
-        fields = line.split("\t", -1)
+      [state["state"], state["error"], Array(state["worlds"]).map { |values| listed_of(values) }, state["admin"] == true]
+    end
 
-        case fields[0]
-        when "world"
-          worlds.push(ListedWorld.new(fields[1], fields[2].to_i, fields[3].to_i, fields[4], fields[5].to_i, fields[6], fields[7], fields[8], [], fields[9] == "1", fields[10] == "1", fields[11] == "1", fields[12] == "1", fields[13] == "1", fields[14], fields[15], fields[16], fields[17], fields[18],
-                                     fields[19], fields[20], fields[19] == RAID ? MGQ_MpWorld.difficulty_of(fields[21]) : nil,
-                                     fields[22] == "1", fields[19] == RAID ? MGQ_MpWorld.squad_of(fields[23]) : nil,
-                                     fields[19] != RAID && fields[24] == "1"))
-        when "member"
-          worlds.last.members.push(Member.new(fields[1], fields[2] == "1", fields[3].to_s)) if worlds.last
-        when "unread"
-          worlds.last.mods_unread = true if worlds.last
+    # Makes a world of the directory as the scripts keep it.
+    #
+    # @param values [Hash] The world, as the DLL tells it: every field of ListedWorld by its name,
+    #   members as [id, online, name] each and squad as squad.read answers it.
+    # @return [ListedWorld] The world.
+    def self.listed_of(values)
+      fields = ListedWorld.members.map do |field|
+        case field
+        when :members then Array(values["members"]).map { |id, online, name| Member.new(id, online, name) }
+        when :squad then MGQ_MpWorld.squad_from(values["squad"])
+        else values[field.to_s]
         end
       end
-
-      [state["state"] || "idle", state["error"], worlds, state["admin"] == "1"]
+      ListedWorld.new(*fields)
     end
+
 
     # Reads the id everyone sees for the player.
     #
     # @return [String] The id, "" while the player has no name.
     def self.my_id
       MGQ_Multiplayer::Player.share
-      MGQ_Multiplayer::Link.player_id
+      MGQ_Multiplayer::Player.id
     end
   end
 

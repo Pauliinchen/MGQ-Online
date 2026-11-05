@@ -2,7 +2,9 @@
 #  ask_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Read a running battle as Sessions does, offered a side battle only beside a full one and told why a battle near takes nobody in
+#      Paulinchen  2026-11-05: Read the scripts' fields and handed the host's rates by their kinds, as CoopRoomTopics does
+#                            - Read a battle's state as its host tells it in rbs
+#                            - Read a running battle as Sessions does, offered a side battle only beside a full one and told why a battle near takes nobody in
 #                            - Offered a party member's battle in a Classic world too
 #      Paulinchen  2026-10-30: Created
 #
@@ -77,7 +79,7 @@ class AskStandIn
     when "coop.ask_release" then release_companions(Array(request["seats"])) && nil
     when "coop.ask_undo" then undo || @match.status([])
     when "coop.ask_abandon" then abandon || @match.status([])
-    when "coop.ask_off" then (peer = world.at(request["seat"])) ? take_off(peer, request["fields"]) : false
+    when "coop.ask_off" then (peer = world.at(request["seat"])) ? take_off(peer, fields_written(request["fields"])) : false
     when "coop.party_offers" then (@match.answer("coop.frame", request) || true) && offers
     when "coop.accept_party" then ((peer = world.at(request["seat"])) && accept_party(peer, request["busy"])) || @match.status([])
     when "coop.decline_party" then ((peer = world.at(request["seat"])) && decline_party(peer)) || @match.status([])
@@ -233,16 +235,12 @@ class AskStandIn
     state == "open" && count.between?(1, MatchStandIn::RAID_PLAYERS - 1) ? MatchStandIn::RAID_PLAYERS - count : 0
   end
 
-  # Reads the battle a host tells, as Sessions.Battle does: its players and its state, which a
-  # state without "rbs" tells by its count alone.
+  # Reads the battle a host tells, as Sessions.Battle does: its players and its state.
   #
   # @param host [Object] The battle's host.
   # @return [Array(Integer, String)] The players and the state.
   def battle_of(host)
-    count = host.state.key?("rbn") ? host.state["rbn"].to_i : 1
-    state = host.state["rbs"].to_s
-    state = count >= MatchStandIn::RAID_PLAYERS ? "full" : count >= 1 ? "open" : "closed" if state.empty?
-    [count, state]
+    [host.state["rbn"].to_i, host.state["rbs"].to_s]
   end
 
   # Lists the party members near and free, as CoopAsking.PartyNear does.
@@ -427,7 +425,7 @@ class AskStandIn
       return log("#{answer} for battle #{message['bid']} from #{@match.who(peer)} ignored: not the battle the player asked to join")
     end
 
-    ask[:host] = { "escape" => message["escape"] == "1", "lose" => message["lose"] == "1", "rates" => message["rates"].to_s, "served" => message["served"].to_s == "1" }
+    ask[:host] = { "escape" => message["escape"] == "1", "lose" => message["lose"] == "1", "rates" => field_value("rates", message["rates"].to_s), "served" => message["served"].to_s == "1" }
     ask[:taken] = message["seats"].to_s.split(",").map(&:to_i) if message.key?("seats")
     ask[:answer] = answer
     log("#{@match.who(peer)} answered for battle #{message['bid']}: #{answer}")
@@ -858,7 +856,7 @@ class AskReplay
     return own(outcome) unless outcome["late"]
 
     host = outcome["host"]
-    @actions.concat([["rates", host["rates"]], ["set", "can_escape", host["escape"]], ["set", "can_lose", host["lose"]], ["set", "preemptive", false],
+    @actions.concat([["rates", field_text("rates", host["rates"])], ["set", "can_escape", host["escape"]], ["set", "can_lose", host["lose"]], ["set", "preemptive", false],
                      ["set", "surprise", false]])
     @asks.answer("coop.ask_release", "facts" => @facts, "seats" => outcome["release"]) unless outcome["release"].empty?
     @result = { "stays_out" => outcome["stays_out"], "own_troop" => true, "late" => true }

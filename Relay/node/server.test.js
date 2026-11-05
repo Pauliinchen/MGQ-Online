@@ -2,6 +2,7 @@
 //  server.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Sent the version of a current game, and served released games only on a relay that names a lower lowest version
 //      Paulinchen  2026-10-31: Wrote every Raid World story key by key and tested that games that keep no keys are turned away
 //                            - Tested an admin's keys reaching the games of a Raid World that plays on tracks
 //                            - Tested the world's mod settings told to the games that take them from the relay
@@ -116,10 +117,20 @@ const logged = { info: [], error: [] };
 const LOG = { info: (line) => logged.info.push(line), error: (line) => logged.error.push(line) };
 
 /**
- * The header every released game that keeps a Raid World's story key by key sends on its directory
+ * The headers a current game, which keeps a Raid World's story key by key, sends on its directory
  * requests and world rooms.
  */
-const GAME = Object.freeze({ [FEATURES_HEADER]: "raid,keys" });
+const GAME = Object.freeze({ [FEATURES_HEADER]: "raid,keys", [VERSION_HEADER]: "0.7.0" });
+
+/**
+ * The header a current game sends on a PvP room, which asks for no features.
+ */
+const PVP = Object.freeze({ [VERSION_HEADER]: GAME[VERSION_HEADER] });
+
+/**
+ * The header a released game that names no version sends, which counts as 0.6.4.
+ */
+const UNNAMED = Object.freeze({ [FEATURES_HEADER]: GAME[FEATURES_HEADER] });
 
 /**
  * The headers the World Admin tool sends on every request.
@@ -127,8 +138,8 @@ const GAME = Object.freeze({ [FEATURES_HEADER]: "raid,keys" });
 const ADMIN_TOOL = Object.freeze({ [FEATURES_HEADER]: "admin", [VERSION_HEADER]: "0.0.0-dev" });
 
 /**
- * Sends a request as a released game from 0.6.0 sends it to the world directory and the mod catalog,
- * with GAME before the request's own headers.
+ * Sends a request as a current game sends it to the world directory and the mod catalog, with GAME
+ * before the request's own headers.
  *
  * @param {string} address The address.
  * @param {RequestInit} [init] The request, its headers as an object.
@@ -199,8 +210,7 @@ function roomId(number) {
  * @returns {Promise<{socket: WebSocket, next: () => Promise<any>, closed: Promise<{code: number}>}>} The peer, its next message and its close.
  */
 async function connect(room, role) {
-  // Released games open PvP rooms without GAME.
-  return open(`${base}${room}?role=${role}`, {});
+  return open(`${base}${room}?role=${role}`, PVP);
 }
 
 /**
@@ -249,13 +259,13 @@ async function sit(room, player, auth = AUTH) {
 }
 
 /**
- * Reads a world from the directory's list.
+ * Reads a world from the directory's list, as the World Admin tool reads it, with its mods.
  *
  * @param {string} room The world's id.
  * @returns {Promise<object | undefined>} The world as everyone sees it.
  */
 async function listed(room) {
-  const { worlds } = await (await gameFetch(directoryBase)).json();
+  const { worlds } = await (await fetch(directoryBase, { headers: ADMIN_TOOL })).json();
   return worlds.find((world) => world.id === room);
 }
 
@@ -560,7 +570,7 @@ test("every game reads the release control, the admins set it, and the gate take
   const release = (headers, body) => fetch(`${relayBase}/admin/release`, body ? { method: "POST", headers, body: JSON.stringify(body) } : { headers });
 
   const read = await fetch(`${relayBase}/release`);
-  assert.deepEqual([read.status, await read.json()], [200, { current: null, min: "0.6.0", repo: RELEASE_REPO }], "open to a game of any version, without headers");
+  assert.deepEqual([read.status, await read.json()], [200, { current: null, min: "0.7.0", repo: RELEASE_REPO }], "open to a game of any version, without headers");
   assert.deepEqual([(await release({ [PLAYER_HEADER]: CREATOR })).status, (await release({ [PLAYER_HEADER]: CREATOR }, { min: "0.6.5" })).status], [403, 403]);
   assert.equal((await release({ [PLAYER_HEADER]: ADMIN }, { current: "0.6.4", min: "0.6.5" })).status, 400);
 
@@ -569,8 +579,8 @@ test("every game reads the release control, the admins set it, and the gate take
     assert.equal(set.status, 200);
     assert.deepEqual((await set.json()).updatedBy, admin);
     assert.ok(logged.info.some((line) => line.endsWith(`admin ${admin} set the release: current unset -> 0.6.8, min unset -> 0.6.5 (0.6.5 served)`)));
-    assert.deepEqual([(await gameFetch(directoryBase)).status, (await gameFetch(directoryBase, { headers: { [VERSION_HEADER]: "0.6.5" } })).status], [426, 200], "a game naming none counts as 0.6.4");
-    assert.deepEqual(await (await release({ [PLAYER_HEADER]: ADMIN })).json(), { current: "0.6.8", min: "0.6.5", repo: RELEASE_REPO, envMin: "0.6.0", updatedAt: now, updatedBy: admin });
+    assert.deepEqual([(await fetch(directoryBase, { headers: UNNAMED })).status, (await gameFetch(directoryBase, { headers: { [VERSION_HEADER]: "0.6.5" } })).status], [426, 200], "a game naming none counts as 0.6.4");
+    assert.deepEqual(await (await release({ [PLAYER_HEADER]: ADMIN })).json(), { current: "0.6.8", min: "0.6.5", repo: RELEASE_REPO, envMin: "0.7.0", updatedAt: now, updatedBy: admin });
   } finally {
     assert.equal((await release({ [PLAYER_HEADER]: ADMIN }, { current: null, min: null })).status, 200);
   }
@@ -733,7 +743,7 @@ function openWithHeaders(address, headers) {
 test("a stopping relay closes every connection as a service restart, so the games connect again, and logs it", async () => {
   const stopping = createRelay({ clock: () => now, checkEveryMs: 3_600_000, sweepEveryMs: 3_600_000, log: LOG });
   await new Promise((resolve) => stopping.server.listen(0, "127.0.0.1", resolve));
-  const host = await open(`ws://127.0.0.1:${stopping.server.address().port}/v1/room/${roomId(211)}?role=host`, {});
+  const host = await open(`ws://127.0.0.1:${stopping.server.address().port}/v1/room/${roomId(211)}?role=host`, PVP);
 
   await stopping.stop();
   assert.deepEqual(await host.closed, { code: 1012, reason: "service restart" });
@@ -835,9 +845,9 @@ test("a world room lets into a Raid World only the games that name it in X-MGQ-F
   assert.deepEqual([(await listed(room)).type, (await listed(room)).share], ["raid", "story"]);
 
   const address = `${worldBase}${room}?name=Player%2052&auth=${AUTH}`;
-  assert.deepEqual(await openWithHeaders(address, { [PLAYER_HEADER]: playerKey(52), [FEATURES_HEADER]: "other" }), { status: 400, refusal: "raid_unsupported" });
+  assert.deepEqual(await openWithHeaders(address, { ...PVP, [PLAYER_HEADER]: playerKey(52), [FEATURES_HEADER]: "other" }), { status: 400, refusal: "raid_unsupported" });
 
-  assert.deepEqual(await openWithHeaders(address, { [PLAYER_HEADER]: playerKey(52), [FEATURES_HEADER]: "raid" }), { status: 400, refusal: "update" }, "a game that keeps the story sealed");
+  assert.deepEqual(await openWithHeaders(address, { ...PVP, [PLAYER_HEADER]: playerKey(52), [FEATURES_HEADER]: "raid" }), { status: 400, refusal: "update" }, "a game that keeps the story sealed");
   const game = await openWithHeaders(address, { [PLAYER_HEADER]: playerKey(52), ...GAME });
   assert.equal(await game.first, "seat 0");
   game.socket.close();
@@ -901,7 +911,7 @@ test("a keyed Raid World's games hear what each write changed, and games that ke
     body: JSON.stringify({ id: room, name: "Raid Keys", seats: 4, playerName: "Creator", authHash: await sha256Hex(AUTH), lock: { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(40) }, type: "raid" }),
   });
   assert.equal(created.status, 201);
-  const keys = { [FEATURES_HEADER]: "raid,keys" };
+  const keys = GAME;
   const watcher = await openWithHeaders(`${worldBase}${room}?name=Watcher&auth=${AUTH}`, { [PLAYER_HEADER]: playerKey(61), ...keys });
   assert.equal(await watcher.first, "seat 0");
   const heard = [];
@@ -951,7 +961,7 @@ test("games that name tracks play a Raid World's story over the world room: writ
   assert.equal(mapped.status, 200);
 
   const game = async (number) => {
-    const opened = await openWithHeaders(`${worldBase}${room}?name=Player${number}&auth=${AUTH}`, { [PLAYER_HEADER]: playerKey(number), [FEATURES_HEADER]: "raid,keys,tracks" });
+    const opened = await openWithHeaders(`${worldBase}${room}?name=Player${number}&auth=${AUTH}`, { ...GAME, [PLAYER_HEADER]: playerKey(number), [FEATURES_HEADER]: "raid,keys,tracks" });
     const heard = [];
     opened.socket.on("message", (data) => data.toString().startsWith("track ") && heard.push(JSON.parse(data.toString().slice(6))));
     await opened.first;
@@ -989,7 +999,7 @@ test("games that name tracks play a Raid World's story over the world room: writ
   viewer.say({ t: "tell", telling: "v2", map: 7, event: "map:7:39:1" });
   assert.equal((await viewer.hears((frame) => frame.t === "tell")).granted, true);
 
-  const plain = await openWithHeaders(`${worldBase}${room}?name=Plain&auth=${AUTH}`, { [PLAYER_HEADER]: playerKey(73), [FEATURES_HEADER]: "raid,keys" });
+  const plain = await openWithHeaders(`${worldBase}${room}?name=Plain&auth=${AUTH}`, { [PLAYER_HEADER]: playerKey(73), ...GAME });
   await plain.first;
   const closed = new Promise((resolve) => plain.socket.on("close", (code) => resolve(code)));
   plain.socket.send(`track ${JSON.stringify({ t: "sync" })}`);
@@ -1128,7 +1138,7 @@ test("entering rooms and making worlds are limited per address", async () => {
   const port = limited.server.address().port;
 
   const host = await open(`ws://127.0.0.1:${port}/v1/room/${roomId(10)}?role=host`);
-  assert.equal((await openWithHeaders(`ws://127.0.0.1:${port}/v1/room/${roomId(11)}?role=host`, {})).status, 429);
+  assert.equal((await openWithHeaders(`ws://127.0.0.1:${port}/v1/room/${roomId(11)}?role=host`, PVP)).status, 429);
 
   const world = (id) => JSON.stringify({ id, name: "Limited", seats: 2, player: CREATOR, playerName: "Creator", authHash: "ab".repeat(32), lock: { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(40) } });
   assert.equal((await gameFetch(`http://127.0.0.1:${port}/v1/worlds`, { method: "POST", body: world(roomId(116)) })).status, 201);
@@ -1179,12 +1189,12 @@ test("a game without X-MGQ-Features, or naming a version below the lowest, is tu
 
   assert.deepEqual(await world({}), worldUpdate, "a game before 0.6.0 stops at a 400 with a code it does not know");
   assert.deepEqual(await world({ ...GAME, [VERSION_HEADER]: "0.5.9+abc" }), worldUpdate);
-  const current = await world({ ...GAME, [VERSION_HEADER]: "0.6.0+abc" });
+  const current = await world({ ...GAME, [VERSION_HEADER]: "0.7.0+abc" });
   assert.equal(await current.first, "seat 0");
   current.socket.close();
 
   assert.deepEqual(await openWithHeaders(`${base}${roomId(12)}?role=host`, { [VERSION_HEADER]: "0.5.3" }), update, "a PvP room holds a named version against the lowest");
-  const host = await openWithHeaders(`${base}${roomId(12)}?role=host`, {});
+  const host = await openWithHeaders(`${base}${roomId(12)}?role=host`, PVP);
   assert.ok(host.socket, "a PvP room takes a game that names no features, as released games open them");
   host.socket.close();
 
@@ -1215,13 +1225,13 @@ test("the MIN_VERSION setting raises the lowest version a game may name, which o
       await Promise.all(["0.6.9", "no version", "0.6.9-dev", "0.7.0+abc", "0.7.0-beta", "0.0.0-dev", "0.0.0-dev+abc"].map((version) => status(trades, { ...GAME, [VERSION_HEADER]: version }))),
       [426, 426, 426, 200, 200, 200, 200],
     );
-    assert.equal(await status(trades, GAME), 426, "a game naming no version counts as 0.6.4");
+    assert.equal(await status(trades, UNNAMED), 426, "a game naming no version counts as 0.6.4");
     assert.deepEqual([await status(`http://${at}/v1/worlds`, {}), await status(`http://${at}/v1/mods`, {}), await status(`http://${at}/v1/worlds`, { [VERSION_HEADER]: "0.6.9" })], [426, 200, 426], "the world directory too, but not a read of the mod catalog");
     assert.deepEqual([await status(`http://${at}/v1/worlds`, ADMIN_TOOL), await status(`http://${at}/v1/mods`, ADMIN_TOOL)], [200, 200], "the World Admin tool names 0.0.0-dev");
     assert.deepEqual([await status(`http://${at}/v1/worlds`, { ...GAME, [VERSION_HEADER]: "0.7.0" }), await status(`http://${at}/v1/mods`, { ...GAME, [VERSION_HEADER]: "0.7.1" })], [200, 200]);
     assert.deepEqual([await status(`http://${at}/v1/worlds`, { [VERSION_HEADER]: "0.7.0" }), (await fetch(`http://${at}/v1/mods`, { method: "POST", headers: { [VERSION_HEADER]: "0.7.1" } })).status], [426, 426], "they ask for X-MGQ-Features too, a change of the mod catalog included");
     assert.deepEqual(await openWithHeaders(`ws://${at}/v1/room/${roomId(134)}?role=host`, {}), { status: 426, refusal: UPDATE_NEEDED }, "a released game's PvP room");
-    assert.deepEqual(await openWithHeaders(`ws://${at}/v1/world/${roomId(133)}?name=Old&auth=${AUTH}`, { [PLAYER_HEADER]: playerKey(81), ...GAME }), { status: 400, refusal: "update" }, "a released game's world room");
+    assert.deepEqual(await openWithHeaders(`ws://${at}/v1/world/${roomId(133)}?name=Old&auth=${AUTH}`, { [PLAYER_HEADER]: playerKey(81), ...UNNAMED }), { status: 400, refusal: "update" }, "a released game's world room");
   } finally {
     await gated.stop();
   }
@@ -1232,7 +1242,7 @@ test("the MIN_VERSION setting raises the lowest version a game may name, which o
 
   try {
     assert.deepEqual(
-      [await status(`http://${open}/v1/trades?player=${playerKey(81)}&world=${roomId(133)}`, GAME), await status(`http://${open}/v1/worlds`, GAME), await status(`http://${open}/v1/mods`, GAME), await status(`http://${open}/v1/worlds`, {})],
+      [await status(`http://${open}/v1/trades?player=${playerKey(81)}&world=${roomId(133)}`, UNNAMED), await status(`http://${open}/v1/worlds`, UNNAMED), await status(`http://${open}/v1/mods`, UNNAMED), await status(`http://${open}/v1/worlds`, {})],
       [200, 200, 200, 426],
       "released games naming no version pass while the lowest is at most 0.6.4, and a request without X-MGQ-Features stays refused",
     );
@@ -1454,6 +1464,11 @@ test("a game that takes mod settings from the relay hears the world's as it ente
 });
 
 test("games from 0.6.8 read a world's mods by its id, and released ones keep the list but stay out of a world with more mods than they hold", async () => {
+  // Only a relay whose lowest version is below 0.7.0 serves the released games this holds apart.
+  const served = createRelay({ clock: () => now, checkEveryMs: 3_600_000, log: LOG, minVersion: "0.6.0" });
+  await new Promise((resolve) => served.server.listen(0, "127.0.0.1", resolve));
+  const directoryBase = `http://127.0.0.1:${served.server.address().port}/v1/worlds`;
+  const worldBase = `ws://127.0.0.1:${served.server.address().port}/v1/world/`;
   const room = roomId(210);
   const creator = playerKey(110);
   const newer = { ...GAME, [VERSION_HEADER]: "0.6.8" };
@@ -1484,9 +1499,9 @@ test("games from 0.6.8 read a world's mods by its id, and released ones keep the
   await until(async () => rules(heard.old).length === 1);
   assert.deepEqual(rules(heard.old), [`mods_rule 1	${"x".repeat(400)}`]);
 
-  const listedFor = async (headers) => (await (await gameFetch(directoryBase, { headers })).json()).worlds.find((world) => world.id === room);
+  const listedFor = async (headers) => (await (await fetch(directoryBase, { headers })).json()).worlds.find((world) => world.id === room);
   assert.equal((await listedFor(released)).mods, "x".repeat(400));
-  assert.equal((await listedFor({})).settings, "a=i:1", "a game naming no version");
+  assert.equal((await listedFor(UNNAMED)).settings, "a=i:1", "a game naming no version");
   assert.equal((await listedFor({ [FEATURES_HEADER]: "web", [VERSION_HEADER]: "0.0.0-dev" })).mods, "x".repeat(400), "the website");
   const slim = await listedFor(newer);
   assert.deepEqual([slim.mods, slim.modHashes, slim.settings, slim.modsCount], [undefined, undefined, undefined, 1]);
@@ -1494,13 +1509,14 @@ test("games from 0.6.8 read a world's mods by its id, and released ones keep the
   assert.deepEqual([opened.status, (await opened.json()).world.mods], [200, "x".repeat(400)]);
 
   assert.deepEqual(await enter(113, released), { status: 400, refusal: "update" }, "a released game is sent to update, as when it is too old");
-  const unnamed = await enter(114, GAME);
+  const unnamed = await enter(114, UNNAMED);
   assert.equal(unnamed.status, 400, "a game naming no version too");
   const later = await enter(115, newer);
   assert.equal(await later.first, "seat 2 0 1");
   later.socket.close();
   current.socket.close();
   old.socket.close();
+  await served.stop();
 });
 
 test("the creator or an admin edits a world over HTTP", async () => {
@@ -1521,8 +1537,8 @@ test("the creator or an admin edits a world over HTTP", async () => {
 test("the admins' stats count the world rooms with their players, the PvP rooms and the game versions in the world rooms", async () => {
   const room = roomId(200);
   await makeWorld(room, 4);
-  const released = await open(`${worldBase}${room}?player=${playerKey(91)}&name=Released&auth=${AUTH}`, { ...GAME, [VERSION_HEADER]: "0.6.7.7" });
-  const unnamed = await sit(room, 92);
+  const newer = await open(`${worldBase}${room}?player=${playerKey(91)}&name=Newer&auth=${AUTH}`, { ...GAME, [VERSION_HEADER]: "0.7.1" });
+  const current = await sit(room, 92);
   const host = await connect(roomId(201), "host");
   await until(async () => (await listed(room)).online === 2);
   const stats = async (headers) => fetch(`${directoryBase.replace("/worlds", "")}/admin/stats`, { headers });
@@ -1531,12 +1547,12 @@ test("the admins' stats count the world rooms with their players, the PvP rooms 
   assert.equal(answer.status, 200);
   const body = await answer.json();
   assert.deepEqual(body.worlds.find((world) => world.id === room), { id: room, name: `World ${room.slice(-3)}`, type: "classic", seats: 4, players: 2 });
-  assert.deepEqual([body.versions["0.6.7.7"], body.versions.unknown], [1, 1]);
+  assert.deepEqual([body.versions["0.7.1"], body.versions["0.7.0"]], [1, 1]);
   assert.ok(body.rooms >= 1 && body.players.total === body.players.worlds + body.players.rooms);
   assert.deepEqual([body.battles, body.battleServer, typeof body.memory.rss, body.startedAt], [{ tracked: 0, served: 0 }, null, "number", new Date(1_000_000).toISOString()]);
   assert.equal((await stats({ [PLAYER_HEADER]: CREATOR })).status, 403, "only admins read them");
 
-  for (const each of [released, unnamed, host]) {
+  for (const each of [newer, current, host]) {
     each.socket.close();
   }
 });

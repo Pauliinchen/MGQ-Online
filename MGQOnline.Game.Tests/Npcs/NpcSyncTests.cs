@@ -2,6 +2,7 @@
 //  NpcSyncTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Handed the snapshots their events as values
 //      Paulinchen  2026-10-30: Created
 //
 //----------------------------------------------------------------
@@ -102,17 +103,17 @@ public sealed class NpcSyncTests
     {
         var game = new Game(false);
         game.Npcs.Update(5, -1, [(2, "1000")]);
-        game.Npcs.Snapshot(5, "1:4,4,2,0");
+        game.Npcs.Snapshot(5, [(1, [4, 4, 2, 0])]);
         game.World.Sent.Clear();
         int asked = 0;
         for (int frame = 0; frame < NpcSync.SendFrames - 1; frame++)
         {
             asked += game.Npcs.Update(5, -1, [(2, "1000"), (3, "3000")]).Snapshot ? 1 : 0;
-            game.Npcs.Snapshot(5, "1:4,4,2,0");
+            game.Npcs.Snapshot(5, [(1, [4, 4, 2, 0])]);
         }
 
         game.Npcs.Update(5, -1, [(2, "1000"), (3, "3100")]);
-        game.Npcs.Snapshot(5, "1:4,4,2,0");
+        game.Npcs.Snapshot(5, [(1, [4, 4, 2, 0])]);
 
         Assert.Equal(1, asked);
         Assert.Equal([3, 3], game.World.TakeSent("npcs").Where(sent => sent.Text.Contains("full=1", System.StringComparison.Ordinal)).Select(sent => sent.Seat));
@@ -207,11 +208,11 @@ public sealed class NpcSyncTests
                         var name => Players[name].Seat,
                     };
                     List<(int, string)> sharing = [.. step.GetProperty("members").EnumerateArray().Select(name => (Players[name.GetString()!].Seat, states[name.GetString()!].Since))];
-                    string events = string.Join(';', step.GetProperty("events").EnumerateArray().Select(entry =>
+                    List<(long, IReadOnlyList<long>)> events = [.. step.GetProperty("events").EnumerateArray().Select(entry =>
                     {
                         long[] values = [.. entry.EnumerateArray().Select(value => value.GetInt64())];
-                        return $"{values[0]}:{values[1]},{values[2]},{values[3]},{values[4]}";
-                    }));
+                        return (values[0], (IReadOnlyList<long>)values[1..]);
+                    })];
                     int times = step.TryGetProperty("times", out JsonElement count) ? count.GetInt32() : 1;
                     for (int frame = 0; frame < times; frame++)
                     {

@@ -2,6 +2,7 @@
 //  SharedSettingsSyncTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Handed the creator's options and the Mod Config groups as values, expected the settings to apply as values, and covered every type as released games wrote it
 //      Paulinchen  2026-10-31: Covered the settings the relay tells every player, the creator's game included
 //      Paulinchen  2026-10-23: Created
 //
@@ -57,7 +58,7 @@ public sealed class SharedSettingsSyncTests
     {
         _sync = new SharedSettingsSync(_directory, new DirectoryTickets(() => _directory.Action.State, () => _directory.Action = ("idle", null, null)), new TopicCaller.NoLog(), () => { });
         _topics = new TopicCaller(_sync.Register);
-        Call(SharedSettingsSync.GroupsTopic, new RubyArray([new RubyArray(["Level Cap", new RubyArray([new RubyArray(["mod_level_cap", "Level Cap", new RubyArray([new RubyArray(["i:1", "On"]), new RubyArray(["i:0", "Off"])])])])])]));
+        Call(SharedSettingsSync.GroupsTopic, new RubyArray([new RubyArray(["Level Cap", new RubyArray([new RubyArray(["mod_level_cap", "Level Cap", new RubyArray([new RubyArray([1, "On"]), new RubyArray([0, "Off"])])])])])]));
     }
 
     /// <summary>
@@ -82,7 +83,7 @@ public sealed class SharedSettingsSyncTests
         _directory.Action = ("done", "settings", null);
         steps = Tick();
         Assert.Equal(["row"], steps.Select(Kind).Where(kind => kind != "notify"));
-        Assert.Equal(Off, Call(SharedSettingsSync.StepTopic)!.AsHash()["world"].AsHash()["text"].AsText());
+        Assert.Equal(Values(("mod_level_cap", 0)), Call(SharedSettingsSync.StepTopic)!.AsHash()["world"].AsHash()["values"]);
     }
 
     /// <summary>
@@ -93,19 +94,19 @@ public sealed class SharedSettingsSyncTests
     public void Options_JoinWhatChangedOnTheRelay()
     {
         Enter("creator", "@shared=o:1;mod_level_cap=i:1;mod_rate=i:1");
-        Call(SharedSettingsSync.LoadedTopic, Load("@shared=o:1;mod_level_cap=i:1;mod_rate=i:1", ("mod_level_cap", "mod_level_cap=i:1"), ("mod_rate", "mod_rate=i:1")));
+        Call(SharedSettingsSync.LoadedTopic, Load("@shared=o:1;mod_level_cap=i:1;mod_rate=i:1", ("mod_level_cap", 1), ("mod_rate", 1)));
         _directory.Done("@shared=o:1;mod_level_cap=i:1;mod_rate=i:1");
         Tick();
         _directory.Read = null;
 
-        RubyHash want = Load("", ("mod_level_cap", "mod_level_cap=i:0"), ("mod_rate", "mod_rate=i:1"));
+        RubyHash want = Load("", ("mod_level_cap", 0), ("mod_rate", 1));
         want.Add("reason", "options");
         Call(SharedSettingsSync.WantTopic, want);
         _directory.Done("@shared=o:1;mod_level_cap=i:1;mod_rate=i:5");
         RubyArray steps = Tick();
 
         Assert.Equal("@shared=o:1;mod_rate=i:5;mod_level_cap=i:0", _directory.Sent);
-        Assert.Contains(steps, step => Kind(step) == "apply" && step.AsArray()[1].AsText() == "@shared=o:1;mod_rate=i:5;mod_level_cap=i:0");
+        Assert.Contains(steps, step => Kind(step) == "apply" && step.AsArray()[1].Equals(Values(("mod_rate", 5), ("mod_level_cap", 0))));
     }
 
     /// <summary>
@@ -145,7 +146,7 @@ public sealed class SharedSettingsSyncTests
         Tick();
 
         Assert.Empty(Steps(Call(SharedSettingsSync.LiveTopic, Told("", On))));
-        Assert.Equal(new RubyArray(["apply_live", Off]), Assert.Single(Steps(Call(SharedSettingsSync.LiveTopic, Told("creator", Off)))));
+        Assert.Equal(new RubyArray(["apply_live", Values(("mod_level_cap", 0))]), Assert.Single(Steps(Call(SharedSettingsSync.LiveTopic, Told("creator", Off)))));
 
         _frame += SharedSettingsSync.NoticeFrames;
         Tick();
@@ -165,15 +166,15 @@ public sealed class SharedSettingsSyncTests
     public void Live_TheCreatorTakesAnAdminsChangeButNotItsOwnRequest()
     {
         Enter("creator", On);
-        Call(SharedSettingsSync.LoadedTopic, Load(On, ("mod_level_cap", "mod_level_cap=i:1")));
+        Call(SharedSettingsSync.LoadedTopic, Load(On, ("mod_level_cap", 1)));
         _directory.Done(On);
         Tick();
 
         RubyArray steps = Steps(Call(SharedSettingsSync.LiveTopic, Told("admin", Off)));
-        Assert.Contains(steps, step => Kind(step) == "apply" && step.AsArray()[1].AsText() == Off);
+        Assert.Contains(steps, step => Kind(step) == "apply" && step.AsArray()[1].Equals(Values(("mod_level_cap", 0))));
         Assert.Contains(steps, step => Notice(step) == "An admin changed the shared mod settings: Level Cap: On -> Off.");
 
-        RubyHash want = Load("", ("mod_level_cap", "mod_level_cap=i:1"));
+        RubyHash want = Load("", ("mod_level_cap", 1));
         want.Add("reason", "options");
         Call(SharedSettingsSync.WantTopic, want);
         _directory.Done(Off);
@@ -186,6 +187,30 @@ public sealed class SharedSettingsSyncTests
         Tick();
         Tick();
         Assert.Null(_directory.Read);
+    }
+
+    /// <summary>
+    /// Asserts that the creator's options of every type go to the relay as released games wrote
+    /// them, which the relay keeps, and come to another player's game as the same values.
+    /// </summary>
+    [Fact]
+    public void Settings_CarryEveryTypeAsReleasedGamesWroteThem()
+    {
+        const string Written = "@shared=o:1;mod_count=i:-3;mod_rate=f:1.0e+20;mod_on=b:true;mod_theme=y:dark;mod_name=s:a%3Bb%3Dc%25";
+        (string Key, RubyValue Value)[] options =
+        [
+            ("mod_count", -3), ("mod_rate", new RubyHash { { "float", "1.0e+20" } }), ("mod_on", true), ("mod_theme", new RubyHash { { "symbol", "dark" } }), ("mod_name", "a;b=c%"),
+        ];
+        Enter("creator", "@shared=o:1");
+        Call(SharedSettingsSync.LoadedTopic, Load("", options));
+        _directory.Done("@shared=o:1");
+        Tick();
+
+        Assert.Equal(Written, _directory.Sent);
+
+        Enter("me", "@shared=o:1");
+        Call(SharedSettingsSync.LoadedTopic, Load(""));
+        Assert.Equal(new RubyArray(["apply_live", Values(options)]), Assert.Single(Steps(Call(SharedSettingsSync.LiveTopic, Told("creator", Written)))));
     }
 
     /// <summary>
@@ -217,18 +242,25 @@ public sealed class SharedSettingsSyncTests
     /// Writes a load's request: the creator's options and every option key the game has.
     /// </summary>
     /// <param name="applied">The settings whose keys were applied.</param>
-    /// <param name="pairs">The creator's options, Level Cap off when none are given.</param>
+    /// <param name="options">The creator's options, each value as the scripts hand it over, Level Cap off when none are given.</param>
     /// <returns>The request.</returns>
-    private static RubyHash Load(string applied, params (string Key, string Pair)[] pairs)
+    private static RubyHash Load(string applied, params (string Key, RubyValue Value)[] options)
     {
-        (string Key, string Pair)[] mine = pairs.Length > 0 ? pairs : [("mod_level_cap", "mod_level_cap=i:0")];
+        (string Key, RubyValue Value)[] mine = options.Length > 0 ? options : [("mod_level_cap", 0)];
         return new RubyHash
         {
             { "applied", new RubyArray(applied.Length == 0 ? [] : ["mod_level_cap"]) },
-            { "pairs", new RubyArray(mine.Select(pair => (RubyValue)new RubyArray([pair.Key, pair.Pair]))) },
-            { "known", new RubyArray(mine.Select(pair => (RubyValue)pair.Key)) },
+            { "options", Values(mine) },
+            { "known", new RubyArray(mine.Select(option => (RubyValue)option.Key)) },
         };
     }
+
+    /// <summary>
+    /// Writes options as the scripts hand them over and the steps hand them back.
+    /// </summary>
+    /// <param name="options">Each option's key and value.</param>
+    /// <returns>[key, value] each.</returns>
+    private static RubyArray Values(params (string Key, RubyValue Value)[] options) => new(options.Select(option => (RubyValue)new RubyArray([option.Key, option.Value])));
 
     /// <summary>
     /// Writes what the relay tells of the world's settings.

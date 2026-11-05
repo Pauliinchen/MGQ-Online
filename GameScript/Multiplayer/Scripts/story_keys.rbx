@@ -2,7 +2,8 @@
 #  story_keys.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Read the story markers from story_ids.rbx
+#      Paulinchen  2026-11-05: Handed the DLL every key as [kind, key], every value as itself and every site as [kind, ...], and looked self switches up in the rows of rules it hands, so only the DLL writes and reads the tracks' texts
+#                            - Read the story markers from story_ids.rbx
 #                            - Noted the found items a run gave or used up, but none a story reset takes, so a run that changed no shared key is handed over too
 #                            - Dropped the names of the commands running, which only the found items' rule read
 #                            - Handed the found items a battle's drops gave to the DLL, and their entry on like a run's
@@ -31,6 +32,10 @@
 # Each write is looked up in the table in Ruby, a byte per switch and per variable, so a frame of
 # thousands of writes (the Final Chapter's reset) costs no call of the DLL per write; the writes a
 # story records go out once a frame, before Graphics.update.
+#
+# A key goes to the DLL as [kind, key], a value as itself, a Float tagged, and a site as ["map", map,
+# event, page], ["ce", id], ["game"] or ["game", what] (StoryPlain in the DLL, which alone writes and
+# reads the texts the relay's tracks and the save's log keep).
 #
 # Each run of the player's own game, one start of a map page or of a common event that runs by
 # itself with every common event it calls, is bracketed ("Issue 73 chest effects.md", "General
@@ -124,8 +129,8 @@ module MGQ_MpStoryKeys
   # Final Chapter's reset, about 1,900), so a runaway parallel event cannot fill the memory.
   MAX_BATCH = 8000
 
-  # A table: its revision, the class of each switch and variable as bytes, the self switch rules by
-  # key, the indexed events, the local steps by variable, the parts' gates, the class of a self
+  # A table: its revision, the class of each switch and variable as bytes, the self switch rules (see
+  # rules_of), the indexed events, the local steps by variable, the parts' gates, the class of a self
   # switch no rule names, and the ids of the switches and variables kept on a track.
   Table = Struct.new(:rev, :switches, :variables, :self_rules, :index, :local_steps, :gates, :self_default, :kept_switches, :kept_variables)
 
@@ -150,7 +155,7 @@ module MGQ_MpStoryKeys
   # Where the writes recorded go: :raid, :classic or nil for nowhere.
   @recording = nil
 
-  # The writes recorded this frame, each [key, value, site].
+  # The writes recorded this frame, each [kind, key, value, site].
   @batch = []
 
   # The writes of a Raid World's story made before its mapping came, each [kind, key, value, site],
@@ -211,8 +216,40 @@ module MGQ_MpStoryKeys
     hash["local_steps"].each { |variable, steps, shared_as, places| local[variable] = [steps, shared_as, places] }
     switches = hash["switches"].to_s
     variables = hash["variables"].to_s
-    Table.new(hash["rev"].to_i, switches, variables, hash["self"] || {}, index, local, hash["gates"] || {}, hash["self_default"].to_i,
+    Table.new(hash["rev"].to_i, switches, variables, rules_of(hash), index, local, hash["gates"] || {}, hash["self_default"].to_i,
               kept_ids(switches), kept_ids(variables))
+  end
+
+  # Reads the self switch rules the DLL hands with a table or the scopes, see StoryPlain.SelfRules in
+  # the DLL.
+  #
+  # @param hash [Hash] "self" ([map, event, letter, what] each) and "common" ([common event, letter,
+  #   what] each), nil standing for every event or letter.
+  # @return [Array<Hash>] What each rule names: the map's rules by [map, event, letter] and the
+  #   common events' by [common event, letter].
+  def self.rules_of(hash)
+    maps = {}
+    Array(hash["self"]).each { |map, event, letter, what| maps[[map, event, letter]] = what }
+    commons = {}
+    Array(hash["common"]).each { |common, letter, what| commons[[common, letter]] = what }
+    [maps, commons]
+  end
+
+  # Finds the most fitting self switch rule: its own, its event's, the common event's that wrote it,
+  # its map's letter's, its map's.
+  #
+  # @param rules [Array<Hash>] The rules, see rules_of.
+  # @param key [Array] The self switch's map, event and letter.
+  # @param site [Array, nil] Where the write came from, which a common event's rule reads.
+  # @return [Object, nil] What the rule names, nil for none.
+  def self.rule_of(rules, key, site)
+    maps, commons = rules
+    return nil if maps.empty? && commons.empty?
+
+    map, event, letter = key
+    common = site && site[0] == "ce" ? site[1] : nil
+    maps[[map, event, letter]] || maps[[map, event, nil]] || (common && (commons[[common, letter]] || commons[[common, nil]])) ||
+      maps[[map, nil, letter]] || maps[[map, nil, nil]]
   end
 
   # Lists the ids whose class keeps them on a track.
@@ -234,7 +271,7 @@ module MGQ_MpStoryKeys
 
     @raid = table_of(hash)
     log("read the story mapping at revision #{@raid.rev}: #{@raid.kept_switches.size} switches and #{@raid.kept_variables.size} variables kept, " \
-        "#{@raid.self_rules.size} self switch rules, #{@raid.index.size} events indexed")
+        "#{@raid.self_rules[0].size + @raid.self_rules[1].size} self switch rules, #{@raid.index.size} events indexed")
     sort_unsorted
     true
   rescue => e
@@ -300,7 +337,7 @@ module MGQ_MpStoryKeys
   #
   # @param kind [Integer] 0 for a switch, 1 for a variable, 2 for a self switch.
   # @param key [Integer, Array] Its id, or a self switch's map, event and letter.
-  # @param site [String, nil] Where the write came from, which a common event's rule reads.
+  # @param site [Array, nil] Where the write came from, which a common event's rule reads.
   # @param table [Table, nil] The table, the open world's by default.
   # @return [Integer] The class, 0 for each player's own and while no table came.
   def self.class_of(kind, key, site = nil, table = self.table)
@@ -309,15 +346,10 @@ module MGQ_MpStoryKeys
 
     return 0 unless key.is_a?(Array) && key.size == 3
 
-    map, event, letter = key
-    rules = table.self_rules
-    unless rules.empty?
-      common = site && site.start_with?("ce:") ? site[3..-1] : nil
-      found = rules["ss#{map}.#{event}.#{letter}"] || rules["ss#{map}.#{event}.*"] ||
-              (common && (rules["ce#{common}.#{letter}"] || rules["ce#{common}.*"])) || rules["ss#{map}.*.#{letter}"] || rules["ss#{map}.*.*"]
-      return found if found
-    end
-    table.index[map.to_i * EVENT_SPAN + event.to_i] ? KEPT : table.self_default
+    found = rule_of(table.self_rules, key, site)
+    return found if found
+
+    table.index[key[0].to_i * EVENT_SPAN + key[1].to_i] ? KEPT : table.self_default
   rescue
     0
   end
@@ -389,7 +421,7 @@ module MGQ_MpStoryKeys
   # @return [Object] What the block returns.
   def self.as(what)
     outer = @origin
-    @origin = "game:#{what}"
+    @origin = ["game", what]
     yield
   ensure
     @origin = outer
@@ -462,14 +494,14 @@ module MGQ_MpStoryKeys
   # @param kind [Integer] 0 for a switch, 1 for a variable, 2 for a self switch.
   # @param key [Integer, Array] Its id, or a self switch's map, event and letter.
   # @param value [Object] The value written.
-  # @param site [String] Where it came from.
+  # @param site [Array] Where it came from, see site_of.
   def self.add(kind, key, value, site)
     if @batch.size >= MAX_BATCH
       return log_once([:batch_full, MGQ_Multiplayer::Bridge.frame_number / 600], "dropped writes past #{MAX_BATCH} in one frame")
     end
 
-    text = text_of(kind, value)
-    @batch << [key_text(kind, key), text, site] if text
+    plain = plain_of(kind, value)
+    @batch << [kind, key, plain, site] unless plain.nil?
   end
 
   # Reports whether a lost battle's defeat runs: a novel scene, as after a lost story battle, or a
@@ -482,66 +514,47 @@ module MGQ_MpStoryKeys
     false
   end
 
-  # Writes a value as the tracks keep it: a switch or self switch as "1" or "0", a variable as
-  # MGQ_MpStoryState.encode_value writes it.
+  # Turns a value into what the DLL takes, see StoryPlain in the DLL: a switch's or self switch's as
+  # true or false, a variable's as MGQ_MpStoryState.plain_variable hands it, nil as 0.
   #
   # @param kind [Integer] 0 for a switch, 1 for a variable, 2 for a self switch.
   # @param value [Object] The value.
-  # @return [String, nil] The text, nil for a variable whose value no story carries, such as a list.
-  def self.text_of(kind, value)
-    return value ? "1" : "0" unless kind == 1
+  # @return [Object] The value, nil for a variable whose value no story carries, such as a list.
+  def self.plain_of(kind, value)
+    return value ? true : false unless kind == 1
 
-    text = MGQ_MpStoryState.encode_value(value.nil? ? 0 : value)
-    text.empty? ? nil : text
+    MGQ_MpStoryState.plain_variable(value.nil? ? 0 : value)
   end
 
-  # Writes a key as the tracks name it.
+  # Turns a value the DLL handed back into the game's, see plain_of.
   #
   # @param kind [Integer] 0 for a switch, 1 for a variable, 2 for a self switch.
-  # @param key [Integer, Array] Its id, or a self switch's map, event and letter.
-  # @return [String] Such as "s12", "v1001" or "ss7.39.A".
-  def self.key_text(kind, key)
-    case kind
-    when 0 then "s#{key}"
-    when 1 then "v#{key}"
-    else "ss#{key[0]}.#{key[1]}.#{key[2]}"
-    end
-  end
-
-  # Reads a key as the tracks name it.
-  #
-  # @param text [String] The key.
-  # @return [Array, nil] Its kind (0 a switch, 1 a variable, 2 a self switch, 3 a frozen fight) and
-  #   its id or self switch key; nil for none.
-  def self.key_of(text)
-    case text
-    when /\As(\d+)\z/ then [0, $1.to_i]
-    when /\Av(\d+)\z/ then [1, $1.to_i]
-    when /\Ass(\d+)\.(\d+)\.(\w+)\z/ then [2, [$1.to_i, $2.to_i, $3]]
-    when /\Af(\d+)\z/ then [3, $1.to_i]
-    end
+  # @param value [Object] The value.
+  # @return [Object] The value.
+  def self.game_value(kind, value)
+    kind == 1 ? MGQ_MpStoryState.variable_value(value) : value == true
   end
 
   # Names where a write comes from: the common event whose commands run, the page of the map event
   # whose commands run, the troop's battle event, or the game itself.
   #
   # @param interpreter [Game_Interpreter, nil] The interpreter running a command, nil for none.
-  # @return [String] Such as "map:7:39:1", "ce:154", "game:troop" or "game".
+  # @return [Array] Such as ["map", 7, 39, 1], ["ce", 154], ["game", "troop"] or ["game"].
   def self.site_of(interpreter)
-    return @origin || "game" unless interpreter
+    return @origin || ["game"] unless interpreter
 
     list = MGQ_MpGame.get(interpreter, :list)
     common = common_event_of(list)
-    return "ce:#{common}" if common
+    return ["ce", common] if common
 
     event_id = MGQ_MpGame.get(interpreter, :event_id).to_i
     map_id = MGQ_MpGame.get(interpreter, :map_id).to_i
-    return "game:troop" if $game_troop && interpreter.equal?($game_troop.interpreter)
-    return "game:event" unless event_id > 0 && map_id > 0
+    return ["game", "troop"] if $game_troop && interpreter.equal?($game_troop.interpreter)
+    return ["game", "event"] unless event_id > 0 && map_id > 0
 
-    "map:#{map_id}:#{event_id}:#{page_of(map_id, event_id, list)}"
+    ["map", map_id, event_id, page_of(map_id, event_id, list)]
   rescue
-    "game"
+    ["game"]
   end
 
   # Finds the common event whose commands a list is.
@@ -593,14 +606,16 @@ module MGQ_MpStoryKeys
   # Asks the relay for a value of the player's own outside the game's writes, such as a frozen raid
   # boss fight or a value the relay handed lower, with the frame's writes.
   #
-  # @param key [String] The key, see key_text.
-  # @param text [String] Its value as the tracks keep it.
-  # @param site [String] Where it comes from, "game" or "game:<what>".
+  # @param kind [Integer] 0 for a switch, 1 for a variable, 2 for a self switch, 3 for a frozen fight.
+  # @param key [Integer, Array] Its id, a self switch's map, event and letter, or a frozen fight's troop.
+  # @param value [Object] Its value: a frozen fight's text, any other as the game holds it.
+  # @param site [Array] Where it comes from, ["game"] or ["game", what].
   # @return [Boolean] Whether it goes with the frame's writes: false unless a Raid World's story records.
-  def self.request(key, text, site)
-    return false unless @recording == :raid && text
+  def self.request(kind, key, value, site)
+    plain = kind == 3 ? value : plain_of(kind, value)
+    return false unless @recording == :raid && !plain.nil?
 
-    @batch << [key, text, site]
+    @batch << [kind, key, plain, site]
     true
   end
 
@@ -617,8 +632,8 @@ module MGQ_MpStoryKeys
   # world, its table or the rewards changed.
   #
   # @return [Hash, nil] :switches and :variables (a scope byte per id), :keys (self switches by
-  #   name), :self (self switch rules), :index (indexed events) and :default; nil outside a world
-  #   and before the list came.
+  #   key), :self (self switch rules, see rules_of), :index (indexed events) and :default; nil
+  #   outside a world and before the list came.
   def self.scopes
     raid = defined?(MGQ_MpCoop::Scope) && MGQ_MpCoop::Scope.raid?
     return nil unless raid || (defined?(MGQ_MpOverworldSync) && MGQ_MpOverworldSync.in_world?)
@@ -631,7 +646,7 @@ module MGQ_MpStoryKeys
     hash = MGQ_Multiplayer::Bridge.call(SCOPES_TOPIC, "party" => !raid)
     found = hash ? scopes_of(hash) : nil
     @scopes = [stamp, found, MGQ_Multiplayer::Bridge.frame_number]
-    log("read who keeps each key: #{found[:keys].size} chest self switches, #{found[:self].size} self switch rules") if found
+    log("read who keeps each key: #{found[:keys].size} chest self switches, #{found[:self][0].size + found[:self][1].size} self switch rules") if found
     found
   rescue => e
     log_once(:scopes, "reading who keeps each key failed: #{e.class}: #{e.message}")
@@ -645,7 +660,9 @@ module MGQ_MpStoryKeys
   def self.scopes_of(hash)
     index = {}
     Array(hash["index"]).each { |code| index[code] = true }
-    { :switches => hash["switches"].to_s, :variables => hash["variables"].to_s, :keys => hash["keys"] || {}, :self => hash["self"] || {},
+    keys = {}
+    Array(hash["keys"]).each { |map, event, letter, scope| keys[[map, event, letter]] = scope }
+    { :switches => hash["switches"].to_s, :variables => hash["variables"].to_s, :keys => keys, :self => rules_of(hash),
       :index => index, :default => hash["self_default"].to_i }
   end
 
@@ -654,24 +671,19 @@ module MGQ_MpStoryKeys
   #
   # @param kind [Integer] 0 for a switch, 1 for a variable, 2 for a self switch.
   # @param key [Integer, Array] Its id, or a self switch's map, event and letter.
-  # @param site [String, nil] Where the write came from, which a common event's rule reads.
+  # @param site [Array, nil] Where the write came from, which a common event's rule reads.
   # @return [Integer, nil] The scope, nil outside a world and before the list came.
   def self.scope_of(kind, key, site = nil)
     found = scopes
     return nil unless found
     return (kind == 0 ? found[:switches] : found[:variables]).getbyte(key).to_i if kind < 2
 
-    map, event, letter = key
-    name = "ss#{map}.#{event}.#{letter}"
-    return found[:keys][name] if found[:keys].key?(name)
+    return found[:keys][key] if found[:keys].key?(key)
 
-    rules = found[:self]
-    common = site && site.start_with?("ce:") ? site[3..-1] : nil
-    rule = rules[name] || rules["ss#{map}.#{event}.*"] || (common && (rules["ce#{common}.#{letter}"] || rules["ce#{common}.*"])) ||
-           rules["ss#{map}.*.#{letter}"] || rules["ss#{map}.*.*"]
+    rule = rule_of(found[:self], key, site)
     return rule if rule
 
-    found[:index][map.to_i * EVENT_SPAN + event.to_i] ? SCOPE_WORLD : found[:default]
+    found[:index][key[0].to_i * EVENT_SPAN + key[1].to_i] ? SCOPE_WORLD : found[:default]
   end
 
   # Reports whether a key is read at a run's start value in a replay: a work or world key.
@@ -696,11 +708,11 @@ module MGQ_MpStoryKeys
   # @return [Boolean] Whether it is.
   def self.party_run?
     run = current_run
-    return false unless run && run.site =~ /\Amap:(\d+):(\d+):/
+    return false unless run && run.site[0] == "map"
 
-    map, event = $1, $2
+    map, event = run.site[1], run.site[2]
     found = scopes
-    found ? %w(A B C D).any? { |letter| found[:keys]["ss#{map}.#{event}.#{letter}"] == SCOPE_PARTY } : false
+    found ? %w(A B C D).any? { |letter| found[:keys][[map, event, letter]] == SCOPE_PARTY } : false
   end
 
   # Opens a run as the game sets up a list at the top, outside every command: a map event's page or
@@ -714,7 +726,7 @@ module MGQ_MpStoryKeys
     return if list.nil? || !@running.empty? || replaying? || ($game_troop && interpreter.equal?($game_troop.interpreter)) || scopes.nil?
 
     site = site_of(interpreter)
-    return unless site.start_with?("map:") || site.start_with?("ce:")
+    return unless site[0] == "map" || site[0] == "ce"
 
     place = MGQ_MpStoryIds.markers.map { |id| $game_variables[id].to_i }
     @runs[interpreter.object_id] = Run.new(site, place, {}, {}, [], Hash.new(0), {}, [], $game_self_switches, Hash.new(0))
@@ -796,13 +808,13 @@ module MGQ_MpStoryKeys
     return if @runs.empty? || !object.equal?(kind == 0 ? $game_switches : kind == 1 ? $game_variables : $game_self_switches)
 
     run = current_run
-    name = key_text(kind, key)
+    name = [kind, kind == 2 ? key.dup : key]
     return if run && run.before.key?(name)
 
     scope = scope_of(kind, key, run && kind == 2 ? site_of(@running.last) : nil)
     return if scope.nil? || scope == SCOPE_PLAYER
 
-    value = text_of(kind, object[key])
+    value = plain_of(kind, object[key])
     run.before[name] = [scope, value] if run
     @runs.each_value { |open| open.starts[name] = value unless open.starts.key?(name) } if VIEWED.include?(scope)
   rescue => e
@@ -815,7 +827,7 @@ module MGQ_MpStoryKeys
   # @param kind [Integer] 0 for a switch, 1 for a variable, 2 for a self switch.
   # @param key [Integer, Array] Its id or key.
   def self.script_read(kind, key)
-    @script_run.reads[key_text(kind, key)] = true if @script_run
+    @script_run.reads[[kind, kind == 2 ? key.dup : key]] = true if @script_run
   end
 
   # Runs a script of a run, noting the keys it reads.
@@ -835,7 +847,7 @@ module MGQ_MpStoryKeys
   #
   # @param kind [String] What it read, such as "choice" or "rand".
   # @param value [Integer, Boolean, nil] What it read; a yes or no is 1 or 0; anything else is no input.
-  # @param at [String, nil] The command, the one running now by default.
+  # @param at [Array, nil] The command, the one running now by default.
   # @param run [Run, nil] The run, the one whose command runs now by default.
   def self.input(kind, value, at = nil, run = current_run)
     return unless run
@@ -853,7 +865,7 @@ module MGQ_MpStoryKeys
 
   # Names the command running now, as the replay names an input's command.
   #
-  # @return [String, nil] Such as "map:1994:42:1@12", nil outside every command.
+  # @return [Array, nil] Such as [["map", 1994, 42, 1], 12], nil outside every command.
   def self.input_place
     @running.empty? ? nil : place_of(@running.last, @indexes.last)
   end
@@ -861,7 +873,7 @@ module MGQ_MpStoryKeys
   # Names the choice the command running now sets up, as the replay names it: the Show Choices its
   # interpreter stands at, after a text's lines too, or the script command of an extended choice.
   #
-  # @return [String, nil] Such as "map:6:30:2@1", nil outside every command.
+  # @return [Array, nil] Such as [["map", 6, 30, 2], 1], nil outside every command.
   def self.choice_place
     return nil if @running.empty?
 
@@ -904,7 +916,7 @@ module MGQ_MpStoryKeys
   #
   # @param interpreter [Game_Interpreter] The interpreter.
   # @param index [Integer] The command's place in its list.
-  # @return [String] Such as "map:1994:42:1@12".
+  # @return [Array] Such as [["map", 1994, 42, 1], 12].
   def self.place_of(interpreter, index)
     MGQ_MpStoryReplay.input_at(site_of(interpreter), MGQ_MpGame.get(interpreter, :list), index)
   end
@@ -1041,13 +1053,14 @@ module MGQ_MpStoryKeys
 
   # Notes a reset of a run of the player's game: a command that writes a range of keys at once.
   #
-  # @param kind [String] "s", "v" or "ss" (by maps).
+  # @param kind [Integer] 0 for switches, 1 for variables, 2 for self switches (by maps).
   # @param from [Integer] The first id or map.
   # @param to [Integer] The last one.
-  # @param value [String, nil] The value written, as the tracks keep it.
+  # @param value [Object] The value written, as the game holds it.
   def self.reset(kind, from, to, value)
     run = replaying? ? nil : current_run
-    run.resets << [kind, from, to, value] if run && value
+    plain = plain_of(kind, value)
+    run.resets << [kind, from, to, plain] if run && !plain.nil?
   end
 
   # Closes a run once its list ended: its resets go to the DLL, and a run that changed a party or
@@ -1059,12 +1072,12 @@ module MGQ_MpStoryKeys
     run = @runs.delete(interpreter.object_id)
     return unless run
 
-    run.resets << ["ss", 0, ALL_MAPS, "0"] unless $game_self_switches.equal?(run.self_switches)
+    run.resets << [2, 0, ALL_MAPS, false] unless $game_self_switches.equal?(run.self_switches)
     MGQ_Multiplayer::Bridge.call(RESET_TOPIC, run.resets) unless run.resets.empty?
     changed = changed_keys(run)
     return if changed.empty? && run.found.values.all? { |change| change == 0 }
 
-    party = changed.keys.select { |name| run.before[name][0] == SCOPE_PARTY }
+    party = changed.select { |kind, key, _before, _after| run.before[[kind, key]][0] == SCOPE_PARTY }.map { |kind, key, _, _| [kind, key] }
     hand_over(run, party, ran_request(run, changed))
   rescue => e
     log_once([:run_ended, e.class], "closing a run failed: #{e.class}: #{e.message}")
@@ -1074,14 +1087,14 @@ module MGQ_MpStoryKeys
   # before its first write.
   #
   # @param run [Run] The run.
-  # @return [Hash{String => Array}] Each key with its values before and after.
+  # @return [Array<Array>] Each key's kind, key and its values before and after.
   def self.changed_keys(run)
-    changed = {}
-    run.before.each do |name, (scope, before)|
+    changed = []
+    run.before.each do |(kind, key), (scope, before)|
       next unless scope == SCOPE_PARTY || scope == SCOPE_WORLD
 
-      after = value_text(name)
-      changed[name] = [before, after] unless after == before
+      after = plain_of(kind, value_of(kind, key))
+      changed << [kind, key, before, after] unless after == before
     end
     changed
   end
@@ -1100,12 +1113,12 @@ module MGQ_MpStoryKeys
     party_id = classic && defined?(MGQ_MpCoop) && MGQ_MpCoop.in_party? ? MGQ_MpCoop::Party.id : nil
     leader = classic ? story_leader : nil
     stream = classic ? story_stream(leader) : raid_track
-    world = changed.keys.any? { |name| run.before[name][0] == SCOPE_WORLD }
+    world = changed.any? { |kind, key, _before, _after| run.before[[kind, key]][0] == SCOPE_WORLD }
     found = run.found.select { |_id, change| change != 0 }.to_a
     sent = world || (changed.empty? && !classic) ? stream : party_id
     { "site" => run.site, "party" => classic, "stream" => stream, "party_stream" => party_id ? "party:#{party_id}" : nil,
       "owner" => classic && !leader.respond_to?(:state), "changed" => changed, "found" => found.empty? ? nil : found,
-      "start" => sent ? start_values(run, classic) : {}, "place" => run.place, "inputs" => run.inputs, "opener" => nil }
+      "start" => sent ? start_values(run, classic) : [], "place" => run.place, "inputs" => run.inputs, "opener" => nil }
   end
 
   # Finds the leader whose story the player keeps in a Classic world.
@@ -1139,17 +1152,15 @@ module MGQ_MpStoryKeys
   #
   # @param run [Run] The run.
   # @param classic [Boolean] Whether the world is a Classic world.
-  # @return [Hash{String => String}] Each key's value as the tracks write it.
+  # @return [Array<Array>] Each key's kind, key and value.
   def self.start_values(run, classic)
     names = Array(MGQ_Multiplayer::Bridge.call(READS_TOPIC, "site" => run.site, "party" => classic))
-    run.reads.each_key do |name|
-      kind, key = key_of(name)
-      names << name if kind && kind < 3 && viewed?(kind, key)
-    end
-    start = {}
-    names.uniq.each do |name|
-      value = run.starts.key?(name) ? run.starts[name] : run.before.key?(name) ? run.before[name][1] : value_text(name)
-      start[name] = value if value
+    run.reads.each_key { |kind, key| names << [kind, key] if viewed?(kind, key) }
+    start = []
+    names.uniq.each do |kind, key|
+      name = [kind, key]
+      value = run.starts.key?(name) ? run.starts[name] : run.before.key?(name) ? run.before[name][1] : plain_of(kind, value_of(kind, key))
+      start << [kind, key, value] unless value.nil?
     end
     start
   end
@@ -1159,11 +1170,10 @@ module MGQ_MpStoryKeys
   # hand_entry. A run the DLL cannot log yet, before the list came, is tried again.
   #
   # @param run [Run] The run.
-  # @param own [Array<String>] The party keys it changed.
+  # @param own [Array<Array>] The party keys it changed, each [kind, key].
   # @param request [Hash] The request, see ran_request.
   def self.hand_over(run, own, request)
-    own.each do |name|
-      kind, key = key_of(name)
+    own.each do |kind, key|
       MGQ_MpCoopStory.keep_own(kind, key, value_of(kind, key)) if defined?(MGQ_MpCoopStory) && MGQ_MpCoopStory.guest?
     end
     answer = MGQ_Multiplayer::Bridge.call(RAN_TOPIC, request)
@@ -1277,15 +1287,6 @@ module MGQ_MpStoryKeys
   def self.value_of(kind, key)
     (kind == 0 ? $game_switches : kind == 1 ? $game_variables : $game_self_switches)[key]
   end
-
-  # Reads a key the player's game holds as the tracks write it.
-  #
-  # @param name [String] The key, see key_text.
-  # @return [String, nil] Its value, nil for a key no story carries.
-  def self.value_text(name)
-    kind, key = key_of(name)
-    kind && kind < 3 ? text_of(kind, value_of(kind, key)) : nil
-  end
 end
 
 # Game hooks shared with other scripts, through core_hooks.rbx.
@@ -1384,17 +1385,17 @@ begin
   # reset (script 167's reset_selfswitch_map), or made anew (see run_ended).
   if has.call(Game_Interpreter, :command_121)
     MGQ_MpHooks.after(Game_Interpreter, :command_121, "story_keys") do
-      MGQ_MpStoryKeys.reset("s", @params[0], @params[1], @params[2] == 0 ? "1" : "0") if MGQ_MpStoryKeys.range_write?(121, @params)
+      MGQ_MpStoryKeys.reset(0, @params[0], @params[1], @params[2] == 0) if MGQ_MpStoryKeys.range_write?(121, @params)
     end
   end
   if has.call(Game_Interpreter, :command_122)
     MGQ_MpHooks.after(Game_Interpreter, :command_122, "story_keys") do
-      MGQ_MpStoryKeys.reset("v", @params[0], @params[1], MGQ_MpStoryKeys.text_of(1, $game_variables[@params[0]])) if MGQ_MpStoryKeys.range_write?(122, @params)
+      MGQ_MpStoryKeys.reset(1, @params[0], @params[1], $game_variables[@params[0]]) if MGQ_MpStoryKeys.range_write?(122, @params)
     end
   end
   if has.call(Game_SelfSwitches, :delete)
     MGQ_MpHooks.before(Game_SelfSwitches, :delete, "story_keys") do |map_ids|
-      Array(map_ids).each { |map| MGQ_MpStoryKeys.reset("ss", map.to_i, map.to_i, "0") } if equal?($game_self_switches)
+      Array(map_ids).each { |map| MGQ_MpStoryKeys.reset(2, map.to_i, map.to_i, false) } if equal?($game_self_switches)
     end
   end
 rescue => e

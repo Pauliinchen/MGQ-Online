@@ -2,7 +2,9 @@
 //  GameBridge.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Handed a Classic member's catch-up what the story's topics know of the party
+//      Paulinchen  2026-11-05: Started the DLL as the scripts first shake hands, in place of mp_start, a refused handshake too
+//                            - Registered the topics of the world directory, the update check, the memory, a Raid World's shared companions and its boss pools
+//                            - Handed a Classic member's catch-up what the story's topics know of the party
 //      Paulinchen  2026-10-31: Opened the registration of the topics to the tests
 //                            - Left the interface's models, the keyboard and the window to the Mod Framework, keeping the bug report's screenshot
 //                            - Registered the topics of the bug report's request
@@ -45,16 +47,21 @@
 using System;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
+using System.Reflection;
+using System.Runtime.InteropServices;
+using System.Threading;
 using System.Runtime.CompilerServices;
 using MGQOnline.Bridge;
 using MGQOnline.Bridge.Native;
 using MGQOnline.Bridge.Ruby;
+using MGQOnline.Data.Sqlite;
 using MGQOnline.Game.Topics;
 using MGQOnline.Game.Ui;
 using MGQParadox.Multiplayer.Mods;
 using MGQParadox.Multiplayer.Network.World;
 using MGQParadox.Multiplayer.Reports;
 using MGQParadox.Multiplayer.Topics;
+using MGQParadox.Multiplayer.Windows;
 
 namespace MGQParadox.Multiplayer;
 
@@ -69,7 +76,63 @@ internal static unsafe class GameBridge
     /// </summary>
     [ModuleInitializer]
     [SuppressMessage("Usage", "CA2255:The 'ModuleInitializer' attribute should not be used in libraries", Justification = "The DLL is the application: NativeAOT runs it as the runtime starts, before any export runs.")]
-    internal static void Install() => BridgeExports.Install(new BridgeHost(UpdateCheck.ModVersion, new FileLog(), RegisterTopics));
+    internal static void Install() => BridgeExports.Install(new BridgeHost(UpdateCheck.ModVersion, new FileLog(), context =>
+    {
+        Start();
+        RegisterTopics(context);
+    }));
+
+    /// <summary>
+    /// Whether <see cref="Start"/> ran in this process.
+    /// </summary>
+    private static int _started;
+
+    /// <summary>
+    /// Finds the mod folder, starts the log, deletes the logs of earlier days and puts back what an
+    /// older release left parked, once per process, as the scripts first shake hands.
+    /// </summary>
+    /// <remarks>
+    /// Nothing may throw out of it, since an exception crossing into the game ends it.
+    /// </remarks>
+    private static void Start()
+    {
+        if (Interlocked.Exchange(ref _started, 1) == 1)
+        {
+            return;
+        }
+
+        try
+        {
+            if (NativeMethods.FileOfModuleContaining((nint)(delegate* unmanaged[Stdcall]<int>)&Marker) is { } dll)
+            {
+                ModFolder.SetRoot(Path.GetDirectoryName(dll)!);
+            }
+
+            var version = typeof(GameBridge).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown";
+            Log.Write($"--- multiplayer {version} started ---");
+            Log.Write($"the events database reader runs sqlite {SqliteConnection.LibraryVersion}");
+            Log.DeleteOtherDays();
+
+            if (NativeMethods.WineVersion() is { } wine)
+            {
+                Log.Write($"the game runs under wine {wine}");
+            }
+
+            ParkedLeftovers.PutBack(ModFolder.GamePathOf("."));
+            CrashEvents.LogOnce();
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"starting the DLL failed: {ex}");
+        }
+    }
+
+    /// <summary>
+    /// A function of the DLL whose address finds the DLL's file; never called.
+    /// </summary>
+    /// <returns>0.</returns>
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvStdcall)])]
+    private static int Marker() => 0;
 
     /// <summary>
     /// Registers the DLL's topics on a new context; each area adds its own as it moves to the bridge.
@@ -80,6 +143,9 @@ internal static unsafe class GameBridge
         var services = new WorldServices(new PlayerIni(Path.Combine(ModFolder.Root, PlayerIni.FileName)), new WorldChanges(context), () => WorldDirectory.Current, () => PatchScripts.List(ModFolder.GamePathOf(".")),
             new DirectoryTickets(() => WorldDirectory.Current.ActionNow().State, WorldDirectory.Current.ClearAction));
         ScriptLog.Register(context);
+        DllTopics.Register(context);
+        DirectoryTopics.Register(context, () => WorldDirectory.Current);
+        RaidRelayTopics.Register(context, RaidStory.Current, RaidBosses.Current);
         SettingsTopics.Register(context, services.Player);
         RuleTopics.Register(context);
         SharedTopics.Register(context, RaidBosses.Current);
@@ -131,11 +197,16 @@ internal static unsafe class GameBridge
     }
 
     /// <summary>
-    /// Writes the bridge's lines into the DLL's log.
+    /// Writes the bridge's lines into the DLL's log, starting the DLL first, so a handshake the
+    /// bridge refuses before any context opens is logged in the game's Logs folder too.
     /// </summary>
     private sealed class FileLog : IBridgeLog
     {
         /// <inheritdoc />
-        public void Write(string line) => Log.Write(line);
+        public void Write(string line)
+        {
+            Start();
+            Log.Write(line);
+        }
     }
 }

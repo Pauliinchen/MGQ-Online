@@ -2,7 +2,9 @@
 #  raid_pool_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Checked that a boss takes its pool's HP once the game's own events before the battle ran
+#      Paulinchen  2026-11-05: Told the boss battle, the rates and the invite's pool as values
+#                            - Stood in for the DLL's fetch of the pools through its topic
+#                            - Checked that a boss takes its pool's HP once the game's own events before the battle ran
 #                            - Started a battle's events and start skills as the game's battle scene does
 #                            - Checked that a boss whose pool is below a phase's share switches phase before anyone acts
 #                            - Moved the scripts' clock with the world's frames and the seconds a test lets pass
@@ -74,31 +76,6 @@ def Time.now; $now; end
 $ticked = 0
 clock_from { $ticked + (($now - Time.at(1_000_000)) * MGQ_Multiplayer::Bridge::FRAMES_PER_SECOND).round }
 
-# The DLL: each call is noted, and a fetch it takes reaches the pools' ledger ($pools) as the DLL's
-# does; the fight's reports go through $pools' reporter, which notes them as calls too.
-module MGQ_Multiplayer
-  # Stands in for the DLL link.
-  module Link
-    # A function of the DLL, which notes its calls without their null bytes.
-    Function = Struct.new(:name) do
-      # Notes the call in $calls, refusing arguments its signature does not name.
-      #
-      # @param args [Array] The arguments.
-      # @return [Integer] $report_result, 1 when the DLL took the call.
-      def call(*args)
-        check_dll_call(name, args)
-        args = args.map { |arg| arg.is_a?(String) ? arg.chomp("\0") : arg }
-        $calls << [name, args]
-        return $report_result unless $report_result == 1
-
-        $pools.enter(args[0]) if name == "mp_raid_bosses_fetch"
-        $report_result
-      end
-    end
-    # Answers a function of the DLL.
-    def self.function(name); Function.new(name); end
-  end
-end
 # Stands in for the world's sync, keeping its frame blocks in $ticks and the state's blocks in
 # $state_fields.
 module MGQ_MpOverworldSync
@@ -137,7 +114,7 @@ end
 # those given back in $given_back.
 module MGQ_MpBattlesCoop
   # Answers the player's enemy rates.
-  def self.rates_text; "100,100,0"; end
+  def self.rates; [100, 100, 0]; end
   # Notes the host's rates borrowed in $borrowed.
   def self.borrow_rates(message); $borrowed << message["rates"]; end
   # Counts the rates given back in $given_back.
@@ -386,6 +363,13 @@ MGQ_Multiplayer::Bridge.open($fake)
 $pools = PoolLedgerStandIn.new($fake) { (Time.now.to_f * 1000).round }
 $pools.reporter = lambda do |world, key, battle, text|
   $calls << ["mp_raid_boss_report", [world, key, battle, text]]
+  $report_result == 1
+end
+# The DLL's fetch of the pools: each call is noted, and a fetch it takes reaches the pools' ledger as
+# the DLL's does.
+$fake.answer("raid.pools.fetch") do |world|
+  $calls << ["raid.pools.fetch", [world]]
+  $pools.enter(world) if $report_result == 1
   $report_result == 1
 end
 check_pool_stand_in
@@ -754,7 +738,7 @@ check("an admin's reset lets the boss be defeated again", $chat.size, 2)
 # A guest fights the pools the invite names, and reports once it takes the battle over.
 reset
 check("an invite's pool is none outside a battle that fights one", pool.invite_fields(31), {})
-pool.note_invite("troop" => "71", "pool" => "1", "boss" => "1")
+pool.note_invite("troop" => "71", "pool" => 1, "boss" => true)
 $role = :guest
 BattleManager.setup(71)
 check("the guest's battle fights the invite's pool", [pool.fight && pool.fight.key, enemy.mhp], ["Queen Harpy", 6000])
@@ -772,7 +756,7 @@ enemy.hp = 2400
 next_turn
 check("its first report carries only what it dealt since it took the battle over", reports.map { |_key, _battle, text| text }, ["1\t0.1000000000\t6000\t0"])
 reset
-pool.note_invite("troop" => "71", "pool" => "1")
+pool.note_invite("troop" => "71", "pool" => 1)
 $role = :guest
 BattleManager.setup(71)
 enemy.hp = 4800
@@ -784,7 +768,7 @@ enemy.hp = 4200
 $scene.start_party_command_selection
 check("only what came after", reports.map { |_key, _battle, text| text }, ["1\t0.1000000000\t6000\t0"])
 reset
-pool.note_invite("troop" => "71", "pool" => "1")
+pool.note_invite("troop" => "71", "pool" => 1)
 $role = :guest
 BattleManager.setup(71)
 $role = nil
@@ -798,7 +782,7 @@ pool.taken_over
 check("a takeover outside a pooled battle does nothing", [pool.fight, reports], [nil, []])
 reset
 push("Queen Harpy", "0", "6000", true)
-pool.note_invite("troop" => "71", "pool" => "1")
+pool.note_invite("troop" => "71", "pool" => 1)
 $role = :guest
 BattleManager.setup(71)
 $scene.start_party_command_selection
@@ -828,12 +812,12 @@ check("with the HP the pool has left", enemy.hp, 3000)
 
 # The invite and the player's state name the battle that fights a pool.
 check("the invite of a battle that fights a pool names how many enemies it has", pool.invite_fields, { "pool" => 1 })
-check("the state names the troop and the enemy rates while the player hosts it", pool.state_fields, { "rpb" => "71;100,100,0" })
+check("the state names the troop and the enemy rates while the player hosts it", pool.state_fields, { "rpb" => [71, [100, 100, 0]] })
 $role = :guest
-check("never while a guest", pool.state_fields, { "rpb" => "" })
+check("never while a guest", pool.state_fields, { "rpb" => nil })
 $role = nil
 $scene = nil
-check("nor outside the battle", pool.state_fields, { "rpb" => "" })
+check("nor outside the battle", pool.state_fields, { "rpb" => nil })
 $raid = false
 check("and not at all in a Classic world", pool.state_fields, {})
 
@@ -841,18 +825,18 @@ check("and not at all in a Classic world", pool.state_fields, {})
 reset
 # Another player as far as their state goes.
 Host = Struct.new(:state)
-check("a host's boss battle offers a side battle", pool.side_of(Host.new({ "rpb" => "71;90,100,0" })), [71, "90,100,0"])
-check("one without a boss battle none", [pool.side_of(Host.new({ "rpb" => "" })), pool.side_of(Host.new({}))], [nil, nil])
-check("nor one whose boss is no pooled last phase", [pool.side_of(Host.new({ "rpb" => "609;1,2" })), pool.side_of(Host.new({ "rpb" => "1507;1,2" }))], [nil, nil])
-check("the side battle starts", pool.start_side(71, "90,100,0"), true)
-check("with the host's rates, the same troop, no escape, and the game's defeat", [$borrowed, $setups.last, $called], [["90,100,0"], [71, false, false], [Scene_Battle]])
+check("a host's boss battle offers a side battle", pool.side_of(Host.new({ "rpb" => [71, [90, 100, 0]] })), [71, [90, 100, 0]])
+check("one without a boss battle none", [pool.side_of(Host.new({ "rpb" => nil })), pool.side_of(Host.new({}))], [nil, nil])
+check("nor one whose boss is no pooled last phase", [pool.side_of(Host.new({ "rpb" => [609, [1, 2]] })), pool.side_of(Host.new({ "rpb" => [1507, [1, 2]] }))], [nil, nil])
+check("the side battle starts", pool.start_side(71, [90, 100, 0]), true)
+check("with the host's rates, the same troop, no escape, and the game's defeat", [$borrowed, $setups.last, $called], [[[90, 100, 0]], [71, false, false], [Scene_Battle]])
 check("it fights the same pool, marked a side battle", [pool.fight.key, pool.fight.side, enemy.mhp], ["Queen Harpy", true, 6000])
 enemy.hp = 5400
 next_turn
 check("and reports like any other", reports.last[0..2].values_at(0, 2), ["Queen Harpy", "1\t0.1000000000\t6000\t0"])
 reset
 push("Queen Harpy", "0", "6000", true)
-check("a side battle never starts against an empty pool", [pool.side_of(Host.new({ "rpb" => "71;1,2" })), pool.start_side(71, "1,2"), $setups], [nil, false, []])
+check("a side battle never starts against an empty pool", [pool.side_of(Host.new({ "rpb" => [71, [1, 2]] })), pool.start_side(71, [1, 2]), $setups], [nil, false, []])
 reset
 $mode = :own
 check("nor for a player behind the world's story", pool.start_side(71, "1,2"), false)
@@ -860,12 +844,12 @@ check("nor for a player behind the world's story", pool.start_side(71, "1,2"), f
 # The pools are fetched as the player enters the world and each map.
 reset
 ticks(1)
-check("the pools are fetched as the player enters the world", $calls.select { |name, _| name == "mp_raid_bosses_fetch" }, [["mp_raid_bosses_fetch", ["w1"]]])
+check("the pools are fetched as the player enters the world", $calls.select { |name, _| name == "raid.pools.fetch" }, [["raid.pools.fetch", ["w1"]]])
 ticks(5)
-check("once per map", $calls.count { |name, _| name == "mp_raid_bosses_fetch" }, 1)
+check("once per map", $calls.count { |name, _| name == "raid.pools.fetch" }, 1)
 $game_map.map_id = 6
 ticks(1)
-check("and again on another map", $calls.count { |name, _| name == "mp_raid_bosses_fetch" }, 2)
+check("and again on another map", $calls.count { |name, _| name == "raid.pools.fetch" }, 2)
 
 # The relay's pushes count.
 reset
@@ -945,7 +929,7 @@ check("and is won already once the pool is empty", pool.retrying { pool.won_alre
 
 # A guest's troop built anew from its host's gets the raised max HP at once.
 reset
-pool.note_invite("troop" => "71", "pool" => "1", "boss" => "1")
+pool.note_invite("troop" => "71", "pool" => 1, "boss" => true)
 $role = :guest
 BattleManager.setup(71)
 rebuilt = [Game_Enemy.new(0, 1)]
@@ -975,12 +959,12 @@ reset
 $report_result = 0
 ticks(1)
 ticks(pool::FETCH_RETRY_FRAMES - 1)
-check("not before a while", $calls.count { |name, _| name == "mp_raid_bosses_fetch" }, 1)
+check("not before a while", $calls.count { |name, _| name == "raid.pools.fetch" }, 1)
 $report_result = 1
 ticks(2)
-check("then again until it starts", $calls.count { |name, _| name == "mp_raid_bosses_fetch" }, 2)
+check("then again until it starts", $calls.count { |name, _| name == "raid.pools.fetch" }, 2)
 ticks(pool::FETCH_RETRY_FRAMES * 2)
-check("and no more once it did", $calls.count { |name, _| name == "mp_raid_bosses_fetch" }, 2)
+check("and no more once it did", $calls.count { |name, _| name == "raid.pools.fetch" }, 2)
 
 # A battle whose pool is forgotten keeps its enemy's own max HP.
 reset
@@ -1156,10 +1140,10 @@ BattleManager.battle_end(1)
 $game_system.instance_variable_set(:@mgq_mp_raid_rewards, { "world" => "w2", "keys" => { "Queen Harpy" => true } })
 pool.start_side(71, "100,100,0")
 check("the notes of another world count for nothing", BattleManager.enable_get_exp?, true)
-check("a side battle's invite tells it is one", pool.invite_fields, { "pool" => 1, "side" => 1 })
+check("a side battle's invite tells it is one", pool.invite_fields, { "pool" => 1, "side" => true })
 BattleManager.battle_end(1)
 pool.note_rewarded("Queen Harpy")
-pool.note_invite("troop" => "71", "pool" => "1", "side" => "1")
+pool.note_invite("troop" => "71", "pool" => 1, "side" => true)
 $role = :guest
 $pages_run.clear
 BattleManager.setup(71)
@@ -1167,7 +1151,7 @@ $game_troop.setup_battle_event
 check("a guest of a side battle fights a side battle too: no troop pages, no rewards again",
       [pool.fight.side, pool.side_battle?(71), $pages_run, BattleManager.enable_get_exp?], [true, true, [], false])
 BattleManager.battle_end(1)
-pool.note_invite("troop" => "71", "pool" => "1")
+pool.note_invite("troop" => "71", "pool" => 1)
 BattleManager.setup(71)
 check("a guest of a boss's event battle does not", [pool.fight.side, BattleManager.enable_get_exp?], [false, true])
 

@@ -2,6 +2,7 @@
 #  ui_leader_hud.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Kept and read its switches in Player.ini as true or false, which the DLL writes as 1 or 0
 #      Paulinchen  2026-11-01: Built the HUD on the Mod Framework's components, docked at the top left under the game's windows
 #                            - Asked the wheels of the Mod Framework whether one is open
 #      Paulinchen  2026-10-31: Kept its rows and its place through the Mod Framework
@@ -100,7 +101,7 @@ module MGQ_MpLeaderHud
   #
   # @return [Boolean] Whether it shows.
   def self.shown?
-    @shown = MGQ_Multiplayer::Player.setting(SHOWN_SETTING).to_s != "0" if @shown.nil?
+    @shown = MGQ_Multiplayer::Player.setting(SHOWN_SETTING) != false if @shown.nil?
     @shown
   end
 
@@ -109,7 +110,11 @@ module MGQ_MpLeaderHud
   #
   # @return [Boolean] Whether it shows.
   def self.sp_shown?
-    @sp_shown = (MGQ_Multiplayer::Player.setting(SP_SHOWN_SETTING) || MGQ_Multiplayer::Player.setting(SHOWN_SETTING)).to_s != "0" if @sp_shown.nil?
+    if @sp_shown.nil?
+      kept = MGQ_Multiplayer::Player.setting(SP_SHOWN_SETTING)
+      kept = MGQ_Multiplayer::Player.setting(SHOWN_SETTING) if kept.nil?
+      @sp_shown = kept != false
+    end
     @sp_shown
   end
 
@@ -150,7 +155,7 @@ module MGQ_MpLeaderHud
   # @param shown [Boolean] Whether it shows.
   def self.show(shown)
     @shown = shown ? true : false
-    MGQ_Multiplayer::Player.store(SHOWN_SETTING, @shown ? 1 : 0)
+    MGQ_Multiplayer::Player.store(SHOWN_SETTING, @shown)
     log("the Leader HUD is #{@shown ? 'on' : 'off'}")
   rescue => e
     log("keeping whether the Leader HUD shows FAILED: #{e.class}: #{e.message}")
@@ -161,7 +166,7 @@ module MGQ_MpLeaderHud
   # @param shown [Boolean] Whether it shows.
   def self.show_sp(shown)
     @sp_shown = shown ? true : false
-    MGQ_Multiplayer::Player.store(SP_SHOWN_SETTING, @sp_shown ? 1 : 0)
+    MGQ_Multiplayer::Player.store(SP_SHOWN_SETTING, @sp_shown)
     log("the Leader HUD is #{@sp_shown ? 'on' : 'off'} in single player")
   rescue => e
     log("keeping whether the Leader HUD shows in single player FAILED: #{e.class}: #{e.message}")

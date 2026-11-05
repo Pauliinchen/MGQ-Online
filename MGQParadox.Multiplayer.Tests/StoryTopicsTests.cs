@@ -2,7 +2,8 @@
 //  StoryTopicsTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Checked whom a Raid World's telling takes along by the world's progress
+//      Paulinchen  2026-11-05: Expected the self switch rules as rows, refused a write the tracks' texts name and read the sites of an earlier release's save
+//                            - Checked whom a Raid World's telling takes along by the world's progress
 //                            - Checked that it reads the common events the scripts hand over
 //                            - Expected no companion of each side among what the catch-up reads, which the side's rule answers
 //                            - Expected no rule of used up items' marks, which the story replay hands over
@@ -97,7 +98,14 @@ public sealed class StoryTopicsTests
         Assert.Equal(7, table["rev"].AsLong());
         Assert.Equal((7103, 1, 4, 8, 64, 65, 0), (switches.Length, switches[7096], switches[2029], switches[7102], switches[23], switches[31], switches[8]));
         Assert.Equal((3006, 3, 17, 1, 35, 0), (variables.Length, variables[1001], variables[1354], variables[1052], variables[3005], variables[900]));
-        Assert.Equal(new RubyHash { { "ce154.*", 1 }, { "ce20.A", 0 }, { "ss0.*.F", 33 }, { "ss12.5.A", 8 }, { "ss231.*.*", 1 }, { "ss231.4.*", 0 }, { "ss231.5.B", 1 }, { "ss40.*.C", 0 } }, table["self"]);
+        Assert.Equal(
+            new RubyArray
+            {
+                new RubyArray { 0, RubyNil.Value, "F", 33 }, new RubyArray { 12, 5, "A", 8 }, new RubyArray { 231, RubyNil.Value, RubyNil.Value, 1 },
+                new RubyArray { 231, 4, RubyNil.Value, 0 }, new RubyArray { 231, 5, "B", 1 }, new RubyArray { 40, RubyNil.Value, "C", 0 },
+            },
+            table["self"]);
+        Assert.Equal(new RubyArray { new RubyArray { 154, RubyNil.Value, 1 }, new RubyArray { 20, "A", 0 } }, table["common"]);
         Assert.Equal(new RubyArray { 7_000_039, 40_000_002 }, table["index"]);
         Assert.Equal(new RubyArray { new RubyArray { 1052, new RubyArray { 3, 4, 5 }, 2, new RubyArray { new RubyArray { 484, 30 }, new RubyArray { 483, 0 } } } }, table["local_steps"]);
         Assert.Equal((new RubyHash { { "1", 25 }, { "2", 55 } }, 0L), (table["gates"], table["self_default"].AsLong()));
@@ -366,15 +374,27 @@ public sealed class StoryTopicsTests
     }
 
     /// <summary>
-    /// Asserts that a write that is no three texts is refused.
+    /// Asserts that a write named by the tracks' texts, as the scripts once staged it, is refused.
     /// </summary>
     [Fact]
-    public void Writes_RefuseAWriteThatIsNoThreeTexts()
+    public void Writes_RefuseAWriteNamedByTheTracksTexts()
     {
         byte[] buffer = new byte[4096];
-        int length = _context.Call(Encoding.UTF8.GetBytes(StoryTopics.WritesTopic), RubyMarshal.Write(new RubyArray { new RubyArray { "s5", "1" } }), buffer);
+        int length = _context.Call(Encoding.UTF8.GetBytes(StoryTopics.WritesTopic), RubyMarshal.Write(new RubyArray { new RubyArray { "s5", "1", "game" } }), buffer);
 
         Assert.Equal("bad_request", RubyMarshal.Read(buffer.AsSpan(0, length)).AsHash()["error"].AsText());
+    }
+
+    /// <summary>
+    /// Asserts that the sites a save of an earlier release keeps as texts, as its frozen fights'
+    /// records do, read as the scripts take sites now.
+    /// </summary>
+    [Fact]
+    public void Sites_ReadTheTextsOfAnEarlierReleasesSave()
+    {
+        RubyValue sites = Call(StoryTopics.SitesTopic, new RubyArray { "map:138:13:1", "ce:347" });
+
+        Assert.Equal(new RubyArray { new RubyArray { "map", 138, 13, 1 }, new RubyArray { "ce", 347 } }, sites);
     }
 
     /// <summary>

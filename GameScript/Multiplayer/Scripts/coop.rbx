@@ -2,6 +2,7 @@
 #  coop.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Read the invites and the players they name as values
 #      Paulinchen  2026-11-01: Named the Mod Framework's interface by its own name
 #                            - Dropped register_option, the rows going into the Mod Framework's options
 #                            - Left the party chat to the DLL's chat
@@ -223,7 +224,7 @@ module MGQ_MpCoop
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The ghost's player.
   # @return [Array, nil] The text and its color, nil for none.
   def self.label_line(peer)
-    peer.state["invite"] == "1" && !peer.member ? ["Invites to a party (#{MGQ_MpHotkeys.label(:wheel)})", INVITE_COLOR] : nil
+    peer.state["invite"] && !peer.member ? ["Invites to a party (#{MGQ_MpHotkeys.label(:wheel)})", INVITE_COLOR] : nil
   end
 
   # A standing invite of the player: to the players nearby, and to players anywhere named by their
@@ -243,9 +244,9 @@ module MGQ_MpCoop
     # @param anywhere [Boolean] Whether an invite naming the player counts wherever the inviter stands.
     # @return [Boolean] Whether it does.
     def self.reaches_me?(state, flag, named, anywhere = true)
-      return false unless state[flag] == "1"
+      return false unless state[flag]
 
-      Party.near?(state) || (anywhere && state[named].to_s.split(",").include?(MGQ_MpOverworldSync::Me.id))
+      Party.near?(state) || (anywhere && Array(state[named]).include?(MGQ_MpOverworldSync::Me.id))
     end
 
     # Reports whether the invite stands.
@@ -522,7 +523,7 @@ module MGQ_MpCoop
 
       option = MGQ_MpActions::Option
       near = MGQ_MpOverworldSync::Peers.all.select { |peer| Party.near?(peer.state) && !Party.member?(peer.state) }
-      inviter = near.find { |peer| peer.state["invite"] == "1" }
+      inviter = near.find { |peer| peer.state["invite"] }
       if inviter
         full = Party.full?(inviter.state["party"])
         return option.new("Accept #{inviter.state['name']}'s invite", full ? nil : lambda { Party.join(inviter) }, "The party is full.")

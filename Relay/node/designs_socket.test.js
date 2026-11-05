@@ -2,6 +2,7 @@
 //  designs_socket.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Named the version of a current game on the game's room
 //      Paulinchen  2026-10-22: Tested the design epoch of the greeting
 //      Paulinchen  2026-10-21: Created
 //
@@ -16,6 +17,7 @@ import { join } from "node:path";
 import { WebSocket } from "ws";
 import { memoryDesignStore } from "../core/design_store_memory.js";
 import { DesignerReleases } from "../core/designer_releases.js";
+import { VERSION_HEADER } from "../core/gate.js";
 import { DESIGNERS, EPOCH, fixtureBook, fixtureReleases } from "../core/test_designs.js";
 import { createRelay } from "./server.js";
 
@@ -165,7 +167,7 @@ test("an unlisted key and an outdated designer are closed with 4403 and 4426", a
 
 test("another design path refuses the upgrade, and the game's rooms still open as before", async () => {
   await assert.rejects(connect(headersOf(DESIGNERS.A), "/v1/designs/me"), /refused with 404/);
-  await assert.rejects(connect({}, "/v1/room/not-a-room"), /refused with 400/);
+  await assert.rejects(connect({ [VERSION_HEADER]: "0.7.0" }, "/v1/room/not-a-room"), /refused with 400/);
 });
 
 test("a removed designer's socket closes with 4403", async () => {

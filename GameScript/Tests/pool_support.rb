@@ -2,6 +2,7 @@
 #  pool_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Took a fight's enemies as values
 #      Paulinchen  2026-10-30: Stood in for a served fight's export and import
 #                            - Stood in for the fight that fights the pools, held against its golden turns
 #                            - Created
@@ -260,10 +261,7 @@ class PoolLedgerStandIn
     return nil unless fight
 
     enemies = {}
-    request["enemies"].split(";").each do |entry|
-      place, hp, mhp, dead, id = entry.split(":")
-      enemies[place.to_i] = [hp.to_i, mhp.to_i, dead == "1", id.to_i]
-    end
+    request["enemies"].each { |place, hp, mhp, dead, id| enemies[place] = [hp, mhp, dead, id] }
     reply = fight.turn(request["moment"], request["reporter"], enemies, self)
     @fight = nil if request["moment"] == "end"
     reply
@@ -575,7 +573,7 @@ def check_turn_cases
       sent.clear
       moment = TURN_MOMENTS.fetch(step["moment"], step["moment"])
       reply = pools.turn_of("moment" => moment, "reporter" => reporter,
-                            "enemies" => enemies.each_with_index.map { |(hp, mhp, dead, id), place| "#{place}:#{hp}:#{mhp}:#{dead ? 1 : 0}:#{id}" }.join(";"))
+                            "enemies" => enemies.each_with_index.map { |(hp, mhp, dead, id), place| [place, hp, mhp, dead, id] })
       collapsed = []
       reply["actions"].each do |place, hp|
         enemies[place][0] = hp

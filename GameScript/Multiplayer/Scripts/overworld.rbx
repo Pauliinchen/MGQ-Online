@@ -2,6 +2,7 @@
 #  overworld.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Read a ghost's followers as values
 #      Paulinchen  2026-11-01: Named the Mod Framework's interface by its own name
 #                            - Built the ghosts' labels, the own ping, the own line and the world status on the Mod Framework's components
 #      Paulinchen  2026-10-31: Placed the world status through the Mod Framework's layout
@@ -395,7 +396,7 @@ class Game_MpGhost < Game_Character
     look_like(state)
     @opacity = MGQ_MpOverworld.ghost_opacity(@member)
     update
-    trail(member && defined?(MGQ_MpCoopSquad) ? MGQ_MpCoopSquad.parse_trail(state["trail"]) : [])
+    trail(member && defined?(MGQ_MpCoopSquad) ? MGQ_MpCoopSquad.followers_of(state["trail"]) : [])
     @followers.each(&:update)
     return if moving?
 

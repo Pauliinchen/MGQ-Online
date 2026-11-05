@@ -2,6 +2,7 @@
 //  BacklineFront.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Took the other side's Frontline as its value, which the script reads of the message
 //      Paulinchen  2026-10-30: Created
 //
 //----------------------------------------------------------------
@@ -21,11 +22,6 @@ namespace MGQOnline.Game.Battles.Live;
 /// </summary>
 public sealed class BacklineFront
 {
-    /// <summary>
-    /// What a game knows of the game when it reads a Frontline: nothing.
-    /// </summary>
-    private static readonly WireGame NoGame = new([], [], new Dictionary<WireTable, int>());
-
     /// <summary>
     /// The actor ids of the other side's team, <see langword="null"/> outside a battle with the Backline.
     /// </summary>
@@ -64,24 +60,23 @@ public sealed class BacklineFront
     /// <summary>
     /// Checks the other side's Frontline the other game told.
     /// </summary>
-    /// <param name="line">The Frontline's actor ids, by place, as the first value of a line.</param>
+    /// <param name="ids">The Frontline's actor ids, by place, as the other game sent them.</param>
     /// <param name="troop">The actor ids of the other side's Frontline now, by place.</param>
     /// <returns>The new Frontline; <see langword="null"/> when it stays, with the reason when it does
     /// not fit the team.</returns>
-    public (List<int>? Front, string? Unfit) Take(ReadOnlySpan<byte> line, IReadOnlyList<int> troop)
+    public (List<int>? Front, string? Unfit) Take(WireValue ids, IReadOnlyList<int> troop)
     {
         ArgumentNullException.ThrowIfNull(troop);
-        IReadOnlyList<WireValue>? values = WireReader.Parse(line, NoGame);
-        if (_team is null || values is not { Count: > 0 } || values[0] is not WireList ids)
+        if (_team is null || ids is not WireList list)
         {
             return (null, null);
         }
 
-        List<int?> front = ids.Items.Select(id => id is WireInteger number && number.Value >= int.MinValue && number.Value <= int.MaxValue && _team.Contains((int)number.Value)
+        List<int?> front = list.Items.Select(id => id is WireInteger number && number.Value >= int.MinValue && number.Value <= int.MaxValue && _team.Contains((int)number.Value)
             ? (int?)(int)number.Value : null).ToList();
         if (front.Count != troop.Count || front.Contains(null) || front.Distinct().Count() != front.Count)
         {
-            return (null, $"left out a Frontline that does not fit the other side's team: {RubyText.Inspect(ids)}");
+            return (null, $"left out a Frontline that does not fit the other side's team: {RubyText.Inspect(list)}");
         }
 
         List<int> taken = front.Select(id => id!.Value).ToList();

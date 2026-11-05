@@ -2,6 +2,7 @@
 //  SharedSettings.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Wrote and read the settings from the values the scripts hand over, which no longer build or split a pair
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -12,7 +13,10 @@ using System.Globalization;
 using System.Linq;
 using System.Numerics;
 using System.Text;
+using MGQOnline.Bridge.Ruby;
+using MGQOnline.Game.Battles.Wire;
 using MGQOnline.Game.Ruby;
+using MGQOnline.Game.Topics;
 
 namespace MGQOnline.Game.Mods;
 
@@ -22,7 +26,7 @@ namespace MGQOnline.Game.Mods;
 /// <param name="Type">'i' (whole number), 'f' (decimal), 'b' (true or false), 'y' (symbol) or 's' (text).</param>
 /// <param name="Integer">The whole number of an 'i'.</param>
 /// <param name="Number">The decimal of an 'f'.</param>
-/// <param name="Text">The text of a 'y' or an 's', "true" or "false" of a 'b'.</param>
+/// <param name="Text">The text of a 'y' or an 's', "true" or "false" of a 'b', the decimal as written of an 'f'.</param>
 public readonly record struct SettingValue(char Type, BigInteger Integer, double Number, string Text);
 
 /// <summary>
@@ -66,6 +70,16 @@ public static class SharedSettings
     /// The reason of a change the creator's own switch made, which alone turns sharing on or off.
     /// </summary>
     public const string SwitchReason = "switch";
+
+    /// <summary>
+    /// The key of the Hash that stands for a Float the scripts hand over, its text as Ruby wrote it.
+    /// </summary>
+    public const string FloatKind = MessageFields.FloatKey;
+
+    /// <summary>
+    /// The key of the Hash that stands for a Symbol the scripts hand over, its name.
+    /// </summary>
+    public const string SymbolKind = WirePlain.SymbolKind;
 
     /// <summary>
     /// Splits settings into their pairs.
@@ -199,13 +213,107 @@ public static class SharedSettings
         return parts[0] switch
         {
             "i" when IsWhole(raw) => new SettingValue('i', BigInteger.Parse(raw, CultureInfo.InvariantCulture), 0, ""),
-            "f" when IsDecimal(raw) => new SettingValue('f', 0, double.Parse(raw, CultureInfo.InvariantCulture), ""),
+            "f" when IsDecimal(raw) => new SettingValue('f', 0, double.Parse(raw, CultureInfo.InvariantCulture), raw),
             "b" => new SettingValue('b', 0, 0, raw == "true" ? "true" : "false"),
             "y" when raw.Length > 0 => new SettingValue('y', 0, 0, raw),
             "s" => new SettingValue('s', 0, 0, raw),
             _ => null,
         };
     }
+
+    /// <summary>
+    /// Reads an option's value as the scripts hand it over: an Integer, true or false, a String, a
+    /// Float as <c>{"float" => text}</c> or a Symbol as <c>{"symbol" => name}</c>, since the bridge
+    /// carries neither.
+    /// </summary>
+    /// <param name="plain">The value.</param>
+    /// <returns>The value, <see langword="null"/> for one of a type a world does not keep.</returns>
+    public static SettingValue? ValueOf(RubyValue plain)
+    {
+        ArgumentNullException.ThrowIfNull(plain);
+        return plain switch
+        {
+            RubyInteger number => new SettingValue('i', number.Value, 0, ""),
+            RubyBool flag => new SettingValue('b', 0, 0, flag.Flag ? "true" : "false"),
+            RubyString => new SettingValue('s', 0, 0, plain.AsText()),
+            RubyHash kind when kind.TryGetValue(FloatKind, out RubyValue? text) && IsDecimal(text.AsText()) =>
+                new SettingValue('f', 0, double.Parse(text.AsText(), CultureInfo.InvariantCulture), text.AsText()),
+            RubyHash kind when kind.TryGetValue(SymbolKind, out RubyValue? name) && name.AsText().Length > 0 => new SettingValue('y', 0, 0, name.AsText()),
+            _ => null,
+        };
+    }
+
+    /// <summary>
+    /// Writes a value as the scripts take it back, see <see cref="ValueOf"/>.
+    /// </summary>
+    /// <param name="value">The value.</param>
+    /// <returns>The plain value.</returns>
+    public static RubyValue PlainOf(SettingValue value) => value.Type switch
+    {
+        'i' => value.Integer,
+        'b' => value.Text == "true",
+        'f' => new RubyHash { { FloatKind, value.Text } },
+        'y' => new RubyHash { { SymbolKind, value.Text } },
+        _ => value.Text,
+    };
+
+    /// <summary>
+    /// Writes a value as Ruby's <c>to_s</c> wrote it, without its type.
+    /// </summary>
+    /// <param name="value">The value.</param>
+    /// <returns>The text.</returns>
+    public static string Raw(SettingValue value) => value.Type == 'i' ? value.Integer.ToString(CultureInfo.InvariantCulture) : value.Text;
+
+    /// <summary>
+    /// Writes a value with its type, as games of every release write it: "i:1", "y:dark", a text's
+    /// percent signs, semicolons and equal signs escaped.
+    /// </summary>
+    /// <param name="value">The value.</param>
+    /// <returns>The text.</returns>
+    public static string Encode(SettingValue value) =>
+        $"{value.Type}:{Raw(value).Replace("%", "%25", StringComparison.Ordinal).Replace(";", "%3B", StringComparison.Ordinal).Replace("=", "%3D", StringComparison.Ordinal)}";
+
+    /// <summary>
+    /// Writes the pairs of options the scripts hand over, leaving out a value of a type a world does
+    /// not keep.
+    /// </summary>
+    /// <param name="options">[key, value] each, see <see cref="ValueOf"/>; nil for none.</param>
+    /// <returns>Each option's key and its pair.</returns>
+    public static List<(string Key, string Pair)> PairsOf(RubyValue options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        if (options.IsNil)
+        {
+            return [];
+        }
+
+        List<(string Key, string Pair)> pairs = [];
+        foreach (RubyValue option in options.AsArray())
+        {
+            string key = option.AsArray()[0].AsText();
+            if (key.Length > 0 && ValueOf(option.AsArray()[1]) is { } value)
+            {
+                pairs.Add((key, $"{key}={Encode(value)}"));
+            }
+        }
+
+        return pairs;
+    }
+
+    /// <summary>
+    /// Writes the options the scripts hand over as settings without the marker, as a battle's setup
+    /// carries the starter's options.
+    /// </summary>
+    /// <param name="options">[key, value] each, see <see cref="ValueOf"/>; nil for none.</param>
+    /// <returns>The settings.</returns>
+    public static string Write(RubyValue options) => string.Join(';', PairsOf(options).Select(pair => pair.Pair));
+
+    /// <summary>
+    /// Reads settings into the values the scripts write into the options, see <see cref="Values"/>.
+    /// </summary>
+    /// <param name="text">The settings.</param>
+    /// <returns>[key, value] each, see <see cref="ValueOf"/>.</returns>
+    public static RubyArray PlainValues(string? text) => new(Values(text).Select(pair => (RubyValue)new RubyArray { pair.Key, PlainOf(pair.Value) }));
 
     /// <summary>
     /// Tells whether two values are the same, decimals within a margin, as Mod Config Remake finds a

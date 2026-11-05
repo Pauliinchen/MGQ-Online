@@ -2,6 +2,7 @@
 //  RunLogTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Gave a common event's entry a variable's value as the tracks write it
 //      Paulinchen  2026-10-31: Covered a step of the own track claimed again on the world's track
 //                            - Created
 //
@@ -203,8 +204,8 @@ public sealed class RunLogTests
     private static ReplayEntry Entry(string id, string stream, string? site = null, long[]? place = null)
     {
         ReplaySite at = site is null ? Chest : ReplaySite.Parse(site);
-        StoryKey key = at.IsCommon ? StoryKey.Variable(57) : StoryKey.SelfSwitch(at.MapId, at.EventId, "A");
-        return new ReplayEntry(id, at, stream, StoryScope.Party, "Ana", new Dictionary<StoryKey, string> { [key] = "0" },
+        (StoryKey key, string before) = at.IsCommon ? (StoryKey.Variable(57), "n0") : (StoryKey.SelfSwitch(at.MapId, at.EventId, "A"), "0");
+        return new ReplayEntry(id, at, stream, StoryScope.Party, "Ana", new Dictionary<StoryKey, string> { [key] = before },
             place is null ? null : new RunPlace(place), new Dictionary<StoryKey, string>(), [], false);
     }
 }

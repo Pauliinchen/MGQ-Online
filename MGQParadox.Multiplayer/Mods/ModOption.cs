@@ -2,6 +2,8 @@
 //  ModOption.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Named an option's type and wrote its values from the values the scripts hand over
+//                            - Took an option as the values the scripts hand over, no longer as a line of text
 //      Paulinchen  2026-10-06: Created
 //
 //----------------------------------------------------------------
@@ -9,6 +11,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using MGQOnline.Bridge.Ruby;
+using MGQOnline.Game.Mods;
 
 namespace MGQParadox.Multiplayer.Mods;
 
@@ -23,16 +27,28 @@ namespace MGQParadox.Multiplayer.Mods;
 internal sealed record ModOption(string Key, string Name, string Type, string Default, IReadOnlyList<(string Value, string Name)> Choices)
 {
     /// <summary>
-    /// Reads the options the game script wrote, one per line: key, name, type, default, then each
-    /// choice's value and name, separated by tabs.
+    /// Takes an option the scripts handed over, its type that of its default.
     /// </summary>
-    /// <param name="text">The lines.</param>
-    /// <returns>The options; a line without a key, name, type and default is left out.</returns>
-    public static IReadOnlyList<ModOption> Parse(string text) =>
-        text.Split('\n', StringSplitOptions.RemoveEmptyEntries)
-            .Select(line => line.TrimEnd('\r').Split('\t'))
-            .Where(fields => fields.Length >= 4)
-            .Select(fields => new ModOption(fields[0], fields[1], fields[2], fields[3],
-                fields.Skip(4).Chunk(2).Where(pair => pair.Length == 2).Select(pair => (pair[0], pair[1])).ToList()))
-            .ToList();
+    /// <param name="option"><c>key</c> and <c>name</c> (texts), <c>default</c> and <c>choices</c>
+    /// ([value, name] each), each value as <see cref="SharedSettings.ValueOf"/> reads it.</param>
+    /// <returns>The option, its choices of a type a world does not keep left out; <see langword="null"/> for an option whose default has such a type.</returns>
+    public static ModOption? Of(RubyHash option)
+    {
+        ArgumentNullException.ThrowIfNull(option);
+        if (SharedSettings.ValueOf(option["default"]) is not { } fallback)
+        {
+            return null;
+        }
+
+        var choices = new List<(string Value, string Name)>();
+        foreach (RubyArray choice in option["choices"].AsArray().Select(choice => choice.AsArray()))
+        {
+            if (SharedSettings.ValueOf(choice[0]) is { } value)
+            {
+                choices.Add((SharedSettings.Raw(value), choice[1].AsText()));
+            }
+        }
+
+        return new ModOption(option["key"].AsText(), option["name"].AsText(), fallback.Type.ToString(), SharedSettings.Raw(fallback), choices);
+    }
 }

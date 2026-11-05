@@ -2,6 +2,8 @@
 //  RaidStoryTests.cs
 //
 //  Changelog:
+//                            - Added and fetched the shared companions through the topics
+//      Paulinchen  2026-11-05: Added companions by their ids as numbers and read the state as values
 //      Paulinchen  2026-10-28: Covered the frames queued just before the world is closed
 //      Paulinchen  2026-10-23: Covered the shared companions alone and the story tracks' frames over the world room
 //      Paulinchen  2026-10-17: Covered the frozen raid boss fights of keyed stories and the end of one
@@ -15,9 +17,12 @@
 using System;
 using System.Linq;
 using System.Threading;
+using MGQOnline.Bridge.Ruby;
 using MGQParadox.Multiplayer.Network.Relay;
 using MGQParadox.Multiplayer.Network.Transport;
 using MGQParadox.Multiplayer.Network.World;
+using MGQParadox.Multiplayer.Tests.Topics;
+using MGQParadox.Multiplayer.Topics;
 using static MGQParadox.Multiplayer.Tests.Network.World.WorldDirectoryTests;
 
 namespace MGQParadox.Multiplayer.Tests.Network.World;
@@ -49,11 +54,11 @@ public sealed class RaidStoryTests
         var code = MakeWorld(relay, WorldType.Raid);
         var story = NewStory(relay, CreatorKey, code);
 
-        Assert.Equal(string.Empty, story.Describe());
+        Assert.Empty(story.Describe());
         Assert.True(story.Fetch(IdOf(code)));
         var state = Await(story, "fetch", "done");
 
-        Assert.Equal((IdOf(code), "0", string.Empty), (state["world"], state["rev"], state["comps"]));
+        Assert.Equal((IdOf(code), 0L, string.Empty), (state["world"].AsText(), state["rev"].AsLong(), Ids(state)));
     }
 
     /// <summary>
@@ -71,14 +76,33 @@ public sealed class RaidStoryTests
         var story = NewStory(relay, CreatorKey, code);
         var other = NewStory(relay, OtherKey, code);
 
-        Assert.True(story.AddCompanions(IdOf(code), "382, 5,382"));
-        Assert.Equal("5,382", Await(story, "companions", "done")["comps"]);
+        Assert.True(story.AddCompanions(IdOf(code), [382, 5, 382]));
+        Assert.Equal("5,382", Ids(Await(story, "companions", "done")));
         Assert.Equal("1", AwaitEntry(session, "story")["rev"]);
         session.Close();
         Assert.True(other.Fetch(IdOf(code)));
-        Assert.Equal("5,382", Await(other, "fetch", "done")["comps"]);
-        Assert.False(story.AddCompanions(IdOf(code), "5,x"));
-        Assert.False(story.AddCompanions(IdOf(code), string.Empty));
+        Assert.Equal("5,382", Ids(Await(other, "fetch", "done")));
+        Assert.False(story.AddCompanions(IdOf(code), [5, 0]));
+        Assert.False(story.AddCompanions(IdOf(code), []));
+    }
+
+    /// <summary>
+    /// Asserts that the scripts add companions and fetch the shared list through the topics, the
+    /// ids as numbers both ways.
+    /// </summary>
+    [Fact]
+    public void Topics_AddAndFetchTheSharedCompanions()
+    {
+        using var relay = new TestRelay();
+        var code = MakeWorld(relay, WorldType.Raid);
+        var topics = new TopicCaller(context => RaidRelayTopics.Register(context, NewStory(relay, CreatorKey, code), new RaidBosses()));
+
+        Assert.Equal(RubyBool.True, topics.Call(RaidRelayTopics.CompanionsAdd, new RubyHash { { "world", IdOf(code) }, { "ids", new RubyArray { 382, 5 } } }));
+        WaitUntil(() => topics.Call(RaidRelayTopics.StoryState)!.AsHash()["companions"] is RubyString { Text: "done" }, "the companions added");
+        Assert.Equal(RubyBool.True, topics.Call(RaidRelayTopics.StoryFetch, IdOf(code)));
+        WaitUntil(() => topics.Call(RaidRelayTopics.StoryState)!.AsHash()["fetch"] is RubyString { Text: "done" }, "the fetch");
+
+        Assert.Equal(new RubyArray { 5, 382 }, topics.Call(RaidRelayTopics.StoryState)!.AsHash()["comps"]);
     }
 
     /// <summary>
@@ -98,12 +122,12 @@ public sealed class RaidStoryTests
             RetryDelays = [TimeSpan.FromMilliseconds(50)],
         };
 
-        Assert.True(story.AddCompanions(IdOf(first), "5"));
-        Assert.Equal(IdOf(first), Await(story, "companions", "done")["world"]);
+        Assert.True(story.AddCompanions(IdOf(first), [5]));
+        Assert.Equal(IdOf(first), Await(story, "companions", "done")["world"].AsText());
         Assert.True(story.Fetch(IdOf(second)));
         var fetched = Await(story, "fetch", "done");
 
-        Assert.Equal((IdOf(second), "0", string.Empty), (fetched["world"], fetched["rev"], fetched["comps"]));
+        Assert.Equal((IdOf(second), 0L, string.Empty), (fetched["world"].AsText(), fetched["rev"].AsLong(), Ids(fetched)));
     }
 
     /// <summary>
@@ -210,13 +234,20 @@ public sealed class RaidStoryTests
     /// <param name="kind">The kind: fetch or companions.</param>
     /// <param name="state">The state.</param>
     /// <returns>The state as the game script reads it.</returns>
-    private static Message Await(RaidStory story, string kind, string state)
+    private static RubyHash Await(RaidStory story, string kind, string state)
     {
-        Message? described = null;
-        WaitUntil(() => (described = Message.Decode(story.Describe()))[kind] is { Length: > 0 } now && now != "busy", $"the {kind}");
-        Assert.True(described![kind] == state, $"{kind} is {described[kind]}: {story.Describe()}");
+        RubyHash? described = null;
+        WaitUntil(() => (described = story.Describe())[kind] is RubyString now && now.Text != "busy", $"the {kind}");
+        Assert.True(described![kind].AsText() == state, $"{kind} is {described[kind]}: {described}");
         return described;
     }
+
+    /// <summary>
+    /// Writes the shared companions of a state for a check.
+    /// </summary>
+    /// <param name="state">The state.</param>
+    /// <returns>Their ids, separated by commas.</returns>
+    private static string Ids(RubyHash state) => string.Join(",", state["comps"].AsArray().Select(id => id.AsLong()));
 
     /// <summary>
     /// Waits for an inbox entry of a kind, taking the others before it.

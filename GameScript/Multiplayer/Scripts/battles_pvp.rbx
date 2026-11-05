@@ -2,7 +2,8 @@
 #  battles_pvp.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Put back through the guard of the game's flow what the duel's snapshot leaves, such as a dark screen
+#      Paulinchen  2026-11-05: Left the team's rule of the Backline to C#, which writes and reads the builds
+#                            - Put back through the guard of the game's flow what the duel's snapshot leaves, such as a dark screen
 #      Paulinchen  2026-10-24: Removed the PvP battle screen's hotkey, its exchange and its Discord invites
 #      Paulinchen  2026-10-23: Named the one log of the day where a battle that failed tells why
 #                            - Deleted the mirror match
@@ -134,14 +135,8 @@ module MGQ_MpBattlesPvp
   end
 
   # The team two games swap: the builds of the Frontline and the Backline, see MGQ_MpActors::Builds,
-  # below a line that says whether the sender's battles have the Backline.
+  # with the rule whether the sender's battles have the Backline, which C# writes and reads.
   module Team
-    # Starts a team's first line, followed by 1 when the sender's battles have the Backline, else 0.
-    RULE = "backline="
-
-    # A team's first line.
-    RULE_LINE = /\A#{RULE}([01])\r?\n/
-
     # Members read of a team at most, which limits what another game can have this one rebuild.
     MOST_MEMBERS = 20
 
@@ -155,7 +150,7 @@ module MGQ_MpBattlesPvp
     # Writes the player's team, the Frontline first, their squad in a Raid World, and notes the rule
     # it carries, which holds when the player hosts the battle.
     #
-    # @return [String] The rule's line, then a member line per party member.
+    # @return [String] The team.
     def self.build
       @sent_backline = Backline.wanted?
       squad = MGQ_MpCoopSquad
@@ -163,7 +158,7 @@ module MGQ_MpBattlesPvp
       sent = party.first(MOST_MEMBERS)
       MGQ_MpBattlesPvp.log("built the team to send: #{MGQ_MpBattlesSync.named_list(sent)}; " \
                            "#{@sent_backline ? 'with' : 'without'} the Backline")
-      "#{RULE}#{@sent_backline ? 1 : 0}\n" + MGQ_MpActors::Builds.write(sent)
+      MGQ_MpActors::Builds.write(sent, @sent_backline ? true : false)
     end
 
     # Reports whether the team the player sent last said their battles have the Backline.
@@ -173,20 +168,12 @@ module MGQ_MpBattlesPvp
       @sent_backline ? true : false
     end
 
-    # Reports whether a team says its sender's battles have the Backline.
-    #
-    # @param text [String] The team, see build.
-    # @return [Boolean] Whether it does.
-    def self.backline?(text)
-      text.to_s[RULE_LINE, 1] == "1"
-    end
-
     # Reads a friend's team, taking only what this game's data knows.
     #
     # @param text [String] The team, see build.
     # @return [Array<MGQ_MpActors::Builds::Member>] The members, the Frontline first, none when nothing was readable.
     def self.parse(text)
-      MGQ_MpActors::Builds.parse(text.to_s.sub(RULE_LINE, ""), MOST_MEMBERS)
+      MGQ_MpActors::Builds.parse(text, MOST_MEMBERS)
     end
   end
 

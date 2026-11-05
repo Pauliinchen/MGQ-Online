@@ -2,6 +2,7 @@
 #  coop_npcs.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Handed the DLL the events of the map as values
 #      Paulinchen  2026-10-30: Left the Map Owner's sends and the follower's checks to the DLL, and read the events to follow when they changed
 #      Paulinchen  2026-10-23: Left the events to the player's own game while it runs an event the player plays, then placed them
 #      Paulinchen  2026-10-17: Left the events to the player's own game while a frozen raid boss fight resumes
@@ -177,7 +178,7 @@ module MGQ_MpCoopNpcs
   # changed to everyone, and logs the events whose page changed, which means the story moved on.
   def self.send_events
     map = $game_map.map_id
-    events = $game_map.events.map { |id, event| "#{id}:#{event.mgq_mp_npc_state.join(',')}" }.join(";")
+    events = $game_map.events.map { |id, event| [id] + event.mgq_mp_npc_state }
     answer = MGQ_Multiplayer::Bridge.call(SNAPSHOT_TOPIC, "map" => map, "events" => events)
     return unless answer.is_a?(Hash)
 

@@ -2,6 +2,7 @@
 #  live_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Read and wrote lines with the codec's stand-in, took the recording's events and values and the Backline's Frontline as values and gave the stream's lines as values
 #      Paulinchen  2026-10-30: Stood in for a co-op battle's side and stream kinds
 #                            - Stood in for what every kind of live battle decides the same way
 #                            - Stood in for the host's recording, held against its golden steps
@@ -14,10 +15,10 @@
 # The DLL's side of the live battle (MGQOnline.Game's Battles/Live folder, behind LiveTopics) for the
 # script tests: LiveStandIn answers the live battle's topics as the DLL does, and
 # check_live_stand_in holds it against the golden cases of fixtures/live, which battles_sync*.rbx
-# played before the rules left them. It reads and writes lines with the battle line codec, so a test
-# loads battles_sync_wire.rbx before it asks.
+# played before the rules left them. It reads and writes lines with the codec's stand-in.
 
 require "json"
+require_relative "wire_support"
 
 # Folder of the live battle's golden cases.
 LIVE_FIXTURES = File.expand_path("../../fixtures/live", __dir__)
@@ -121,14 +122,15 @@ class LiveSessionStandIn
       left = Array(@events).size
       @events = []
       { "sends" => [], "events" => left }
-    when "event" then { "sends" => recorded(request["line"]) }
+    when "event" then { "sends" => recorded(wire.line(request["values"])) }
     when "values"
       @values = {} if request["full"]
       sends = request["battlers"].flat_map do |key, ref, values|
-        next [] if @values[key] == values
+        line = wire.line(values)
+        next [] if @values[key] == line
 
-        @values[key] = values
-        recorded(values.empty? ? "svalues\t@#{ref}" : "svalues\t@#{ref}\t#{values}")
+        @values[key] = line
+        recorded(line.empty? ? "svalues\t@#{ref}" : "svalues\t@#{ref}\t#{line}")
       end
       { "sends" => sends }
     when "flush" then { "sends" => [flushed].compact }
@@ -164,11 +166,11 @@ class LiveSessionStandIn
     send
   end
 
-  # The battle line codec, loaded by the test.
+  # The battle line codec's stand-in.
   #
-  # @return [Module] MGQ_MpBattlesSync::Wire.
+  # @return [Module] WireStandIn.
   def wire
-    MGQ_MpBattlesSync::Wire
+    WireStandIn
   end
 
   # Plans a guest's commands, as CommandPlan does.
@@ -293,8 +295,7 @@ class LiveSessionStandIn
       @team_ids = @told_front = nil
       { "front" => nil, "unfit" => nil }
     when "take"
-      values = wire.parse(request["line"])
-      ids = values && values[0]
+      ids = request["ids"]
       return { "front" => nil, "unfit" => nil } unless @team_ids && ids.is_a?(Array)
 
       front = ids.map { |id| id.is_a?(Integer) && @team_ids.include?(id) ? id : nil }
@@ -742,11 +743,11 @@ class LiveStandIn
   # @return [LiveSessionStandIn] The session.
   attr_reader :session
 
-  # The battle line codec, loaded by the test.
+  # The battle line codec's stand-in.
   #
-  # @return [Module] MGQ_MpBattlesSync::Wire.
+  # @return [Module] WireStandIn.
   def wire
-    MGQ_MpBattlesSync::Wire
+    WireStandIn
   end
 
   # Answers a topic.
@@ -797,7 +798,7 @@ class LiveStandIn
   def take_stream(request)
     taken = { "lines" => [], "events" => 0, "unreadable" => 0, "others_choose" => 0, "logs" => [] }
     request["body"].split("\n").each do |line|
-      values = wire.parse(line)
+      values = wire_values(line)
       unless values && values[0].is_a?(String)
         taken["unreadable"] += 1
         taken["logs"] << ["unreadable_event", "left out an unreadable line of the host's stream (#{line.size} characters)"]
@@ -812,7 +813,7 @@ class LiveStandIn
       end
 
       kept = checked(kind, args, line, taken["logs"])
-      taken["lines"] << kept if kept
+      taken["lines"] << wire.parse(kept) if kept
     end
     taken
   end
@@ -986,10 +987,10 @@ end
 
 # Tells what a line the intake kept does on the guest, as the golden cases note it.
 #
-# @param line [String] The line.
+# @param plain [Array] The line's values as the intake gives them.
 # @return [Array<Array>] Its effects.
-def live_effects(line)
-  values = MGQ_MpBattlesSync::Wire.parse(line) { |ref| ref }
+def live_effects(plain)
+  values = MGQ_MpBattlesSync::Wire.objects(plain) { |ref| ref }
   kind, *args = values
   method = kind.split(".", 2)[1]
   describe = lambda do |value|
@@ -1018,8 +1019,8 @@ def live_effects(line)
   end
 end
 
-# Holds the stand-in against the golden cases of the guest's intake, which needs the battle line
-# codec and the story scene's stand-in loaded.
+# Holds the stand-in against the golden cases of the guest's intake, which needs
+# battles_sync_wire.rbx and the story scene's stand-in loaded.
 #
 # @raise [RuntimeError] A case the stand-in answers otherwise than the scripts did.
 def check_live_stand_in
@@ -1029,7 +1030,7 @@ def check_live_stand_in
     logs = stand_in.answer("live.guest_setup", "names" => entry["names"], "own" => entry["own"], "name_box" => entry["name_box"],
                                                "lists" => golden["lists"].merge("log_calls" => golden["log_calls"]), "animations" => entry["animations"])
     taken = stand_in.answer("live.take_stream", "body" => entry["body"], "seat" => entry["seat"])
-    effects = taken["lines"].flat_map { |line| live_effects(line) }
+    effects = taken["lines"].flat_map { |values| live_effects(values) }
     raise "the live stand-in plays #{entry['name']} otherwise than the scripts: #{effects.inspect[0, 300]}" if effects != entry["effects"]
 
     counts = [taken["events"], taken["unreadable"], taken["others_choose"]]
@@ -1202,17 +1203,20 @@ end
 def check_live_recorder_stand_in
   session = LiveSessionStandIn.new
   record = lambda { |op, fields = {}| session.answer("live.record", fields.merge("op" => op)) }
+  # The steps note each battler's values as their line; the scripts hand them over as values.
+  battlers = lambda { |step| step["battlers"].map { |key, ref, line| [key, ref, WireStandIn.parse(line)] } }
   live_cases("recorder.json")["steps"].each_with_index do |step, index|
     logs = []
     sends =
       case step["op"]
       when "start" then logs << "recording the battle for the guests' stream"; record.call("start")["sends"]
-      when "values" then record.call("values", "battlers" => step["battlers"], "full" => step["full"])["sends"]
+      when "values" then record.call("values", "battlers" => battlers.call(step), "full" => step["full"])["sends"]
       when "tick" then session.answer("live.tick", "check" => "frame")["sends"]
-      when "event" then record.call("event", "line" => step["line"])["sends"]
+      when "event" then record.call("event", "values" => WireStandIn.parse(step["line"]))["sends"]
       when "flush" then record.call("flush")["sends"]
       when "phase"
-        sent = record.call("values", "battlers" => step["battlers"], "full" => true)["sends"] + record.call("event", "line" => step["line"])["sends"] + record.call("flush")["sends"]
+        sent = record.call("values", "battlers" => battlers.call(step), "full" => true)["sends"] + record.call("event", "values" => WireStandIn.parse(step["line"]))["sends"] +
+               record.call("flush")["sends"]
         counts = record.call("counts")
         logs << "streamed the battle's start: #{counts['events']} events in #{counts['sends_counted']} sends, every battler's values anew"
         sent

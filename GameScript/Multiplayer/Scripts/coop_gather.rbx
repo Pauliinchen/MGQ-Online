@@ -2,7 +2,8 @@
 #  coop_gather.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Asked the DLL's one decision whether a telling moves the world's story on, which decides whom it takes along
+#      Paulinchen  2026-11-05: Told and read whether a telling moves the world's story on as true or false, which the DLL writes as 1 or 0
+#                            - Asked the DLL's one decision whether a telling moves the world's story on, which decides whom it takes along
 #                            - Left what a call, follow or teleport leaves of the player's scene and place to the one guard of the game's flow, the followers a map left hidden among it
 #                            - Counted its moments by the bridge's frame
 #      Paulinchen  2026-10-31: Stopped carrying the warp ban along with a call, a follow or a teleport
@@ -257,13 +258,13 @@ module MGQ_MpCoopGather
   # teller without moving the story on would start again for every player left behind (issue 61).
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The teller.
-  # @param message [Hash] The call's fields, "moves" 0 for a telling that does not move the world's
+  # @param message [Hash] The call's fields, "moves" false for a telling that does not move the world's
   #   story on; a call without it, from an earlier build, is followed at once as before.
   # @return [String, nil] The reason, nil when the player follows at once.
   def self.follow_refusal(peer, message)
     return "the player's story is behind the world's" if MGQ_MpCoopEvents.behind?
     return "the relay told of no telling of #{MGQ_MpOverworldSync.who(peer)}'s on the player's track" unless MGQ_MpCoop::Scope.watches?(peer)
-    return nil unless message["moves"] == "0"
+    return nil unless message["moves"] == false
     return "#{MGQ_MpOverworldSync.who(peer)}'s telling does not move the world's story on" unless MGQ_MpCoopEvents.keeps_autorun_of?(peer)
 
     log("follows #{MGQ_MpOverworldSync.who(peer)} though their telling does not move the world's story on: the player's game keeps its own copy of the scene, which runs by itself, from starting")
@@ -525,12 +526,12 @@ module MGQ_MpCoopGather
     if raid
       # The map's gate takes the call only for the map the others are on.
       fields["mmap"] = from[0]
-      fields["moves"] = moves_story? ? 1 : 0
+      fields["moves"] = moves_story? ? true : false
       MGQ_MpCoopEvents.tell_each(along, "follow", fields)
     else
       along.each { |peer| tell(peer.seat, "follow", fields) }
     end
-    offered = raid && fields["moves"] == 0 ? ", as an offer: the telling does not move the world's story on" : ""
+    offered = raid && fields["moves"] == false ? ", as an offer: the telling does not move the world's story on" : ""
     log("took #{along.map { |peer| peer.state['name'] }.join(', ')} along to map #{$game_map.map_id} #{$game_player.x},#{$game_player.y}#{offered}")
   rescue => e
     log("taking the party along failed: #{e.class}: #{e.message}")

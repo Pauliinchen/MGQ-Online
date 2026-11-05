@@ -2,6 +2,7 @@
 //  PoolTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Took a fight's enemies as values, no longer as a text
 //      Paulinchen  2026-10-30: Handed a fight's pools to the battle server and took them there
 //                            - Ran the fights' moments and handed out the battle server's outbox, in place of counting its own reports
 //                            - Created
@@ -59,7 +60,7 @@ public static class PoolTopics
     /// <summary>
     /// Runs a moment of the battle, see <see cref="RaidFight.Turn"/>: <c>moment</c> (start, phase,
     /// action, wait, turn_end, end, take_over or role), <c>reporter</c> and <c>enemies</c>
-    /// (<c>place:hp:mhp:dead:id</c> per own enemy, separated by semicolons) in; <c>actions</c>
+    /// ([place, hp, mhp, dead, id] per own enemy) in; <c>actions</c>
     /// ([place, hp] each, 0 kills), <c>killed</c>, <c>reported</c>, <c>guest</c>, <c>took_over</c>,
     /// <c>rebuilt</c> (places), <c>report_in</c> and <c>sync_in</c> (milliseconds, nil for at once)
     /// out; nil without a battle. The end ends the battle.
@@ -176,26 +177,22 @@ public static class PoolTopics
     /// <summary>
     /// Reads the enemies of <see cref="FightTurn"/>.
     /// </summary>
-    /// <param name="text">place:hp:mhp:dead:id per enemy, separated by semicolons.</param>
+    /// <param name="list">[place, hp, mhp, dead, id] per enemy.</param>
     /// <returns>The enemies by their place.</returns>
-    /// <exception cref="BridgeRequestException">A field is no whole number.</exception>
-    public static Dictionary<int, FightEnemy> EnemiesOf(string text)
+    /// <exception cref="BridgeRequestException">An enemy is not [place, hp, mhp, dead, id].</exception>
+    public static Dictionary<int, FightEnemy> EnemiesOf(RubyArray list)
     {
-        ArgumentNullException.ThrowIfNull(text);
+        ArgumentNullException.ThrowIfNull(list);
         var enemies = new Dictionary<int, FightEnemy>();
-        foreach (string entry in text.Split(';', StringSplitOptions.RemoveEmptyEntries))
+        foreach (RubyValue entry in list)
         {
-            string[] fields = entry.Split(':');
-            if (fields.Length != 5 || !int.TryParse(fields[0], NumberStyles.None, CultureInfo.InvariantCulture, out int place)
-                || !long.TryParse(fields[1], NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out long hp)
-                || !long.TryParse(fields[2], NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out long mhp)
-                || fields[3] is not ("0" or "1")
-                || !long.TryParse(fields[4], NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out long id))
+            RubyArray fields = entry.AsArray();
+            if (fields.Count != 5 || fields[0].AsInt() < 0)
             {
-                throw new BridgeRequestException($"The enemy {entry} is not place:hp:mhp:dead:id.");
+                throw new BridgeRequestException($"The enemy {entry} is not [place, hp, mhp, dead, id].");
             }
 
-            enemies[place] = new FightEnemy(hp, mhp, fields[3] == "1", id);
+            enemies[fields[0].AsInt()] = new FightEnemy(fields[1].AsLong(), fields[2].AsLong(), fields[3].AsBool(), fields[4].AsLong());
         }
 
         return enemies;
@@ -333,7 +330,7 @@ public static class PoolTopics
     {
         string name = request["moment"].AsText();
         FightMoment moment = Moments.TryGetValue(name, out FightMoment found) ? found : throw new BridgeRequestException($"There is no moment {name}.");
-        FightTurn turn = fight.Turn(moment, request["reporter"].AsBool(), EnemiesOf(request["enemies"].AsText()), relay, relay.Ledger.Now, log);
+        FightTurn turn = fight.Turn(moment, request["reporter"].AsBool(), EnemiesOf(request["enemies"].AsArray()), relay, relay.Ledger.Now, log);
         var reply = new RubyHash
         {
             { "actions", new RubyArray(turn.Actions.Select(action => (RubyValue)new RubyArray([action.Index, action.Hp]))) },

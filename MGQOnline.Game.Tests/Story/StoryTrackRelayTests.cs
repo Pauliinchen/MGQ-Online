@@ -2,6 +2,7 @@
 //  StoryTrackRelayTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Checked the keys and values one game's scripts hand over reaching the other game's scripts as the same values, in the track and in a run
 //      Paulinchen  2026-10-31: Checked a run one game hands over reaching the other through the relay's walk, once
 //      Paulinchen  2026-10-23: Created
 //
@@ -13,6 +14,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using MGQOnline.Bridge.Ruby;
 using MGQOnline.Game.Story;
 
 namespace MGQOnline.Game.Tests.Story;
@@ -145,6 +147,51 @@ public sealed class StoryTrackRelayTests : IDisposable
     }
 
     /// <summary>
+    /// Asserts that the keys and values one game's scripts stage (a switch, a self switch, a whole
+    /// number, a text, a Float and a frozen fight) reach the other game's scripts through the relay's
+    /// track as the same values, and that a run handed over after them reaches the other game's replay with the
+    /// same keys and start values.
+    /// </summary>
+    [Fact]
+    public void TwoGames_CarryTheScriptsKeysAndValuesThroughTheRelaysTrack()
+    {
+        Assert.SkipWhen(relay is null, "Node is not installed.");
+        StoryTrack alice = Join("a1", 0, true, StoryPlain.TextsOf(new RubyArray { new RubyArray { 1, 1001, 5 } }).ToDictionary(pair => pair.Key.ToString(), pair => pair.Value));
+        StoryTrack bob = Join("b2", 1, false, []);
+        alice.Take();
+        bob.Take();
+        RubyArray rows =
+        [
+            new RubyArray { 0, 7096, true }, new RubyArray { 2, new RubyArray { 231, 5, "B" }, true }, new RubyArray { 1, 1001, 6 },
+            new RubyArray { 1, 1052, "アリス" }, new RubyArray { 1, 1062, new RubyHash { { "float", "2.5" } } },
+            new RubyArray
+            {
+                3, 868, new RubyHash
+                {
+                    { "troop", 868 }, { "site", new RubyArray { "map", 138, 13, 1 } }, { "outer", new RubyArray { "map", 138, 13, 1 } }, { "scene", false },
+                    { "tableau", new RubyArray { 138, new RubyArray { new RubyArray { 13, 32, 8, 2, 1, "$Sonya", 0, 0, 255, 0, 1, 1, 1 } }, new RubyArray() } },
+                    { "spot", new RubyArray { 138, 30, 10, 8 } }, { "held", new RubyArray { new RubyArray { 1, 1075, 14 } } },
+                }
+            },
+        ];
+        RubyArray before = [new RubyArray { 0, 7096, false }, new RubyArray { 1, 1001, 5 }];
+        RubyArray start = [new RubyArray { 1, 1052, "ルカ" }];
+
+        alice.Write(StoryPlain.WritesOf(new RubyArray(rows.Select(row => (RubyValue)new RubyArray { row.AsArray()[0], row.AsArray()[1], row.AsArray()[2], new RubyArray { "map", 7, 39, 1 } }))));
+        alice.Hand(ReplayEntry.Read(new RubyHash
+        {
+            { "id", "gift" }, { "site", new RubyArray { "map", 7, 39, 1 } }, { "stream", "story" }, { "scope", "world" }, { "opener", RubyNil.Value }, { "keys", before },
+            { "place", new RubyArray { 5, 0, 0, 0 } }, { "start", start }, { "inputs", new RubyArray() }, { "derived", false },
+        }), "Ana");
+        Pump();
+        RubyHash pushed = StoryPlain.TakeOf(bob.Take()!);
+        RubyHash run = bob.NextRun(true, [])!.Write();
+
+        Assert.Equal(Sorted(rows), Sorted(pushed["keys"].AsArray()));
+        Assert.Equal((Sorted(before), start), (Sorted(run["keys"].AsArray()), run["start"]));
+    }
+
+    /// <summary>
     /// Finds the repository's root folder above the tests.
     /// </summary>
     /// <returns>The folder, <see langword="null"/> when it is not found.</returns>
@@ -160,6 +207,13 @@ public sealed class StoryTrackRelayTests : IDisposable
 
         return null;
     }
+
+    /// <summary>
+    /// Orders rows by what they hold, as the relay may push them in another order.
+    /// </summary>
+    /// <param name="rows">The rows.</param>
+    /// <returns>The rows in order.</returns>
+    private static RubyArray Sorted(RubyArray rows) => new(rows.OrderBy(row => row.ToString(), StringComparer.Ordinal));
 
     /// <summary>
     /// Lets a game enter the world room, sync and hand the seed the relay asks for.

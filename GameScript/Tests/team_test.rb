@@ -2,6 +2,7 @@
 #  team_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Wrote and read the battle lines through the codec's stand-in
 #      Paulinchen  2026-10-30: Set the guests ready in an earlier wait on the stand-in of the DLL
 #      Paulinchen  2026-10-12: Checked the commanders a guest takes for the characters of players who left
 #      Paulinchen  2026-10-11: Let the waiting box stand-in take the names waited for and their prefix
@@ -30,7 +31,6 @@ load_script "battles_team"
 
 team = MGQ_MpBattlesTeam
 sync = MGQ_MpBattlesSync
-wire = MGQ_MpBattlesSync::Wire
 scene = Scene_Battle.new
 $scene_now = scene
 
@@ -73,12 +73,12 @@ check("the player's Frontline characters past their share wait on no Backline", 
 # @param id [Integer] The skill.
 # @return [Array<Array>] The commands.
 skill = lambda { |id| [["skill", id, 0]] }
-MGQ_MpBattlesSync::Commands.apply(wire.line([[skill.call(11), skill.call(12), [], []]]), 5)
+MGQ_MpBattlesSync::Commands.apply(wire_line([[skill.call(11), skill.call(12), [], []]]), 5)
 check("a guest of the other side commands their characters in the host's troop", $game_troop.members.map { |o| o.actions.map(&:item) },
       [[[:skill, 11]], [[:skill, 12]], [], []])
-MGQ_MpBattlesSync::Commands.apply(wire.line([[skill.call(13), [], skill.call(14), []]]), 6)
+MGQ_MpBattlesSync::Commands.apply(wire_line([[skill.call(13), [], skill.call(14), []]]), 6)
 check("never another player's", $game_troop.members.map { |o| o.actions.map(&:item) }, [[[:skill, 11]], [[:skill, 12]], [[:skill, 14]], []])
-MGQ_MpBattlesSync::Commands.apply(wire.line([[skill.call(15), [], skill.call(16), []]]), 2)
+MGQ_MpBattlesSync::Commands.apply(wire_line([[skill.call(15), [], skill.call(16), []]]), 2)
 check("a guest of the host's side commands theirs in the host's party", [$game_party.battle_members[0].actions, $game_party.battle_members[2].actions.map(&:item)],
       [[], [[:skill, 16]]])
 check("the host commands only its own characters", $game_party.battle_members.map(&:inputable?), [true, true, false, false])
@@ -88,8 +88,8 @@ $sent.clear
 sync.guest_left(5)
 team.settle
 heirs = $sent.map { |_, text| fields_of(text) }.find { |f| f["battle"] == "team_heirs" }
-check("the first player of their side still in it takes them over, told to the guests", [team.heir_of(5), wire.parse(heirs[:payload])[0]], [6, [5, 6]])
-MGQ_MpBattlesSync::Commands.apply(wire.line([[skill.call(21), skill.call(22), skill.call(23), []]]), 6)
+check("the first player of their side still in it takes them over, told to the guests", [team.heir_of(5), wire_values(heirs[:payload])[0]], [6, [5, 6]])
+MGQ_MpBattlesSync::Commands.apply(wire_line([[skill.call(21), skill.call(22), skill.call(23), []]]), 6)
 check("whose commands then reach them", $game_troop.members.map { |o| o.actions.map(&:item).last }, [[:skill, 21], [:skill, 22], [:skill, 23], nil])
 $sent.clear
 team.settle
@@ -117,15 +117,15 @@ check("the other side's guest has its side as party, the host's as troop", [$gam
       [["Actor1", "Actor2", "Actor30 (Mate)", "Actor31 (Mate)"], ["Actor1 (Me)", "Actor2 (Me)", "Actor7 (Friend)", "Actor8 (Friend)"]])
 check("so the host's references swap", [sync.same_side?, MGQ_MpBattlesSync::Playback.battler("a1").name, MGQ_MpBattlesSync::Playback.battler("e2").name],
       [false, "Actor2 (Me)", "Actor30 (Mate)"])
-check("its commands are its own characters'", wire.parse(MGQ_MpBattlesSync::Commands.build)[0].map { |list| list && list.size }, [0, 0, nil, nil])
-MGQ_MpBattlesSync::Channel.receive(0, "team_heirs", wire.line([[6, 5]]))
+check("its commands are its own characters'", wire_values(MGQ_MpBattlesSync::Commands.build)[0].map { |list| list && list.size }, [0, 0, nil, nil])
+MGQ_MpBattlesSync::Channel.receive(0, "team_heirs", wire_line([[6, 5]]))
 MGQ_MpBattlesSync::Channel.receive(0, "events", "")
 MGQ_MpBattlesSync::Playback.reset
 MGQ_MpBattlesSync::Playback.next_event(scene)
 ally = $game_party.battle_members[2]
 check("a taken-over character can be commanded", [team.heir_of(6), ally.inputable?], [5, true])
 ally.actions = [Game_Action.new(ally).tap { |a| a.set_skill(7); a.target_index = 1; a.item = RPG::Skill.new; def (a.item).id; 7; end }]
-check("and its commands go to the host", wire.parse(MGQ_MpBattlesSync::Commands.build)[0][2], [["skill", 7, 1]])
+check("and its commands go to the host", wire_values(MGQ_MpBattlesSync::Commands.build)[0][2], [["skill", 7, 1]])
 check("a guest leaves a team duel rather than forfeiting it", MGQ_MpBattlesSync::Live.escape_leaves?, true)
 MGQ_MpBattlesCoop.ended
 sync.finish
@@ -156,7 +156,7 @@ MGQ_MpBattlesSync::Live.host_start(scene)
 check("guests ready in an earlier wait do not count in the next", $answers, [nil])
 
 # A guest takes only whole pairs of seats from the heirs the host sends.
-team.take_heirs(wire.line([[6, "x", 7, 5, [8], 2]]))
+team.take_heirs(wire_line([[6, "x", 7, 5, [8], 2]]))
 check("a guest keeps only the pairs of seats", [team.heir_of(6), team.heir_of(7), team.heir_of(2)], [nil, 5, nil])
 team.take_heirs("[\t[")
 check("and nobody from a line that does not read, logged once", [team.heir_of(7), $log.grep(/where the host sent no pair of seats/).size], [nil, 1])

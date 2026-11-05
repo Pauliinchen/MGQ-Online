@@ -2,6 +2,7 @@
 //  NpcSync.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Took the events' places as values, writing their text for the other games itself
 //      Paulinchen  2026-10-30: Created
 //
 //----------------------------------------------------------------
@@ -260,9 +261,9 @@ public sealed class NpcSync
     /// a newcomer the whole map, and on the beat everyone what changed.
     /// </summary>
     /// <param name="onMap">The map the events are on.</param>
-    /// <param name="events">Each event's place: "id:x,y,d,page" joined by ";".</param>
+    /// <param name="events">Each event's id and place: x, y, direction and page.</param>
     /// <returns>The events whose page changed in what went to everyone, which the scripts name in the log.</returns>
-    public IReadOnlyList<NpcTurn> Snapshot(long onMap, string events)
+    public IReadOnlyList<NpcTurn> Snapshot(long onMap, IReadOnlyList<(long Id, IReadOnlyList<long> Place)> events)
     {
         ArgumentNullException.ThrowIfNull(events);
         if (role != NpcRole.Owner || onMap != map)
@@ -270,7 +271,7 @@ public sealed class NpcSync
             return [];
         }
 
-        List<(long Id, string State)> now = [.. RubySplit(events, ';').Select(EntryOf)];
+        List<(long Id, string State)> now = [.. events.Select(entry => (entry.Id, string.Join(',', entry.Place.Select(value => value.ToString(CultureInfo.InvariantCulture)))))];
         foreach ((int seat, string since) in arrivals.Where(arrival => WholeDue(arrival.Seat, arrival.Since)))
         {
             SendWhole(seat, since, now);

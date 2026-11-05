@@ -2,6 +2,7 @@
 //  WorldRoomTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Opened, closed and sent to the world room and told the player's id through topics, writing the messages from the fields the scripts hand over
 //      Paulinchen  2026-10-31: Registered the topics of the raid bars with the raid pools
 //                            - Registered the topics of the edge arrows over the room
 //                            - Registered the overview topics over the room
@@ -28,6 +29,7 @@ using System.Numerics;
 using System.Security.Cryptography;
 using MGQOnline.Bridge;
 using MGQOnline.Bridge.Ruby;
+using MGQOnline.Game.Topics;
 using MGQOnline.Game.World;
 using MGQParadox.Multiplayer.Network.Transport;
 using MGQParadox.Multiplayer.Network.World;
@@ -53,6 +55,29 @@ internal sealed class WorldRoomTopics : IWorldRoomHost
     /// map), "raid", "story_map"}.
     /// </summary>
     public const string MeTopic = "world.me";
+
+    /// <summary>
+    /// Enters a world: its code in; whether the connection started, false for a text that is no
+    /// world code or without a player.
+    /// </summary>
+    public const string OpenTopic = "world.open";
+
+    /// <summary>
+    /// Leaves the world and forgets what arrived: nothing in, nothing out.
+    /// </summary>
+    public const string CloseTopic = "world.close";
+
+    /// <summary>
+    /// Sends a message to one game of the world or to every other: <c>seat</c> (-1 for everyone),
+    /// <c>fields</c> (see <see cref="MessageTopics.FieldsOf"/>) and <c>body</c> in; whether it went out.
+    /// </summary>
+    public const string SendTopic = "world.send";
+
+    /// <summary>
+    /// Tells the id everyone sees for the player, as the world directory lists it: nothing in; the
+    /// id out, empty before the player was set.
+    /// </summary>
+    public const string PlayerIdTopic = "world.player_id";
 
     /// <summary>
     /// The topic the scripts call as the game closes: waits until the world room sent what was
@@ -236,6 +261,18 @@ internal sealed class WorldRoomTopics : IWorldRoomHost
     {
         var topics = new WorldRoomTopics(context, session, readAhead);
         context.Register(MeTopic, (_, request) => topics.TakeMe(request.AsHash()));
+        context.Register(OpenTopic, (_, request) => session.Open(request.AsText()));
+        context.Register(CloseTopic, (_, _) =>
+        {
+            session.Close();
+            return null;
+        });
+        context.Register(SendTopic, (_, request) =>
+        {
+            RubyHash message = request.AsHash();
+            return session.Send(message["seat"].AsInt(), MessageTopics.FieldsOf(message["fields"].AsHash()).Encode(MessageTopics.BodyOf(message["body"])));
+        });
+        context.Register(PlayerIdTopic, (_, _) => Identity().Id);
         context.Register(RoutesTopic, (_, request) => topics.TakeRoutes(request.AsArray()));
         context.Register(ResetSinceTopic, (_, _) =>
         {
@@ -274,7 +311,7 @@ internal sealed class WorldRoomTopics : IWorldRoomHost
     public void Notice(string text) => Post(NoticeEvent, text);
 
     /// <inheritdoc />
-    public void PeerTold(Peer peer) => Post(PeerEvent, new RubyHash { { "seat", peer.Seat }, { "state", HashOf(peer.State) }, { "member", peer.Member } });
+    public void PeerTold(Peer peer) => Post(PeerEvent, new RubyHash { { "seat", peer.Seat }, { "state", MessageTopics.HashOf(peer.State) }, { "member", peer.Member } });
 
     /// <inheritdoc />
     public void PeerAway(Peer peer) => Post(AwayEvent, new RubyHash { { "seat", peer.Seat } });
@@ -293,26 +330,10 @@ internal sealed class WorldRoomTopics : IWorldRoomHost
     {
         { "field", message.Field },
         { "seat", message.Seat is { } seat ? seat : RubyNil.Value },
-        { "fields", HashOf(message.Fields) },
+        { "fields", MessageTopics.HashOf(message.Fields) },
         { "body", message.Body },
         { "relay", message.Relay },
     });
-
-    /// <summary>
-    /// Writes fields as a Hash of Strings.
-    /// </summary>
-    /// <param name="fields">The fields.</param>
-    /// <returns>The Hash.</returns>
-    private static RubyHash HashOf(WorldFields fields)
-    {
-        var hash = new RubyHash();
-        foreach (KeyValuePair<string, string> pair in fields)
-        {
-            hash.Add(pair.Key, pair.Value);
-        }
-
-        return hash;
-    }
 
     /// <summary>
     /// Writes ids or seats as an Array.
@@ -320,20 +341,6 @@ internal sealed class WorldRoomTopics : IWorldRoomHost
     /// <param name="items">The items.</param>
     /// <returns>The Array.</returns>
     private static RubyArray ArrayOf(IEnumerable<RubyValue> items) => new(items);
-
-    /// <summary>
-    /// Writes a value of the scripts as their <c>to_s</c> does.
-    /// </summary>
-    /// <param name="value">The value.</param>
-    /// <returns>The text.</returns>
-    internal static string TextOf(RubyValue value) => value switch
-    {
-        RubyNil => string.Empty,
-        RubyString text => text.Text,
-        RubyInteger number => number.Value.ToString(CultureInfo.InvariantCulture),
-        RubyBool flag => flag.Flag ? "true" : "false",
-        _ => value.ToString() ?? string.Empty,
-    };
 
     /// <summary>
     /// Tells the player's id and name as Player.ini keeps them.
@@ -357,15 +364,7 @@ internal sealed class WorldRoomTopics : IWorldRoomHost
     /// <returns><see langword="null"/>, no reply.</returns>
     private RubyValue? TakeMe(RubyHash request)
     {
-        WorldFields? state = null;
-        if (request["state"] is RubyHash fields)
-        {
-            state = new WorldFields();
-            foreach (KeyValuePair<RubyValue, RubyValue> pair in fields)
-            {
-                state.Set(TextOf(pair.Key), TextOf(pair.Value));
-            }
-        }
+        WorldFields? state = request["state"] is RubyHash fields ? MessageTopics.FieldsOf(fields) : null;
 
         int? storyMap = request["story_map"] is RubyInteger map ? (int)map.Value : null;
         _room.TakeOwn(request["in_world"] is RubyBool { Flag: true }, state, request["raid"] is RubyBool { Flag: true }, storyMap);

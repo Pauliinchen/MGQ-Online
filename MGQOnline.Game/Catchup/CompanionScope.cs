@@ -2,7 +2,8 @@
 //  CompanionScope.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Let every companion join a player who plays their own story, and read the routes a Classic member played from their stories
+//      Paulinchen  2026-11-05: Took the site of a join as plain values
+//                            - Let every companion join a player who plays their own story, and read the routes a Classic member played from their stories
 //                            - Merged the companion sharing of a Raid World into the one companion filter
 //      Paulinchen  2026-11-01: Told the replay whether a page is where the player takes a side along
 //                            - Created
@@ -165,7 +166,7 @@ public sealed class CompanionScope
     /// join may go ahead (<see cref="AllowsAt"/>); else whether the player may have them at all
     /// (<see cref="Allows"/>).
     /// </summary>
-    /// <param name="request">"actors" (main personas), "guest" (whether the player plays a Classic leader's story; every companion may join one who plays their own), "site" (the page or common event that runs, nil for none), "pick" ("alice", "ilias", "" or nil), "own" and "played" (the player's own story and the one they play, as the side's rule reads a story, see <see cref="ClassicStory.Routes"/>) and "held" (the side the switches of the story played hold, "alice", "ilias" or nil; optional).</param>
+    /// <param name="request">"actors" (main personas), "guest" (whether the player plays a Classic leader's story; every companion may join one who plays their own), "site" (the page or common event that runs as <see cref="StoryPlain"/> names a site, nil for none), "pick" ("alice", "ilias", "" or nil), "own" and "played" (the player's own story and the one they play, as the side's rule reads a story, see <see cref="ClassicStory.Routes"/>) and "held" (the side the switches of the story played hold, "alice", "ilias" or nil; optional).</param>
     /// <returns>"allowed", the companions that may join.</returns>
     public RubyHash Answer(RubyHash request)
     {
@@ -178,7 +179,7 @@ public sealed class CompanionScope
 
         string? pick = request["pick"] is RubyString { Text.Length: > 0 } side ? side.Text : null;
         string? held = request["held"] is RubyString { Text.Length: > 0 } switches ? switches.Text : null;
-        string? site = request["site"] is RubyString running ? running.Text : null;
+        string? site = request["site"] is RubyArray running ? StoryPlain.SiteText(running) : null;
         StoryValues own = CatchupLook.StoryOf(request["own"]) ?? new StoryValues([], [], []);
         HashSet<string> routes = [.. ClassicStory.Routes(own, CatchupLook.StoryOf(request["played"]) ?? own)];
         IEnumerable<int> allowed = actors.Select(actor => actor.AsInt())

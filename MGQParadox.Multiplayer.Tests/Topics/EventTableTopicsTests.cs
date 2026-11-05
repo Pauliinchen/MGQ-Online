@@ -2,6 +2,7 @@
 //  EventTableTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Expected the frozen fights' sites as plain values
 //      Paulinchen  2026-11-01: Dropped the checks of troops' members and whether a file exists, whose topics are gone
 //      Paulinchen  2026-10-28: Checked the rules the sites come with
 //                            - Created
@@ -81,9 +82,9 @@ public sealed class EventTableTopicsTests
 
         RubyHash answer = Call(EventTableTopics.Sites, new RubyHash { { "troops", new RubyArray { 12, 13 } } });
 
-        Assert.Equal(new RubyArray { new RubyArray { "map:1:1:1", 0, 0, 0, false, 0 } }, answer["sites"].AsHash()[12]);
-        Assert.Equal(["ce:40"], answer["sites"].AsHash()[13].AsArray().Select(site => site.AsArray()[0].AsText()));
-        Assert.Equal(new RubyHash { { 40, new RubyArray { "map:1:3:1" } } }, answer["callers"]);
+        Assert.Equal(new RubyArray { new RubyArray { new RubyArray { "map", 1, 1, 1 }, 0, 0, 0, false, 0 } }, answer["sites"].AsHash()[12]);
+        Assert.Equal([new RubyArray { "ce", 40 }], answer["sites"].AsHash()[13].AsArray().Select(site => site.AsArray()[0]));
+        Assert.Equal(new RubyHash { { 40, new RubyArray { new RubyArray { "map", 1, 3, 1 } } } }, answer["callers"]);
         Assert.Equal(new RubyArray { 154, 576 }, answer["excluded_maps"]);
         Assert.Equal(new RubyArray { 132, 133, 283 }, answer["preamble_codes"]);
     }

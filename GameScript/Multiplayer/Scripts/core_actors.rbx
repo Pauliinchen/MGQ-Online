@@ -2,6 +2,8 @@
 #  core_actors.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Dropped writing and reading an item as text, which a trade's tokens in the DLL do
+#                            - Handed the characters' and items' facts to C#, which writes and reads their text
 #      Paulinchen  2026-10-31: Compared a rebuild with its owner's game outside of battle, as that game measured it
 #      Paulinchen  2026-10-11: Named a rebuilt character's owner and its own name
 #      Paulinchen  2026-10-07: Logged once when a hero, a counter or switches cannot be read
@@ -22,7 +24,7 @@
 #
 #----------------------------------------------------------------
 
-# Characters of another game: their builds written as plain numbers, and rebuilt from those as real
+# Characters of another game: their builds, which C# writes and reads as text, rebuilt as real
 # characters of this game. PvP battles rebuild a friend's team with them, and co-op battles the
 # party members' characters, so balancing them happens in one place.
 module MGQ_MpActors
@@ -55,30 +57,44 @@ module MGQ_MpActors
     MGQ_MpGame.set(party, :in_battle, held) if held
   end
 
-  # Characters' builds as plain numbers, which another game turns back into the characters from its
-  # own data.
+  # Turns a game's value into what the bridge carries: a Float as a Hash of one key, as a battle
+  # line's values are (MGQOnline.Game's WirePlain), since the bridge carries no Floats.
   #
-  # Nothing of the save format leaves the game, since loading someone else's save data can run code.
+  # @param value [Object] nil, true, false, an Integer, a Float, a String, or an Array or Hash of these.
+  # @return [Object] The value, each Float in it tagged.
+  def self.plain(value)
+    case value
+    when Float then { "float" => value.to_s }
+    when Array then value.map { |item| plain(item) }
+    when Hash then value.each_with_object({}) { |(key, item), tagged| tagged[key] = plain(item) }
+    else value
+    end
+  end
+
+  # Takes a Float C# handed back, see plain.
+  #
+  # @param value [Hash, Numeric] The tagged Float, or a number.
+  # @return [Float] The number.
+  def self.float(value)
+    value.is_a?(Hash) ? value["float"].to_s.to_f : value.to_f
+  end
+
+  # Characters' builds, which another game turns back into the characters from its own data. C#
+  # (MGQOnline.Game's BuildTopics) writes and reads their text; the scripts hand over each
+  # character's facts and leave out what this game's data lacks of those they get back.
   module Builds
-    # Starts every member line.
-    PREFIX = "member="
+    # The topic that writes builds.
+    WRITE_TOPIC = "builds.write"
 
-    # Fields every member line has; the HERO follows as one more only for a replaced Luka, so a game
-    # of 0.4.1, which takes exactly these, still reads every other character.
-    FIELD_COUNT = 14
+    # The topic that reads builds.
+    READ_TOPIC = "builds.read"
 
-    # The counters of field 12: battles fought in the save, then the character's own count of
+    # The topic that writes the fingerprint of the game's data and the build format.
+    GAME_TOPIC = "builds.game"
+
+    # The counters a build carries: battles fought in the save, then the character's own count of
     # carries, defeated enemies, times down, orgasms and steals in the Library, then its affection.
     COUNTERS = [:battle_count, :actor_carry, :actor_defeat, :actor_down, :actor_orgasm, :actor_steal, :love]
-
-    # Entries a list of a member takes at most.
-    MAX_ENTRIES = 3000
-
-    # Equipment slots a member takes at most.
-    MAX_SLOTS = 8
-
-    # Highest job or race level taken from another game.
-    MAX_LEVEL = 999
 
     # Stats the game counts, max HP to luck.
     PARAM_COUNT = 8
@@ -87,30 +103,35 @@ module MGQ_MpActors
     # critical, magic reflection and counter.
     RATES = { 0 => "hit", 1 => "evasion", 2 => "critical", 5 => "magic reflection", 6 => "counter" }
 
-    # A whole number, ids and levels included.
-    NUMBER = /\A-?\d{1,15}\z/
-
-    # The key of a hero Luka Replacer plays in Luka's place, empty for Luka.
-    HERO = /\A[a-z0-9_]{0,32}\z/
+    # Texts whose reading is kept, since a battle's start reads each player's builds several times.
+    KEPT_READINGS = 16
 
     # A character's build: its make-up, the stats and rates its owner's game showed, what of the
     # owner's save the character reads, and the hero the owner's game plays in Luka's place.
     Member = Struct.new(:actor_id, :base_level, :class_id, :tribe_id, :level_list, :param_plus, :skill_ids,
                         :abilities, :equip_abilities, :equips, :params, :rates, :counters, :switches_on, :hero)
 
-    # The build format, which both games must share.
-    FORMAT = 3
+    # The facts C# read of the texts read last, by text and limit.
+    @readings = {}
+
+    # The databases' sizes and the fingerprint C# wrote of them.
+    @game = nil
 
     # Fingerprints this game's data by the sizes of its databases, which differ between versions,
-    # and this mod's build format.
+    # and the build format.
     #
     # Only games with equal fingerprints may swap builds, since the ids and fields must mean the same
-    # things.
+    # things. Asked every frame of the map, so C# writes it only when a size changed.
     #
-    # @return [String] The fingerprint.
+    # @return [String] The fingerprint, empty while the DLL does not answer.
     def self.game
       sizes = [$data_actors, $data_classes, $data_skills, $data_items, $data_weapons, $data_armors, $data_enemies, $data_states].map(&:size)
-      fingerprint = "#{FORMAT}:#{sizes.join(',')}"
+      return @game[1] if @game && @game[0] == sizes
+
+      fingerprint = MGQ_Multiplayer::Bridge.call(GAME_TOPIC, sizes).to_s
+      return fingerprint if fingerprint.empty?
+
+      @game = [sizes, fingerprint]
       MGQ_MpActors.log_once([:game, fingerprint], "this game's data fingerprint (build format, then actors, classes, skills, items, weapons, armors, enemies, states): #{fingerprint}")
       fingerprint
     end
@@ -118,50 +139,47 @@ module MGQ_MpActors
     # Writes characters' builds.
     #
     # @param actors [Array<Game_Actor>] The characters.
-    # @return [String] A member line per character.
-    def self.write(actors)
-      text = actors.map { |actor| line_of(actor) }.join("\n")
+    # @param backline [Boolean, nil] For a PvP team, whether the player's battles have the
+    #   Backline; nil for builds alone.
+    # @return [String] The builds, empty while the DLL does not answer.
+    def self.write(actors, backline = nil)
+      request = { "actors" => actors.map { |actor| facts_of(actor) } }
+      request["backline"] = backline unless backline.nil?
+      text = MGQ_Multiplayer::Bridge.call(WRITE_TOPIC, request).to_s
       MGQ_MpActors.log("wrote the builds of #{actors.size} characters (#{text.bytesize} bytes): #{MGQ_MpActors.actors_text(actors)}")
       text
     end
 
-    # Writes a member as PREFIX and its fields, split by ";": 0 actor id, 1 personal level, 2 job,
-    # 3 race, 4 every job and race level as id:level, 5 the stat growths from items, 6 the skills
-    # learned, 7 the abilities learned and 8 set as skill type:id.id, 9 the equipment per slot (see
-    # Items), 10 the stats and 11 the rates in per mille as the sender sees them, 12 the COUNTERS,
-    # 13 the switches on that the character's battle start states wait for and 14 the HERO, only
-    # when there is one.
+    # Lists a character's facts, as the game keeps them.
     #
-    # Fields 12 to 14 come from the sender's save, which the receiver's save would stand in for.
+    # The counters, the switches and the hero come from the player's save, which the receiver's
+    # save would stand in for.
     #
     # @param actor [Game_Actor] The character.
-    # @return [String] The member line.
-    def self.line_of(actor)
-      hero = hero_of(actor)
-      fields = [
-        actor.id,
-        actor.base_level,
-        actor.class_id,
-        actor.tribe_id,
-        actor.level_list.map { |id, level| "#{id}:#{level}" }.join(","),
-        Array(MGQ_MpGame.get(actor, :param_plus)).map(&:to_i).join(","),
-        Array(MGQ_MpGame.get(actor, :skills)).join(","),
-        groups(MGQ_MpGame.get(actor, :abilities)),
-        groups(MGQ_MpGame.get(actor, :equip_abilities)),
-        Array(MGQ_MpGame.get(actor, :equips)).map { |slot| Items.write(slot && slot.object) }.join(","),
-        (0...PARAM_COUNT).map { |id| actor.param(id).to_i }.join(","),
-        RATES.keys.map { |id| (actor.xparam(id) * 1000).round }.join(","),
-        COUNTERS.map { |counter| counter_of(actor, counter) }.join(","),
-        switches_on(actor).join(","),
-      ]
-      fields.push(hero) unless hero.empty?
-      PREFIX + fields.join(";")
+    # @return [Hash] The facts by name, see MGQOnline.Game's BuildPlain.
+    def self.facts_of(actor)
+      MGQ_MpActors.plain(
+        "actor" => actor.id,
+        "level" => actor.base_level,
+        "class" => actor.class_id,
+        "tribe" => actor.tribe_id,
+        "levels" => actor.level_list.to_a,
+        "param_plus" => Array(MGQ_MpGame.get(actor, :param_plus)),
+        "skills" => Array(MGQ_MpGame.get(actor, :skills)),
+        "abilities" => groups(MGQ_MpGame.get(actor, :abilities)),
+        "equip_abilities" => groups(MGQ_MpGame.get(actor, :equip_abilities)),
+        "equips" => Array(MGQ_MpGame.get(actor, :equips)).map { |slot| Items.facts(slot && slot.object) },
+        "params" => (0...PARAM_COUNT).map { |id| actor.param(id) },
+        "rates" => RATES.keys.map { |id| actor.xparam(id) },
+        "counters" => COUNTERS.map { |counter| counter_of(actor, counter) },
+        "switches" => switches_on(actor),
+        "hero" => hero_of(actor))
     end
 
     # Reads the hero a character shows.
     #
     # @param actor [Game_Actor] The character.
-    # @return [String] The HERO, empty without Luka Replacer or for any character but Luka.
+    # @return [String] The hero's key, empty without Luka Replacer or for any character but Luka.
     def self.hero_of(actor)
       defined?(MGQ_LukaReplacer) ? MGQ_LukaReplacer.hero_key(actor).to_s : ""
     rescue => e
@@ -196,81 +214,83 @@ module MGQ_MpActors
       []
     end
 
-    # Writes an ability table.
+    # Lists an ability table's groups.
     #
     # @param table [Hash, nil] Ability ids by skill type.
-    # @return [String] The table as skill type:id.id, joined by ",".
+    # @return [Array<Array(Integer, Array)>] Each skill type and its ability ids.
     def self.groups(table)
-      (table || {}).map { |stype_id, ids| "#{stype_id}:#{Array(ids).compact.join('.')}" }.join(",")
+      (table || {}).map { |stype_id, ids| [stype_id, Array(ids)] }
     end
 
     # Reads builds another game wrote, taking only what this game's data knows.
     #
     # @param text [String] The builds, see write.
-    # @param limit [Integer] How many to take at most.
+    # @param limit [Integer] How many C# reads at most; those this game's data lacks the actor of
+    #   are left out after.
     # @return [Array<Member>] The members, none when nothing was readable.
     def self.parse(text, limit)
-      members = []
-
-      text.to_s.split("\n").each do |line|
-        break if members.size >= limit
-
-        member = parse_member(line.strip)
-        if member
-          members.push(member)
-        else
-          MGQ_MpActors.log("left out an unreadable member: #{line[0, 120]}")
-        end
-      end
-
-      members
+      reading(text.to_s, limit).map { |facts| member_of(facts) }.compact
     end
 
-    # Reads a member line.
+    # Reads builds through C#, the facts of a text read lately kept.
     #
-    # @param line [String] The line, see PREFIX.
-    # @return [Member, nil] The member, nil when the line is none, has the wrong number of fields or
-    #   names no actor of this game.
-    def self.parse_member(line)
-      return nil unless line.start_with?(PREFIX)
+    # @param text [String] The builds.
+    # @param limit [Integer] How many to read at most.
+    # @return [Array<Hash>] Each character's facts, none while the DLL does not answer.
+    def self.reading(text, limit)
+      key = [text, limit]
+      return @readings[key] if @readings.key?(key)
 
-      fields = line[PREFIX.size..-1].split(";", -1)
-      actor_id = number(fields[0])
-      return nil unless [FIELD_COUNT, FIELD_COUNT + 1].include?(fields.size) && actor_id && actor_id > 0 && $data_actors[actor_id]
+      facts = MGQ_Multiplayer::Bridge.call(READ_TOPIC, "text" => text, "limit" => limit)
+      return [] unless facts.is_a?(Array)
+
+      @readings.clear if @readings.size >= KEPT_READINGS
+      @readings[key] = facts
+    end
+
+    # Makes a member of the facts C# read, taking only what this game's data knows.
+    #
+    # @param facts [Hash] The character's facts, see MGQOnline.Game's BuildPlain.
+    # @return [Member, nil] The member, nil when this game's data lacks its actor.
+    def self.member_of(facts)
+      actor_id = facts["actor"]
+      unless $data_actors[actor_id]
+        MGQ_MpActors.log_once([:actor, actor_id], "left out a member of actor #{actor_id}, which this game's data lacks")
+        return nil
+      end
 
       member = Member.new(
         actor_id,
-        [[number(fields[1]) || 1, 1].max, max_base_level].min,
-        known_class(number(fields[2])),
-        known_class(number(fields[3])),
-        level_list(fields[4]),
-        (numbers(fields[5]) + [0] * PARAM_COUNT).first(PARAM_COUNT),
-        numbers(fields[6]).select { |id| known_skill?(id) }.uniq,
-        ability_table(fields[7]),
-        ability_table(fields[8]),
-        fields[9].split(",", -1).first(MAX_SLOTS).map { |text| Items.read(text) },
-        numbers(fields[10]),
-        numbers(fields[11]).map { |value| value / 1000.0 },
-        (numbers(fields[12]) + [0] * COUNTERS.size).first(COUNTERS.size).map { |value| [value, 0].max },
-        numbers(fields[13]).select { |id| id > 0 },
-        fields[14].to_s =~ HERO ? fields[14].to_s : "")
-      log_left_out(member, fields)
+        [facts["level"], max_base_level].min,
+        known_class(facts["class"]),
+        known_class(facts["tribe"]),
+        level_list(facts["levels"]),
+        facts["param_plus"],
+        facts["skills"].select { |id| known_skill?(id) },
+        ability_table(facts["abilities"]),
+        ability_table(facts["equip_abilities"]),
+        facts["equips"].map { |item| Items.make(item) },
+        facts["params"],
+        facts["rates"].map { |rate| MGQ_MpActors.float(rate) },
+        facts["counters"],
+        facts["switches"],
+        facts["hero"].to_s)
+      log_left_out(member, facts)
       member
     end
 
     # Logs, once per character and what was left out, what of a build this game's data lacks.
     #
-    # @param member [Member] The character as read.
-    # @param fields [Array<String>] Its fields as sent.
-    def self.log_left_out(member, fields)
+    # @param member [Member] The character as made.
+    # @param facts [Hash] Its facts as C# read them.
+    def self.log_left_out(member, facts)
       left_out = []
-      left_out << "job #{fields[2]}" if number(fields[2]) && member.class_id.nil?
-      left_out << "race #{fields[3]}" if number(fields[3]) && member.tribe_id.nil?
-      skills = numbers(fields[6]).uniq.size - member.skill_ids.size
+      left_out << "job #{facts['class']}" if facts["class"] && member.class_id.nil?
+      left_out << "race #{facts['tribe']}" if facts["tribe"] && member.tribe_id.nil?
+      skills = facts["skills"].size - member.skill_ids.size
       left_out << "#{skills} skills" if skills > 0
-      equips = fields[9].split(",", -1).first(MAX_SLOTS).count { |text| !text.empty? } - member.equips.compact.size
+      equips = facts["equips"].compact.size - member.equips.compact.size
       left_out << "#{equips} pieces of equipment" if equips > 0
-      left_out << "hero #{fields[14]}" if !fields[14].to_s.empty? && member.hero.empty?
       return if left_out.empty?
 
       name = MGQ_MpLog.named($data_actors, member.actor_id)
@@ -283,22 +303,6 @@ module MGQ_MpActors
     # @return [Integer] The highest personal level of this game.
     def self.max_base_level
       defined?(NWConst::Actor::MAX_BASE_LEVEL) ? NWConst::Actor::MAX_BASE_LEVEL : 9999
-    end
-
-    # Reads a number field.
-    #
-    # @param text [String, nil] A field.
-    # @return [Integer, nil] Its number, nil when it is none.
-    def self.number(text)
-      text.to_s =~ NUMBER ? text.to_i : nil
-    end
-
-    # Reads a list of numbers.
-    #
-    # @param text [String] Numbers joined by ",".
-    # @return [Array<Integer>] The numbers, at most MAX_ENTRIES.
-    def self.numbers(text)
-      text.to_s.split(",").first(MAX_ENTRIES).map { |value| number(value) }.compact
     end
 
     # Checks a job or race id against this game's data.
@@ -318,134 +322,90 @@ module MGQ_MpActors
       skill && !skill.name.empty? ? true : false
     end
 
-    # Reads a list of job or race levels.
+    # Takes the job and race levels this game's data knows.
     #
-    # @param text [String] id:level pairs joined by ",".
+    # @param pairs [Array<Array(Integer, Integer)>] Each job's or race's id and level.
     # @return [Hash] The levels by job or race id.
-    def self.level_list(text)
-      text.to_s.split(",").first(MAX_ENTRIES).each_with_object({}) do |pair, levels|
-        id, level = pair.split(":").map { |value| number(value) }
-        levels[id] = [[level, 1].max, MAX_LEVEL].min if known_class(id) && level
-      end
+    def self.level_list(pairs)
+      pairs.each_with_object({}) { |(id, level), levels| levels[id] = level if known_class(id) }
     end
 
-    # Reads an ability table.
+    # Takes the abilities this game's data knows.
     #
-    # @param text [String] Skill type:id.id groups joined by ",".
+    # @param groups [Array<Array(Integer, Array<Integer>)>] Each skill type and its ability ids.
     # @return [Hash] The ability ids by skill type.
-    def self.ability_table(text)
-      text.to_s.split(",").first(MAX_ENTRIES).each_with_object({}) do |group, table|
-        stype, ids = group.split(":", 2)
-        stype_id = number(stype)
-        next unless stype_id && ids
-
-        table[stype_id] = ids.split(".").map { |value| number(value) }.compact.select { |id| known_skill?(id) }
-      end
+    def self.ability_table(groups)
+      groups.each_with_object({}) { |(stype_id, ids), table| table[stype_id] = ids.select { |id| known_skill?(id) } }
     end
   end
 
-  # Equipment as text and back.
+  # Equipped items as facts, which C# writes and reads as text for a build (BuildTopics) and for a
+  # trade's enchanted or socketed copy (TradeTopics).
   #
-  # Socket and enchanted items are one of a kind, so the receiver makes its own copy from the text,
+  # Socket and enchanted items are one of a kind, so the receiver makes its own copy of the facts,
   # the way the game remakes an enchanted item's traits from its rolls when a save loads.
   module Items
-    # A weapon or armor of the database.
-    PLAIN = /\A([wa])(\d{1,6})\z/
-
-    # A socket item and its gems.
-    SOCKET = /\As([wa])(\d{1,6})\.([\d+]*)\z/
-
-    # An enchanted item and its rolls.
-    ENCHANTED = /\Ae([wa])(\d{1,6})\.(\d{1,6})\.(\d{1,4})\.(\d{1,3})\.(\d{1,6})\.([\d+]*)\.([\d+]*)\.([-\d:+]*)\.([\d+]*)\z/
-
-    # Stat rolls an enchanted item has, one per stat.
-    STAT_ROLLS = 8
-
-    # Trait rolls an enchanted item takes at most.
-    MAX_ROLLS = 500
-
-    # Writes an equipped item: "" for an empty slot, w<id> or a<id> for a weapon or armor, s in front
-    # for a socket item followed by .<gems>, e in front for an enchanted item followed by
-    # .<rarity>.<upgrade>.<sockets>.<variance>.<enchantments>.<stat rolls>.<trait rolls>.<gems>,
-    # lists joined by "+", rolls in per mille and a trait roll as enchantment:formula:roll:value.
+    # Lists an equipped item's facts, as the game keeps them.
     #
     # @param item [RPG::EquipItem, nil] An equipped item.
-    # @return [String] The item as text.
-    def self.write(item)
-      return "" unless item
+    # @return [Hash, nil] The facts, see MGQOnline.Game's BuildPlain; nil for an empty slot.
+    def self.facts(item)
+      return nil unless item
 
-      kind = item.is_a?(RPG::Weapon) ? "w" : "a"
-      return enchanted_text(item, kind) if item.enchant_item?
-      return "s#{kind}#{item.base_data.id}.#{gems_text(item)}" if item.socket_item?
+      kind = item.is_a?(RPG::Weapon) ? "weapon" : "armor"
+      unique = item.enchant_item? || item.socket_item?
+      facts = { "base" => { kind => unique ? item.base_data.id : item.id } }
+      return facts unless unique
 
-      "#{kind}#{item.id}"
+      facts["gems"] = Array(MGQ_MpGame.get(item, :stones))
+      facts["enchant"] = enchant_facts(item) if item.enchant_item?
+      facts
     end
 
-    # Writes an enchanted item.
+    # Lists an enchanted item's rolls.
     #
     # @param item [Enchant_Item] An enchanted item.
-    # @param kind [String] "w" or "a".
-    # @return [String] The item as text.
-    def self.enchanted_text(item, kind)
+    # @return [Hash] The rolls.
+    def self.enchant_facts(item)
       rolls = []
       (item.enchants_variance || {}).each do |enchant_id, formulas|
         formulas.each do |formula_id, variances|
-          variances.each { |variance_id, value| rolls.push("#{enchant_id}:#{formula_id}:#{variance_id}:#{(value * 1000).round}") }
+          variances.each { |variance_id, value| rolls.push([enchant_id, formula_id, variance_id, value]) }
         end
       end
 
-      ["e#{kind}#{item.base_data.id}",
-       item.rarity_num.to_i,
-       item.plus_num.to_i,
-       item.socket_num.to_i,
-       item.enchant_variance_base.to_i,
-       Array(MGQ_MpGame.get(item, :enchants)).join("+"),
-       Array(item.params_variance).map { |value| (value * 1000).round }.join("+"),
-       rolls.join("+"),
-       gems_text(item)].join(".")
+      { "rarity" => item.rarity_num, "plus" => item.plus_num, "sockets" => item.socket_num, "variance" => item.enchant_variance_base,
+        "enchants" => Array(MGQ_MpGame.get(item, :enchants)), "stats" => Array(item.params_variance), "traits" => rolls }
     end
 
-    # Writes the gems of an item.
+    # Makes an item of the facts C# read.
     #
-    # @param item [RPG::EquipItem] A socket or enchanted item.
-    # @return [String] Its gems' item ids joined by "+", 0 for an empty socket.
-    def self.gems_text(item)
-      Array(MGQ_MpGame.get(item, :stones)).map(&:to_i).join("+")
-    end
-
-    # Makes an item from its text.
-    #
-    # @param text [String] The item as text, see write.
+    # @param facts [Hash, nil] The item's facts, nil for an empty slot.
     # @return [RPG::EquipItem, nil] The item, nil for an empty slot or one this game's data lacks.
-    def self.read(text)
+    def self.make(facts)
+      return nil unless facts.is_a?(Hash)
+
+      kind, id = facts["base"].to_a.first
+      base = MGQ_MpGame.item(kind == "weapon" ? "w" : "a", id)
       item =
-        if (match = PLAIN.match(text))
-          base(match[1], match[2].to_i)
-        elsif (match = SOCKET.match(text))
-          socket_item(base(match[1], match[2].to_i), match[3])
-        elsif (match = ENCHANTED.match(text))
-          enchanted_item(base(match[1], match[2].to_i), match)
+        if facts["enchant"]
+          enchanted_item(base, facts["enchant"], facts["gems"])
+        elsif facts["gems"]
+          socket_item(base, facts["gems"])
+        else
+          base
         end
-      MGQ_MpActors.log_once([:equipment, text], "left out equipment #{text[0, 40]}: #{match ? "this game's data has no such item" : 'unreadable'}") if item.nil? && !text.empty?
+      MGQ_MpActors.log_once([:equipment, kind, id], "left out equipment #{kind} #{id}: this game's data has no such item") unless item
       item
     rescue => e
-      MGQ_MpActors.log("left out equipment #{text[0, 40]}: #{e.class}: #{e.message}")
+      MGQ_MpActors.log("left out equipment #{facts['base'].inspect[0, 40]}: #{e.class}: #{e.message}")
       nil
-    end
-
-    # Finds a database item.
-    #
-    # @param kind [String] "w" or "a".
-    # @param id [Integer] The item's id in the database.
-    # @return [RPG::EquipItem, nil] The item, nil when this game's data lacks it.
-    def self.base(kind, id)
-      MGQ_MpGame.item(kind, id)
     end
 
     # Makes this game's copy of a socket item.
     #
     # @param base [RPG::EquipItem, nil] The item the socket item is made of.
-    # @param gems [String] Its gems' item ids.
+    # @param gems [Array<Integer>] Its gems' item ids.
     # @return [RPG::EquipItem, nil] The socket item, the base itself when it has no sockets.
     def self.socket_item(base, gems)
       return base unless base && base.socket?
@@ -458,47 +418,44 @@ module MGQ_MpActors
     # Makes this game's copy of an enchanted item.
     #
     # @param base [RPG::EquipItem, nil] The item the enchanted item is made of.
-    # @param match [MatchData] Its text, see ENCHANTED.
+    # @param enchant [Hash] Its rolls, see enchant_facts.
+    # @param gems [Array<Integer>] Its gems' item ids.
     # @return [RPG::EquipItem, nil] The enchanted item, the base itself when it cannot be enchanted.
-    def self.enchanted_item(base, match)
+    def self.enchanted_item(base, enchant, gems)
       return base unless base && base.need_enchant?
 
       item = base.enchant_item
-      socket_num = match[5].to_i
-      stat_rolls = match[8].split("+").map { |value| value.to_i / 1000.0 }
-      item.rarity_num = match[3].to_i
-      MGQ_MpGame.set(item, :plus_num, match[4].to_i)
+      socket_num = enchant["sockets"]
+      item.rarity_num = enchant["rarity"]
+      MGQ_MpGame.set(item, :plus_num, enchant["plus"])
       MGQ_MpGame.set(item, :socket_num, socket_num)
-      item.enchant_variance_base = match[6].to_i
-      MGQ_MpGame.set(item, :enchants, match[7].split("+").map(&:to_i).select { |id| id > 0 && $data_classes[id] })
-      item.params_variance = stat_rolls.size == STAT_ROLLS ? stat_rolls : [1.0] * STAT_ROLLS
-      item.enchants_variance = trait_rolls(match[9])
-      MGQ_MpGame.set(item, :stones, gem_list(match[10], socket_num))
+      item.enchant_variance_base = enchant["variance"]
+      MGQ_MpGame.set(item, :enchants, enchant["enchants"].select { |id| id > 0 && $data_classes[id] })
+      item.params_variance = enchant["stats"].map { |roll| MGQ_MpActors.float(roll) }
+      item.enchants_variance = trait_rolls(enchant["traits"])
+      MGQ_MpGame.set(item, :stones, gem_list(gems, socket_num))
       MGQ_MpGame.set(item, :prefix, "")
       item.reset_data
       item
     end
 
-    # Reads the trait rolls of an enchanted item.
+    # Takes the trait rolls of an enchanted item.
     #
-    # @param text [String] enchantment:formula:roll:value entries joined by "+".
+    # @param rolls [Array<Array>] Each roll's enchantment, formula, roll and value.
     # @return [Hash] The rolls by enchantment, formula and roll.
-    def self.trait_rolls(text)
-      text.split("+").first(MAX_ROLLS).each_with_object({}) do |entry, rolls|
-        enchant_id, formula_id, variance_id, value = entry.split(":").map(&:to_i)
-        next unless value
-
-        ((rolls[enchant_id] ||= {})[formula_id] ||= {})[variance_id] = value / 1000.0
+    def self.trait_rolls(rolls)
+      rolls.each_with_object({}) do |(enchant_id, formula_id, variance_id, value), table|
+        ((table[enchant_id] ||= {})[formula_id] ||= {})[variance_id] = MGQ_MpActors.float(value)
       end
     end
 
-    # Reads the gems of an item.
+    # Takes the gems this game's data knows, one per socket.
     #
-    # @param text [String] Item ids joined by "+", 0 for an empty socket.
+    # @param ids [Array<Integer>, nil] The gems' item ids, 0 for an empty socket.
     # @param count [Integer] The item's sockets.
     # @return [Array<Integer, nil>] A gem id or nil per socket.
-    def self.gem_list(text, count)
-      ids = text.split("+").first(count).map { |value| id = value.to_i; id > 0 && $data_items[id] ? id : nil }
+    def self.gem_list(ids, count)
+      ids = Array(ids).first(count).map { |id| id > 0 && $data_items[id] ? id : nil }
       ids + [nil] * (count - ids.size)
     end
   end

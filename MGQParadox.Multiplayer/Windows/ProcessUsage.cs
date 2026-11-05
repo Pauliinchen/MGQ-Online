@@ -2,6 +2,7 @@
 //  ProcessUsage.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Told the free address space as a number, which the scripts weigh a live map by
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -59,6 +60,16 @@ internal static unsafe partial class ProcessUsage
 
         parts.Add($"{GetGuiResources(CurrentProcess, GdiObjects)} GDI and {GetGuiResources(CurrentProcess, UserObjects)} USER handles");
         return string.Join(", ", parts);
+    }
+
+    /// <summary>
+    /// Tells the address space the game has left.
+    /// </summary>
+    /// <returns>The free megabytes, <see langword="null"/> when Windows cannot tell.</returns>
+    public static long? FreeAddressSpace()
+    {
+        var status = new MemoryStatus { Length = (uint)sizeof(MemoryStatus) };
+        return GlobalMemoryStatusEx(&status) ? (long)(status.AvailableVirtual / Megabyte) : null;
     }
 
     /// <summary>

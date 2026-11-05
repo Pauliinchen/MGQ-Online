@@ -2,6 +2,7 @@
 #  mods.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Read the mods a setup names without the core, moved from battles_served.rbx
 #      Paulinchen  2026-10-15: Created
 #
 #----------------------------------------------------------------
@@ -51,10 +52,42 @@ module ServedMods
   # A path inside Patch a mod's file may have: no step up, no drive, no start at the root.
   PATCH_PATH = %r{\A(?!/)(?!.*(?:\A|/)\.\.(?:/|\z))[^:\\]+\z}
 
+  # The format of a setup whose mods named_in reads, MGQOnline.Game's ServedSetup.Format.
+  SETUP_FORMAT = 1
+
+  # The place of the world's mods among a setup's values.
+  SETUP_MODS = 18
+
+  # The escapes a setup's texts hold, turned back.
+  SETUP_ESCAPES = { '\\\\' => "\\", '\t' => "\t", '\n' => "\n", '\r' => "\r" }.freeze
+
   # Raised when a battle's mods cannot all be had, which the starter hears as the refusal "mods".
   class Unavailable < StandardError; end
 
   class << self
+    # Reads the world's mods a served battle's setup names.
+    #
+    # A battle's child gets its mods before its sandbox, which reaches neither the network nor the
+    # cache, and may start the core only inside it, so this reads the setup, a battle line
+    # MGQOnline.Game's ServedSetup writes, without the core: its texts, whole numbers and lists,
+    # all the mods' place holds.
+    #
+    # @param setup [String] The setup.
+    # @return [Array<Array>, nil] Each mod's key, kind (empty for one the server cannot get), version
+    #   and files' hashes by path, those of another shape left out; nil for a setup of another format.
+    def named_in(setup)
+      values = setup_values(setup)
+      return nil unless values && values[0] == SETUP_FORMAT && values[3].is_a?(Integer)
+
+      Array(values[SETUP_MODS]).filter_map do |key, kind, version, files|
+        next unless key.is_a?(String) && !key.empty? && kind.is_a?(String) && version.is_a?(String) && files.is_a?(Array)
+
+        hashes = {}
+        files.each { |path, hash| hashes[path] = hash if path.is_a?(String) && hash.is_a?(String) && hash.match?(/\A[0-9a-f]{64}\z/) }
+        [key, kind, version, hashes]
+      end
+    end
+
     # Gets the files of a battle's mods: from the cache, else from the relay's catalog.
     #
     # @param mods [Array<Array>] Each mod's key, kind, version and files' hashes by path, see
@@ -152,6 +185,37 @@ module ServedMods
     end
 
     private
+
+    # Reads a setup's values: tab-separated tokens, lists between "[" and "]".
+    #
+    # @param setup [String] The setup.
+    # @return [Array, nil] The values, nil for brackets that do not close.
+    def setup_values(setup)
+      stack = [[]]
+      setup.to_s.split("\t").each do |token|
+        case token
+        when "[" then stack.push([])
+        when "]"
+          return nil if stack.size < 2
+
+          inner = stack.pop
+          stack.last << inner
+        else stack.last << setup_value(token)
+        end
+      end
+      stack.size == 1 ? stack[0] : nil
+    end
+
+    # Reads one token of a setup.
+    #
+    # @param token [String] The token, its kind first.
+    # @return [Integer, String, nil] A whole number, a text, nil for any other kind.
+    def setup_value(token)
+      case token[0]
+      when "i" then Integer(token[1..], exception: false)
+      when "s" then token[1..].gsub(/\\[\\tnr]/, SETUP_ESCAPES)
+      end
+    end
 
     # Unpacks one file of a zip.
     #

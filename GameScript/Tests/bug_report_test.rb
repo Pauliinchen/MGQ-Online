@@ -2,7 +2,8 @@
 #  bug_report_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Dropped the stand-in of the World overview, which hid the untranslated game's name
+#      Paulinchen  2026-11-05: Asked whether the DLL is a development build and the player's id through its topics
+#                            - Dropped the stand-in of the World overview, which hid the untranslated game's name
 #      Paulinchen  2026-11-01: Drew the form through the Mod Framework's window and answered the request from the DLL's topics
 #                            - Covered a form open at F12
 #                            - Dropped the stand-in of the title screen's commands, which no script hooks any more
@@ -127,30 +128,14 @@ module MGQ_Multiplayer
     def self.setting(key); $player_ini[key]; end
     def self.store(key, value); $player_ini[key] = value.to_s; true; end
   end
-  # Stands in for the DLL's link, recording each call in $calls.
-  module Link
-    # A DLL export, checked against the contract and answering from $results.
-    Function = Struct.new(:name, :signature) do
-      def call(*args); check_dll_call(name, args); $calls << [name, args]; $results.fetch(name, 1); end
-    end
-    def self.function(name); Function.new(name, dll_signature(name)); end
-    def self.read(_name, _size); ""; end
-    def self.player_id; "0123abcd"; end
-    # Reads a message into its header fields, its body under :payload.
-    def self.parse(text)
-      head, payload = text.split("\n\n", 2)
-      state = { :payload => payload.to_s }
-      head.to_s.split("\n").each { |line| k, v = line.split("=", 2); state[k] = v if v }
-      state
-    end
-  end
+  # Stands in for the player's id, as the DLL tells it.
+  module Player; def self.id; "0123abcd"; end; end
 end
 
 $sounds = []
 $called = []
 $bitmaps = []
 $calls = []
-$results = {}
 $log = []
 $player_ini = {}
 $returned = 0
@@ -216,7 +201,7 @@ $game_system = Struct.new(:playtime_s).new("01:02:03")
 $data_system = Struct.new(:variables).new([nil, "Overall Events Progress"])
 $patch_ver = "v3.06.00"
 MGQ_MpWorld.instance_variable_set(:@world, local_world("folder", "name" => "Test World", "world" => "dir0123", "type" => "raid"))
-$results["mp_dev_build"] = 0
+$dev_build = false
 # A world in the directory's list.
 Listed = Struct.new(:id, :name, :hidden)
 # The world list as the directory last sent it, the open world public in it.
@@ -237,10 +222,10 @@ check("a hidden world keeps its name out of the public facts", report.facts(Scen
 $listing = ["loading", "", []]
 check("as does a world while the list is not there", report.facts(SceneManager.scene)[1], ["World", "Raid, a hidden world"])
 $listing = ["ready", "", [Listed.new("dir0123", "Test World", false)]]
-$results["mp_dev_build"] = 1
+$dev_build = true
 MGQ_MpWorld.instance_variable_set(:@dev_build, nil)
 check("a development build says so", report.facts(Scene_Battle.new).last(2), [["Where", "Scene_Battle, map 154"], ["Development build", "yes"]])
-$results["mp_dev_build"] = 0
+$dev_build = false
 MGQ_MpWorld.instance_variable_set(:@dev_build, nil)
 check("the private details: the player with the id everyone sees, the world, the map, position, party and time",
       report.details(SceneManager.scene),

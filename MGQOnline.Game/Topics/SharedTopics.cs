@@ -2,7 +2,10 @@
 //  SharedTopics.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Registered the topic of the battlers the scripts build
+//      Paulinchen  2026-11-05: Registered the topics that write and read characters' builds and equipped items
+//                            - Registered the topics that write and read a live battle's lines
+//                            - Registered the topics that write and read the messages games send each other, and the one that writes the game data's fingerprint
+//                            - Registered the topic of the battlers the scripts build
 //                            - Registered the topics of the grace of players away
 //                            - Registered the topics of the guard of the game's flow
 //                            - Registered the topic of the story's ids
@@ -30,6 +33,7 @@ using MGQOnline.Bridge.Ruby;
 using MGQOnline.Game.Ids;
 using MGQOnline.Game.Raid;
 using MGQOnline.Game.Story;
+using MGQOnline.Game.Worlds;
 
 namespace MGQOnline.Game.Topics;
 
@@ -86,6 +90,10 @@ public static class SharedTopics
         SetupTopics.Register(context);
         JournalTopics.Register(context);
         PresenceTopics.Register(context);
+        MessageTopics.Register(context);
+        WireTopics.Register(context);
+        BuildTopics.Register(context);
+        DataFingerprint.Register(context);
     }
 
     /// <summary>

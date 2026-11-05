@@ -2,7 +2,10 @@
 #  rules_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Stood in for the one decision of the player's own common events, a resumed raid fight and whether a telling moves the world's story on, and named the castle's maps
+#      Paulinchen  2026-11-05: Answered the world entered with the values of its settings a test sets
+#                            - Read the fields of a request a served battle's starter passed on by their kinds
+#                            - Stood in for the DLL's topics of the world room, the directory's list and the development build, noting each call in $calls
+#                            - Stood in for the one decision of the player's own common events, a resumed raid fight and whether a telling moves the world's story on, and named the castle's maps
 #                            - Answered the topics of the one guard of the game's flow from its stand-in, checked against the reported cases
 #      Paulinchen  2026-11-01: Dropped the stand-ins of the World overview's story topics and of marking settings shared, which no script calls
 #      Paulinchen  2026-10-30: Dropped the stand-ins of the parking's topics
@@ -734,6 +737,9 @@ SETTINGS_CASES["shared"].each { |entry| raise "the shared stand-in reads #{entry
 $settings_calls = []
 $settings_steps = []
 
+# The values the DLL reads from a world's settings, by the settings, which a test sets.
+$settings_values = {}
+
 # Answers the shared mod settings' topics: the texts as the golden cases show them, the world
 # entered as the DLL describes it, and the steps a test queued.
 #
@@ -750,7 +756,7 @@ def answer_settings(fake)
     listed = request["world"]
     text = listed && (request["fresh"] || !confirmed.key?(listed["id"]) ? listed["settings"] : confirmed[listed["id"]])
     world = listed && { "id" => listed["id"], "name" => listed["name"], "creator_id" => listed["creator_id"], "creator_name" => listed["creator_name"], "mods" => listed["mods"],
-                        "text" => text, "crc" => Zlib.crc32(text).to_s(16), "own" => !request["me"].empty? && request["me"] == listed["creator_id"],
+                        "values" => $settings_values[text] || [], "own" => !request["me"].empty? && request["me"] == listed["creator_id"],
                         "shared" => stand_in_shared(text), "latest_shared" => stand_in_shared(text) }
     reply.call("settings.enter", request)
   end
@@ -800,9 +806,62 @@ def screen_requests(topic)
   $screen_calls.select { |called, _| called == topic }.map { |_, request| request }
 end
 
+# A world of the directory's list as the DLL hands it (topic directory.list, ScreenTopics.ListedValue
+# in C#), every field the test does not name at the list's default.
+#
+# @param id [String] The world's id.
+# @param name [String] Its name.
+# @param fields [Hash] The fields that differ, by name.
+# @return [Hash] The world.
+def listed_value(id, name, fields = {})
+  { "id" => id, "seats" => 4, "online" => 0, "creator_id" => "c", "active" => 0, "creator_name" => "C", "name" => name, "start" => "none",
+    "members" => [], "hidden" => false, "choose" => false, "open" => false, "featured" => false, "strict" => false, "data" => "", "mods" => "",
+    "description" => "", "mod_hashes" => "", "settings" => "", "type" => "classic", "share" => "off", "difficulty" => nil, "other_mods_off" => false,
+    "squad" => nil, "raid_bosses" => false, "mods_unread" => false }.merge(fields)
+end
+
+# The directory's list as the DLL hands it (topic directory.list).
+#
+# @param worlds [Array<Hash>] The worlds, see listed_value.
+# @param state [String] How the list stands.
+# @return [Hash] The list.
+def directory_list(worlds, state = "ready")
+  { "state" => state, "error" => nil, "admin" => false, "worlds" => worlds }
+end
+
+# The requests of the DLL's topics of a Raid World's shared companions, whose state marks them
+# busy once they start, as the DLL's does.
+RAID_STORY_KINDS = { "raid.story.fetch" => "fetch", "raid.companions.add" => "companions" }
+
+# Answers the DLL's topics of the player's id, the directory's list ($directory), the world room's
+# opening and closing, the development build ($dev_build), the game data's fingerprint, writing
+# and reading a message and a request's fields (see encode_message), and a Raid World's shared companions
+# ($raid_story, the state) and boss pools, noting each call but the reads in $calls as [topic,
+# request].
+#
+# @param fake [FakeBridge] The bridge.
+def answer_dll(fake)
+  fake.answer("world.player_id") { $player_id || "me" }
+  fake.answer("directory.list") { $directory || directory_list([], "idle") }
+  fake.answer("raid.story.state") { $raid_story || {} }
+  fake.answer("worlds.fingerprint") { |parts| "2:" + parts.map { |ids| format("%08x", Zlib.crc32(ids.join(","))) }.join(".") }
+  fake.answer("message.write") { |request| encode_message(request["fields"], request["body"]) }
+  fake.answer("message.read") { |text| fields = decode_message(text); { "fields" => fields.reject { |key, _| key == :payload }, "body" => fields[:payload] } }
+  fake.answer("message.read_pairs") { |pairs| Hash[pairs.map { |key, text| [key, field_value(key, text)] }] }
+  %w(directory.open world.open world.close update.dev_build raid.story.fetch raid.companions.add raid.pools.fetch).each do |topic|
+    fake.answer(topic) do |request|
+      ($calls ||= []) << [topic, request]
+      kind = RAID_STORY_KINDS[topic]
+      ($raid_story ||= {})[kind] = "busy" if kind
+      topic == "update.dev_build" ? $dev_build == true : !%w(directory.open world.close).include?(topic)
+    end
+  end
+end
+
 def open_rules_bridge
   load_bridge unless defined?(MGQ_Multiplayer::Bridge)
   fake = ($world_bridge ||= FakeBridge.new)
+  answer_dll(fake)
   answer_catchup(fake)
   answer_mod_keys(fake)
   answer_mods_text(fake)

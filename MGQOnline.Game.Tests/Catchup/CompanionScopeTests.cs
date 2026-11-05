@@ -2,7 +2,8 @@
 //  CompanionScopeTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Handed the companion filter the story played in place of the routes
+//      Paulinchen  2026-11-05: Handed the companion filter the site of a join as plain values
+//                            - Handed the companion filter the story played in place of the routes
 //      Paulinchen  2026-11-01: Created
 //
 //----------------------------------------------------------------
@@ -138,7 +139,7 @@ public sealed class CompanionScopeTests
         {
             RubyHash request = Request(Story(side is null ? [] : [4], (1001, 22)), Roster((1, 30)));
             request["actor"] = actor;
-            request["site"] = site;
+            request["site"] = StoryPlain.SiteOf(site);
             request["scope_only"] = true;
             return new CatchupEngine { Ledger = Notes(side) }.HoldJoin(Tables, request);
         }
@@ -339,7 +340,7 @@ public sealed class CompanionScopeTests
     {
         RubyArray Allowed(string? site, string held, params string[] routes) => Tables.Scope.Answer(new RubyHash
         {
-            { "actors", new RubyArray { Ilias, Heinrich } }, { "site", site is null ? RubyNil.Value : site }, { "pick", "" },
+            { "actors", new RubyArray { Ilias, Heinrich } }, { "site", site is null ? RubyNil.Value : StoryPlain.SiteOf(site) }, { "pick", "" },
             { "own", RoutesPlayed(routes) }, { "guest", true }, { "held", held },
         })["allowed"].AsArray();
 

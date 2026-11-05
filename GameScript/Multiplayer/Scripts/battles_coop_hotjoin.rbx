@@ -2,7 +2,10 @@
 #  battles_coop_hotjoin.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Built the enemies added to the troop through MGQ_MpBattlers
+#      Paulinchen  2026-11-05: Wrote the invite's flags as true or false and its enemy rates as numbers, and read them so
+#                            - Had C# read the joins taken in
+#                            - Handed the seats of a taken-in request and an invite to the DLL as a list, which it writes
+#                            - Built the enemies added to the troop through MGQ_MpBattlers
 #                            - Told the battle the player fights and kept a battle nobody joined their own in a Classic world too, so a party member who missed it joins it late
 #      Paulinchen  2026-10-31: Left the battle server out of the count of its battle's players
 #      Paulinchen  2026-10-30: Kept the widths of a served battle's troop its starter measured for the placements on the battle server
@@ -512,10 +515,10 @@ module MGQ_MpBattlesHotjoin
   # pools it fights (see MGQ_MpRaidPool.note_invite). Called by
   # MGQ_MpBattlesCoop.accept, follow and yield_to_rival.
   #
-  # @param message [Hash] The invite, "hot" 1 for a running battle, "boss" 1 for a boss battle.
+  # @param message [Hash] The invite, "hot" true for a running battle, "boss" true for a boss battle.
   def self.note_invite(message)
-    @late = message["hot"] == "1" ? :invited : nil
-    @boss_battle = message["boss"] == "1"
+    @late = message["hot"] ? :invited : nil
+    @boss_battle = message["boss"] ? true : false
     @called_off = false
     MGQ_MpRaidPool.note_invite(message) if defined?(MGQ_MpRaidPool)
   end
@@ -695,7 +698,7 @@ module MGQ_MpBattlesHotjoin
     sync.expect(seats)
     coop = MGQ_MpBattlesCoop
     fields = invite_fields(seats - [peer.seat])
-    coop.tell_map([peer.seat], "hot_ok", "bid" => bid, "escape" => fields["escape"], "lose" => fields["lose"], "rates" => fields["rates"], "seats" => seats.join(","),
+    coop.tell_map([peer.seat], "hot_ok", "bid" => bid, "escape" => fields["escape"], "lose" => fields["lose"], "rates" => fields["rates"], "seats" => seats,
                                          "served" => fields["served"])
     coop.tell_map(seats - [peer.seat], "invite", fields) unless fields["seats"].empty?
     log("takes #{who(peer)}'s encounter into battle #{bid} at the next command phase: #{placed.size} enemies at x " \
@@ -725,12 +728,12 @@ module MGQ_MpBattlesHotjoin
   # @return [Hash] The invite's fields.
   def self.invite_fields(seats)
     troop = MGQ_MpGame.get($game_troop, :troop_id)
-    fields = { "bid" => running_battle[0], "troop" => troop, "escape" => MGQ_MpGame.get(BattleManager, :can_escape) ? 1 : 0,
-               "lose" => MGQ_MpGame.get(BattleManager, :can_lose) ? 1 : 0, "seats" => seats.join(","), "map" => $game_map.map_id, "hot" => 1,
-               "rates" => MGQ_MpBattlesCoop.rates_text }
-    fields["boss"] = 1 if boss_battle?
+    fields = { "bid" => running_battle[0], "troop" => troop, "escape" => MGQ_MpGame.get(BattleManager, :can_escape) ? true : false,
+               "lose" => MGQ_MpGame.get(BattleManager, :can_lose) ? true : false, "seats" => seats, "map" => $game_map.map_id, "hot" => true,
+               "rates" => MGQ_MpBattlesCoop.rates }
+    fields["boss"] = true if boss_battle?
     # The battle server's players come onto its battle channel.
-    fields["served"] = 1 if defined?(MGQ_MpBattlesServed) && MGQ_MpBattlesServed.server?
+    fields["served"] = true if defined?(MGQ_MpBattlesServed) && MGQ_MpBattlesServed.server?
     fields.update(MGQ_MpRaidPool.invite_fields) if defined?(MGQ_MpRaidPool)
     fields
   end
@@ -944,7 +947,7 @@ module MGQ_MpBattlesHotjoin
     guests = sync.guests_in
     players = coop.players.map(&:to_a)
     joined.each do |seat, body|
-      builds, vitals, max = sync::Wire.parse(body.to_s)
+      builds, vitals, max = sync::Wire.read(body)
       peer = MGQ_MpBattlesSync.peer_at(seat)
       players << [seat, peer ? peer.state["name"].to_s : "?", builds.to_s, Array(vitals), max.is_a?(Integer) ? max : 0]
     end

@@ -2,6 +2,7 @@
 //  RaidStory.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Took the companions' ids as numbers and described the state as values, for the bridge's topics
 //      Paulinchen  2026-10-23: Kept only the world's shared companions, since the story itself plays on tracks
 //                            - Took the parts a checkpoint may be of from StoryParts of MGQOnline.Game
 //      Paulinchen  2026-10-15: Kept a Raid World's story key by key, wrote only the keys this game changed and laid the relay's pushes over it
@@ -19,6 +20,7 @@ using System.Globalization;
 using System.Linq;
 using System.Net;
 using System.Threading;
+using MGQOnline.Bridge.Ruby;
 using MGQParadox.Multiplayer.Network.Relay;
 using MGQParadox.Multiplayer.Network.Transport;
 
@@ -109,19 +111,17 @@ internal sealed class RaidStory
     /// Adds companions to the world's shared list.
     /// </summary>
     /// <param name="world">The world the game is in.</param>
-    /// <param name="ids">The companions' actor ids, separated by commas.</param>
+    /// <param name="ids">The companions' actor ids.</param>
     /// <returns><see langword="false"/> while an add runs, without a player, outside that world, or for ids that are not as they should be.</returns>
-    public bool AddCompanions(string world, string ids)
+    public bool AddCompanions(string world, IReadOnlyList<long> ids)
     {
-        var parsed = ids.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(id => int.TryParse(id, NumberStyles.None, CultureInfo.InvariantCulture, out var number) ? number : 0)
-            .ToList();
-
-        if (parsed.Count == 0 || parsed.Any(id => id <= 0))
+        if (ids.Count == 0 || ids.Any(id => id is <= 0 or > int.MaxValue))
         {
-            Log.Write($"companions of {Log.Short(world)} not added: the ids '{ids}' are not as they should be");
+            Log.Write($"companions of {Log.Short(world)} not added: the ids {string.Join(",", ids)} are not as they should be");
             return false;
         }
+
+        var parsed = ids.Select(id => (int)id).Distinct().ToList();
 
         return Run(Kind.Companions, world, $"adding {parsed.Count} shared companion(s)", (client, me) =>
         {
@@ -134,32 +134,34 @@ internal sealed class RaidStory
     /// <summary>
     /// Describes the newest state the relay told and how each kind of request stands, for the game script.
     /// </summary>
-    /// <returns>See docs/DEVELOPER.md, "World story on the relay": <c>world</c>, <c>rev</c> and <c>comps</c>, and one header per kind of request with its error and code.</returns>
-    public string Describe()
+    /// <returns>See docs/DEVELOPER.md, "World story on the relay": <c>world</c>, <c>rev</c> and <c>comps</c> (the ids) once the
+    /// relay told a state, and per kind of request that ran (<c>fetch</c>, <c>companions</c>) how it stands with its
+    /// <c>_code</c>, <c>_error</c> and <c>_rev</c>.</returns>
+    public RubyHash Describe()
     {
         lock (_gate)
         {
-            var headers = new List<KeyValuePair<string, string?>>();
+            var described = new RubyHash();
 
             if (_known is { } known)
             {
-                headers.Add(new("world", _world));
-                headers.Add(new("rev", known.Rev.ToString(CultureInfo.InvariantCulture)));
-                headers.Add(new("comps", string.Join(',', known.Comps.Select(id => id.ToString(CultureInfo.InvariantCulture)))));
+                described.Add("world", _world);
+                described.Add("rev", known.Rev);
+                described.Add("comps", new RubyArray(known.Comps.Select(id => (RubyValue)id)));
             }
 
             foreach (var kind in new[] { Kind.Fetch, Kind.Companions })
             {
                 if (_outcomes.TryGetValue(kind, out var outcome))
                 {
-                    headers.Add(new(kind, outcome.State));
-                    headers.Add(new($"{kind}_code", outcome.Code));
-                    headers.Add(new($"{kind}_error", outcome.Error));
-                    headers.Add(new($"{kind}_rev", outcome.Rev?.ToString(CultureInfo.InvariantCulture)));
+                    described.Add(kind, outcome.State);
+                    described.Add($"{kind}_code", outcome.Code);
+                    described.Add($"{kind}_error", outcome.Error);
+                    described.Add($"{kind}_rev", outcome.Rev is { } rev ? rev : RubyNil.Value);
                 }
             }
 
-            return headers.Count == 0 ? string.Empty : new Message(headers).Encode();
+            return described;
         }
     }
 

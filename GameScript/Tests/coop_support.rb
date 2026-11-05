@@ -2,7 +2,10 @@
 #  coop_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Told whether the running battle takes players in or why not as JoinIntake.Told does
+#      Paulinchen  2026-11-05: Handed a message no stand-in took to the scripts with its fields read by their kinds
+#                            - Wrote and read the roster's lines with the codec's stand-in
+#                            - Told the battle's players in rbn whether or not it takes players in, as JoinIntake.Told does
+#                            - Told whether the running battle takes players in or why not as JoinIntake.Told does
 #      Paulinchen  2026-10-30: Stood in for the widths of a served battle's troop the battle server keeps
 #                            - Stood in for the joins the live session holds
 #                            - Stood in for asking a running battle and joining one by choice
@@ -18,10 +21,12 @@
 # battle server core's side of the co-op battles (MGQOnline.Game's Coop folder, behind CoopTopics)
 # on the test's one stand-in bridge. CoopStandIn answers the topics as C# does and is checked
 # against the golden cases of fixtures/coop, which battles_coop*.rbx played before the rules left
-# them, as this file loads; the roster's lines are written and read with the battle line codec of
-# battles_sync_wire.rbx, which a test loads before it asks.
+# them, as this file loads; the roster's lines are written and read with the codec's stand-in, read
+# into the objects battles_sync_wire.rbx makes of them, which it loads unless a test did.
 
 require "json"
+require_relative "wire_support"
+load_script "battles_sync_wire" unless defined?(MGQ_MpBattlesSync::Wire)
 
 # Folder of the co-op battles' golden cases.
 COOP_FIXTURES = File.expand_path("../../fixtures/coop", __dir__)
@@ -68,23 +73,23 @@ module CoopStandIn
     when "coop.read_entries" then read_entries(request)
     when "coop.write_entries" then request.map { |entry| entry.first(4).join(":") }.join(";")
     when "coop.intake" then intake(request)
-    when "coop.room" then closed(request) ? { "rbn" => 0, "rbs" => closed(request)[0] } : { "rbn" => players_in(request), "rbs" => "open" }
+    when "coop.room" then { "rbn" => request["bid"].nil? || request["role"] == "guest" ? 0 : players_in(request), "rbs" => closed(request) ? closed(request)[0] : "open" }
     when "coop.level" then level(request)
     when "coop.write_roster" then wire.line(request.key?("turn") ? request.values_at("enemies", "players", "level", "turn") : request.values_at("enemies", "players", "level"))
     when "coop.write_party" then wire.line([request])
     when "coop.read_roster" then read_roster(request)
-    when "coop.read_party" then read_players(Array(wire.parse(request.to_s))[0])
+    when "coop.read_party" then read_players(Array(wire_values(request.to_s))[0])
     when "coop.read_troop" then read_troop(request)
     when "coop.repair" then repair(request["enemies"], request)
     when "coop.settle" then settle(request)
     end
   end
 
-  # The battle line codec.
+  # The battle line codec's stand-in.
   #
-  # @return [Module] MGQ_MpBattlesSync::Wire.
+  # @return [Module] WireStandIn.
   def self.wire
-    MGQ_MpBattlesSync::Wire
+    WireStandIn
   end
 
   # Answers coop.level.
@@ -106,7 +111,7 @@ module CoopStandIn
   # @param request [Hash] The request.
   # @return [Hash] The roster.
   def self.read_roster(request)
-    enemies, players, level, turn = Array(wire.parse(request["line"].to_s))
+    enemies, players, level, turn = Array(wire_values(request["line"].to_s))
     read_players(players).merge(repair(plain_enemies(enemies), request)).merge(
       "size" => Array(enemies).size, "level" => level.is_a?(Integer) ? level : nil, "turn" => turn.is_a?(Integer) ? turn : nil)
   end
@@ -116,7 +121,7 @@ module CoopStandIn
   # @param request [Hash] The request.
   # @return [Hash] The troop.
   def self.read_troop(request)
-    entries, names = Array(wire.parse(request["line"].to_s))
+    entries, names = Array(wire_values(request["line"].to_s))
     repair(plain_enemies(entries), request).merge("names" => names.is_a?(String) ? names : nil)
   end
 
@@ -370,7 +375,7 @@ module CoopStandIn
               (request["boss_troop"] ? ["closed", "the encounter's troop #{request['troop']} is a boss"] : nil) ||
               known(facts, seat, "its player is already taken in with another encounter") || full(facts)
     known_seats = (facts["role"] ? facts["seats"] : []) + facts["pending"] + [facts["own_seat"], seat]
-    seats = [seat] + (request["seats"].to_s.split(",").map(&:to_i) - known_seats)
+    seats = [seat] + (field_text("seats", request["seats"]).split(",").map(&:to_i) - known_seats)
     room = PLAYERS - players_in(facts)
     kept = seats.first([room, 1].max)
     { "refusal" => refusal, "kept" => kept, "left" => seats - kept, "room" => room }
@@ -404,8 +409,8 @@ coop_cases("intake.json")["cases"].each do |entry|
   asked = entry["request"].merge("facts" => entry["facts"])
   encounter = CoopStandIn.intake(asked.merge("kind" => "encounter"))
   found = [encounter["refusal"] && encounter["refusal"][1], encounter["kept"], encounter["left"], encounter["room"],
-           CoopStandIn.intake(asked.merge("kind" => "choice"))["refusal"], CoopStandIn.answer("coop.room", entry["facts"])["rbn"]]
-  raise "the intake stand-in differs at #{entry['name']}" unless found == [entry["hot"], entry["kept"], entry["left"], entry["room"], entry["pick"], entry["rbn"]]
+           CoopStandIn.intake(asked.merge("kind" => "choice"))["refusal"]]
+  raise "the intake stand-in differs at #{entry['name']}" unless found == [entry["hot"], entry["kept"], entry["left"], entry["room"], entry["pick"]]
 end
 
 # Writes the log lines of fields left out as the scripts write them, each field and kind once, and
@@ -420,7 +425,7 @@ def coop_logged(answer, key)
   key == "enemy_dropped" && !lacking.empty? ? lines + ["co-op battle: the host's troop holds enemies this game lacks (#{lacking.join(', ')}); it keeps its own"] : lines
 end
 
-# Checks the roster's stand-ins against their golden cases; needs the battle line codec.
+# Checks the roster's stand-ins against their golden cases.
 def check_roster_stand_in
   cases = coop_cases("roster.json")
   cases["levels"].each do |entry|
@@ -688,14 +693,13 @@ class TestMatchWorld
   def new_id; MGQ_MpCoop.random_id(8); end
 end
 
-# Answers the co-op topics with CoopStandIn, its roster checked once the battle line codec is there,
-# the matchmaking's with a MatchStandIn over the tests' world, kept in $coop_match, the asking and
+# Answers the co-op topics with CoopStandIn, its roster checked, the matchmaking's with a MatchStandIn over the tests' world, kept in $coop_match, the asking and
 # joining sides' with an AskStandIn beside it, kept in $coop_ask, and the joins with a
 # CoopJoinsStandIn over the live session's stand-in in $live, kept in $coop_joins.
 #
 # @param fake [FakeBridge] The bridge.
 def answer_coop(fake)
-  check_roster_stand_in if defined?(MGQ_MpBattlesSync::Wire)
+  check_roster_stand_in
   COOP_TOPICS.each { |topic| fake.answer(topic) { |request| CoopStandIn.answer(topic, with_pending(topic, request)) } }
   $coop_match = MatchStandIn.new(TestMatchWorld.new)
   $coop_ask = AskStandIn.new($coop_match)
@@ -734,7 +738,7 @@ def coop_deliver(peer, message, map = false)
   if AskStandIn::KINDS.include?(message["coop"].to_s) && (!map || $coop_match.instance_variable_get(:@world).raid? || (peer.member && message["coop"] == "pick_no"))
     $coop_ask.take_message(peer, message)
   elsif !$coop_match.route(peer, message, map)
-    return MGQ_MpBattlesCoop.take(peer, message)
+    return MGQ_MpBattlesCoop.take(peer, fields_read(message))
   end
 
   MGQ_MpBattlesCoop.take_status($coop_match.state)

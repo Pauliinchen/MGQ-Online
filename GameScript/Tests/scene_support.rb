@@ -2,7 +2,8 @@
 #  scene_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Answered at the bridge's frame, the scripts' clock
+#      Paulinchen  2026-11-05: Took a change's arguments and gave a message's back as values, its lines written and read by the codec's stand-in
+#                            - Answered at the bridge's frame, the scripts' clock
 #      Paulinchen  2026-10-28: Created
 #
 #----------------------------------------------------------------
@@ -11,10 +12,12 @@
 # script tests: SceneStandIn keeps a teller's changes as the DLL does, merged and split into their
 # messages, and refuses a viewer's changes as the DLL does; scene_fixtures_test.rb checks it against
 # the golden cases of fixtures/scene/cases.json, played as coop_scene.rbx played them before the
-# rules left it. It reads and writes the changes' lines with the battle line codec, so a test loads
-# battles_sync_wire.rbx before the scene's first change.
+# rules left it. It reads and writes the changes' lines with the codec's stand-in and checks the
+# changes as the script's objects, so a test loads battles_sync_wire.rbx before the scene's first
+# change.
 
 require_relative "rules_support"
+require_relative "wire_support"
 
 # The golden cases of the story's scene.
 SCENE_CASES = rule_cases("scene", "cases.json")
@@ -50,11 +53,11 @@ class SceneStandIn
     @flushed_at = nil
   end
 
-  # The battle line codec, loaded by the test.
+  # The battle line codec's stand-in.
   #
-  # @return [Module] MGQ_MpBattlesSync::Wire.
+  # @return [Module] WireStandIn.
   def wire
-    MGQ_MpBattlesSync::Wire
+    WireStandIn
   end
 
   # Answers a topic.
@@ -66,17 +69,12 @@ class SceneStandIn
   def answer(topic, request, frame = 0)
     case topic
     when "scene.change"
-      args = wire.parse(request["line"])
-      return false unless args
-
-      add(request["kind"], args, request["map"], request["logged"], request["skip"])
+      add(request["kind"], request["args"], request["map"], request["logged"], request["skip"])
       true
     when "scene.flush" then flush(request, frame)
     when "scene.clear" then @outgoing = []; @flushed_at = nil; nil
     when "scene.take" then take(request)
-    when "scene.check"
-      args = wire.parse(request["line"])
-      args ? refusal(request["kind"], args) : "arguments this game cannot take"
+    when "scene.check" then refusal(request["kind"], request["args"])
     else raise "no stand-in for #{topic}"
     end
   end
@@ -160,10 +158,19 @@ class SceneStandIn
   # Checks a message for a viewer.
   #
   # @param request [Hash] "kind", "line", "map" and "here".
-  # @return [Array, String, nil] Each change's refusal or nil, a text refusing the whole message, nil for a line that does not read.
+  # @return [Hash, nil] "args", the message's arguments, and "refusals", each change's refusal or
+  #   nil, or a text refusing the whole message; nil for a line that does not read.
   def take(request)
     values = wire.parse(request["line"])
-    return nil unless values
+    values && { "args" => values, "refusals" => refusals(request, values) }
+  end
+
+  # Tells what a viewer refuses of a message's changes.
+  #
+  # @param request [Hash] "kind", "map" and "here".
+  # @param values [Array] The message's arguments.
+  # @return [Array, String] Each change's refusal or nil, or a text refusing the whole message.
+  def refusals(request, values)
     return [verdict(request["kind"], values, request["map"], request["here"])] unless request["kind"] == BATCH_KIND
     return "more than #{MAX_BATCH} or not changes" unless values.size <= MAX_BATCH && values.all? { |entry| entry.is_a?(Array) && entry.size == 2 && entry[0].is_a?(String) && entry[1].is_a?(Array) }
 
@@ -197,9 +204,10 @@ class SceneStandIn
   # Tells what a viewer refuses of a change before the game's facts.
   #
   # @param kind [String] What changes.
-  # @param args [Array] Its arguments.
+  # @param plain [Array] Its arguments as plain values.
   # @return [String, nil] The refusal.
-  def refusal(kind, args)
+  def refusal(kind, plain)
+    args = MGQ_MpBattlesSync::Wire.objects(plain)
     target, method = kind.split(".", 2)
     case target
     when "picture" then picture_refusal(method, args)
@@ -275,7 +283,7 @@ class SceneStandIn
   end
 end
 
-# Checks the stand-in against the golden cases, which needs the battle line codec loaded with the
+# Checks the stand-in against the golden cases, which needs battles_sync_wire.rbx loaded with the
 # game's Tone and Color.
 #
 # @raise [RuntimeError] A case the stand-in answers otherwise than the DLL.
@@ -284,7 +292,7 @@ def check_scene_stand_in
     stand_in = SceneStandIn.new
     scenario["steps"].each do |step|
       if step["op"] == "change"
-        stand_in.answer("scene.change", step)
+        stand_in.answer("scene.change", step.merge("args" => WireStandIn.parse(step["line"])))
       else
         messages = (stand_in.answer("scene.flush", nil) || []).map { |message| { "map" => message["map"], "pscene" => message["kind"], "args" => message["args"] } }
         raise "the scene stand-in sends #{scenario['name']} otherwise than the DLL" if messages != step["messages"]
@@ -293,11 +301,11 @@ def check_scene_stand_in
   end
   stand_in = SceneStandIn.new
   SCENE_CASES["checks"].each do |entry|
-    verdict = stand_in.answer("scene.take", entry)
+    verdict = stand_in.answer("scene.take", entry)["refusals"]
     raise "the scene stand-in answers #{entry['kind']} #{entry['line'][0, 40].inspect} with #{verdict.inspect}, the DLL #{entry['refusal'].inspect}" if verdict != [entry["refusal"]]
   end
   SCENE_CASES["batches"].each do |entry|
-    verdict = stand_in.answer("scene.take", { "kind" => "batch", "line" => entry["line"], "map" => 7, "here" => 7 })
+    verdict = stand_in.answer("scene.take", { "kind" => "batch", "line" => entry["line"], "map" => 7, "here" => 7 })["refusals"]
     raise "the scene stand-in refuses the batch #{entry['name']} otherwise than the DLL" if verdict.is_a?(String) != !entry["refusal"].nil?
   end
 end

@@ -2,8 +2,8 @@
 //  StoryReplayTopicsTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Covered a talk that gave a key item handed over in both world types, a Makina never, and the Medal King's run never
-//                            - Covered a chest's trade played the way its own letter shut it, without asking the player
+//      Paulinchen  2026-11-05: Handed and expected the keys, values, sites and things a replay reads as plain values, and read the entries of an earlier release's save
+//                            - Covered a talk that gave a key item handed over in both world types, a Makina never, and the Medal King's run never
 //                            - Covered a battle's drop of a key item reaching the other players in both world types, once, and never the player who won it
 //      Paulinchen  2026-11-01: Covered a choice named by its place among the kept commands, with the shapes of the receiver's lists, and the side pick never handed over
 //      Paulinchen  2026-10-31: Read a Classic party's scopes from a reviewed list that shares the story's progress and map 1
@@ -53,7 +53,7 @@ public sealed class StoryReplayTopicsTests
     /// <summary>
     /// The shapes of the receiver's lists of the choices a take names, as the scripts hand them over.
     /// </summary>
-    private readonly RubyHash _shapes;
+    private readonly RubyArray _shapes;
 
     /// <summary>
     /// Initializes the topics over a Makina-shaped chest on map 1: page 1 reads the story's progress,
@@ -91,11 +91,8 @@ public sealed class StoryReplayTopicsTests
             .MapEvent(1, 13, 6, 0, new TinyPage([
                 C(102, "Trade", 2), C(402, 0, "Trade"), At(126, 1, 1734, 1, 0, 1), At(126, 1, 610, 0, 0, 1), At(123, 1, "B", 0), At(0, 1), C(402, 1, "Decline"), At(0, 1), C(404)])));
         topics.Events = () => events;
-        _shapes = new RubyHash
-        {
-            { "map:1:10:1", events.Store.List(events.Store.Page(1, 10, 0)!.Value.ListId)!.Value.Shape },
-            { "map:1:13:1", events.Store.List(events.Store.Page(1, 13, 0)!.Value.ListId)!.Value.Shape },
-        };
+        _shapes = [new RubyArray { Page(1, 10, 1), events.Store.List(events.Store.Page(1, 10, 0)!.Value.ListId)!.Value.Shape },
+                   new RubyArray { Page(1, 13, 1), events.Store.List(events.Store.Page(1, 13, 0)!.Value.ListId)!.Value.Shape }];
         Call(StoryTopics.MappingTopic, "w1");
         Drain(1);
         Drain(2);
@@ -110,11 +107,11 @@ public sealed class StoryReplayTopicsTests
     public void Scopes_NameWhatTheReplayReadsAtTheRunsStart()
     {
         RubyHash scopes = Call(StoryTopics.ReplayScopesTopic, new RubyHash { { "party", true } }).AsHash();
-        RubyValue reads = Call(StoryTopics.ReplayReadsTopic, new RubyHash { { "site", "map:1:7:1" }, { "party", true } });
+        RubyValue reads = Call(StoryTopics.ReplayReadsTopic, new RubyHash { { "site", Page(1, 7, 1) }, { "party", true } });
 
         Assert.Equal((2, 1, 0), (scopes["switches"].AsBytes().Span[2045], scopes["variables"].AsBytes().Span[57], scopes["self_default"].AsInt()));
-        Assert.Equal(new RubyHash { { "ss1.7.A", 2 } }, scopes["keys"]);
-        Assert.Equal(new RubyArray { "ss1.7.B", "ss1.7.C", "ss1.7.D", "v1001" }, reads);
+        Assert.Equal(new RubyArray { new RubyArray { 1, 7, "A", 2 } }, scopes["keys"]);
+        Assert.Equal(new RubyArray { Self(1, 7, "B"), Self(1, 7, "C"), Self(1, 7, "D"), Variable(1001) }, reads);
     }
 
     /// <summary>
@@ -124,12 +121,12 @@ public sealed class StoryReplayTopicsTests
     [Fact]
     public void Ran_HandsAPartyChestToTheParty()
     {
-        RubyHash entry = Ran(new RubyHash { { "ss1.7.A", Pair("0", "1") }, { "s2045", Pair("0", "1") }, { "v9", Pair("n0", "n1") } }).AsHash();
+        RubyHash entry = Ran([Change(Self(1, 7, "A"), false, true), Change(Switch(2045), false, true), Change(Variable(9), 0, 1)]).AsHash();
 
         Assert.Equal(("e1", "party", "party:1"), (entry["id"].AsText(), entry["scope"].AsText(), entry["stream"].AsText()));
-        Assert.Equal(new RubyHash { { "s2045", "0" }, { "ss1.7.A", "0" } }, entry["keys"]);
-        Assert.Equal("done", Take(entry, new RubyHash())["do"].AsText());
-        Assert.True(Ran(new RubyHash { { "v9", Pair("n1", "n2") } }).IsNil);
+        Assert.Equal(new RubyArray { Row(Switch(2045), false), Row(Self(1, 7, "A"), false) }, entry["keys"]);
+        Assert.Equal("done", Take(entry, [])["do"].AsText());
+        Assert.True(Ran([Change(Variable(9), 1, 2)]).IsNil);
     }
 
     /// <summary>
@@ -140,13 +137,13 @@ public sealed class StoryReplayTopicsTests
     [Fact]
     public void Ran_HandsARunThatChangedAWorldKeyToTheStorysStream()
     {
-        RubyHash entry = Ran(new RubyHash { { "ss1.7.A", Pair("0", "1") }, { "s2045", Pair("0", "1") }, { "v1001", Pair("n5", "n6") } }).AsHash();
-        RubyHash member = Ran(new RubyHash { { "ss1.7.A", Pair("0", "1") }, { "v1001", Pair("n6", "n7") } }, owner: false).AsHash();
+        RubyHash entry = Ran([Change(Self(1, 7, "A"), false, true), Change(Switch(2045), false, true), Change(Variable(1001), 5, 6)]).AsHash();
+        RubyHash member = Ran([Change(Self(1, 7, "A"), false, true), Change(Variable(1001), 6, 7)], owner: false).AsHash();
 
         Assert.Equal(("world", "story:lead"), (entry["scope"].AsText(), entry["stream"].AsText()));
-        Assert.Equal(new RubyHash { { "s2045", "0" }, { "ss1.7.A", "0" }, { "v1001", "n5" } }, entry["keys"]);
-        Assert.Equal("done", Take(entry, new RubyHash())["do"].AsText());
-        Assert.Equal("done", Take(member, new RubyHash())["do"].AsText());
+        Assert.Equal(new RubyArray { Row(Switch(2045), false), Row(Self(1, 7, "A"), false), Row(Variable(1001), 5) }, entry["keys"]);
+        Assert.Equal("done", Take(entry, [])["do"].AsText());
+        Assert.Equal("done", Take(member, [])["do"].AsText());
     }
 
     /// <summary>
@@ -157,11 +154,11 @@ public sealed class StoryReplayTopicsTests
     [Fact]
     public void Ran_HandsAStoryRunThatGivesToTheStorysStream()
     {
-        RubyHash entry = Ran(new RubyHash { { "s300", Pair("0", "1") } }, site: "map:1:8:1").AsHash();
+        RubyHash entry = Ran([Change(Switch(300), false, true)], site: Page(1, 8, 1)).AsHash();
 
         Assert.Equal(("world", "story:lead"), (entry["scope"].AsText(), entry["stream"].AsText()));
-        Assert.Equal(new RubyHash { { "s300", "0" } }, entry["keys"]);
-        Assert.True(Ran(new RubyHash { { "s301", Pair("0", "1") } }, site: "map:1:9:1").IsNil);
+        Assert.Equal(new RubyArray { Row(Switch(300), false) }, entry["keys"]);
+        Assert.True(Ran([Change(Switch(301), false, true)], site: Page(1, 9, 1)).IsNil);
     }
 
     /// <summary>
@@ -172,18 +169,18 @@ public sealed class StoryReplayTopicsTests
     [Fact]
     public void Take_AsksTheReceiverAChoiceWhoseAnswersDifferInTheirOwnKeys()
     {
-        RubyArray asked = [new RubyArray { "map:1:10:1@0", 0, "choice", 1 }];
-        RubyArray kept = [new RubyArray { "map:1:10:1@6", 0, "choice", 0 }, new RubyArray { "map:1:10:1@14", 0, "rand", 3 }];
+        RubyArray asked = [new RubyArray { new RubyArray { Page(1, 10, 1), 0 }, 0, "choice", 1 }];
+        RubyArray kept = [new RubyArray { new RubyArray { Page(1, 10, 1), 6 }, 0, "choice", 0 }, new RubyArray { new RubyArray { Page(1, 10, 1), 14 }, 0, "rand", 3 }];
         RubyHash entry = Entry();
-        entry["site"] = "map:1:10:1";
+        entry["site"] = Page(1, 10, 1);
         entry["stream"] = "story:lead";
         entry["scope"] = "world";
-        entry["keys"] = new RubyHash { { "s305", "0" } };
+        entry["keys"] = new RubyArray { Row(Switch(305), false) };
         entry["inputs"] = new RubyArray(asked.Concat(kept));
 
         Call(StoryTopics.ReplayScopesTopic, new RubyHash { { "party", true } });
 
-        Assert.Equal(kept, Take(entry, new RubyHash())["inputs"]);
+        Assert.Equal(kept, Take(entry, [])["inputs"]);
     }
 
     /// <summary>
@@ -194,13 +191,13 @@ public sealed class StoryReplayTopicsTests
     public void Ran_NeverHandsOverWhereThePlayerTakesASideAlong()
     {
         RubyHash entry = Entry();
-        entry["site"] = "map:1:11:1";
+        entry["site"] = Page(1, 11, 1);
         entry["stream"] = "story:lead";
         entry["scope"] = "world";
-        entry["keys"] = new RubyHash { { "s300", "0" } };
+        entry["keys"] = new RubyArray { Row(Switch(300), false) };
 
-        Assert.Equal("done", Take(entry, new RubyHash())["do"].AsText());
-        Assert.True(Ran(new RubyHash { { "s300", Pair("0", "1") } }, site: "map:1:11:1").IsNil);
+        Assert.Equal("done", Take(entry, [])["do"].AsText());
+        Assert.True(Ran([Change(Switch(300), false, true)], site: Page(1, 11, 1)).IsNil);
     }
 
     /// <summary>
@@ -210,9 +207,9 @@ public sealed class StoryReplayTopicsTests
     [Fact]
     public void Take_IsDoneForAMemberWhoLootedTheChestAlone()
     {
-        Ran(new RubyHash { { "ss1.7.A", Pair("0", "1") } }, null);
+        Ran([Change(Self(1, 7, "A"), false, true)], null);
 
-        Assert.Equal("done", Take(Entry(), new RubyHash())["do"].AsText());
+        Assert.Equal("done", Take(Entry(), [])["do"].AsText());
     }
 
     /// <summary>
@@ -224,7 +221,7 @@ public sealed class StoryReplayTopicsTests
     {
         Call(StoryTopics.ReplayLogTopic, new RubyHash { { "log", RubyNil.Value }, { "place", new RubyArray { 9, 0, 0, 0 } } });
 
-        Assert.Equal("done", Take(Entry(), new RubyHash())["do"].AsText());
+        Assert.Equal("done", Take(Entry(), [])["do"].AsText());
     }
 
     /// <summary>
@@ -235,9 +232,9 @@ public sealed class StoryReplayTopicsTests
     [Fact]
     public void Take_WaitsForAMemberWhoOpenedTheChestAtTheSameTime()
     {
-        Ran(new RubyHash { { "ss1.7.A", Pair("0", "1") }, { "s2045", Pair("0", "1") } });
+        Ran([Change(Self(1, 7, "A"), false, true), Change(Switch(2045), false, true)]);
 
-        Assert.Equal("pending", Take(Entry(), new RubyHash { { "ss1.7.A", "1" } })["do"].AsText());
+        Assert.Equal("pending", Take(Entry(), [Row(Self(1, 7, "A"), true)])["do"].AsText());
     }
 
     /// <summary>
@@ -249,11 +246,11 @@ public sealed class StoryReplayTopicsTests
     {
         RubyHash entry = Entry();
 
-        Assert.Equal(new RubyHash { { "needs", new RubyArray { "ss1.7.A" } } }, Take(entry, new RubyHash()));
-        Assert.Equal(new RubyHash { { "do", "replay" }, { "page", 1 }, { "sibling", false }, { "inputs", new RubyArray() } }, Take(entry, new RubyHash { { "ss1.7.A", "0" } }));
-        Assert.Equal("pending", Take(entry, new RubyHash { { "ss1.7.A", "1" } })["do"].AsText());
-        Assert.Equal(new RubyArray(), Call(StoryTopics.ReplayDueTopic, new RubyHash { { "values", new RubyHash { { "ss1.7.A", "1" } } } }));
-        Assert.Equal(new RubyArray { entry }, Call(StoryTopics.ReplayDueTopic, new RubyHash { { "values", new RubyHash { { "ss1.7.A", "0" } } } }));
+        Assert.Equal(new RubyHash { { "needs", new RubyArray { Self(1, 7, "A") } } }, Take(entry, []));
+        Assert.Equal(new RubyHash { { "do", "replay" }, { "page", 1 }, { "sibling", false }, { "inputs", new RubyArray() } }, Take(entry, [Row(Self(1, 7, "A"), false)]));
+        Assert.Equal("pending", Take(entry, [Row(Self(1, 7, "A"), true)])["do"].AsText());
+        Assert.Equal(new RubyArray(), Call(StoryTopics.ReplayDueTopic, new RubyHash { { "values", new RubyArray { Row(Self(1, 7, "A"), true) } } }));
+        Assert.Equal(new RubyArray { entry }, Call(StoryTopics.ReplayDueTopic, new RubyHash { { "values", new RubyArray { Row(Self(1, 7, "A"), false) } } }));
     }
 
     /// <summary>
@@ -269,13 +266,14 @@ public sealed class StoryReplayTopicsTests
 
         RubyHash done = Call(StoryTopics.ReplayDoneTopic, new RubyHash
         {
-            { "entry", entry }, { "reached", true }, { "before", new RubyHash { { "ss1.7.A", "0" }, { "s2045", "1" } } }, { "reads", new RubyHash() }, { "had", had }, { "has", has },
+            { "entry", entry }, { "reached", true }, { "before", new RubyArray { Row(Self(1, 7, "A"), false), Row(Switch(2045), true) } }, { "reads", new RubyArray() },
+            { "had", had }, { "has", has },
         }).AsHash();
         RubyValue saved = Call(StoryTopics.ReplayLogSaveTopic, RubyNil.Value);
         Call(StoryTopics.ReplayLogTopic, new RubyHash { { "log", saved }, { "place", RubyNil.Value } });
 
         Assert.Equal("Ana opened a chest for the party: Makina.", done["notice"].AsText());
-        Assert.Equal("done", Take(entry, new RubyHash())["do"].AsText());
+        Assert.Equal("done", Take(entry, [])["do"].AsText());
     }
 
     /// <summary>
@@ -290,10 +288,33 @@ public sealed class StoryReplayTopicsTests
 
         Call(StoryTopics.ReplayQueueTopic, entry);
         RubyValue queued = Reload();
-        Take(entry, new RubyHash { { "ss1.7.A", "0" } });
+        Take(entry, [Row(Self(1, 7, "A"), false)]);
 
         Assert.Equal(new RubyArray { entry }, queued);
         Assert.Equal(new RubyArray(), Reload());
+    }
+
+    /// <summary>
+    /// Asserts that a save of an earlier release, whose log keeps a waiting run's keys and start
+    /// values as texts by name, hands that run back as values, and is saved again in the new form.
+    /// </summary>
+    [Fact]
+    public void Log_ReadsTheWaitingRunsOfAnEarlierReleasesSave()
+    {
+        Call(StoryTopics.ReplayQueueTopic, Entry());
+        RubyHash saved = Call(StoryTopics.ReplayLogSaveTopic, RubyNil.Value).AsHash();
+        RubyHash old = OtherMembers(Entry());
+        old["id"] = "x1";
+        old["keys"] = new RubyHash { { "s2045", "0" }, { "ss1.7.A", "0" } };
+        old["start"] = new RubyHash { { "v1001", "n5" } };
+        old["site"] = "map:1:7:1";
+        saved["queued"] = new RubyArray { old };
+
+        RubyValue queued = Call(StoryTopics.ReplayLogTopic, new RubyHash { { "log", saved }, { "place", RubyNil.Value } });
+        RubyHash again = Call(StoryTopics.ReplayLogSaveTopic, RubyNil.Value).AsHash();
+
+        Assert.Equal(new RubyArray { Entry() }, queued);
+        Assert.Equal(new RubyArray { Entry() }, again["queued"]);
     }
 
     /// <summary>
@@ -319,12 +340,12 @@ public sealed class StoryReplayTopicsTests
     [Fact]
     public void Repair_TurnsOnTheSwitchOfAChestLeftShutWithoutIt()
     {
-        RubyHash Ask(bool world, RubyHash values) => Call(StoryTopics.RepairTopic, new RubyHash { { "world", world }, { "raid", false }, { "values", values } }).AsHash();
+        RubyHash Ask(bool world, RubyArray values) => Call(StoryTopics.RepairTopic, new RubyHash { { "world", world }, { "raid", false }, { "values", values } }).AsHash();
 
-        Assert.Equal(new RubyHash { { "needs", new RubyArray { "ss1.7.A", "s2045" } } }, Ask(false, new RubyHash()));
-        Assert.Equal(new RubyArray { 2045 }, Ask(false, new RubyHash { { "ss1.7.A", "1" }, { "s2045", "0" } })["switches"]);
-        Assert.Equal(new RubyArray(), Ask(false, new RubyHash { { "ss1.7.A", "1" }, { "s2045", "1" } })["switches"]);
-        Assert.Equal(new RubyArray { 2045 }, Ask(true, new RubyHash { { "ss1.7.A", "1" }, { "s2045", "0" } })["switches"]);
+        Assert.Equal(new RubyHash { { "needs", new RubyArray { Self(1, 7, "A"), Switch(2045) } } }, Ask(false, []));
+        Assert.Equal(new RubyArray { 2045 }, Ask(false, [Row(Self(1, 7, "A"), true), Row(Switch(2045), false)])["switches"]);
+        Assert.Equal(new RubyArray(), Ask(false, [Row(Self(1, 7, "A"), true), Row(Switch(2045), true)])["switches"]);
+        Assert.Equal(new RubyArray { 2045 }, Ask(true, [Row(Self(1, 7, "A"), true), Row(Switch(2045), false)])["switches"]);
     }
 
     /// <summary>
@@ -341,7 +362,7 @@ public sealed class StoryReplayTopicsTests
         RubyHash entry = found["entries"].AsArray().Single().AsHash();
 
         Assert.Equal(new RubyArray { 606 }, found["items"]);
-        Assert.Equal(("derived:map:1:7:1", new RubyHash { { "ss1.7.A", "0" } }), (entry["id"].AsText(), entry["keys"]));
+        Assert.Equal(("derived:map:1:7:1", new RubyArray { Row(Self(1, 7, "A"), false) }), (entry["id"].AsText(), entry["keys"]));
         Assert.Equal(new RubyHash { { "entries", new RubyArray() }, { "items", new RubyArray() } }, Ask([new RubyArray { 1, 9, "A" }]));
     }
 
@@ -352,11 +373,11 @@ public sealed class StoryReplayTopicsTests
     [Fact]
     public void Derive_PlaysTheChestThatClosesFromThePlayersOwnValues()
     {
-        RubyHash derived = Call(StoryTopics.ReplayDeriveTopic, new RubyHash { { "chest", "ss1.7.A" }, { "closes", new RubyArray { "ss1.7.A" } }, { "party", true } }).AsHash();
+        RubyHash derived = Call(StoryTopics.ReplayDeriveTopic, new RubyHash { { "chest", Self(1, 7, "A") }, { "closes", new RubyArray { Self(1, 7, "A") } }, { "party", true } }).AsHash();
 
         Assert.Equal(("derived:map:1:7:1", "derived", true), (derived["id"].AsText(), derived["stream"].AsText(), derived["derived"] is RubyBool { Flag: true }));
-        Assert.Equal((new RubyHash { { "ss1.7.A", "0" } }, new RubyHash()), (derived["keys"], derived["start"]));
-        Assert.Equal("replay", Take(derived, new RubyHash { { "ss1.7.A", "0" }, { "v1001", "n5" } })["do"].AsText());
+        Assert.Equal((new RubyArray { Row(Self(1, 7, "A"), false) }, new RubyArray()), (derived["keys"], derived["start"]));
+        Assert.Equal("replay", Take(derived, [Row(Self(1, 7, "A"), false), Row(Variable(1001), 5)])["do"].AsText());
     }
 
     /// <summary>
@@ -367,11 +388,11 @@ public sealed class StoryReplayTopicsTests
     [Fact]
     public void Derive_AnswersAChestsTradeTheWayItsLetterShutIt()
     {
-        RubyArray traded = [new RubyArray { "map:1:13:1@0", 0, "choice", 0 }];
+        RubyArray traded = [new RubyArray { new RubyArray { Page(1, 13, 1), 0 }, 0, "choice", 0 }];
         Call(StoryTopics.ReplayScopesTopic, new RubyHash { { "party", true } });
 
-        RubyHash derived = Call(StoryTopics.ReplayDeriveTopic, new RubyHash { { "chest", "ss1.13.B" }, { "party", true } }).AsHash();
-        RubyHash taken = Take(derived, new RubyHash { { "ss1.13.B", "0" } });
+        RubyHash derived = Call(StoryTopics.ReplayDeriveTopic, new RubyHash { { "chest", Self(1, 13, "B") }, { "party", true } }).AsHash();
+        RubyHash taken = Take(derived, [Row(Self(1, 13, "B"), false)]);
 
         Assert.Equal(traded, derived["inputs"]);
         Assert.Equal(("replay", traded), (taken["do"].AsText(), taken["inputs"]));
@@ -384,12 +405,12 @@ public sealed class StoryReplayTopicsTests
     [Fact]
     public void Ran_HandsATalkThatGaveAKeyItemToTheParty()
     {
-        RubyHash entry = Ran(new RubyHash { { "v9", Pair("n0", "n1") } }, site: "map:1:9:1", found: [new RubyArray { 613, 1 }]).AsHash();
+        RubyHash entry = Ran([Change(Variable(9), 0, 1)], site: Page(1, 9, 1), found: [new RubyArray { 613, 1 }]).AsHash();
 
         Assert.Equal(("party", "party:1", true), (entry["scope"].AsText(), entry["stream"].AsText(), entry["found"] is RubyBool { Flag: true }));
-        Assert.Equal(new RubyHash(), entry["keys"]);
-        Assert.Equal("done", Take(entry, new RubyHash())["do"].AsText());
-        Assert.Equal("replay", Take(OtherMembers(entry), new RubyHash())["do"].AsText());
+        Assert.Equal(new RubyArray(), entry["keys"]);
+        Assert.Equal("done", Take(entry, [])["do"].AsText());
+        Assert.Equal("replay", Take(OtherMembers(entry), [])["do"].AsText());
     }
 
     /// <summary>
@@ -412,7 +433,7 @@ public sealed class StoryReplayTopicsTests
     [Fact]
     public void Ran_NeverHandsOverTheMedalKingsRun()
     {
-        Assert.True(Ran(new RubyHash { { "s300", Pair("0", "1") } }, site: "map:1:12:1").IsNil);
+        Assert.True(Ran([Change(Switch(300), false, true)], site: Page(1, 12, 1)).IsNil);
     }
 
     /// <summary>
@@ -432,12 +453,12 @@ public sealed class StoryReplayTopicsTests
         RubyHash gain = Take(crossed, []);
         RubyHash done = Call(StoryTopics.ReplayDoneTopic, new RubyHash
         {
-            { "entry", crossed }, { "reached", true }, { "before", new RubyHash() }, { "reads", new RubyHash() },
+            { "entry", crossed }, { "reached", true }, { "before", new RubyArray() }, { "reads", new RubyArray() },
             { "had", new RubyArray() }, { "has", new RubyArray { new RubyArray { "i613", 1, "Colosseum Pass", false } } },
         }).AsHash();
         Call(StoryTopics.ReplayLogTopic, new RubyHash { { "log", Call(StoryTopics.ReplayLogSaveTopic, RubyNil.Value) }, { "place", RubyNil.Value } });
 
-        Assert.Equal(("party", "party:1", "game:drop"), (entry["scope"].AsText(), entry["stream"].AsText(), entry["site"].AsText()));
+        Assert.Equal(("party", "party:1", new RubyArray { "game", "drop" }), (entry["scope"].AsText(), entry["stream"].AsText(), entry["site"]));
         Assert.Equal("done", Take(entry, [])["do"].AsText());
         Assert.Equal(("gain", new RubyArray { new RubyArray { 613, 1 } }), (gain["do"].AsText(), gain["items"]));
         Assert.Equal("Ana won a battle drop for everyone: Colosseum Pass.", done["notice"].AsText());
@@ -471,23 +492,24 @@ public sealed class StoryReplayTopicsTests
     /// <returns>The entry.</returns>
     private static RubyHash Entry() => new()
     {
-        { "id", "x1" }, { "site", "map:1:7:1" }, { "stream", "party:1" }, { "scope", "party" }, { "opener", "Ana" },
-        { "keys", new RubyHash { { "s2045", "0" }, { "ss1.7.A", "0" } } }, { "place", new RubyArray { 5, 0, 0, 0 } },
-        { "start", new RubyHash { { "v1001", "n5" } } }, { "inputs", new RubyArray() }, { "derived", false },
+        { "id", "x1" }, { "site", Page(1, 7, 1) }, { "stream", "party:1" }, { "scope", "party" }, { "opener", "Ana" },
+        { "keys", new RubyArray { Row(Switch(2045), false), Row(Self(1, 7, "A"), false) } }, { "place", new RubyArray { 5, 0, 0, 0 } },
+        { "start", new RubyArray { Row(Variable(1001), 5) } }, { "inputs", new RubyArray() }, { "derived", false },
     };
 
     /// <summary>
     /// Ends a run of a page the player's game ran as a member of a Classic party, the chest by default.
     /// </summary>
-    /// <param name="changed">The keys it changed: key => [before, after].</param>
+    /// <param name="changed">The keys it changed, see <see cref="Change"/>.</param>
     /// <param name="party">The party's stream, <see langword="null"/> for a player alone.</param>
-    /// <param name="site">The page it ran.</param>
+    /// <param name="site">The page it ran, the chest's unless given.</param>
     /// <param name="owner">Whether the player owns the story's stream, as its leader.</param>
     /// <returns>The answer.</returns>
-    private RubyValue Ran(RubyHash changed, string? party = "party:1", string site = "map:1:7:1", bool owner = true, RubyArray? found = null) => Call(StoryTopics.ReplayRanTopic, new RubyHash
+    /// <param name="found">The found items it gave: [[item, change], ...], <see langword="null"/> for none.</param>
+    private RubyValue Ran(RubyArray changed, string? party = "party:1", RubyArray? site = null, bool owner = true, RubyArray? found = null) => Call(StoryTopics.ReplayRanTopic, new RubyHash
     {
-        { "site", site }, { "party", true }, { "stream", "story:lead" }, { "party_stream", party is null ? RubyNil.Value : party }, { "owner", owner },
-        { "changed", changed }, { "found", found is null ? RubyNil.Value : found }, { "start", new RubyHash { { "v1001", "n5" } } }, { "place", new RubyArray { 5, 0, 0, 0 } },
+        { "site", site ?? Page(1, 7, 1) }, { "party", true }, { "stream", "story:lead" }, { "party_stream", party is null ? RubyNil.Value : party }, { "owner", owner },
+        { "changed", changed }, { "found", found is null ? RubyNil.Value : found }, { "start", new RubyArray { Row(Variable(1001), 5) } }, { "place", new RubyArray { 5, 0, 0, 0 } },
         { "inputs", new RubyArray() }, { "opener", "Ana" },
     });
 
@@ -498,8 +520,8 @@ public sealed class StoryReplayTopicsTests
     /// <returns>The answer.</returns>
     private RubyValue RaidRan(RubyArray found) => Call(StoryTopics.ReplayRanTopic, new RubyHash
     {
-        { "site", "map:1:9:1" }, { "party", false }, { "stream", "t2" }, { "party_stream", RubyNil.Value }, { "owner", false }, { "changed", new RubyHash() },
-        { "found", found }, { "start", new RubyHash() }, { "place", new RubyArray { 5, 0, 0, 0 } }, { "inputs", new RubyArray() }, { "opener", "Ana" },
+        { "site", Page(1, 9, 1) }, { "party", false }, { "stream", "t2" }, { "party_stream", RubyNil.Value }, { "owner", false }, { "changed", new RubyArray() },
+        { "found", found }, { "start", new RubyArray() }, { "place", new RubyArray { 5, 0, 0, 0 } }, { "inputs", new RubyArray() }, { "opener", "Ana" },
     });
 
     /// <summary>
@@ -535,17 +557,58 @@ public sealed class StoryReplayTopicsTests
     /// Hands the player's game an entry.
     /// </summary>
     /// <param name="entry">The entry.</param>
-    /// <param name="values">The receiver's values the request holds.</param>
+    /// <param name="values">The rows of the receiver's values the request holds.</param>
     /// <returns>The answer.</returns>
-    private RubyHash Take(RubyHash entry, RubyHash values) => Call(StoryTopics.ReplayTakeTopic, new RubyHash { { "entry", entry }, { "values", values }, { "shapes", _shapes } }).AsHash();
+    private RubyHash Take(RubyHash entry, RubyArray values) => Call(StoryTopics.ReplayTakeTopic, new RubyHash { { "entry", entry }, { "values", values }, { "shapes", _shapes } }).AsHash();
 
     /// <summary>
-    /// Makes a key's values before and after a run.
+    /// Names a map event's page as the scripts hand a site over.
     /// </summary>
+    /// <param name="map">The map.</param>
+    /// <param name="eventId">The event.</param>
+    /// <param name="page">The page, from 1.</param>
+    /// <returns>["map", map, event, page].</returns>
+    private static RubyArray Page(int map, int eventId, int page) => ["map", map, eventId, page];
+
+    /// <summary>
+    /// Names a switch as the scripts hand it over.
+    /// </summary>
+    /// <param name="id">The switch.</param>
+    /// <returns>[0, id].</returns>
+    private static RubyArray Switch(int id) => [0, id];
+
+    /// <summary>
+    /// Names a variable as the scripts hand it over.
+    /// </summary>
+    /// <param name="id">The variable.</param>
+    /// <returns>[1, id].</returns>
+    private static RubyArray Variable(int id) => [1, id];
+
+    /// <summary>
+    /// Names a self switch as the scripts hand it over.
+    /// </summary>
+    /// <param name="map">The map.</param>
+    /// <param name="eventId">The event.</param>
+    /// <param name="letter">The letter.</param>
+    /// <returns>[2, [map, event, letter]].</returns>
+    private static RubyArray Self(int map, int eventId, string letter) => [2, new RubyArray { map, eventId, letter }];
+
+    /// <summary>
+    /// Writes a key with its value as a row.
+    /// </summary>
+    /// <param name="key">The key.</param>
+    /// <param name="value">The value.</param>
+    /// <returns>[kind, key, value].</returns>
+    private static RubyArray Row(RubyArray key, RubyValue value) => [key[0], key[1], value];
+
+    /// <summary>
+    /// Writes a key a run changed with its values before and after.
+    /// </summary>
+    /// <param name="key">The key.</param>
     /// <param name="before">Its value before.</param>
     /// <param name="after">Its value after.</param>
-    /// <returns>[before, after].</returns>
-    private static RubyArray Pair(string before, string after) => [before, after];
+    /// <returns>[kind, key, before, after].</returns>
+    private static RubyArray Change(RubyArray key, RubyValue before, RubyValue after) => [key[0], key[1], before, after];
 
     /// <summary>
     /// Calls a topic and reads the value it answers.

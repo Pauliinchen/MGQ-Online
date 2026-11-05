@@ -2,7 +2,10 @@
 #  battles_hotjoin_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Checked that a guest enters its own troop in the Library as its battle starts
+#      Paulinchen  2026-11-05: Noted invites with their flags as true, as the DLL hands them
+#                            - Wrote and read the battle lines through the codec's stand-in
+#                            - Told every host's battle state in rbs beside its players in rbn
+#                            - Checked that a guest enters its own troop in the Library as its battle starts
 #                            - Checked that a guest builds the enemies it adds through the one factory, started once as the game starts them
 #                            - Expected a Classic world's player to tell the battle it fights too
 #      Paulinchen  2026-11-01: Read the waiting box's lines from its box of the Mod Framework
@@ -188,7 +191,7 @@ $raid = true
 reset
 
 # An encounter on a map where a battle runs asks its host.
-host = player(5, { "scene" => "battle", "rb" => "hb1", "rbh" => "5", "since" => "100" })
+host = player(5, { "scene" => "battle", "rb" => "hb1", "rbh" => "5", "rbn" => "1", "rbs" => "open", "since" => "100" })
 guest = player(6, { "scene" => "battle", "rb" => "hb1", "rbh" => "5" })
 free = player(7)
 MGQ_MpOverworldSync::Peers.all.replace([host, guest, free])
@@ -363,11 +366,11 @@ coop::Mode.before_start(scene)
 check("refused then, the encounter starts on its own without the member who said no", [sync.role, map_sent("invite").map(&:first)], [:host, [7]])
 reset
 
-host.state["rbn"] = "0"
+host.state.merge!("rbn" => "1", "rbs" => "closed")
 check("no encounter joins a battle that takes nobody in", running_target, nil)
-host.state["rbn"] = "4"
+host.state.merge!("rbn" => "4", "rbs" => "full")
 check("nor a full one", running_target, nil)
-host.state.delete("rbn")
+host.state.merge!("rbn" => "1", "rbs" => "open")
 MGQ_MpOverworldSync::Peers.all.replace([host, guest, free])
 
 # A host that took some of the players a request brought along.
@@ -391,7 +394,7 @@ check("nor does a boss troop", map_sent("hot"), [])
 check("whose invite marks it a boss battle", map_sent("invite").map { |seat, f| [seat, f["boss"]] }, [[7, "1"]])
 reset
 
-early_host = player(8, { "scene" => "battle", "rb" => "hb2", "rbh" => "8", "since" => "50" })
+early_host = player(8, { "scene" => "battle", "rb" => "hb2", "rbh" => "8", "rbn" => "1", "rbs" => "open", "since" => "50" })
 MGQ_MpOverworldSync::Peers.all.replace([host, guest, early_host])
 check("of two running battles it asks the one whose host entered the map first", running_target, [early_host, "hb2"])
 early_host.state.merge!("x" => "30", "y" => "0")
@@ -478,7 +481,7 @@ $sent.clear
 $chat = []
 $notices = []
 popups_on(scene)
-sync.take(asker, { "battle" => "join", "bid" => "own7", :payload => sync::Wire.line(["5,6,7", [[50, 5], [60, 6], [70, 7]], 4]) })
+sync.take(asker, { "battle" => "join", "bid" => "own7", :payload => wire_line(["5,6,7", [[50, 5], [60, 6], [70, 7]], 4]) })
 open_phase(scene)
 check("the command phase still opens", $commands_phase, true)
 check("the host reads in the battle's popup who joined, once, and nothing in the chat", [$popups, $notices, $chat], [["P8 joined the battle."], ["P8 joined the battle."], []])
@@ -493,7 +496,7 @@ check("and the encounter's enemies the troop", $game_troop.members.map { |enemy|
 check("drawn anew", spriteset.enemies.size, 2)
 roster = battle_sent("roster")
 check("the player who joined gets the roster", roster.map(&:first), [8])
-roster_values = sync::Wire.parse(roster[0][1][:payload])
+roster_values = wire_values(roster[0][1][:payload])
 check("with the whole troop and both players", [roster_values[0].map(&:first), roster_values[1].map(&:first)], [[31, 50], [0, 8]])
 check("and the battle's names, ready", battle_sent("ready").map(&:first), [8])
 check("then the command phase's stream", battle_sent("events").map(&:first), [8])
@@ -504,7 +507,7 @@ third = player(11, { "scene" => "battle", "rb" => "own7", "rbh" => "0" })
 MGQ_MpOverworldSync::Peers.all.replace([asker, comrade, latecomer, third])
 coop.take(third, request.merge("seats" => "", "enemies" => "51:300:300:0"))
 check("a live battle takes another encounter in", map_sent("hot_ok").map(&:first), [11])
-sync.take(third, { "battle" => "join", "bid" => "own7", :payload => sync::Wire.line(["8", [[40, 4]], 4]) })
+sync.take(third, { "battle" => "join", "bid" => "own7", :payload => wire_line(["8", [[40, 4]], 4]) })
 sync.take(comrade, { "battle" => "decline", "bid" => "own7", :payload => "" })
 sync.take(asker, { "battle" => "ready", "bid" => "own7", :payload => "" })
 sync::Live.close_phase
@@ -539,7 +542,7 @@ coop::Mode.take("coop_troop", scene, troop_body)
 check("a guest whose troop is longer than the host's takes the host's whole troop", $game_troop.members.map(&:enemy_id), [31, 50, 51])
 $log.clear
 $game_troop.members[1].screen_x = 170
-odd_body = sync::Wire.line([[[31, 320, 300, 0], [60, "160", 300, 0], [51, 480, 300, [1]], [52, 640, nil, 0]], nil])
+odd_body = wire_line([[[31, 320, 300, 0], [60, "160", 300, 0], [51, 480, 300, [1]], [52, 640, nil, 0]], nil])
 2.times { coop::Mode.take("coop_troop", scene, odd_body) }
 check("a guest keeps every host's enemy at its place when a place or mark is no number",
       $game_troop.members.map { |enemy| [enemy.enemy_id, enemy.screen_x, enemy.screen_y, enemy.hidden?] }, [[31, 320, 300, false], [60, 170, 300, false], [51, 480, 300, false], [52, 640, 0, false]])
@@ -550,34 +553,34 @@ kept = $game_troop.members.dup
 [[[31, 320, 300, 0], ["60", 0, 300, 0], [51, 480, 300, 0], [52, 640, 300, 0], [53, 0, 0, 0]],
  [[31, 320, 300, 0], :enemy, [51, 480, 300, 0], [52, 640, 300, 0], [53, 0, 0, 0]],
  [[31, 320, 300, 0], [60, 0, 300, 0], [51, 480, 300, 0], [52, 640, 300, 0], [500, 0, 0, 0]]].each do |entries|
-  coop::Mode.take("coop_troop", scene, sync::Wire.line([entries, nil]))
+  coop::Mode.take("coop_troop", scene, wire_line([entries, nil]))
   check("a host's enemy whose id is no enemy of this game keeps the guest's own troop: #{entries.inspect}", $game_troop.members, kept)
 end
 check("logged once per kind", $log.grep(/dropped the host's troop/).size, 2)
 reset
 
 # A late guest takes the battle's turn and waits for its next command phase.
-hotjoin.note_invite({ "hot" => "1" })
+hotjoin.note_invite({ "hot" => true })
 sync.join_world(:guest, "lt1", [5], "P5")
 sync.battle_started
 MGQ_MpOverworldSync::Peers.all.replace([host])
 $inject = lambda do |frame|
   next unless frame == 2
 
-  line = sync::Wire.line([[[31, 320, 300, 0], [50, 160, 300, 1]], [[5, "P5", "1,2,3", [], 4, [0, 1, 2], 1, 2], [0, "Me", "1,2,3", [], 4, [0, 1, 2], 1, 2]], nil, 3])
+  line = wire_line([[[31, 320, 300, 0], [50, 160, 300, 1]], [[5, "P5", "1,2,3", [], 4, [0, 1, 2], 1, 2], [0, "Me", "1,2,3", [], 4, [0, 1, 2], 1, 2]], nil, 3])
   sync.take(host, { "battle" => "roster", "bid" => "lt1", :payload => line })
 end
 check("a late guest takes the roster", coop.join(scene), nil)
 check("with the battle's turn", $game_troop.instance_variable_get(:@turn_count), 3)
 check("and a hidden enemy hidden", $game_troop.members.map(&:hidden?), [false, true])
 reset
-hotjoin.note_invite({ "hot" => "1" })
+hotjoin.note_invite({ "hot" => true })
 sync.join_world(:guest, "lt3", [5], "P5")
 sync.battle_started
 $inject = lambda do |frame|
   next unless frame == 2
 
-  line = sync::Wire.line([[[31, 320, 300, 0], [50, 160, 300, hotjoin::FALLEN]], [[5, "P5", "1,2,3", [], 4, [0, 1, 2], 1, 2], [0, "Me", "1,2,3", [], 4, [0, 1, 2], 1, 2]], nil, 3])
+  line = wire_line([[[31, 320, 300, 0], [50, 160, 300, hotjoin::FALLEN]], [[5, "P5", "1,2,3", [], 4, [0, 1, 2], 1, 2], [0, "Me", "1,2,3", [], 4, [0, 1, 2], 1, 2]], nil, 3])
   sync.take(host, { "battle" => "roster", "bid" => "lt3", :payload => line })
 end
 coop.join(scene)
@@ -590,7 +593,7 @@ $game_troop.members.push(Game_Enemy.new(1, 50))
 $game_troop.members[1].dead = true
 check("the host marks fallen enemies for late guests", hotjoin.late_entries.map(&:last), [0, hotjoin::FALLEN])
 reset
-hotjoin.note_invite({ "hot" => "1" })
+hotjoin.note_invite({ "hot" => true })
 sync.join_world(:guest, "lt2", [5], "P5")
 sync.battle_started
 $inject = lambda { |frame| coop.take(host, { "coop" => "off", "bid" => "lt2" }) if frame == 2 }
@@ -600,7 +603,7 @@ reset
 # A late guest whose host's battle is over before the roster came goes back to the map, told why,
 # instead of the battle breaking off; one whose host is gone the same, never fighting it alone.
 missed = lambda do |inject|
-  hotjoin.note_invite({ "hot" => "1" })
+  hotjoin.note_invite({ "hot" => true })
   sync.join_world(:guest, "lt3", [5], "P5")
   sync.battle_started
   $aborted = false
@@ -697,7 +700,7 @@ own_troop
 hotjoin.fight_alone("own10")
 MGQ_MpOverworldSync::Peers.all.replace([asker, comrade])
 coop.take(asker, request.merge("bid" => "own10"))
-sync.take(asker, { "battle" => "join", "bid" => "own10", :payload => sync::Wire.line(["5", [[50, 5]], 4]) })
+sync.take(asker, { "battle" => "join", "bid" => "own10", :payload => wire_line(["5", [[50, 5]], 4]) })
 sync.take(asker, { "battle" => "leave", "bid" => "own10", :payload => "" })
 hotjoin.expire
 pending = $coop_joins.entries
@@ -719,7 +722,7 @@ check("a battle that ends before anyone it took in joined keeps the game's Retry
 MGQ_MpGame.set(BattleManager, :retry_data, nil)
 reset
 
-hotjoin.note_invite({ "boss" => "1" })
+hotjoin.note_invite({ "boss" => true })
 own_troop
 hotjoin.fight_alone("own12")
 $sent.clear
@@ -738,13 +741,13 @@ coop.take(asker, request.merge("bid" => "own14", "seats" => "", "enemies" => "50
 check("an encounter's enemy is placed beside the troop's standing ones as it is taken in",
       $coop_joins.entries[0][:enemies], [[50, 80, 300, 0]])
 $game_troop.members[1].dead = true
-sync.take(asker, { "battle" => "join", "bid" => "own14", :payload => sync::Wire.line(["5", [[50, 5]], 4]) })
+sync.take(asker, { "battle" => "join", "bid" => "own14", :payload => wire_line(["5", [[50, 5]], 4]) })
 $sent.clear
 open_phase(scene)
 check("and takes the place of an enemy that fell before its player joined, nearest the middle",
       $game_troop.members.map { |enemy| [enemy.enemy_id, enemy.screen_x] }, [[31, 240], [32, 400], [50, 400]])
 check("which the roster of the player who joined tells, the fallen enemy fallen",
-      sync::Wire.parse(battle_sent("roster")[0][1][:payload])[0], [[31, 240, 300, 0], [32, 400, 300, hotjoin::FALLEN], [50, 400, 300, 0]])
+      wire_values(battle_sent("roster")[0][1][:payload])[0], [[31, 240, 300, 0], [32, 400, 300, hotjoin::FALLEN], [50, 400, 300, 0]])
 reset
 
 # An all-foes skill in a battle that took an encounter in after one of its enemies fell: the host
@@ -758,7 +761,7 @@ hotjoin.fight_alone("own15")
 MGQ_MpOverworldSync::Peers.all.replace([asker])
 coop.take(asker, request.merge("bid" => "own15", "seats" => "", "enemies" => "1:218:332:0;1:421:332:0"))
 $game_troop.members[0].dead = true
-sync.take(asker, { "battle" => "join", "bid" => "own15", :payload => sync::Wire.line(["5", [[50, 5]], 4]) })
+sync.take(asker, { "battle" => "join", "bid" => "own15", :payload => wire_line(["5", [[50, 5]], 4]) })
 $sent.clear
 open_phase(scene)
 host_troop = $game_troop.members.map { |enemy| [enemy.name, enemy.screen_x, enemy.dead?] }
@@ -768,10 +771,10 @@ check("the host letters the added enemies after its own, its fallen one keeping 
 aimed = $game_troop.members.reject { |enemy| enemy.dead? || enemy.hidden? }
 check("an all-foes skill on the host reaches every enemy standing, the added ones too",
       aimed.map { |enemy| sync::Recorder.ref(enemy) }, ["e1", "e2", "e3"])
-host_entries = sync::Wire.parse(battle_sent("roster")[0][1][:payload])[0]
+host_entries = wire_values(battle_sent("roster")[0][1][:payload])[0]
 host_names = battle_sent("ready")[0][1][:payload]
 reset
-hotjoin.note_invite({ "hot" => "1" })
+hotjoin.note_invite({ "hot" => true })
 sync.join_world(:guest, "own15", [5], "P5")
 sync.battle_started
 MGQ_MpOverworldSync::Peers.all.replace([host])
@@ -780,7 +783,7 @@ $inject = lambda do |frame|
   next unless frame == 2
 
   players = [[5, "P5", "1,2,3", [], 4, [0, 1, 2], 1, 2], [0, "Me", "1,2,3", [], 4, [0, 1, 2], 1, 2]]
-  sync.take(host, { "battle" => "roster", "bid" => "own15", :payload => sync::Wire.line([host_entries, players, nil, 3]) })
+  sync.take(host, { "battle" => "roster", "bid" => "own15", :payload => wire_line([host_entries, players, nil, 3]) })
 end
 coop.join(scene)
 check("a guest who joins rebuilds the troop with the host's places, the fallen enemy fallen",
@@ -888,7 +891,7 @@ end
 # @param seat [Integer] The player's seat.
 # @return [Array<Array>] Each message's troop, see MGQ_MpBattlesHotjoin.late_entries.
 def troops_to(seat)
-  battle_sent("coop_troop").select { |to, _| to == seat }.map { |_, f| MGQ_MpBattlesSync::Wire.parse(f[:payload])[0] }
+  battle_sent("coop_troop").select { |to, _| to == seat }.map { |_, f| wire_values(f[:payload])[0] }
 end
 
 # Adds an enemy to the running troop, as another mod may mid-battle: a picture as wide as the
@@ -912,7 +915,7 @@ own_troop
 hotjoin.fight_alone("own16")
 MGQ_MpOverworldSync::Peers.all.replace([asker])
 coop.take(asker, request.merge("bid" => "own16", "seats" => ""))
-sync.take(asker, { "battle" => "join", "bid" => "own16", :payload => sync::Wire.line(["5", [[50, 5]], 4]) })
+sync.take(asker, { "battle" => "join", "bid" => "own16", :payload => wire_line(["5", [[50, 5]], 4]) })
 open_phase(scene)
 $sent.clear
 added_enemy = add_wide_enemy
@@ -952,7 +955,7 @@ $sent.clear
 newcomer = player(11, { "scene" => "battle", "rb" => "own16", "rbh" => "0" })
 MGQ_MpOverworldSync::Peers.all.replace([asker, newcomer])
 coop.take(newcomer, request.merge("bid" => "own16", "seats" => "", "enemies" => "51:300:300:0"))
-sync.take(newcomer, { "battle" => "join", "bid" => "own16", :payload => sync::Wire.line(["8", [[40, 4]], 4]) })
+sync.take(newcomer, { "battle" => "join", "bid" => "own16", :payload => wire_line(["8", [[40, 4]], 4]) })
 sync::Live.close_phase
 sync::Recorder.turn_started
 add_wide_enemy
@@ -984,7 +987,7 @@ MGQ_MpOverworldSync::Peers.all.replace([asker])
 coop.take(asker, request.merge("bid" => "own17", "seats" => "", "enemies" => "50:0:300:0;52:0:300:0"))
 check("an encounter of two enemies is taken in while the troop has room", $coop_joins.entries[0][:enemies].size, 2)
 6.times { add_wide_enemy }
-sync.take(asker, { "battle" => "join", "bid" => "own17", :payload => sync::Wire.line(["5", [[50, 5]], 4]) })
+sync.take(asker, { "battle" => "join", "bid" => "own17", :payload => wire_line(["5", [[50, 5]], 4]) })
 $log.clear
 open_phase(scene)
 check("only the first that still fits joins, the troop holding no more than it may",
@@ -996,7 +999,7 @@ own_troop
 hotjoin.fight_alone("own18")
 coop.take(asker, request.merge("bid" => "own18", "seats" => "", "enemies" => "50:0:300:0"))
 7.times { add_wide_enemy }
-sync.take(asker, { "battle" => "join", "bid" => "own18", :payload => sync::Wire.line(["5", [[50, 5]], 4]) })
+sync.take(asker, { "battle" => "join", "bid" => "own18", :payload => wire_line(["5", [[50, 5]], 4]) })
 $log.clear
 open_phase(scene)
 check("with no place left none joins, but its player does",
@@ -1014,10 +1017,10 @@ MGQ_MpOverworldSync::Peers.all.replace([asker, late_asker])
 coop.take(asker, request.merge("bid" => "own19", "seats" => "", "enemies" => "50:0:300:0"))
 coop.take(late_asker, request.merge("bid" => "own19", "seats" => "", "enemies" => "52:0:300:0"))
 reserved = $coop_joins.entries.map { |entry| entry[:enemies][0][1] }
-sync.take(late_asker, { "battle" => "join", "bid" => "own19", :payload => sync::Wire.line(["8", [[40, 4]], 4]) })
+sync.take(late_asker, { "battle" => "join", "bid" => "own19", :payload => wire_line(["8", [[40, 4]], 4]) })
 open_phase(scene)
 first_x = $game_troop.members.last.screen_x
-sync.take(asker, { "battle" => "join", "bid" => "own19", :payload => sync::Wire.line(["5", [[50, 5]], 4]) })
+sync.take(asker, { "battle" => "join", "bid" => "own19", :payload => wire_line(["5", [[50, 5]], 4]) })
 sync::Live.close_phase
 sync::Recorder.turn_started
 open_phase(scene)
@@ -1032,7 +1035,7 @@ own_troop
 hotjoin.fight_alone("own20")
 MGQ_MpOverworldSync::Peers.all.replace([asker])
 coop.take(asker, request.merge("bid" => "own20", "seats" => ""))
-sync.take(asker, { "battle" => "join", "bid" => "own20", :payload => sync::Wire.line(["5", [[50, 5]], 4]) })
+sync.take(asker, { "battle" => "join", "bid" => "own20", :payload => wire_line(["5", [[50, 5]], 4]) })
 open_phase(scene)
 eaten = $game_troop.members[1]
 eaten.dead = true
@@ -1097,7 +1100,7 @@ own_troop
 $game_party.in_battle = false
 $battle_starts = []
 MGQ_MpBattlers.start_guest
-coop::Mode.take("coop_troop", scene, sync::Wire.line([[[31, 320, 300, 0], [50, 160, 300, 0]], nil]))
+coop::Mode.take("coop_troop", scene, wire_line([[[31, 320, 300, 0], [50, 160, 300, 0]], nil]))
 grown = $game_troop.members.last
 check("a guest enters its own troop in the Library as it starts, and an enemy it adds too, with the game's own start, every enemy started once",
       [grown.enemy_id, $game_troop.members.map { |enemy| $battle_starts.count(enemy) }, $game_library.enemy.found], [50, [1, 1], [31, 50]])

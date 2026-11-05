@@ -2,7 +2,9 @@
 #  coop_scope.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Counted the scope's times by the bridge's frame
+#      Paulinchen  2026-11-05: Read whether another player tells the story as true or false
+#                            - Handed the ids a map message names to the DLL as a list, which it writes
+#                            - Counted the scope's times by the bridge's frame
 #                            - Told whether the screens the mod opens on its own wait, while the followed teller tells or a battle's invite is open
 #      Paulinchen  2026-10-28: Took a Raid World's tellers from the tellings the relay told of on the player's track, and its viewers from their tracks
 #      Paulinchen  2026-10-24: Let a teller's telling hold the player no longer once nothing of it came for thirty seconds
@@ -79,7 +81,7 @@ module MGQ_MpCoop
     # Those the story took along may stand on another map, so the message goes out without asking
     # who is on the player's.
     message = { MAP_PREFIX + field => value, "mmap" => $game_map.map_id }.merge(fields)
-    MGQ_MpOverworldSync.tell(-1, message.merge(TO_FIELD => peers.map { |peer| peer.state["id"].to_s }.join(",")))
+    MGQ_MpOverworldSync.tell(-1, message.merge(TO_FIELD => peers.map { |peer| peer.state["id"].to_s }))
   end
 
   # Reports whether a screen the mod opens on its own, such as a replayed event's message or a
@@ -372,7 +374,7 @@ module MGQ_MpCoop
       # @param peer [MGQ_MpOverworldSync::Peers::Peer] The other player.
       # @return [Boolean] Whether they do.
       def self.telling?(peer)
-        peer.state["telling"] == "1"
+        peer.state["telling"] == true
       end
 
       # Reports whether the player plays in a party with someone else.

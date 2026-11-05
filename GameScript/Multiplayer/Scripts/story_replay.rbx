@@ -2,7 +2,8 @@
 #  story_replay.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Read the story markers from story_ids.rbx
+#      Paulinchen  2026-11-05: Handed the DLL the keys and the player's own things as [kind, key] with their values, sites and commands' places as plain values, and what the player holds whole for the DLL to sum up
+#                            - Read the story markers from story_ids.rbx
 #                            - Took a found item a replay uses up from the receiver, but none a story reset takes, and dropped the copy got as found, which the story replay replaces
 #                            - Told whether a replay goes the receiver's own way, whose companion joins as their own
 #                            - Took the runs handed to the player only while no screen waits, see MGQ_MpCoop.screens_wait?
@@ -72,6 +73,9 @@ module MGQ_MpStoryReplay
 
   # The field of $game_system the save keeps the DLL's log in.
   LOG_FIELD = :@mgq_mp_replay_log
+
+  # The kind of the player's own things a run reads that stands for what they hold, see holdings_read.
+  HOLDINGS = "holdings"
 
   # Frames between two asks whether a waiting run is due again, two seconds.
   DUE_FRAMES = 120
@@ -239,21 +243,21 @@ module MGQ_MpStoryReplay
   # timer, the map, the player or an event ("timer.sec", "map.field?", "player.x",
   # "event12.direction"). A yes or no is 1 or 0.
   #
-  # @param site [String] The list: "map:<map>:<event>:<page from 1>" or "ce:<id>".
+  # @param site [Array] The list: ["map", map, event, page from 1] or ["ce", id].
   # @param list [Array<RPG::EventCommand>, nil] The list's commands, nil for none known.
   # @param index [Integer] The command's place in the list.
-  # @return [String] Such as "map:1994:42:1@12".
+  # @return [Array] The site and the place, such as [["map", 1994, 42, 1], 12].
   def self.input_at(site, list, index)
-    "#{site}@#{kept_place(list, index)}"
+    [site, kept_place(list, index)]
   end
 
   # Names a choice as input_at names an input's command: the Show Choices, or the script command
   # that shows an extended choice, whose last line the interpreter stands at while it waits.
   #
-  # @param site [String] The list, see input_at.
+  # @param site [Array] The list, see input_at.
   # @param list [Array<RPG::EventCommand>, nil] The list's commands, nil for none known.
   # @param index [Integer] The place the interpreter stands at.
-  # @return [String] Such as "map:6:30:2@1".
+  # @return [Array] Such as [["map", 6, 30, 2], 1].
   def self.choice_at(site, list, index)
     index = index.to_i
     index -= 1 while list.is_a?(Array) && index > 0 && list[index] && list[index].code == SCRIPT_LINE
@@ -402,7 +406,7 @@ module MGQ_MpStoryReplay
   # @param entry [Hash] The run's entry.
   # @return [Boolean] Whether it was taken; false while the DLL cannot decide yet.
   def self.take(entry)
-    answer = ask_with_values(TAKE_TOPIC, "entry" => entry, "shapes" => choice_shapes(entry))
+    answer = ask_with_values(TAKE_TOPIC, "entry" => entry, "shapes" => choice_shapes(entry).to_a)
     return false unless answer.is_a?(Hash) && answer["do"]
 
     start(answer["inputs"] ? entry.merge("inputs" => answer["inputs"]) : entry, answer["page"], entry["inputs"]) if answer["do"] == "replay"
@@ -423,7 +427,7 @@ module MGQ_MpStoryReplay
 
       $game_party.gain_item(item, count.to_i)
     end
-    answer = MGQ_Multiplayer::Bridge.call(DONE_TOPIC, "entry" => entry, "reached" => true, "before" => {}, "reads" => {}, "had" => had, "has" => holdings)
+    answer = MGQ_Multiplayer::Bridge.call(DONE_TOPIC, "entry" => entry, "reached" => true, "before" => [], "reads" => [], "had" => had, "has" => holdings)
     notice(answer, had)
   end
 
@@ -436,8 +440,8 @@ module MGQ_MpStoryReplay
     @site_shapes ||= {}
     shapes = {}
     Array(entry["inputs"]).each do |at, _occurrence, kind, _value|
-      site = at.to_s.sub(/@\d+\z/, "")
-      next unless kind == "choice" && !shapes.key?(site)
+      site = at.is_a?(Array) ? at[0] : nil
+      next unless site && kind == "choice" && !shapes.key?(site)
 
       @site_shapes.clear if @site_shapes.size >= MAX_KEPT_LISTS
       unless @site_shapes.key?(site)
@@ -451,16 +455,16 @@ module MGQ_MpStoryReplay
 
   # Reads the commands of a list of the player's game: a map event's page or a common event.
   #
-  # @param site [String] Such as "map:215:23:1" (pages from 1) or "ce:154".
+  # @param site [Array] Such as ["map", 215, 23, 1] (pages from 1) or ["ce", 154].
   # @return [Array<RPG::EventCommand>, nil] The commands, nil for a list the game does not have.
   def self.list_at(site)
-    case site
-    when /\Amap:(\d+):(\d+):(\d+)\z/
-      event = load_data(DataManager.map_file_name($1.to_i)).events[$2.to_i]
-      page = event && event.pages[$3.to_i - 1]
+    case site[0]
+    when "map"
+      event = load_data(DataManager.map_file_name(site[1])).events[site[2]]
+      page = event && event.pages[site[3] - 1]
       page && page.list
-    when /\Ace:(\d+)\z/
-      common_event = $data_common_events[$1.to_i]
+    when "ce"
+      common_event = $data_common_events[site[1]]
       common_event && common_event.list
     end
   rescue => e
@@ -475,12 +479,12 @@ module MGQ_MpStoryReplay
   # @param request [Hash] The request.
   # @return [Object] The answer, nil when the DLL did not give one.
   def self.ask_with_values(topic, request)
-    values = {}
+    values = []
     NEEDS_ROUNDS.times do
       answer = MGQ_Multiplayer::Bridge.call(topic, request.merge("values" => values))
       return answer unless answer.is_a?(Hash) && answer["needs"]
 
-      Array(answer["needs"]).each { |name| values[name] = own_value(name) }
+      Array(answer["needs"]).each { |kind, key| values << [kind, key, own_value(kind, key)] }
     end
     nil
   end
@@ -508,8 +512,7 @@ module MGQ_MpStoryReplay
   # @param replay [Replay] The replay.
   # @param keep [Proc] Keeps what the replay did.
   def self.committing(state, replay, keep)
-    state[:before] = {}
-    (state[:entry]["keys"] || {}).each_key { |name| state[:before][name] = own_value(name) }
+    state[:before] = Array(state[:entry]["keys"]).map { |kind, key, _value| [kind, key, own_value(kind, key)] }
     state[:had] = holdings
     keep.call
     state[:has] = holdings + medals_of(replay.medals)
@@ -521,8 +524,8 @@ module MGQ_MpStoryReplay
   # @param state [Hash] The replay, its entry, and what committing measured.
   def self.finish(state)
     replay = state[:replay]
-    reads = replay.reads.merge("holdings" => holdings_digest)
-    answer = MGQ_Multiplayer::Bridge.call(DONE_TOPIC, "entry" => state[:entry], "reached" => replay.committed?, "before" => state[:before] || {},
+    reads = replay.reads.map { |(kind, key), value| [kind, key, value] } << [HOLDINGS, nil, holdings_read]
+    answer = MGQ_Multiplayer::Bridge.call(DONE_TOPIC, "entry" => state[:entry], "reached" => replay.committed?, "before" => state[:before] || [],
                                                       "reads" => reads, "had" => state[:had] || [], "has" => state[:has] || [])
     notice(answer, state[:had])
   end
@@ -608,23 +611,24 @@ module MGQ_MpStoryReplay
     lambda do |kind, key, value|
       MGQ_MpCoopStory.keep_own(kind, key, value) if guest
       if raid && MGQ_MpStoryKeys.class_of(kind, key) & MGQ_MpStoryKeys::REQUESTED != 0
-        MGQ_MpStoryKeys.request(MGQ_MpStoryKeys.key_text(kind, key), MGQ_MpStoryKeys.text_of(kind, value), "game:replay")
+        MGQ_MpStoryKeys.request(kind, key, value, ["game", "replay"])
       end
     end
   end
 
-  # Reads one of the player's own things as the DLL names it: "s<id>", "v<id>" and
-  # "ss<map>.<event>.<letter>" as the tracks write them, "item<id>" and "actor<id>" as "1" or "0"
-  # (held, in the party), and "holdings", see holdings_digest.
+  # Reads one of the player's own things as the DLL names it (StoryPlain in the DLL): a key's value,
+  # whether the player holds an item ("item") or has a companion in the party ("actor"), and what
+  # they hold ("holdings", see holdings_read).
   #
-  # @param name [String] The thing.
-  # @return [String] Its value.
-  def self.own_value(name)
-    case name
-    when /\Aitem(\d+)\z/ then $data_items[$1.to_i] && $game_party.has_item?($data_items[$1.to_i]) ? "1" : "0"
-    when /\Aactor(\d+)\z/ then $game_party.members.any? { |actor| actor.id == $1.to_i } ? "1" : "0"
-    when "holdings" then holdings_digest
-    else MGQ_MpStoryKeys.value_text(name).to_s
+  # @param kind [Integer, String] The key's kind, "item", "actor" or "holdings".
+  # @param key [Integer, Array, nil] The key or id, nil for the holdings.
+  # @return [Object] Its value.
+  def self.own_value(kind, key)
+    case kind
+    when "item" then $data_items[key.to_i] && $game_party.has_item?($data_items[key.to_i]) ? true : false
+    when "actor" then $game_party.members.any? { |actor| actor.id == key.to_i }
+    when HOLDINGS then holdings_read
+    else MGQ_MpStoryKeys.plain_of(kind, MGQ_MpStoryKeys.value_of(kind, key))
     end
   end
 
@@ -656,13 +660,13 @@ module MGQ_MpStoryReplay
     end
   end
 
-  # Sums up what the player holds in one number, which a waiting run's read of their holdings
-  # compares: a script's check of the party, such as a chest's lock, reads no key.
+  # Lists what the player holds as a waiting run's read of their holdings compares it, which the DLL
+  # sums up: a script's check of the party, such as a chest's lock, reads no key.
   #
-  # @return [String] The number.
-  def self.holdings_digest
+  # @return [Array] Each thing's key and amount, then each companion's id, level and equipment.
+  def self.holdings_read
     party = $game_party.members.map { |actor| [actor.id, actor.level, actor.equips.map { |equip| equip ? equip.id : 0 }] }
-    Zlib.crc32(Marshal.dump(holdings.map { |key, amount| [key, amount] } + [party])).to_s
+    holdings.map { |key, amount| [key, amount] } + [party]
   end
 
   # Finds the icon of the first item a replay gave, for its notice.
@@ -701,7 +705,7 @@ module MGQ_MpStoryReplay
   # chest it names, played from their own values with the keys that close it read as shut where a
   # replay reads the run's start values, as a run handed to them; once while it waits.
   #
-  # @param fields [Hash] "site", such as "map:215:23:1", or "chest", such as "ss588.9.A".
+  # @param fields [Hash] "site", such as ["map", 215, 23, 1], or "chest", such as [2, [588, 9, "A"]].
   # @param why [String] What names it, for the log.
   def self.derive(fields, why)
     raid = defined?(MGQ_MpCoop::Scope) && MGQ_MpCoop::Scope.raid?
@@ -767,13 +771,13 @@ module MGQ_MpStoryReplay
     def initialize(inputs)
       @values = {}
       inputs.each do |at, _occurrence, kind, value|
-        (@values[[at.to_s, kind.to_s]] ||= []) << value
+        (@values[[at, kind.to_s]] ||= []) << value
       end
     end
 
     # Takes the next value of a command's input.
     #
-    # @param at [String] The command, see MGQ_MpStoryReplay.input_at.
+    # @param at [Array] The command, see MGQ_MpStoryReplay.input_at.
     # @param kind [String] What it read, see MGQ_MpStoryReplay.input_at.
     # @return [Integer, nil] The value, nil once the record holds none.
     def take(at, kind)
@@ -783,7 +787,7 @@ module MGQ_MpStoryReplay
 
     # Adds the receiver's answer to a command's input, which the replay takes next.
     #
-    # @param at [String] The command.
+    # @param at [Array] The command.
     # @param kind [String] What it read.
     # @param value [Integer] The answer.
     def add(at, kind, value)
@@ -1653,11 +1657,13 @@ module MGQ_MpStoryReplay
     # @param options [Hash] The view's test, the own writes' block, the page, the commit's measure
     #   and the opener's whole record, see MGQ_MpStoryReplay.play.
     def initialize(entry, options)
-      @site = options[:page] ? entry["site"].to_s.sub(/:\d+\z/, ":#{options[:page]}") : entry["site"].to_s
+      site = entry["site"]
+      @site = options[:page] && site[0] == "map" ? site[0, 3] + [options[:page]] : site
       @record = Record.new(entry["inputs"] || [])
       @opener = Record.new(options[:recorded] || entry["inputs"] || [])
-      @view = View.new(start_values(entry["start"] || {}), options[:view] || method(:kept_key?))
-      @keys = entry["keys"] || {}
+      @view = View.new(start_values(entry["start"]), options[:view] || method(:kept_key?))
+      @keys = {}
+      Array(entry["keys"]).each { |kind, key, _value| @keys[[kind, key]] = true }
       @own_write = options[:own_write]
       @around_commit = options[:around_commit]
       @writes = []
@@ -1758,7 +1764,7 @@ module MGQ_MpStoryReplay
 
     # Names the command running now, the deepest one.
     #
-    # @return [String] The command, see MGQ_MpStoryReplay.input_at.
+    # @return [Array] The command, see MGQ_MpStoryReplay.input_at.
     def at_now
       site, list, index = @places.last || [@site, @list, 0]
       MGQ_MpStoryReplay.input_at(site, list, index)
@@ -1767,7 +1773,7 @@ module MGQ_MpStoryReplay
     # Names the choice the message waits for: the Show Choices the deepest command running stands
     # at, which a text sets up after its lines, or the script command of an extended choice.
     #
-    # @return [String] The command, see MGQ_MpStoryReplay.choice_at.
+    # @return [Array] The command, see MGQ_MpStoryReplay.choice_at.
     def choice_now
       site, list, index, interpreter = @places.last || [@site, @list, 0, nil]
       MGQ_MpStoryReplay.choice_at(site, list, interpreter ? interpreter.place : index)
@@ -1775,7 +1781,7 @@ module MGQ_MpStoryReplay
 
     # Runs a command, its inputs named by its place.
     #
-    # @param site [String] The command's list.
+    # @param site [Array] The command's list.
     # @param list [Array<RPG::EventCommand>] The list's commands.
     # @param index [Integer] Its place.
     # @param interpreter [Interpreter] The interpreter that runs it.
@@ -1790,12 +1796,12 @@ module MGQ_MpStoryReplay
     # Names a list for the record: the run's own, or the common event it is.
     #
     # @param list [Array] The commands.
-    # @return [String] Such as "map:215:23:1" or "ce:129".
+    # @return [Array] Such as ["map", 215, 23, 1] or ["ce", 129]; ["list"] for a list of no site.
     def site_of(list)
       return @site if list.equal?(@list)
 
       common = $data_common_events.index { |event| event && event.list.equal?(list) }
-      common ? "ce:#{common}" : "list"
+      common ? ["ce", common] : ["list"]
     end
 
     # The stand-in of an event of the run's map.
@@ -1820,7 +1826,7 @@ module MGQ_MpStoryReplay
       return false if kind == 2 && @reset.include?(key[0])
 
       value = yield
-      @reads[MGQ_MpStoryKeys.key_text(kind, key)] = MGQ_MpStoryKeys.text_of(kind, value) unless @made[kind]
+      @reads[[kind, kind == 2 ? key.dup : key]] = MGQ_MpStoryKeys.plain_of(kind, value) unless @made[kind]
       value
     end
 
@@ -1847,7 +1853,7 @@ module MGQ_MpStoryReplay
     # @param key [Integer, Array] The key.
     # @return [Boolean] Whether it is.
     def step_key?(kind, key)
-      @keys.key?(MGQ_MpStoryKeys.key_text(kind, key))
+      @keys.key?([kind, key])
     end
 
     # Tells how much of a change of what the receiver holds the replay makes, and notes what it
@@ -1972,16 +1978,11 @@ module MGQ_MpStoryReplay
 
     # Reads the run's start values.
     #
-    # @param start [Hash] The values as the tracks write them, by key text.
+    # @param start [Array<Array>, nil] Each key's kind, key and value, see StoryPlain in the DLL.
     # @return [Hash] The values by [kind, key].
     def start_values(start)
       values = {}
-      start.each do |text, value|
-        kind, key = MGQ_MpStoryKeys.key_of(text.to_s)
-        next unless kind && kind < 3
-
-        values[[kind, key]] = kind == 1 ? MGQ_MpStoryState.decode_value(value) : value.to_s == "1"
-      end
+      Array(start).each { |kind, key, value| values[[kind, key]] = MGQ_MpStoryKeys.game_value(kind, value) if kind.is_a?(Integer) && kind < 3 }
       values
     end
 
@@ -1999,11 +2000,11 @@ module MGQ_MpStoryReplay
     # @param entry [Hash] The run.
     # @return [Array, nil] The commands, nil for a site the game does not have.
     def bind(entry)
-      case @site
-      when /\Amap:(\d+):(\d+):\d+\z/
-        @map_id = $1.to_i
-        @event_id = $2.to_i
-      when /\Ace:\d+\z/
+      case @site[0]
+      when "map"
+        @map_id = @site[1]
+        @event_id = @site[2]
+      when "ce"
         @map_id = (entry["map"] || $game_map.map_id).to_i
         @event_id = 0
       end

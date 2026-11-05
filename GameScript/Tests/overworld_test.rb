@@ -2,6 +2,8 @@
 #  overworld_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Told a member's followers as values
+#                            - Expected the player's state handed to the DLL with its numbers as numbers, which the DLL writes into the message
 #      Paulinchen  2026-11-01: Named the Mod Framework's interface by its own name
 #                            - Read the ghosts' labels, the own ping, the own line and the world status from the Mod Framework's components
 #                            - Opened the action wheel through the Mod Framework's hotkey and read its pick from the framework's wheel
@@ -123,7 +125,7 @@ world_frame
 routes = $staged_world.select { |topic, _| topic == "world.routes" }
 frames = $staged_world.select { |topic, _| topic == "world.me" }
 check("the routes go to the DLL once, the chat's left to C#", [routes.size, routes[0][1].map { |field, _gate| field } & %w[chat whisper pchat]], [1, []])
-check("the player's frame goes to the DLL, the state as text", [frames.size, frames[0][1]["in_world"], frames[0][1]["state"].values_at("map", "x", "y")], [1, true, %w[5 3 4]])
+check("the player's frame goes to the DLL, the state's numbers as numbers", [frames.size, frames[0][1]["in_world"], frames[0][1]["state"].values_at("map", "x", "y")], [1, true, [5, 3, 4]])
 check("without the fields the DLL adds", frames[0][1]["state"].keys & %w[id name since ping party], [])
 $staged_world.clear
 world_frame
@@ -131,7 +133,7 @@ check("quiet while nothing changes", $staged_world, [])
 $game_player.x = 4
 world_frame
 world_frame
-check("a step is handed over once", $staged_world.map { |_, frame| frame["state"]["x"] }, ["4"])
+check("a step is handed over once", $staged_world.map { |_, frame| frame["state"]["x"] }, [4])
 $staged_world.clear
 
 # The DLL's events of a player make a peer and a ghost on the same map; the notices are the DLL's.
@@ -458,14 +460,14 @@ member_tag.close
 check("a member is not invited again, the wheel offers the teleport to the leader instead", option(PARTY), ["Teleport to Friend", false])
 
 # A member's ghost has the followers they show, which step where the one before stood.
-check("followers are told only once shown", MGQ_MpOverworldSync::Me.current.values_at("trail", "follow"), ["", 0])
+check("followers are told only once shown", MGQ_MpOverworldSync::Me.current.values_at("trail", "follow"), [[], 0])
 [21, 22, 23, 24].each do |x|
-  $inbox << entry("message", 2, told(friend.merge("map" => 5, "x" => x, "y" => 22, "party" => my_party, "trail" => "Actor5*1|Actor6*2")))
+  $inbox << entry("message", 2, told(friend.merge("map" => 5, "x" => x, "y" => 22, "party" => my_party, "trail" => [["Actor5", 1], ["Actor6", 2]])))
   MGQ_MpOverworldSync.tick
   MGQ_MpOverworld.update_ghosts
 end
 check("a member's ghost has their followers", ghost.followers.map { |f| [f.character_name, f.character_index] }, [["Actor5", 1], ["Actor6", 2]])
-$inbox << entry("message", 2, told(friend.merge("map" => 5, "x" => 24, "y" => 22, "party" => my_party, "trail" => "Actor5*1|$missing*2")))
+$inbox << entry("message", 2, told(friend.merge("map" => 5, "x" => 24, "y" => 22, "party" => my_party, "trail" => [["Actor5", 1], ["$missing", 2]])))
 MGQ_MpOverworldSync.tick
 MGQ_MpOverworld.update_ghosts
 check("a follower whose sprite this game lacks shows only the outline of Luka's",
@@ -474,7 +476,7 @@ outlined = ghost.followers.last
 outlined.look_like("$missing", 2, Struct.new(:member, :move_speed, :opacity, :transparent).new(false, 4, 255, false))
 check("in white once its player is no longer in the party", outlined.outline, :stranger)
 check("each a step behind the one before", [ghost.x, ghost.followers.map(&:x)], [24, [23, 22]])
-$inbox << entry("message", 2, told(friend.merge("map" => 5, "x" => 24, "y" => 40, "party" => my_party, "trail" => "Actor5*1")))
+$inbox << entry("message", 2, told(friend.merge("map" => 5, "x" => 24, "y" => 40, "party" => my_party, "trail" => [["Actor5", 1]])))
 MGQ_MpOverworldSync.tick
 MGQ_MpOverworld.update_ghosts
 check("a jump gathers the followers, as many as told", ghost.followers.map { |f| [f.x, f.y] }, [[24, 40]])
@@ -843,4 +845,4 @@ check("nor while a world's new game waits there, as through the world screen's f
 $new_game_pending = false
 SceneManager.scene = Scene_Map.new
 world_frame
-check("once the map starts the DLL is handed the state", $staged_world.last[1]["state"]["x"], $game_player.x.to_s)
+check("once the map starts the DLL is handed the state", $staged_world.last[1]["state"]["x"], $game_player.x)

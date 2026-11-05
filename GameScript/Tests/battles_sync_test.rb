@@ -2,7 +2,9 @@
 #  battles_sync_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Checked that the guest gives a state the host added or took away its counters through the game's own reset and erase
+#      Paulinchen  2026-11-05: Numbered the messages and asked again with the number in its field
+#                            - Checked what the script makes of another game's values and left out a send the DLL did not check, through the codec's stand-in
+#                            - Checked that the guest gives a state the host added or took away its counters through the game's own reset and erase
 #      Paulinchen  2026-11-01: Read the waiting box from its box of the Mod Framework, its leave offer naming the bound cancel key and taking a click
 #      Paulinchen  2026-10-31: Answered the leave question a frame later, as the Mod Framework collects it at the wait's frame
 #                            - Checked that the numpad's 0 with Num Lock off asks before leaving, the offer naming the keys that cancel
@@ -231,7 +233,7 @@ check("the guest uses up the items its own characters used, and nothing else", $
 # @return [Array<Array>] The events the guest plays.
 taken = lambda do |*events|
   playback.reset
-  playback.take_send(events.map { |event| sync::Wire.line(event) }.join("\n"))
+  playback.take_send(events.map { |event| wire_line(event) }.join("\n"))
   kept = playback.instance_variable_get(:@events)
   playback.instance_variable_set(:@events, [])
   kept
@@ -320,7 +322,7 @@ recorder.event("end", "process_victory", 0, 0)
 recorder.flush
 stream = $sent.map { |seat, text| [seat, fields_of(text)] }.select { |_, f| f["battle"] == "events" }
 check("the host streams the turn to its guest", [stream.size, stream[0][0], stream[0][1]["bid"]], [1, 2, "r1"])
-check("as lines the wire reads back", stream[0][1][:payload].split("\n").map { |line| sync::Wire.parse(line) { |ref| ref }[0] },
+check("as lines the wire reads back", stream[0][1][:payload].split("\n").map { |line| wire_values(line) { |ref| ref }[0] },
       ["values", "values", "values", "values", "time_stop", "call", "message", "emerge", "end"])
 sync.finish
 
@@ -509,7 +511,7 @@ peers.all.replace([peers::Peer.new(2, { "id" => "id-a", "name" => "Player A" }, 
 sync.join_world(:host, "w10", [2], "the party")
 sync.battle_started
 guest = peers.all.first
-numbered = lambda { |number, kind, body| sync.take(guest, { "battle" => kind, "bid" => "w10", "sq" => number.to_s, :payload => body }) }
+numbered = lambda { |number, kind, body| sync.take(guest, { "battle" => kind, "bid" => "w10", "sq" => number, :payload => body }) }
 numbered.call(1, "ready", "")
 numbered.call(3, "commands", "c3")
 numbered.call(2, "commands", "c2")
@@ -523,11 +525,11 @@ sync::Channel.post("events", "e1")
 guest.away = nil
 guest.seat = 5
 sync::Sequence.presence(guest, :back)
-asked = $sent.map { |seat, text| [seat, fields_of(text)["battle"], fields_of(text)[:payload]] }
+asked = $sent.map { |seat, text| [seat, fields_of(text)["battle"], fields_of(text)["sq"]] }
 check("messages to a guest away wait, and the guest back is asked for what they sent after the last taken",
       asked, [[5, "resync", "3"]])
 $sent.clear
-sync.take(guest, { "battle" => "resync", "bid" => "w10", :payload => "0" })
+sync.take(guest, { "battle" => "resync", "bid" => "w10", "sq" => 0, :payload => "" })
 check("a guest who asks again gets the messages after the last they took, numbered as before",
       $sent.map { |seat, text| [seat, fields_of(text)["battle"], fields_of(text)["sq"]] }, [[5, "waiting", "1"], [5, "events", "2"]])
 $frames = 0
@@ -549,7 +551,7 @@ live.forget_waiting
 $sent.clear
 $frames = 0
 seen = []
-commands = sync::Wire.line([[]])
+commands = wire_line([[]])
 $inject = lambda do |frame|
   seen << waiting_lines[1] if [2, 5].include?(frame)
   sync::Channel.receive(2, "commands", commands) if frame == 3
@@ -686,36 +688,28 @@ check("the guest's box while the host's stream stalls names whom the host waits 
 check("and the guest leaves only once it confirmed leaving", $asked, [[waiting::LEAVE_QUESTION, waiting::LEAVE_CHOICES]])
 sync.finish
 
-# A hostile line on the wire reads as nil or as unknown values, never raising or making a symbol.
-wire = sync::Wire
-check("an equipped item reads one skill, item, state, weapon or armor token, anything else as unknown",
-      [wire.parse("g+"), wire.parse("gi5"), wire.parse("gx"), wire.parse("ggk1")], [[nil], [nil], [nil], [nil]])
-equipped = wire.parse("gk3")[0]
-check("and wraps the skill it names", [equipped.class, equipped.object], [Game_BaseItem, $data_skills[3]])
-check("a long chain of item marks reads as unknown", wire.parse("g" * 10_000 + "k1"), [nil])
-odd = wire.parse("{\t:1x\ti1\t}")[0]
+# What another game's line names that this game lacks becomes nil, never a symbol made of its text.
+check("an equipped item wraps the skill it names", [wire_values("gk3")[0].class, wire_values("gk3")[0].object], [Game_BaseItem, $data_skills[3]])
+odd = wire_values("{\t:1x\ti1\t}")[0]
 check("an action result takes no field it lacks", [odd.class, odd.instance_variables.map(&:to_s).include?("@1x"), odd.hp_damage], [Game_ActionResult, false, 0])
-wire.parse(":hp_damage")
+wire_values(":hp_damage")
 symbols = Symbol.all_symbols.size
-check("a symbol this game lacks reads as unknown", wire.parse(":zzz_never_seen_symbol_123"), [nil])
+check("a symbol this game lacks reads as unknown", wire_values(":zzz_never_seen_symbol_123"), [nil])
 check("and is never made", [Symbol.all_symbols.size <= symbols, Symbol.all_symbols.map(&:to_s).include?("zzz_never_seen_symbol_123")], [true, false])
-check("a symbol this game has reads back", wire.parse(":hp_damage\txcount"), [:hp_damage, sync::Wire::ActionKind.new(:count)])
-check("a database id too large for the game reads as unknown", [wire.parse("k#{2**70}"), wire.parse("k200"), wire.parse("i#{2**70}")], [[nil], [nil], [2**70]])
+check("a symbol this game has reads back", wire_values(":hp_damage\txcount"), [:hp_damage, sync::Wire::ActionKind.new(:count)])
+check("a database id past the game's table reads as unknown", [wire_values("k200"), wire_values("i#{2**70}")], [[nil], [2**70]])
 nest = lambda { |depth| (["["] * depth + ["i1"] + ["]"] * depth).join("\t") }
-check("a line nests at most 8 deep", [wire.parse(nest.call(8)), wire.parse(nest.call(9)), wire.parse(Array.new(1000, "[").join("\t"))],
-      [[[[[[[[[[1]]]]]]]]], nil, nil])
-check("a line longer than the relay delivers is not read", [wire.parse("s" + "x" * wire::MAX_LINE_BYTES), wire.parse("s" + "x" * 1000).size], [nil, 1])
 
 # The host's names that fail to read leave every name as it is.
 names = sync::Names
 $game_party.own = [Game_Actor.new(1)]
 $game_troop.members = [Game_Enemy.new(0, 31)]
-names.setup(wire.line([["x"], []]))
+names.setup(wire_line([["x"], []]))
 check("the host's names are swapped for this game's, the host's party being this game's troop in a duel", names.swap("x and Actor1"), "Enemy31 and Actor1")
 party_side = sync.method(:party_side)
 sync.define_singleton_method(:party_side) { raise "broken" }
 $log.clear
-names.setup(wire.line([["x"], []]))
+names.setup(wire_line([["x"], []]))
 sync.define_singleton_method(:party_side, party_side)
 check("the host's names that fail to read are shown unswapped, logged once",
       [names.swap("x"), $log.grep(/could not read the host's names, showing them unswapped: RuntimeError: broken/).size], ["x", 1])
@@ -734,17 +728,17 @@ take = coop_mode.method(:take)
 coop_mode.define_singleton_method(:take) { |*| raise "bad party" }
 $log.clear
 sync::Channel.receive(0, "coop_party", "anything")
-sync::Channel.receive(0, "events", ["boom", nest.call(9), sync::Wire.line(["turn", 3])].join("\n"))
+sync::Channel.receive(0, "events", ["boom", nest.call(9), wire_line(["turn", 3])].join("\n"))
 event = playback.next_event(scene)
 coop_mode.define_singleton_method(:take, take)
 check("the guest plays the good line of a send with bad ones", [event, playback.instance_variable_get(:@stats)[:unreadable], playback.instance_variable_get(:@stats)[:events]], [["turn", 3], 2, 1])
 check("and leaves out a message of the mode that fails, logged once", $log.grep(/left out the host's coop_party, which failed: RuntimeError: bad party/).size, 1)
 
-# A send the DLL does not check keeps only its markers, so the battle goes on.
+# A send the DLL does not check is left out.
 $world_bridge.answer("live.take_stream") { |_request| nil }
 playback.reset
-sync::Channel.receive(0, "events", [sync::Wire.line(["turn", 4]), sync::Wire.line(["choose_again", [9]]), sync::Wire.line(["commands"])].join("\n"))
-check("a send the DLL does not check keeps only its markers", [playback.next_event(scene), playback.next_event(scene)], [["commands"], nil])
+sync::Channel.receive(0, "events", [wire_line(["turn", 4]), wire_line(["commands"])].join("\n"))
+check("a send the DLL does not check is left out", playback.next_event(scene), nil)
 $world_bridge.answer("live.take_stream") { |request| $live.answer("live.take_stream", request) }
 
 # A time stop whose character is no battler here ends at once.

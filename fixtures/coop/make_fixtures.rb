@@ -2,6 +2,7 @@
 #  make_fixtures.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Wrote no "rbn" into the intake cases and invited busy party members in Classic by the new rule
 #      Paulinchen  2026-10-31: Read the old scripts from a commit that feat/refactor holds
 #      Paulinchen  2026-10-30: Recorded the invites, the requests to lead and the rivals
 #                            - Wrote the golden scenarios of the matchmaking: offers, holds, the stand-still and the encounter's steps
@@ -19,13 +20,16 @@
 #   enemies in a troop, each enemy's width as the game measured it.
 # - entries.json: the troop's enemies a request carries, written and read.
 # - intake.json: what a host told of a request to join its running battle, by hotjoin (refusal and
-#   fitting_players) and by choice (battles_coop_join.rbx's closed_reason and refusal), and the "rbn"
-#   its state told, for the facts of its battle.
+#   fitting_players) and by choice (battles_coop_join.rbx's closed_reason and refusal), for the
+#   facts of its battle. The "rbn" and "rbs" a host's state tells changed meaning after these
+#   scripts, so MGQOnline.Game.Tests' SessionsTests walks them by the new rule instead.
 # - roster.json: the battle's level, the roster and party lines read and written, and the host's
 #   troop repaired on a guest.
 # - match.json: scenarios of the matchmaking (offers, held encounters, the stand-still and the
 #   encounter's steps), each step with the world as the script saw it and what it sent, showed,
 #   logged and had the scripts do; GameScript/Tests/match_support.rb replays them on its stand-in.
+#   A Classic battle invites the busy members on the map too, by the rule that came after these
+#   scripts (#76).
 #
 # It runs on the old scripts with their own test support, on Ruby 3.3:
 #
@@ -186,7 +190,7 @@ def intake(name, change, request = {})
   fitting = HOTJOIN.fitting_players(seats)
   room = MGQ_MpBattlesCoop::RAID_PLAYERS - facts["players"] - facts["pending"].size
   { "name" => name, "facts" => facts, "request" => request, "hot" => HOTJOIN.refusal(message, request["seat"]),
-    "kept" => fitting, "left" => seats - fitting, "room" => room, "pick" => JOIN.refusal(request["seat"], message), "rbn" => JOIN.state_fields["rbn"] }
+    "kept" => fitting, "left" => seats - fitting, "room" => room, "pick" => JOIN.refusal(request["seat"], message) }
 end
 
 INTAKE = [
@@ -410,6 +414,9 @@ stand(sync, :break_off) { |reason, *_| $actions << ["break_off", reason] }
 stand(sync, :finish) { $actions << ["finish"] if $live[:role]; $live = { :seats => [] } }
 # The players whose connection stands, as the world room tells them.
 stand(MGQ_MpOverworldSync::Peers, :present) { all.select { |peer| peer.away.nil? } }
+# A Classic battle invites the party members on the map who are busy in a menu, typing or on a
+# vehicle too, who join once free, as C# rules since the old scripts (#76).
+stand(COOP, :candidates) { MGQ_MpCoop::Party.members.select { |peer| peer.state["map"].to_i == $game_map.map_id && peer.state["scene"] != "battle" } }
 
 # The clock the stand-still runs by, in seconds, $now.
 class << Time

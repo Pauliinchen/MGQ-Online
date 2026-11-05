@@ -2,7 +2,8 @@
 #  battles_pvp_backline.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Started the other side's Backline with the troop through MGQ_MpBattlers
+#      Paulinchen  2026-11-05: Handed the DLL the other side's Frontline as values and had C# write and read the Frontline's message
+#                            - Started the other side's Backline with the troop through MGQ_MpBattlers
 #      Paulinchen  2026-11-01: Added the option's row through the Mod Framework's options
 #      Paulinchen  2026-10-31: Took the group of its row from MGQ_Multiplayer::OPTION_PREFIX
 #      Paulinchen  2026-10-30: Left the Frontline's message among the stream's kinds to the battle modes' defaults
@@ -183,7 +184,7 @@ module MGQ_MpBattlesPvp
       return unless on? && ids.is_a?(Array)
 
       current = $game_troop.members
-      taken = fronts("take", "line" => MGQ_MpBattlesSync::Wire.line([ids]), "troop" => current.map(&:id))
+      taken = fronts("take", "ids" => MGQ_MpBattlesSync::Wire.plain(ids), "troop" => current.map(&:id))
       return MGQ_MpBattlesPvp.log(taken["unfit"]) if taken["unfit"]
       return unless taken["front"]
 
@@ -226,7 +227,7 @@ module MGQ_MpBattlesPvp
 
       MGQ_MpBattlesPvp.log("telling the other side this side's new Frontline: #{MGQ_MpBattlesSync.named_list($game_party.battle_members)}")
       MGQ_MpBattlesSync::Recorder.flush if MGQ_MpBattlesSync::Recorder.active?
-      MGQ_MpBattlesSync::Channel.post(FRONT_MESSAGE, MGQ_MpBattlesSync::Wire.line([ids]))
+      MGQ_MpBattlesSync::Channel.post(FRONT_MESSAGE, MGQ_MpBattlesSync::Wire.write([ids]))
     rescue => e
       MGQ_MpBattlesPvp.log("telling the Frontline failed: #{e.class}: #{e.message}")
     end
@@ -302,7 +303,7 @@ module MGQ_MpBattlesPvp
 
       # (see MGQ_MpBattles::Mode#take)
       def self.take(_kind, _scene, body)
-        values = MGQ_MpBattlesSync::Wire.parse(body.to_s)
+        values = MGQ_MpBattlesSync::Wire.read(body)
         Backline.take_front(values && values[0])
       end
 

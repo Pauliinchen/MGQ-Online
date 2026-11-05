@@ -2,6 +2,8 @@
 #  online.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Stood in for the battle channel's and the world room's ports of the scripts in place of the DLL's exports, the core writing and reading the messages
+#                            - Handed the core's ledger the pools' word as the core read it from the relay's lines, and the reports to the relay as their texts
 #      Paulinchen  2026-10-31: Started the game first, where the Mod Framework loads MGQ Online's title part, then entered it, which loads the rest
 #                            - Dropped the stand-in for the deleted mp_raid_boss_report export
 #      Paulinchen  2026-10-30: Named the seats that came onto and left the battle channel in its state, as the DLL's state does
@@ -15,35 +17,42 @@
 
 # MGQ Online on the battle server: its scripts load from the game folder's Patch folder through the
 # Mod Framework it ships inside, as in the game (see boot.rb), but without either DLL. This takes
-# the DLL's place for the battle channel and a Raid World's boss pools, which the relay carries to
-# the server and the core's ledger keeps, and makes MGQ Online's log the server's.
+# the DLL's place for the battle channel, the world room's sending and a Raid World's boss pools,
+# which the relay carries to the server and the core's ledger keeps, and makes MGQ Online's log
+# the server's. The core writes and reads the battle channel's messages (topics message.write and
+# message.read), as the DLL does in the game.
 module Online
   # Bytes of a log line MGQ Online writes that the server's log keeps.
   LOG_LINE_BYTES = 2_000
 
-  # Exports that answer nothing on the server, logged the first time each is called.
-  @unanswered = {}
+  # The core's topic that writes a message from its fields and body.
+  WRITE_TOPIC = "message.write"
+
+  # The core's topic that reads a message into its fields and body.
+  READ_TOPIC = "message.read"
 
   class << self
     # The battle channel's other end: the relay, or a test's stand-in.
     attr_reader :bridge
 
-    # Starts the game, where the Mod Framework loads MGQ Online's title part, puts the server's
-    # stand-ins in place, and enters the game through the framework, which loads the rest of MGQ
-    # Online and runs the hooks its scripts install as the game starts; a server never enters a
-    # game otherwise.
+    # Starts the game, where the Mod Framework loads MGQ Online's title part, enters the game
+    # through the framework, which loads the rest of MGQ Online and runs the hooks its scripts
+    # install as the game starts (a server never enters a game otherwise), and puts the server's
+    # stand-ins in place.
     #
     # @param log [IO] Where MGQ Online's log goes.
     def install(log = $stderr)
       @log = log
       start_game
-      raise "MGQ Online did not load: the game folder's Patch folder has no Multiplayer.rb or no Mod Framework" unless defined?(MGQ_Multiplayer::Link)
+      raise "MGQ Online did not load: the game folder's Patch folder has no Multiplayer.rb or no Mod Framework" unless defined?(MGQ_Multiplayer::Bridge)
 
       MGQ_Multiplayer::Log.define_singleton_method(:write) { |line| Online.write_log(line) }
       MGQ_Multiplayer::Log.define_singleton_method(:flush) { nil }
       MGQ_Multiplayer.define_singleton_method(:available?) { true }
-      MGQ_Multiplayer::Link.define_singleton_method(:function) { |name| Online.function(name) }
       ::Mod_Framework::Mods.enter("the battle server")
+      raise "MGQ Online did not load its battle scripts: the game folder's Patch folder holds an older MGQ Online" unless defined?(MGQ_MpBattlesServed::Port)
+
+      stand_in_ports
     end
 
     # Hands the battle channel to a bridge: what the server sends goes there, what it takes comes
@@ -63,23 +72,39 @@ module Online
       @log.puts("[mgq] #{line.to_s.byteslice(0, LOG_LINE_BYTES)}")
     end
 
-    # The stand-in for an export of the DLL.
+    # Sends a message of the battle to players over the channel, written by the core.
     #
-    # @param name [String] The export.
-    # @return [#call] What its calls do.
-    def function(name)
-      case name
-      when "mp_battle_open" then ->(_world, _battle_id) { 1 }
-      when "mp_battle_send" then ->(seat, text) { @bridge && @bridge.send_to(seat, text.chomp("\0")) ? 1 : 0 }
-      when "mp_battle_receive" then reader { note_seat(@bridge && @bridge.next_entry) }
-      when "mp_battle_state" then reader { "state=#{@bridge && !@bridge.closed? ? 'open' : 'closed'}\nin=#{@seats_in.to_a.join(',')}\nout=#{@seats_out.to_a.join(',')}" }
-      when "mp_battle_close" then -> { @bridge&.close; 1 }
-      # The server sits in no world room: the battle's starter passes its messages on there.
-      when "mp_world_send" then ->(seat, text) { MGQ_MpBattlesServed.front_out(seat, text.chomp("\0")) ? 1 : 0 }
-      # The starter's setup brings the pools, and the relay tells the server of each change.
-      when "mp_raid_bosses_fetch" then ->(_world) { 1 }
-      else unanswered(name)
+    # @param seats [Array<Integer>] Their world seats, -1 for every player.
+    # @param kind [String] What it is.
+    # @param battle_id [String] The battle's id.
+    # @param body [String] The rest.
+    # @return [Array<Integer>] The seats it went out to.
+    def send_to(seats, kind, battle_id, body)
+      text = MGQ_Multiplayer::Bridge.call(WRITE_TOPIC, "fields" => { "battle" => kind, "bid" => battle_id }, "body" => body)
+      return [] unless @bridge && text.is_a?(String)
+
+      seats.select { |seat| @bridge.send_to(seat, text) }
+    end
+
+    # Takes what came over the channel, each message read by the core, as the DLL hands it.
+    #
+    # @return [Array<Hash>] The entries, oldest first: "kind" ("in", "out", "message" or
+    #   "closed"), "seat", "code" for closed, and a message's "fields" and "body".
+    def entries
+      taken = []
+      while @bridge && (entry = @bridge.next_entry)
+        note_seat(entry)
+        taken << read_message(entry)
       end
+      taken
+    end
+
+    # Tells how the channel stands, as the DLL's state does.
+    #
+    # @return [Hash] "state" ("open" or "closed"), and the seats that came onto the channel
+    #   ("in") and left it ("out").
+    def state
+      { "state" => @bridge && !@bridge.closed? ? "open" : "closed", "in" => @seats_in.to_a.dup, "out" => @seats_out.to_a.dup }
     end
 
     # Hands the core's ledger what the relay told of the pools since, before the scripts read them.
@@ -99,21 +124,45 @@ module Online
 
     private
 
+    # Puts the scripts' ports of the battle channel and the world room's sending on the server's
+    # stand-ins: the server opens no channel itself and sits in no world room, so the battle's
+    # starter passes its messages for the world room on.
+    def stand_in_ports
+      port = MGQ_MpBattlesServed::Port
+      port.define_singleton_method(:serve) { |*| false }
+      port.define_singleton_method(:open) { |_world, _battle_id| true }
+      port.define_singleton_method(:send_to) { |seats, kind, battle_id, body| Online.send_to(seats, kind, battle_id, body) }
+      port.define_singleton_method(:entries) { Online.entries }
+      port.define_singleton_method(:state) { Online.state }
+      port.define_singleton_method(:close) { Online.bridge && Online.bridge.close }
+      MGQ_MpOverworldSync::Port.define_singleton_method(:send_to) { |seat, fields, body| MGQ_MpBattlesServed.front_out(seat, fields, body) }
+    end
+
     # Notes the seat of a player who came onto the battle channel or left it, as its entry passes
     # to the scripts: those who came stay named, those who left only until they come back.
     #
-    # @param entry [String, nil] The entry.
-    # @return [String, nil] The entry.
+    # @param entry [Hash] The entry.
     def note_seat(entry)
-      kind = entry.to_s[/\Akind=(in|out)\n/, 1]
-      seat = entry.to_s[/^seat=(\d+)$/, 1]
-      return entry unless kind && seat
+      kind = entry["kind"]
+      return unless kind == "in" || kind == "out"
 
-      seat = seat.to_i
+      seat = entry["seat"].to_i
       (@seats_in ||= []) << seat if kind == "in" && !@seats_in.to_a.include?(seat)
       @seats_out = @seats_out.to_a - [seat]
       @seats_out << seat if kind == "out"
-      entry
+    end
+
+    # Reads a message's text into its fields and body through the core, as the DLL hands an entry
+    # to the scripts.
+    #
+    # @param entry [Hash] The entry, a message's "text" with it.
+    # @return [Hash] The entry, a message's "fields" and "body" in place of its text.
+    def read_message(entry)
+      taken = entry.reject { |key, _| key == "text" }
+      return taken unless entry["kind"] == "message"
+
+      read = MGQ_Multiplayer::Bridge.call(READ_TOPIC, entry["text"].to_s)
+      taken.merge("fields" => read.is_a?(Hash) ? read["fields"] : {}, "body" => read.is_a?(Hash) ? read["body"].to_s : "")
     end
 
     # Names the world as MGQ Online's raid pools read it on the server, which the pools' state
@@ -134,48 +183,11 @@ module Online
     ensure
       SceneManager.define_singleton_method(:first_scene_class, first) if first
     end
-
-    # An export that writes a text into the caller's buffer, as the DLL's read exports do: the
-    # text's length, its negative length when the buffer is too small, which keeps the text for
-    # the next call, or 0 for none.
-    #
-    # @yieldreturn [String, nil] The next text.
-    # @return [#call] The export.
-    def reader(&take)
-      kept = nil
-      lambda do |buffer, size|
-        text = kept || take.call
-        kept = nil
-        return 0 if text.nil? || text.empty?
-
-        bytes = text.b
-        if bytes.bytesize > size
-          kept = text
-          return -bytes.bytesize
-        end
-        buffer.force_encoding("ASCII-8BIT")[0, bytes.bytesize] = bytes
-        bytes.bytesize
-      end
-    end
-
-    # An export the server does not answer: it does nothing and answers 0, which the scripts take
-    # as a call that did nothing, and writes nothing into a buffer.
-    #
-    # @param name [String] The export.
-    # @return [#call] The export.
-    def unanswered(name)
-      unless @unanswered[name]
-        @unanswered[name] = true
-        write_log("server: #{name} answers nothing on the battle server")
-      end
-      ->(*) { 0 }
-    end
   end
 
   # What the relay tells the server of a Raid World's boss pools while it hosts a battle that
-  # fights them: its lines arrive on the bridge's reading thread and wait here until the game's
-  # thread hands them to the core's ledger (MGQOnline.Game's PoolTopics), which the scripts read as
-  # the DLL's.
+  # fights them, as the core read the relay's lines: it waits here until the scripts read the pools,
+  # then goes to the core's ledger (MGQOnline.Game's PoolTopics), which the scripts read as the DLL's.
   class BossPools
     # The core's topic that takes what the relay told of a pool.
     HEARD_TOPIC = "raid.pool.heard"
@@ -191,32 +203,19 @@ module Online
     # Keeps what the relay told of a pool for the next flush: the answer to one of the server's
     # reports, or another battle's change.
     #
-    # @param fields [Hash] "key", "left" (the share of its max left), "max", "defeated", "by" and
-    #   "answer"; an answer the relay refused names no "left".
-    def take(fields)
-      @told << fields
+    # @param entry [Hash] The boss entry the core read of the relay's line (RelayLineTopics.Read):
+    #   "key", "left", "max", "defeated", "by" and "answer", as HEARD_TOPIC takes them.
+    def take(entry)
+      @told << entry
     end
 
     # Hands the core's ledger what the relay told since the last flush, oldest first.
     #
     # @param world [String] The world's id the game's scripts expect.
     def flush(world)
-      while (fields = next_told)
-        next if fields["key"].to_s.empty?
-
-        MGQ_Multiplayer::Bridge.call(HEARD_TOPIC, request_of(fields, world))
+      while (entry = next_told)
+        MGQ_Multiplayer::Bridge.call(HEARD_TOPIC, entry.reject { |key, _| key == "kind" }.merge("world" => world))
       end
-    end
-
-    # Reads a report as MGQ Online's raid pools write it.
-    #
-    # @param text [String] "seq\tdelta\tmax\tkilled", see MGQ_MpRaidPool.report.
-    # @return [Hash, nil] :seq, :delta, :max and :killed, nil for a report of another shape.
-    def self.report_of(text)
-      seq, delta, max, killed = text.to_s.split("\t")
-      return nil unless seq.to_s.match?(/\A\d+\z/) && delta.to_s.match?(/\A-?\d+(\.\d+)?\z/) && max.to_s.match?(/\A\d+\z/)
-
-      { seq: seq.to_i, delta: delta.to_f, max: max.to_i, killed: killed == "1" }
     end
 
     private
@@ -228,17 +227,6 @@ module Online
       @told.pop(true)
     rescue ThreadError
       nil
-    end
-
-    # Writes the core's request of a word the relay told.
-    #
-    # @param fields [Hash] The word, see take.
-    # @param world [String] The world's id.
-    # @return [Hash] The request of HEARD_TOPIC.
-    def request_of(fields, world)
-      left = fields["left"]
-      { "world" => world, "key" => fields["key"].to_s, "left" => left.is_a?(Numeric) ? left.to_f.to_s : nil, "max" => fields["max"].to_i,
-        "defeated" => fields["defeated"] ? true : false, "by" => fields["by"].to_s, "answer" => fields["answer"] ? true : false }
     end
   end
 
@@ -280,31 +268,27 @@ module Online
     #
     # @param key [String] The pool's key.
     # @param battle [String] The battle's id the report counts under.
-    # @param text [String] The report, see BossPools.report_of.
-    # @return [Boolean] Whether it was one.
+    # @param text [String] The report as the core's fight left it.
+    # @return [Boolean] true.
     def report(key, battle, text)
-      report = BossPools.report_of(text)
-      return false unless report
-
-      @reports << [key, battle, report]
+      @reports << [key, battle, text]
       true
     end
 
-    # Hands the server an entry, as the DLL would: a player's message, coming or going, or the
+    # Hands the server an entry, as the relay would: a player's message, coming or going, or the
     # channel's end.
     #
     # @param kind [String] "message", "in", "out" or "closed".
     # @param seat [Integer] The player's world seat.
     # @param payload [String] A message's text.
     def push(kind, seat, payload = nil)
-      text = "kind=#{kind}\nseat=#{seat}\n\n"
-      text += payload.to_s if payload
-      @entries << text
+      @entries << { "kind" => kind, "seat" => seat, "text" => payload.to_s }
     end
 
     # Takes the next entry, see push.
     #
-    # @return [String, nil] The entry as the DLL writes it, nil while none waits.
+    # @return [Hash, nil] The entry: "kind", "seat", "code" for closed and a message's "text"; nil
+    #   while none waits.
     def next_entry
       @entries.pop(true)
     rescue ThreadError

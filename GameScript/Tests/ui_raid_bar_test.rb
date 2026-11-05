@@ -2,7 +2,9 @@
 #  ui_raid_bar_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Read the scripts' clock from $frame
+#      Paulinchen  2026-11-05: Kept the bars' switches in the stand-in of Player.ini as true or false, as the DLL hands them back
+#                            - Noted invites with their pool as a number and their tier as true
+#                            - Read the scripts' clock from $frame
 #      Paulinchen  2026-11-01: Read the bars from the Mod Framework's components they build, the DLL's bars answered by a stand-in
 #                            - Stopped loading the deleted ui_boxes.rbx
 #      Paulinchen  2026-10-31: Kept the strip's place in the Mod Framework's settings
@@ -126,8 +128,8 @@ module MGQ_Multiplayer
   module Player
     # A setting of Player.ini.
     def self.setting(name); ($settings ||= {})[name]; end
-    # Stores a setting.
-    def self.store(name, value); ($settings ||= {})[name] = value.to_s; end
+    # Stores a setting as the DLL hands it back: true or false as they are, the rest as text.
+    def self.store(name, value); ($settings ||= {})[name] = value == true || value == false || value.is_a?(Integer) ? value : value.to_s; end
     # Forgets a setting.
     def self.forget(name); ($settings ||= {}).delete(name); end
   end
@@ -369,7 +371,7 @@ end
 # The battle's strip.
 reset
 check("a battle that fights no pool shows no strip, without asking the DLL", [bar.battle_bar, $bar_requests], [nil, []])
-pool.note_invite("troop" => "71", "pool" => "1")
+pool.note_invite("troop" => "71", "pool" => 1)
 BattleManager.setup(71)
 $game_troop.members[0].hp = 4500
 check("the battle asks the DLL for its boss's bar with each enemy's HP as the battle has it and its pool",
@@ -411,9 +413,9 @@ $tab_pressed = true
 spriteset.update
 $tab_pressed = false
 check("Tab makes it small and keeps the choice, its height easing down to the gauges alone, which it keeps at its bottom",
-      [$settings["raid_bar_small"], root.tail, $cursor_sounds], ["1", true, 1])
+      [$settings["raid_bar_small"], root.tail, $cursor_sounds], [true, true, 1])
 part_with_text(root, "Tab: bars").send(:emit, :click)
-check("a click on its hint shows it whole again", [$settings["raid_bar_small"], MGQ_MpRaidBar.small?], ["0", false])
+check("a click on its hint shows it whole again", [$settings["raid_bar_small"], MGQ_MpRaidBar.small?], [false, false])
 # The chat, which the player types in while $chat_typing.
 module MGQ_MpChat; def self.typing?; $chat_typing; end; end
 $chat_typing = true
@@ -422,7 +424,7 @@ spriteset.update
 $tab_pressed = false
 $chat_typing = false
 check("Tab typed into the chat box changes nothing, its refusal left to the hotkeys, which log none while the player types",
-      [$settings["raid_bar_small"], $refusals], ["0", [[:party_box, "the chat box is open"]]])
+      [$settings["raid_bar_small"], $refusals], [false, [[:party_box, "the chat box is open"]]])
 spriteset.dispose
 check("the battle's sprites close the strip as they go", root.open?, false)
 spriteset.update
@@ -431,7 +433,7 @@ spriteset.dispose
 
 # A boss of several enemies in battle: a name and a gauge per enemy.
 reset
-pool.note_invite("troop" => "836", "pool" => "3")
+pool.note_invite("troop" => "836", "pool" => 3)
 BattleManager.setup(836)
 spriteset = Spriteset_Battle.new
 spriteset.update
@@ -522,13 +524,13 @@ tiers = MGQ_MpRaidTiers
 reset
 $raid = false
 tiers.choose(true)
-tiers.note_invite("troop" => "71", "tiers" => "1")
+tiers.note_invite("troop" => "71", "tiers" => true)
 BattleManager.setup(71)
 $game_troop.members[0].hp = 4500
 check("outside a Raid World a battle whose boss fights at its tier asks for a bar of its enemies' own HP, without a pool",
       [pool.fight, flat(bar.battle_bar), $bar_requests.last[1]["enemies"]], [nil, ["Tier 9 Raid Boss", [["Queen Harpy", 4500, 6000]]], [["Queen Harpy", 4500, 6000, false, nil]]])
 bar.show_bar(:battle, false)
-check("none once the player turned the battle's bar off, kept in Player.ini", [bar.battle_bar, $settings["raid_bar_battle"]], [nil, "0"])
+check("none once the player turned the battle's bar off, kept in Player.ini", [bar.battle_bar, $settings["raid_bar_battle"]], [nil, false])
 bar.show_bar(:battle, true)
 BattleManager.setup(126)
 check("nor in a battle no event, retry or invite started", bar.battle_bar, nil)
@@ -542,7 +544,7 @@ check("a boss the story beat shows none", [bar.shown_troop?(71), bar.boss_events
 $game_variables[1011] = 0
 bar.show_bar(:map, false)
 $frame += MGQ_MpRaidBar::SCAN_FRAMES
-check("nor any once the player turned the map's bar off, kept in Player.ini", [bar.tier_map?, bar.boss_events, $settings["raid_bar_map"]], [false, [], "0"])
+check("nor any once the player turned the map's bar off, kept in Player.ini", [bar.tier_map?, bar.boss_events, $settings["raid_bar_map"]], [false, [], false])
 bar.show_bar(:map, true)
 tiers.choose(false)
 $frame += MGQ_MpRaidBar::SCAN_FRAMES
@@ -558,7 +560,7 @@ $raid = true
 $raid_bosses = true
 bar.show_bar(:battle, false)
 bar.show_bar(:map, false)
-pool.note_invite("troop" => "71", "pool" => "1")
+pool.note_invite("troop" => "71", "pool" => 1)
 BattleManager.setup(71)
 $game_troop.members[0].hp = 4500
 push("Queen Harpy", "0.5", "6000")

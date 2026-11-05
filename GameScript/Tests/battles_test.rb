@@ -2,6 +2,7 @@
 #  battles_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Sent through the world room's port, as coop.rbx does
 #      Paulinchen  2026-10-06: Checked that a reset forgets the rules and leaves the next save's switches alone
 #      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Checked that a PvP battle with the Backline may swap it in
@@ -35,7 +36,7 @@ $game_switches = Game_Switches.new
 # Stands in for coop.rbx's tell and routes.
 module MGQ_MpCoop
   def self.tell(seat, field, value, fields = {})
-    MGQ_MpOverworldSync::Link.send_to(seat, MGQ_MpOverworldSync::Me.encode({ field => value, "party" => Party.id }.merge(fields)))
+    MGQ_MpOverworldSync::Port.send_to(seat, { field => value, "party" => Party.id }.merge(fields), "")
   end
   def self.route(*); end
 end

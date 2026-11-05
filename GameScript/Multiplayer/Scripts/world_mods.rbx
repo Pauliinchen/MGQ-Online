@@ -2,7 +2,10 @@
 #  world_mods.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Read the catalog at most once a second by the bridge's frame
+#      Paulinchen  2026-11-05: Took the relay's mods rule as the flag the DLL reads
+#                            - Handed the DLL the options of a world's mods as values and took its settings as values, building and splitting no pairs
+#                            - Handed the DLL an option for the catalog as values
+#                            - Read the catalog at most once a second by the bridge's frame
 #      Paulinchen  2026-11-01: Dropped the download check of a mod row, which nothing calls
 #                            - Added the row of Shared Mod Settings once as the script loads, through the Mod Framework's options, shown only in a world
 #      Paulinchen  2026-10-31: Took the group of its row from MGQ_Multiplayer::OPTION_PREFIX
@@ -122,9 +125,6 @@ module MGQ_MpWorldMods
 
   # What the row says while Off.
   ROW_OFF_HELP = "Each player here sets their own mod options."
-
-  # The marker's key, as settings_from reads it.
-  MARKER_KEY = :"@shared"
 
   # An option's name that opens its mod's group, "[Mod Name] Option", as Mod Config Remake reads it.
   MOD_NAME = /\A\s*\[([^\]]+)\]\s*/
@@ -342,7 +342,7 @@ module MGQ_MpWorldMods
     return unless world && defined?(Mod_Framework::Mods) && Mod_Framework::Mods.respond_to?(:stays_on)
 
     running = Mod_Framework::Mods.loaded - Array(@from_start)
-    told = MGQ_Multiplayer::Bridge.call(NOW_OFF_TOPIC, "world" => world.name.to_s, "off" => message[MGQ_MpOverworldSync::MODS_RULE_FIELD].to_s == "1", "mods" => mods, "running" => running)
+    told = MGQ_Multiplayer::Bridge.call(NOW_OFF_TOPIC, "world" => world.name.to_s, "off" => message[MGQ_MpOverworldSync::MODS_RULE_FIELD] == true, "mods" => mods, "running" => running)
     return unless told.is_a?(Hash) && told["text"]
 
     log("#{world.name} now turns off #{told['off'].join(', ')}, which this session runs")
@@ -559,38 +559,28 @@ module MGQ_MpWorldMods
     return unless admin && defined?(NWConst::Config::MOD_CONTENTS)
 
     (MGQ_Multiplayer::Bridge.call(REPORT_TOPIC) || []).each do |key, _name, version|
-      lines = world_entries([key]).map { |entry| option_line(entry) }.compact
-      MGQ_Multiplayer::Bridge.call(OPTIONS_TOPIC, "key" => key, "version" => version, "lines" => lines)
+      options = world_entries([key]).map { |entry| option_of(entry) }.compact
+      MGQ_Multiplayer::Bridge.call(OPTIONS_TOPIC, "key" => key, "version" => version, "options" => options)
     end
   rescue => e
     log_once(:report_options, "sending the Mod Config options failed: #{e.class}: #{e.message}")
   end
 
-  # Writes one Mod Config option for the catalog: its key, name, type, default and choices.
+  # Reads one Mod Config option for the catalog: its key, name, default and choices; the DLL names
+  # its type and leaves out what a world does not keep (ModOption.Of).
   #
   # @param entry [Hash] The option's entry in MOD_CONTENTS.
-  # @return [String, nil] Tab-separated fields, see ModOption.Parse in the DLL; nil for an option
-  #   whose value has a type a world does not keep.
-  def self.option_line(entry)
+  # @return [Hash] "key", "name", "default" and "choices" ([value, name] each), each value as
+  #   plain_option hands it.
+  def self.option_of(entry)
     config = NWConst::Config
     key = entry[:key]
     values = values_of(entry)
     texts = (config.const_defined?(:DATA_TEXT) && config::DATA_TEXT[key]) || {}
     default = config.const_defined?(:DEFAULT) ? config::DEFAULT[key] : nil
     default = values.first if default.nil?
-    type = type_of(default)
-    return nil unless type
-
-    choices = values.map { |value| type_of(value) && [value, (texts[value] && texts[value][:name]) || value] }.compact
-    ([key, short_name(entry), type, default] + choices.flatten).map { |field| dump_field(field) }.join("\t")
-  end
-
-  # Writes a field of a tab-separated line.
-  #
-  # @param field [Object] The field.
-  # @return [String] Its text, tabs and line breaks turned into spaces.
-  def self.dump_field(field)
-    field.to_s.gsub(/[\t\r\n]/, " ")
+    choices = values.map { |value| [plain_option(value), ((texts[value] && texts[value][:name]) || value).to_s] }
+    { "key" => key.to_s, "name" => short_name(entry).to_s, "default" => plain_option(default), "choices" => choices }
   end
 
   # Reads the values an option can take as Mod Config Remake does: from its :values, an array or a
@@ -634,30 +624,34 @@ module MGQ_MpWorldMods
     MGQ_Multiplayer::Bridge.call(SERVED_TOPIC, @world["mods"].to_s) || []
   end
 
-  # Writes the player's options of the world's mods, which the battle server takes for a battle
-  # it hosts. Called by MGQ_MpBattlesServed.setup_text.
+  # Lists the player's options of the world's mods, which the battle server takes for a battle it
+  # hosts. Called by MGQ_MpBattlesServed.setup_text, whose battle line carries a Float or a Symbol
+  # as the DLL reads it (SharedSettings.ValueOf).
   #
-  # @return [String] "key=type:value" pairs separated by semicolons.
+  # @return [Array<Array(String, Object)>] Each option's key and its value, only values of a type a
+  #   world keeps.
   def self.served_settings
-    return "" unless @world
+    return [] unless @world
 
-    option_pairs(MGQ_MpWorld.mods_of(@world["mods"]).map { |name| MGQ_MpWorld.mod_key(name) }).map { |_, pair| pair }.join(";")
+    keys = MGQ_MpWorld.mods_of(@world["mods"]).map { |name| MGQ_MpWorld.mod_key(name) }
+    $game_system ? world_options(keys).map { |key| [key.to_s, option_value(key)] }.reject { |_, value| plain_option(value).nil? } : []
   rescue => e
-    log("writing the world's mod settings for the battle server failed: #{e.class}: #{e.message}")
-    ""
+    log("listing the world's mod settings for the battle server failed: #{e.class}: #{e.message}")
+    []
   end
 
   # Settings.
 
-  # Writes some mods' options as the creator's game has them, leaving out key bindings, buttons and
-  # options marked personal.
+  # Lists some mods' options as the creator's game has them, leaving out key bindings, buttons,
+  # options marked personal and values of a type a world does not keep; the DLL writes them as the
+  # world's settings (SharedSettings.PairsOf).
   #
   # @param keys [Array<String>] The mods' keys.
-  # @return [Array<Array(Symbol, String)>] Each option's key and its "key=type:value" pair.
-  def self.option_pairs(keys)
+  # @return [Array<Array(String, Object)>] Each option's key and its value, see plain_option.
+  def self.option_values(keys)
     return [] unless $game_system
 
-    world_options(keys).map { |key| (encoded = encode(option_value(key))) && [key, "#{key}=#{encoded}"] }.compact
+    world_options(keys).map { |key| (plain = plain_option(option_value(key))).nil? ? nil : [key.to_s, plain] }.compact
   end
 
   # Lists the keys of every Mod Config entry this game has.
@@ -667,14 +661,6 @@ module MGQ_MpWorldMods
     return [] unless defined?(NWConst::Config::MOD_CONTENTS)
 
     NWConst::Config::MOD_CONTENTS.map { |entry| entry[:key] }.compact.map { |key| key.to_sym }
-  end
-
-  # Splits a world's settings into their pairs.
-  #
-  # @param text [String, nil] "key=type:value" pairs separated by semicolons.
-  # @return [Array<Array(Symbol, String)>] Each pair's key and the pair as written.
-  def self.pairs_of(text)
-    text.to_s.split(";").map { |pair| key = pair.split("=", 2)[0].to_s; key.empty? ? nil : [key.to_sym, pair] }.compact
   end
 
   # Tells whether a world's settings are shared: an empty text leaves every player their own.
@@ -694,70 +680,44 @@ module MGQ_MpWorldMods
     value.nil? && defined?(NWConst::Config::DEFAULT) ? NWConst::Config::DEFAULT[key] : value
   end
 
-  # Writes a value with its type.
+  # Turns an option's value into what the bridge carries, which carries no Floats and no Symbols.
   #
   # @param value [Object] The value.
-  # @return [String, nil] Such as "i:1", nil for a type a world does not keep.
-  def self.encode(value)
-    type = type_of(value)
-    type && "#{type}:#{value.to_s.gsub('%', '%25').gsub(';', '%3B').gsub('=', '%3D')}"
-  end
-
-  # Names a value's type as a world's settings write it.
-  #
-  # @param value [Object] The value.
-  # @return [String, nil] "i", "f", "b", "y" or "s", nil for a type a world does not keep.
-  def self.type_of(value)
+  # @return [Object, nil] An Integer, true, false or a String as it is, a Float as {"float" => text},
+  #   a Symbol as {"symbol" => name}; nil for a type a world does not keep.
+  def self.plain_option(value)
     # Ruby 1.9's whole numbers are Fixnum or Bignum, which case finds as Integer.
     case value
-    when Integer then "i"
-    when Float then "f"
-    when true, false then "b"
-    when Symbol then "y"
-    when String then "s"
+    when Integer, true, false, String then value
+    when Float then { "float" => value.to_s }
+    when Symbol then { "symbol" => value.to_s }
     end
   end
 
-  # Reads a value written with its type.
+  # Turns settings the DLL read into the options' values, see plain_option.
   #
-  # @param text [String] Such as "i:1".
-  # @return [Array] Whether it was readable, and the value.
-  def self.decode(text)
-    type, raw = text.to_s.split(":", 2)
-    raw = raw.to_s.gsub('%3D', '=').gsub('%3B', ';').gsub('%25', '%')
-
-    case type
-    when "i" then raw =~ /\A-?\d+\z/ ? [true, raw.to_i] : [false, nil]
-    when "f" then raw =~ /\A-?\d+(\.\d+)?(e[-+]?\d+)?\z/i ? [true, raw.to_f] : [false, nil]
-    when "b" then [true, raw == "true"]
-    when "y" then raw.empty? ? [false, nil] : [true, raw.to_sym]
-    when "s" then [true, raw]
-    else [false, nil]
-    end
-  end
-
-  # Reads a world's settings.
-  #
-  # @param text [String, nil] "key=type:value" pairs separated by semicolons.
-  # @return [Hash] The values by the options' keys, without the marker.
-  def self.settings_from(text)
-    pairs_of(text).each_with_object({}) do |(key, pair), values|
-      next if key == MARKER_KEY
-
-      readable, value = decode(pair.split("=", 2)[1])
-      values[key] = value if readable
+  # @param settings [Array<Array(String, Object)>, nil] Each option's key and its value.
+  # @return [Hash] The values by the options' keys.
+  def self.settings_of(settings)
+    Array(settings).each_with_object({}) do |(key, plain), values|
+      values[key.to_s.to_sym] =
+        if plain.is_a?(Hash) && plain.key?("float") then plain["float"].to_s.to_f
+        elsif plain.is_a?(Hash) then plain["symbol"].to_s.to_sym
+        else plain
+        end
     end
   end
 
   # Lists this game's Mod Config groups as the DLL's notices name them: each option's key, its name
   # as its row shows it and the names Mod Config gives its values.
   #
-  # @return [Array<Array>] Each group's name and [key, name, [[value with its type, name], ...]] options.
+  # @return [Array<Array>] Each group's name and [key, name, [[value, name], ...]] options, each
+  #   value as plain_option hands it.
   def self.options_table
     texts = defined?(NWConst::Config::DATA_TEXT) ? NWConst::Config::DATA_TEXT : {}
     menu_groups.map do |name, entries|
       options = entries.select { |entry| entry[:key] }.map do |entry|
-        values = (texts[entry[:key]] || {}).map { |value, text| (encoded = encode(value)) && text.is_a?(Hash) && text[:name] ? [encoded, text[:name].to_s] : nil }.compact
+        values = (texts[entry[:key]] || {}).map { |value, text| (plain = plain_option(value)).nil? || !(text.is_a?(Hash) && text[:name]) ? nil : [plain, text[:name].to_s] }.compact
         [entry[:key].to_s, short_name(entry), values]
       end
       [name, options]
@@ -834,7 +794,7 @@ module MGQ_MpWorldMods
   def self.apply
     return unless MGQ_MpWorld.open? && @world && $game_system
 
-    applied = @world["shared"] ? apply_text(@world["text"]) : (lock([]); [])
+    applied = @world["shared"] ? apply_settings(@world["values"]) : (lock([]); [])
     take(MGQ_Multiplayer::Bridge.call(LOADED_TOPIC, own_options.merge("applied" => applied.map { |key| key.to_s })))
   rescue => e
     log("applying the world's mod settings failed: #{e.class}: #{e.message}")
@@ -843,21 +803,22 @@ module MGQ_MpWorldMods
   # Writes the creator's options of the world's mods for the DLL, which makes them the world's
   # settings while it shares them.
   #
-  # @return [Hash] "pairs", each option's [key, "key=type:value"], and "known", the key of every
-  #   option this game's Mod Config has; none of either for another player.
+  # @return [Hash] "options", each option's key and value (see option_values), and "known", the key
+  #   of every option this game's Mod Config has; none of either for another player.
   def self.own_options
-    return { "pairs" => [], "known" => [] } unless own_world? && $game_system
+    return { "options" => [], "known" => [] } unless own_world? && $game_system
 
     keys = MGQ_MpWorld.mods_of(@world["mods"]).map { |name| MGQ_MpWorld.mod_key(name) }
-    { "pairs" => option_pairs(keys).map { |key, pair| [key.to_s, pair] }, "known" => menu_keys.map { |key| key.to_s } }
+    { "options" => option_values(keys), "known" => menu_keys.map { |key| key.to_s } }
   end
 
   # Writes shared settings into the game's options and locks them, but for the creator.
   #
-  # @param text [String] The world's settings.
+  # @param values [Array<Array(String, Object)>] The world's settings as the DLL read them, see
+  #   settings_of.
   # @return [Array<Symbol>] The options written.
-  def self.apply_text(text)
-    settings = settings_from(text)
+  def self.apply_settings(values)
+    settings = settings_of(values)
     before = settings.select { |key, value| !same_value?($game_system.conf[key], value) }.map { |key, value| "#{key} #{$game_system.conf[key].inspect} -> #{value.inspect}" }
     applied = apply_values(settings)
     lock(own_world? ? [] : applied)
@@ -984,15 +945,15 @@ module MGQ_MpWorldMods
   # Plays one step of the DLL.
   #
   # @param step [Array] Its kind and values: "notify" with the lines, "apply" or "apply_live" with
-  #   the settings, "unlock", "row" with whether it shares.
+  #   the settings' values (see settings_of), "unlock", "row" with whether it shares.
   def self.play(step)
     kind, first = step
     case kind
     when "notify" then notify(first)
-    when "apply" then apply_text(first) if $game_system
+    when "apply" then apply_settings(first) if $game_system
     when "unlock" then lock([])
     when "apply_live"
-      applied = $game_system ? apply_text(first) : []
+      applied = $game_system ? apply_settings(first) : []
       take(MGQ_Multiplayer::Bridge.call(APPLIED_TOPIC, "keys" => applied.map { |key| key.to_s }))
     when "row"
       show_row_value(first)

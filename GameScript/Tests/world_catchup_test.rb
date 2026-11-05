@@ -2,7 +2,9 @@
 #  world_catchup_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Checked that a prize's row gives only as history before the world's log, but the Medal King's free gift
+#      Paulinchen  2026-11-05: Handed and expected the story's keys as [kind, key] with values, and the sites a replay plays as plain values
+#                            - Expected the shared companions added through the DLL's topic, their ids as numbers
+#                            - Checked that a prize's row gives only as history before the world's log, but the Medal King's free gift
 #                            - Checked that the orbs' event plays only as history before the world's log
 #                            - Checked that the repair never gives back an item an event takes away, read as the events database lists it
 #                            - Checked that a found item's gain notes nothing for the world but a Makina, whose items the story replay hands over
@@ -246,7 +248,7 @@ frames(40)
 check("a player in the world's story gets every key item it gave, and loses what it took",
       [$game_party.items[502], $game_party.items[503], $game_party.items[504]], [1, 0, 0])
 check("and the story chests the world opened are played in their own game, which gives what each gives, such as an ore the Chaos forge asks for",
-      [$derived, $game_party.items[501], $game_switches[7102]], [[[{ "chest" => "ss30.4.A" }, "c:30.4.A"]], 0, false])
+      [$derived, $game_party.items[501], $game_switches[7102]], [[[{ "chest" => [2, [30, 4, "A"]] }, "c:30.4.A"]], 0, false])
 frames(40)
 story.pushed(MGQ_MpOverworldSync::STORY_FIELD => "5", :relay => true)
 frames(1)
@@ -349,7 +351,7 @@ $game_actors[1].level = 50
 frames(40)
 check("then joins, though the player's story never passed its join", roster.include?(16), true)
 check("a battle recruit is not shared with story companions alone", roster.include?(80), false)
-check("the player's own battle recruit is no story companion to share", calls_of("mp_raid_companions_add"), [])
+check("the player's own battle recruit is no story companion to share", calls_of("raid.companions.add"), [])
 $sharing = :all
 new_game({ 1001 => 40, 1142 => 5 }, [], 9)
 $game_party.add_actor(77)
@@ -357,10 +359,10 @@ frames(1)
 relay({ "rev" => 9, "wrev" => 9, "p" => 40, "r1142" => 5, "part" => "mr", "route" => "mr", "comps" => "16,80" }, packed({ 1001 => 40, 1142 => 5 }))
 frames(700)
 check("with battle recruits shared, one joins at its start level", roster.include?(80), true)
-check("and the player's own recruit goes to the world's list, once", calls_of("mp_raid_companions_add"), [["w1\0", "77\0"]])
+check("and the player's own recruit goes to the world's list, once", calls_of("raid.companions.add"), [{ "world" => "w1", "ids" => [77] }])
 relay({ "rev" => 10, "wrev" => 9, "p" => 40, "r1142" => 5, "part" => "mr", "route" => "mr", "comps" => "16,77,80", "companions" => "done" }, packed({ 1001 => 40, 1142 => 5 }))
 frames(700)
-check("which the next look sends nothing for", calls_of("mp_raid_companions_add").size, 1)
+check("which the next look sends nothing for", calls_of("raid.companions.add").size, 1)
 # A talk join the player's story walked past gave them nothing, so the world's share still brings
 # them.
 tables(:JOINS => [join.new(45, 45, "map:5:27:1", "1", 6, nil, [[:v, 1001, 6]], 8, :start, 1, false)])
@@ -438,7 +440,7 @@ tables(:REWARDS => [reward.new(:i, 600, 1, "map:36:18:1", "2", 20, nil, [[:v, 10
                     reward.new(:i, 701, 1, "map:40:3:1", nil, nil, nil, [[:s, 3001]], true)])
 new_game({ 1001 => 10 }, [], 40)
 frames(1)
-relay({ "rev" => 17, "wrev" => 17, "p" => 32, "part" => "2", "start" => [25, 0, 0, 0], "log" => packed({ 1001 => 25 }, [3000], {}).merge("s3001" => "0") },
+relay({ "rev" => 17, "wrev" => 17, "p" => 32, "part" => "2", "start" => [25, 0, 0, 0], "log" => packed({ 1001 => 25 }, [3000], {}) + [[0, 3001, false]] },
       packed({ 1001 => 32 }, [3000, 3001]))
 frames(80)
 check("a story laid over the player's gives a row of the history the world was past where its log starts once, and nothing of a row whose run the log holds",
@@ -453,7 +455,7 @@ frames(1)
 relay({ "rev" => 18, "wrev" => 18, "p" => 40, "part" => "3", "clear" => "ad", "done" => "ad" }, packed({ 1001 => 40 }, [7096]))
 frames(80)
 check("a companion the player missed has their recruit page played in the player's game once a route finished, once",
-      [$derived, roster.include?(77)], [[[{ "site" => "map:132:23:1" }, "m:77"]], false])
+      [$derived, roster.include?(77)], [[[{ "site" => ["map", 132, 23, 1] }, "m:77"]], false])
 $derived = nil
 $sharing = :off
 
@@ -478,7 +480,7 @@ $game_self_switches[[30, 4, "A"]] = true
 frames(1)
 relay({ "rev" => 18, "wrev" => 18, "p" => 24, "part" => "2" }, packed({ 1001 => 24 }))
 frames(40)
-check("a world chest the player opened goes to the relay as the player's request", staged("story.writes").flatten(1).map(&:first).include?("ss30.4.A"), true)
+check("a world chest the player opened goes to the relay as the player's request", staged("story.writes").flatten(1).map { |kind, key, _value, _site| [kind, key] }.include?([2, [30, 4, "A"]]), true)
 relay({ "rev" => 19, "part" => "2" }, packed({ 1001 => 24 }, [], { [30, 4, "A"] => true }))
 frames(40)
 check("and stays open under the world's story, which keeps it, giving nothing", [story.mode, $game_self_switches[[30, 4, "A"]], $game_party.items[501]], [:world, true, 0])
@@ -954,7 +956,7 @@ check("a Makina no player of the world got stays away, and the copies the player
 $game_self_switches[[0, 700, "F"]] = true
 frames(40)
 check("once another player got it and the player's level reaches its area level, its chest plays in the player's game, without a notice",
-      [$derived.uniq, $messages.grep(/Makina/)], [[[{ "site" => "map:215:23:1" }, "makina:700 at level 6"]], []])
+      [$derived.uniq, $messages.grep(/Makina/)], [[[{ "site" => ["map", 215, 23, 1] }, "makina:700 at level 6"]], []])
 $derived = nil
 $game_self_switches[[0, 701, "F"]] = nil
 $game_party.items[701] = 1

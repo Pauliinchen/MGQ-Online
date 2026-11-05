@@ -2,6 +2,7 @@
 //  CoopRoomTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Handed the enemy rates as numbers
 //      Paulinchen  2026-10-30: Checked a join frame whose hotkey is unread
 //                            - Checked the leader's wait without a question and the status after a reset
 //                            - Created
@@ -118,7 +119,7 @@ public sealed class CoopRoomTopicsTests
     private static RubyHash Offer() => new()
     {
         { "facts", Facts() }, { "troop", 40 }, { "escape", true }, { "lose", false }, { "encounter", false }, { "encountering", false }, { "joining", false },
-        { "asked_hot", false }, { "side", false }, { "pools_won", false }, { "boss", false }, { "rates", "100,100,100,100,100,100" },
+        { "asked_hot", false }, { "side", false }, { "pools_won", false }, { "boss", false }, { "rates", new RubyArray { 100, 100, 100, 100, 100, 100 } },
         { "invite_fields", new RubyArray() }, { "viewers", new RubyArray() }, { "leading", RubyNil.Value }, { "stays_out", new RubyArray() },
     };
 

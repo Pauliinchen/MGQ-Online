@@ -2,6 +2,8 @@
 #  ui_chat.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Took the log's size kept in Player.ini as the width and lines the DLL reads
+#                            - Named a scene whose class has no name by the class it builds on, so the chat's model always gets one
 #      Paulinchen  2026-11-01: Built the chat log, its tabs, its box, a player's menu and the bubbles of the Mod Framework's components
 #                            - Showed the DLL's chat model and handed it the typing, the keys and the clicks, leaving it the chat's
 #                              rules and messages
@@ -323,7 +325,7 @@ module MGQ_MpChat
   #
   # @param key [Integer, nil] Windows' code of the key that opened it, nil when the wheel did.
   def self.start_typing(key = nil)
-    take_view(call(OPEN_TOPIC, "key" => !key.nil?, "scene" => SceneManager.scene.class.name, "close" => UI.cancel_keys(:text)))
+    take_view(call(OPEN_TOPIC, "key" => !key.nil?, "scene" => scene_name(SceneManager.scene), "close" => UI.cancel_keys(:text)))
   end
 
   # Closes the chat box, if it is open.
@@ -368,13 +370,13 @@ module MGQ_MpChat
     !typing? && Array(@view && @view["lines"]).empty?
   end
 
-  # Tells the log's size until the player resizes it through the layout: SIZE_SETTING's, else
-  # DEFAULT_SIZE.
+  # Tells the log's size until the player resizes it through the layout: SIZE_SETTING's, which the
+  # DLL reads as a width and lines, else DEFAULT_SIZE.
   #
   # @return [Array<Integer>] Its width and its lines.
   def self.size
-    stored = MGQ_Multiplayer::Player.setting(SIZE_SETTING).to_s.split("x").map { |part| part.to_i }
-    stored.size == 2 && stored.all? { |value| value > 0 } ? stored : DEFAULT_SIZE
+    stored = MGQ_Multiplayer::Player.setting(SIZE_SETTING)
+    stored.is_a?(Array) ? stored : DEFAULT_SIZE
   end
 
   # Tells where a place's log starts: at the left, standing on the room kept below it, its size
@@ -757,6 +759,17 @@ module MGQ_MpChat
     [peer && peer.ghost, GHOST_LIFT + (peer && MGQ_MpOverworldSync.label_line_of(peer) ? LINE_LIFT : 0)]
   end
 
+  # Names a scene as the chat's model reads it: by its class, or for a class without a name, such
+  # as one made with Class.new, by the nearest named class it builds on.
+  #
+  # @param scene [Scene_Base, nil] The scene.
+  # @return [String] The name.
+  def self.scene_name(scene)
+    named = scene.class
+    named = named.superclass while named.name.nil?
+    named.name
+  end
+
   # Stages the scene in front for the chat's model, which closes the box where the chat does not
   # open, and closes the log and the bubbles once no world is open. Called by overworld_sync.rbx
   # every frame in every scene.
@@ -764,7 +777,7 @@ module MGQ_MpChat
   # @param in_world [Boolean] Whether a world is open.
   def self.tick(in_world)
     scene = SceneManager.scene
-    MGQ_Multiplayer::Bridge.stage(SCENE_TOPIC, "scene" => scene.class.name, "chat_scene" => chat_scene?(scene) ? true : false)
+    MGQ_Multiplayer::Bridge.stage(SCENE_TOPIC, "scene" => scene_name(scene), "chat_scene" => chat_scene?(scene) ? true : false)
     return if in_world
 
     drop_root
@@ -837,7 +850,7 @@ module MGQ_MpChat
   # Shows the log in a scene follow_scene names, such as a shop, and opens the chat box with its
   # key, as in a battle. Called by the scene every frame, its waits included.
   def self.on_menu
-    chat_anywhere(:menu_chat, SceneManager.scene.class.name, true)
+    chat_anywhere(:menu_chat, scene_name(SceneManager.scene), true)
   end
 
   # Shows the log in a place and opens the chat box with its key, in a scene that holds no event the

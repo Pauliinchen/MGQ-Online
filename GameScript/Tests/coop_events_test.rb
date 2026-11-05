@@ -2,7 +2,11 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Checked that every caller asks the DLL's one decision, and left the player's own common events and the Library's replay to it
+#      Paulinchen  2026-11-05: Handed and expected sites as plain values
+#                            - Handed and expected the story's keys and values as [kind, key] with values, the self switches a sort needs as the game keys them
+#                            - Sent and took the story's messages with their fields as values, the DLL writing the whole story and what of it changed
+#                            - Stood in for the world room's sending through its port
+#                            - Checked that every caller asks the DLL's one decision, and left the player's own common events and the Library's replay to it
 #                            - Checked that an event ended early or kept from starting goes to the one guard of the game's flow, in place of the fade-ins on frame timers
 #                            - Answered the Classic catch-up, the side and the key item loan by the DLL's rules as engine.rb stands in for them, recorded by make_classic.rb
 #                            - Answered how a Classic member plays the leader's story, which of its changes they take and which of their runs it keeps by the DLL's rules as engine.rb and the checks stand in for them
@@ -170,20 +174,16 @@ module MGQ_MpOverworldSync
   def self.notice(text, icon = nil); Status.notice(text); ($icons ||= []) << icon; end
   # Reports whether the player is free on the map, no event, message or transfer running.
   def self.map_free?; SceneManager.scene.is_a?(Scene_Map) && !$game_map.interpreter.running? && !$game_message.busy? && !$game_player.transfer?; end
-  def self.tell(seat, fields, body = ""); Link.send_to(seat, Me.encode(fields) + body); end
+  def self.tell(seat, fields, body = ""); Port.send_to(seat, fields, body); end
   def self.who(peer); peer == :me ? "the player" : "#{peer && peer.state['name']}"; end
   # The other players this game knows, each a Peer: their seat, state, ghost and whether they were
   # in the player's party.
   module Peers; Peer = Struct.new(:seat, :state, :ghost, :member); end
-  # The player's own state, encoded as the game sends it.
-  module Me; def self.encode(state); state.map { |k, v| "#{k}=#{v}" }.join("\n") + "\n\n"; end; end
-  # The link to the other games.
-  module Link
-    # Notes each message sent in $sent, its seat and fields.
-    def self.send_to(seat, text)
-      fields = {}
-      text.split("\n").each { |line| k, v = line.split("=", 2); fields[k] = v if v }
-      $sent << [seat, fields]
+  # The world room's sending to the other games.
+  module Port
+    # Notes each message sent in $sent, its seat and fields as the other games read them.
+    def self.send_to(seat, fields, body)
+      $sent << [seat, decode_message(encode_message(fields, body)).reject { |key, _| key == :payload }]
       true
     end
   end
@@ -418,7 +418,7 @@ end
 # The party's messages of coop.rbx, sent through the world's link.
 module MGQ_MpCoop
   def self.tell(seat, field, value, fields = {})
-    MGQ_MpOverworldSync::Link.send_to(seat, MGQ_MpOverworldSync::Me.encode({ field => value, "party" => Party.id }.merge(fields)))
+    MGQ_MpOverworldSync::Port.send_to(seat, { field => value, "party" => Party.id }.merge(fields), "")
   end
   def self.route(*); end
 end
@@ -547,9 +547,8 @@ def classic_scopes
   scope = lambda do |bytes|
     bytes.bytes.map { |found| found & MGQ_MpStoryKeys::CHEST != 0 ? 2 : (found & MGQ_MpStoryKeys::KEPT != 0 && found & MGQ_MpStoryKeys::SIDE == 0 ? 3 : 0) }.pack("C*")
   end
-  keys = {}
-  MGQ_MpStoryState.all_chest_keys.each { |key| keys["ss#{key.join('.')}"] = MGQ_MpStoryKeys::SCOPE_PARTY }
-  { "switches" => scope.call(table["switches"]), "variables" => scope.call(table["variables"]), "keys" => keys, "self" => {}, "index" => [],
+  keys = MGQ_MpStoryState.all_chest_keys.map { |map, event, letter| [map, event, letter, MGQ_MpStoryKeys::SCOPE_PARTY] }
+  { "switches" => scope.call(table["switches"]), "variables" => scope.call(table["variables"]), "keys" => keys, "self" => [], "common" => [], "index" => [],
     "self_default" => MGQ_MpStoryKeys::SCOPE_WORLD }
 end
 $world_bridge.answer("story.replay_scopes") { |request| request["party"] ? classic_scopes : nil }
@@ -670,8 +669,8 @@ check("the DLL had the game data's fingerprint once, before its first question",
 # the party as "WIRE:<id>".
 $ran = []
 $world_bridge.answer("story.replay_scopes") do |request|
-  found = request["party"] ? classic_scopes : { "switches" => "\0" * 30, "variables" => "\0" * 10, "keys" => {}, "self" => {}, "index" => [], "self_default" => 0 }
-  found["keys"].update("ss3.5.A" => 2, "ss3.8.A" => 2, "ss3.9.A" => 2) if request["party"]
+  found = request["party"] ? classic_scopes : { "switches" => "\0" * 30, "variables" => "\0" * 10, "keys" => [], "self" => [], "common" => [], "index" => [], "self_default" => 0 }
+  found["keys"] += [[3, 5, "A", 2], [3, 8, "A", 2], [3, 9, "A", 2]] if request["party"]
   found["switches"].setbyte(22, MGQ_MpStoryKeys::SCOPE_WORLD)
   found
 end
@@ -679,11 +678,39 @@ MGQ_MpStoryKeys.instance_variable_set(:@scopes, nil)
 $world_bridge.answer("story.replay_reads") { |_request| [] }
 $world_bridge.answer("story.replay_ran") { |request| $ran << request; { "id" => "e#{$ran.size}", "site" => request["site"], "scope" => "party", "stream" => request["party_stream"] } }
 $world_bridge.answer("story.replay_wire") { |entry| "WIRE:#{entry['id']}" }
+# Stands in for the DLL's writing of a whole story (ClassicStoryLists.Full), which always fits a
+# message here.
+$world_bridge.answer("story.classic_full") { |lists| { "z" => lists, "part" => false } }
+# Stands in for the DLL's writing of what of the story changed (ClassicStoryLists.Delta) from the
+# writes' rows.
+$world_bridge.answer("story.classic_delta") do |writes|
+  changes = { "s" => [], "v" => [], "ss" => [] }
+  writes.each { |kind, key, value| changes[%w(s v ss)[kind]] << [key, value] }
+  changes
+end
+
+# Writes a leader's whole story as the DLL hands its message to a member.
+#
+# @param lists [Hash] The lists, see MGQ_MpStoryState.story_lists.
+# @param more [Hash] Other fields of the message.
+# @return [Hash] The message.
+def whole_story(lists, more = {})
+  { "story" => "full", "party" => "p1", "z" => lists }.merge(more)
+end
+
+# Writes what of a leader's story changed as the DLL hands its message to a member.
+#
+# @param kind [String] "delta", or "req" for a member's requests.
+# @param changes [Hash] "s", "v" and "ss", see MGQ_MpStoryState.decode_delta, none for those left out.
+# @return [Hash] The message.
+def story_changes(kind, changes)
+  { "story" => kind, "party" => "p1", "s" => [], "v" => [], "ss" => [] }.merge(changes)
+end
 $world_bridge.answer("story.replay_unwire") do |text|
   id = text.sub("WIRE:", "")
   world = id.start_with?("w")
-  { "id" => id, "site" => "map:4:9:1", "scope" => world ? "world" : "party", "stream" => world ? "story" : "party:p1", "place" => world ? [12, 0, 0, 0] : nil,
-    "keys" => world ? { "s2280" => "0" } : { "ss4.9.A" => "0" } }
+  { "id" => id, "site" => ["map", 4, 9, 1], "scope" => world ? "world" : "party", "stream" => world ? "story" : "party:p1", "place" => world ? [12, 0, 0, 0] : nil,
+    "keys" => world ? [[0, 2280, false]] : [[2, [4, 9, "A"], false]] }
 end
 
 $party = "p1"
@@ -695,7 +722,7 @@ $game_map.interpreter.setup(chest_page.list, 5)
 $game_map.interpreter.run
 check("opening a chest hands the party the run that opened it, which changed the chest's party key",
       [$sent.map { |seat, f| [seat, f["replay"]] }, $ran.last.values_at("site", "changed", "owner", "party_stream")],
-      [[[-1, "WIRE:e1"]], ["map:3:5:1", { "ss3.5.A" => ["0", "1"] }, true, "party:p1"]])
+      [[[-1, "WIRE:e1"]], [["map", 3, 5, 1], [[2, [3, 5, "A"], false, true]], true, "party:p1"]])
 $sent.clear
 $game_map.events[9] = Game_Event.new(9, [RPG::Page.new([c(123, "A", 0), c(126, 1, 0, 0, 1), c(121, 22, 22, 0)])])
 MGQ_MpCoopEvents.instance_variable_set(:@chest_keys_map, nil)
@@ -703,7 +730,7 @@ $game_map.interpreter.setup($game_map.events[9].list, 9)
 $game_map.interpreter.run
 check("a chest that also turns on a world switch reaches the party all the same",
       [$sent.map { |seat, f| [seat, f["replay"]] }, $ran.last.values_at("changed", "owner", "party_stream")],
-      [[[-1, "WIRE:e2"]], [{ "ss3.9.A" => ["0", "1"], "s22" => ["0", "1"] }, true, "party:p1"]])
+      [[[-1, "WIRE:e2"]], [[[2, [3, 9, "A"], false, true], [0, 22, false, true]], true, "party:p1"]])
 $game_map.events.delete(9)
 MGQ_MpCoopEvents.instance_variable_set(:@chest_keys_map, nil)
 # The leader tells the party the story's writes their game made, as story_keys.rbx records them.
@@ -716,7 +743,7 @@ $game_variables[1050] = 32
 MGQ_MpStoryKeys.flush
 MGQ_MpCoopStory::SEND_FRAMES.times { MGQ_MpCoopStory.update }
 check("as leader, the party hears the story's writes the player's game made in one change, the last of each, each player's own left out",
-      $sent.select { |_, f| f["story"] == "delta" }.map { |seat, f| [seat, f["s"], f["v"], f["ss"]] }, [[-1, "2280:1", "1050:n32", ""]])
+      $sent.select { |_, f| f["story"] == "delta" }.map { |seat, f| [seat, f["s"], f["v"], f["ss"]] }, [[-1, [[2280, true]], [[1050, 32]], []]])
 MGQ_MpCoopStory::SEND_FRAMES.times { MGQ_MpCoopStory.update }
 check("and nothing more while their game wrote nothing", $sent.count { |_, f| f["story"] == "delta" }, 1)
 $sent.clear
@@ -743,7 +770,7 @@ check("strangers hand over nothing", MGQ_MpStoryReplay.waiting.size, 1)
 MGQ_MpStoryReplay.waiting.clear
 SceneManager.scene = Scene_Map.new
 $sent.clear
-MGQ_MpCoopEvents.hand_entry("id" => "w1", "site" => "map:4:9:1", "scope" => "world", "stream" => "story")
+MGQ_MpCoopEvents.hand_entry("id" => "w1", "site" => ["map", 4, 9, 1], "scope" => "world", "stream" => "story")
 check("as leader, a run of the story that changed a world key goes to every member as its entry", $sent.map { |seat, f| [seat, f["replay"]] }, [[-1, "WIRE:w1"]])
 
 # Chests while playing the leader's story.
@@ -751,9 +778,9 @@ leader = MGQ_MpOverworldSync::Peers::Peer.new(4, { "id" => "l", "name" => "Leade
 $leader = leader
 $members = [leader]
 raw($game_self_switches)[[3, 5, "A"]] = nil
-MGQ_MpCoopStory.take(leader, { "story" => "full", "party" => "p1", "s" => "", "v" => "", "ss" => "3.5.A,3.1.B" })
+MGQ_MpCoopStory.take(leader, whole_story("ss" => [[3, 5, "A"], [3, 1, "B"]]))
 check("a member's chests stay their own on the leader's story", [raw($game_self_switches)[[3, 5, "A"]], raw($game_self_switches)[[3, 1, "B"]]], [nil, true])
-MGQ_MpCoopStory.take(leader, { "story" => "delta", "party" => "p1", "s" => "", "v" => "", "ss" => "3.5.A:1" })
+MGQ_MpCoopStory.take(leader, story_changes("delta", "ss" => [[[3, 5, "A"], true]]))
 check("and the leader's chests do not change them", raw($game_self_switches)[[3, 5, "A"]], nil)
 MGQ_MpCoopEvents.take_entry(leader, { "replay" => "WIRE:w2", "party" => "p1" })
 MGQ_MpCoopEvents.take_entry(friend, { "replay" => "WIRE:w3", "party" => "p1" })
@@ -763,7 +790,7 @@ check("a member who follows the leader's story waits to play the leader's run in
       [["w2", "story:l", "Leader", [12, 0, 0, 0]], ["w7", "story:l", "Friend", [12, 0, 0, 0]]])
 MGQ_MpStoryReplay.waiting.clear
 $sent.clear
-MGQ_MpCoopEvents.hand_entry("id" => "w4", "site" => "map:4:9:1", "scope" => "world", "stream" => "story")
+MGQ_MpCoopEvents.hand_entry("id" => "w4", "site" => ["map", 4, 9, 1], "scope" => "world", "stream" => "story")
 check("a member's own run of the story waits to go to the leader with their requests", $sent, [])
 $game_map.interpreter.setup(chest_page.list, 5)
 $game_map.interpreter.run
@@ -778,52 +805,51 @@ $world_bridge.answer("story.classic_merge") do |request|
   changed = {}
   takes = request["writes"].map do |kind, key, held, value|
     found = MGQ_MpStoryKeys.class_of(kind, key, nil, list)
-    lower = held =~ /\An(-?\d+)\z/ && value =~ /\An(-?\d+)\z/ && value[1..-1].to_i < held[1..-1].to_i
+    lower = held.is_a?(Integer) && value.is_a?(Integer) && value < held
     taken = MGQ_MpStoryState.classic_world?(kind, key) && found & MGQ_MpStoryKeys::COUNT == 0 && !(found & MGQ_MpStoryKeys::ONE_WAY != 0 && lower) ? true : false
-    changed[MGQ_MpStoryKeys.key_text(kind, key)] = true if taken && held != value
+    changed[[kind, key]] = true if taken && held != value
     taken
   end
-  keeps = request["runs"].map do |names, site|
-    names.any? do |name|
-      kind, key = MGQ_MpStoryKeys.key_of(name)
-      changed[name] || (kind && kind < 3 && MGQ_MpStoryKeys.scope_of(kind, key, site) == MGQ_MpStoryKeys::SCOPE_PARTY) ? true : false
+  keeps = request["runs"].map do |entry|
+    entry && entry["keys"].any? do |kind, key, _value|
+      changed[[kind, key]] || (kind < 3 && MGQ_MpStoryKeys.scope_of(kind, key, entry["site"]) == MGQ_MpStoryKeys::SCOPE_PARTY) ? true : false
     end
   end
   { "takes" => takes, "keeps" => keeps }
 end
 MGQ_MpCoopStory.update
-MGQ_MpCoopStory.take(leader, { "story" => "full", "party" => "p1", "s" => "", "v" => "", "ss" => "" })
+MGQ_MpCoopStory.take(leader, whole_story({}))
 $sent.clear
 MGQ_MpCoopStory.update
 $game_switches[2280] = true
 $game_variables[1020] = 3
 $game_variables[3001] = 9
 MGQ_MpStoryKeys.flush
-MGQ_MpCoopEvents.hand_entry("id" => "w8", "site" => "map:4:9:1", "scope" => "world", "stream" => "story")
+MGQ_MpCoopEvents.hand_entry("id" => "w8", "site" => ["map", 4, 9, 1], "scope" => "world", "stream" => "story")
 MGQ_MpCoopStory::SEND_FRAMES.times { MGQ_MpCoopStory.update }
 check("a member's writes of the leader's story go to the leader as requests, each player's own left out, with the member's runs of it",
-      $sent.select { |_, f| f["story"] == "req" }.map { |seat, f| [seat, f["s"], f["v"], f["ss"], f["runs"]] }, [[4, "2280:1", "1020:n3", "", "WIRE:w8"]])
+      $sent.select { |_, f| f["story"] == "req" }.map { |seat, f| [seat, f["s"], f["v"], f["ss"], f["runs"]] }, [[4, [[2280, true]], [[1020, 3]], [], ["WIRE:w8"]]])
 $leader = :me
 $members = [friend]
 MGQ_MpCoopStory.update
 raw($game_switches)[2280] = false
 raw($game_variables)[1020] = 5
 $sent.clear
-MGQ_MpCoopStory.take(friend, { "story" => "req", "party" => "p1", "s" => "2280:1", "v" => "1020:n3", "ss" => "", "runs" => "WIRE:w5" })
+MGQ_MpCoopStory.take(friend, story_changes("req", "s" => [[2280, true]], "v" => [[1020, 3]], "runs" => ["WIRE:w5"]))
 MGQ_MpCoopStory::SEND_FRAMES.times { MGQ_MpCoopStory.update }
 check("the leader's story takes a member's write and sends it back to everyone by value, and a write it refuses comes back as it keeps it",
       [raw($game_switches)[2280], raw($game_variables)[1020], $sent.select { |_, f| f["story"] == "delta" }.map { |seat, f| [seat, f["s"], f["v"]] }],
-      [true, 5, [[-1, "2280:1", "1020:n5"]]])
+      [true, 5, [[-1, [[2280, true]], [[1020, 5]]]]])
 check("a member's run whose writes changed the leader's story goes to the party in the leader's stream, named by its opener, and plays in the leader's game too",
       [$sent.select { |_, f| f["replay"] }.map { |seat, f| [seat, f["replay"], f["opener"]] },
        MGQ_MpStoryReplay.waiting.map { |entry| entry.values_at("id", "stream", "opener") }],
       [[[-1, "WIRE:w5", "Friend"]], [["w5", MGQ_MpStoryKeys.story_stream(:me), "Friend"]]])
 MGQ_MpStoryReplay.waiting.clear
 $sent.clear
-MGQ_MpCoopStory.take(friend, { "story" => "req", "party" => "p1", "s" => "2280:1", "v" => "", "ss" => "", "runs" => "WIRE:w6" })
+MGQ_MpCoopStory.take(friend, story_changes("req", "s" => [[2280, true]], "runs" => ["WIRE:w6"]))
 check("one whose writes changed nothing of it goes to nobody", [$sent.select { |_, f| f["replay"] }, MGQ_MpStoryReplay.waiting], [[], []])
 MGQ_MpCoopStory.take(MGQ_MpOverworldSync::Peers::Peer.new(8, { "id" => "s", "party" => "p9" }, nil, false),
-                     { "story" => "req", "party" => "p1", "s" => "2281:1", "v" => "", "ss" => "" })
+                     story_changes("req", "s" => [[2281, true]]))
 check("a stranger's request is refused", raw($game_switches)[2281], nil)
 $party = nil
 $leader = nil
@@ -927,7 +953,7 @@ $game_player.instance_variable_set(:@reserved, nil)
 
 # While the leader's story scene plays, the member stands still.
 check("free while the leader tells no story", [$game_player.movable?, MGQ_MpCoopGather.blocked?], [true, false])
-leader.state["telling"] = "1"
+leader.state["telling"] = true
 scene = Scene_Map.new
 scene.update_call_menu
 check("blocked while it plays: no moving, no menu", [$game_player.movable?, scene.menu_calling], [false, false])
@@ -938,7 +964,7 @@ check("and blocked again once the story goes on", MGQ_MpCoopGather.blocked?, tru
 leader.state["map"] = "5"
 check("a member on another map, whom the story started without, plays on", [$game_player.movable?, MGQ_MpCoopGather.blocked?], [true, false])
 leader.state["map"] = "8"
-leader.state["telling"] = "0"
+leader.state["telling"] = false
 scene.update_call_menu
 check("free again once it ends", [$game_player.movable?, scene.menu_calling], [true, :asked])
 
@@ -955,7 +981,7 @@ interpreter = $game_map.interpreter
 interpreter.setup([c(101, "", 0, 0, 2), c(121, 60, 60, 0)], 1)
 check("a story scene calls the members", [$sent.map { |seat, f| [seat, f["pevent"], f["map"], f["x"]] }, $notices.last], [[[-1, "gather", "3", "5"]], "Gathering the party for the story . . ."])
 interpreter.busy = true
-check("and waits while one is away", [MGQ_MpCoopGather.holding?(interpreter), MGQ_MpCoopGather.own_doing, MGQ_MpCoopEvents.state_fields["telling"]], [true, ["Gathering: Friend", 30.0], 0])
+check("and waits while one is away", [MGQ_MpCoopGather.holding?(interpreter), MGQ_MpCoopGather.own_doing, MGQ_MpCoopEvents.state_fields["telling"]], [true, ["Gathering: Friend", 30.0], false])
 check("the leader only waits for the party then, so the chat may open", MGQ_MpCoopGather.waiting?, true)
 $sent.clear
 $frame_count = 1100
@@ -966,10 +992,10 @@ MGQ_MpCoopGather.holding?(interpreter)
 check("then once more", $sent.map { |_, f| f["pevent"] }, ["gather"])
 check("other interpreters never wait", MGQ_MpCoopGather.holding?(Game_Interpreter.new), false)
 friend.state.merge!("map" => "3", "x" => "7", "y" => "4")
-check("once everyone stands near, the scene plays", [MGQ_MpCoopGather.holding?(interpreter), $notices.last, MGQ_MpCoopEvents.state_fields["telling"]], [false, "The party is here.", 1])
+check("once everyone stands near, the scene plays", [MGQ_MpCoopGather.holding?(interpreter), $notices.last, MGQ_MpCoopEvents.state_fields["telling"]], [false, "The party is here.", true])
 check("but no longer once the scene plays", MGQ_MpCoopGather.waiting?, false)
 interpreter.busy = false
-check("and the members are free once it ends", MGQ_MpCoopEvents.state_fields["telling"], 0)
+check("and the members are free once it ends", MGQ_MpCoopEvents.state_fields["telling"], false)
 $sent.clear
 interpreter.setup([c(101, "", 0, 0, 2), c(121, 60, 60, 0)], 1)
 check("a party gathered already plays at once", [$sent.size, MGQ_MpCoopGather.holding?(interpreter)], [0, false])
@@ -981,7 +1007,7 @@ $frame_count = 4799
 check("a member who does not come holds the scene up to thirty seconds", MGQ_MpCoopGather.holding?(interpreter), true)
 $frame_count = 4800
 check("then it plays without them", [MGQ_MpCoopGather.holding?(interpreter), $notices.last, MGQ_MpCoopEvents.state_fields["telling"]],
-      [false, "The story starts without Friend.", 1])
+      [false, "The story starts without Friend.", true])
 
 # The story moves the leader elsewhere, as a theater show's stage or a story's own teleport: the
 # members who stood near come along at once, the others stay.
@@ -1327,7 +1353,7 @@ MGQ_MpCoopEvents.page_ended
 $game_message.clear
 $game_map.update
 check("and the one the leader is on", $game_message.texts, ["Current page"])
-leader.state["telling"] = "0"
+leader.state["telling"] = false
 $frame_count += PagesStandIn::STALE_FRAMES
 check("a page ends anyway once the leader stopped telling the story a while ago", MGQ_MpCoopEvents.page_done?, true)
 MGQ_MpCoopEvents.page_ended
@@ -1413,12 +1439,12 @@ def play_along(own_progress)
   $members = [$story_leader]
   $notices.clear
   MGQ_MpCoopStory.update
-  MGQ_MpCoopStory.take($story_leader, { "story" => "full", "party" => "p1", "s" => "81", "v" => "1001:n40", "ss" => "" })
+  MGQ_MpCoopStory.take($story_leader, whole_story("s" => [81], "v" => [[1001, 40]]))
   joined = $notices.last
-  MGQ_MpCoopStory.take($story_leader, { "story" => "delta", "party" => "p1", "s" => "82:1", "v" => "1001:n41", "ss" => "" })
+  MGQ_MpCoopStory.take($story_leader, story_changes("delta", "s" => [[82, true]], "v" => [[1001, 41]]))
   $game_variables[151] = 7
   $game_switches[90] = true
-  MGQ_MpCoopStory.take($story_leader, { "story" => "keys", "party" => "p1", "k" => "3:1" })
+  MGQ_MpCoopStory.take($story_leader, { "story" => "keys", "party" => "p1", "k" => [[3, 1]] })
   $key_in_party = $game_party.items["Basement Key"]
   save = MGQ_MpCoopStory.save_contents(:switches => $game_switches, :variables => $game_variables, :self_switches => $game_self_switches, :party => $game_party)
   saved = [save[:switches][82], save[:variables][1001], save[:variables][151], save[:party].items["Basement Key"]]
@@ -1525,7 +1551,7 @@ $game_self_switches = Game_SelfSwitches.new
 $game_variables[1001] = 50
 MGQ_MpCoopStory.forget
 $notices.clear
-full_story ={ "story" => "full", "party" => "p1", "s" => "", "v" => "1001:n40", "ss" => "", "k" => "3:1" }
+full_story = whole_story({ "v" => [[1001, 40]] }, "k" => [[3, 1]])
 MGQ_MpCoopStory.take(leader, full_story)
 check("a member ahead of the leader borrows the leader's key items with the story", [$game_party.items["Basement Key"], $notices.last],
       [1, "Leader lent you Basement Key for the story."])
@@ -1574,7 +1600,7 @@ $members = [leader]
 MGQ_MpCoopStory.forget
 MGQ_MpCoopStory.take(leader, full_story)
 $pvp = true
-MGQ_MpCoopStory.take(leader, { "story" => "keys", "party" => "p1", "k" => "3:1,2:1" })
+MGQ_MpCoopStory.take(leader, { "story" => "keys", "party" => "p1", "k" => [[3, 1], [2, 1]] })
 $game_party = Game_Party.new
 DataManager.extract_save_contents({})
 $pvp = false
@@ -1594,7 +1620,7 @@ $game_party = Game_Party.new
 $game_party.gain_item(key, 1)
 $sent.clear
 MGQ_MpCoopStory.take(friend, { "story" => "ask", "party" => "p1" })
-check("the leader's story carries the key items they hold", $sent.last[1]["k"], "3:1")
+check("the leader's story carries the key items they hold", $sent.last[1]["k"], [[3, 1]])
 
 # The whole story waits for the rewards a member catches up with, which come with the story mapping;
 # while they are missing, the scripts ask the DLL for them only every half second.
@@ -1613,12 +1639,12 @@ check("and answers it once they came", $sent.map { |_, fields| fields["story"] }
 MGQ_MpCoopStory.instance_variable_set(:@frames, MGQ_MpCoopStory::SEND_FRAMES)
 $sent.clear
 MGQ_MpCoopStory.update
-check("and the leader tells them again whenever they change", $sent.select { |_, f| f["story"] == "keys" }.map { |_, f| f["k"] }, ["3:1"])
+check("and the leader tells them again whenever they change", $sent.select { |_, f| f["story"] == "keys" }.map { |_, f| f["k"] }, [[[3, 1]]])
 $game_party.gain_item(key, -1)
 MGQ_MpCoopStory.instance_variable_set(:@frames, MGQ_MpCoopStory::SEND_FRAMES)
 $sent.clear
 MGQ_MpCoopStory.update
-check("such as when the story takes one", $sent.select { |_, f| f["story"] == "keys" }.map { |_, f| f["k"] }, [""])
+check("such as when the story takes one", $sent.select { |_, f| f["story"] == "keys" }.map { |_, f| f["k"] }, [[]])
 
 # A member who keeps the story catches up with the story's skills, companions and items the leader
 # holds, those of their own side where the sides differ; one without a side chooses first.
@@ -1700,8 +1726,11 @@ def held(name)
 end
 
 SceneManager.scene = Scene_Map.new
-holdings = { "side" => "a" }
-behind_story = { "story" => "full", "party" => "p1", "s" => "120", "v" => "1001:n40,1076:n5", "ss" => "" }.merge(holdings)
+holdings = { "leader_side" => "alice" }
+behind_lists = { "s" => [120], "v" => [[1001, 40], [1076, 5]], "ss" => [] }
+# Writes the whole story of the leader behind with lists or fields of the message changed.
+behind = lambda { |lists = {}, more = {}| whole_story(behind_lists.merge(lists), holdings.merge(more)) }
+behind_story = behind.call
 
 # The DLL's catch-up by the frozen rows, its engine in the Classic settings over the tables above.
 answer_classic_keys.call
@@ -1709,11 +1738,11 @@ check("the side each player chose is their own as the reviewed list keeps it, be
       [4, 5].map { |id| [MGQ_MpStoryState.personal_switch?(id, []), MGQ_MpStoryState.personal_switch?(id, [0] * 1141 + [2])] }, [[true, true], [true, true]])
 # A key item a party chest gave the leader comes by playing that chest in the member's own game.
 $key_chests = { [40, 1, "A"] => [3] }
-$world_bridge.answer("story.replay_derive") { |request| { "id" => "derived:#{request['chest']}", "site" => request["chest"] == "ss40.1.A" ? "map:40:1:1" : request["chest"] } }
+$world_bridge.answer("story.replay_derive") { |request| { "id" => "derived:#{request['chest'].inspect}", "site" => request["chest"] == [2, [40, 1, "A"]] ? ["map", 40, 1, 1] : request["chest"] } }
 member_game(30)
-MGQ_MpCoopStory.take(leader, behind_story.merge("ss" => "40.1.A"))
+MGQ_MpCoopStory.take(leader, behind.call("ss" => [[40, 1, "A"]]))
 check("a key item the leader's chest gave comes by playing that chest in the member's game, not as a gift",
-      [held("Basement Key"), MGQ_MpStoryReplay.waiting.map { |entry| entry["site"] }, $notices.include?("You got Sword to catch up with Leader's story.")], [0, ["map:40:1:1"], true])
+      [held("Basement Key"), MGQ_MpStoryReplay.waiting.map { |entry| entry["site"] }, $notices.include?("You got Sword to catch up with Leader's story.")], [0, [["map", 40, 1, 1]], true])
 MGQ_MpStoryReplay.waiting.clear
 $key_chests = {}
 $world_bridge.answer("story.replay_derive") { |_request| nil }
@@ -1727,12 +1756,12 @@ check("a member behind who holds the World Seed the leader's story used up loses
       [held("World Seed"), $notices.grep(/World Seed/)], [0, []])
 
 member_game(30)
-MGQ_MpCoopStory.take(leader, behind_story.merge("ss" => "41.1.A"))
+MGQ_MpCoopStory.take(leader, behind.call("ss" => [[41, 1, "A"]]))
 check("a member behind without a side catches up with the rows both sides pass, as the DLL finds them from both stories",
       [$game_actors[1].skills, $game_party.include_actors, classic_asks.last["before"]["v"], classic_asks.last["leader"]["v"], classic_asks.last["pick"]],
       [[13], [4], [[1001, 30]], [[1001, 40]], nil])
 check("and the world chest the leader's story opened plays in the member's own game",
-      $world_bridge.calls.select { |topic, _| topic == "story.replay_derive" }.map { |_, bytes| Marshal.load(bytes)["chest"] }.include?("ss41.1.A"), true)
+      $world_bridge.calls.select { |topic, _| topic == "story.replay_derive" }.map { |_, bytes| Marshal.load(bytes)["chest"] }.include?([2, [41, 1, "A"]]), true)
 check("and with the rows' items and key items, never a copy of what the leader holds", [held("Sword"), held("Basement Key"), held("Potion")], [1, 1, 0])
 check("with notices", $notices.include?("Luka learned Sylph to catch up with Leader's story.") && $notices.include?("You got Sword and Basement Key to catch up with Leader's story."), true)
 MGQ_MpCoopStory.update
@@ -1751,10 +1780,10 @@ MGQ_MpCoopStory.take(leader, behind_story)
 check("a member on the leader's side gets what the leader got", [$game_actors[1].skills.sort, $game_party.include_actors], [[11, 13], [4, 5]])
 check("and is not asked", ($game_message.choices || []).empty?, true)
 
-derives = lambda { $world_bridge.calls.count { |topic, bytes| topic == "story.replay_derive" && Marshal.load(bytes)["chest"] == "ss41.1.A" } }
+derives = lambda { $world_bridge.calls.count { |topic, bytes| topic == "story.replay_derive" && Marshal.load(bytes)["chest"] == [2, [41, 1, "A"]] } }
 before = derives.call
 member_game(36)
-MGQ_MpCoopStory.take(leader, behind_story.merge("v" => "1001:n40", "ss" => "41.1.A"))
+MGQ_MpCoopStory.take(leader, behind.call("v" => [[1001, 40]], "ss" => [[41, 1, "A"]]))
 check("a member whose own story is past a world chest's step without opening it keeps it shut", derives.call, before)
 
 # A member whose save came from another player's starting save past Iliasville holds that player's
@@ -1788,8 +1817,8 @@ member_game(30, 4)
 MGQ_MpStoryState.note_other_start
 scope_held = []
 answer_scope { |request| scope_held << request; { "allowed" => request["pick"] == "" && request["held"] == "alice" ? request["actors"] : [] } }
-MGQ_MpCoopStory.take(leader, behind_story.merge("s" => "4,120", "v" => "1001:n40,1143:n1"))
-refused = MGQ_MpCoopStory.refuses_join?(26, "map:437:11:1")
+MGQ_MpCoopStory.take(leader, behind.call("s" => [4, 120], "v" => [[1001, 40], [1143, 1]]))
+refused = MGQ_MpCoopStory.refuses_join?(26, ["map", 437, 11, 1])
 check("a member without a side of their own on the Chaos route gets the conference's companions by the side switches of the story played",
       [refused, scope_held.last["pick"], scope_held.last["held"]], [false, "", "alice"])
 MGQ_MpCoopStory.update
@@ -1894,13 +1923,13 @@ answer_scope do |request|
 end
 member_game(40, 4)
 $game_variables[1141] = 2
-MGQ_MpCoopStory.take(leader, behind_story.merge("s" => "4,120", "v" => "1001:n40,1076:n5,1141:n5"))
+MGQ_MpCoopStory.take(leader, behind.call("s" => [4, 120], "v" => [[1001, 40], [1076, 5], [1141, 5]]))
 check("a member on a route whose save notes no side taken along has the rows read with no side: no row of Alice's side the leader's route passed, though their switch 4 is on",
       [classic_asks.last["pick"], $game_actors[1].skills], [nil, []])
 $world_bridge.answer("catchup.scope") { |_request| nil }
 
 member_game(30, 5)
-part3 = behind_story.merge("s" => "4,120", "v" => "1001:n40,1076:n5,1141:n2")
+part3 = behind.call("s" => [4, 120], "v" => [[1001, 40], [1076, 5], [1141, 2]])
 MGQ_MpCoopStory.take(leader, part3)
 check("after the Great Decision a member still gets their own side's rows of the events before it",
       [$game_actors[1].skills.sort, $game_party.include_actors], [[12, 13], [4, 6, 7]])
@@ -1911,7 +1940,7 @@ $members = []
 MGQ_MpCoopStory.update
 check("which they keep, having caught up with it", [$game_switches[4], $game_switches[5]], [true, false])
 member_game(50, 5)
-MGQ_MpCoopStory.take(leader, part3.merge("v" => "1001:n40,1141:n2"))
+MGQ_MpCoopStory.take(leader, behind.call("s" => [4, 120], "v" => [[1001, 40], [1141, 2]]))
 $party = nil
 $leader = nil
 $members = []
@@ -1935,24 +1964,24 @@ check("a member ahead catches up with nothing", [$game_actors[1].skills, $game_p
 derived = []
 $world_bridge.answer("story.replay_derive") do |request|
   derived << [request["chest"], request["letters"]]
-  { "id" => "derived:#{request['chest']}", "site" => request["chest"] }
+  { "id" => "derived:#{request['chest'][1].join('.')}", "site" => request["chest"] }
 end
 $world_bridge.answer("story.replay_scopes") do |request|
   found = classic_scopes
-  found["self"] = { "ss50.*.*" => MGQ_MpStoryKeys::SCOPE_PLAYER } if request["party"]
+  found["self"] = [[50, nil, nil, MGQ_MpStoryKeys::SCOPE_PLAYER]] if request["party"]
   found
 end
 MGQ_MpStoryKeys.instance_variable_set(:@scopes, nil)
 member_game(30, 5)
 $game_self_switches[[50, 4, "A"]] = true
 MGQ_MpCoopStory.update
-MGQ_MpCoopStory.take(leader, behind_story.merge("ss" => "50.3.A,50.3.B,50.4.A,9.9.A"))
+MGQ_MpCoopStory.take(leader, behind.call("ss" => [[50, 3, "A"], [50, 3, "B"], [50, 4, "A"], [9, 9, "A"]]))
 check("a member behind gets the leader's closures of their own keys they lack as derived entries, answered by the leader's letters",
       [derived, MGQ_MpStoryReplay.waiting.map { |entry| entry["id"] }, $game_self_switches[[50, 3, "A"]], $game_self_switches[[9, 9, "A"]]],
-      [[["ss50.3.A", %w(A B)], ["ss50.3.B", %w(A B)]], ["derived:ss50.3.A", "derived:ss50.3.B"], false, true])
-MGQ_MpCoopStory.take(leader, behind_story.merge("ss" => "50.3.A,50.3.B,50.5.A"))
+      [[[[2, [50, 3, "A"]], %w(A B)], [[2, [50, 3, "B"]], %w(A B)]], ["derived:50.3.A", "derived:50.3.B"], false, true])
+MGQ_MpCoopStory.take(leader, behind.call("ss" => [[50, 3, "A"], [50, 3, "B"], [50, 5, "A"]]))
 member_game(40, 5)
-MGQ_MpCoopStory.take(leader, behind_story.merge("v" => "1001:n40", "ss" => "50.6.A"))
+MGQ_MpCoopStory.take(leader, behind.call("v" => [[1001, 40]], "ss" => [[50, 6, "A"]]))
 check("the leader's later whole story derives nothing again, nor does a member as far along get any",
       [derived.size, MGQ_MpStoryReplay.waiting.size], [2, 2])
 MGQ_MpStoryReplay.waiting.clear
@@ -1976,7 +2005,7 @@ MGQ_MpCoopStory.instance_variable_set(:@sent_held, nil)
 $sent.clear
 MGQ_MpCoopStory.update
 told = $sent.find { |_, f| f["story"] == "hold" }
-check("the leader tells their side, and nothing of what they hold", told && [told[1]["side"], told[1].key?("sk"), told[1].key?("it")], ["a", false, false])
+check("the leader tells their side, and nothing of what they hold", told && [told[1]["leader_side"], told[1].key?("sk"), told[1].key?("it")], ["alice", false, false])
 
 # The catch-up's edge cases: the side after the Great Decision, the member's own side quests, the
 # leader's companions outside the story, a companion let go, and equipment at the castle.
@@ -1985,7 +2014,7 @@ morrigan = holdings
 
 member_game(30, 5)
 MGQ_MpCoopStory.take(leader, behind_story)
-MGQ_MpCoopStory.take(leader, { "story" => "delta", "party" => "p1", "s" => "", "v" => "1141:n2", "ss" => "" })
+MGQ_MpCoopStory.take(leader, story_changes("delta", "v" => [[1141, 2]]))
 check("the route's progress arriving alone makes the member play the side of the leader's route", [$game_switches[4], $game_switches[5]], [true, false])
 check("and gives nothing of the leader's side on top", [$game_actors[1].skills.sort, $game_party.include_actors.include?(5)], [[12, 13], false])
 MGQ_MpCoopStory.take(leader, { "story" => "hold", "party" => "p1" }.merge(holdings))
@@ -1998,7 +2027,7 @@ $game_variables[1500] = 3
 $game_self_switches[[9, 9, "A"]] = true
 $game_self_switches[[9, 9, "B"]] = true
 MGQ_MpCoopStory.update
-MGQ_MpCoopStory.take(leader, behind_story.merge("sf" => "301", "ssf" => "9.9.B"))
+MGQ_MpCoopStory.take(leader, behind.call("sf" => [301], "ssf" => [[9, 9, "B"]]))
 $party = nil
 $leader = nil
 $members = []
@@ -2050,7 +2079,7 @@ $game_actors = [nil, Hero.new]
 member_game(30, 5)
 $game_self_switches[[40, 2, "A"]] = true
 MGQ_MpCoopStory.update
-MGQ_MpCoopStory.take(leader, behind_story.merge("ss" => "40.1.A,40.3.A"))
+MGQ_MpCoopStory.take(leader, behind.call("ss" => [[40, 1, "A"], [40, 3, "A"]]))
 $party = nil
 $leader = nil
 $members = []
@@ -2060,28 +2089,16 @@ check("a chest only the leader looted on another map stays shut for the member, 
 
 # What the leader's whole story covers is not taken again from what waited before it.
 member_game(30, 5)
-MGQ_MpCoopStory.take(leader, { "story" => "hold", "party" => "p1" }.merge(holdings).merge("side" => "i"))
+MGQ_MpCoopStory.take(leader, { "story" => "hold", "party" => "p1" }.merge(holdings).merge("leader_side" => "ilias"))
 MGQ_MpCoopStory.take(leader, behind_story)
 MGQ_MpCoopStory.update
 check("older holdings that waited do not replace the newer ones the whole story came with", MGQ_MpCoopStory.instance_variable_get(:@leader_held)[:side], :alice)
 
-# The whole story travels packed, and one too large leaves out what the story turned off.
-story = [[nil, true, false], [nil, 0, 5], { [1, 2, "A"] => true, [1, 3, "A"] => false }]
-packed = MGQ_MpStoryState.full(story)
-check("the whole story travels packed and reads back with what it turned off", MGQ_MpStoryState.decode_full(packed),
-      [[nil, true, false], [nil, 0, 5], { [1, 2, "A"] => true, [1, 3, "A"] => false }])
-limit = MGQ_MpStoryState::MAX_FULL_BYTES
-MGQ_MpStoryState.send(:remove_const, :MAX_FULL_BYTES)
-MGQ_MpStoryState.const_set(:MAX_FULL_BYTES, 10)
-check("one too large leaves out what the story turned off", MGQ_MpStoryState.decode_full(MGQ_MpStoryState.full(story)),
-      [[nil, true], [nil, nil, 5], { [1, 2, "A"] => true }])
-check("and says so", [MGQ_MpStoryState.full(story)["part"], packed["part"]], [1, nil])
-MGQ_MpStoryState.send(:remove_const, :MAX_FULL_BYTES)
-MGQ_MpStoryState.const_set(:MAX_FULL_BYTES, limit)
+# A whole story too large for a message comes without what it turned off.
 member_game(30, 5)
 $game_switches[300] = true
 MGQ_MpCoopStory.update
-MGQ_MpCoopStory.take(leader, behind_story.merge("part" => "1"))
+MGQ_MpCoopStory.take(leader, behind.call({}, "part" => true))
 $party = nil
 $leader = nil
 $members = []
@@ -2091,7 +2108,7 @@ check("a member who caught up with such a story keeps none of their own values i
 
 # An event the leader played on one side counts once the Great Decision set them on the other.
 member_game(30, 4)
-MGQ_MpCoopStory.take(leader, behind_story.merge("sk" => "12,13", "ac" => "4", "side" => "a"))
+MGQ_MpCoopStory.take(leader, behind_story)
 check("a camp the leader trained at on Ilias's side counts though they now play Alice's", $game_actors[1].skills.sort, [11, 13])
 
 # What waited for the member is the leader's who sent it, never another leader's.
@@ -2118,21 +2135,21 @@ MGQ_MpCoopStory.update
 # tells in its state.
 $real_sync = true
 $story_leader = leader
-leader.state["sm"] = "32,0,0,0"
+leader.state["sm"] = [32, 0, 0, 0]
 MGQ_MpCoopStory.instance_variable_set(:@sync_state, nil)
 $sent.clear
 member_game(30)
 check("a member just behind the leader follows the leader's story and asks for it",
-      [MGQ_MpCoopStory.follows_leader?, MGQ_MpCoopStory.state_fields, $sent.map { |_, f| f["story"] }], [true, { "sm" => "30,0,0,0", "ssync" => "l" }, ["ask"]])
+      [MGQ_MpCoopStory.follows_leader?, MGQ_MpCoopStory.state_fields, $sent.map { |_, f| f["story"] }], [true, { "sm" => [30, 0, 0, 0], "ssync" => "l" }, ["ask"]])
 
-leader.state["sm"] = "33,0,0,0"
+leader.state["sm"] = [33, 0, 0, 0]
 MGQ_MpCoopStory.instance_variable_set(:@sync_state, nil)
 $sent.clear
 member_game(30)
 check("one three steps behind plays their own story and is told why",
       [MGQ_MpCoopStory.follows_leader?, MGQ_MpCoopStory.state_fields["ssync"], $sent, $notices],
       [false, "", [], ["You and Leader are too far apart in the story; each of you plays your own."]])
-MGQ_MpCoopStory.take(leader, behind_story.merge("v" => "1001:n33"))
+MGQ_MpCoopStory.take(leader, behind.call("v" => [[1001, 33]]))
 check("the leader's story and its catch-up stay away from them, and nothing waits",
       [MGQ_MpCoopStory.guest?, held("Sword"), MGQ_MpCoopStory.instance_variable_get(:@held), $game_variables[1001]], [false, 0, nil, 30])
 own_event = Game_Event.new(41, [story_page])
@@ -2141,21 +2158,21 @@ check("their own story events run in their own game", [MGQ_MpCoopEvents.hand_ove
 $game_player = Game_Player.new
 SceneManager.scene = Scene_Map.new
 leader.state["map"] = $game_map.map_id.to_s
-leader.state["telling"] = "1"
+leader.state["telling"] = true
 MGQ_MpCoopEvents.take(leader, { "pevent" => "gather", "party" => "p1", "map" => "9", "x" => "1", "y" => "1", "d" => "2" })
 MGQ_MpCoopEvents.take(leader, { "pevent" => "say", "party" => "p1", "map" => $game_map.map_id.to_s, "page" => "x.9", "lines" => ["Hi"].pack("m0") })
 check("the leader's story scene neither calls nor holds them, nor shows them its pages",
       [MGQ_MpCoopGather.coming?, MGQ_MpCoopGather.blocked?, $pages_stand_in.waiting], [false, false, 0])
-leader.state["telling"] = "0"
+leader.state["telling"] = false
 MGQ_MpCoopEvents.take_entry(leader, { "replay" => "WIRE:x4", "party" => "p1" })
 check("but chests the party opens are shared all the same", MGQ_MpStoryReplay.waiting.map { |entry| entry["id"] }, ["x4"])
 MGQ_MpStoryReplay.waiting.clear
 
-leader.state["sm"] = "40,2,0,1"
+leader.state["sm"] = [40, 2, 0, 1]
 MGQ_MpCoopStory.instance_variable_set(:@sync_state, nil)
 member_game(39)
 check("across the Great Decision each plays their own story", $notices, ["You and Leader are on different sides of the Great Decision; each of you plays your own story."])
-leader.state["sm"] = "40,0,6,1"
+leader.state["sm"] = [40, 0, 6, 1]
 MGQ_MpCoopStory.instance_variable_set(:@sync_state, nil)
 member_game(40)
 $game_variables[1141] = 3
@@ -2165,15 +2182,15 @@ check("on different routes too", $notices.last, "You and Leader are on different
 
 # Drifting apart: a member ahead of the leader plays along until the leader passes them by more than
 # two steps, then gets their own story back.
-leader.state["sm"] = "30,0,0,0"
+leader.state["sm"] = [30, 0, 0, 0]
 MGQ_MpCoopStory.instance_variable_set(:@sync_state, nil)
 member_game(32)
-MGQ_MpCoopStory.take(leader, behind_story.merge("v" => "1001:n30"))
+MGQ_MpCoopStory.take(leader, behind.call("v" => [[1001, 30]]))
 check("a member two steps ahead plays along", [MGQ_MpCoopStory.guest?, $game_variables[1001]], [true, 30])
-leader.state["sm"] = "34,0,0,0"
+leader.state["sm"] = [34, 0, 0, 0]
 MGQ_MpCoopStory.update
 check("still while the leader is two steps past them", MGQ_MpCoopStory.guest?, true)
-leader.state["sm"] = "35,0,0,0"
+leader.state["sm"] = [35, 0, 0, 0]
 MGQ_MpCoopStory.update
 check("but once three steps past, they get their own story back and are told why",
       [MGQ_MpCoopStory.guest?, $game_variables[1001], $notices.last(2)],
@@ -2181,19 +2198,19 @@ check("but once three steps past, they get their own story back and are told why
 
 # A member behind who caught up plays as far as the leader, so the leader's progress telling more
 # than the story that came yet never ends it.
-leader.state["sm"] = "31,0,0,0"
+leader.state["sm"] = [31, 0, 0, 0]
 MGQ_MpCoopStory.instance_variable_set(:@sync_state, nil)
 member_game(30)
-MGQ_MpCoopStory.take(leader, behind_story.merge("v" => "1001:n31"))
-leader.state["sm"] = "40,1,0,1"
+MGQ_MpCoopStory.take(leader, behind.call("v" => [[1001, 31]]))
+leader.state["sm"] = [40, 1, 0, 1]
 MGQ_MpCoopStory.update
 check("a member who caught up stays synced while the leader's story moves on", [MGQ_MpCoopStory.guest?, MGQ_MpCoopStory.follows_leader?], [true, true])
 
 # The leader: only members who follow the story are waited for, and the leader hears who follows.
 $party = "p1"
 $leader = :me
-far = MGQ_MpOverworldSync::Peers::Peer.new(6, { "id" => "o", "name" => "Other", "party" => "p1", "sm" => "20,0,0,0", "ssync" => "", "map" => "99", "x" => "0", "y" => "0" }, nil, true)
-near = MGQ_MpOverworldSync::Peers::Peer.new(7, { "id" => "n", "name" => "Near", "party" => "p1", "sm" => "30,0,0,0", "ssync" => "me", "map" => "99", "x" => "0", "y" => "0" }, nil, true)
+far = MGQ_MpOverworldSync::Peers::Peer.new(6, { "id" => "o", "name" => "Other", "party" => "p1", "sm" => [20, 0, 0, 0], "ssync" => "", "map" => "99", "x" => "0", "y" => "0" }, nil, true)
+near = MGQ_MpOverworldSync::Peers::Peer.new(7, { "id" => "n", "name" => "Near", "party" => "p1", "sm" => [30, 0, 0, 0], "ssync" => "me", "map" => "99", "x" => "0", "y" => "0" }, nil, true)
 $members = [far, near]
 $game_variables = Game_Variables.new
 $game_variables[1001] = 30
@@ -2322,11 +2339,11 @@ $real_sync = false
 choices.forget("next check")
 member_game(30, 5)
 choices.apply(:magistea, 0)
-MGQ_MpCoopStory.take(leader, behind_story.merge("s" => "120,2097", "ac" => "4,163"))
+MGQ_MpCoopStory.take(leader, behind.call("s" => [120, 2097]))
 check("the leader's outcome of Magistea Village stays out of the member's story",
       [$game_switches[2096], $game_switches[2097], MGQ_MpStoryState.personal_switch?(2097)], [true, false, true])
 check("and the leader's choice companion with it", $game_party.include_actors.include?(163), false)
-MGQ_MpCoopStory.take(leader, { "story" => "delta", "party" => "p1", "s" => "2096:0,2097:1", "v" => "", "ss" => "" })
+MGQ_MpCoopStory.take(leader, story_changes("delta", "s" => [[2096, false], [2097, true]]))
 check("nor do the leader's later changes of it reach the member", [$game_switches[2096], $game_switches[2097]], [true, false])
 
 # Synced play: catching up with the leader's story asks the member's own outcome of the choices the
@@ -2335,7 +2352,7 @@ check("nor do the leader's later changes of it reach the member", [$game_switche
 choices.forget("next check")
 member_game(15, 5)
 $scenes = []
-MGQ_MpCoopStory.take(leader, behind_story.merge("v" => "1001:n17", "s" => "120,2097"))
+MGQ_MpCoopStory.take(leader, behind.call("v" => [[1001, 17]], "s" => [120, 2097]))
 check("a reward behind the leader's outcome of a choice the member has not answered waits for their own answer",
       $game_actors[1].skills.include?(15), false)
 SceneManager.scene = Scene_Map.new
@@ -2350,7 +2367,7 @@ choices.screen_closed(screen, :button)
 check("and keeps it", [$game_switches[2097], $game_party.include_actors.include?(163), choices.instance_variable_get(:@prompts)], [true, true, []])
 MGQ_MpCoopStory.choice_answered
 check("and the reward behind that outcome comes once they answered it, once", $game_actors[1].skills.count(15), 1)
-MGQ_MpCoopStory.take(leader, { "story" => "delta", "party" => "p1", "s" => "2280:1", "v" => "", "ss" => "" })
+MGQ_MpCoopStory.take(leader, story_changes("delta", "s" => [[2280, true]]))
 check("a choice the leader resolves after the member followed is left to the replay of its run", choices.instance_variable_get(:@prompts), [])
 choices.forget("test")
 
@@ -2358,23 +2375,23 @@ choices.forget("test")
 $party = "p1"
 $leader = :me
 $members = [friend]
-friend.state["sm"] = "20,0,0,0"
+friend.state["sm"] = [20, 0, 0, 0]
 friend.state["ssync"] = ""
 $game_variables = Game_Variables.new
 $game_variables[1001] = 30
 choices.offer(friend)
-check("the leader offers a member behind to sync their story", choices.state_fields["ssoffer"].split(":")[0], "f")
-friend.state["sm"] = "31,0,0,0"
+check("the leader offers a member behind to sync their story", choices.state_fields["ssoffer"].keys, ["f"])
+friend.state["sm"] = [31, 0, 0, 0]
 check("but never to one ahead", choices.offer_refusal(friend), "Friend is not behind you in the story.")
-friend.state["sm"] = "20,0,0,0"
+friend.state["sm"] = [20, 0, 0, 0]
 $notices.clear
 choices.take(friend, { "choices" => "declined", "party" => "p1" })
-check("a member who declines is no longer offered it, and the leader hears it", [choices.state_fields["ssoffer"], $notices.last], ["", "Friend declined to sync their story."])
+check("a member who declines is no longer offered it, and the leader hears it", [choices.state_fields["ssoffer"], $notices.last], [{}, "Friend declined to sync their story."])
 
 # Accepted: the screen asks the choices, and the member is brought to the leader's point.
 member_game(20, 5)
-leader.state["sm"] = "40,3,0,1"
-leader.state["ssoffer"] = "me:1"
+leader.state["sm"] = [40, 3, 0, 1]
+leader.state["ssoffer"] = { "me" => 1 }
 check("the member sees the leader's offer", choices::Offers.notice_of(leader).text, "Leader offers to bring your story up to theirs")
 $scenes = []
 choices.accept(leader)
@@ -2382,12 +2399,12 @@ screen = choices.screen
 check("accepting shows the choices the catch-up carries them past",
       [screen[:keys], screen[:buttons]], [[:navy, :plansect, :succubus, :spider, :sphinx, :decision], ["Bring me there", "Cancel"]])
 choices.screen_closed(screen, :cancel)
-leader.state["ssoffer"] = ""
+leader.state["ssoffer"] = {}
 check("which closes once the leader takes the offer back", choices.valid_offer?(leader), "Leader took the offer back.")
 $leader = nil
 check("or leaves the party", choices.valid_offer?(leader), "Leader no longer leads your party.")
 $leader = leader
-leader.state["ssoffer"] = "me:1"
+leader.state["ssoffer"] = { "me" => 1 }
 
 # The other side of the Great Decision: the member starts their own route from its start.
 decision = [RPG::EventCommand.new(102, 0, [["a", "b"], 0]), RPG::EventCommand.new(122, 2, [1002, 1002, 0, 0, 112]),
@@ -2400,7 +2417,7 @@ check("the member's outcomes are theirs before the leader's story comes",
       [$game_variables[1061], $game_switches[2281]], [1, true])
 MGQ_MpCoopStory.update
 check("the member then follows the leader's story, by the offer", MGQ_MpCoopStory.follows_leader?, true)
-MGQ_MpCoopStory.take(leader, behind_story.merge("v" => "1001:n40,1141:n3", "ac" => "4,163"))
+MGQ_MpCoopStory.take(leader, behind.call("v" => [[1001, 40], [1141, 3]]))
 queued = choices.instance_variable_get(:@queued)
 check("taking the other side, they keep the leader's story up to the Great Decision and play their own",
       [MGQ_MpCoopStory.guest?, $game_variables[1001], $game_variables[1141], MGQ_MpCoopStory.follows_leader?], [false, 39, 0, false])
@@ -2459,9 +2476,9 @@ MGQ_MpCoopEvents.page_ended
 teller = MGQ_MpOverworldSync::Peers::Peer.new(6, { "id" => "t", "name" => "Teller", "map" => "3", "since" => "1000", "trk" => "world" }, nil, false)
 stranger = MGQ_MpOverworldSync::Peers::Peer.new(7, { "id" => "s", "name" => "Stranger", "map" => "3", "since" => "3000", "trk" => "world" }, nil, false)
 behind = MGQ_MpOverworldSync::Peers::Peer.new(8, { "id" => "b", "name" => "Behind", "map" => "3", "since" => "3000", "trk" => "t2" }, nil, false)
-leader.state.merge!("map" => "9", "telling" => "0", "since" => "500", "trk" => "world")
+leader.state.merge!("map" => "9", "telling" => false, "since" => "500", "trk" => "world")
 $peers = [teller, stranger, behind, leader]
-$tellings[6] = ["t1", 3, "map:3:1:1"]
+$tellings[6] = ["t1", 3, ["map", 3, 1, 1]]
 check("a Raid World's parties lead no story: nobody borrows a leader's story or tells members one",
       [MGQ_MpCoopStory.leader, MGQ_MpCoopStory.real_synced_members, MGQ_MpCoopStory.real_follows_leader?], [nil, [], false])
 
@@ -2489,14 +2506,14 @@ interpreter = $game_map.interpreter
 interpreter.setup(story_page.list, 52)
 interpreter.busy = true
 check("the player tells it, alone too, and says so in their state",
-      [MGQ_MpCoopGather.holding_story?, MGQ_MpCoopEvents.state_fields], [false, { "telling" => 1 }])
+      [MGQ_MpCoopGather.holding_story?, MGQ_MpCoopEvents.state_fields], [false, { "telling" => true }])
 $game_message.add("Told line")
 MGQ_MpCoopEvents.show(interpreter)
 check("its pages go through the map's gate in one message to the players on the map who play the player's track",
       $sent.map { |seat, fields| [seat, fields["map_pevent"], fields["mmap"], fields["mto"]] }, [[-1, "say", "3", "t,s"]])
 $game_message.clear
 check("its first command waits for the relay's answer for the telling's lock of the map",
-      [MGQ_MpCoopEvents.lock_holding?(interpreter), $telling_machine.requests.last], [true, ["map:3:52:1", 3]])
+      [MGQ_MpCoopEvents.lock_holding?(interpreter), $telling_machine.requests.last], [true, [["map", 3, 52, 1], 3]])
 $lock = true
 check("and runs once the relay granted it", [MGQ_MpCoopEvents.lock_holding?(interpreter), MGQ_MpCoopEvents.telling?], [false, true])
 MGQ_MpCoopEvents.finished(interpreter)
@@ -2611,7 +2628,7 @@ $world_bridge.answer("story.leaves_part") do |request|
   next { "unknown" => true } unless request["list"]
 
   if $chain_end
-    known = request["values"] && request["values"]["ss"]
+    known = request["values"] && request["values"]["ss"] ? Hash[request["values"]["ss"]] : nil
     next { "needs" => { "ss" => [$chain_end] } } unless known && known.key?($chain_end)
     next { "leaves" => !known[$chain_end], "why" => known[$chain_end] ? nil : "its chain sets v1001, which leaves Part #{$track_part}" }
   end
@@ -2641,7 +2658,7 @@ asks = leave_asks
 check("and asks the DLL no more on the frames it would start again", leave_asks - asks, 0)
 # Alice's final battle, which leads across maps to the part's end on a map without exits, waits
 # where it starts, as long as the self switch its chain's last page checks keeps that page.
-$chain_end = "750.12.A"
+$chain_end = [750, 12, "A"]
 final_battle = Game_Event.new(58, [story_page], 3)
 check("story whose chain across maps ends the part waits too, read with the self switch the DLL named",
       [MGQ_MpCoopEvents.hand_over(final_battle), $notices.size], [true, 1])
@@ -2707,7 +2724,7 @@ $game_player.reserve_transfer(432, 0, 0, 2)
 $game_player.perform_transfer
 check("a telling that moves the player takes those on the map along", [$game_map.map_id, $sent.map { |seat, f| [seat, f["map_pevent"], f["mmap"]] }, MGQ_MpCoopGather.taken_along],
       [432, [[7, "follow", "430"]], [stranger]])
-check("and its lock moves to the new map as the transfer lands, while its event still runs", $telling_machine.requests.last, ["map:430:52:1", 432])
+check("and its lock moves to the new map as the transfer lands, while its event still runs", $telling_machine.requests.last, [["map", 430, 52, 1], 432])
 MGQ_MpCoopEvents.finished(interpreter)
 interpreter.busy = false
 $game_map.update
@@ -2718,7 +2735,7 @@ $own_commons = [114]
 interpreter.setup(transfer_process.list)
 interpreter.busy = true
 check("the game's transfer process runs between its events in the player's own game, telling nothing",
-      [MGQ_MpCoopEvents.state_fields["telling"], MGQ_MpCoopGather.taken_along], [0, []])
+      [MGQ_MpCoopEvents.state_fields["telling"], MGQ_MpCoopGather.taken_along], [false, []])
 $own_commons = []
 MGQ_MpCoopEvents.finished(interpreter)
 interpreter.busy = false
@@ -2729,9 +2746,9 @@ interpreter.setup(story_page.list, 53)
 interpreter.busy = true
 check("a story event on the new map within CONTINUE_FRAMES goes on with the telling: whom it took along, and that the player tells it",
       [MGQ_MpCoopEvents.state_fields, MGQ_MpCoopGather.taken_along, MGQ_MpCoop::Scope.viewers, $log.grep(/goes on with the telling that moved the player from map 430/).size],
-      [{ "telling" => 1 }, [stranger], [stranger], 1])
+      [{ "telling" => true }, [stranger], [stranger], 1])
 check("which keeps the lock of the new map, with the telling's first site, without a hold",
-      [$telling_machine.requests.last, MGQ_MpCoopEvents.lock_holding?(interpreter)], [["map:430:52:1", 432], false])
+      [$telling_machine.requests.last, MGQ_MpCoopEvents.lock_holding?(interpreter)], [[["map", 430, 52, 1], 432], false])
 $game_player.reserve_transfer(433, 0, 0, 2)
 $game_player.perform_transfer
 MGQ_MpCoopEvents.finished(interpreter)
@@ -2795,7 +2812,7 @@ $game_map.map_id = 430
 $game_player.moveto(25, 19)
 $game_variables[1001] = 12
 teller.state["map"] = "432"
-$tellings[6] = ["t1", 430, "map:430:1:1"]
+$tellings[6] = ["t1", 430, ["map", 430, 1, 1]]
 stranger.state["map"] = "3"
 $peers = [teller, stranger]
 MGQ_MpCoopEvents.page_ended
@@ -2838,7 +2855,7 @@ $tellings.delete(6)
 check("arrived, their copy of the story's next event waits too while the relay tells of no telling of the teller's for a moment",
       [MGQ_MpCoopEvents.hand_over(next_copy), $log.grep(/kept event 2 on map 432 from starting: the player follows Teller's story to map 432/).size, MGQ_MpCoop::Scope.teller],
       [true, 1, teller])
-$tellings[6] = ["t1", 432, "map:430:1:1"]
+$tellings[6] = ["t1", 432, ["map", 430, 1, 1]]
 check("and once it tells of it again", [MGQ_MpCoopEvents.hand_over(next_copy), MGQ_MpCoop::Scope.teller], [true, teller])
 $tellings.delete(6)
 $frame_count += GatherStandIn::CALL_LAPSE_FRAMES

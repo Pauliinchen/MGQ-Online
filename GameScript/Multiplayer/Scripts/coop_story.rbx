@@ -2,7 +2,9 @@
 #  coop_story.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Caught a member behind the leader up by the one catch-up engine in its Classic settings, carrying out its actions, the closures of their own keys and the party chests of their key items among them
+#      Paulinchen  2026-11-05: Kept the story's writes by [kind, key] with their values, and handed the DLL a member's writes and runs as they are
+#                            - Sent and read the story's fields as values, the DLL writing what of the story changed
+#                            - Caught a member behind the leader up by the one catch-up engine in its Classic settings, carrying out its actions, the closures of their own keys and the party chests of their key items among them
 #                            - Took a key item the leader's story used up from a member who catches up, with no notice
 #                            - Caught a member up again once they answered a choice the leader's story is past
 #                            - Asked the DLL whether a member plays the leader's story, which members follow it, how a member keeps it and what their own story is once they leave
@@ -127,6 +129,15 @@ module MGQ_MpCoopStory
   FOLLOWERS_TOPIC = "catchup.classic_followers"
   MODE_TOPIC = "catchup.classic_mode"
   RESTORE_TOPIC = "catchup.classic_restore"
+
+  # The DLL's topic that writes what of the story changed, see ClassicStoryLists.Delta in the DLL.
+  DELTA_TOPIC = "story.classic_delta"
+
+  # The field of the leader's side in their messages about the story: "alice", "ilias" or empty.
+  SIDE_FIELD = "leader_side"
+
+  # The sides a leader's message may name.
+  SIDES = %w(alice ilias)
 
   # The DLL's topic of the Medal King's prizes a player of a Classic party is owed.
   GIFT_TOPIC = "catchup.medal_king"
@@ -338,11 +349,10 @@ module MGQ_MpCoopStory
 
   # Reads how far another player's story is, as their state tells it.
   #
-  # @param text [String, nil] The values, comma separated, see state_fields.
+  # @param values [Object] The values, see state_fields.
   # @return [Array<Integer>, nil] The values, nil when their game tells none.
-  def self.read_markers(text)
-    values = text.to_s.split(",")
-    values.size == MGQ_MpStoryIds.markers.size ? values.map(&:to_i) : nil
+  def self.read_markers(values)
+    values.is_a?(Array) && values.size == MGQ_MpStoryIds.markers.size && values.all? { |value| value.is_a?(Integer) } ? values : nil
   end
 
   # Asks the DLL whether a member plays the leader's story (ClassicStory.Sync), and where the
@@ -473,12 +483,12 @@ module MGQ_MpCoopStory
   # The fields the party's story adds to the state the player's game tells the others: how far
   # the player's own story is, and the leader whose story they follow.
   #
-  # @return [Hash] "sm": the values of markers_of, comma separated; "ssync": the leader's id, empty
+  # @return [Hash] "sm": the values of markers_of; "ssync": the leader's id, empty
   #   for none.
   def self.state_fields
     return {} unless $game_variables
 
-    { "sm" => own_markers.join(","), "ssync" => follows_leader? ? @sync_with.to_s : "" }
+    { "sm" => own_markers, "ssync" => follows_leader? ? @sync_with.to_s : "" }
   rescue => e
     log_once(:state_fields, "telling the story's progress failed: #{e.class}: #{e.message}")
     {}
@@ -527,7 +537,7 @@ module MGQ_MpCoopStory
     @frames = 0
     unless @writes.empty?
       changes = delta_of(@writes)
-      log("the story changed: #{changes.map { |key, list| "#{key} #{list.split(',').size}" }.join(', ')} (#{changes.values.join(',')[0, 200]}), " \
+      log("the story changed: #{changes.map { |key, list| "#{key} #{list.size}" }.join(', ')} (#{changes.inspect[0, 200]}), " \
           "now #{MGQ_MpStoryState.progress_text(MGQ_MpStoryState.data_of($game_variables))}")
       @writes = {} if tell(-1, "delta", changes)
     end
@@ -538,7 +548,7 @@ module MGQ_MpCoopStory
     end
     held = write_holdings(holdings)
     if held != @sent_held
-      log("the leader's side changed: #{held['side']}")
+      log("the leader's side changed: #{held[SIDE_FIELD]}")
       @sent_held = held if tell(-1, "hold", held)
     end
   end
@@ -546,14 +556,14 @@ module MGQ_MpCoopStory
   # Takes the story's writes the player's game made in a frame, the last value of each key kept: as
   # leader, to tell the members; as member, to ask the leader to take them. Called by story_keys.rbx.
   #
-  # @param batch [Array<Array>] Each write's key, value and site, see MGQ_MpStoryKeys.key_text.
+  # @param batch [Array<Array>] Each write's kind, key, value and site, see MGQ_MpStoryKeys.add.
   def self.recorded(batch)
     writes = guest? ? (@requests ||= {}) : @writes
     return unless writes
 
-    batch.each do |key, value, _site|
-      writes.delete(key)
-      writes[key] = value
+    batch.each do |kind, key, value, _site|
+      writes.delete([kind, key])
+      writes[[kind, key]] = value
     end
   end
 
@@ -577,8 +587,8 @@ module MGQ_MpCoopStory
     @frames = 0
     changes = delta_of(@requests || {})
     runs = @request_runs.map { |entry| MGQ_MpStoryReplay.wire(entry) }.compact
-    log("asking the leader to take the story's writes the player's game made: #{changes.values.join(',')[0, 200]}; #{runs.size} run(s)")
-    return unless tell(leader.seat, "req", runs.empty? ? changes : changes.merge("runs" => runs.join(",")))
+    log("asking the leader to take the story's writes the player's game made: #{changes.inspect[0, 200]}; #{runs.size} run(s)")
+    return unless tell(leader.seat, "req", runs.empty? ? changes : changes.merge("runs" => runs))
 
     @requests = {}
     @request_runs = []
@@ -601,24 +611,22 @@ module MGQ_MpCoopStory
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The member.
   # @param changes [Array] The switches, variables and self switches written, each by key.
-  # @param runs [Array<String>] The entries of the member's runs, as MGQ_MpStoryReplay.wire writes them;
-  #   the message joins them with commas, which the wire's Base64 never holds.
+  # @param runs [Array<String>] The entries of the member's runs, as MGQ_MpStoryReplay.wire writes them.
   def self.take_requests(peer, changes, runs = [])
     writes = []
     changes.each_with_index { |list, kind| list.each { |key, value| writes << [kind, key, MGQ_MpStoryKeys.value_of(kind, key), value] } }
     entries = runs.map { |text| MGQ_MpStoryReplay.unwire(text.to_s) }
-    answer = MGQ_Multiplayer::Bridge.call(MERGE_TOPIC, "writes" => writes.map { |kind, key, held, value| [kind, key, MGQ_MpStoryKeys.text_of(kind, held).to_s, MGQ_MpStoryKeys.text_of(kind, value).to_s] },
-                                                       "runs" => entries.map { |entry| entry.is_a?(Hash) ? [(entry["keys"] || {}).keys, entry["site"]] : [[], nil] })
+    answer = MGQ_Multiplayer::Bridge.call(MERGE_TOPIC, "writes" => writes.map { |kind, key, held, value| [kind, key, MGQ_MpStoryKeys.plain_of(kind, held), MGQ_MpStoryKeys.plain_of(kind, value)] },
+                                                       "runs" => entries.map { |entry| entry.is_a?(Hash) ? entry : nil })
     answer = { "takes" => [], "keeps" => [] } unless answer.is_a?(Hash)
     taken = []
     refused = []
     writes.each_with_index do |(kind, key, held, value), index|
       kept = answer["takes"][index] ? value : held
-      name = MGQ_MpStoryKeys.key_text(kind, key)
       write_own(kind, key, kept) unless kept == held
-      (kept == value ? taken : refused) << name
-      text = MGQ_MpStoryKeys.text_of(kind, kept)
-      (@writes ||= {})[name] = text if text
+      (kept == value ? taken : refused) << [kind, key].inspect
+      plain = MGQ_MpStoryKeys.plain_of(kind, kept)
+      (@writes ||= {})[[kind, key]] = plain unless plain.nil?
     end
     log("took #{MGQ_MpOverworldSync.who(peer)}'s requests: #{taken.join(', ')[0, 200]}#{refused.empty? ? '' : "; refused, kept as the story holds them: #{refused.join(', ')[0, 200]}"}")
     entries.each_with_index { |entry, index| keep_run(peer, entry, answer["keeps"][index]) }
@@ -651,21 +659,18 @@ module MGQ_MpCoopStory
     $game_map.need_refresh = true if $game_map
   end
 
-  # Writes the story's writes as the members read them, see MGQ_MpStoryState.decode_delta.
+  # Writes the story's writes as the members read them (DELTA_TOPIC), see
+  # MGQ_MpStoryState.decode_delta.
   #
-  # @param writes [Hash{String => String}] Each key's last value, as story_keys.rbx writes them.
+  # @param writes [Hash{Array => Object}] Each key's last value by [kind, key], as story_keys.rbx
+  #   hands them over.
   # @return [Hash] The changed switches, variables and self switches under "s", "v" and "ss".
+  # @raise [RuntimeError] When the DLL wrote none.
   def self.delta_of(writes)
-    lists = { "s" => [], "v" => [], "ss" => [] }
-    writes.each do |key, value|
-      kind, id = MGQ_MpStoryKeys.key_of(key)
-      case kind
-      when 0 then lists["s"] << "#{id}:#{value}"
-      when 1 then lists["v"] << "#{id}:#{value}"
-      when 2 then lists["ss"] << "#{id.join('.')}:#{value}"
-      end
-    end
-    Hash[lists.map { |name, list| [name, list.join(",")] }]
+    changes = MGQ_Multiplayer::Bridge.call(DELTA_TOPIC, writes.map { |(kind, key), value| [kind, key, value] })
+    raise "the DLL wrote no changes of the story" unless changes.is_a?(Hash)
+
+    changes
   end
 
   # As member, asks the leader for their story until it came, again whenever the leader changes.
@@ -731,7 +736,7 @@ module MGQ_MpCoopStory
       tell(peer.seat, "full", MGQ_MpStoryState.full(MGQ_MpStoryState.raw_state).merge("k" => write_keys(keys)).merge(write_holdings(held)))
     when "full"
       first = !guest?
-      @partial = message["part"].to_s == "1"
+      @partial = message["part"] ? true : false
       held = read_holdings(message)
       borrow(peer, MGQ_MpStoryState.decode_full(message), held)
       lend_keys(peer, read_keys(message["k"]))
@@ -740,7 +745,7 @@ module MGQ_MpCoopStory
       drop_covered
       choices_borrowed(peer, first)
     when "delta" then apply(MGQ_MpStoryState.decode_delta(message))
-    when "req" then take_requests(peer, MGQ_MpStoryState.decode_delta(message), message["runs"].to_s.split(","))
+    when "req" then take_requests(peer, MGQ_MpStoryState.decode_delta(message), Array(message["runs"]))
     when "keys" then lend_keys(peer, read_keys(message["k"]))
     when "hold" then leader_holds(read_holdings(message))
     else log("ignored #{kind} from #{MGQ_MpOverworldSync.who(peer)}: unknown kind")
@@ -782,10 +787,10 @@ module MGQ_MpCoopStory
   # @return [String] The summary, with a colon before it; empty when nothing matters.
   def self.message_details(kind, message)
     case kind
-    when "full" then ": whole story#{message['part'].to_s == '1' ? ' without what it turned off' : ''}, keys #{message['k']}, side #{message['side']}"
-    when "delta", "req" then ": switches #{message['s'].to_s[0, 200]}; variables #{message['v'].to_s[0, 200]}; self switches #{message['ss'].to_s[0, 200]}"
-    when "keys" then ": #{message['k']}"
-    when "hold" then ": side #{message['side']}"
+    when "full" then ": whole story#{message['part'] ? ' without what it turned off' : ''}, keys #{message['k'].inspect}, side #{message[SIDE_FIELD]}"
+    when "delta", "req" then ": switches #{message['s'].inspect[0, 200]}; variables #{message['v'].inspect[0, 200]}; self switches #{message['ss'].inspect[0, 200]}"
+    when "keys" then ": #{message['k'].inspect}"
+    when "hold" then ": side #{message[SIDE_FIELD]}"
     else ""
     end
   rescue
@@ -1003,19 +1008,19 @@ module MGQ_MpCoopStory
   # Writes key items for a message.
   #
   # @param keys [Hash{Integer => Integer}] How many of each, by the item's id.
-  # @return [String] Each item's id and count, "id:count", comma separated.
+  # @return [Array<Array<Integer>>] Each item's id and count.
   def self.write_keys(keys)
-    keys.map { |id, count| "#{id}:#{count}" }.join(",")
+    keys.to_a
   end
 
   # Reads key items a leader wrote.
   #
-  # @param text [String, nil] The items, see write_keys.
+  # @param list [Object] The items, see write_keys.
   # @return [Hash{Integer => Integer}] How many of each, by the item's id; none for a count below
   #   one.
-  def self.read_keys(text)
+  def self.read_keys(list)
     keys = {}
-    MGQ_MpStoryState.entries(text).each { |id, count| keys[id.to_i] = count.to_i if MGQ_MpStoryState.known_id?(:items, id.to_i) && count.to_i > 0 }
+    MGQ_MpStoryState.entries(list).each { |id, count| keys[id] = count if MGQ_MpStoryState.story_id?(:items, id) && count.is_a?(Integer) && count > 0 }
     keys
   end
 
@@ -1030,9 +1035,9 @@ module MGQ_MpCoopStory
   # Writes the leader's side for a message.
   #
   # @param held [Hash] The side, see holdings.
-  # @return [Hash] The side under "side": "a" for Alice's, "i" for Ilias's, empty for none.
+  # @return [Hash] The side under SIDE_FIELD: "alice", "ilias" or empty for none.
   def self.write_holdings(held)
-    { "side" => { :alice => "a", :ilias => "i" }[held[:side]].to_s }
+    { SIDE_FIELD => held[:side].to_s }
   end
 
   # Reads the leader's side.
@@ -1040,7 +1045,8 @@ module MGQ_MpCoopStory
   # @param message [Hash] The message.
   # @return [Hash] The side, see holdings.
   def self.read_holdings(message)
-    { :side => { "a" => :alice, "i" => :ilias }[message["side"].to_s] }
+    side = message[SIDE_FIELD]
+    { :side => SIDES.include?(side) ? side.to_sym : nil }
   end
 
   # Keeps the leader's side, which the member's side past the Great Decision and the question whom
@@ -1223,7 +1229,8 @@ module MGQ_MpCoopStory
   # own story. A DLL that answers nothing leaves the game's own joins alone, as every hook does.
   #
   # @param ids [Array<Integer>] The companions' main personas.
-  # @param site [String, nil] The page or common event whose own join it is, nil for a catch-up.
+  # @param site [Array, nil] The page or common event whose own join it is, such as ["map", 6, 30, 2];
+  #   nil for a catch-up.
   # @return [Array<Integer>] Those who may.
   def self.allowed_companions(ids, site = nil)
     return ids if ids.empty?
@@ -1246,7 +1253,7 @@ module MGQ_MpCoopStory
   # allowed_companions.
   #
   # @param actor [Integer] The companion's main persona.
-  # @param site [String, nil] The page or common event that runs.
+  # @param site [Array, nil] The page or common event that runs.
   # @return [Boolean] Whether it is.
   def self.refuses_join?(actor, site)
     !allowed_companions([actor], site).include?(actor)
@@ -1287,7 +1294,7 @@ module MGQ_MpCoopStory
   def self.side_question(leader)
     led = leader.is_a?(MGQ_MpOverworldSync::Peers::Peer)
     gates = { "classic" => MGQ_MpOverworldSync.in_world? && !MGQ_MpCoop::Scope.raid?, "asking" => @asking ? true : false, "mirroring" => MGQ_MpCoopEvents.mirroring? ? true : false,
-              "guest" => guest?, "holdings" => !@leader_held.nil?, "led" => led, "telling" => led && leader.state["telling"] == "1" }
+              "guest" => guest?, "holdings" => !@leader_held.nil?, "led" => led, "telling" => led && leader.state["telling"] ? true : false }
     fields = { "gates" => gates }
     fields["leader"] = @leader_held[:side].to_s if guest? && @leader_held
     stories = side_stories
@@ -1441,7 +1448,7 @@ module MGQ_MpCoopStory
     return unless guest?
 
     @own[kind][key] = value
-    log("kept #{MGQ_MpStoryKeys.key_text(kind, key)} as the player's own in their own story too")
+    log("kept #{[kind, key].inspect} as the player's own in their own story too")
   end
 
   # Shows the player's own chests on a map they enter while playing the leader's story. Called

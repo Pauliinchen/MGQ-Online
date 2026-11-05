@@ -34,8 +34,11 @@
   </ItemGroup>
 
   <!-- The bridge's four exports live in MGQOnline.Bridge.Native, which NativeAOT exports from only
-       because it is named an UnmanagedEntryPointsAssembly here; GameBridge installs their host. -->
+       because it is named an UnmanagedEntryPointsAssembly here; GameBridge installs their host.
+       NativeAOT runs a module initializer only for an assembly it compiled code of, and nothing
+       but the initializer reaches this one, so it is rooted. -->
   <ItemGroup>
+    <TrimmerRootAssembly Include="$(AssemblyName)" />
     <ProjectReference Include="..\MGQOnline.Bridge.Native\MGQOnline.Bridge.Native.csproj" />
     <UnmanagedEntryPointsAssembly Include="MGQOnline.Bridge.Native" />
   </ItemGroup>

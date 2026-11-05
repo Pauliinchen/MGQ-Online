@@ -2,7 +2,8 @@
 //  ReplayEntry.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Read the story markers from StoryIds
+//      Paulinchen  2026-11-05: Wrote an entry's keys, start values, site and inputs' places as plain values, and read the texts of a save's entry once
+//                            - Read the story markers from StoryIds
 //                            - Noted whether a run gave or used up a found item
 //                            - Named a battle's drops as a site, and carried the found items they gave
 //      Paulinchen  2026-10-31: Kept the number its track keeps an entry under
@@ -20,7 +21,7 @@ using MGQOnline.Bridge.Ruby;
 namespace MGQOnline.Game.Story;
 
 /// <summary>
-/// Where a run started, named as story_keys.rbx names a write's site: a map event's page,
+/// Where a run started, named as the tracks and the save's log name a site: a map event's page,
 /// <c>map:&lt;map&gt;:&lt;event&gt;:&lt;page from 1&gt;</c>, an autorun or parallel common event,
 /// <c>ce:&lt;id&gt;</c>, or a battle's drops, <c>game:drop</c>.
 /// </summary>
@@ -60,7 +61,7 @@ public readonly record struct ReplaySite(int MapId, int EventId, int PageNo, int
     public static ReplaySite Page(int map, int eventId, int pageNo) => new(map, eventId, pageNo, 0);
 
     /// <summary>
-    /// Reads a site as the scripts name it.
+    /// Reads a site as the tracks and the save's log name it.
     /// </summary>
     /// <param name="text">The site, such as "map:215:27:1", "ce:129" or "game:drop".</param>
     /// <returns>The site.</returns>
@@ -87,7 +88,25 @@ public readonly record struct ReplaySite(int MapId, int EventId, int PageNo, int
     }
 
     /// <summary>
-    /// Writes the site as the scripts name it.
+    /// Reads a site as the scripts hand it over, or its text as a save of an earlier release keeps it.
+    /// </summary>
+    /// <param name="value">The site, see <see cref="StoryPlain"/>, or its text.</param>
+    /// <returns>The site.</returns>
+    /// <exception cref="RubyValueException">The value names no page, no common event and no battle's drops.</exception>
+    public static ReplaySite Of(RubyValue value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        return Parse(value is RubyString ? value.AsText() : StoryPlain.SiteText(value));
+    }
+
+    /// <summary>
+    /// Writes the site as the scripts take it.
+    /// </summary>
+    /// <returns>["map", map, event, page from 1], ["ce", id] or ["game", "drop"].</returns>
+    public RubyArray Plain() => IsCommon ? ["ce", CommonId] : IsDrop ? ["game", "drop"] : ["map", MapId, EventId, PageNo + 1];
+
+    /// <summary>
+    /// Writes the site as the tracks and the save's log name it.
     /// </summary>
     /// <returns>Such as "map:215:27:1", "ce:129" or "game:drop".</returns>
     public override string ToString() => IsCommon
@@ -171,7 +190,7 @@ public sealed record RunPlace(IReadOnlyList<long> Markers)
 /// One input of the opener's run, which a replay answers with: a choice, number or item input's
 /// answer, a random draw, a read of the player's position, the timer or a key, or a battle's outcome.
 /// </summary>
-/// <param name="At">The command's site and place, as the scripts name it.</param>
+/// <param name="At">The command's site and place, as the save's log names it, such as "map:1994:42:1@12".</param>
 /// <param name="Occurrence">How often the command ran before in the run, from 0.</param>
 /// <param name="Kind">What was read, such as "choice", "rand" or "battle".</param>
 /// <param name="Value">The result.</param>
@@ -246,7 +265,9 @@ public sealed record ReplayEntry(
     }
 
     /// <summary>
-    /// Reads an entry as the scripts and the save hold it, see <see cref="Write"/>.
+    /// Reads an entry as the scripts and the save hold it, see <see cref="Write"/>, or as a save of
+    /// an earlier release holds it, its keys and start values as texts by name, its site and its
+    /// inputs' places as texts.
     /// </summary>
     /// <param name="value">The entry.</param>
     /// <returns>The entry.</returns>
@@ -267,7 +288,7 @@ public sealed record ReplayEntry(
             "world" => StoryScope.World,
             string other => throw new RubyValueException($"An entry travels for no scope {other}."),
         };
-        return new ReplayEntry(id, ReplaySite.Parse(entry["site"].AsText()), entry["stream"].AsText(), scope,
+        return new ReplayEntry(id, ReplaySite.Of(entry["site"]), entry["stream"].AsText(), scope,
             entry["opener"].IsNil ? null : entry["opener"].AsText(), KeysOf(entry["keys"]), PlaceOf(entry["place"]), KeysOf(entry["start"]),
             InputsOf(entry["inputs"]), entry["derived"] is RubyBool { Flag: true })
         {
@@ -280,7 +301,7 @@ public sealed record ReplayEntry(
     /// <summary>
     /// Writes the entry as the scripts and the save hold it.
     /// </summary>
-    /// <returns>{"id", "site", "stream", "scope" ("party" or "world"), "opener" (nil for none), "keys" (key => value before), "place" ([markers] or nil), "start" (key => value), "inputs" ([[at, occurrence, kind, value], ...]), "derived", "found" for a found item's run, "drops" ([[item, count], ...]) for a battle's drops, and "n" for an entry of a track}.</returns>
+    /// <returns>{"id", "site" (see <see cref="StoryPlain"/>), "stream", "scope" ("party" or "world"), "opener" (nil for none), "keys" (the rows of each key's value before, see <see cref="StoryPlain"/>), "place" ([markers] or nil), "start" (the rows of the start values), "inputs" ([[at, occurrence, kind, value], ...]), "derived", "found" for a found item's run, "drops" ([[item, count], ...]) for a battle's drops, and "n" for an entry of a track}.</returns>
     public RubyHash Write()
     {
         RubyHash written = Fields();
@@ -309,13 +330,13 @@ public sealed record ReplayEntry(
     private RubyHash Fields() => new()
     {
         { "id", Id },
-        { "site", Site.ToString() },
+        { "site", Site.Plain() },
         { "stream", Stream },
         { "scope", Scope == StoryScope.Party ? "party" : "world" },
         { "opener", Opener },
-        { "keys", HashOf(Keys) },
+        { "keys", StoryPlain.Rows(Keys) },
         { "place", PlaceText(Place) },
-        { "start", HashOf(Start) },
+        { "start", StoryPlain.Rows(Start) },
         { "inputs", InputsArray(Inputs) },
         { "derived", Derived },
     };
@@ -338,39 +359,41 @@ public sealed record ReplayEntry(
     /// Writes inputs as an entry holds them.
     /// </summary>
     /// <param name="inputs">The inputs, in their order.</param>
-    /// <returns>[[at, occurrence, kind, value], ...].</returns>
+    /// <returns>[[at, occurrence, kind, value], ...], each at a command's place (see <see cref="StoryPlain"/>), or its text where it names none.</returns>
     public static RubyArray InputsArray(IEnumerable<ReplayInput> inputs) =>
-        new(inputs.Select(input => (RubyValue)new RubyArray { input.At, input.Occurrence, input.Kind, input.Value }));
+        new(inputs.Select(input => (RubyValue)new RubyArray { StoryPlain.PlaceOf(input.At) is RubyArray at ? at : input.At, input.Occurrence, input.Kind, input.Value }));
 
     /// <summary>
     /// Reads inputs.
     /// </summary>
-    /// <param name="value">[[at, occurrence, kind, value], ...], nil for none.</param>
+    /// <param name="value">[[at, occurrence, kind, value], ...], each at a command's place or its text; nil for none.</param>
     /// <returns>The inputs, in their order.</returns>
     /// <exception cref="RubyValueException">An input is no such four.</exception>
     public static IReadOnlyList<ReplayInput> InputsOf(RubyValue value)
     {
         ArgumentNullException.ThrowIfNull(value);
         return value.IsNil ? [] : [.. value.AsArray().Select(input => input.AsArray() is { Count: 4 } fields
-            ? new ReplayInput(fields[0].AsText(), fields[1].AsInt(), fields[2].AsText(), fields[3].AsLong())
+            ? new ReplayInput(fields[0] is RubyString ? fields[0].AsText() : StoryPlain.PlaceText(fields[0]), fields[1].AsInt(), fields[2].AsText(), fields[3].AsLong())
             : throw new RubyValueException("An input is [at, occurrence, kind, value]."))];
     }
 
     /// <summary>
-    /// Reads keys and their values.
+    /// Reads keys and their values: rows as the scripts hand them over, or the texts by name a save's
+    /// log keeps, which a save of an earlier release keeps its entries' keys in too.
     /// </summary>
-    /// <param name="value">{key => value}, nil for none.</param>
-    /// <returns>The keys.</returns>
+    /// <param name="value">[[kind, key, value], ...] (see <see cref="StoryPlain"/>) or {name => text}; nil for none.</param>
+    /// <returns>The keys, with their values as the tracks write them.</returns>
     /// <exception cref="RubyValueException">A key is none the tracks name.</exception>
     public static Dictionary<StoryKey, string> KeysOf(RubyValue value)
     {
-        var keys = new Dictionary<StoryKey, string>();
-        if (value.IsNil)
+        ArgumentNullException.ThrowIfNull(value);
+        if (value is not RubyHash named)
         {
-            return keys;
+            return StoryPlain.TextsOf(value);
         }
 
-        foreach ((RubyValue name, RubyValue text) in value.AsHash())
+        var keys = new Dictionary<StoryKey, string>();
+        foreach ((RubyValue name, RubyValue text) in named)
         {
             keys[StoryKey.TryParse(name.AsText(), out StoryKey key) ? key : throw new RubyValueException($"{name.AsText()} is no story key.")] = text.AsText();
         }
@@ -379,7 +402,7 @@ public sealed record ReplayEntry(
     }
 
     /// <summary>
-    /// Writes keys and their values in the order of their names.
+    /// Writes keys and their values in the order of their names, as a save's log keeps them.
     /// </summary>
     /// <param name="keys">The keys.</param>
     /// <returns>{key => value}.</returns>

@@ -2,6 +2,8 @@
 //  ModCheckTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Left out an option whose default has a type no world keeps
+//                            - Took a mod's Mod Config options as values
 //      Paulinchen  2026-10-31: Read Patch anew for the creator's hashes, so a mod put there right before counts
 //      Paulinchen  2026-10-30: Told the mods a world's session loads and those it turns off now
 //                            - Left installing a world's mods to the Mod Framework
@@ -64,8 +66,8 @@ internal sealed class ModCheckTopics
     public const string ReportTopic = "mods.report";
 
     /// <summary>
-    /// Sends a mod's Mod Config options: <c>key</c>, <c>version</c> and <c>lines</c> (one per option,
-    /// see <see cref="ModOption.Parse"/>) in; true when sent.
+    /// Sends a mod's Mod Config options: <c>key</c>, <c>version</c> and <c>options</c> (each as
+    /// <see cref="ModOption.Of"/> takes it) in; true when sent.
     /// </summary>
     public const string OptionsTopic = "mods.options";
 
@@ -396,11 +398,11 @@ internal sealed class ModCheckTopics
     /// <summary>
     /// Answers <see cref="OptionsTopic"/>.
     /// </summary>
-    /// <param name="request">The mod's key, the version and the options' lines.</param>
+    /// <param name="request">The mod's key, the version and the options.</param>
     /// <returns>Whether they were sent.</returns>
     private RubyValue SendOptions(RubyHash request)
     {
-        IReadOnlyList<ModOption> options = ModOption.Parse(string.Join("\n", request["lines"].AsArray().Select(line => line.AsText())));
+        IReadOnlyList<ModOption> options = [.. request["options"].AsArray().Select(option => ModOption.Of(option.AsHash())).OfType<ModOption>()];
         string key = request["key"].AsText();
         string version = request["version"].AsText();
         _log.Write($"sending {options.Count} Mod Config option(s) of {key} {(version.Length == 0 ? "of no known version" : version)}");

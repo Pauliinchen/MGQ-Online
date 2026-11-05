@@ -2,6 +2,7 @@
 #  coop_squad.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Told the followers shown and read a ghost's as values, the DLL writing them
 #      Paulinchen  2026-11-01: Named the Mod Framework's interface by its own name
 #                            - Added the followers' row through the Mod Framework's options
 #      Paulinchen  2026-10-31: Took the group of its row from MGQ_Multiplayer::OPTION_PREFIX
@@ -436,26 +437,25 @@ module MGQ_MpCoopSquad
   # Writes the looks of the followers the player shows, which their party's games show behind
   # their ghost.
   #
-  # @return [String] Each follower's sprite and index, "name*index" joined by "|".
+  # @return [Array<Array>] Each follower's sprite and index.
   def self.trail
-    return "" unless MGQ_MpCoop.in_party? && $game_player
+    return [] unless MGQ_MpCoop.in_party? && $game_player
 
     shown = []
     $game_player.followers.each do |follower|
-      shown << "#{follower.character_name}*#{follower.character_index}" if follower.visible? && !follower.character_name.to_s.empty?
+      shown << [follower.character_name.to_s, follower.character_index] if follower.visible? && !follower.character_name.to_s.empty?
     end
-    shown.join("|")
+    shown
   end
 
-  # Reads the looks of a ghost's followers.
+  # Reads the looks of a ghost's followers, leaving out what another game sent that is none.
   #
-  # @param text [String, nil] The trail the ghost's player told, see trail.
+  # @param trail [Object] The trail the ghost's player told, see trail.
   # @return [Array<Array>] Each follower's sprite and index.
-  def self.parse_trail(text)
-    text.to_s.split("|").map do |part|
-      name, index = part.split("*", 2)
-      [name.to_s, index.to_i]
-    end.reject { |name, _| name.empty? }
+  def self.followers_of(trail)
+    return [] unless trail.is_a?(Array)
+
+    trail.select { |look| look.is_a?(Array) && look.size == 2 && look[0].is_a?(String) && !look[0].empty? && look[1].is_a?(Integer) }
   end
 
   # The fields the squad adds to the state the player's game tells the others.

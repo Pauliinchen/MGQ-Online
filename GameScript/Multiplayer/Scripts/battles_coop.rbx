@@ -2,7 +2,9 @@
 #  battles_coop.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Built other players' characters and the host's troop through MGQ_MpBattlers
+#      Paulinchen  2026-11-05: Handed the enemy rates, the invite's fields and whether the player is busy as values, and read the invites' flags as true or false
+#                            - Had C# write and read the joins and the troop's changes
+#                            - Built other players' characters and the host's troop through MGQ_MpBattlers
 #                            - Started a rival's troop taken after the battle's start through MGQ_MpBattlers
 #                            - Let a guest that takes a battle over go on from the battlers its start made whole, started once
 #                            - Told whether a battle's invite is open for the player, which the screens the mod opens on its own wait for
@@ -183,7 +185,7 @@ module MGQ_MpBattlesCoop
   UP_TO_PREFIX = "Up to "
 
   # The field of a running battle's "off" that tells the player why it called their joining off,
-  # see MGQ_MpBattlesHotjoin::OFF_OVER; games of 0.6.8 and before send none and ignore it.
+  # see MGQ_MpBattlesHotjoin::OFF_OVER.
   OFF_WHY_FIELD = "why"
 
   # What a guest is told whose battle ended before they got into it, with its host's name.
@@ -616,8 +618,8 @@ module MGQ_MpBattlesCoop
              end
     { "facts" => facts, "troop" => troop_id.to_i, "escape" => can_escape ? true : false, "lose" => can_lose ? true : false,
       "encounter" => encounter ? true : false, "encountering" => @encountering ? true : false, "joining" => @joining ? true : false,
-      "side" => side_battle?(troop_id), "pools_won" => pools_won?(troop_id), "boss" => boss, "rates" => rates_text,
-      "invite_fields" => fields.map { |key, value| [key.to_s, value.to_s] }, "viewers" => raid? && boss ? MGQ_MpCoop::Scope.viewers.map(&:seat) : [],
+      "side" => side_battle?(troop_id), "pools_won" => pools_won?(troop_id), "boss" => boss, "rates" => rates,
+      "invite_fields" => fields.map { |key, value| [key.to_s, value] }, "viewers" => raid? && boss ? MGQ_MpCoop::Scope.viewers.map(&:seat) : [],
       "leading" => @leading, "stays_out" => MGQ_MpBattlesHotjoin.stays_out_seats }
   end
 
@@ -805,7 +807,7 @@ module MGQ_MpBattlesCoop
   #
   # @return [Hash] The fields, none in a Classic world.
   def self.state_fields
-    raid? ? { "busy" => @busy ? 1 : 0 } : {}
+    raid? ? { "busy" => @busy ? true : false } : {}
   end
 
   # Reports whether the player takes part in a trade, through trade.rbx.
@@ -947,7 +949,7 @@ module MGQ_MpBattlesCoop
     MGQ_MpBattlesSync.keep_seats(joined.keys)
     players = [[MGQ_MpBattlesSync.own_seat, MGQ_Multiplayer::Player.name.to_s] + own_build]
     joined.keys.sort.each do |seat|
-      builds, vitals, max = MGQ_MpBattlesSync::Wire.parse(joined[seat].to_s)
+      builds, vitals, max = MGQ_MpBattlesSync::Wire.read(joined[seat])
       # A player who joined may have left the world since; their characters fight on all the same.
       peer = MGQ_MpBattlesSync.peer_at(seat)
       players << [seat, peer ? peer.state["name"].to_s : "?", builds.to_s, Array(vitals), max.is_a?(Integer) ? max : 0]
@@ -1073,8 +1075,8 @@ module MGQ_MpBattlesCoop
     $game_troop.setup(message["troop"].to_i)
     MGQ_MpBattlers.start_troop
     BattleManager.make_escape_ratio if BattleManager.respond_to?(:make_escape_ratio)
-    MGQ_MpGame.set(BattleManager, :can_escape, message["escape"] == "1")
-    MGQ_MpGame.set(BattleManager, :can_lose, message["lose"] == "1")
+    MGQ_MpGame.set(BattleManager, :can_escape, message["escape"] ? true : false)
+    MGQ_MpGame.set(BattleManager, :can_lose, message["lose"] ? true : false)
     MGQ_MpGame.set(BattleManager, :preemptive, false)
     MGQ_MpGame.set(BattleManager, :surprise, false)
     MGQ_MpBattlers.redraw(scene)
@@ -1206,7 +1208,7 @@ module MGQ_MpBattlesCoop
   def self.lead(peer, message)
     @leading = [peer.seat, message["bid"].to_s]
     MGQ_MpRaidTiers.note_invite(message) if defined?(MGQ_MpRaidTiers)
-    BattleManager.setup(message["troop"].to_i, message["escape"] == "1", message["lose"] == "1")
+    BattleManager.setup(message["troop"].to_i, message["escape"] ? true : false, message["lose"] ? true : false)
     return refuse_lead(peer, message, "the battle did not become a co-op battle the player hosts (#{MGQ_MpBattlesSync.role.inspect})") unless MGQ_MpBattlesSync.role == :host
 
     SceneManager.call(Scene_Battle)
@@ -1235,9 +1237,9 @@ module MGQ_MpBattlesCoop
     MGQ_MpBattlesHotjoin.note_invite(message)
     MGQ_MpRaidTiers.note_invite(message) if defined?(MGQ_MpRaidTiers)
     borrow_rates(message)
-    BattleManager.setup(message["troop"].to_i, message["escape"] == "1", message["lose"] == "1")
+    BattleManager.setup(message["troop"].to_i, message["escape"] ? true : false, message["lose"] ? true : false)
     MGQ_MpBattlesSync.join_world(:guest, message["bid"].to_s, [peer.seat], peer.state["name"].to_s)
-    MGQ_MpBattlesServed.become_guest(message["bid"].to_s) if message["served"].to_s == "1" && defined?(MGQ_MpBattlesServed)
+    MGQ_MpBattlesServed.become_guest(message["bid"].to_s) if message["served"] && defined?(MGQ_MpBattlesServed)
     MGQ_MpBattlesSync.battle_started
     MGQ_MpBattles.begin(:coop)
     SceneManager.call(Scene_Battle)
@@ -1246,11 +1248,11 @@ module MGQ_MpBattlesCoop
     @joining = false
   end
 
-  # Writes the enemies' rates the player's game fights with, for the invites of a battle it hosts.
+  # Tells the enemies' rates the player's game fights with, for the invites of a battle it hosts.
   #
-  # @return [String] RATE_VARIABLES' values, separated by commas.
-  def self.rates_text
-    RATE_VARIABLES.map { |id| $game_variables[id].to_i }.join(",")
+  # @return [Array<Integer>] RATE_VARIABLES' values.
+  def self.rates
+    RATE_VARIABLES.map { |id| $game_variables[id].to_i }
   end
 
   # Fights the battle the player joins with its host's enemy rates, which an invite in a Raid World
@@ -1258,14 +1260,14 @@ module MGQ_MpBattlesCoop
   # the host's Labyrinth of Chaos too, whatever the player's own difficulty. Keeps the player's own
   # until the battle ends (see restore); a second invite keeps the first's.
   #
-  # @param message [Hash] The invite, "rates" with rates_text of the host.
+  # @param message [Hash] The invite, "rates" with the host's rates.
   def self.borrow_rates(message)
-    rates = message["rates"].to_s.split(",")
-    return unless rates.size == RATE_VARIABLES.size && rates.all? { |rate| rate =~ /\A-?\d+\z/ }
+    rates = message["rates"]
+    return unless rates.is_a?(Array) && rates.size == RATE_VARIABLES.size && rates.all? { |rate| rate.is_a?(Integer) }
 
     @kept_rates ||= RATE_VARIABLES.map { |id| [id, $game_variables[id]] }
-    RATE_VARIABLES.each_with_index { |id, index| $game_variables[id] = rates[index].to_i }
-    log("fights with the host's enemy rates #{message['rates']} instead of the player's own #{@kept_rates.map { |_, rate| rate }.join(',')}")
+    RATE_VARIABLES.each_with_index { |id, index| $game_variables[id] = rates[index] }
+    log("fights with the host's enemy rates #{rates.join(',')} instead of the player's own #{@kept_rates.map { |_, rate| rate }.join(',')}")
   rescue => e
     log("taking the host's enemy rates failed: #{e.class}: #{e.message}")
   end
@@ -1310,7 +1312,7 @@ module MGQ_MpBattlesCoop
     else
       # The host's party says how many of them fight and how many wait on the Backline.
       build = own_build
-      MGQ_MpBattlesSync::Channel.post("join", MGQ_MpBattlesSync::Wire.line(build))
+      MGQ_MpBattlesSync::Channel.post("join", MGQ_MpBattlesSync::Wire.write(build))
       log("sent join for battle #{MGQ_MpBattlesSync.battle_id} with #{Array(build[1]).size} characters, party_member_max #{build[2]}, waiting up to #{limit / 60} s for the roster")
     end
     bridge = MGQ_Multiplayer::Bridge
@@ -1452,7 +1454,7 @@ module MGQ_MpBattlesCoop
     return if current == @shared_troop
 
     hotjoin = MGQ_MpBattlesHotjoin
-    hotjoin.send_to(seats, "coop_troop", sync::Wire.line([hotjoin.late_entries, sync.names]))
+    hotjoin.send_to(seats, "coop_troop", sync::Wire.write([hotjoin.late_entries, sync.names]))
     # Noted only once sent, so a send that failed is tried again before the next one.
     @shared_troop = current
     log("the troop of battle #{sync.battle_id} changed, now #{current.size} enemies (#{current.count { |_, _, hidden| hidden == 1 }} hidden)" +

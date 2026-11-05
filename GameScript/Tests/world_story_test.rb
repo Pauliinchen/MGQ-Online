@@ -2,7 +2,10 @@
 #  world_story_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Left whether commands move the world's story on to the DLL's one decision, checked there
+#      Paulinchen  2026-11-05: Handed and expected sites as plain values
+#                            - Handed and expected the story's keys and values as [kind, key] with values
+#                            - Stood in for the shared companions through the DLL's topics
+#                            - Left whether commands move the world's story on to the DLL's one decision, checked there
 #                            - Took the player out of their own scene through the stand-in of the one guard of the game's flow
 #                            - Dropped the stand-in of the game's frame counter, which no script reads
 #      Paulinchen  2026-11-01: Dropped the stand-in of the form window no script draws with any more
@@ -70,50 +73,6 @@ module MGQ_Multiplayer; module Log; def self.write(m); puts "  log: #{m}"; end; 
 $calls = []
 $notices = []
 $raid = true
-$comps = ""
-
-# Stands in for the DLL's shared companions: each call is noted and starts, and the state names the
-# world's companions from $comps.
-module MGQ_Multiplayer
-  module Link
-    # A function of the DLL, which notes its calls.
-    Function = Struct.new(:name) do
-      # Notes the call.
-      #
-      # @param args [Array] The call's arguments.
-      # @return [Integer] 1, started.
-      def call(*args)
-        check_dll_call(name, args)
-        $calls << [name, args]
-        1
-      end
-    end
-
-    # Gives the DLL function of a name, which notes its calls.
-    def self.function(name); Function.new(name); end
-
-    # Reads the shared companions' state as the DLL writes it.
-    #
-    # @param name [String] The export.
-    # @param size [Integer] The buffer's size.
-    # @return [String] The text.
-    def self.read(name, size)
-      check_dll_call(name, ["", size])
-      "world=w1\nrev=1\ncomps=#{$comps}\nfetch=done\n\n".dup.force_encoding("ASCII-8BIT")
-    end
-
-    # Splits a DLL answer into its header fields and its payload.
-    #
-    # @param text [String] The answer.
-    # @return [Hash] The fields by name, the payload under :payload.
-    def self.parse(text)
-      head, payload = text.force_encoding("UTF-8").split("\n\n", 2)
-      state = { :payload => payload.to_s }
-      head.to_s.split("\n").each { |line| key, value = line.split("=", 2); state[key] = value if value }
-      state
-    end
-  end
-end
 
 # Stands in for the overworld sync, whose world is always open.
 module MGQ_MpOverworldSync
@@ -392,6 +351,9 @@ class Game_Map; attr_accessor :events; end
 
 fake = open_rules_bridge
 answer_story(fake)
+# The DLL's fetch of the shared companions, which ends at once with the companions in $comps.
+fake.answer("raid.story.fetch") { |world| $calls << ["raid.story.fetch", world]; true }
+fake.answer("raid.story.state") { { "world" => "w1", "rev" => 1, "comps" => $comps.to_a, "fetch" => "done" } }
 load_script "story_state"
 load_script "coop_story"
 load_script "coop_choices"
@@ -461,7 +423,7 @@ frames(2)
 check("the mapping's table is read once the DLL tells its revision", keys.raid_table.rev, 1)
 seed = staged("story.seed").first
 check("the player's story the relay asks for holds what the mapping keeps or a chest's, never each player's own",
-      [seed["v1001"], seed["s7096"], seed["s4"], seed["v3001"], seed.size], ["n5", "1", nil, nil, 2])
+      seed, [[0, 7096, true], [1, 1001, 5]])
 frames(1)
 check("once", staged("story.seed").size, 1)
 
@@ -470,7 +432,7 @@ $game_variables[1062] = 3
 $game_switches[600] = true
 frames(1)
 $story_staged.clear
-$takes << track_take({ "v1001" => "n9", "s500" => "1", "ss12.3.A" => "1", "v1062" => "n4" }, "held" => ["v1062"], "chests" => { "s7102" => "1" })
+$takes << track_take([[1, 1001, 9], [0, 500, true], [2, [12, 3, "A"], true], [1, 1062, 4]], "held" => [[1, 1062]], "chests" => [[0, 7102, true]])
 tell_status(fake, "pending" => true)
 frames(2)
 check("a whole track is written over every key the mapping keeps, those it never wrote off",
@@ -484,10 +446,10 @@ check("none of it goes to the relay as the player's", staged("story.writes"), []
 # The player's own writes go to the relay; what the relay hands waits while an event of theirs runs.
 $game_map.interpreter.busy = true
 $game_variables[1001] = 10
-$takes << keys_take([["v1001", "n11"], ["s501", "1"]])
+$takes << keys_take([[1, 1001, 11], [0, 501, true]])
 tell_status(fake, "pending" => true)
 frames(2)
-check("the player's own write goes to the relay", staged("story.writes").last, [["v1001", "n10", "game"]])
+check("the player's own write goes to the relay", staged("story.writes").last, [[1, 1001, 10, ["game"]]])
 check("what the relay hands waits while an event of the player's runs", [$game_variables[1001], $game_switches[501], $takes.size], [10, false, 1])
 $game_map.interpreter.busy = false
 frames(1)
@@ -502,13 +464,13 @@ $game_variables[3005] = 40
 $story_staged.clear
 frames(1)
 $story_staged.clear
-$takes << keys_take([["v1052", "n2"], ["v3005", "n30"]], 3)
+$takes << keys_take([[1, 1052, 2], [1, 3005, 30]], 3)
 tell_status(fake, "pending" => true)
 frames(2)
 check("a Queen's Cup step stays the player's in its waiting room", $game_variables[1052], 3)
-check("the affection the world keeps stays at the player's higher value, which goes to the relay again", [$game_variables[3005], staged("story.writes")], [40, [[["v3005", "n40", "game"]]]])
+check("the affection the world keeps stays at the player's higher value, which goes to the relay again", [$game_variables[3005], staged("story.writes")], [40, [[[1, 3005, 40, ["game"]]]]])
 $game_map.map_id = 3
-$takes << keys_take([["v1052", "n2"]], 4)
+$takes << keys_take([[1, 1052, 2]], 4)
 tell_status(fake, "pending" => true)
 frames(2)
 check("elsewhere the world's value of it comes", $game_variables[1052], 2)
@@ -518,10 +480,10 @@ check("elsewhere the world's value of it comes", $game_variables[1052], 2)
 $game_switches[445] = true
 frames(1)
 $story_staged.clear
-$takes << keys_take([["s445", "0"]], 5)
+$takes << keys_take([[0, 445, false]], 5)
 tell_status(fake, "pending" => true)
 frames(2)
-check("an unlock the player holds that the relay hands off stays on and goes to the relay", [$game_switches[445], staged("story.writes")], [true, [[["s445", "1", "game"]]]])
+check("an unlock the player holds that the relay hands off stays on and goes to the relay", [$game_switches[445], staged("story.writes")], [true, [[[0, 445, true, ["game"]]]]])
 
 # The teller the player watches: the relay hears of them, and the player's story events wait until
 # the track's revision the telling ended at was written into their story.
@@ -563,8 +525,8 @@ $joined = 0
 $game_variables[1001] = 40
 $game_variables[1141] = 1
 story.instance_variable_set(:@decision_roster, [1, 26])
-fake.post("story.refused", [["v1141", "route", "n0"]])
-$takes << keys_take([["v1141", "n0"], ["v1142", "n1"]], 7)
+fake.post("story.refused", [[[1, 1141], "route", 0]])
+$takes << keys_take([[1, 1141, 0], [1, 1142, 1]], 7)
 tell_status(fake, "pending" => true, "world" => { "rev" => 7, "part" => "mr", "route" => "mr", "done" => [], "open" => ["mr"], "checkpoints" => ["1", "2", "3"] })
 $brought = []
 # Brings companions back as story_state.rbx does, noted in $brought.
@@ -579,7 +541,7 @@ $setups = []
 world_back = { "rev" => 8, "part" => "3", "route" => "none", "done" => ["mr"], "open" => ["ad"], "checkpoints" => ["1", "2", "3", "mr"] }
 tell_status(fake, "world" => world_back)
 frames(1)
-$takes << keys_take([["v1142", "n0"], ["v1001", "n39"], ["s7097", "1"]], 8)
+$takes << keys_take([[1, 1142, 0], [1, 1001, 39], [0, 7097, true]], 8)
 tell_status(fake, "pending" => true, "world" => world_back)
 # Stands in for the co-op scene: nothing of a teller's scene waits to be put back.
 module MGQ_MpCoopScene
@@ -601,7 +563,7 @@ check("after taking the player wholly out of a scene of their own, such as their
 check("the Great Decision then offers the routes the relay grants", story.decision_routes, [0])
 
 # The shared companions, which the world's state names.
-$comps = "77,80"
+$comps = [77, 80]
 story.pushed(MGQ_MpOverworldSync::STORY_FIELD => "3", :relay => true)
 frames(story::STATE_FRAMES + 2)
 check("the relay's push fetches the shared companions, which the world's story names", story.world["comps"], [77, 80])
@@ -707,7 +669,7 @@ module MGQ_MpRaidFreeze
 end
 $unjournaled = []
 $holding = true
-$takes << keys_take([["v1001", "n41"]], 9)
+$takes << keys_take([[1, 1001, 41]], 9)
 tell_status(fake, "pending" => true)
 frames(2)
 check("nothing the relay hands is written while a lost raid boss battle's defeat runs", $game_variables[1001], 39)
@@ -758,7 +720,7 @@ $raid = false
 frames(1)
 check("closing the world sends the frame's writes first, then tells the DLL and forgets the mapping",
       [$story_staged.map { |topic, _| topic }, staged("story.writes").last, keys.raid_table, keys.recording],
-      [["story.writes", "story.close"], [["v1001", "n42", "game"]], nil, nil])
+      [["story.writes", "story.close"], [[1, 1001, 42, ["game"]]], nil, nil])
 
 # A Classic world has the DLL fetch the story mapping, for the rewards a party member catches up
 # with, and no longer once it closed.

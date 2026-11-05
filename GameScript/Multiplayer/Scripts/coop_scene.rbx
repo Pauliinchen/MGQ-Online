@@ -2,7 +2,8 @@
 #  coop_scene.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Put a viewer's screen back through the one guard of the game's flow in coop_flow.rbx, which follows the player's own scenes now
+#      Paulinchen  2026-11-05: Handed the DLL a change's arguments as values and took a message's back as values
+#                            - Put a viewer's screen back through the one guard of the game's flow in coop_flow.rbx, which follows the player's own scenes now
 #                            - Counted its timers by the bridge's frame
 #      Paulinchen  2026-10-28: Put a Raid World viewer's screen back with the relay's word that the telling ended, and dropped the places a viewer kept of the values taken
 #                            - Kept the teller's changes waiting and checked another game's changes in the DLL
@@ -418,7 +419,7 @@ module MGQ_MpCoopScene
     followers = MGQ_MpCoop::Scope.viewers
     return if followers.empty?
 
-    kept = MGQ_Multiplayer::Bridge.call(CHANGE_TOPIC, "kind" => kind, "line" => MGQ_MpBattlesSync::Wire.line(args), "map" => $game_map.map_id,
+    kept = MGQ_Multiplayer::Bridge.call(CHANGE_TOPIC, "kind" => kind, "args" => MGQ_MpBattlesSync::Wire.plain(args), "map" => $game_map.map_id,
                                                       "logged" => logged ? true : false, "skip" => MGQ_MpCoopEvents.skip_held?)
     return log_once([:unkept, kind], "did not tell the party #{kind}: the DLL did not keep it (#{describe(args)})") unless kept
 
@@ -509,9 +510,11 @@ module MGQ_MpCoopScene
 
     line = message["args"].to_s
     map = message["map"].to_i
-    refusals = MGQ_Multiplayer::Bridge.call(TAKE_TOPIC, "kind" => kind, "line" => line, "map" => map, "here" => $game_map.map_id)
-    args = refusals && MGQ_MpBattlesSync::Wire.parse(line) { nil }
-    return log("ignored #{kind}: its arguments did not read (#{line.size} characters)") unless args
+    taken = MGQ_Multiplayer::Bridge.call(TAKE_TOPIC, "kind" => kind, "line" => line, "map" => map, "here" => $game_map.map_id)
+    return log("ignored #{kind}: its arguments did not read (#{line.size} characters)") unless taken.is_a?(Hash)
+
+    args = MGQ_MpBattlesSync::Wire.objects(taken["args"])
+    refusals = taken["refusals"]
     if refusals.is_a?(String)
       return log_once([:batch, peer.state["id"]], "ignored #{args.size} changes from #{MGQ_MpOverworldSync.who(peer)} in one message: #{refusals}")
     end
@@ -546,10 +549,7 @@ module MGQ_MpCoopScene
   # @return [String, nil] The refusal, nil for a change that passes; a refusal while the DLL does
   #   not answer, since a wrong argument ends the game outside every rescue.
   def self.refusal(kind, args)
-    # The line writes Infinity and NaN as texts that read back as 0.0, so the DLL never sees them.
-    return "arguments this game cannot take" if args.flatten.any? { |arg| arg.is_a?(Float) && !arg.finite? }
-
-    MGQ_Multiplayer::Bridge.call!(CHECK_TOPIC, "kind" => kind, "line" => MGQ_MpBattlesSync::Wire.line(args))
+    MGQ_Multiplayer::Bridge.call!(CHECK_TOPIC, "kind" => kind, "args" => MGQ_MpBattlesSync::Wire.plain(args))
   rescue => e
     "the DLL did not check it (#{e.message})"
   end

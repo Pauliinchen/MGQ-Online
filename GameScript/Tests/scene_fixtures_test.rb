@@ -2,6 +2,7 @@
 #  scene_fixtures_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Loaded the script that makes the changes' objects beside the harness's game classes
 #      Paulinchen  2026-10-28: Created
 #
 #----------------------------------------------------------------
@@ -13,6 +14,8 @@
 require_relative "support"
 require_relative "../../fixtures/wire/wire_harness"
 require_relative "scene_support"
+
+load File.join(SCRIPTS_DIR, "battles_sync_wire.rbx")
 
 failure =
   begin

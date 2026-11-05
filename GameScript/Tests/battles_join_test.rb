@@ -2,7 +2,9 @@
 #  battles_join_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Expected the battle's players and state in the state, in a Classic world too
+#      Paulinchen  2026-11-05: Wrote and read the battle lines through the codec's stand-in
+#                            - Told every host's battle state in rbs beside its players in rbn
+#                            - Expected the battle's players and state in the state, in a Classic world too
 #                            - Covered a party member's battle a member who missed it joins late in a Classic world (issue 76)
 #                            - Covered a press near a battle that ends, which tells why and starts no side battle (issue 74)
 #      Paulinchen  2026-11-01: Named the Mod Framework's interface by its own name
@@ -230,19 +232,19 @@ $scene_now = scene
 sync.join_world(:host, "g2", [7], "the players")
 sync.battle_started
 hotjoin.fight_alone("g2")
-check("a host still gathering its players takes nobody in", [join.state_fields, closed_code.call], [{ "rbn" => 0, "rbs" => "gathering" }, "gathering"])
+check("a host still gathering its players takes nobody in", [join.state_fields, closed_code.call], [{ "rbn" => 2, "rbs" => "gathering" }, "gathering"])
 reset
 $scene_now = scene
 hotjoin.fight_alone("own2")
 $ending = true
-check("nor does a battle that ends", [join.state_fields, closed_code.call], [{ "rbn" => 0, "rbs" => "ending" }, "ending"])
+check("nor does a battle that ends", [join.state_fields, closed_code.call], [{ "rbn" => 1, "rbs" => "ending" }, "ending"])
 $ending = false
 MGQ_MpBattles.instance_variable_set(:@kind, :pvp)
-check("nor a PvP battle", [join.state_fields, closed_code.call], [{ "rbn" => 0, "rbs" => "pvp" }, "pvp"])
+check("nor a PvP battle", [join.state_fields, closed_code.call], [{ "rbn" => 1, "rbs" => "pvp" }, "pvp"])
 reset
 
 # When the prompt shows.
-host = player(5, { "scene" => "battle", "rb" => "b1", "rbh" => "5", "rbn" => "1", "x" => "2", "y" => "1" })
+host = player(5, { "scene" => "battle", "rb" => "b1", "rbh" => "5", "rbn" => "1", "rbs" => "open", "x" => "2", "y" => "1" })
 MGQ_MpOverworldSync::Peers.all.replace([host])
 map_frame
 check("a player near a battle that takes players in sees the prompt", [offered, join.prompt_text], [[host, "b1"], "Press J to join battle"])
@@ -258,11 +260,11 @@ guest = player(6, { "scene" => "battle", "rb" => "b1", "rbh" => "5", "x" => "-1"
 MGQ_MpOverworldSync::Peers.all.replace([host, guest])
 check("but near one of its guests, whose host stands further", offered, [host, "b1"])
 host.state["x"] = "1"
-host.state["rbn"] = "4"
+host.state.merge!("rbn" => "4", "rbs" => "full")
 check("not when four players fight in it", offered, nil)
-host.state["rbn"] = "0"
+host.state.merge!("rbn" => "1", "rbs" => "closed")
 check("nor when its host takes nobody in", offered, nil)
-host.state["rbn"] = "2"
+host.state.merge!("rbn" => "2", "rbs" => "open")
 host.state["map"] = "6"
 check("nor when its host is on another map", offered, nil)
 host.state["map"] = "5"
@@ -372,7 +374,7 @@ coop_deliver_map(player(10), request)
 $sent.clear
 coop_deliver_map(player(11), request)
 check("and a fifth player", map_sent("pick_no").map { |seat, f| [seat, f["why"]] }, [[11, "full"]])
-check("whom the state tells, taking nobody in as it is full", join.state_fields, { "rbn" => 0, "rbs" => "full" })
+check("whom the state tells, taking nobody in as it is full", join.state_fields, { "rbn" => 4, "rbs" => "full" })
 coop_deliver_map(asker, { "coop" => "off", "bid" => "ev1" })
 check("a player who stopped waiting is forgotten", hotjoin.pending_seats.include?(8), false)
 
@@ -383,13 +385,13 @@ $game_troop.setup(52)
 hotjoin.fight_alone("ev2")
 coop_deliver_map(asker, request.merge("bid" => "ev2"))
 $sent.clear
-sync.take(asker, { "battle" => "join", "bid" => "ev2", :payload => sync::Wire.line(["5,6,7", [[50, 5], [60, 6], [70, 7]], 4]) })
+sync.take(asker, { "battle" => "join", "bid" => "ev2", :payload => wire_line(["5,6,7", [[50, 5], [60, 6], [70, 7]], 4]) })
 open_phase(scene)
 check("the command phase turns the event's battle live for the player who joined", [sync.host?, sync.guests_in], [true, [8]])
 check("whose first character joins the party", $game_party.battle_members.map(&:name), ["Actor1", "Actor5 (P8)"])
 check("while the troop stays the event's", $game_troop.members.map(&:enemy_id), [52])
 roster = battle_sent("roster")
-check("the player gets the roster with the event's troop", [roster.map(&:first), sync::Wire.parse(roster[0][1][:payload])[0].map(&:first)], [[8], [52]])
+check("the player gets the roster with the event's troop", [roster.map(&:first), wire_values(roster[0][1][:payload])[0].map(&:first)], [[8], [52]])
 
 reset
 $scene_now = scene
@@ -401,7 +403,7 @@ $sent.clear
 coop_deliver_map(player(9, { "scene" => "battle", "rb" => "boss1", "rbh" => "0" }),
               { "coop" => "hot", "bid" => "boss1", "troop" => "50", "enemies" => "50:320:300:0", "seats" => "", "map" => "5" })
 check("though it still takes no encounter in", map_sent("hot_no").map(&:first), [9])
-sync.take(asker, { "battle" => "join", "bid" => "boss1", :payload => sync::Wire.line(["5", [[50, 5]], 4]) })
+sync.take(asker, { "battle" => "join", "bid" => "boss1", :payload => wire_line(["5", [[50, 5]], 4]) })
 open_phase(scene)
 check("the player joins the boss battle, which keeps its own troop", [sync.guests_in, $game_troop.members.map(&:enemy_id)], [[8], [29]])
 reset
@@ -418,11 +420,11 @@ $sent.clear
 coop_deliver_map(player(9, { "scene" => "battle", "rb" => "boss2", "rbh" => "0" }),
               { "coop" => "hot", "bid" => "boss2", "troop" => "50", "enemies" => "50:320:300:0", "seats" => "", "map" => "5" })
 check("and takes no encounter in", map_sent("hot_no").map(&:first), [9])
-sync.take(asker, { "battle" => "join", "bid" => "boss2", :payload => sync::Wire.line(["5", [[50, 5]], 4]) })
+sync.take(asker, { "battle" => "join", "bid" => "boss2", :payload => wire_line(["5", [[50, 5]], 4]) })
 open_phase(scene)
 roster = battle_sent("roster")
 check("the player joins with every enemy in the roster, the one added mid-battle after the troop's own",
-      [sync.guests_in, sync::Wire.parse(roster[0][1][:payload])[0].map(&:first), $game_troop.members.map(&:enemy_id)], [[8], [29, 31], [29, 31]])
+      [sync.guests_in, wire_values(roster[0][1][:payload])[0].map(&:first), $game_troop.members.map(&:enemy_id)], [[8], [29, 31], [29, 31]])
 reset
 
 $raid = false
@@ -433,7 +435,7 @@ $raid = true
 reset
 
 # The player who asked joins as a late guest once the invite comes.
-host = player(5, { "scene" => "battle", "rb" => "b1", "rbh" => "5", "rbn" => "1", "x" => "1" })
+host = player(5, { "scene" => "battle", "rb" => "b1", "rbh" => "5", "rbn" => "1", "rbs" => "open", "x" => "1" })
 MGQ_MpOverworldSync::Peers.all.replace([host])
 map_frame
 $down = [0x4A]
@@ -450,7 +452,7 @@ $scene_now = scene
 $inject = lambda do |frame|
   next unless frame == 2
 
-  line = sync::Wire.line([[[29, 320, 300, 0]], [[5, "P5", "1,2,3", [], 4, [0, 1, 2], 1, 2], [0, "Me", "1,2,3", [], 4, [0, 1, 2], 1, 2]], nil, 4])
+  line = wire_line([[[29, 320, 300, 0]], [[5, "P5", "1,2,3", [], 4, [0, 1, 2], 1, 2], [0, "Me", "1,2,3", [], 4, [0, 1, 2], 1, 2]], nil, 4])
   sync.take(host, { "battle" => "roster", "bid" => "b1", :payload => line })
 end
 check("and takes the roster at the host's next turn", [coop.join(scene), $game_troop.instance_variable_get(:@turn_count)], [nil, 4])
@@ -532,7 +534,7 @@ coop_deliver_map(asker7, { "coop" => "hot", "bid" => "own7", "troop" => "50", "e
 check("a running battle takes an encounter that brings along more players than it takes, with those that fit",
       [map_sent("hot_no"), map_sent("hot_ok").map { |seat, f| [seat, f["seats"]] }, map_sent("invite").map(&:first)], [[], [[8, "8,7,9"]], [7, 9]])
 reset
-running = player(5, { "scene" => "battle", "rb" => "hb7", "rbh" => "5", "rbn" => "1" })
+running = player(5, { "scene" => "battle", "rb" => "hb7", "rbh" => "5", "rbn" => "1", "rbs" => "open" })
 MGQ_MpOverworldSync::Peers.all.replace([running] + companions)
 $scene_now = Scene_Map.new
 $encounter_troop = 50
@@ -551,7 +553,7 @@ reset
 $scene_now = Scene_Map.new
 map_frame
 fellow = player(8, { "scene" => "battle", "rb" => "hb9", "rbh" => "5" })
-outsider = player(5, { "scene" => "battle", "rb" => "hb9", "rbh" => "5", "rbn" => "2", "x" => "1" })
+outsider = player(5, { "scene" => "battle", "rb" => "hb9", "rbh" => "5", "rbn" => "2", "rbs" => "open", "x" => "1" })
 MGQ_MpOverworldSync::Peers.all.replace([fellow, outsider])
 coop_deliver_map(fellow, { "coop" => "party_hot", "mode" => "join", "host" => "5", "bid" => "hb9", "map" => "5" })
 check("a member's offer to join a battle along stands", hotjoin.party_offer_text(fellow, hotjoin.party_offers[fellow.seat]), "Join battle with P8?")
@@ -580,7 +582,7 @@ map_frame
 $down = []
 check("asking to join by choice asks the party member near along", map_sent("party_hot").map { |seat, f| [seat, f["mode"]] }, [[9, "join"]])
 reset
-outsider.state["rbn"] = "3"
+outsider.state.merge!("rbn" => "3", "rbs" => "open")
 $down = [0x4A]
 map_frame
 $down = []
@@ -604,7 +606,7 @@ module MGQ_MpRaidPool
   def self.note_invite(_message); end
 end
 $scene_now = Scene_Map.new
-boss_host = player(5, { "scene" => "battle", "rb" => "b3", "rbh" => "5", "rbn" => "4", "rpb" => "71;100,100,0", "x" => "2", "y" => "1" })
+boss_host = player(5, { "scene" => "battle", "rb" => "b3", "rbh" => "5", "rbn" => "4", "rbs" => "full", "rpb" => "71;100,100,0", "x" => "2", "y" => "1" })
 MGQ_MpOverworldSync::Peers.all.replace([boss_host])
 map_frame
 check("near a full raid boss battle the prompt offers a side battle", [offered, join.prompt_text], [nil, "Press J to fight Queen Harpy alongside"])
@@ -616,10 +618,10 @@ map_frame
 check("a hotkey that turns Join Battle off hides the side battle's prompt too", join.prompt_text, nil)
 $settings = nil
 map_frame
-boss_host.state["rbn"] = "2"
+boss_host.state.merge!("rbn" => "2", "rbs" => "open")
 map_frame
 check("near one that takes the player in it offers to join it", join.prompt_text, "Press J to join battle")
-boss_host.state["rbn"] = "4"
+boss_host.state.merge!("rbn" => "4", "rbs" => "full")
 boss_host.state["rpb"] = ""
 map_frame
 check("a full battle against no raid boss offers nothing", join.prompt_text, nil)
@@ -700,10 +702,10 @@ $freeze_steps = join::JOIN_DISTANCE + 1
 map_frame
 check("not from further than #{join::JOIN_DISTANCE} steps", join.prompt_text, nil)
 $freeze_steps = 2
-MGQ_MpOverworldSync::Peers.all.replace([player(5, { "scene" => "battle", "rb" => "b5", "rbh" => "5", "rbn" => "1", "x" => "1" })])
+MGQ_MpOverworldSync::Peers.all.replace([player(5, { "scene" => "battle", "rb" => "b5", "rbh" => "5", "rbn" => "1", "rbs" => "open", "x" => "1" })])
 map_frame
 check("a battle near that takes the player in comes first", join.prompt_text, "Press J to join battle")
-MGQ_MpOverworldSync::Peers.all.replace([player(5, { "scene" => "battle", "rb" => "b6", "rbh" => "5", "rbn" => "4", "rpb" => "71;100,100,0", "x" => "1" })])
+MGQ_MpOverworldSync::Peers.all.replace([player(5, { "scene" => "battle", "rb" => "b6", "rbh" => "5", "rbn" => "4", "rbs" => "full", "rpb" => "71;100,100,0", "x" => "1" })])
 map_frame
 check("so does a side battle near", join.prompt_text, "Press J to fight Queen Harpy alongside")
 MGQ_MpOverworldSync::Peers.all.replace([])

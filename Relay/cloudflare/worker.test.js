@@ -2,6 +2,7 @@
 //  worker.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Sent the version of a current game on the routes the gate holds to it
 //      Paulinchen  2026-10-31: Tested the world's mod settings told to the games that take them from the relay
 //      Paulinchen  2026-10-30: Tested that a read of the mod catalog passes without headers, as the Mod Framework sends it
 //      Paulinchen  2026-10-21: Tested that every Raid design route answers 404
@@ -38,6 +39,11 @@ registerHooks({
     ? { url: "data:text/javascript,export class DurableObject { constructor(ctx, env) { this.ctx = ctx; this.env = env; } }", shortCircuit: true }
     : next(specifier, context)),
 });
+
+/**
+ * The headers a current game sends on the routes the gate holds to its features and version.
+ */
+const GAME = Object.freeze({ [FEATURES_HEADER]: "raid", [VERSION_HEADER]: "0.7.0" });
 
 /**
  * One end of a WebSocket as a Durable Object holds it: it records what the object sends and how the
@@ -660,10 +666,10 @@ test("the Worker refuses a story write whose Content-Length is too long before r
   let pulled = false;
   const unread = new ReadableStream({ pull: (controller) => ((pulled = true), controller.close()) }, { highWaterMark: 0 });
 
-  const declared = await worker.fetch(new Request(url, { method: "POST", headers: { [FEATURES_HEADER]: "raid", "Content-Length": String(STORY_LIMITS.maxBodyLength + 1) }, body: unread, duplex: "half" }), env);
+  const declared = await worker.fetch(new Request(url, { method: "POST", headers: { ...GAME, "Content-Length": String(STORY_LIMITS.maxBodyLength + 1) }, body: unread, duplex: "half" }), env);
   assert.deepEqual([declared.status, pulled, forwarded.length], [413, false, 0], "refused unread");
 
-  const chunked = (text) => new Request(url, { method: "POST", headers: { [FEATURES_HEADER]: "raid" }, body: new ReadableStream({ start: (controller) => (controller.enqueue(new TextEncoder().encode(text)), controller.close()) }), duplex: "half" });
+  const chunked = (text) => new Request(url, { method: "POST", headers: GAME, body: new ReadableStream({ start: (controller) => (controller.enqueue(new TextEncoder().encode(text)), controller.close()) }), duplex: "half" });
   assert.equal((await worker.fetch(chunked("x".repeat(STORY_LIMITS.maxBodyLength + 1)), env)).status, 413, "a body without the header is read to tell");
   assert.equal((await worker.fetch(chunked("{}"), env)).status, 200);
   assert.deepEqual(forwarded, ["{}"], "a body short enough is forwarded whole");
@@ -673,9 +679,9 @@ test("the Worker refuses every battle on the battle server, which it has none of
   const reached = [];
   const env = { DIRECTORY: namespace(() => ({ fetch: async () => (reached.push("directory"), new Response("{}")) })) };
   const world = "ab".repeat(16);
-  const start = await worker.fetch(new Request(`https://relay.test/v1/worlds/${world}/battles`, { method: "POST", headers: { [FEATURES_HEADER]: "raid" }, body: "{}" }), env);
+  const start = await worker.fetch(new Request(`https://relay.test/v1/worlds/${world}/battles`, { method: "POST", headers: GAME, body: "{}" }), env);
   assert.deepEqual([start.status, (await start.json()).code], [503, "no_server"]);
-  const channel = await worker.fetch(new Request(`https://relay.test/v1/worlds/${world}/battles/k3x9`, { headers: { [FEATURES_HEADER]: "raid", Upgrade: "websocket" } }), env);
+  const channel = await worker.fetch(new Request(`https://relay.test/v1/worlds/${world}/battles/k3x9`, { headers: { ...GAME, Upgrade: "websocket" } }), env);
   assert.equal(channel.status, 503);
   assert.deepEqual(reached, []);
 });
@@ -687,7 +693,7 @@ test("the Worker answers every Raid design route with 404 no_designs, which only
 
   for (const [method, path, headers, body] of [
     ["GET", "/v1/designs/me", designer], ["POST", "/v1/designs/push", designer, JSON.stringify({ designFormat: 1, changes: [] })], ["GET", "/v1/designs/socket", { ...designer, Upgrade: "websocket" }],
-    ["GET", "/v1/raid-design", { [FEATURES_HEADER]: "raid", "X-MGQ-Design-Reader": "3" }], ["GET", `/v1/raid-design/${"ab".repeat(32)}`, { [FEATURES_HEADER]: "raid" }],
+    ["GET", "/v1/raid-design", { ...GAME, "X-MGQ-Design-Reader": "3" }], ["GET", `/v1/raid-design/${"ab".repeat(32)}`, GAME],
   ]) {
     const answer = await worker.fetch(new Request(`https://relay.test${path}`, { method, headers, body }), env);
     assert.deepEqual([answer.status, await answer.json()], [404, { code: "no_designs" }], `${method} ${path}`);
@@ -702,8 +708,8 @@ test("the Worker sends bug reports to an object of their own, never to the world
   const answering = (name) => namespace((id) => ({ fetch: async () => (reached.push(`${name}:${id}`), new Response("{}")) }));
   const env = { DIRECTORY: answering("directory"), REPORTS: answering("reports") };
 
-  await worker.fetch(new Request("https://relay.test/v1/reports", { method: "POST", headers: { [FEATURES_HEADER]: "raid" }, body: "{}" }), env);
-  await worker.fetch(new Request("https://relay.test/v1/worlds", { headers: { [FEATURES_HEADER]: "raid" } }), env);
+  await worker.fetch(new Request("https://relay.test/v1/reports", { method: "POST", headers: GAME, body: "{}" }), env);
+  await worker.fetch(new Request("https://relay.test/v1/worlds", { headers: GAME }), env);
   assert.deepEqual(reached, ["reports:reports", "directory:directory"]);
 
   const reports = new Reports(objectState(), {});

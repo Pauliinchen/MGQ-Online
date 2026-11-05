@@ -2,6 +2,7 @@
 #  world_open_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Read the directory's list, the world room and the player's id through the DLL's topics
 #      Paulinchen  2026-11-01: Dropped the checks that read the old screen prototype instead of the scripts
 #                            - Dropped the checks of the form window no screen draws with any more
 #                            - Reached the update over the title's commands through the world screen's opening alone, the Mod Framework adding Multiplayer
@@ -115,7 +116,6 @@ module DataManager; def self.save_system; end; end
 # Stand-ins for the mod's base script and its DLL.
 $sounds = []
 $calls = []
-$dll = {}
 $outdated = false
 
 # Stands in for the mod's base script: available, and outdated while $outdated.
@@ -199,35 +199,8 @@ module MGQ_Multiplayer
   # Stands in for the mouse, never clicked.
   module Mod_Framework::UI::Mouse; def self.clicked?; false; end; end
 
-  # Stands in for the DLL: each call is checked against its signature and noted in $calls, and what
-  # it reads is in $dll.
-  module Link
-    # Answers the player's id.
-    def self.player_id; "me"; end
-
-    # A function of the DLL with its signature.
-    Function = Struct.new(:name, :signature) do
-      # Checks the call against the signature, notes it in $calls and answers 1, started.
-      def call(*args); check_dll_call(name, args); $calls << [name, signature, args]; 1; end
-    end
-
-    # Gives the DLL function of a name, with its signature from Multiplayer.rb.
-    def self.function(name); Function.new(name, dll_signature(name)); end
-
-    # Reads an export's text from $dll.
-    def self.read(name, _size); $dll[name].to_s; end
-
-    # Splits a DLL answer into its header fields and its payload.
-    #
-    # @param text [String] The answer.
-    # @return [Hash] The fields by name, the payload under :payload.
-    def self.parse(text)
-      head, payload = text.split("\n\n", 2)
-      state = { :payload => payload.to_s }
-      head.to_s.split("\n").each { |line| k, v = line.split("=", 2); state[k] = v if v }
-      state
-    end
-  end
+  # Stands in for the player's id, as the DLL tells it.
+  module Player; def self.id; "me"; end; end
 end
 
 require_relative "world_screen_support"
@@ -261,10 +234,7 @@ ways = MGQ_MpWorld::Form.new("Ways", [switch], :way => 0)
 check("a switch turns round between its outcomes, with the line of the one picked", [ways.turn(switch, -1), switch.note_of(ways), ways.turn(switch, 1)], [2, "Picked 2", 0])
 
 # The directory.
-$dll["mp_dir_list"] = "state=ready\n\n" \
-  "world\tw1\t4\t0\tc\t0\tC\tPlain\tnone\t0\t0\t0\t0\t\t\t\t\t\t\tclassic\toff\t\t0\t\t0\n" \
-  "world\tw2\t4\t0\tc\t0\tGlobal\tGolden\tnone\t0\t0\t1\t1\t\t\t\t\t\t\tclassic\toff\t\t0\t\t0\n" \
-  "world\tw3\t4\t0\tc\t0\tC\tOld\tnone\t0\t0\t\t\t\t\t\t\t\t\tclassic\toff\t\t0\t\t0\n"
+$directory = directory_list([listed_value("w1", "Plain"), listed_value("w2", "Golden", "creator_name" => "Global", "open" => true, "featured" => true), listed_value("w3", "Old")])
 _, _, listed, = MGQ_MpWorld::Directory.list
 check("the list reads which worlds have no password", listed.map { |world| world.open }, [false, true, false])
 check("and which are featured", listed.map { |world| world.featured }, [false, true, false])
@@ -316,16 +286,17 @@ check("a world's code tells its seats", local_world("abcdef012345", "code" => "m
 
 # Raid Worlds: the type and companion sharing the list reads, their place and colour, the details,
 # world.ini, what every script asks of the open world, and the new world's form.
-$dll["mp_dir_list"] = "state=ready\n\n" \
-  "world\tr1\t4\t0\tc\t0\tC\tRaid Night\tnone\t0\t0\t0\t0\t0\t\t\t\t\t\traid\tstory\t1\t1\t1 6 2 1\t0\n" \
-  "world\tr2\t4\t0\tc\t0\tGlobal\tRaid Gold\tnone\t0\t0\t1\t1\t0\t\t\t\t\t\traid\tall\t\t1\t\t0\n" \
-  "world\tw1\t4\t0\tc\t0\tC\tPlain\tnone\t0\t0\t0\t0\t0\t\t\t\t\t\tclassic\toff\t3\t0\t0 4 1 1\t0\n" \
-  "world\tw3\t4\t0\tc\t0\tC\tOld\tnone\t0\t0\t\t\t\t\t\t\t\t\tclassic\toff\t\t0\t\t0\n"
+$directory = directory_list([
+  listed_value("r1", "Raid Night", "type" => "raid", "share" => "story", "difficulty" => 1, "other_mods_off" => true,
+               "squad" => { "luka" => true, "formation" => 6, "front" => 2, "raid_front" => 1 }),
+  listed_value("r2", "Raid Gold", "creator_name" => "Global", "open" => true, "featured" => true, "type" => "raid", "share" => "all", "other_mods_off" => true),
+  listed_value("w1", "Plain"),
+  listed_value("w3", "Old")])
 _, _, typed, = MGQ_MpWorld::Directory.list
 check("the list reads each world's type and companion sharing",
       typed.map { |world| [world.type, world.share, world.raid?] }, [["raid", "story", true], ["raid", "all", true], ["classic", "off", false], ["classic", "off", false]])
-check("and a Raid World's difficulty, none for one without it and for every Classic world", typed.map { |world| world.difficulty }, [1, nil, nil, nil])
-check("and a Raid World's squad rules, none for one without them and for every Classic world", typed.map { |world| world.squad },
+check("and a Raid World's difficulty", typed.map { |world| world.difficulty }, [1, nil, nil, nil])
+check("and a Raid World's squad rules", typed.map { |world| world.squad },
       [{ :luka => true, :formation => 6, :front => 2, :raid_front => 1 }, nil, nil, nil])
 $local_worlds.clear
 raid_entries = screen_entries(typed, true)
@@ -404,13 +375,14 @@ MGQ_MpWorld.instance_variable_set(:@world, nil)
 
 # A Classic world's raid bosses: the list, the details, world.ini and what every script asks of the
 # open world.
-$dll["mp_dir_list"] = "state=ready\n\n" \
-  "world\tw1\t4\t0\tc\t0\tC\tPlain\tnone\t0\t0\t0\t0\t0\t\t\t\t\t\tclassic\toff\t\t0\t\t1\n" \
-  "world\tw2\t4\t0\tc\t0\tC\tCalm\tnone\t0\t0\t0\t0\t0\t\t\t\t\t\tclassic\toff\t\t0\t\t0\n" \
-  "world\tr1\t4\t0\tc\t0\tC\tRaid Night\tnone\t0\t0\t0\t0\t0\t\t\t\t\t\traid\tstory\t1\t1\t1 6 2 1\t1\n" \
-  "world\tw3\t4\t0\tc\t0\tC\tOld\tnone\t0\t0\t\t\t\t\t\t\t\t\tclassic\toff\t\t0\t\t0\n"
+$directory = directory_list([
+  listed_value("w1", "Plain", "raid_bosses" => true),
+  listed_value("w2", "Calm"),
+  listed_value("r1", "Raid Night", "type" => "raid", "share" => "story", "difficulty" => 1, "other_mods_off" => true,
+               "squad" => { "luka" => true, "formation" => 6, "front" => 2, "raid_front" => 1 }),
+  listed_value("w3", "Old")])
 _, _, bossed, = MGQ_MpWorld::Directory.list
-check("the list reads a Classic world's raid bosses, never a Raid World's, none for a world without them", bossed.map { |world| world.raid_bosses }, [true, false, false, false])
+check("the list reads a Classic world's raid bosses", bossed.map { |world| world.raid_bosses }, [true, false, false, false])
 bossed_found = MGQ_MpWorld::World.found("mgqmp2;abcdefghjkmnpqrs;r1;4", "Plain", "w1", "classic", "off", nil, nil, true)
 check("a Classic world found goes over with its raid bosses and reads back with them",
       [Marshal.load(fake.calls.reverse.find { |topic, _| topic == "worlds.found" }[1])["raid_bosses"], bossed_found.raid_bosses], [true, true])

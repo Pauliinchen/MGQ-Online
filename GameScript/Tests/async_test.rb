@@ -2,6 +2,7 @@
 #  async_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Stood in for the DLL's topic of the memory the game uses
 #      Paulinchen  2026-10-24: Checked the live map handed from menu to menu and kept out while address space is short
 #      Paulinchen  2026-10-23: Checked that the live map shows none of the HUD the map shows
 #                            - Checked that the save and load screens keep their picture of the map
@@ -46,9 +47,13 @@ end
 $screen = []
 # Stands in for the loader's log, printing its lines.
 module MGQ_Multiplayer; module Log; def self.write(m); puts "  log: #{m}"; end; end; end
-# Stands in for the DLL, which describes the memory the game uses as $memory_usage says.
-module MGQ_Multiplayer; module Link; def self.read(_name, _size); $memory_usage; end; end; end
-$memory_usage = ""
+# Stands in for the DLL, which tells the memory the game uses as $memory_usage says (topic dll.memory).
+require_relative "bridge_support"
+load_bridge
+$memory_fake = FakeBridge.new
+$memory_fake.answer("dll.memory") { $memory_usage }
+MGQ_Multiplayer::Bridge.open($memory_fake)
+$memory_usage = nil
 # Stands in for world.rbx, a world open while $open is.
 module MGQ_MpWorld; def self.open?; $open; end; end
 
@@ -148,7 +153,7 @@ end
 # Stands in for coop.rbx's tell and routes.
 module MGQ_MpCoop
   def self.tell(seat, field, value, fields = {})
-    MGQ_MpOverworldSync::Link.send_to(seat, MGQ_MpOverworldSync::Me.encode({ field => value, "party" => Party.id }.merge(fields)))
+    MGQ_MpOverworldSync::Port.send_to(seat, { field => value, "party" => Party.id }.merge(fields), "")
   end
   def self.route(*); end
 end
@@ -255,16 +260,16 @@ SceneManager.scene.post_start
 check("a live map the next screen leaves is freed once it started", left.disposed?, true)
 
 SceneManager.scene = menu
-$memory_usage = "private 1022 MB, address space 1418 of 2047 MB, 204 GDI and 25 USER handles"
+$memory_usage = { "line" => "private 1022 MB, address space 1418 of 2047 MB, 204 GDI and 25 USER handles", "free_mb" => 629 }
 check("little free address space keeps the picture (issue 60)", logged_lines { menu.create_background },
       ["async: kept the picture of the map behind Scene_Menu: 629 MB of address space free, a live map needs 768"])
 check("and builds no live map", [menu.instance_variable_get(:@mgq_mp_live_map), menu.background_sprite.visible], [nil, true])
-$memory_usage = "private 1022 MB, address space 1418 of 4095 MB, 204 GDI and 25 USER handles"
+$memory_usage = { "line" => "private 1022 MB, address space 1418 of 4095 MB, 204 GDI and 25 USER handles", "free_mb" => 2677 }
 menu.create_background
 check("a large address space builds it", menu.instance_variable_get(:@mgq_mp_live_map).is_a?(Spriteset_MpLiveMap), true)
 SceneManager.scene = map_scene
 menu.dispose_background
-$memory_usage = ""
+$memory_usage = nil
 menu.create_background
 broken = menu.instance_variable_get(:@mgq_mp_live_map)
 def broken.update; raise "broken"; end
@@ -305,10 +310,10 @@ check("the map to a battle keeps its fade", switch(map_scene, Scene_Battle.new, 
 check("a menu to the title keeps its fade", switch(menu_scene, Scene_Title.new, [map_scene]), [:freeze, :transition])
 $open = false
 check("outside a world everything fades as ever", switch(map_scene, menu_scene, [map_scene]), [:freeze, :transition])
-$memory_usage = "private 812 MB, 320 GDI and 150 USER handles"
+$memory_usage = { "line" => "private 812 MB, 320 GDI and 150 USER handles", "free_mb" => nil }
 check("every switch logs the memory the game uses", logged_lines { switch(menu_scene, Scene_Battle.new, [map_scene]) },
       ["async: switching from Scene_Menu to Scene_Battle; private 812 MB, 320 GDI and 150 USER handles"])
-$memory_usage = ""
+$memory_usage = nil
 $open = true
 SceneManager.scene = menu_scene
 $screen.clear

@@ -2,6 +2,7 @@
 #  raid_scope_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Expected the ids a map message names as a list
 #      Paulinchen  2026-10-28: Took a Raid World's tellers from the relay's tellings and its viewers from their tracks
 #      Paulinchen  2026-10-23: Left the map's gate to the DLL, checking only the route it registers
 #      Paulinchen  2026-10-12: Checked the messages of a Classic world to several members and to a lone member
@@ -162,7 +163,7 @@ check("and not at all while nobody else is on the map", [MGQ_MpCoop.tell_map(-1,
 $game_map.map_id = 5
 scope.tell_each([member, elsewhere], "pevent", "say", "page" => "x")
 check("a message for several players goes out once and names them, wherever they stand",
-      $told.map { |seat, fields| [seat, fields["map_pevent"], fields["mto"], fields["mmap"]] }, [[-1, "say", "m,e", 5]])
+      $told.map { |seat, fields| [seat, fields["map_pevent"], fields["mto"], fields["mmap"]] }, [[-1, "say", %w[m e], 5]])
 $told.clear
 scope.tell_each([member], "pevent", "say", "page" => "x")
 check("one for a single player goes to their seat", $told.map { |seat, fields| [seat, fields.key?("mto")] }, [[2, false]])

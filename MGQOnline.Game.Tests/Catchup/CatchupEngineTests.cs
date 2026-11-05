@@ -2,7 +2,8 @@
 //  CatchupEngineTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Replayed the calls of the side's rule too, and shared reading a golden case's tables
+//      Paulinchen  2026-11-05: Expected the chest a replay plays as [kind, key], and handed and expected sites as plain values
+//                            - Replayed the calls of the side's rule too, and shared reading a golden case's tables
 //                            - Checked that a prize counted by a variable comes by its row no more, the Medal King's gift still
 //                            - Checked that a companion a replay hands out follows the world's companion sharing and the join's level
 //                            - Dropped the found job item's case, whose items the story replay hands over
@@ -126,7 +127,7 @@ public sealed class CatchupEngineTests
 
         RubyArray given = Actions(false);
 
-        Assert.Contains(given, action => action.Equals(new RubyArray { "replay", new RubyHash { { "chest", "s2719" } }, "c:s2719" }));
+        Assert.Contains(given, action => action.Equals(new RubyArray { "replay", new RubyHash { { "chest", new RubyArray { 0, 2719 } } }, "c:s2719" }));
         Assert.DoesNotContain(given, action => action.AsArray()[0].AsText() is "give" or "switch");
         Assert.DoesNotContain(Actions(true), action => action.AsArray()[0].AsText() is "replay");
     }
@@ -176,7 +177,7 @@ public sealed class CatchupEngineTests
         {
             RubyHash request = Request(new RubyArray { new RubyArray { 1, 1, level, RubyNil.Value } });
             request["actor"] = 163;
-            request["site"] = "map:359:35:3";
+            request["site"] = new RubyArray { "map", 359, 35, 3 };
             request["scope_only"] = true;
             request["replay"] = true;
             request["sharing"] = sharing;
@@ -218,7 +219,7 @@ public sealed class CatchupEngineTests
         {
             RubyHash request = Ask(15, false);
             request["actor"] = 241;
-            request["site"] = "map:132:23:3";
+            request["site"] = new RubyArray { "map", 132, 23, 3 };
             request["scope_only"] = !ownWay;
             request["replay"] = true;
             request["own_way"] = ownWay;
@@ -268,7 +269,7 @@ public sealed class CatchupEngineTests
         }
 
         Assert.Empty(Settled("""{"rule": "free_order", "value": [{"part": "chaos", "step": 21}]}"""));
-        Assert.Equal(new RubyArray { new RubyArray { "setting", "v", 1002, 137, "map:1900:37:1" } }, Settled(""));
+        Assert.Equal(new RubyArray { new RubyArray { "setting", "v", 1002, 137, new RubyArray { "map", 1900, 37, 1 } } }, Settled(""));
     }
 
     /// <summary>
@@ -325,7 +326,7 @@ public sealed class CatchupEngineTests
 
         Assert.DoesNotContain(Look("off"), action => action.AsArray()[0].AsText() is "replay" or "join");
         RubyArray first = Look("story");
-        Assert.Contains(first, action => action.Equals(new RubyArray { "replay", new RubyHash { { "site", "map:132:23:1" } }, "m:241" }));
+        Assert.Contains(first, action => action.Equals(new RubyArray { "replay", new RubyHash { { "site", new RubyArray { "map", 132, 23, 1 } } }, "m:241" }));
         Assert.DoesNotContain(first, action => action.AsArray()[0].AsText() == "join");
         Assert.DoesNotContain(Look("story"), action => action.AsArray()[0].AsText() == "replay");
     }

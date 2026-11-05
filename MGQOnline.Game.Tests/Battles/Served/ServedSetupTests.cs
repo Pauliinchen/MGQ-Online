@@ -2,6 +2,8 @@
 //  ServedSetupTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Handed and read the mod options as values, as the scripts do since the golden cases were written
+//                            - Handed and read the enemy rates as numbers, as the scripts do since the golden cases were written
 //      Paulinchen  2026-10-30: Checked the widths of the troop a setup carries
 //                            - Created
 //
@@ -13,6 +15,8 @@ using System.Text;
 using System.Text.Json;
 using MGQOnline.Bridge.Ruby;
 using MGQOnline.Game.Battles.Served;
+using MGQOnline.Game.Mods;
+using MGQOnline.Game.Topics;
 
 namespace MGQOnline.Game.Tests.Battles.Served;
 
@@ -36,7 +40,7 @@ public sealed class ServedSetupTests
     {
         foreach (JsonElement write in Golden.GetProperty("writes").EnumerateArray())
         {
-            Assert.Equal(write.GetProperty("line").GetString(), ServedSetup.Write((RubyHash)RubyOf(write.GetProperty("facts"))));
+            Assert.Equal(write.GetProperty("line").GetString(), ServedSetup.Write(AsHandedNow(RubyOf(write.GetProperty("facts")))));
         }
     }
 
@@ -50,7 +54,7 @@ public sealed class ServedSetupTests
         foreach (JsonElement read in Golden.GetProperty("reads").EnumerateArray())
         {
             JsonElement setup = read.GetProperty("setup");
-            Assert.Equal(setup.ValueKind == JsonValueKind.Null ? "nil" : Text(RubyOf(setup)), ServedSetup.Read(read.GetProperty("line").GetString()!) is { } found ? Text(found) : "nil");
+            Assert.Equal(setup.ValueKind == JsonValueKind.Null ? "nil" : Text(AsHandedNow(RubyOf(setup))), ServedSetup.Read(read.GetProperty("line").GetString()!) is { } found ? Text(found) : "nil");
         }
     }
 
@@ -73,7 +77,7 @@ public sealed class ServedSetupTests
     [Fact]
     public void Widths_FollowTheFactsOnlyWhenTheStarterMeasuredThem()
     {
-        var facts = (RubyHash)RubyOf(Golden.GetProperty("writes")[0].GetProperty("facts"));
+        RubyHash facts = AsHandedNow(RubyOf(Golden.GetProperty("writes")[0].GetProperty("facts")));
         string line = ServedSetup.Write(facts);
         facts["widths"] = new RubyArray { new RubyArray { 31, 160 }, new RubyArray { 52, 600 } };
         string measured = ServedSetup.Write(facts);
@@ -130,6 +134,20 @@ public sealed class ServedSetupTests
         JsonValueKind.Array => new RubyArray(value.EnumerateArray().Select(RubyOf)),
         _ => HashOf(value),
     };
+
+    /// <summary>
+    /// Gives a golden setup's enemy rates and mod options, which the scripts wrote and read as
+    /// texts, as the values the scripts hand over and get now.
+    /// </summary>
+    /// <param name="value">The setup or the facts.</param>
+    /// <returns>The same with its rates as numbers and its options as values.</returns>
+    private static RubyHash AsHandedNow(RubyValue value)
+    {
+        RubyHash hash = value.AsHash();
+        hash["rates"] = MessageFields.Read("rates", hash["rates"].AsText());
+        hash["settings"] = SharedSettings.PlainValues(hash["settings"].AsText());
+        return hash;
+    }
 
     /// <summary>
     /// Makes a Hash of a golden object.

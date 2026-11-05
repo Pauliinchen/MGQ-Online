@@ -2,6 +2,8 @@
 #  try_served.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Wrote and read the battle lines through the core
+#                            - Wrote and read the battle channel's messages through the core
 #      Paulinchen  2026-10-15: Named the first scripted guest the battle's starter
 #                            - Let a third player join late through the starter with HOTJOIN=1
 #                            - Loaded the game folder's mods as a world's with MODS
@@ -56,7 +58,9 @@ bridge = Online::Bridge.new
 seats = players.map(&:seat)
 seats.each { |seat| bridge.push("in", seat) }
 # Writes a guest's message as the battle channel carries it.
-message = ->(kind, body = "") { MGQ_MpOverworldSync::Me.encode({ "battle" => kind, "bid" => battle_id }) + body }
+message = ->(kind, body = "") { MGQ_Multiplayer::Bridge.call("message.write", "fields" => { "battle" => kind, "bid" => battle_id }, "body" => body) }
+# Reads a message into its fields, its body under :payload, through the core.
+read = ->(text) { told = MGQ_Multiplayer::Bridge.call("message.read", text.to_s); told["fields"].merge(:payload => told["body"]) }
 seen = Hash.new(0)
 passed = []
 asked = false
@@ -68,7 +72,7 @@ guests = Thread.new do
       sleep 0.001
       next
     end
-    fields = MGQ_Multiplayer::Link.parse(text.dup)
+    fields = read.(text)
     kind = fields["battle"].to_s
     seen[kind] += 1
     targets = seat == -1 ? seats : [seat]
@@ -78,21 +82,21 @@ guests = Thread.new do
     when "waiting"
       waiting = fields[:payload].to_s.split(",").map(&:to_i)
       attacks = Array.new(16) { [["skill", 1, -1]] }
-      (waiting & targets).each { |guest| bridge.push("message", guest, message.("commands", MGQ_MpBattlesSync::Wire.line([attacks]))) }
+      (waiting & targets).each { |guest| bridge.push("message", guest, message.("commands", MGQ_MpBattlesSync::Wire.write([attacks]))) }
       if hotjoin && !asked
         asked = true
         request = [["coop", "hot"], ["bid", battle_id], ["troop", troop.to_s], ["enemies", ""], ["seats", ""], ["map", $game_map.map_id.to_s]]
         bridge.push("message", players.first.seat,
-                    message.("front_in", MGQ_MpBattlesSync::Wire.line([LATE_SEAT, [[LATE_SEAT, [["id", "id-late"], ["name", "Late"]]]], request])))
+                    message.("front_in", MGQ_MpBattlesSync::Wire.write([LATE_SEAT, [[LATE_SEAT, [["id", "id-late"], ["name", "Late"]]]], request])))
       end
     when "front_out"
-      target, world_text = MGQ_MpBattlesSync::Wire.parse(fields[:payload].to_s)
-      passed << [target, MGQ_Multiplayer::Link.parse(world_text.to_s.dup).reject { |key, _| key.is_a?(Symbol) }]
+      target, world_text = MGQ_MpBattlesSync::Wire.read(fields[:payload])
+      passed << [target, read.(world_text).reject { |key, _| key.is_a?(Symbol) }]
       # Taken in, the late player comes onto the channel and joins with the same characters.
       if passed.last[1]["map_coop"] == "hot_ok" && bridge.admitted.include?(LATE_SEAT)
         seats << LATE_SEAT
         bridge.push("in", LATE_SEAT)
-        bridge.push("message", LATE_SEAT, message.("join", MGQ_MpBattlesSync::Wire.line(build)))
+        bridge.push("message", LATE_SEAT, message.("join", MGQ_MpBattlesSync::Wire.write(build)))
       end
     end
   end

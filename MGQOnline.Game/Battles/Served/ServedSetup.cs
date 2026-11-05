@@ -2,6 +2,9 @@
 //  ServedSetup.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Took and gave the starter's mod options as values, written in the line as a world's settings
+//                            - Took and gave the enemy rates as numbers, written in the line as their field
+//                            - Took the starter's facts as the battle line's plain values
 //      Paulinchen  2026-10-30: Carried the widths of the troop's pictures the starter measured
 //                            - Created
 //
@@ -9,7 +12,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
 using System.Numerics;
 using System.Text;
@@ -17,7 +19,9 @@ using System.Text.RegularExpressions;
 using MGQOnline.Bridge.Ruby;
 using MGQOnline.Game.Battles.Wire;
 using MGQOnline.Game.Coop;
+using MGQOnline.Game.Mods;
 using MGQOnline.Game.Ruby;
+using MGQOnline.Game.Topics;
 
 namespace MGQOnline.Game.Battles.Served;
 
@@ -66,18 +70,6 @@ public static partial class ServedSetup
     private static readonly HashSet<string> Flags = new(StringComparer.Ordinal) { "escape", "lose", "raid", "tiers" };
 
     /// <summary>
-    /// The key of a one-key Hash that stands for a Float among the facts, its Ruby text as its
-    /// value; the bridge carries no Floats.
-    /// </summary>
-    private const string FloatTag = "float";
-
-    /// <summary>
-    /// The key of a one-key Hash that stands for a Symbol among the facts, its name as its value;
-    /// the bridge carries no Symbols.
-    /// </summary>
-    private const string SymbolTag = "symbol";
-
-    /// <summary>
     /// What a setup's line is read against: plain values alone.
     /// </summary>
     private static readonly WireGame PlainLines = new([], [], new Dictionary<WireTable, int>());
@@ -86,12 +78,13 @@ public static partial class ServedSetup
     /// Writes a setup from the facts the starter's game collected.
     /// </summary>
     /// <param name="facts">By name: <c>scripts</c> and <c>data</c> (the fingerprints), <c>troop</c>,
-    /// <c>escape</c> and <c>lose</c> (true or false), <c>map</c>, <c>rates</c>, <c>enemies</c>,
+    /// <c>escape</c> and <c>lose</c> (true or false), <c>map</c>, <c>rates</c> (numbers, written as
+    /// <see cref="MessageFields"/> writes the field), <c>enemies</c>,
     /// <c>players</c>, <c>level</c> (nil for none), <c>switches</c>, <c>variables</c>, <c>raid</c>,
     /// <c>pool</c> (nil for none), <c>tiers</c>, <c>starter</c>, <c>squad</c> ([name, value] pairs,
-    /// nil for none), <c>mods</c>, <c>settings</c> and, when the starter measured them, <c>widths</c>
-    /// ([enemy id, width] each, written as <see cref="EnemyWidths.Write"/> writes them); a Float or
-    /// Symbol among them tagged.</param>
+    /// nil for none), <c>mods</c>, <c>settings</c> ([key, value] of each mod option, see <see cref="SharedSettings.ValueOf"/>, written as a world's settings) and, when the starter measured them, <c>widths</c>
+    /// ([enemy id, width] each, written as <see cref="EnemyWidths.Write"/> writes them); each as
+    /// <see cref="WirePlain"/> carries it.</param>
     /// <returns>The setup, a battle line.</returns>
     public static string Write(RubyHash facts)
     {
@@ -104,8 +97,10 @@ public static partial class ServedSetup
             {
                 _ when Flags.Contains(name) => fact is RubyBool { Flag: true } ? 1L : 0L,
                 "level" => fact is RubyInteger level ? level.Value : 0L,
-                "squad" => fact.IsNil ? new WireList([]) : WireOf(fact),
-                _ => WireOf(fact),
+                "squad" => fact.IsNil ? new WireList([]) : WirePlain.Of(fact),
+                "rates" => MessageFields.Write(name, fact),
+                "settings" => WirePlain.Of(SharedSettings.Write(fact)),
+                _ => WirePlain.Of(fact),
             });
         }
 
@@ -122,10 +117,10 @@ public static partial class ServedSetup
     /// </summary>
     /// <param name="line">The setup.</param>
     /// <returns>By name: <c>scripts</c>, <c>data</c>, <c>troop</c>, <c>escape</c>, <c>lose</c>, <c>map</c>,
-    /// <c>rates</c>, <c>enemies</c>, <c>players</c> (each player's fields as they came), <c>level</c>
+    /// <c>rates</c> (numbers, nil for a list that does not read), <c>enemies</c>, <c>players</c> (each player's fields as they came), <c>level</c>
     /// (nil for none), <c>switches</c>, <c>variables</c>, <c>raid</c>, <c>pool</c> (nil for none),
     /// <c>tiers</c>, <c>starter</c> (nil for none), <c>squad</c> (the [name, value] pairs of a squad
-    /// rule's kinds), <c>mods</c> ([key, kind, version, {path => hash}] each), <c>settings</c> and,
+    /// rule's kinds), <c>mods</c> ([key, kind, version, {path => hash}] each), <c>settings</c> ([key, value] each, see <see cref="SharedSettings.PlainValues"/>) and,
     /// when the line holds them as a text, <c>widths</c>; <see langword="null"/> for a setup of
     /// another format.</returns>
     public static RubyHash? Read(string line)
@@ -150,7 +145,7 @@ public static partial class ServedSetup
             { "escape", IsOne(At(values, 4)) },
             { "lose", IsOne(At(values, 5)) },
             { "map", map },
-            { "rates", ToS(At(values, 7)) },
+            { "rates", MessageFields.Read("rates", ToS(At(values, 7))) },
             { "enemies", RubyOf(new WireList(ArrayOf(At(values, 8)))) },
             { "players", RubyOf(new WireList(ArrayOf(At(values, 9)))) },
             { "level", At(values, 10) is WireInteger { Value: var level } && level > 0 ? level : RubyNil.Value },
@@ -162,7 +157,7 @@ public static partial class ServedSetup
             { "starter", At(values, 16) is WireInteger { Value: var starter } ? starter : RubyNil.Value },
             { "squad", new RubyArray(ArrayOf(At(values, 17)).Where(pair => pair is WireList { Items: [WireString, WireInteger or WireBool] }).Select(RubyOf)) },
             { "mods", new RubyArray(ArrayOf(At(values, 18)).Select(ModOf).OfType<RubyValue>()) },
-            { "settings", ToS(At(values, 19)) },
+            { "settings", SharedSettings.PlainValues(ToS(At(values, 19))) },
         };
         if (At(values, WidthsAt) is WireString { Text: var widths })
         {
@@ -302,37 +297,6 @@ public static partial class ServedSetup
         WireString text => RubyNumbers.ToI(Encoding.UTF8.GetBytes(text.Text)),
         WireNil => BigInteger.Zero,
         _ => null,
-    };
-
-    /// <summary>
-    /// Writes a plain value of the bridge as a value of the line.
-    /// </summary>
-    /// <param name="value">The value: nil, true, false, an Integer, a String, a tagged Float or
-    /// Symbol (see <see cref="FloatTag"/> and <see cref="SymbolTag"/>) or an Array of these.</param>
-    /// <returns>The line's value.</returns>
-    private static WireValue WireOf(RubyValue value) => value switch
-    {
-        RubyNil => WireNil.Value,
-        RubyBool flag => flag.Flag,
-        RubyInteger number => number.Value,
-        RubyString text => text.AsText(),
-        RubyArray list => new WireList(list.Select(WireOf).ToList()),
-        RubyHash { Count: 1 } tagged when tagged.TryGetValue(FloatTag, out RubyValue? number) => new WireFloat(FloatOf(number.AsText())),
-        RubyHash { Count: 1 } tagged when tagged.TryGetValue(SymbolTag, out RubyValue? name) => new WireSymbol(name.AsText()),
-        _ => throw new ArgumentException($"{value.GetType().Name} has no place in a setup.", nameof(value)),
-    };
-
-    /// <summary>
-    /// Reads a Float as Ruby's <c>Float#to_s</c> wrote it.
-    /// </summary>
-    /// <param name="text">The text, such as "320.5", "1.0e+20" or "Infinity".</param>
-    /// <returns>The number.</returns>
-    private static double FloatOf(string text) => text switch
-    {
-        "Infinity" => double.PositiveInfinity,
-        "-Infinity" => double.NegativeInfinity,
-        "NaN" => double.NaN,
-        _ => double.Parse(text, NumberStyles.Float, CultureInfo.InvariantCulture),
     };
 
     /// <summary>

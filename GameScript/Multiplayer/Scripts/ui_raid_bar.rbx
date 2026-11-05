@@ -2,7 +2,8 @@
 #  ui_raid_bar.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Counted its scans and redraws by the bridge's frame
+#      Paulinchen  2026-11-05: Kept and read its switches in Player.ini as true or false, which the DLL writes as 1 or 0
+#                            - Counted its scans and redraws by the bridge's frame
 #      Paulinchen  2026-11-01: Built the bars on the Mod Framework's components and took them from the DLL's bars
 #                            - Docked the map's strip at the top and made the battle's small by a click on its hint too
 #      Paulinchen  2026-10-31: Placed its strip through the Mod Framework's layout
@@ -154,7 +155,7 @@ module MGQ_MpRaidBar
   # @param where [Symbol] :map or :battle.
   # @return [Boolean] Whether it shows.
   def self.shown?(where)
-    @shown[where] = MGQ_Multiplayer::Player.setting(SHOWN_SETTINGS[where]).to_s != "0" unless @shown.key?(where)
+    @shown[where] = MGQ_Multiplayer::Player.setting(SHOWN_SETTINGS[where]) != false unless @shown.key?(where)
     @shown[where]
   end
 
@@ -164,7 +165,7 @@ module MGQ_MpRaidBar
   # @param shown [Boolean] Whether it shows.
   def self.show_bar(where, shown)
     @shown[where] = shown ? true : false
-    MGQ_Multiplayer::Player.store(SHOWN_SETTINGS[where], @shown[where] ? 1 : 0)
+    MGQ_Multiplayer::Player.store(SHOWN_SETTINGS[where], @shown[where])
     log("the raid boss bar #{where == :map ? 'on the map' : 'in battle'} is #{@shown[where] ? 'on' : 'off'} outside Raid Worlds")
   rescue => e
     log("keeping whether the raid boss bar shows FAILED: #{e.class}: #{e.message}")
@@ -246,7 +247,7 @@ module MGQ_MpRaidBar
   #
   # @return [Boolean] Whether it does.
   def self.small?
-    @small = MGQ_Multiplayer::Player.setting(SMALL_SETTING).to_s == "1" if @small.nil?
+    @small = MGQ_Multiplayer::Player.setting(SMALL_SETTING) == true if @small.nil?
     @small
   end
 
@@ -266,7 +267,7 @@ module MGQ_MpRaidBar
   # Player.ini, as its hotkey and a click on its hint do.
   def self.toggle_small
     @small = !small?
-    MGQ_Multiplayer::Player.store(SMALL_SETTING, @small ? 1 : 0)
+    MGQ_Multiplayer::Player.store(SMALL_SETTING, @small)
     log("the battle's boss bar shows #{@small ? 'its gauges alone' : 'the title and the names again'}")
     Sound.play_cursor
   rescue => e

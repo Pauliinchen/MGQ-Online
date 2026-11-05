@@ -2,6 +2,7 @@
 #  single_player_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Expected the slot kept as a number and the switches as true or false
 #      Paulinchen  2026-11-01: Named the Mod Framework's interface by its own name, and took the framework away only for the restart's answer
 #      Paulinchen  2026-10-31: Read the single player group from MGQ_Multiplayer::SP_PREFIX
 #                            - Checked that the restart question starts on Restart
@@ -255,7 +256,7 @@ check("each row takes the value picked into its own script's setting",
       [[hud.sp_shown?, bar.shown?(:map), bar.shown?(:battle), tiers.single_player?], sp_rows.map { |each| each[:value].call }],
       [[false, false, false, true], ["Off", "Off", "Off", "On"]])
 check("which Player.ini keeps",
-      $player_ini.values_at(hud::SP_SHOWN_SETTING, bar::SHOWN_SETTINGS[:map], bar::SHOWN_SETTINGS[:battle], tiers::SETTING), ["0", "0", "0", "1"])
+      $player_ini.values_at(hud::SP_SHOWN_SETTING, bar::SHOWN_SETTINGS[:map], bar::SHOWN_SETTINGS[:battle], tiers::SETTING), [false, false, false, true])
 check("the HUD's single player setting leaves the one inside worlds alone", $player_ini.key?(hud::SHOWN_SETTING), false)
 fresh_settings
 
@@ -361,7 +362,7 @@ check("Restart saves the game through the game's own save to the file kept for t
       [saved, Dir["*.rvdata2"]], ["on map 5 at 3, 4", []])
 check("a save the game's count of saves leaves out", $game_system.save_count, 5)
 check("the slot the game saved to last stays, kept in Player.ini, and its files keep their names after",
-      [DataManager.last_savefile_index, $player_ini[sp::SLOT_SETTING], DataManager.make_filename(3)], [3, "3", "Save04.rvdata2"])
+      [DataManager.last_savefile_index, $player_ini[sp::SLOT_SETTING], DataManager.make_filename(3)], [3, 3, "Save04.rvdata2"])
 check("then the Mod Framework starts the game again, going on from it, and this one ends", [$calls, $exits, $msgboxes, $notices], [[[:restart, "multiplayer.resume"]], 1, [], []])
 $game_state = "in the Pocket Castle"
 $exits = 0

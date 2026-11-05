@@ -2,7 +2,8 @@
 #  match_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Invited a busy party member too in a Classic world, as Sessions in C# names them
+#      Paulinchen  2026-11-05: Wrote the scripts' rates and invite fields and read the messages it hands them by their kinds, as CoopRoomTopics does
+#                            - Invited a busy party member too in a Classic world, as Sessions in C# names them
 #                            - Kept a Classic battle nobody joined open for a party member on the map who missed it
 #                            - Kept an invite waiting while the player types in the chat box
 #      Paulinchen  2026-10-30: Shared the world, the facts and the status with the asking and joining sides
@@ -112,7 +113,7 @@ class MatchStandIn
     when "coop.steps" then steps(request["steps"])
     when "coop.freeze_party" then freeze_party(Array(request["seats"])) && nil
     when "coop.raid_candidates" then raid_candidates(Array(request["viewers"]), Array(request["stays_out"])).map(&:seat)
-    when "coop.take_off" then status((peer = @world.at(request["seat"])) ? take_off(peer, request["fields"]) : [])
+    when "coop.take_off" then status((peer = @world.at(request["seat"])) ? take_off(peer, fields_written(request["fields"])) : [])
     when "coop.leader_wait" then leader_wait
     when "coop.leader_end" then leader_end(request.to_s)
     when "coop.yield" then status(yield_battle)
@@ -175,8 +176,10 @@ class MatchStandIn
   # @param fields [Hash] Its other fields.
   # @return [Hash] The action.
   def action(kind, fields = {})
-    { "kind" => kind, "role" => nil, "bid" => nil, "seats" => nil, "label" => nil, "seat" => nil, "troop" => nil, "escape" => false, "lose" => false,
-      "fields" => nil }.merge(fields)
+    made = { "kind" => kind, "role" => nil, "bid" => nil, "seats" => nil, "label" => nil, "seat" => nil, "troop" => nil, "escape" => false, "lose" => false,
+             "fields" => nil }.merge(fields)
+    made["fields"] = fields_read(made["fields"]) if made["fields"]
+    made
   end
 
   # Decides a battle the game set up, as CoopMatchmaking.Offer does.
@@ -251,7 +254,7 @@ class MatchStandIn
     if raid
       fields << ["enc", @random_encounter ? "1" : "0"]
       fields << ["boss", "1"] if offer["boss"]
-      fields << ["rates", offer["rates"].to_s]
+      fields << ["rates", field_text("rates", offer["rates"])]
     end
     fields = merged(fields, offer["invite_fields"])
     raid ? tell_map(seats, "invite", fields) : tell(-1, "invite", fields)
@@ -641,7 +644,7 @@ class MatchStandIn
   def merged(fields, added)
     Array(added).each do |key, value|
       at = fields.index { |field| field[0] == key }
-      at ? fields[at] = [key, value] : fields << [key, value]
+      at ? fields[at] = [key, field_text(key, value)] : fields << [key, field_text(key, value)]
     end
     fields
   end

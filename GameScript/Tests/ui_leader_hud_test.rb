@@ -2,6 +2,7 @@
 #  ui_leader_hud_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Expected the HUD's switches kept as true or false
 #      Paulinchen  2026-11-01: Read the HUD from the Mod Framework's components it builds
 #                            - Stood in for the emote wheel of the Mod Framework
 #      Paulinchen  2026-10-31: Kept the boxes' places in the Mod Framework's settings
@@ -180,7 +181,7 @@ check("a message at the top hides it", [hud.shows?, hidden_root?(root)], [false,
 $game_message.visible = false
 check("it shows again once the message is gone", [hud.shows?, hidden_root?(root)], [true, false])
 hud.show(false)
-check("turned off it hides, kept in Player.ini", [hidden_root?(root), $player_ini["leader_hud"]], [true, "0"])
+check("turned off it hides, kept in Player.ini", [hidden_root?(root), $player_ini["leader_hud"]], [true, false])
 logged = []
 MGQ_Multiplayer::Log.define_singleton_method(:write) { |line| logged << line }
 $pressed = 0x48
@@ -199,9 +200,9 @@ hud.show(false)
 MGQ_MpOverworldSync.define_singleton_method(:in_world?) { false }
 check("outside a world the single player row follows the Settings row until the player sets it", [hud.on?, hidden_root?(root)], [false, true])
 hud.show_sp(true)
-check("set, the single player row decides whatever the Settings row says", [hud.on?, hidden_root?(root), $player_ini["sp_leader_hud"]], [true, false, "1"])
+check("set, the single player row decides whatever the Settings row says", [hud.on?, hidden_root?(root), $player_ini["sp_leader_hud"]], [true, false, true])
 hud.show_sp(false)
-check("turned off there it hides, kept in Player.ini apart from the Settings row", [hud.on?, hidden_root?(root), $player_ini["sp_leader_hud"]], [false, true, "0"])
+check("turned off there it hides, kept in Player.ini apart from the Settings row", [hud.on?, hidden_root?(root), $player_ini["sp_leader_hud"]], [false, true, false])
 check("so the size hotkey changes nothing there", hud.busy_reason, "the HUD is off")
 hud.show(true)
 MGQ_MpOverworldSync.define_singleton_method(:in_world?, in_world)

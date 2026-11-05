@@ -2,7 +2,9 @@
 #  raid_freeze_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Read the scripts' clock from $frame
+#      Paulinchen  2026-11-05: Checked that a value written over that the bridge cannot carry stays with the scripts
+#                            - Handed and expected sites as plain values, and checked that the DLL reads the sites of an earlier release's save once
+#                            - Read the scripts' clock from $frame
 #      Paulinchen  2026-10-28: Answered the freeze's tables as the DLL's events database does
 #                            - Checked writes the DLL refuses, writes the journal looks away from and a defeat whose start the journal lost
 #      Paulinchen  2026-10-23: Ran on the shared stand-in bridge, whose journal keeps the story's writes, and replayed the journal's golden cases
@@ -587,18 +589,19 @@ module FreezeTables
   PREAMBLE_CODES = [132, 133, 283]
   # The fights' sites: key, index, indent, preamble's start and whether on a cutscene map.
   SITES = {
-    71 => [["map:576:1:1", 0, 0, 0, false]],
-    607 => [["map:138:16:1", 1, 0, 1, false]],
-    807 => [["ce:347", 11, 2, 9, false]],
-    868 => [["map:138:13:1", 7, 1, 4, false]],
-    870 => [["map:728:12:1", 2, 0, 0, true], ["map:749:13:1", 2, 0, 0, true]],
+    71 => [[["map", 576, 1, 1], 0, 0, 0, false]],
+    607 => [[["map", 138, 16, 1], 1, 0, 1, false]],
+    807 => [[["ce", 347], 11, 2, 9, false]],
+    868 => [[["map", 138, 13, 1], 7, 1, 4, false]],
+    870 => [[["map", 728, 12, 1], 2, 0, 0, true], [["map", 749, 13, 1], 2, 0, 0, true]],
   }
   # The map pages that reach a site's common event.
-  CALLERS = { 347 => ["map:214:42:1"] }
-  # How the story enters each cutscene site: its field sources, side switch and entry spot.
+  CALLERS = { 347 => [["map", 214, 42, 1]] }
+  # How the story enters each cutscene site: its field sources, side switch and entry spot; the DLL
+  # hands them as rows, since a Hash that crosses the bridge has no Array keys.
   SCENES = {
-    "map:728:12:1" => [[[138, 13, 32, 8]], 4, [728, 0, 0, 0]],
-    "map:749:13:1" => [[[138, 13, 32, 8]], 5, [749, 1, 0, 0]],
+    ["map", 728, 12, 1] => [[[138, 13, 32, 8]], 4, [728, 0, 0, 0]],
+    ["map", 749, 13, 1] => [[[138, 13, 32, 8]], 5, [749, 1, 0, 0]],
   }
   # The cutscene maps.
   SCENE_MAPS = [728, 746, 747, 749]
@@ -639,6 +642,10 @@ module MGQ_MpStoryState
   def self.data_of(object); object.instance_variable_get(:@data); end
   # Copies a story deeply.
   def self.deep_copy(story); Marshal.load(Marshal.dump(story)); end
+  # Turns a variable's value into what the bridge carries, as story_state.rbx does.
+  def self.plain_variable(value); value.is_a?(Float) ? { "float" => value.to_s } : [Integer, Float, String, TrueClass, FalseClass].any? { |kind| value.is_a?(kind) } ? value : nil; end
+  # Turns a value the bridge carried back into the variable's, as story_state.rbx does.
+  def self.variable_value(value); value.is_a?(Hash) ? value["float"].to_s.to_f : value; end
 end
 # Stands in for coop_events.rbx, noting each block it runs as story in $as_story.
 module MGQ_MpCoopEvents
@@ -665,7 +672,7 @@ open_rules_bridge
 freeze = MGQ_MpRaidFreeze
 $world_bridge.answer("raid.sites") do |request|
   $sites_asked = request["troops"]
-  { "sites" => FreezeTables::SITES, "callers" => FreezeTables::CALLERS, "alternatives" => {}, "scenes" => FreezeTables::SCENES,
+  { "sites" => FreezeTables::SITES, "callers" => FreezeTables::CALLERS, "alternatives" => {}, "scenes" => FreezeTables::SCENES.to_a,
     "scene_maps" => FreezeTables::SCENE_MAPS, "excluded_maps" => FreezeTables::EXCLUDED_MAPS, "preamble_codes" => FreezeTables::PREAMBLE_CODES,
     "defeat" => { "events" => FreezeTables::DEFEAT_EVENTS, "switches" => FreezeTables::DEFEAT_SWITCHES, "variables" => FreezeTables::DEFEAT_VARIABLES } }
 end
@@ -850,6 +857,18 @@ JOURNAL_CASES.each do |entry|
   check("the journal finds what the whole-story diff found: #{entry['name']}", freeze.changed_since(mark), entry["diff"])
 end
 
+# A value written over that the bridge cannot carry stays with the scripts, the DLL's journal
+# naming it by its write's number, and comes back as it was.
+reset
+$game_variables[1077] = [1, 2]
+mark = freeze.instance_variable_get(:@seq)
+freeze.instance_variable_set(:@run, { :mark => mark })
+$game_variables[1077] = 5
+calls = $world_bridge.calls.size
+diff = freeze.changed_since(mark)
+handed = $world_bridge.calls[calls..-1].select { |topic, _| topic == "freeze.journal" }.map { |_, bytes| Marshal.load(bytes)["entries"] }.flatten(1)
+check("a value the bridge cannot carry stays with the scripts and comes back as it was", [diff, handed.map { |entry| entry[3] }], [[[1, 1077, [1, 2], 5]], [{ "object" => mark + 1 }]])
+
 # Writes the DLL refuses stay with the scripts until it takes them; meanwhile the journal knows
 # nothing since the mark.
 reset
@@ -899,7 +918,7 @@ $bgm_pos = 1234
 fight_event(13)
 record = freeze.record_for(868)
 check("a raid boss fight of the map's event takes a record as its battle is set up", [record && record["state"], $scene.class], ["battle", Scene_Battle])
-check("its frame: the page by the list that runs, the battle command's index and the branches", record["frames"], [["map:138:13:1", 7, { 0 => true }]])
+check("its frame: the page by the list that runs, the battle command's index and the branches", record["frames"], [[["map", 138, 13, 1], 7, { 0 => true }]])
 check("while the event shows a later page", $game_map.events[13].mgq_mp_page, 1)
 check("it resumes at the preamble's start, at the command's indent", [record["resume"], record["indent"], record["event_id"], record["map"]], [4, 1, 13, 138])
 check("it keeps the values the event changed since its start, at both ends, the player's own too",
@@ -931,7 +950,7 @@ check("no message tells of the frozen fight", $notices.grep(/waits/), [])
 check("the world hears of it, holding the event's start values that are not the player's own, then the undone ones",
       $noted.last && $noted.last["held"], [[0, 31, nil], [1, 1075, 14], [0, 2307, true], [2, [138, 13, "A"], nil]])
 check("the world's entry carries where the boss waits", [$noted.last["troop"], $noted.last["site"], $noted.last["outer"], $noted.last["scene"], $noted.last["spot"]],
-      [868, "map:138:13:1", "map:138:13:1", false, [138, 32, 9, 8]])
+      [868, ["map", 138, 13, 1], ["map", 138, 13, 1], false, [138, 32, 9, 8]])
 check("it is the player's own record of the open world", [freeze.records.map { |r| r["troop"] }, freeze.resuming?], [[868], false])
 
 # The resume puts the player on the battle's spot with the scene as it stood and runs the event
@@ -1012,7 +1031,7 @@ $game_player.moveto(5, 6)
 fight_event(42)
 record = freeze.record_for(807)
 check("a fight two common events deep records every frame with its index, branches and common event, a common event's with its map and event",
-      record && record["frames"], [["map:214:42:1", 2, { 0 => 0 }], ["ce:340", 2, { 0 => true }, [214, 42]], ["ce:347", 11, { 1 => true }, [214, 42]]])
+      record && record["frames"], [[["map", 214, 42, 1], 2, { 0 => 0 }], [["ce", 340], 2, { 0 => true }, [214, 42]], [["ce", 347], 11, { 1 => true }, [214, 42]]])
 check("the innermost list's preamble starts inside the loop's branch", record["resume"], 9)
 check("before the battle the loop ran once", [$ran, $game_variables[60]], [[:loop_body], 2])
 lose
@@ -1045,7 +1064,7 @@ reread_tables
 fight_event(13)
 FreezeTables::SITES[868] = kept
 reread_tables
-check("nor one whose site the data lacks", [freeze.record_for(868), $log.grep(/its site map:138:13:1 is not in the data/).size], [nil, 1])
+check("nor one whose site the data lacks", [freeze.record_for(868), $log.grep(/its site \["map", 138, 13, 1\] is not in the data/).size], [nil, 1])
 reset
 $game_map.setup(576)
 fight_event(1)
@@ -1155,7 +1174,7 @@ check("but not from another map", [$game_player.x, $game_player.y, $log.grep(/di
 reset
 $game_switches[4] = true
 $game_variables[1075] = 14
-$entries[868] = { "troop" => 868, "outer" => "map:138:13:1", "scene" => false, "spot" => [138, 32, 9, 8] }
+$entries[868] = { "troop" => 868, "outer" => ["map", 138, 13, 1], "scene" => false, "spot" => [138, 32, 9, 8] }
 $game_map.refresh
 check("a world entry's field event starts from its first command as story", [freeze.resume(868), $as_story, $game_map.interpreter.instance_variable_get(:@index)], [true, 1, 0])
 check("the page of the entry", $game_map.interpreter.instance_variable_get(:@list).equal?(SONYA_PAGE.list), true)
@@ -1163,15 +1182,15 @@ frames(3)
 check("its battle takes the player's own record", [freeze.record_for(868) && freeze.record_for(868)["state"], $scene.class], ["battle", Scene_Battle])
 reset
 $game_variables[1075] = 16
-$entries[868] = { "troop" => 868, "outer" => "map:138:13:1", "scene" => false }
+$entries[868] = { "troop" => 868, "outer" => ["map", 138, 13, 1], "scene" => false }
 $game_map.refresh
 check("refused while the event shows another page", [freeze.resume(868), $notices.last], [false, "Cannot fight Sonya Mazda here yet."])
 $game_variables[1075] = 14
 $game_map.setup(154)
-check("and on another map", [freeze.resume(868), $log.grep(/map:138:13:1 is not the page that shows here \(map 154\)/).size], [false, 1])
+check("and on another map", [freeze.resume(868), $log.grep(/\["map", 138, 13, 1\] is not the page that shows here \(map 154\)/).size], [false, 1])
 reset
 $game_switches[5] = true
-$entries[870] = { "troop" => 870, "outer" => "map:728:12:1", "scene" => true }
+$entries[870] = { "troop" => 870, "outer" => ["map", 728, 12, 1], "scene" => true }
 check("a cutscene entry takes the player's side's cutscene, its page probed before the transfer", freeze.resume(870), true)
 frames(1)
 check("and starts it on arrival from its first command", [$game_map.map_id, $game_player.x, $game_player.y, $game_map.interpreter.event_id, $game_map.interpreter.instance_variable_get(:@index)],
@@ -1180,7 +1199,7 @@ check("and starts it on arrival from its first command", [$game_map.map_id, $gam
 # Nobody resumes while another player tells the story here.
 reset
 $game_variables[1075] = 14
-$entries[868] = { "troop" => 868, "outer" => "map:138:13:1", "scene" => false }
+$entries[868] = { "troop" => 868, "outer" => ["map", 138, 13, 1], "scene" => false }
 $teller = MGQ_MpOverworldSync::Peers::Peer.new(2, { "name" => "Teller" })
 check("refused while another player tells the story", [freeze.resume(868), $notices.last, $log.grep(/refused the fight against troop 868: Teller tells the story here/).size],
       [false, "Teller is telling the story here.", 1])
@@ -1327,8 +1346,8 @@ check("nor when the world's list holds it", $noted, [])
 # that call the common event are blocked, and the resume runs the page from that map's data, its
 # interpreters on that map as at the battle.
 reset
-FreezeTables::SITES[2133] = [["ce:9062", 2, 0, 1, false]]
-FreezeTables::CALLERS[9062] = ["map:138:30:1", "map:138:31:1", "map:777:30:1"]
+FreezeTables::SITES[2133] = [[["ce", 9062], 2, 0, 1, false]]
+FreezeTables::CALLERS[9062] = [["map", 138, 30, 1], ["map", 138, 31, 1], ["map", 777, 30, 1]]
 reread_tables
 $data_common_events[9062] = RPG::CommonEvent.new(9062, [
   c(201, 0, 0, 300, 4, 4, 8), c(132, 0), c(301, 0, 0, 2133, false, false), c(123, 0, "A", 0), c(900, 0, :ce9062_after), c(0, 0),
@@ -1347,14 +1366,14 @@ fight_event(30)
 record = freeze.record_for(2133)
 check("a fight whose event moved the player away first takes a record on the battle's map", [record && record["state"], $game_map.map_id], ["battle", 300])
 check("its frames name the page of the map the event started on, the common event's with its interpreter's map and event",
-      record["frames"], [["map:138:30:1", 1, {}], ["ce:9062", 2, {}, [138, 30]]])
+      record["frames"], [[["map", 138, 30, 1], 1, {}], [["ce", 9062], 2, {}, [138, 30]]])
 check("the story at the event's start is known", [record["start"], record["pre"]], [[[1, 1001, 39]], [[1, 1001, 40]]])
 check("its boss waits at the event on its own map, looking as the battle map's boss, the event and its sibling blocked",
       record["tableau"], [138, [[30, 40, 10, 2, 1, "$allknowing", 0, 0, 255, 0, 1, 1, 0]], [30, 31]])
 check("which is logged", $log.grep(/blocks the starts of events \[30, 31\] on map 138, 1 of them other callers of its common events/).size, 1)
 check("it is no cutscene, and its spot is on the battle's map", [record["scene"], record["spot"], record["map"]], [false, [300, 4, 4, 8], 300])
 lose(lambda { $game_variables[1001] = 10 })
-check("lost, the story goes back to the event's start and the fight waits", [$game_variables[1001], record["state"], $noted.last["outer"]], [39, "frozen", "map:138:30:1"])
+check("lost, the story goes back to the event's start and the fight waits", [$game_variables[1001], record["state"], $noted.last["outer"]], [39, "frozen", ["map", 138, 30, 1]])
 $executed.clear
 $ran.clear
 check("its resume starts", freeze.resume(2133), true)
@@ -1377,7 +1396,7 @@ reread_tables
 # A common event's fight on a field map blocks every page of that map that calls it.
 reset
 callers = FreezeTables::CALLERS[347]
-FreezeTables::CALLERS[347] = callers + ["map:214:43:1", "map:999:7:1"]
+FreezeTables::CALLERS[347] = callers + [["map", 214, 43, 1], ["map", 999, 7, 1]]
 reread_tables
 $game_switches[50] = true
 $game_map.setup(214)
@@ -1478,7 +1497,7 @@ def fresh_sonya(trigger)
   SONYA_PAGE.trigger = trigger
   $game_switches[4] = true
   $game_variables[1075] = 14
-  $entries[868] = { "troop" => 868, "outer" => "map:138:13:1", "scene" => false, "spot" => [138, 32, 9, 8], "tableau" => SONYA_TABLEAU }
+  $entries[868] = { "troop" => 868, "outer" => ["map", 138, 13, 1], "scene" => false, "spot" => [138, 32, 9, 8], "tableau" => SONYA_TABLEAU }
   $game_map.refresh
   $game_player.moveto(20, 20)
   $game_player.set_direction(2)
@@ -1575,7 +1594,7 @@ $game_map.singleton_class.send(:remove_method, :valid?)
 reset
 TRIGGER_PAGE.trigger = 1
 $game_map.events[30] = Game_Event.new(138, trigger)
-$entries[2133] = { "troop" => 2133, "outer" => "map:138:30:1", "scene" => false, "spot" => [300, 4, 4, 8],
+$entries[2133] = { "troop" => 2133, "outer" => ["map", 138, 30, 1], "scene" => false, "spot" => [300, 4, 4, 8],
                    "tableau" => [138, [[30, 40, 10, 2, 1, "$allknowing", 0, 0, 255, 0, 1, 1, 0]], [30, 31]] }
 check("a moved fight's touch goes onto its event's tile, nothing let through", [freeze.resume(2133), reserved_spot, through_of(30)], [true, [40, 10, 2], [false]])
 frames(1)
@@ -1583,3 +1602,12 @@ check("and starts its page there", [$game_map.map_id, $game_player.x, $game_play
                                      $game_map.interpreter.instance_variable_get(:@list).equal?(TRIGGER_PAGE.list)], [138, 40, 10, 30, true])
 TRIGGER_PAGE.trigger = nil
 SONYA_PAGE.trigger = 3
+
+# A save of an earlier release keeps its frozen fights' sites as texts, which the DLL reads once
+# (StoryTopics.SitesTopic): its stand-in reads them as the DLL does.
+$world_bridge.answer("story.sites") { |texts| texts.map { |text| parts = text.split(":"); [parts[0]] + parts[1..-1].map(&:to_i) } }
+older = { "troop" => 868, "state" => "frozen", "site" => "ce:347", "outer" => "map:138:13:1", "frames" => [["map:138:13:1", 7, {}], ["ce:347", 11, {}, [138, 13]]] }
+MGQ_MpGame.set($game_system, :raid_freeze, { "world" => $world, "origin" => nil, "records" => { 868 => older } })
+read = freeze.record_for(868)
+check("a save of an earlier release has the DLL read its frozen fights' sites once",
+      [read["site"], read["outer"], read["frames"].map(&:first)], [["ce", 347], ["map", 138, 13, 1], [["map", 138, 13, 1], ["ce", 347]]])

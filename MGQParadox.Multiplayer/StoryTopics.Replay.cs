@@ -2,7 +2,9 @@
 //  StoryTopics.Replay.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Never handed over the Medal King's run, whose gift is its one path
+//      Paulinchen  2026-11-05: Took and handed the keys, values, sites and things a replay reads as plain values, see StoryPlain
+//                            - Digested what the player holds from the things the scripts hand over
+//                            - Never handed over the Medal King's run, whose gift is its one path
 //                            - Handed over every run that gave or used up a found item, a personal talk too, but a Makina in a Raid World, which comes by level
 //                            - Played a chest the way its own letter shut it and never asked the player a derived entry's answers
 //                            - Handed over the found items of a battle's drops as the found items of a run, and gave them to each receiver
@@ -58,7 +60,8 @@ internal sealed partial class StoryTopics
     /// The topic that makes the entry of a page the player's own history or a feature names, see
     /// <see cref="ReplayEntry.Derive"/>: {"site" (or "chest", the key of a chest whose closing page
     /// is meant), "closes" ([key, ...]), "party", "letters" (the letters of the event the source
-    /// holds on, which answer its choices, see <see cref="DerivedAnswers"/>; nil for none)}; answers
+    /// holds on, which answer its choices, see <see cref="DerivedAnswers"/>; nil for none)}, the keys
+    /// as <see cref="StoryPlain"/> names them; answers
     /// the entry, nil before the list came or without an events database for a chest.
     /// </summary>
     public const string ReplayDeriveTopic = "story.replay_derive";
@@ -74,7 +77,7 @@ internal sealed partial class StoryTopics
 
     /// <summary>
     /// The topic of the one-time repair of a save the 0.6.9.2 chest path left stuck: {"world" (whether
-    /// a world is open), "raid", "values" (name => "1" or "0")}; answers {"needs"=>[name, ...]},
+    /// a world is open), "raid", "values" (the rows of the things asked for, see <see cref="StoryPlain"/>)}; answers {"needs"=>[[kind, key], ...]},
     /// {"switches"=>[id, ...]} to turn on, or {"unknown"=>true} before a world's list came or without
     /// an events database.
     /// </summary>
@@ -82,20 +85,19 @@ internal sealed partial class StoryTopics
 
     /// <summary>
     /// The topic that names the keys whose start values a run carries, the world and work keys any
-    /// page of its event can read: {"site", "party"}; answers [key, ...], nil before the list came
+    /// page of its event can read: {"site", "party"}; answers [[kind, key], ...], nil before the list came
     /// or without an events database.
     /// </summary>
     public const string ReplayReadsTopic = "story.replay_reads";
 
     /// <summary>
-    /// The topic that takes a run of the player's own game ending: {"site", "party", "stream" (its
+    /// The topic that takes a run of the player's own game ending: {"site" (see <see cref="StoryPlain"/>), "party", "stream" (its
     /// story's: the Raid World's track, "world" or the player's own "t&lt;n&gt;", or the Classic
     /// leader's "story:&lt;id&gt;"; nil for none), "party_stream" (its Classic party's, nil for none),
     /// "owner" (whether the player owns their story's stream, as a Classic leader does, so its entry
     /// is in it at once),
-    /// "changed" (key => [before, after]), "found" ([[item, change], ...] of the found items, key items
-    /// and items unlocking a job or a race, it gave or used up; nil for none), "start" (key =>
-    /// value), "place" ([markers]), "inputs" ([[at, occurrence, kind, value], ...]), "opener" (the
+    /// "changed" ([kind, key, before, after] each, see <see cref="StoryPlain"/>), "found" ([[item, change], ...] of the found items, key items
+    /// and items unlocking a job or a race, it gave or used up; nil for none), "start" (rows), "place" ([markers]), "inputs" ([[at, occurrence, kind, value], ...]), "opener" (the
     /// player's name)}. Logs its step and
     /// answers its entry to hand over (see <see cref="ReplayEntry.Write"/>), nil when it hands
     /// nothing over, or {"unknown"=>true} before the list came.
@@ -116,12 +118,12 @@ internal sealed partial class StoryTopics
     public const string ReplayQueueTopic = "story.replay_queue";
 
     /// <summary>
-    /// The topic that takes a run handed to the player: {"entry", "values" (name => value of the
-    /// player's own: "s&lt;id&gt;", "v&lt;id&gt;", "ss&lt;map&gt;.&lt;event&gt;.&lt;letter&gt;" as the tracks
-    /// write them, "item&lt;id&gt;" and "actor&lt;id&gt;" as "1" or "0"), "shapes" (site => the
-    /// <see cref="MGQOnline.Data.Events.ListShape"/> of the player's list of each choice the entry's
+    /// The topic that takes a run handed to the player: {"entry", "values" (the rows of the player's
+    /// own things asked for: keys, items, companions and holdings, see <see cref="StoryPlain"/>),
+    /// "shapes" ([site, the
+    /// <see cref="MGQOnline.Data.Events.ListShape"/>] of the player's list of each choice the entry's
     /// inputs name)}. Answers {"do"=>"done"},
-    /// {"needs"=>[name, ...]}, {"do"=>"pending", "why"}, {"do"=>"replay", "page" (from 1, nil for
+    /// {"needs"=>[[kind, key], ...]}, {"do"=>"pending", "why"}, {"do"=>"replay", "page" (from 1, nil for
     /// a common event), "sibling", "inputs" (the entry's, less the answers of the choices that are
     /// the receiver's, whom the replay asks them)}, {"do"=>"gain", "items" ([[item, count], ...] of
     /// another player's battle drops)} or {"unknown"=>true} without an events database
@@ -131,21 +133,21 @@ internal sealed partial class StoryTopics
 
     /// <summary>
     /// The topic that takes a replay ending: {"entry", "reached" (whether it reached the step's
-    /// writes), "before" (key => the value the replay found of each key of the step), "reads" (name
-    /// => value of the player's own things it read), "had" and "has" (what the player held before
+    /// writes), "before" (the rows of the value the replay found of each key of the step), "reads" (the
+    /// rows of the player's own things it read), "had" and "has" (what the player held before
     /// and after: [[key, amount, name, sum], ...])}. Answers {"notice"} (nil for none).
     /// </summary>
     public const string ReplayDoneTopic = "story.replay_done";
 
     /// <summary>
-    /// The topic that takes the waiting runs one of whose reads changed: {"values" (name => value)}.
-    /// Answers [entry, ...] to take again first, or {"needs"=>[name, ...]}.
+    /// The topic that takes the waiting runs one of whose reads changed: {"values" (rows)}.
+    /// Answers [entry, ...] to take again first, or {"needs"=>[[kind, key], ...]}.
     /// </summary>
     public const string ReplayDueTopic = "story.replay_due";
 
     /// <summary>
-    /// The topic that takes the resets of a run of the player's game: [[kind ("s", "v" or "ss"),
-    /// from, to, value], ...], a self switch reset by its maps.
+    /// The topic that takes the resets of a run of the player's game: [[kind, from, to, value], ...],
+    /// the kind and value as <see cref="StoryPlain"/> names them, a self switch reset by its maps.
     /// </summary>
     public const string ReplayResetTopic = "story.replay_reset";
 
@@ -209,7 +211,10 @@ internal sealed partial class StoryTopics
         {
             foreach (RubyValue reset in request.AsArray())
             {
-                topics._log.Reset(ResetOf(reset.AsArray()));
+                if (ResetOf(reset.AsArray()) is { } read)
+                {
+                    topics._log.Reset(read);
+                }
             }
 
             return null;
@@ -249,14 +254,14 @@ internal sealed partial class StoryTopics
         }
 
         IReadOnlyList<RepairPairRow> pairs = store.RepairPairs();
-        Dictionary<string, string> values = TextsOf(request["values"]);
+        Dictionary<string, string> values = StoryPlain.ThingTextsOf(request["values"]);
         string[] lacking = [.. SaveRepair.Keys(pairs, own).Select(key => key.ToString()).Where(name => !values.ContainsKey(name))];
         if (lacking.Length > 0)
         {
-            return new RubyHash { { "needs", new RubyArray(lacking.Select(name => (RubyValue)name)) } };
+            return NeedsOf(lacking);
         }
 
-        IReadOnlyList<int> switches = SaveRepair.Switches(pairs, own, key => values.GetValueOrDefault(key.ToString()) == "1");
+        IReadOnlyList<int> switches = SaveRepair.Switches(pairs, own, key => values.GetValueOrDefault(key.ToString()) == StoryPlain.OnText);
         Log.Write($"repair: {pairs.Count} pairs read, {(switches.Count == 0 ? "the save holds none shut without its switch" : $"the save gets the switches {string.Join(", ", switches)}")}");
         return new RubyHash { { "switches", new RubyArray(switches.Select(id => (RubyValue)id)) } };
     }
@@ -294,7 +299,8 @@ internal sealed partial class StoryTopics
     /// Answers <see cref="ReplayDeriveTopic"/>.
     /// </summary>
     /// <param name="request">{"site" or "chest", "closes" (the keys that close it; for a chest its
-    /// key, for a site the self switches its page turns on, when missing), "party"}.</param>
+    /// key, for a site the self switches its page turns on, when missing), "party"}, each key as
+    /// [kind, key].</param>
     /// <returns>The entry, nil when it cannot be made yet.</returns>
     private RubyValue ReplayDerive(RubyHash request)
     {
@@ -305,8 +311,8 @@ internal sealed partial class StoryTopics
         }
 
         var match = new PageMatch(store);
-        StoryKey? chest = request["chest"].IsNil ? null : StoryKey.TryParse(request["chest"].AsText(), out StoryKey parsed) ? parsed : throw new BridgeRequestException($"{request["chest"].AsText()} is no story key.");
-        ReplaySite? site = chest is { } named ? match.ChestPage(named) : ReplaySite.Parse(request["site"].AsText());
+        StoryKey? chest = request["chest"].IsNil ? null : StoryPlain.KeyOf(request["chest"]);
+        ReplaySite? site = chest is { } named ? match.ChestPage(named) : ReplaySite.Of(request["site"]);
         if (site is not { } found)
         {
             Log.Write($"replay: no page closes the chest {chest}, so it is not played");
@@ -314,7 +320,7 @@ internal sealed partial class StoryTopics
         }
 
         StoryKey[] closes = !request["closes"].IsNil
-            ? [.. request["closes"].AsArray().Select(name => StoryKey.TryParse(name.AsText(), out StoryKey closing) ? closing : throw new BridgeRequestException($"{name.AsText()} is no story key."))]
+            ? [.. request["closes"].AsArray().Select(key => StoryPlain.KeyOf(key))]
             : chest is { } own ? [own] : [.. match.ClosingKeys(found)];
         string[] letters = !request["letters"].IsNil ? [.. request["letters"].AsArray().Select(letter => letter.AsText())] : chest is { } shut ? [shut.Letter] : [];
         ReplayEntry entry = ChestEntry(store, found, closes, letters, scopes);
@@ -343,27 +349,23 @@ internal sealed partial class StoryTopics
     /// Writes scopes as the scripts look keys up in them.
     /// </summary>
     /// <param name="table">The scopes.</param>
-    /// <returns>{"switches" and "variables" (a scope byte per id, binary), "keys" (self switch => scope), "self" (rule => scope), "index" (each event as map * 1,000,000 + event), "self_default"}.</returns>
+    /// <returns>{"switches" and "variables" (a scope byte per id, binary), "keys" ([map, event, letter, scope] of each self switch named), "self" and "common" (the self switch rules' rows with their scope, see <see cref="StoryPlain.SelfRules"/>), "index" (each event as map * 1,000,000 + event), "self_default"}.</returns>
     private static RubyHash ScopeTableOf(ScopeTable table)
     {
-        var keys = new RubyHash();
-        foreach ((string key, StoryScope scope) in table.Keys.Select(pair => (pair.Key.ToString(), pair.Value)).OrderBy(pair => pair.Item1, StringComparer.Ordinal))
+        var keys = new RubyArray();
+        foreach ((StoryKey key, StoryScope scope) in table.Keys.OrderBy(pair => pair.Key.ToString(), StringComparer.Ordinal))
         {
-            keys.Add(key, (long)scope);
+            keys.Add(new RubyArray { key.Id, key.Event, key.Letter, (long)scope });
         }
 
-        var rules = new RubyHash();
-        foreach ((string rule, StoryScope scope) in table.SelfRules.OrderBy(pair => pair.Key, StringComparer.Ordinal))
-        {
-            rules.Add(rule, (long)scope);
-        }
-
+        RubyHash rules = StoryPlain.SelfRules(table.SelfRules, scope => (long)scope);
         return new RubyHash
         {
             { "switches", RubyString.Binary(table.Switches) },
             { "variables", RubyString.Binary(table.Variables) },
             { "keys", keys },
-            { "self", rules },
+            { "self", rules["self"] },
+            { "common", rules["common"] },
             { "index", new RubyArray(table.Index.Order().Select(code => (RubyValue)code)) },
             { "self_default", (long)table.SelfDefault },
         };
@@ -372,21 +374,25 @@ internal sealed partial class StoryTopics
     /// <summary>
     /// Reads a reset.
     /// </summary>
-    /// <param name="reset">[kind, from, to, value].</param>
-    /// <returns>The reset.</returns>
+    /// <param name="reset">[kind, from, to, value], see <see cref="StoryPlain"/>.</param>
+    /// <returns>The reset, <see langword="null"/> for one to a value no story carries.</returns>
     /// <exception cref="BridgeRequestException">The reset is no such four.</exception>
-    private static RunReset ResetOf(RubyArray reset)
+    private static RunReset? ResetOf(RubyArray reset)
     {
-        StoryKeyKind? kind = reset.Count == 4 ? reset[0].AsText() switch
+        StoryKeyKind? kind = reset.Count == 4 && reset[0] is RubyInteger ? reset[0].AsInt() switch
         {
-            "s" => StoryKeyKind.Switch,
-            "v" => StoryKeyKind.Variable,
-            "ss" => StoryKeyKind.SelfSwitch,
+            StoryPlain.SwitchKind => StoryKeyKind.Switch,
+            StoryPlain.VariableKind => StoryKeyKind.Variable,
+            StoryPlain.SelfSwitchKind => StoryKeyKind.SelfSwitch,
             _ => null,
         } : null;
-        return kind is { } found
-            ? new RunReset(found, reset[1].AsInt(), reset[2].AsInt(), reset[3].AsText())
-            : throw new BridgeRequestException("A reset is [kind, from, to, value], its kind \"s\", \"v\" or \"ss\".");
+        if (kind is not { } found)
+        {
+            throw new BridgeRequestException("A reset is [kind, from, to, value], its kind 0, 1 or 2.");
+        }
+
+        string? value = StoryPlain.TextOf(new StoryKey(found, 0), reset[3]);
+        return value is null ? null : new RunReset(found, reset[1].AsInt(), reset[2].AsInt(), value);
     }
 
     /// <summary>
@@ -418,7 +424,7 @@ internal sealed partial class StoryTopics
     /// <returns>The keys in the order of their names, nil before the list came or without an events database.</returns>
     private RubyValue ReplayReads(RubyHash request)
     {
-        ReplaySite site = ReplaySite.Parse(request["site"].AsText());
+        ReplaySite site = ReplaySite.Of(request["site"]);
         EventStore store = Events().Store;
         if (ScopesOf(request["party"] is RubyBool { Flag: true }) is not { } scopes || !store.IsUsable)
         {
@@ -426,8 +432,8 @@ internal sealed partial class StoryTopics
         }
 
         string at = site.ToString();
-        IEnumerable<string> keys = new PageMatch(store).ReadKeys(site, key => KeyScopes.InView(scopes.ScopeOf(key, at))).Select(key => key.ToString());
-        return new RubyArray(keys.Order(StringComparer.Ordinal).Select(key => (RubyValue)key));
+        IEnumerable<StoryKey> keys = new PageMatch(store).ReadKeys(site, key => KeyScopes.InView(scopes.ScopeOf(key, at)));
+        return new RubyArray(keys.OrderBy(key => key.ToString(), StringComparer.Ordinal).Select(key => (RubyValue)StoryPlain.Plain(key)));
     }
 
     /// <summary>
@@ -443,7 +449,7 @@ internal sealed partial class StoryTopics
     /// <returns>The entry, nil, or {"unknown"=>true}.</returns>
     private RubyValue ReplayRan(RubyHash request)
     {
-        ReplaySite site = ReplaySite.Parse(request["site"].AsText());
+        ReplaySite site = ReplaySite.Of(request["site"]);
         if (ScopesOf(request["party"] is RubyBool { Flag: true }) is not { } scopes)
         {
             Log.Write($"replay: the run of {site} is not logged, the story key list has not come yet");
@@ -606,7 +612,7 @@ internal sealed partial class StoryTopics
     private RubyHash ReplayTake(RubyHash request)
     {
         ReplayEntry entry = ReplayEntry.Read(request["entry"]);
-        RubyHash answer = Decide(entry, request["values"] as RubyHash, ShapesOf(request["shapes"]));
+        RubyHash answer = Decide(entry, StoryPlain.ThingTextsOf(request["values"]), ShapesOf(request["shapes"]));
         if (answer.ContainsKey("do"))
         {
             _log.Taken(entry);
@@ -620,10 +626,10 @@ internal sealed partial class StoryTopics
     /// it waits, else the page the player's game shows decides whether it is replayed or waits.
     /// </summary>
     /// <param name="entry">The run's entry.</param>
-    /// <param name="values">The player's own values the request holds, nil for none.</param>
+    /// <param name="values">The player's own values the request holds, by name as the save's log keeps them.</param>
     /// <param name="shapes">The shapes of the player's lists of the choices the entry's inputs name, by site.</param>
     /// <returns>The answer.</returns>
-    private RubyHash Decide(ReplayEntry entry, RubyHash? values, IReadOnlyDictionary<string, int> shapes)
+    private RubyHash Decide(ReplayEntry entry, IReadOnlyDictionary<string, string> values, IReadOnlyDictionary<string, int> shapes)
     {
         if (_log.Claims(entry))
         {
@@ -738,7 +744,7 @@ internal sealed partial class StoryTopics
         ReplayEntry entry = ReplayEntry.Read(request["entry"]);
         if (request["reached"] is not RubyBool { Flag: true })
         {
-            _log.Pend(entry, TextsOf(request["reads"]));
+            _log.Pend(entry, StoryPlain.ThingTextsOf(request["reads"]));
             Log.Write($"replay: entry {entry.Id} of {entry.Site} did not reach its step and waits");
             return new RubyHash { { "notice", RubyNil.Value } };
         }
@@ -757,11 +763,11 @@ internal sealed partial class StoryTopics
     /// <returns>The entries to take again, or the values lacking.</returns>
     private RubyValue ReplayDue(RubyHash request)
     {
-        Dictionary<string, string> values = TextsOf(request["values"]);
+        Dictionary<string, string> values = StoryPlain.ThingTextsOf(request["values"]);
         string[] lacking = [.. _log.PendingReads().Where(name => !values.ContainsKey(name))];
         if (lacking.Length > 0)
         {
-            return new RubyHash { { "needs", new RubyArray(lacking.Select(name => (RubyValue)name)) } };
+            return NeedsOf(lacking);
         }
 
         IReadOnlyList<ReplayEntry> due = _log.Due(name => values.GetValueOrDefault(name));
@@ -806,44 +812,48 @@ internal sealed partial class StoryTopics
     /// <summary>
     /// Reads the keys a run changed.
     /// </summary>
-    /// <param name="value">{key => [before, after]}.</param>
-    /// <returns>Each key with its values.</returns>
-    /// <exception cref="BridgeRequestException">A key is none the tracks name, or its values are no pair.</exception>
+    /// <param name="value">[kind, key, before, after] each, see <see cref="StoryPlain"/>.</param>
+    /// <returns>Each key with its values as the tracks write them, empty for a value no story carries.</returns>
+    /// <exception cref="BridgeRequestException">A change is no key with two values.</exception>
     private static IEnumerable<(StoryKey Key, string Before, string After)> ChangesOf(RubyValue value)
     {
-        foreach ((RubyValue name, RubyValue pair) in value.AsHash())
+        foreach (RubyValue change in value.AsArray())
         {
-            RubyArray values = pair.AsArray();
-            if (!StoryKey.TryParse(name.AsText(), out StoryKey key) || values.Count != 2)
-            {
-                throw new BridgeRequestException("A changed key is key => [before, after].");
-            }
-
-            yield return (key, values[0].AsText(), values[1].AsText());
+            RubyArray fields = change is RubyArray { Count: 4 } found ? found : throw new BridgeRequestException("A changed key is [kind, key, before, after].");
+            StoryKey key = StoryPlain.KeyOf(fields[0], fields[1]);
+            yield return (key, StoryPlain.TextOf(key, fields[2]) ?? string.Empty, StoryPlain.TextOf(key, fields[3]) ?? string.Empty);
         }
     }
 
     /// <summary>
-    /// Reads texts by name.
+    /// Answers the things a request lacked.
     /// </summary>
-    /// <param name="value">{name => text}, nil for none.</param>
-    /// <returns>The texts.</returns>
-    private static Dictionary<string, string> TextsOf(RubyValue value) =>
-        value.IsNil ? new(StringComparer.Ordinal) : value.AsHash().ToDictionary(pair => pair.Key.AsText(), pair => pair.Value.AsText(), StringComparer.Ordinal);
+    /// <param name="names">Their names, as the save's log keeps them.</param>
+    /// <returns><c>{"needs"=>[[kind, key], ...]}</c>.</returns>
+    private static RubyHash NeedsOf(IEnumerable<string> names) => new() { { "needs", new RubyArray(names.Select(name => (RubyValue)StoryPlain.ThingOf(name))) } };
 
     /// <summary>
     /// Reads the shapes of the player's lists by site.
     /// </summary>
-    /// <param name="value">{site => shape}, nil for none.</param>
-    /// <returns>The shapes.</returns>
-    private static Dictionary<string, int> ShapesOf(RubyValue value) =>
-        value.IsNil ? new(StringComparer.Ordinal) : value.AsHash().ToDictionary(pair => pair.Key.AsText(), pair => pair.Value.AsInt(), StringComparer.Ordinal);
+    /// <param name="value">[[site, shape], ...], the site as <see cref="StoryPlain"/> names it; nil for none.</param>
+    /// <returns>The shapes by the site's text.</returns>
+    private static Dictionary<string, int> ShapesOf(RubyValue value)
+    {
+        var shapes = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (RubyValue pair in value.IsNil ? [] : value.AsArray())
+        {
+            RubyArray fields = pair.AsArray();
+            shapes[StoryPlain.SiteText(fields[0])] = fields[1].AsInt();
+        }
+
+        return shapes;
+    }
 
     /// <summary>
     /// The player's own values a request holds, noting those read and those it lacks.
     /// </summary>
-    /// <param name="values">{name => value}, nil for none.</param>
-    private sealed class OwnValues(RubyHash? values) : IReplayState
+    /// <param name="values">The values by name, as the save's log keeps them.</param>
+    private sealed class OwnValues(IReadOnlyDictionary<string, string> values) : IReplayState
     {
         /// <summary>
         /// The values read that the request lacks.
@@ -856,7 +866,7 @@ internal sealed partial class StoryTopics
         public Dictionary<string, string> Reads { get; } = new(StringComparer.Ordinal);
 
         /// <inheritdoc />
-        public bool Switch(long id) => Read(string.Create(CultureInfo.InvariantCulture, $"s{id}")) == "1";
+        public bool Switch(long id) => Read(string.Create(CultureInfo.InvariantCulture, $"s{id}")) == StoryPlain.OnText;
 
         /// <inheritdoc />
         public long? Variable(long id) => Read(string.Create(CultureInfo.InvariantCulture, $"v{id}")) is { } value ? ReplayView.WholeOf(value) : 0;
@@ -868,19 +878,19 @@ internal sealed partial class StoryTopics
         public bool PersonalVariable(long id) => false;
 
         /// <inheritdoc />
-        public bool SelfSwitch(int map, int eventId, string letter) => Read(StoryKey.SelfSwitch(map, eventId, letter).ToString()) == "1";
+        public bool SelfSwitch(int map, int eventId, string letter) => Read(StoryKey.SelfSwitch(map, eventId, letter).ToString()) == StoryPlain.OnText;
 
         /// <inheritdoc />
-        public bool HasItem(int item) => Read(string.Create(CultureInfo.InvariantCulture, $"item{item}")) == "1";
+        public bool HasItem(int item) => Read(string.Create(CultureInfo.InvariantCulture, $"{StoryPlain.ItemKind}{item}")) == StoryPlain.OnText;
 
         /// <inheritdoc />
-        public bool InParty(int actor) => Read(string.Create(CultureInfo.InvariantCulture, $"actor{actor}")) == "1";
+        public bool InParty(int actor) => Read(string.Create(CultureInfo.InvariantCulture, $"{StoryPlain.ActorKind}{actor}")) == StoryPlain.OnText;
 
         /// <summary>
-        /// Answers the values lacking: <c>{"needs"=>[name, ...]}</c>.
+        /// Answers the values lacking.
         /// </summary>
-        /// <returns>The answer, <see langword="null"/> when the request held every value read.</returns>
-        public RubyHash? Needs() => _missing.Count == 0 ? null : new RubyHash { { "needs", new RubyArray(_missing.Select(name => (RubyValue)name)) } };
+        /// <returns>The answer, see <see cref="NeedsOf"/>; <see langword="null"/> when the request held every value read.</returns>
+        public RubyHash? Needs() => _missing.Count == 0 ? null : NeedsOf(_missing);
 
         /// <summary>
         /// Reads a value, noting it.
@@ -889,9 +899,9 @@ internal sealed partial class StoryTopics
         /// <returns>The value, <see langword="null"/> when the request lacks it.</returns>
         private string? Read(string name)
         {
-            if (values is not null && values.TryGetValue(name, out RubyValue? value))
+            if (values.TryGetValue(name, out string? value))
             {
-                return Reads[name] = value.AsText();
+                return Reads[name] = value;
             }
 
             _missing.Add(name);

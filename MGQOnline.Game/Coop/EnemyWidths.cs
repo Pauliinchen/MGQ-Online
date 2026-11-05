@@ -2,6 +2,7 @@
 //  EnemyWidths.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Took the widths every request to join a battle carries
 //      Paulinchen  2026-10-30: Created
 //
 //----------------------------------------------------------------
@@ -71,11 +72,11 @@ public sealed class EnemyWidths
     /// Keeps the widths a request to join a battle tells, forgetting those of another battle.
     /// </summary>
     /// <param name="bid">The battle's id.</param>
-    /// <param name="text">The widths, <see langword="null"/> for a request that tells none, as a
-    /// game of 0.6.9 and before sends it.</param>
-    public void Note(string bid, string? text)
+    /// <param name="text">The widths, see <see cref="Write"/>.</param>
+    public void Note(string bid, string text)
     {
         ArgumentNullException.ThrowIfNull(bid);
+        ArgumentNullException.ThrowIfNull(text);
         if (bid != battle)
         {
             widths.Clear();

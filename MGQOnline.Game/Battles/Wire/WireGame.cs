@@ -2,6 +2,7 @@
 //  WireGame.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Gave a game that knows every symbol, field and entry, whose script finds them among its own
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -33,6 +34,11 @@ public sealed class WireGame
     private readonly Dictionary<WireTable, int> tableSizes;
 
     /// <summary>
+    /// Whether the game takes every symbol, field and entry a line names.
+    /// </summary>
+    private readonly bool takesAll;
+
+    /// <summary>
     /// Initializes what a game knows.
     /// </summary>
     /// <param name="symbols">The symbols' texts the game has; Ruby takes them from <c>Symbol.all_symbols</c>.</param>
@@ -48,23 +54,40 @@ public sealed class WireGame
     }
 
     /// <summary>
+    /// Gets a game that takes every symbol, action result field and database entry a line names,
+    /// for the lines the scripts read through the bridge.
+    /// </summary>
+    /// <remarks>
+    /// The script finds each of them among its own game's when it makes its objects, so a symbol
+    /// is never made of the other game's text.
+    /// </remarks>
+    public static WireGame Any { get; } = new(true);
+
+    /// <summary>
+    /// Initializes a game that takes everything a line names.
+    /// </summary>
+    /// <param name="takesAll">Whether the game takes everything.</param>
+    private WireGame(bool takesAll)
+        : this([], [], new Dictionary<WireTable, int>()) => this.takesAll = takesAll;
+
+    /// <summary>
     /// Tells whether the game has a symbol.
     /// </summary>
     /// <param name="text">The symbol's text.</param>
     /// <returns>Whether it does.</returns>
-    public bool HasSymbol(string text) => symbols.Contains(text);
+    public bool HasSymbol(string text) => takesAll || symbols.Contains(text);
 
     /// <summary>
     /// Tells whether the game's action results have a field.
     /// </summary>
     /// <param name="name">The field's name without "@".</param>
     /// <returns>Whether they do.</returns>
-    public bool HasResultField(string name) => resultFields.Contains(name);
+    public bool HasResultField(string name) => takesAll || resultFields.Contains(name);
 
     /// <summary>
     /// Gives a database table's size.
     /// </summary>
     /// <param name="table">The table.</param>
     /// <returns>Its size, <see langword="null"/> for a table the game lacks.</returns>
-    public int? TableSize(WireTable table) => tableSizes.TryGetValue(table, out int size) ? size : null;
+    public int? TableSize(WireTable table) => takesAll ? int.MaxValue : tableSizes.TryGetValue(table, out int size) ? size : null;
 }

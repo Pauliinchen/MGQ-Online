@@ -2,7 +2,9 @@
 #  world_story.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Left whether a telling moves the world's story on to the DLL's one decision
+#      Paulinchen  2026-11-05: Took the relay's keys and values from the DLL as [kind, key] and values, and handed it the player's the same way, their sites as plain values
+#                            - Fetched and read the world's shared companions through topics
+#                            - Left whether a telling moves the world's story on to the DLL's one decision
 #                            - Read the story's ids of the route rules from story_ids.rbx
 #                            - Took the player out of their own scene through the one guard of the game's flow
 #                            - Handed a refused start of the collab scenario to that guard
@@ -115,9 +117,6 @@ module MGQ_MpWorldStory
 
   # Frames before the player's story is handed again while the relay still asks for it, a second.
   SEED_FRAMES = 60
-
-  # Bytes the DLL may write the shared companions' state into at first; a larger one asks for more.
-  STATE_SIZE = 4096
 
   # The highest level the relay's gates take.
   MAX_LEVEL = 99_999
@@ -380,11 +379,11 @@ module MGQ_MpWorldStory
   # route keeps, refused, brings back the companions of the player's own decision once the world's
   # value is written into their story.
   #
-  # @param refusals [Array<Array>] Each key, code and the relay's value, nil for none.
+  # @param refusals [Array<Array>] Each key ([kind, key]), code and the relay's value, nil for none.
   def self.refused(refusals)
     refusals.each do |key, code, value|
-      log_once([:refused, key, code], "the relay did not keep #{key} as written (#{code})#{value ? ", it keeps #{value}" : ''}")
-      @route_refused = true if ROUTE_CODES.include?(code) && MGQ_MpStoryIds.route_variables.any? { |id| key == "v#{id}" }
+      log_once([:refused, key, code], "the relay did not keep #{key.inspect} as written (#{code})#{value.nil? ? '' : ", it keeps #{value.inspect}"}")
+      @route_refused = true if ROUTE_CODES.include?(code) && key[0] == 1 && MGQ_MpStoryIds.route_variables.include?(key[1])
     end
   rescue => e
     log("taking the relay's refusals failed: #{e.class}: #{e.message}")
@@ -504,22 +503,22 @@ module MGQ_MpWorldStory
   # Lists the player's story as a seed: each key the mapping keeps or a chest's, at its value.
   #
   # @param table [MGQ_MpStoryKeys::Table, nil] The story mapping's table.
-  # @return [Hash{String => String}, nil] The keys and their values, nil before the table came.
+  # @return [Array<Array>, nil] Each key's kind, key and value, nil before the table came.
   def self.seed_of(table)
     return nil unless table
 
-    seed = {}
+    seed = []
     switches = MGQ_MpStoryState.data_of($game_switches)
     variables = MGQ_MpStoryState.data_of($game_variables)
     switches.each_with_index do |value, id|
-      seed["s#{id}"] = "1" if value && MGQ_MpStoryKeys.class_of(0, id, nil, table) & MGQ_MpStoryKeys::REQUESTED != 0
+      seed << [0, id, true] if value && MGQ_MpStoryKeys.class_of(0, id, nil, table) & MGQ_MpStoryKeys::REQUESTED != 0
     end
     table.kept_variables.each do |id|
-      text = MGQ_MpStoryKeys.text_of(1, variables[id])
-      seed["v#{id}"] = text if text && text != "n0"
+      value = MGQ_MpStoryKeys.plain_of(1, variables[id])
+      seed << [1, id, value] unless value.nil? || value == 0
     end
     MGQ_MpStoryState.data_of($game_self_switches).each do |key, value|
-      seed[MGQ_MpStoryKeys.key_text(2, key)] = "1" if value && MGQ_MpStoryKeys.class_of(2, key, nil, table) & MGQ_MpStoryKeys::REQUESTED != 0
+      seed << [2, key, true] if value && MGQ_MpStoryKeys.class_of(2, key, nil, table) & MGQ_MpStoryKeys::REQUESTED != 0
     end
     seed
   end
@@ -548,7 +547,8 @@ module MGQ_MpWorldStory
 
     state = @waiting["state"]
     if state && defined?(MGQ_MpWorldOpening)
-      return if MGQ_MpWorldOpening.before_take("p" => MGQ_MpStoryState.decode_value(state["keys"]["v#{MGQ_MpStoryIds.main_progress}"] || "n0").to_i) == :wait
+      progress = state["keys"].find { |kind, key, _value| kind == 1 && key == MGQ_MpStoryIds.main_progress }
+      return if MGQ_MpWorldOpening.before_take("p" => progress ? MGQ_MpStoryState.variable_value(progress[2]).to_i : 0) == :wait
     end
 
     waiting = @waiting
@@ -587,7 +587,7 @@ module MGQ_MpWorldStory
     unjournaled do
       MGQ_MpStoryKeys.applying do
         written += lay_over(state, freezes) if state
-        take["keys"].each { |key, value| written += 1 if put_key(key, value, freezes) }
+        take["keys"].each { |kind, key, value| written += 1 if put_key(kind, key, value, freezes) }
       end
     end
     MGQ_MpWorldFreeze.take_keys(freezes) if defined?(MGQ_MpWorldFreeze) && !freezes.empty?
@@ -616,20 +616,19 @@ module MGQ_MpWorldStory
     @log_story
   end
 
-  # Reads a story from keys as the tracks name them.
+  # Reads a story from the rows of its keys.
   #
-  # @param keys [Hash{String => String}, nil] Each key with its value, nil for none.
+  # @param keys [Array<Array>, nil] Each key's kind, key and value, nil for none.
   # @return [Array, nil] The switches on, the variables and the self switches on, each by key; nil
   #   for none.
   def self.story_of_keys(keys)
     return nil unless keys
 
     story = [{}, {}, {}]
-    keys.each do |name, value|
-      kind, key = MGQ_MpStoryKeys.key_of(name)
+    keys.each do |kind, key, value|
       if kind == 1
-        story[1][key] = MGQ_MpStoryState.decode_value(value)
-      elsif kind && kind < 3 && value == "1"
+        story[1][key] = MGQ_MpStoryState.variable_value(value)
+      elsif (kind == 0 || kind == 2) && value == true
         story[kind][key] = true
       end
     end
@@ -645,27 +644,25 @@ module MGQ_MpWorldStory
   # @return [Integer] How many keys changed.
   def self.lay_over(state, freezes)
     table = MGQ_MpStoryKeys.raid_table
-    keys = state["keys"]
+    keys = {}
+    state["keys"].each { |kind, key, value| keys[[kind, key]] = value }
     held = {}
     state["held"].each { |key| held[key] = true }
     written = 0
     table.kept_switches.each do |id|
-      key = "s#{id}"
-      written += 1 if !held[key] && put_key(key, keys[key] || "0", freezes)
+      written += 1 if !held[[0, id]] && put_key(0, id, keys.fetch([0, id], false), freezes)
     end
     table.kept_variables.each do |id|
-      key = "v#{id}"
-      written += 1 if !held[key] && put_key(key, keys[key] || "n0", freezes)
+      written += 1 if !held[[1, id]] && put_key(1, id, keys.fetch([1, id], 0), freezes)
     end
-    selves = MGQ_MpStoryState.data_of($game_self_switches).keys.map { |key| MGQ_MpStoryKeys.key_text(2, key) } | keys.keys.select { |key| key.start_with?("ss") }
+    selves = MGQ_MpStoryState.data_of($game_self_switches).keys | keys.keys.select { |kind, _key| kind == 2 }.map { |_kind, key| key }
     selves.each do |key|
-      kind, self_key = MGQ_MpStoryKeys.key_of(key)
-      next unless kind == 2 && !held[key] && MGQ_MpStoryKeys.class_of(2, self_key, nil, table) & MGQ_MpStoryKeys::KEPT != 0
+      next unless !held[[2, key]] && MGQ_MpStoryKeys.class_of(2, key, nil, table) & MGQ_MpStoryKeys::KEPT != 0
 
-      written += 1 if put_key(key, keys[key] || "0", freezes)
+      written += 1 if put_key(2, key, keys.fetch([2, key], false), freezes)
     end
-    keys.each { |key, value| freezes[key[1..-1].to_i] = value if key.start_with?("f") }
-    state["chests"].each { |key, value| written += 1 if put_key(key, value, freezes) }
+    keys.each { |(kind, key), value| freezes[key] = value if kind == 3 }
+    state["chests"].each { |kind, key, value| written += 1 if put_key(kind, key, value, freezes) }
     written
   end
 
@@ -676,16 +673,16 @@ module MGQ_MpWorldStory
   # whole world keeps going only up, such as affection, and an unlock the player holds, such as the
   # second accessory slot, stay the player's (the latter two asked of the relay again).
   #
-  # @param key [String] The key, see MGQ_MpStoryKeys.key_of.
-  # @param text [String] Its value as the tracks keep it.
+  # @param kind [Integer] 0 for a switch, 1 for a variable, 2 for a self switch, 3 for a frozen fight.
+  # @param id [Integer, Array] Its id, a self switch's map, event and letter, or a frozen fight's troop.
+  # @param plain [Object] Its value as the DLL hands it, see StoryPlain in the DLL.
   # @param freezes [Hash{Integer => String}] Takes the frozen fights by troop.
   # @return [Boolean] Whether the player's story changed.
-  def self.put_key(key, text, freezes)
-    kind, id = MGQ_MpStoryKeys.key_of(key)
-    return false unless kind
-    return (freezes[id] = text) && false if kind == 3
+  def self.put_key(kind, id, plain, freezes)
+    return (freezes[id] = plain) && false if kind == 3
+    return false unless kind.is_a?(Integer) && kind < 3
 
-    value = kind == 1 ? MGQ_MpStoryState.decode_value(text) : text == "1"
+    value = MGQ_MpStoryKeys.game_value(kind, plain)
     held = defined?(MGQ_MpWorldFreeze) ? MGQ_MpWorldFreeze.held_value(kind, id) : nil
     value = held[1] if held
     return false if kind == 1 && (local_step?(id) || kept_higher?(id, value))
@@ -740,7 +737,7 @@ module MGQ_MpWorldStory
     own = $game_variables[id]
     return false unless found & whole_one_way == whole_one_way && own.is_a?(Integer) && value.is_a?(Integer) && own > value
 
-    MGQ_MpStoryKeys.request("v#{id}", MGQ_MpStoryKeys.text_of(1, own), "game")
+    MGQ_MpStoryKeys.request(1, id, own, ["game"])
     true
   end
 
@@ -755,7 +752,7 @@ module MGQ_MpWorldStory
   def self.kept_unlock?(id, value)
     return false if value || !MGQ_MpStoryState::UNLOCK_SWITCHES.include?(id) || !$game_switches[id]
 
-    MGQ_MpStoryKeys.request("s#{id}", "1", "game")
+    MGQ_MpStoryKeys.request(0, id, true, ["game"])
     true
   end
 
@@ -830,16 +827,17 @@ module MGQ_MpWorldStory
     held ? held[1] : value
   end
 
-  # Writes a frozen raid boss fight as the player's request, or "0" once it ended, for the whole
-  # world. Called by world_freeze.rbx.
+  # Writes a frozen raid boss fight as the player's request, or its end, for the whole world. Called
+  # by world_freeze.rbx.
   #
   # @param troop [Integer] The fight's troop.
-  # @param text [String] The fight as world_freeze.rbx writes it after its troop, or "0".
+  # @param entry [Hash, false] The fight as the DLL takes it (MGQ_MpWorldFreeze.plain_entry), false
+  #   once it ended.
   # @return [Boolean] Whether it goes to the relay: false unless the world's story applies.
-  def self.write_freeze(troop, text)
+  def self.write_freeze(troop, entry)
     return false unless active?
 
-    MGQ_MpStoryKeys.request("f#{troop}", text, "game:freeze")
+    MGQ_MpStoryKeys.request(3, troop.to_i, entry, ["game", "freeze"])
   end
 
   # Reports whether the world's story and the catch-up wait while a lost raid boss battle's defeat
@@ -1117,7 +1115,7 @@ module MGQ_MpWorldStory
       @busy = nil
       return unless state["world"] == world_id && state["fetch"] == "done"
 
-      @comps = state["comps"].to_s.split(",").map { |id| id.to_i }
+      @comps = Array(state["comps"])
       @world = nil
       return
     end
@@ -1370,14 +1368,20 @@ module MGQ_MpWorldStory
     nil
   end
 
-  # Patch/Multiplayer/Multiplayer.dll's state of the world's shared companions at the relay.
+  # The state of the world's shared companions at the relay, which the DLL fetches.
   module Relay
+    # The topic that starts fetching the world's state.
+    FETCH_TOPIC = "raid.story.fetch"
+
+    # The topic that tells how each request stands and the newest state.
+    STATE_TOPIC = "raid.story.state"
+
     # Starts fetching the world's state with its shared companions.
     #
     # @param world [String] The world's id.
     # @return [Boolean] Whether it started.
     def self.fetch(world)
-      MGQ_Multiplayer::Link.function('mp_raid_story_fetch').call(world + "\0") == 1
+      MGQ_Multiplayer::Bridge.call(FETCH_TOPIC, world.to_s) == true
     rescue => e
       MGQ_MpWorldStory.log("fetching the shared companions failed: #{e.class}: #{e.message}")
       false
@@ -1385,10 +1389,12 @@ module MGQ_MpWorldStory
 
     # Reads how each request stands and the newest state, with the shared companions.
     #
-    # @return [Hash] The headers, see docs/DEVELOPER.md; empty before any request.
+    # @return [Hash] "world", "rev" and "comps" (the ids), and each request's state ("fetch",
+    #   "companions") with its "_code", "_error" and "_rev", see docs/DEVELOPER.md; empty before any
+    #   request.
     def self.headers
-      text = MGQ_Multiplayer::Link.read('mp_raid_story_headers', STATE_SIZE)
-      text.empty? ? {} : MGQ_Multiplayer::Link.parse(text)
+      state = MGQ_Multiplayer::Bridge.call(STATE_TOPIC)
+      state.is_a?(Hash) ? state : {}
     rescue => e
       MGQ_MpWorldStory.log_once([:headers, e.class], "reading the shared companions failed: #{e.class}: #{e.message}")
       {}

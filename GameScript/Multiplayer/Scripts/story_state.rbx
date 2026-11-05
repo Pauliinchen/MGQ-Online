@@ -2,7 +2,9 @@
 #  story_state.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Asked the DLL's one rule which side the player took along in Iliasville
+#      Paulinchen  2026-11-05: Left writing and reading the tracks' texts of a variable's value to the DLL
+#                            - Handed the whole story and what of it changed to the DLL as values, which writes and reads them
+#                            - Asked the DLL's one rule which side the player took along in Iliasville
 #                            - Asked the DLL's rule which keys of the leader's story a Classic party member takes as stories are joined
 #                            - Read the story's ids from story_ids.rbx
 #                            - Left the self switches of the Navy's and the Pirates' lines to the reviewed key list
@@ -72,19 +74,6 @@ module MGQ_MpStoryState
   # The character whose story skills count, Luka.
   HERO = 1
 
-  # Bytes a whole story takes at most in a message, below the 256 KB one carries.
-  MAX_FULL_BYTES = 200_000
-
-  # Bytes of packed text a story another game wrote is read from at most, twice what a whole story
-  # takes, since a story too large for a message goes without what it turned off, unchecked.
-  MAX_PACKED_BYTES = MAX_FULL_BYTES * 2
-
-  # Bytes a packed story unpacks to at most, far beyond any real story's lists.
-  MAX_UNPACKED_BYTES = 8 * 1024 * 1024
-
-  # Bytes of packed text inflated per step, so one step unpacks a few MB at most.
-  INFLATE_SLICE = 4096
-
   extend MGQ_MpLog
 
   # What starts this script's lines in the log, the same as coop_story.rbx's.
@@ -102,6 +91,12 @@ module MGQ_MpStoryState
   # The topic of which of the leader's keys a Classic party member takes, see ClassicMerge.Follows
   # in the DLL.
   FOLLOW_TOPIC = "story.classic_follow"
+
+  # The topic that writes the fields of a whole story, see ClassicStoryLists.Full in the DLL.
+  FULL_TOPIC = "story.classic_full"
+
+  # The variables' values a story carries; others are left out.
+  CARRIED_VALUES = [Integer, Float, String, TrueClass, FalseClass]
 
   # The field of $game_system that keeps the side the player took along in Iliasville, which the
   # route sets anew in the side switches past the Great Decision: "alice" or "ilias"; "" while the
@@ -570,116 +565,108 @@ module MGQ_MpStoryState
 
   # Writes a whole story, leaving out what is the player's own. What the story turned off or set to
   # zero is written too, apart from what it never set, which a member who catches up keeps of their
-  # own, see MGQ_MpCoopStory.own_with_values. The lists are packed, see pack; one still too large
-  # for a message leaves out what the story turned off or set to zero, and says so.
+  # own, see MGQ_MpCoopStory.own_with_values. The DLL packs the lists, and one too large for a
+  # message leaves out what the story turned off or set to zero, and says so.
   #
   # @param story [Array] The switches, variables and self switches.
-  # @return [Hash] The packed lists under "z", see unpack, and "part" 1 for a story that leaves
-  #   out what it turned off.
+  # @return [Hash] The message's fields: the lists under "z", and "part" true for a story that
+  #   leaves out what it turned off.
+  # @raise [RuntimeError] When the DLL wrote none.
   def self.full(story)
-    packed = pack(story_lists(story, true))
-    return { "z" => packed } if packed.size <= MAX_FULL_BYTES
+    fields = MGQ_Multiplayer::Bridge.call(FULL_TOPIC, story_lists(story))
+    raise "the DLL wrote no whole story" unless fields.is_a?(Hash)
 
-    log_once(:full_size, "the whole story took #{packed.size} bytes, so it leaves out what the story turned off")
-    { "z" => pack(story_lists(story, false)), "part" => 1 }
+    log_once(:full_size, "the whole story was too large for a message, so it leaves out what the story turned off") if fields["part"]
+    fields
   end
 
   # Lists a story for a message: the switches on and off under "s" and "sf", the variables set
   # under "v", and the self switches on and off under "ss" and "ssf".
   #
   # @param story [Array] The switches, variables and self switches.
-  # @param off [Boolean] Whether what the story turned off or set to zero is listed too.
-  # @return [Hash{String => String}] The lists.
-  def self.story_lists(story, off)
-    switches = (0...story[0].size).reject { |id| story[0][id].nil? || personal_switch?(id) || (!off && !story[0][id]) }
-    variables = (0...story[1].size).reject { |id| story[1][id].nil? || personal_variable?(id) || (!off && story[1][id] == 0) }
-    self_switches = story[2].keys.reject { |key| story[2][key].nil? || (!off && !story[2][key]) }
+  # @return [Hash{String => Array}] The lists: ids, [id, value] pairs and self switches' keys.
+  def self.story_lists(story)
+    switches = (0...story[0].size).reject { |id| story[0][id].nil? || personal_switch?(id) }
+    variables = (0...story[1].size).reject { |id| story[1][id].nil? || personal_variable?(id) || !carried?(story[1][id]) }
+    self_switches = story[2].keys.reject { |key| story[2][key].nil? }
     switches_on, switches_off = switches.partition { |id| story[0][id] }
     self_on, self_off = self_switches.partition { |key| story[2][key] }
-    {
-      "s" => switches_on.join(","), "sf" => switches_off.join(","),
-      "v" => variables.map { |id| "#{id}:#{encode_value(story[1][id])}" }.join(","),
-      "ss" => self_on.map { |key| key.join(".") }.join(","), "ssf" => self_off.map { |key| key.join(".") }.join(","),
-    }
+    { "s" => switches_on, "sf" => switches_off, "v" => variables.map { |id| [id, plain_variable(story[1][id])] }, "ss" => self_on, "ssf" => self_off }
   end
 
-  # Packs lists for a message: each as name=list on its own line, deflated and written in Base64,
-  # since a late story's lists of ids would pass what one message carries.
+  # Reports whether a story carries a variable's value: only the kinds a message carries safely, so
+  # no message can make objects in the other game.
   #
-  # @param lists [Hash{String => String}] The lists.
-  # @return [String] The packed text.
-  def self.pack(lists)
-    [Zlib::Deflate.deflate(lists.map { |name, list| "#{name}=#{list}" }.join("\n"))].pack("m0")
-  end
-
-  # Unpacks lists another game packed, see pack.
-  #
-  # @param text [String] The packed text.
-  # @return [Hash{String => String}] The lists.
-  # @raise [ArgumentError] For a text longer than any story, or one that unpacks past
-  #   MAX_UNPACKED_BYTES.
-  def self.unpack(text)
-    raise ArgumentError, "the packed story took #{text.bytesize} bytes, more than any story" if text.bytesize > MAX_PACKED_BYTES
-
-    lists = {}
-    inflated(text.unpack("m0")[0].to_s).split("\n").each do |line|
-      name, list = line.split("=", 2)
-      lists[name] = list.to_s
-    end
-    lists
-  end
-
-  # Inflates packed bytes a step at a time, stopping once they pass MAX_UNPACKED_BYTES.
-  #
-  # A deflated text unpacks to up to about a thousand times its size, and running out of memory
-  # raises an error no rescue of the callers catches.
-  #
-  # @param data [String] The deflated bytes.
-  # @return [String] The inflated bytes.
-  # @raise [ArgumentError] For bytes that unpack past MAX_UNPACKED_BYTES.
-  def self.inflated(data)
-    zstream = Zlib::Inflate.new
-    out = ""
-    offset = 0
-    while offset < data.size
-      out << zstream.inflate(data[offset, INFLATE_SLICE])
-      offset += INFLATE_SLICE
-      raise ArgumentError, "the packed story unpacked past #{MAX_UNPACKED_BYTES} bytes" if out.bytesize > MAX_UNPACKED_BYTES
-    end
-    out << zstream.finish
-    raise ArgumentError, "the packed story unpacked past #{MAX_UNPACKED_BYTES} bytes" if out.bytesize > MAX_UNPACKED_BYTES
-    out
-  ensure
-    zstream.close if zstream && !zstream.closed?
+  # @param value [Object] The value.
+  # @return [Boolean] Whether it does.
+  def self.carried?(value)
+    CARRIED_VALUES.any? { |kind| value.is_a?(kind) }
   end
 
   # Reads a whole story another game wrote.
   #
-  # @param message [Hash] The message.
+  # @param message [Hash] The message, its lists under "z".
   # @return [Array] The switches, variables and self switches.
   def self.decode_full(message)
-    lists = message["z"] ? unpack(message["z"].to_s) : message
+    lists = message["z"].is_a?(Hash) ? message["z"] : {}
     switches = []
-    lists["s"].to_s.split(",").each { |id| switches[id.to_i] = true if known_id?(:switches, id.to_i) }
-    lists["sf"].to_s.split(",").each { |id| switches[id.to_i] = false if known_id?(:switches, id.to_i) }
+    Array(lists["s"]).each { |id| switches[id] = true if story_id?(:switches, id) }
+    Array(lists["sf"]).each { |id| switches[id] = false if story_id?(:switches, id) }
     variables = []
-    entries(lists["v"]).each { |id, value| variables[id.to_i] = decode_value(value) if known_id?(:variables, id.to_i) }
+    entries(lists["v"]).each { |id, value| variables[id] = variable_value(value) if story_id?(:variables, id) }
     self_switches = {}
-    lists["ss"].to_s.split(",").each { |key| self_switches[decode_key(key)] = true }
-    lists["ssf"].to_s.split(",").each { |key| self_switches[decode_key(key)] = false }
+    Array(lists["ss"]).each { |key| self_switches[key] = true if self_switch_key?(key) }
+    Array(lists["ssf"]).each { |key| self_switches[key] = false if self_switch_key?(key) }
     [switches, variables, self_switches]
   end
 
-  # Reads what of a story changed.
+  # Reads what of a story changed, see ClassicStoryLists.Delta in the DLL.
   #
   # @param message [Hash] The message.
   # @return [Array<Array>] The changed switches, variables and self switches, each by key.
   def self.decode_delta(message)
     [
-      entries(message["s"]).map { |id, value| [id.to_i, value == "1"] }.select { |id, _| known_id?(:switches, id) },
-      entries(message["v"]).map { |id, value| [id.to_i, decode_value(value)] }.select { |id, _| known_id?(:variables, id) },
-      entries(message["ss"]).map { |key, value| [decode_key(key), value == "1"] },
+      entries(message["s"]).select { |id, _| story_id?(:switches, id) }.map { |id, on| [id, on == true] },
+      entries(message["v"]).select { |id, _| story_id?(:variables, id) }.map { |id, value| [id, variable_value(value)] },
+      entries(message["ss"]).select { |key, _| self_switch_key?(key) }.map { |key, on| [key, on == true] },
     ]
+  end
+
+  # Lists the pairs of a list another game sent, leaving out what is no pair.
+  #
+  # @param list [Object] The list.
+  # @return [Array<Array>] The pairs.
+  def self.entries(list)
+    list.is_a?(Array) ? list.select { |entry| entry.is_a?(Array) && entry.size == 2 } : []
+  end
+
+  # Reports whether a value another game sent is the id of one of this game's switches, variables
+  # or items, see known_id?.
+  #
+  # @param kind [Symbol] :switches, :variables or :items.
+  # @param id [Object] The value.
+  # @return [Boolean] Whether it is.
+  def self.story_id?(kind, id)
+    id.is_a?(Integer) && known_id?(kind, id)
+  end
+
+  # Reports whether a value another game sent is a self switch's key: map, event and letter.
+  #
+  # @param key [Object] The value.
+  # @return [Boolean] Whether it is.
+  def self.self_switch_key?(key)
+    key.is_a?(Array) && key.size == 3 && key[0].is_a?(Integer) && key[1].is_a?(Integer) && key[2].is_a?(String)
+  end
+
+  # Reads a variable's value another game sent: a Float comes as the DLL's Hash of its text, since
+  # the bridge hands the scripts no Floats (MessageFields.FloatKey in the DLL).
+  #
+  # @param value [Object] The value.
+  # @return [Object] The value, nil for one no story carries.
+  def self.variable_value(value)
+    return value["float"].to_s.to_f if value.is_a?(Hash)
+
+    carried?(value) ? value : nil
   end
 
   # Reports whether an id another game sent names one of this game's switches, variables or items,
@@ -696,51 +683,15 @@ module MGQ_MpStoryState
     false
   end
 
-  # Splits a list of key:value entries.
-  #
-  # @param text [String, nil] The list.
-  # @return [Array<Array<String>>] Each entry's key and value.
-  def self.entries(text)
-    text.to_s.split(",").map { |entry| entry.split(":", 2) }
-  end
-
-  # Writes a variable's value; only the kinds a message can carry safely.
+  # Turns a variable's value into what the bridge carries for the DLL, which writes it as the tracks
+  # keep it (StoryPlain in the DLL): a Float as a Hash of its text, since the bridge carries no Floats.
   #
   # @param value [Object] The value.
-  # @return [String] The value, empty for none or a kind no message carries.
-  def self.encode_value(value)
-    case value
-    when Integer then "n#{value}"
-    when Float then "f#{value}"
-    when String then "s#{[value].pack('m0')}"
-    when true then "T"
-    when false then "F"
-    else ""
-    end
-  end
+  # @return [Object] The value, nil for a kind no story carries.
+  def self.plain_variable(value)
+    return { "float" => value.to_s } if value.is_a?(Float)
 
-  # Reads a variable's value.
-  #
-  # @param text [String, nil] The value as written.
-  # @return [Object] The value, nil for none.
-  def self.decode_value(text)
-    text = text.to_s
-    case text[0, 1]
-    when "n" then text[1..-1].to_i
-    when "f" then text[1..-1].to_f
-    when "s" then text[1..-1].unpack('m0')[0].force_encoding("UTF-8")
-    when "T" then true
-    when "F" then false
-    end
-  end
-
-  # Reads a self switch's key.
-  #
-  # @param text [String] The key as written: map, event and letter.
-  # @return [Array] The key.
-  def self.decode_key(text)
-    map_id, event_id, letter = text.split(".")
-    [map_id.to_i, event_id.to_i, letter]
+    carried?(value) ? value : nil
   end
 
   # Lists the ids of the player's own companions, those in the party and those waiting at the

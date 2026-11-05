@@ -11,7 +11,7 @@
 #----------------------------------------------------------------
 
 # The topics of the world screen's model (screen.*), answered by FakeBridge stand-ins: the list
-# from the directory's list the test's DLL stand-in reads ($dll["mp_dir_list"]) joined with the
+# from the directory's list the test's stand-in of the DLL hands ($directory) joined with the
 # worlds on this PC as local_worlds_support.rb keeps them, and a world's row, details, choices and
 # list box lines from fixtures/screen/screen_prototype.rb, the screen's methods as they were before
 # they moved to C#, asking the other scripts' stand-ins what they asked them. The prototype is

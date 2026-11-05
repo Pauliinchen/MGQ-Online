@@ -2,6 +2,7 @@
 //  SharedSettingsSync.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Took the creator's options and the Mod Config groups as values, and handed the settings to apply as values
 //      Paulinchen  2026-11-01: Dropped the topic that marks settings shared, which no script calls
 //      Paulinchen  2026-10-31: Took the world's settings from the relay, which tells every player, instead of the creator's game telling each
 //      Paulinchen  2026-10-23: Handed the world screen the details line of the shared settings
@@ -83,13 +84,13 @@ internal sealed class SharedSettingsSync
     public const string ForgetTopic = "settings.forget";
 
     /// <summary>
-    /// Takes this game's Mod Config groups: [[group, [[key, short name, [[value with its type, name], ...]], ...]], ...].
+    /// Takes this game's Mod Config groups: [[group, [[key, short name, [[value, name], ...]], ...]], ...], each value as <see cref="SharedSettings.ValueOf"/> reads it.
     /// </summary>
     public const string GroupsTopic = "settings.options";
 
     /// <summary>
     /// Notes that a save of the world was loaded or started: <c>applied</c> (the option keys the scripts
-    /// set), <c>pairs</c> ([key, pair] of the creator's options of the world's mods) and <c>known</c>
+    /// set), <c>options</c> ([key, value] of the creator's options of the world's mods, see <see cref="SharedSettings.ValueOf"/>) and <c>known</c>
     /// (every option key of this game's Mod Config) in.
     /// </summary>
     public const string LoadedTopic = "settings.loaded";
@@ -97,7 +98,7 @@ internal sealed class SharedSettingsSync
     /// <summary>
     /// Makes the creator's options the world's settings: <c>reason</c> ("options" as the options
     /// screen closes, "switch" for the row of Shared Mod Settings), <c>on</c> (the switch's value),
-    /// <c>pairs</c> and <c>known</c> in.
+    /// <c>options</c> and <c>known</c> in.
     /// </summary>
     public const string WantTopic = "settings.want";
 
@@ -401,7 +402,7 @@ internal sealed class SharedSettingsSync
     /// <summary>
     /// Describes the world for the scripts.
     /// </summary>
-    /// <returns>Its id, name, creator, mods, settings, whether it is the player's own and whether the settings it will have are shared; nil outside a world.</returns>
+    /// <returns>Its id, name, creator, mods, the values its settings set (<see cref="SharedSettings.PlainValues"/>), whether it is the player's own and whether the settings it will have are shared; nil outside a world.</returns>
     private RubyValue WorldValue() => _world is not { } world ? RubyNil.Value : new RubyHash
     {
         { "id", world.Id },
@@ -409,7 +410,7 @@ internal sealed class SharedSettingsSync
         { "creator_id", world.CreatorId },
         { "creator_name", world.CreatorName },
         { "mods", world.Mods },
-        { "text", world.Text },
+        { "values", SharedSettings.PlainValues(world.Text) },
         { "own", world.Own },
         { "shared", SharedSettings.IsShared(world.Text) },
         { "latest_shared", SharedSettings.IsShared(LatestText()) },
@@ -490,7 +491,7 @@ internal sealed class SharedSettingsSync
             [.. group.AsArray()[1].AsArray().Select(option => new SettingOption(
                 option.AsArray()[0].AsText(),
                 option.AsArray()[1].AsText(),
-                [.. option.AsArray()[2].AsArray().Select(name => new KeyValuePair<string, string>(name.AsArray()[0].AsText(), name.AsArray()[1].AsText()))]))]))]);
+                [.. option.AsArray()[2].AsArray().Select(name => (Value: SharedSettings.ValueOf(name.AsArray()[0]), Name: name.AsArray()[1].AsText())).Where(name => name.Value is not null).Select(name => new KeyValuePair<string, string>(SharedSettings.Encode(name.Value!.Value), name.Name))]))]))]);
 
     /// <summary>
     /// Takes a loaded or started save of the world: the creator's options become the world's while
@@ -538,7 +539,7 @@ internal sealed class SharedSettingsSync
         }
 
         bool on = request["on"].AsBool();
-        (string text, List<string> leftOut) = on ? SharedSettings.Build(PairsOf(request), Keys(request["known"]), LatestText()) : ("", []);
+        (string text, List<string> leftOut) = on ? SharedSettings.Build(SharedSettings.PairsOf(request["options"]), Keys(request["known"]), LatestText()) : ("", []);
         _leftOut = leftOut.Count;
         Log($"the creator turned Shared Mod Settings {(on ? "on" : "off")} in world {Short(world.Id)}");
         Request(text, reason);
@@ -557,7 +558,7 @@ internal sealed class SharedSettingsSync
             return;
         }
 
-        (string text, List<string> leftOut) = SharedSettings.Build(PairsOf(request), Keys(request["known"]), LatestText());
+        (string text, List<string> leftOut) = SharedSettings.Build(SharedSettings.PairsOf(request["options"]), Keys(request["known"]), LatestText());
         if (leftOut.Count > 0)
         {
             Log($"left out {leftOut.Count} mod setting(s) past {SharedSettings.MaxChars} characters: {string.Join(", ", leftOut)}");
@@ -918,7 +919,7 @@ internal sealed class SharedSettingsSync
         if (SharedSettings.IsShared(text))
         {
             _live = (before, text, name);
-            Step("apply_live", text);
+            Step("apply_live", SharedSettings.PlainValues(text));
             return;
         }
 
@@ -1086,7 +1087,14 @@ internal sealed class SharedSettingsSync
     {
         if (_loaded)
         {
-            Step(SharedSettings.IsShared(text) ? "apply" : "unlock", text);
+            if (SharedSettings.IsShared(text))
+            {
+                Step("apply", SharedSettings.PlainValues(text));
+            }
+            else
+            {
+                Step("unlock");
+            }
         }
     }
 
@@ -1128,14 +1136,6 @@ internal sealed class SharedSettingsSync
     /// <param name="id">The id.</param>
     /// <returns>Its first eight characters.</returns>
     private static string Short(string id) => id.Length > 8 ? id[..8] : id;
-
-    /// <summary>
-    /// Reads the creator's options of a request.
-    /// </summary>
-    /// <param name="request">The request.</param>
-    /// <returns>Each key with its pair.</returns>
-    private static List<(string Key, string Pair)> PairsOf(RubyHash request) =>
-        request["pairs"].IsNil ? [] : [.. request["pairs"].AsArray().Select(pair => (pair.AsArray()[0].AsText(), pair.AsArray()[1].AsText()))];
 
     /// <summary>
     /// Reads option keys.

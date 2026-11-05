@@ -2,6 +2,7 @@
 #  served.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Took the starter's mod options as the values the core read from the setup
 #      Paulinchen  2026-10-30: Checked a setup through the core
 #                            - Handed the core's ledger what the relay told of the boss pools before the scripts read them
 #                            - Sent the reports of a raid boss fight's turns from the core's outbox
@@ -231,11 +232,12 @@ module ServedBattle
     # Gives the battle's game the starter's options of the world's mods, as a world's shared
     # settings are given (see MGQ_MpWorldMods.apply_values).
     #
-    # @param text [String] The options, "key=type:value" pairs separated by semicolons.
-    def apply_settings(text)
-      return if text.to_s.empty? || !defined?(MGQ_MpWorldMods)
+    # @param settings [Array<Array(String, Object)>, nil] The options as the core read them from the
+    #   setup, see MGQ_MpWorldMods.settings_of.
+    def apply_settings(settings)
+      return if Array(settings).empty? || !defined?(MGQ_MpWorldMods)
 
-      MGQ_MpWorldMods.apply_values(MGQ_MpWorldMods.settings_from(text))
+      MGQ_MpWorldMods.apply_values(MGQ_MpWorldMods.settings_of(settings))
     end
 
     # Reads the boss pools every POOL_FRAMES frames while the battle fights a Raid World's pools, as

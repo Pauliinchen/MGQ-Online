@@ -2,7 +2,8 @@
 #  ui_raid_freeze.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Handed a frozen fight's event kept from starting to the one guard of the game's flow
+#      Paulinchen  2026-11-05: Read whether the teller tells the story as true or false
+#                            - Handed a frozen fight's event kept from starting to the one guard of the game's flow
 #                            - Counted its scans and refusals by the bridge's frame
 #      Paulinchen  2026-10-28: Read what a page writes from the DLL's command index and the post-defeat processing's writes from the freeze's tables
 #      Paulinchen  2026-10-17: Created
@@ -164,7 +165,7 @@ module MGQ_MpRaidFreezeUi
 
     teller = MGQ_MpCoop::Scope.teller
     return nil unless teller.is_a?(MGQ_MpOverworldSync::Peers::Peer)
-    return nil unless teller.state["telling"].to_s == "1" && teller.state["map"].to_i == $game_map.map_id
+    return nil unless teller.state["telling"] == true && teller.state["map"].to_i == $game_map.map_id
 
     name = teller.state["name"].to_s
     "#{name.empty? ? 'another player' : name} tells the story here"

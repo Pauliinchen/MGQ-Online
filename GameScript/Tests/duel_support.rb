@@ -2,6 +2,7 @@
 #  duel_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Dropped the stand-in of the battle line codec, which the duel no longer calls
 #      Paulinchen  2026-10-30: Created
 #
 #----------------------------------------------------------------
@@ -68,13 +69,6 @@ end
 
 # Stands in for the live battle, its role in $role and the battles joined in $joined.
 module MGQ_MpBattlesSync
-  # Writes values as tab-separated text, nested ones as hex of Marshal.
-  module Wire
-    # Writes values.
-    def self.line(values); values.all? { |v| v.is_a?(String) || v.is_a?(Numeric) } ? values.join("\t") : "M:" + Marshal.dump(values).unpack1("H*"); end
-    # Reads values.
-    def self.parse(text); text.start_with?("M:") ? Marshal.load([text[2..-1]].pack("H*")) : text.split("\t"); end
-  end
   # Answers the live battle's role.
   def self.role; $role; end
   # Notes a battle joined.

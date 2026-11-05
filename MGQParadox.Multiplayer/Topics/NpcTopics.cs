@@ -2,6 +2,7 @@
 //  NpcTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Took the events of a snapshot as [id, x, y, direction, page] each
 //      Paulinchen  2026-10-30: Created
 //
 //----------------------------------------------------------------
@@ -87,7 +88,9 @@ internal static class NpcTopics
     /// <returns>The answer.</returns>
     private static RubyHash SnapshotOf(NpcSync npcs, RubyHash request)
     {
-        IReadOnlyList<NpcTurn> turned = npcs.Snapshot(request["map"].AsLong(), request["events"].AsText());
+        List<(long, IReadOnlyList<long>)> events = [.. request["events"].AsArray().Select(entry => entry.AsArray())
+            .Select(entry => (entry[0].AsLong(), (IReadOnlyList<long>)[.. entry.Skip(1).Select(value => value.AsLong())]))];
+        IReadOnlyList<NpcTurn> turned = npcs.Snapshot(request["map"].AsLong(), events);
         return new RubyHash { { "turned", new RubyArray(turned.Select(turn => (RubyValue)new RubyArray { turn.Id, turn.From, turn.To })) } };
     }
 

@@ -2,7 +2,8 @@
 #  telling_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Answered at the bridge's frame, the scripts' clock
+#      Paulinchen  2026-11-05: Handed and expected sites as plain values
+#                            - Answered at the bridge's frame, the scripts' clock
 #      Paulinchen  2026-10-28: Created
 #
 #----------------------------------------------------------------
@@ -168,7 +169,7 @@ class TellingStandIn
   # the map or a common event starts it.
   #
   # @param map [Integer] The map.
-  # @param site [String, nil] The site.
+  # @param site [Array, nil] The site.
   # @param frame [Integer] The frame.
   def start_anew(map, site, frame)
     if @requested
@@ -178,7 +179,7 @@ class TellingStandIn
     @map = map
     @site = site
     @pending = false
-    return unless @locks.call && site && !site.start_with?("game")
+    return unless @locks.call && site && site[0] != "game"
 
     @requests << [site, map]
     @requested = true
@@ -215,7 +216,7 @@ TELLING_CASES["scenarios"].each do |scenario|
     case step["op"]
     when "start", "common"
       by_itself = step["op"] == "common" || step["by_itself"] == true
-      site = step["op"] == "common" ? "ce:1" : "map:#{map}:#{step['event']}:1"
+      site = step["op"] == "common" ? ["ce", 1] : ["map", map, step["event"], 1]
       continued = machine.start(step["story"], by_itself, map, site, frame)["continued"]
     when "end" then machine.end_event
     when "frame" then machine.step(frame); frame += 1

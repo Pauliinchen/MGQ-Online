@@ -2,7 +2,11 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Loaded battles_battlers.rbx after battles.rbx
+#      Paulinchen  2026-11-05: Kept true or false and whole numbers in Player.ini as the DLL writes them, the rest as text
+#                            - Held the events of a topic no script takes yet until its handler comes
+#                            - Logged a DLL that does not load by what happened, calling it older only where an export is missing
+#                            - Dropped Link and every export but the bridge's four, the DLL starting as the bridge opens and the update check, the player's id and the rest going through topics
+#                            - Loaded battles_battlers.rbx after battles.rbx
 #                            - Loaded coop_flow.rbx after coop_scene.rbx
 #                            - Loaded story_ids.rbx after core_async.rbx
 #                            - Dropped story_found.rbx, whose items the story replay hands over
@@ -307,7 +311,6 @@ module MGQ_Multiplayer
       return false
     end
 
-    Link.start
     return false unless Bridge.start(path(DLL))
 
     Log.write("started #{path(DLL)}")
@@ -932,10 +935,11 @@ module MGQ_Multiplayer
     # Keeps a setting in Player.ini.
     #
     # @param key [String] The setting.
-    # @param value [Object] Its value.
+    # @param value [Object] Its value: true or false, which the DLL writes as 1 or 0, a whole number,
+    #   or a text.
     # @return [Boolean] Whether Player.ini was written.
     def self.store(key, value)
-      change(key => value.to_s)
+      change(key => value.nil? ? "" : value)
     end
 
     # Removes a setting from Player.ini.
@@ -949,11 +953,11 @@ module MGQ_Multiplayer
     # Keeps and removes settings of Player.ini in one write. A setting kept moves to the end of the
     # file, so a list such as the hidden worlds added reads back the oldest first.
     #
-    # @param changes [Hash] The values by setting, nil for one to remove.
+    # @param changes [Hash] The values by setting, nil for one to remove, see store.
     # @return [Boolean] Whether Player.ini was written.
     def self.change(changes)
       plain = {}
-      changes.each { |key, value| plain[key.to_s] = value.nil? ? nil : value.to_s }
+      changes.each { |key, value| plain[key.to_s] = value.nil? || value == true || value == false || value.is_a?(Integer) ? value : value.to_s }
       answer = take(Bridge.call(CHANGE_TOPIC, plain))
       answer ? answer["written"] == true : false
     end
@@ -975,6 +979,16 @@ module MGQ_Multiplayer
 
       @noticed = true
       notice
+    end
+
+    # The topic that tells the id everyone sees for the player.
+    ID_TOPIC = "world.player_id"
+
+    # Reads the id everyone sees for the player, as the world directory lists it.
+    #
+    # @return [String] The id, "" before the player was set.
+    def self.id
+      Bridge.call(ID_TOPIC).to_s
     end
 
     # Tells the worlds who plays, once the player has a name.
@@ -1018,113 +1032,6 @@ module MGQ_Multiplayer
     end
   end
 
-  # Patch/Multiplayer/Multiplayer.dll's functions outside the bridge, each loaded once by name.
-  module Link
-    # The arguments of an export that writes a text into a buffer, see read: the buffer and its size.
-    READ_ARGUMENTS = 'pl'
-
-    # Times read asks again with a larger buffer, the first time and three more when the text grew
-    # again between asking its size and copying it.
-    READ_TRIES = 4
-
-    # Every export of the DLL with its arguments in Win32API notation, 'v' for none; each returns a
-    # long. A call names the export alone, so a changed signature is followed here once.
-    EXPORTS = {
-      # The DLL itself, the player and the update check.
-      'mp_start' => 'v',
-      'mp_check_for_update' => 'v',
-      'mp_newer_version' => READ_ARGUMENTS,
-      'mp_player_id' => READ_ARGUMENTS,
-      'mp_update_rollback' => 'v',
-      'mp_dev_build' => 'v',
-      'mp_memory_usage' => READ_ARGUMENTS,
-
-      # The world directory.
-      'mp_dir_open' => 'p',
-      'mp_dir_list' => READ_ARGUMENTS,
-
-      # The world's room.
-      'mp_world_open' => 'p',
-      'mp_world_close' => 'v',
-      'mp_world_send' => 'lp',
-
-      # A Raid World's shared companions at the relay.
-      'mp_raid_story_fetch' => 'p',
-      'mp_raid_story_headers' => READ_ARGUMENTS,
-      'mp_raid_companions_add' => 'pp',
-
-      # A Raid World's boss pools at the relay.
-      'mp_raid_bosses_fetch' => 'p',
-
-      # A co-op battle the battle server hosts, and its battle channel.
-      'mp_battle_serve' => 'pppp',
-      'mp_battle_open' => 'pp',
-      'mp_battle_send' => 'lp',
-      'mp_battle_receive' => READ_ARGUMENTS,
-      'mp_battle_state' => READ_ARGUMENTS,
-      'mp_battle_close' => 'v',
-    }
-
-    # Finds the mod folder and starts the DLL's log.
-    def self.start
-      function('mp_start').call
-    end
-
-    # Reads the id everyone sees for the player, as the world directory lists it.
-    #
-    # @return [String] The id, "" before the player was set.
-    def self.player_id
-      read('mp_player_id', 64)
-    end
-
-    # Reads a description an export of the DLL writes: key=value lines, an empty line, the payload.
-    #
-    # @param text [String] The description.
-    # @return [Hash] The values by key, the payload under :payload.
-    def self.parse(text)
-      head, payload = text.force_encoding("UTF-8").split("\n\n", 2)
-      state = { :payload => payload.to_s }
-
-      head.to_s.split("\n").each do |line|
-        key, value = line.split("=", 2)
-        state[key] = value if value
-      end
-
-      state
-    end
-
-    # Calls an export that writes a text into a buffer, again with a larger buffer when asked for
-    # one, READ_TRIES times at most.
-    #
-    # @param name [String] The export, one that takes READ_ARGUMENTS.
-    # @param size [Integer] The buffer's size at first.
-    # @return [String] The text as bytes, "" when there is none or it outgrew every buffer.
-    def self.read(name, size)
-      buffer = "\0" * size
-      length = function(name).call(buffer, buffer.size)
-      tries = 0
-
-      while length < 0 && tries < READ_TRIES
-        tries += 1
-        buffer = "\0" * (1 - length)
-        length = function(name).call(buffer, buffer.size)
-      end
-
-      # The DLL wrote bytes past Ruby's back, so only a binary string counts them right; they are its
-      # UTF-8 text, which the bridge takes only as text.
-      length > 0 ? buffer.force_encoding("ASCII-8BIT")[0, length].force_encoding("UTF-8") : ""
-    end
-
-    # Loads an export of the DLL, with the arguments EXPORTS names for it.
-    #
-    # @param name [String] The exported function, a key of EXPORTS.
-    # @return [Win32API] The function, loaded once.
-    def self.function(name)
-      @functions ||= {}
-      @functions[name] ||= Win32API.new(MGQ_Multiplayer.path(DLL), name, EXPORTS.fetch(name), 'l')
-    end
-  end
-
   # The bridge to C# (MGQOnline.Bridge): named topics the DLL answers, with plain values crossing
   # as Marshal through four exports. A script calls a topic for its value, stages what it hands
   # over during a frame, and takes the DLL's events in the handlers it registered; once a frame the
@@ -1155,6 +1062,13 @@ module MGQ_Multiplayer
 
     # What a call without a request hands over: an empty request, which C# reads as nil.
     NO_REQUEST = ""
+
+    # The events of a topic no script takes yet that are held, the newest, such as the world
+    # room's views that come before the in-world scripts load.
+    HELD_EVENTS = 256
+
+    # What the game's Win32API names in its error when the DLL lacks an export.
+    MISSING_EXPORT = "GetProcAddress"
 
     # What call! raises for a topic that answered an error, or while the bridge is closed.
     class Error < StandardError; end
@@ -1256,9 +1170,20 @@ module MGQ_Multiplayer
         begin
           Win32Backend.new(path)
         rescue => e
-          return refuse("#{path} lacks the bridge's exports (#{e.class}: #{e.message}), so it is older than these scripts")
+          return refuse(load_failure(path, e))
         end
       open(backend)
+    end
+
+    # Words why the DLL or its bridge exports did not load, calling it older only where an export
+    # is missing.
+    #
+    # @param path [String] The DLL's path.
+    # @param error [Exception] What loading raised.
+    # @return [String] The reason.
+    def self.load_failure(path, error)
+      reason = "could not load #{path} or find its bridge exports: #{error.class}: #{error.message}"
+      error.message.include?(MISSING_EXPORT) ? "#{reason}, so it is older than these scripts" : reason
     end
 
     # Shakes hands with C# through a backend. Until one succeeds, every call answers nil and a
@@ -1300,6 +1225,7 @@ module MGQ_Multiplayer
       @context = nil
       @staged = []
       @failures = {}
+      @held = {}
     end
 
     # Tells whether the handshake succeeded.
@@ -1406,8 +1332,10 @@ module MGQ_Multiplayer
       failures.each { |entry| failed(entry["topic"], entry["error"], entry["text"]) } if failures.is_a?(Array)
     end
 
-    # Takes the DLL's events and hands each to its topic's handlers.
+    # Takes the DLL's events and hands each to its topic's handlers, after the events held for a
+    # topic whose handler came since.
     def self.drain
+      hand_held
       length = @backend.drain(@context, @frame, @events, @events.bytesize)
       if length < 0
         # The DLL parked the events, which the next drain of the frame hands out.
@@ -1422,12 +1350,13 @@ module MGQ_Multiplayer
     end
 
     # Hands an event to its topic's handlers; one that fails is logged and the others still run.
+    # An event of a topic no script takes yet is held for the drain after its handler came.
     #
     # @param topic [String] The event's topic.
     # @param payload [Object] The event's plain value.
     def self.dispatch(topic, payload)
       handlers = @handlers && @handlers[topic]
-      return failed(topic, "no_handler", "no script takes its events") unless handlers
+      return hold(topic, payload) unless handlers
 
       handlers.each do |handler|
         begin
@@ -1436,6 +1365,27 @@ module MGQ_Multiplayer
           failed(topic, "handler", "#{e.class}: #{e.message}")
         end
       end
+    end
+
+    # Holds an event of a topic no script takes yet, keeping the newest HELD_EVENTS of it; the first
+    # one dropped is logged.
+    #
+    # @param topic [String] The event's topic.
+    # @param payload [Object] The event's plain value.
+    def self.hold(topic, payload)
+      held = (@held[topic] ||= [])
+      held << payload
+      return if held.size <= HELD_EVENTS
+
+      held.shift
+      failed(topic, "no_handler", "no script takes its events, so only the newest #{HELD_EVENTS} are held")
+    end
+
+    # Hands the events held for each topic that has a handler now to it, in order.
+    def self.hand_held
+      return if @held.empty? || @handlers.nil?
+
+      (@held.keys & @handlers.keys).each { |topic| @held.delete(topic).each { |payload| dispatch(topic, payload) } }
     end
 
     # Calls a topic through the backend: the request dumped, a parked reply taken into a grown
@@ -1502,6 +1452,12 @@ module MGQ_Multiplayer
     # Frames between two looks at the DLL, half a second at 60 frames per second.
     CHECK_FRAMES = 30
 
+    # The topic that starts the check.
+    CHECK_TOPIC = "update.check"
+
+    # The topic that tells the release to play once the check found one.
+    OFFER_TOPIC = "update.offer"
+
     # Starts the check on the DLL's own thread, once per game session. A development build never
     # asks.
     def self.start
@@ -1509,7 +1465,7 @@ module MGQ_Multiplayer
       @started = true
       return unless MGQ_Multiplayer.available?
 
-      Link.function('mp_check_for_update').call
+      Bridge.call(CHECK_TOPIC)
       Log.write("asked the DLL for the release to play; its answer follows in its own lines")
     end
 
@@ -1522,12 +1478,12 @@ module MGQ_Multiplayer
       return if @frames < CHECK_FRAMES
 
       @frames = 0
-      text = Link.read('mp_newer_version', 64)
-      return if text.empty?
+      offer = Bridge.call(OFFER_TOPIC)
+      return unless offer.is_a?(Hash)
 
-      @version = text
-      @rollback = Link.function('mp_update_rollback').call == 1
-      Log.write("update gate closed: release #{text} is #{@rollback ? 'the one to play, a step back' : 'out'}, so worlds and PvP battles stay shut until it is installed")
+      @version = offer["version"].to_s
+      @rollback = offer["rollback"] == true
+      Log.write("update gate closed: release #{@version} is #{@rollback ? 'the one to play, a step back' : 'out'}, so worlds and PvP battles stay shut until it is installed")
     rescue => e
       Log.write("update check failed: #{e.class}: #{e.message}")
     end

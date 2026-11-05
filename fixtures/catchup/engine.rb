@@ -2,7 +2,8 @@
 #  engine.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Answered a Classic party's member's catch-up as one look in the Classic settings, the side a player takes along and the Classic key item loan, as the C# engine does
+#      Paulinchen  2026-11-05: Named the chest a replay plays as [kind, key], and took and named sites as plain values, as the C# engine does
+#                            - Answered a Classic party's member's catch-up as one look in the Classic settings, the side a player takes along and the Classic key item loan, as the C# engine does
 #                            - Answered how a Classic member plays the leader's story, as ClassicStory in the DLL does
 #                            - Took a used-up key item, kept every choice's outcome the member's own, read the side from the save's note alone and played the closures and key item chests in a Classic member's catch-up, as the C# engine does
 #                            - Gave a prize from its row only as history before the world's log, but the Medal King's free gift, as the C# engine does
@@ -124,6 +125,26 @@ module CatchupEngine
   REWARD_KINDS = { "skill" => :skill, "item" => :i, "weapon" => :w, "armor" => :a }
   SETTING_KINDS = { "encounters" => :encounters, "variable" => :v, "switch" => :s }
   VEHICLES = %w(boat ship airship)
+
+  # Reads a site the scripts hand over as the tables name it, as the C# engine does
+  # (StoryPlain.SiteText).
+  #
+  # @param site [Array, nil] Such as ["map", 6, 30, 2] or ["ce", 154].
+  # @return [String, nil] Such as "map:6:30:2", nil for none.
+  def self.site_text(site)
+    return nil unless site.is_a?(Array)
+
+    site[0] == "ce" ? "ce:#{site[1]}" : site[0] == "map" ? "map:#{site[1]}:#{site[2]}:#{site[3]}" : site.join(":")
+  end
+
+  # Writes a site of the tables as the scripts take it, as the C# engine does (StoryPlain.SiteOf).
+  #
+  # @param text [String] Such as "map:6:30:2" or "ce:154".
+  # @return [Array] Such as ["map", 6, 30, 2] or ["ce", 154].
+  def self.site_plain(text)
+    parts = text.to_s.split(":")
+    parts[0] == "map" || parts[0] == "ce" ? [parts[0]] + parts[1..-1].map(&:to_i) : parts
+  end
 
   # Reads the relay's tables as the DLL does (CatchupTables.Read): a row that does not read is left
   # out.
@@ -643,7 +664,7 @@ module CatchupEngine
 
       covered = []
       @party.chests(@t.party_chests.select { |key| leader_selves.include?(key) }, @owed.map(&:first)).each do |chest, items|
-        @actions << ["replay", { "chest" => "ss#{chest.join('.')}" }, "o:ss#{chest.join('.')}"]
+        @actions << ["replay", { "chest" => [2, chest] }, "o:ss#{chest.join('.')}"]
         covered |= items
       end
       @owed.each { |id, amount| give("i", id, amount, "k:owed:#{id}") unless covered.include?(id) }
@@ -663,7 +684,7 @@ module CatchupEngine
 
         done[mark] = true
         letters = %w(A B C D).select { |letter| leader_selves.include?([key[0], key[1], letter]) }
-        @actions << ["replay", { "chest" => "ss#{key.join('.')}", "letters" => letters }, mark]
+        @actions << ["replay", { "chest" => [2, key], "letters" => letters }, mark]
       end
     end
 
@@ -732,8 +753,9 @@ module CatchupEngine
     def hold_join
       main = @request["actor"]
       gate = nil
-      unless in_roster?(main) || allowed_at?(main, @request["site"], noted_side)
-        log("left out the join of {actor:#{main}} at #{@request['site']}: it is for the players who took the other side along, and the player took #{noted_side || 'no side'} along")
+      site = CatchupEngine.site_text(@request["site"])
+      unless in_roster?(main) || allowed_at?(main, site, noted_side)
+        log("left out the join of {actor:#{main}} at #{site}: it is for the players who took the other side along, and the player took #{noted_side || 'no side'} along")
         return finish("gate" => nil, "refused" => true)
       end
       if @request["replay"] && !in_roster?(main)
@@ -752,7 +774,7 @@ module CatchupEngine
       end
       return finish("gate" => gate) if @request["scope_only"]
 
-      unless in_roster?(main) || visit_running?(main, @request["site"])
+      unless in_roster?(main) || visit_running?(main, site)
         part = own_part
         done = ledger["done"]
         rows = joins_of(main).select { |row| row.part == part && done[key_of("j", row)] != true }
@@ -1358,7 +1380,7 @@ module CatchupEngine
         now = row.kind == :encounters ? @encounters : story_now[1][row.id]
         next if now == row.value || !earlier[key].include?(now)
 
-        @actions << ["setting", row.kind.to_s, row.id, row.value, row.site]
+        @actions << ["setting", row.kind.to_s, row.id, row.value, CatchupEngine.site_plain(row.site)]
       end
     end
 
@@ -1464,7 +1486,7 @@ module CatchupEngine
         next unless (carried || !mine) && (!@log || @log[2][row.key])
         next if @classic && !mine && past_step?(row, story)
 
-        @actions << ["replay", { "chest" => "ss#{row.key.join('.')}" }, key]
+        @actions << ["replay", { "chest" => [2, row.key] }, key]
       end
       restock_key_items(story, told)
       restock_unlock_items(story, told) unless @classic
@@ -1890,7 +1912,7 @@ module CatchupEngine
         key = "i#{row.item}"
         next unless @items.key?(key) && @items[key] == 0 && found?(row.item) && reached?(row.level)
 
-        @actions << ["replay", { "site" => row.site }, "makina:#{row.item} at level #{row.level}"]
+        @actions << ["replay", { "site" => CatchupEngine.site_plain(row.site) }, "makina:#{row.item} at level #{row.level}"]
       end
     end
 
@@ -1917,7 +1939,7 @@ module CatchupEngine
         next if taken_away_since?(row, story, nil) || !reached?(row.gate) || !allowed?(row.actor)
 
         done[key] = true
-        @actions << ["replay", { "site" => row.site }, key]
+        @actions << ["replay", { "site" => CatchupEngine.site_plain(row.site) }, key]
       end
     end
 

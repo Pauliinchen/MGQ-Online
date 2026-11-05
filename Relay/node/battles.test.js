@@ -2,6 +2,7 @@
 //  battles.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Named the version of a current game with every game
 //      Paulinchen  2026-10-31: Covered a battle server out of reach
 //                            - Named keys with every game, as a Raid World asks
 //      Paulinchen  2026-10-23: Covered the story index the battle server derives after a change of the mapping's rows
@@ -23,6 +24,7 @@ import net from "node:net";
 import WebSocketClient from "ws";
 import { BATTLE_LIMITS, SERVER_SEAT } from "../core/battles.js";
 import { Directory, playerIdOf, sha256Hex } from "../core/directory.js";
+import { VERSION_HEADER } from "../core/gate.js";
 import { AUTH_HEADER, CLOSE, FEATURES_HEADER, PING, PLAYER_HEADER, PONG, REFUSAL_HEADER } from "../core/relay.js";
 import { NODE_LIMITS, battleServerOf, createRelay, memoryStore } from "./server.js";
 
@@ -47,9 +49,9 @@ const ADMIN = "ad".repeat(16);
 const PING_REPLY = Object.freeze({ ok: true, boot_seconds: 1.5, battles: 0, busy: false, mode: "stand-in", pid: 42 });
 
 /**
- * What every game names in X-MGQ-Features.
+ * What a current game names in X-MGQ-Features and X-MGQ-Version.
  */
-const GAME = Object.freeze({ [FEATURES_HEADER]: "raid,keys" });
+const GAME = Object.freeze({ [FEATURES_HEADER]: "raid,keys", [VERSION_HEADER]: "0.7.0" });
 
 /**
  * The rates the tests leave unlimited.

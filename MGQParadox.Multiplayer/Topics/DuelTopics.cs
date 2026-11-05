@@ -2,6 +2,7 @@
 //  DuelTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Took the player's team and gave a team duel's sides as the battle line's values
 //      Paulinchen  2026-10-30: Created
 //
 //----------------------------------------------------------------
@@ -11,8 +12,10 @@ using System.Collections.Generic;
 using System.Linq;
 using MGQOnline.Bridge;
 using MGQOnline.Bridge.Ruby;
+using MGQOnline.Game.Battles.Wire;
 using MGQOnline.Game.Duels;
 using MGQOnline.Game.Ids;
+using MGQOnline.Game.Topics;
 using MGQOnline.Game.World;
 
 namespace MGQParadox.Multiplayer.Topics;
@@ -50,7 +53,8 @@ internal sealed class DuelTopics : IDuelHost
     public const string StopTopic = "duel.stop";
 
     /// <summary>
-    /// The topic that accepts a challenge: {"seat", "free", "team"} in, the view out.
+    /// The topic that accepts a challenge: {"seat", "free", "team" (the game's fingerprint and the
+    /// team, see <see cref="TeamLine"/>, nil while busy)} in, the view out.
     /// </summary>
     public const string AcceptTopic = "duel.accept";
 
@@ -60,8 +64,8 @@ internal sealed class DuelTopics : IDuelHost
     public const string DeclineTopic = "duel.decline";
 
     /// <summary>
-    /// The topic that answers a need: {"id", "count", "line", "backline", "builds", "max",
-    /// "own_count", "counts"} in, the view out.
+    /// The topic that answers a need: {"id", "count", "line" (as "team" of <see cref="AcceptTopic"/>),
+    /// "backline", "builds", "max", "own_count", "counts"} in, the view out.
     /// </summary>
     public const string TeamTopic = "duel.team";
 
@@ -94,7 +98,8 @@ internal sealed class DuelTopics : IDuelHost
 
     /// <summary>
     /// The event of a duel that waits to start from the map: {"role", "bid", "seat", "name", "team",
-    /// "backline", "sides", "same_side"}.
+    /// "backline", "sides" (a team duel's host's side and other side, each player's fields, as
+    /// <see cref="WirePlain"/> gives them), "same_side"}.
     /// </summary>
     public const string StartEvent = "duel.start";
 
@@ -164,7 +169,7 @@ internal sealed class DuelTopics : IDuelHost
         context.Register(AcceptTopic, (_, request) => topics.Act(() =>
         {
             RubyHash accept = request.AsHash();
-            duel.Accept(topics.PeerAt(accept["seat"]), accept["free"] is RubyBool { Flag: true }, accept["team"].IsNil ? string.Empty : accept["team"].AsText());
+            duel.Accept(topics.PeerAt(accept["seat"]), accept["free"] is RubyBool { Flag: true }, TeamLine(accept["team"]));
         }));
         context.Register(DeclineTopic, (_, request) => topics.Act(() =>
         {
@@ -215,7 +220,7 @@ internal sealed class DuelTopics : IDuelHost
             { "name", start.Name },
             { "team", start.Team },
             { "backline", start.Backline },
-            { "sides", start.Sides },
+            { "sides", WirePlain.ToPlain(WireReader.Parse(start.Sides, WireGame.Any) ?? []) },
             { "same_side", start.SameSide },
         });
     }
@@ -228,12 +233,19 @@ internal sealed class DuelTopics : IDuelHost
     private static DuelAnswer AnswerOf(RubyHash answer) => new(
         answer["id"].AsInt(),
         answer["count"].IsNil ? -1 : answer["count"].AsInt(),
-        answer["line"].IsNil ? string.Empty : answer["line"].AsText(),
+        TeamLine(answer["line"]),
         answer["backline"] is RubyBool { Flag: true },
         answer["builds"].IsNil ? string.Empty : answer["builds"].AsText(),
         answer["max"].IsNil ? 0 : answer["max"].AsLong(),
         answer["own_count"].IsNil ? 0 : answer["own_count"].AsInt(),
         answer["counts"].IsNil ? [] : [.. answer["counts"].AsArray().Select(count => count.AsInt())]);
+
+    /// <summary>
+    /// Writes the player's team the scripts handed over as the line the duel's messages carry.
+    /// </summary>
+    /// <param name="team">The game's fingerprint and the team, nil for none.</param>
+    /// <returns>The line, empty for none.</returns>
+    private static string TeamLine(RubyValue team) => team.IsNil ? string.Empty : WireTopics.LineOf(team);
 
     /// <summary>
     /// Writes the view as the scripts read it.

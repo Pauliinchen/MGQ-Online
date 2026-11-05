@@ -2,6 +2,8 @@
 #  coop_squad_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Expected the followers' looks told as values
+#                            - Stood in for the player's id the DLL tells through its topic
 #      Paulinchen  2026-11-01: Checked the followers' row in Options > Mods, which the Mod Framework keeps
 #      Paulinchen  2026-10-31: Took the mod's prefix and the style from ui_online.rbx and the Mod Framework
 #      Paulinchen  2026-10-30: Read the share and the followers' mode from the squad's stand-in after each frame's tick
@@ -202,8 +204,8 @@ $log = []
 module MGQ_Multiplayer
   # Stands in for the mod's log, recording each line in $log.
   module Log; def self.write(m); $log << m; end; end
-  # Stands in for the DLL's link, giving the own player's id.
-  module Link; def self.player_id; "me-id-000"; end; end
+  # Stands in for the player's id, as the DLL tells it.
+  module Player; def self.id; "me-id-000"; end; end
   # Stands in for Discord, never there.
   module Discord; def self.available?; false; end; end
 end
@@ -285,7 +287,7 @@ check("the leader first, then by id", squad.ranked([["b", false], ["c", true], [
 check("outside a party no share", squad.own_share, nil)
 check("every follower shows", $game_player.followers.map { |f| f.visible? }, [true, true, true])
 check("nobody is cut", squad.place_of(actors[7]), nil)
-check("no trail is told", squad.state_fields["trail"], "")
+check("no trail is told", squad.state_fields["trail"], [])
 
 # A party of two, the player leading.
 friend = MGQ_MpOverworldSync::Peers::Peer.new(2, { "id" => "friend-id", "name" => "Friend", "party" => "me-id-0p1" }, nil, true)
@@ -298,7 +300,7 @@ check("two players: two in front and two behind, as the frame's tick read the sq
 check("places in the squad", actors.first(6).map { |a| squad.place_of(a) }, [:front, :front, :bench, :bench, :cut, :cut])
 check("followers are shown anew once the share changed", $game_player.refreshed, 1)
 check("only the share of the Frontline follows, as the frame's tick took it", $game_player.followers.map { |f| f.visible? }, [true, false, false])
-check("the trail tells the followers shown", squad.state_fields, { "follow" => 0, "trail" => "Follower1*1" })
+check("the trail tells the followers shown", squad.state_fields, { "follow" => 0, "trail" => [["Follower1", 1]] })
 
 # The leader's choice of followers.
 followers = NWConst::Config::MOD_CONTENTS.find { |e| e[:key] == squad::FOLLOWERS }
@@ -310,7 +312,7 @@ check("and the leader may choose", Mod_Framework::Options.enabled?(followers), t
 $game_system.conf[squad::FOLLOWERS] = squad::LEADERS_ONLY
 MGQ_MpOverworldSync.tick(true)
 check("leaders only hides every follower", $game_player.followers.map { |f| f.visible? }, [false, false, false])
-check("and is told", squad.state_fields, { "follow" => 1, "trail" => "" })
+check("and is told", squad.state_fields, { "follow" => 1, "trail" => [] })
 $game_system.conf[squad::FOLLOWERS] = squad::ACTIVE_FRONTLINE
 
 # The player joins the friend's party instead: the friend leads.
@@ -398,7 +400,7 @@ check("unless he may leave it", squad.past_cap([2, 3, 4, 5, 1, 6], 4, false), [1
 check("every player has one and two, in a party of four too", [MGQ_MpCoop.in_party?, squad.own_share], [true, [1, 2]])
 check("the fourth place is cut", actors.first(4).map { |a| squad.place_of(a) }, [:front, :bench, :bench, :cut])
 check("nobody follows", $game_player.followers.map { |f| f.visible? }, [false, false, false])
-check("and no trail is told", squad.state_fields["trail"], "")
+check("and no trail is told", squad.state_fields["trail"], [])
 menu = Window_MenuStatus.new
 (0...4).each { |row| menu.draw_item(row) }
 check("the menu draws the Frontline opaque, the Backline translucent", menu.faces, [[1, :opaque], [2, :translucent], [3, :translucent]])

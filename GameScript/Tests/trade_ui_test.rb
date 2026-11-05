@@ -2,6 +2,7 @@
 #  trade_ui_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Stood in for an offer's key in place of its text
 #      Paulinchen  2026-11-01: Checked the trade screen built of the Mod Framework's components
 #      Paulinchen  2026-10-31: Dressed the help window through the Mod Framework's theme, as its hook of Window_Base#update does
 #      Paulinchen  2026-10-24: Updated the help window through the game's window base, which every window's look follows
@@ -152,8 +153,8 @@ module MGQ_MpTrade
     def self.label(item); item.name; end
     # The tradeable items held.
     def self.bag; $held.keys.select { |item| $held[item] > 0 }; end
-    # An offer as text.
-    def self.write_offer(offer); ([offer.gold.to_s] + offer.entries.map { |entry| "#{entry.token}x#{entry.amount}" }).join(","); end
+    # An offer by its gold and each item's token and amount.
+    def self.key(offer); [offer.gold.to_i, offer.entries.map { |entry| [entry.token, entry.amount] }]; end
   end
 end
 

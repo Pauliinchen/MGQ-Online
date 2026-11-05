@@ -2,6 +2,8 @@
 //  WorldSessionTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Expected true written as 1
+//                            - Sent a message of the scripts through the world room's topics to another game
 //      Paulinchen  2026-10-31: Covered the world's mod settings the relay tells
 //                            - Used the join code, which moved beside the world code
 //      Paulinchen  2026-10-31: Expected the plainer texts the player reads
@@ -29,11 +31,15 @@
 
 using System;
 using System.Diagnostics;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using MGQOnline.Bridge.Ruby;
+using MGQOnline.Game.World;
 using MGQParadox.Multiplayer.Network.Relay;
 using MGQParadox.Multiplayer.Network.Transport;
 using MGQParadox.Multiplayer.Network.World;
+using MGQParadox.Multiplayer.Tests.Topics;
 
 namespace MGQParadox.Multiplayer.Tests.Network.World;
 
@@ -133,6 +139,51 @@ public sealed class WorldSessionTests
         {
             game.Close();
         }
+    }
+
+    /// <summary>
+    /// Asserts that the scripts' message goes through the world room's topics: the DLL enters the
+    /// world, writes the fields and the body the scripts hand over, and another game reads the same
+    /// fields and body; a list goes as its items separated by commas, true as 1 and a line break in a
+    /// value as a space.
+    /// </summary>
+    [Fact]
+    public void SendTopic_WritesTheScriptsFieldsAndAnotherGameReadsThem()
+    {
+        using var relay = new TestRelay();
+        var code = MakeWorld(relay, 4);
+        var sender = NewSession(relay.Address);
+        var receiver = NewSession(relay.Address);
+        var topics = new TopicCaller(context => WorldRoomTopics.Register(context, sender, _ => { }));
+
+        Assert.Equal(RubyBool.True, topics.Call(WorldRoomTopics.OpenTopic, code));
+        receiver.Open(code);
+        AwaitState(sender, "open");
+        AwaitState(receiver, "open");
+        var senderSeat = Await(sender, described => described["others"].Length > 0, "the other game")["seat"];
+        Await(receiver, described => described["others"].Length > 0, "the other game");
+        Drain(sender, receiver);
+
+        var fields = new RubyHash
+        {
+            { "coop", "hot_ok" },
+            { "seats", new RubyArray { 0, 2 } },
+            { "level", 30 },
+            { "escape", true },
+            { "none", RubyNil.Value },
+            { "note", "two\nlines" },
+        };
+        Assert.Equal(RubyBool.True, topics.Call(WorldRoomTopics.SendTopic, new RubyHash { { "seat", -1 }, { "fields", fields }, { "body", "アリス" } }));
+
+        var (seat, text) = Received(NextEntry(receiver, "message"));
+        var read = WorldFields.Parse(text, out var body);
+        Assert.Equal(senderSeat, seat);
+        Assert.Equal(["coop=hot_ok", "seats=0,2", "level=30", "escape=1", "none=", "note=two lines"], read.Select(pair => $"{pair.Key}={pair.Value}"));
+        Assert.Equal("アリス", body);
+
+        topics.Call(WorldRoomTopics.CloseTopic);
+        AwaitState(sender, "idle");
+        receiver.Close();
     }
 
     /// <summary>

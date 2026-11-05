@@ -2,6 +2,7 @@
 #  player_ini_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Expected whole numbers and true or false handed over as they are
 #      Paulinchen  2026-10-23: Left marking favourites and adding hidden worlds to the DLL's tests
 #                            - Checked that the world lists hand their changes to the DLL and take Player.ini as it answers it
 #                            - Checked the settings the DLL answers instead of the file, whose reading and writing its tests cover
@@ -84,9 +85,10 @@ fresh.call
 $ini = { "name" => "X", "p.b" => "1", "p.a" => "2" }
 check("the settings are asked once and then read from the copy", [player.setting("name"), player.setting("name"), player.keys_under("p."), $asked], ["X", "X", ["b", "a"], 1])
 check("a change answers them anew, so the setting reads at once without asking",
-      [player.store("k", 5), player.setting("k"), $asked], [true, "5", 1])
-player.change("z" => 1, "k" => nil)
-check("a change hands its values over as text, nil for a setting to remove", sent.call("player.change"), { "z" => "1", "k" => nil })
+      [player.store("k", "5"), player.setting("k"), $asked], [true, "5", 1])
+player.change("z" => 1, "on" => true, "y" => :sym, "k" => nil)
+check("a change hands whole numbers and true or false over as they are, which the DLL writes, any other value as text, nil for a setting to remove",
+      sent.call("player.change"), { "z" => 1, "on" => true, "y" => "sym", "k" => nil })
 
 fresh.call
 $unreadable = true

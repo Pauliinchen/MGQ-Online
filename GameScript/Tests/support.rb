@@ -2,7 +2,10 @@
 #  support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Loaded the story's ids with the table the DLL hands
+#      Paulinchen  2026-11-05: Handed the story tables' self switch rules as the DLL's rows
+#                            - Wrote and read each message field by its kind, as the DLL's MessageFields does
+#                            - Dropped the export table's checks and wrote messages as the DLL does for the stand-ins of the world room and the battle channel
+#                            - Loaded the story's ids with the table the DLL hands
 #                            - Let a test move the scripts' clock, the bridge's frame, by hand
 #      Paulinchen  2026-11-01: Stood in for a wheel of the Mod Framework
 #      Paulinchen  2026-10-31: Loaded the Mod Framework's scripts before the mod's, as the game does
@@ -86,36 +89,112 @@ def check(label, actual, expected)
   Checks.check(label, actual, expected)
 end
 
-# The DLL's exports and their Win32API signatures, as Multiplayer.rb's Link names them.
-DLL_EXPORTS = begin
-  source = File.read(File.expand_path("../Multiplayer.rb", __dir__), :encoding => "UTF-8")
-  eval(source[/    READ_ARGUMENTS = '.*?'\n/] + source[/    EXPORTS = \{.*?\n    \}\n/m])
+# The kinds of the message fields that hold more than a text, a stand-in of the DLL's table
+# (MGQOnline.Game's MessageFields): :flag, :number, :numbers, :texts, :value or :packed by name.
+FIELD_KINDS = {
+  "invite" => :flag, "invite_to" => :texts, "trading" => :flag, "trading_to" => :texts,
+  "busy" => :flag, "escape" => :flag, "lose" => :flag, "served" => :flag, "hot" => :flag, "boss" => :flag, "tiers" => :flag, "side" => :flag,
+  "pool" => :number, "seats" => :numbers, "rates" => :numbers, "rpb" => :value,
+  "sm" => :numbers, "ssoffer" => :value, "telling" => :flag, "z" => :packed, "part" => :flag, "s" => :value, "v" => :value, "ss" => :value,
+  "k" => :value, "runs" => :texts, "trail" => :value, "emote" => :number, "sq" => :number
+}
+
+# Writes a field's value as the DLL does (MessageFields.Write); a text the test hands for a field
+# of another kind is taken as written already, as another game's text.
+#
+# @param key [String] The field's name.
+# @param value [Object] The value.
+# @return [String] The text.
+def field_text(key, value)
+  kind = FIELD_KINDS[key.to_s]
+  return value if value.is_a?(String) && kind
+  return value ? "1" : "0" if kind == :flag
+  return value.nil? ? "" : JSON.generate(field_json(value)) if kind == :value
+  return value.nil? ? "" : [raw_deflate(JSON.generate(field_json(value)))].pack("m0") if kind == :packed
+
+  (value.is_a?(Array) ? value.join(",") : value == true ? "1" : value == false ? "0" : value.to_s).gsub(/[\r\n]/, " ")
 end
 
-# Finds a DLL export's signature in the table of Multiplayer.rb, failing the test for an export
-# the table lacks, as Link.function would.
+# Deflates a text without zlib header, as the DLL's DeflateStream does.
 #
-# @param name [String] The export.
-# @return [String] Its arguments in Win32API notation, "v" for none.
-def dll_signature(name)
-  DLL_EXPORTS.fetch(name) do
-    check("#{name} is an export the table in Multiplayer.rb names", DLL_EXPORTS.key?(name), true)
-    raise KeyError, "key not found: #{name}"
+# @param text [String] The text.
+# @return [String] The deflated bytes.
+def raw_deflate(text)
+  deflate = Zlib::Deflate.new(Zlib::DEFAULT_COMPRESSION, -Zlib::MAX_WBITS)
+  bytes = deflate.deflate(text, Zlib::FINISH)
+  deflate.close
+  bytes
+end
+
+# Writes a value for JSON as the DLL does: a Float as a Hash of its text.
+#
+# @param value [Object] The value.
+# @return [Object] The value for JSON.
+def field_json(value)
+  case value
+  when Float then { "float" => value.to_s }
+  when Array then value.map { |item| field_json(item) }
+  when Hash then Hash[value.map { |key, item| [key, field_json(item)] }]
+  else value
   end
 end
 
-# Refuses a call to a DLL function whose arguments differ in number from its Win32API signature,
-# as RGSS does, so a stand-in for Win32API fails the test where the game would fail.
+# Reads a field another game wrote as the DLL hands it to the scripts (MessageFields.Read).
 #
-# @param name [String] The function.
-# @param args [Array] The arguments of the call.
-def check_dll_call(name, args)
-  signature = dll_signature(name)
-  expected = signature == "v" ? 0 : signature.size
-  return if args.size == expected
+# @param key [String] The field's name.
+# @param text [String] The text.
+# @return [Object] The value.
+def field_value(key, text)
+  case FIELD_KINDS[key.to_s]
+  when :flag then text == "1"
+  when :number then text =~ /\A-?\d+\z/ ? text.to_i : nil
+  when :numbers then text.split(",").map(&:to_i)
+  when :texts then text.split(",")
+  when :value then text.empty? ? nil : (JSON.parse(text) rescue nil)
+  when :packed then text.empty? ? nil : (JSON.parse(Zlib::Inflate.new(-Zlib::MAX_WBITS).inflate(text.unpack("m0")[0])) rescue nil)
+  else text
+  end
+end
 
-  check("#{name} gets the #{expected} argument(s) its signature #{signature} names", args.size, expected)
-  raise "wrong number of parameters: expected #{expected}, got #{args.size}"
+# Hands fields to the scripts as the DLL does once another game wrote them.
+#
+# @param fields [Hash] The fields as a game's scripts hand them over.
+# @return [Hash{String => Object}] The fields.
+def fields_read(fields)
+  Hash[fields.map { |key, value| [key.to_s, field_value(key, field_text(key, value))] }]
+end
+
+# Writes fields the scripts hand the DLL as the DLL keeps them, each as field_text writes it.
+#
+# @param fields [Hash] The fields.
+# @return [Hash{String => String}] The texts by name.
+def fields_written(fields)
+  Hash[fields.map { |key, value| [key.to_s, field_text(key, value)] }]
+end
+
+# Writes a message as the DLL does (MGQOnline.Game's WorldFields.Encode, topics world.send and
+# message.write), for the stand-ins of the world room and the battle channel, so a check reads what
+# another game receives: key=value lines, each value as field_text writes it, then an empty line
+# and the body.
+#
+# @param fields [Hash] The fields.
+# @param body [String] The body.
+# @return [String] The message.
+def encode_message(fields, body = "")
+  fields.map { |key, value| "#{key}=#{field_text(key, value)}" }.join("\n") + "\n\n" + body.to_s
+end
+
+# Reads a message as the DLL does (MGQOnline.Game's WorldFields.Parse and MessageTopics.HashOf),
+# for the stand-ins of the world room and the battle channel.
+#
+# @param text [String] The message.
+# @return [Hash] The fields, its body under :payload.
+def decode_message(text)
+  head, payload = text.to_s.split("\n\n", 2)
+  fields = {}
+  head.to_s.split("\n").each { |line| key, value = line.split("=", 2); fields[key] = field_value(key, value) if value }
+  fields[:payload] = payload.to_s
+  fields
 end
 
 # Collects the log lines a block writes, then lets the log write as before.
@@ -220,7 +299,8 @@ def classic_table_hash(request)
   clear.call(variables, CLASSIC_PERSONAL_VARIABLES + [[3000, 3000 + [request["companions"], 1].max - 1]])
   request["chest_flags"].each { |id| switches[id] = 8 if id < switches.size }
   [4, 5].each { |id| switches[id] = 129 if id < switches.size }
-  { "rev" => 0, "switches" => switches.pack("C*"), "variables" => variables.pack("C*"), "self" => {}, "index" => [], "local_steps" => [], "gates" => {}, "self_default" => 1 }
+  { "rev" => 0, "switches" => switches.pack("C*"), "variables" => variables.pack("C*"), "self" => [], "common" => [], "index" => [], "local_steps" => [], "gates" => {},
+    "self_default" => 1 }
 end
 
 
@@ -229,7 +309,8 @@ end
 # @param switches [Array<Array>] The switches' classes as runs, each [from, to, class].
 # @param variables [Array<Array>] The variables' classes alike.
 # @param self_default [Integer] The class of a self switch no rule names.
-# @param rest [Hash] The table's other fields, such as "self", "index" or "rev".
+# @param rest [Hash] The table's other fields, such as "self" and "common" (the self switch rules'
+#   rows), "index" or "rev".
 # @return [Hash] The table.
 def story_table_hash(switches, variables, self_default = 0, rest = {})
   bytes = lambda do |runs|
@@ -237,8 +318,8 @@ def story_table_hash(switches, variables, self_default = 0, rest = {})
     runs.each { |from, to, found| text << ([found].pack("C") * (to - from + 1)) }
     text
   end
-  { "rev" => 0, "switches" => bytes.call(switches), "variables" => bytes.call(variables), "self" => {}, "index" => [], "local_steps" => [], "gates" => {},
-    "self_default" => self_default }.merge(rest)
+  { "rev" => 0, "switches" => bytes.call(switches), "variables" => bytes.call(variables), "self" => [], "common" => [], "index" => [], "local_steps" => [],
+    "gates" => {}, "self_default" => self_default }.merge(rest)
 end
 
 at_exit { Checks.finish($!) }

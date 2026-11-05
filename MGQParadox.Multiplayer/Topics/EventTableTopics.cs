@@ -2,6 +2,7 @@
 //  EventTableTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Named the frozen fights' sites as plain values, the cutscenes' as rows
 //      Paulinchen  2026-11-01: Dropped the topics of troops' members and whether a file exists, which no script calls
 //      Paulinchen  2026-10-28: Handed the frozen fights the excluded maps and the preamble's commands with the sites
 //                            - Created
@@ -10,12 +11,12 @@
 
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
 using MGQOnline.Bridge;
 using MGQOnline.Bridge.Ruby;
 using MGQOnline.Data.Events;
 using MGQOnline.Game.Events;
+using MGQOnline.Game.Story;
 using MGQOnline.Game.Worlds;
 
 namespace MGQParadox.Multiplayer.Topics;
@@ -45,12 +46,12 @@ internal static class EventTableTopics
     /// <summary>
     /// Tells where the story fights troops, for the frozen fights: <c>troops</c> (ids). Answers
     /// <c>sites</c> (per troop each [site, index, indent, preamble's index, cutscene map, battle number],
-    /// a site "map:map:event:page from 1" or "ce:id" and its index the battle command's place in the
-    /// list the game runs), <c>callers</c> (per common event of a site the map pages that reach it, as
-    /// sites), <c>alternatives</c> (per troop the asked troops the other side fights in its place),
-    /// <c>scenes</c> (per cutscene map site [[[map, event, x, y] of each field event that leads into
-    /// it], the side switch the first one needs or nil, [map, x, y, direction] of the transfer into
-    /// it]), <c>scene_maps</c> (every cutscene map) and <c>defeat</c> (the post-defeat processing's
+    /// a site as <see cref="StoryPlain"/> names it, ["map", map, event, page from 1] or ["ce", id], and
+    /// its index the battle command's place in the list the game runs), <c>callers</c> (per common
+    /// event of a site the map pages that reach it, as sites), <c>alternatives</c> (per troop the asked
+    /// troops the other side fights in its place), <c>scenes</c> ([site, [[[map, event, x, y] of each
+    /// field event that leads into it], the side switch the first one needs or nil, [map, x, y,
+    /// direction] of the transfer into it]] of each cutscene map's site), <c>scene_maps</c> (every cutscene map) and <c>defeat</c> (the post-defeat processing's
     /// <c>events</c>, <c>switches</c> and <c>variables</c>); every table empty while the database may not be
     /// read for the maps, common events or troops. The rules come with it, read or not:
     /// <c>excluded_maps</c> (maps whose boss battles never freeze) and <c>preamble_codes</c> (the commands
@@ -132,7 +133,7 @@ internal static class EventTableTopics
         var sites = new RubyHash();
         var callers = new RubyHash();
         var alternatives = new RubyHash();
-        var scenes = new RubyHash();
+        var scenes = new RubyArray();
         var answer = new RubyHash
         {
             { "sites", sites }, { "callers", callers }, { "alternatives", alternatives }, { "scenes", scenes },
@@ -165,12 +166,20 @@ internal static class EventTableTopics
 
                 if (site is { Cutscene: true, MapId: { } map } && store.SceneEntries(site.ListId) is { Count: > 0 } entries)
                 {
-                    scenes[SiteOf(map, site.EventId, site.PageNo, null)] = new RubyArray(
-                    [
-                        new RubyArray(entries.Select(entry => (RubyValue)new RubyArray([entry.FieldMap, entry.FieldEvent, entry.X, entry.Y]))),
-                        entries[0].SideSwitch is { } side ? side : RubyNil.Value,
-                        new RubyArray([entries[0].ToMap, entries[0].ToX, entries[0].ToY, entries[0].Direction]),
-                    ]);
+                    RubyArray scene = SiteOf(map, site.EventId, site.PageNo, null);
+                    if (!scenes.Any(known => known.AsArray()[0].Equals(scene)))
+                    {
+                        scenes.Add(new RubyArray
+                        {
+                            scene,
+                            new RubyArray(
+                            [
+                                new RubyArray(entries.Select(entry => (RubyValue)new RubyArray([entry.FieldMap, entry.FieldEvent, entry.X, entry.Y]))),
+                                entries[0].SideSwitch is { } side ? side : RubyNil.Value,
+                                new RubyArray([entries[0].ToMap, entries[0].ToX, entries[0].ToY, entries[0].Direction]),
+                            ]),
+                        });
+                    }
                 }
             }
 
@@ -228,10 +237,10 @@ internal static class EventTableTopics
     /// <param name="eventId">The page's event.</param>
     /// <param name="pageNo">The page's place from 0.</param>
     /// <param name="commonId">The common event, <see langword="null"/> for a page.</param>
-    /// <returns>Such as "map:289:10:1" or "ce:338".</returns>
-    private static string SiteOf(int? map, int? eventId, int? pageNo, int? commonId) => commonId is { } common
-        ? string.Create(CultureInfo.InvariantCulture, $"ce:{common}")
-        : string.Create(CultureInfo.InvariantCulture, $"map:{map}:{eventId}:{pageNo + 1}");
+    /// <returns>["map", map, event, page from 1] or ["ce", id], see <see cref="StoryPlain"/>.</returns>
+    private static RubyArray SiteOf(int? map, int? eventId, int? pageNo, int? commonId) => commonId is { } common
+        ? ["ce", common]
+        : ["map", map ?? 0, eventId ?? 0, (pageNo ?? 0) + 1];
 
     /// <summary>
     /// Lists the ids the post-defeat processing writes of one kind.

@@ -2,7 +2,9 @@
 //  CoopTopics.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Told whether the running battle takes players in or why not, which Sessions reads in the other games
+//      Paulinchen  2026-11-05: Took the seats an encounter brings along as numbers
+//                            - Took the widths every request to join a battle carries
+//                            - Told whether the running battle takes players in or why not, which Sessions reads in the other games
 //                            - Timed the players taken in by the bridge's frame
 //      Paulinchen  2026-10-30: Kept the widths of a served battle's troop its setup carries
 //                            - Collected the joins of a gathered battle, the roster and the players taken in from the live session
@@ -73,7 +75,7 @@ public static class CoopTopics
     /// Checks a request to join the running battle, see <see cref="JoinIntake.Refusal"/>:
     /// <c>kind</c> ("encounter" or "choice"), <c>facts</c> (see <see cref="FactsOf"/>), <c>seat</c>,
     /// <c>bid</c>, <c>map</c>, <c>troop</c>, <c>boss_troop</c> and <c>seats</c> (the seats an
-    /// encounter brings along, as written) in; <c>refusal</c> ([code, reason], nil to take it), and
+    /// encounter brings along, nil for none) in; <c>refusal</c> ([code, reason], nil to take it), and
     /// for an encounter <c>kept</c>, <c>left</c> and <c>room</c> (see <see cref="JoinIntake.Fit"/>) out.
     /// </summary>
     public const string Intake = "coop.intake";
@@ -186,7 +188,7 @@ public static class CoopTopics
         context.Register(KeepWidths, (_, request) =>
         {
             RubyHash kept = request.AsHash();
-            widths.Note(TextOf(kept["bid"]) ?? string.Empty, TextOf(kept["widths"]));
+            widths.Note(TextOf(kept["bid"]) ?? string.Empty, kept["widths"].AsText());
             return null;
         });
         context.Register(WriteWidths, (_, request) => EnemyWidths.Write(request.AsArray().Select(pair => (pair.AsArray()[0].AsLong(), pair.AsArray()[1].AsLong()))));
@@ -491,7 +493,7 @@ public static class CoopTopics
         string bid = TextOf(request["bid"]) ?? string.Empty;
         if (request.ContainsKey("widths"))
         {
-            widths.Note(bid, TextOf(request["widths"]));
+            widths.Note(bid, request["widths"].AsText());
         }
 
         int Width(RubyArray row, int index) => widths.Of(bid, row[0].AsLong(), row[index].AsInt());
@@ -526,7 +528,7 @@ public static class CoopTopics
         var answer = new RubyHash { { "refusal", refusal is null ? RubyNil.Value : new RubyArray { refusal.Code, refusal.Reason } } };
         if (kind == IntakeKind.Encounter)
         {
-            IntakeFit fit = JoinIntake.Fit(facts, seat, TextOf(request["seats"]));
+            IntakeFit fit = JoinIntake.Fit(facts, seat, MessageFields.Write("seats", request["seats"]));
             answer.Add("kept", Seats(fit.Kept));
             answer.Add("left", Seats(fit.Left));
             answer.Add("room", fit.Room);

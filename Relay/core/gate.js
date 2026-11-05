@@ -2,6 +2,7 @@
 //  gate.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Raised the lowest version served while MIN_VERSION names none to 0.7.0
 //      Paulinchen  2026-10-30: Let a GET of the mod catalog and its files pass ungated, as the Mod Framework reads them naming no game version
 //      Paulinchen  2026-10-22: Let a relay admin set the design formats
 //                            - Told which games hold a world's long mods and which read the world list with every world's mods
@@ -57,7 +58,7 @@ const FULL_LIST_FEATURES = Object.freeze(["web", "admin"]);
 /**
  * The lowest version the relay serves unless its MIN_VERSION setting names another.
  */
-export const DEFAULT_MIN_VERSION = "0.6.0";
+export const DEFAULT_MIN_VERSION = "0.7.0";
 
 /**
  * The HTTP status of a game too old for the relay, on every route but the world rooms.

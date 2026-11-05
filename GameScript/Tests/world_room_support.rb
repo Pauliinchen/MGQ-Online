@@ -2,6 +2,8 @@
 #  world_room_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Read a message as the DLL reads it
+#                            - Handed states and messages over with each field as its kind reads
 #      Paulinchen  2026-11-01: Handed the chat's messages to C#, which the chat's model takes, and dropped the stand-in for its send
 #      Paulinchen  2026-10-31: Dropped the messages whose field a rule in C# takes, as the room does
 #      Paulinchen  2026-10-23: Kept the stand-in bridge a test already opened
@@ -45,12 +47,13 @@ $world_bridge.answer("world.since") { |map| { "map" => map, "since" => $map_sinc
 end
 MGQ_Multiplayer::Bridge.open($world_bridge)
 
-# Writes a state as the DLL hands it on: every field as text, marked as a state.
+# Writes a state as the DLL hands it on: each field as its kind reads (see fields_read), marked
+# as a state.
 #
 # @param state [Hash] The state's fields.
 # @return [Hash] The state.
 def plain_state(state)
-  Hash[{ "state" => 1 }.merge(state).map { |key, value| [key.to_s, value.to_s] }]
+  fields_read({ "state" => 1 }.merge(state))
 end
 
 # Plays the DLL telling that another player told their state: the mirror takes it, with each
@@ -88,7 +91,7 @@ end
 # @param body [String] What follows them.
 # @param relay [Boolean] Whether the relay pushed it.
 def message_from(seat, fields, body = "", relay = false)
-  message = Hash[fields.map { |key, value| [key.to_s, value.to_s] }]
+  message = fields_read(fields)
   return if message.keys.any? { |key| CSHARP_FIELDS.include?(key) }
 
   MGQ_MpOverworldSync.take_route("field" => message.keys.first, "seat" => seat, "fields" => message, "body" => body, "relay" => relay)
@@ -141,7 +144,7 @@ class WorldInbox
     when "seat" then MGQ_MpOverworldSync::Me.take_seat(seat)
     when "out" then MGQ_MpOverworldSync::Peers.away(seat)
     when "message"
-      fields = MGQ_Multiplayer::Link.parse(item[:payload].to_s.dup)
+      fields = decode_message(item[:payload])
       body = fields.delete(:payload)
       fields["state"] ? peer_told(seat, fields.reject { |key, _| key == "state" }) : message_from(seat, fields, body)
     end

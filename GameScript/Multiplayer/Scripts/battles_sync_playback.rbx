@@ -2,7 +2,8 @@
 #  battles_sync_playback.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Gave a state the host added or took away its counters through the game's own reset and erase
+#      Paulinchen  2026-11-05: Made the game's objects of the values the DLL read of the host's stream, and left out a send the DLL did not check
+#                            - Gave a state the host added or took away its counters through the game's own reset and erase
 #      Paulinchen  2026-10-30: Read whether the guest fell behind the host's stream from the DLL
 #                            - Took the host's stream through the DLL, which checks its lines and swaps the host's names
 #      Paulinchen  2026-10-28: Checked the host's picture and screen calls in the DLL
@@ -56,9 +57,6 @@ module MGQ_MpBattlesSync
 
     # The DLL's topic that swaps the host's names in a text, see Names.swap.
     SWAP_TOPIC = "live.swap"
-
-    # The kinds of the host's stream that mark where its turn stops, see run.
-    MARKERS = %w(commands end choose_again)
 
     # Plays the host's stream until its next command phase, the player's choosing again or the
     # battle's end.
@@ -203,20 +201,21 @@ module MGQ_MpBattlesSync
     end
 
     # Takes one send of the host's stream: the DLL leaves out the lines that do not read or that this
-    # game refuses and swaps the host's names, and the lines left are read with this game's battlers.
+    # game refuses, swaps the host's names and reads the values of the lines left, which become this
+    # game's objects with its battlers. A send the DLL did not check is left out.
     #
     # @param body [String] The send.
     def self.take_send(body)
       taken = MGQ_Multiplayer::Bridge.call(STREAM_TOPIC, "body" => body.to_s, "seat" => MGQ_MpBattlesSync.own_seat)
-      return take_markers(body) unless taken.is_a?(Hash)
+      return MGQ_MpBattlesSync.log_once(:stream_unchecked, "left out what a send of the host's stream showed: the DLL did not check it") unless taken.is_a?(Hash)
 
       MGQ_MpBattlesSync.log_lines(taken["logs"])
       count(:events, taken["events"].to_i)
       count(:unreadable, taken["unreadable"].to_i)
       count(:others_choose, taken["others_choose"].to_i)
-      Array(taken["lines"]).each do |line|
+      Array(taken["lines"]).each do |values|
         event = begin
-          Wire.parse(line) { |ref| battler(ref) }
+          Wire.objects(values) { |ref| battler(ref) } if values.is_a?(Array)
         rescue
           nil
         end
@@ -224,22 +223,7 @@ module MGQ_MpBattlesSync
 
         count(:events, -1)
         count(:unreadable)
-        MGQ_MpBattlesSync.log_once("unreadable_event", "left out an unreadable line of the host's stream (#{line.size} characters)")
-      end
-    end
-
-    # Takes only the markers of a send the DLL did not check, the command phase, the end and a choose
-    # again that names the player, so the battle goes on without what the send showed.
-    #
-    # @param body [String] The send.
-    def self.take_markers(body)
-      MGQ_MpBattlesSync.log_once(:stream_unchecked, "left out what a send of the host's stream showed: the DLL did not check it")
-      body.to_s.split("\n").each do |line|
-        event = Wire.parse(line)
-        next unless event && MARKERS.include?(event[0])
-        next if event[0] == "choose_again" && !Array(event[1]).include?(MGQ_MpBattlesSync.own_seat)
-
-        @events << event
+        MGQ_MpBattlesSync.log_once("unreadable_event", "left out an unreadable line of the host's stream")
       end
     end
 

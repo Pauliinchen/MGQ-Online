@@ -2,7 +2,9 @@
 #  battles_raid_pool.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Took the pools' HP once the game's own events before the battle ran
+#      Paulinchen  2026-11-05: Told the boss battle a side battle fights and the invite's pool as values, the DLL writing them
+#                            - Handed a fight's enemies to C# as values and fetched the pools through a topic
+#                            - Took the pools' HP once the game's own events before the battle ran
 #                            - Checked the troop's pages once more right after the pools' HP, so a phase the pools' HP meets begins before anyone acts
 #                            - Named the story's ids in the milestones' markers by the story's table
 #                            - Counted its reads, retries and reports by the bridge's frame
@@ -926,11 +928,11 @@ module MGQ_MpRaidPool
   #   while the bridge does not answer.
   def self.turn(fight, moment)
     enemies = $game_troop.members
-    text = fight.members.map do |member|
+    own = fight.members.map do |member|
       enemy = enemies[member.index]
-      enemy ? "#{member.index}:#{enemy.hp.to_i}:#{enemy.mhp.to_i}:#{enemy.dead? ? 1 : 0}:#{enemy.__id__}" : nil
-    end.compact.join(";")
-    reply = MGQ_Multiplayer::Bridge.call(FIGHT_TURN_TOPIC, "moment" => moment, "reporter" => reporter?, "enemies" => text)
+      enemy ? [member.index, enemy.hp.to_i, enemy.mhp.to_i, enemy.dead? ? true : false, enemy.__id__] : nil
+    end.compact
+    reply = MGQ_Multiplayer::Bridge.call(FIGHT_TURN_TOPIC, "moment" => moment, "reporter" => reporter?, "enemies" => own)
     return {} unless reply.is_a?(Hash)
 
     Array(reply["actions"]).each do |index, hp|
@@ -1103,7 +1105,7 @@ module MGQ_MpRaidPool
 
   # Writes the fields an invite to the player's battle adds when it fights a pool: "pool", how many
   # enemies the troop's setup made, so the guest fights the same pools (see note_invite), and
-  # "side" 1 for a side battle, which is one for the guest too.
+  # "side" true for a side battle, which is one for the guest too.
   #
   # @param troop_id [Integer, nil] The troop of a battle just set up, before set_up decided on it;
   #   nil for the battle running.
@@ -1119,7 +1121,7 @@ module MGQ_MpRaidPool
       own = retry_of?(troop_id.to_i) ? @lost.own : own_count(troop_id)
       side = side_battle?(troop_id)
     end
-    side ? { "pool" => own, "side" => 1 } : { "pool" => own }
+    side ? { "pool" => own, "side" => true } : { "pool" => own }
   rescue => e
     log("writing the invite's pool failed: #{e.class}: #{e.message}")
     {}
@@ -1143,8 +1145,8 @@ module MGQ_MpRaidPool
   #
   # @param message [Hash] The invite: "troop", "pool" and "side".
   def self.note_invite(message)
-    own = message["pool"].to_s
-    @invited = own =~ /\A[1-9]\d?\z/ ? [message["troop"].to_i, own.to_i, message["side"].to_s == "1"] : nil
+    own = message["pool"]
+    @invited = own.is_a?(Integer) && own.between?(1, 99) ? [message["troop"].to_i, own, message["side"] ? true : false] : nil
   end
 
   # Writes what the battle server needs to fight the battle's pools as the player's game would: how
@@ -1183,7 +1185,7 @@ module MGQ_MpRaidPool
   # The field this script adds to the state the player's game tells the others: in a Raid World
   # STATE_FIELD, the troop and the enemy rates of the boss battle the player fights as its host, as
   # the starter of one the battle server hosts, or alone while its pools are not all empty, such as
-  # "71;100,100,0", which a side battle fights, else empty.
+  # [71, [100, 100, 0]], which a side battle fights, else nil.
   #
   # @return [Hash] The field, none in a Classic world.
   def self.state_fields
@@ -1192,10 +1194,10 @@ module MGQ_MpRaidPool
     fight = @fight
     starter = defined?(MGQ_MpBattlesServed) && MGQ_MpBattlesServed.starter?
     open = fight && (reporter? || starter) && SceneManager.scene.is_a?(Scene_Battle) && !defeated?(fight.troop)
-    { STATE_FIELD => open ? "#{fight.troop};#{MGQ_MpBattlesCoop.rates_text}" : "" }
+    { STATE_FIELD => open ? [fight.troop, MGQ_MpBattlesCoop.rates] : nil }
   rescue => e
     log_once(:state_fields, "telling the boss battle failed: #{e.class}: #{e.message}")
-    { STATE_FIELD => "" }
+    { STATE_FIELD => nil }
   end
 
   # Finds the boss battle another player hosts that the player may fight in a side battle: one
@@ -1204,10 +1206,10 @@ module MGQ_MpRaidPool
   # @param host [MGQ_MpOverworldSync::Peers::Peer] The battle's host.
   # @return [Array, nil] Its troop and enemy rates, nil for none.
   def self.side_of(host)
-    return nil unless host.state[STATE_FIELD].to_s =~ /\A(\d+);(-?\d+(?:,-?\d+)*)?\z/
+    told = host.state[STATE_FIELD]
+    return nil unless told.is_a?(Array) && told.size == 2 && told[0].is_a?(Integer) && told[1].is_a?(Array) && told[1].all? { |rate| rate.is_a?(Integer) }
 
-    troop = $1.to_i
-    rates = $2.to_s
+    troop, rates = told
     side_troop?(troop) ? [troop, rates] : nil
   end
 
@@ -1229,7 +1231,7 @@ module MGQ_MpRaidPool
   # battle's damage stays in the pools.
   #
   # @param troop [Integer] The troop.
-  # @param rates [String] The host's enemy rates, see MGQ_MpBattlesCoop.rates_text.
+  # @param rates [Array<Integer>] The host's enemy rates, see MGQ_MpBattlesCoop.rates.
   # @return [Boolean] Whether it started.
   def self.start_side(troop, rates)
     return false unless side_troop?(troop)
@@ -1506,14 +1508,17 @@ module MGQ_MpRaidPool
     log("battle hooks FAILED: #{e.class}: #{e.message}")
   end
 
-  # Patch/Multiplayer/Multiplayer.dll's boss pools at the relay.
+  # The boss pools at the relay, which the DLL fetches.
   module Relay
+    # The topic that starts fetching the world's pools.
+    FETCH_TOPIC = "raid.pools.fetch"
+
     # Starts fetching the world's pools.
     #
     # @param world [String] The world's id.
     # @return [Boolean] Whether it started.
     def self.fetch(world)
-      MGQ_Multiplayer::Link.function('mp_raid_bosses_fetch').call(world + "\0") == 1
+      MGQ_Multiplayer::Bridge.call(FETCH_TOPIC, world.to_s) == true
     rescue => e
       MGQ_MpRaidPool.log("fetching the pools failed: #{e.class}: #{e.message}")
       false

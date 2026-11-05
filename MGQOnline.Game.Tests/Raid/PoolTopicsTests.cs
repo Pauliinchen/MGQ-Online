@@ -2,6 +2,7 @@
 //  PoolTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Handed a fight's enemies as values
 //      Paulinchen  2026-10-30: Covered a served fight's export and import
 //                            - Covered the fights' moments and the battle server's outbox
 //                            - Created
@@ -101,21 +102,21 @@ public sealed class PoolTopicsTests
     [Fact]
     public void Fight_RunsItsMomentsThroughTheTopics()
     {
-        RubyHash Turn(string moment, string enemies) => _context.Ask(PoolTopics.FightTurn, new RubyHash { { "moment", moment }, { "reporter", true }, { "enemies", enemies } })!.AsHash();
+        RubyHash Turn(string moment, long hp) => _context.Ask(PoolTopics.FightTurn, new RubyHash { { "moment", moment }, { "reporter", true }, { "enemies", new RubyArray { new RubyArray { 0, hp, 900, false, 7 } } } })!.AsHash();
 
-        Assert.Null(_context.Ask(PoolTopics.FightTurn, new RubyHash { { "moment", "phase" }, { "reporter", true }, { "enemies", string.Empty } }));
+        Assert.Null(_context.Ask(PoolTopics.FightTurn, new RubyHash { { "moment", "phase" }, { "reporter", true }, { "enemies", new RubyArray() } }));
         _ledger.Enter("w1");
         _ledger.Hear(new PoolWord("Sara", 0.5, 900, false, string.Empty), PoolSource.Fetched);
         _context.Ask(PoolTopics.FightOpen, new RubyHash { { "world", "w1" }, { "battle", "b1" }, { "keys", new RubyArray(["Sara"]) }, { "guest", false } });
 
-        RubyHash start = Turn("start", "0:900:900:0:7");
-        RubyHash phase = Turn("phase", "0:360:900:0:7");
+        RubyHash start = Turn("start", 900);
+        RubyHash phase = Turn("phase", 360);
 
         Assert.Equal("0:450", string.Join(",", start["actions"].AsArray().Select(action => $"{action.AsArray()[0].AsInt()}:{action.AsArray()[1].AsLong()}")));
         Assert.Equal((true, false, 2000L), (phase["reported"].AsBool(), phase["guest"].AsBool(), phase["report_in"].AsLong()));
         Assert.Equal(["w1|Sara|b1|1\t0.1000000000\t900\t0"], _context.Ask(PoolTopics.Reports)!.AsArray().Select(report => string.Join("|", report.AsArray().Select(field => field.AsText()))));
-        Turn("end", "0:360:900:0:7");
-        Assert.Null(_context.Ask(PoolTopics.FightTurn, new RubyHash { { "moment", "phase" }, { "reporter", true }, { "enemies", string.Empty } }));
+        Turn("end", 360);
+        Assert.Null(_context.Ask(PoolTopics.FightTurn, new RubyHash { { "moment", "phase" }, { "reporter", true }, { "enemies", new RubyArray() } }));
     }
 
     /// <summary>

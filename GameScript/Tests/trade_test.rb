@@ -2,6 +2,8 @@
 #  trade_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Handed and took the offers and items as values, the DLL's stand-in naming the tokens
+#                            - Expected the trade's invite told as true
 #      Paulinchen  2026-10-31: Expected the plainer texts the player reads
 #      Paulinchen  2026-10-30: Checked the trades to recover the DLL hands over
 #                            - Checked that the relay hears of a saved trade through the DLL
@@ -147,14 +149,16 @@ module DataManager
   def self.setup_new_game; end
 end
 
-# The enchanted copies' text, as core_actors.rbx writes them.
+# The enchanted copies' facts, as core_actors.rbx hands them to C# and makes a copy of them.
 module MGQ_MpActors
-  # Enchanted copies as text.
+  # Hands values over as they are.
+  def self.plain(value); value; end
+  # Enchanted copies' facts.
   module Items
-    # Writes a copy's rolls.
-    def self.write(item); "ew9.#{item.rolls}"; end
-    # Reads a copy back, nil for a text that is none.
-    def self.read(text); text =~ /\Aew9\.(\d+)\z/ ? EnchantedSword.new($1.to_i) : nil; end
+    # A copy's rolls.
+    def self.facts(item); { "rolls" => item.rolls }; end
+    # Makes a copy of its rolls.
+    def self.make(facts); EnchantedSword.new(facts["rolls"]); end
   end
 end
 
@@ -205,8 +209,29 @@ $world_bridge.answer("trade.offer") do |offer|
   $trade_view
 end
 $world_bridge.answer("trade.tick") { |frame| $trade_ticks << frame; nil }
+# The DLL's tokens, standing in: an item of the database by its letter and id, a copy by its rolls
+# and its prefix.
+$world_bridge.answer("trade.token") do |item|
+  copy = item["copy"]
+  copy ? "uew9.#{copy['rolls']}~#{Array(item['prefix']).join}" : "#{item.keys.first[0]}#{item.values.first}"
+end
 # The relay hears through the DLL that a save holds a trade, recorded in $dll.
 $world_bridge.answer("trade.done") { |id| $dll << ["trade.done", id]; nil }
+
+# Writes an offer as the DLL hands it to the scripts.
+#
+# @param gold [Integer] The gold.
+# @param items [Array<Array>] Each item's token, values and amount.
+# @return [Hash] The offer.
+def offer(gold, *items); { "gold" => gold, "items" => items }; end
+
+# Names an item of the database as an offer the DLL read does.
+#
+# @param kind [String] "item", "weapon" or "armor".
+# @param id [Integer] Its id.
+# @param amount [Integer] How many.
+# @return [Array] Its token, values and amount.
+def listed(kind, id, amount); ["#{kind[0]}#{id}", { kind => id }, amount]; end
 
 # Writes the DLL's view of an open trade with Friend.
 #
@@ -253,7 +278,7 @@ check("the wheel's ring holds the trade after the duel's place, here the right",
 check("someone near: trade offered", [MGQ_MpActions.wheel_options[:RIGHT].text, !MGQ_MpActions.wheel_options[:RIGHT].run.nil?], ["Trade", true])
 MGQ_MpActions.wheel_options[:RIGHT].run.call
 check("an offer is told, never as a field named trade, which marks trade messages",
-      [MGQ_MpOverworldSync::Me.current["trading"], MGQ_MpOverworldSync::Me.current.key?("trade"), MGQ_MpActions.own_line =~ /\AOffering a trade \(\d+ s\) \. \. \.\z/ ? true : false], [1, false, true])
+      [MGQ_MpOverworldSync::Me.current["trading"], MGQ_MpOverworldSync::Me.current.key?("trade"), MGQ_MpActions.own_line =~ /\AOffering a trade \(\d+ s\) \. \. \.\z/ ? true : false], [true, false, true])
 check("and the line above the player's head names the offer with the seconds it stands for", [doing_shown, (trade.own_doing[1] - MGQ_MpActions.lapse_in(MGQ_MpCoop::INVITE_FRAMES)).abs < 1],
       ["Offering a trade (15 s)", true])
 ticks(5 * 60)
@@ -313,17 +338,17 @@ trade.set_gold(500)
 check("and at most the party's gold", trade.session.mine.gold, 100)
 trade.set_gold(0)
 trade.set_gold(0)
-check("each change goes to the DLL as the offer reads, an unchanged one not",
-      $trade_calls, [["offer", "g0;i1*5"], ["offer", "g0;i1*3"], ["offer", "g100;i1*3"], ["offer", "g0;i1*3"]])
+check("each change goes to the DLL as the offer's values, an unchanged one not", $trade_calls.map { |_, sent| [sent["gold"], sent["items"]] },
+      [[0, [["i1", 5]]], [0, [["i1", 3]]], [100, [["i1", 3]]], [0, [["i1", 3]]]])
 check("whose answer counts the revisions", trade.session.my_rev, 4)
-from_dll("trade.their_offer", { "rev" => 1, "text" => "g50;w2*1" })
+from_dll("trade.their_offer", { "rev" => 1, "offer" => offer(50, listed("weapon", 2, 1)) })
 check("the other player's offer is read as this game's items", [trade.session.theirs.gold, trade.session.theirs.entries.map { |e| [e.item, e.amount] }], [50, [[spear, 1]]])
 
 # Confirming.
 $trade_calls.clear
 trade.toggle_confirm
 check("confirming hands the DLL what the bag cannot take, here nothing", $trade_calls, [["confirm", nil]])
-from_dll("trade.their_offer", { "rev" => 2, "text" => "g0;i2*1" })
+from_dll("trade.their_offer", { "rev" => 2, "offer" => offer(0, listed("item", 2, 1)) })
 trade.toggle_confirm
 check("or why it cannot", $trade_calls.last, ["confirm", "Friend's offer holds key items."])
 check("which the confirm button tells too", trade.confirm_refusal, "Friend's offer holds key items.")
@@ -348,14 +373,14 @@ check("nothing changes while the relay decides", [trade.session.mine.entries.map
 # The relay commits: the trade is applied and saved.
 relay_id = "#{TID}00020004"
 $dll.clear
-from_dll("trade.apply", { "id" => relay_id, "name" => "Friend", "mine" => "g0;i1*3", "theirs" => "g60;w2*1" })
+from_dll("trade.apply", { "id" => relay_id, "name" => "Friend", "mine" => offer(0, listed("item", 1, 3)), "theirs" => offer(60, listed("weapon", 2, 1)) })
 check("the trade moves the items and gold", [$game_party.item_number(potion), $game_party.item_number(spear), $game_party.gold], [2, 1, 160])
 check("the save notes it, saves into the slot loaded last and tells the relay",
       [$game_system.instance_variable_get(:@mgq_mp_trades), $saved, $dll.last], [[relay_id], [2], ["trade.done", relay_id]])
 check("the trade ends with a notice", [trade.session, MGQ_MpOverworldSync::Status.lines.last], [nil, "Trade with Friend complete, game saved."])
 $save_fails = true
 $dll.clear
-from_dll("trade.apply", { "id" => "#{TID}00030005", "name" => "Friend", "mine" => "g0", "theirs" => "g0" })
+from_dll("trade.apply", { "id" => "#{TID}00030005", "name" => "Friend", "mine" => offer(0), "theirs" => offer(0) })
 check("a trade the save could not hold stays undone at the relay",
       [$dll.map(&:first), MGQ_MpOverworldSync::Status.lines.last], [[], "Trade with Friend complete. Save your game."])
 $save_fails = false
@@ -374,15 +399,15 @@ check("a trade that ended forgets its screen and its message", [trade.session, t
 trade.stop
 
 # What may not be taken.
-offer = MGQ_MpTrade::Items.read_offer("g0;i2*1")
+offer = MGQ_MpTrade::Items.read_offer(offer(0, listed("item", 2, 1)))
 check("an offer with key items cannot be confirmed", MGQ_MpTrade::Items.receive_refusal(offer, "Friend"), "Friend's offer holds key items.")
-offer = MGQ_MpTrade::Items.read_offer("g0;i77*1")
+offer = MGQ_MpTrade::Items.read_offer(offer(0, listed("item", 77, 1)))
 check("nor one with items this game lacks", MGQ_MpTrade::Items.receive_refusal(offer, "Friend"), "Friend's offer holds items your game does not know.")
-offer = MGQ_MpTrade::Items.read_offer("g0;i1*98")
+offer = MGQ_MpTrade::Items.read_offer(offer(0, listed("item", 1, 98)))
 check("nor more than the bag can carry", MGQ_MpTrade::Items.receive_refusal(offer, "Friend"), "You cannot carry more Potion.")
-check("counting what the own offer gives away", MGQ_MpTrade::Items.receive_refusal(offer, "Friend", MGQ_MpTrade::Items.read_offer("g0;i1*1")), nil)
-offer = MGQ_MpTrade::Items.read_offer("g999999999")
-check("and the gold it gives away", [MGQ_MpTrade::Items.receive_refusal(offer, "Friend"), MGQ_MpTrade::Items.receive_refusal(offer, "Friend", MGQ_MpTrade::Items.read_offer("g160"))],
+check("counting what the own offer gives away", MGQ_MpTrade::Items.receive_refusal(offer, "Friend", MGQ_MpTrade::Items.read_offer(offer(0, listed("item", 1, 1)))), nil)
+offer = MGQ_MpTrade::Items.read_offer(offer(999_999_999))
+check("and the gold it gives away", [MGQ_MpTrade::Items.receive_refusal(offer, "Friend"), MGQ_MpTrade::Items.receive_refusal(offer, "Friend", MGQ_MpTrade::Items.read_offer(offer(160)))],
       ["You cannot carry that much gold.", nil])
 check("enchant stones may be traded", MGQ_MpTrade::Items.tradeable?(ruby), true)
 
@@ -390,17 +415,18 @@ check("enchant stones may be traded", MGQ_MpTrade::Items.tradeable?(ruby), true)
 sword = EnchantedSword.new(7)
 sword.prefix = "Sharp"
 $game_party.gain_item(sword, 1)
+plain = MGQ_MpTrade::Items.plain(sword)
 token = MGQ_MpTrade::Items.token(sword)
-check("an enchanted copy is written with its data and its prefix's enchantment and place", token, "uew9.7~5p1")
-copy = MGQ_MpTrade::Items.item_of(token)
+check("an enchanted copy goes to the DLL with its facts and its prefix's enchantment and place", plain, { "copy" => { "rolls" => 7 }, "prefix" => [5, "p", 1] })
+copy = MGQ_MpTrade::Items.item_from(plain)
 check("and read back as a new copy with the same prefix", [copy.class, copy.rolls, copy.prefix], [EnchantedSword, 7, "Sharp"])
 $data_classes[5] = Enchantment.new(["Nibui", "Surudoi"], ["Densetsu"])
-check("which a game in another language names in its own", MGQ_MpTrade::Items.item_of(token).prefix, "Surudoi")
+check("which a game in another language names in its own", MGQ_MpTrade::Items.item_from(plain).prefix, "Surudoi")
 $data_classes[5] = Enchantment.new(["Dull", "Sharp"], ["Legendary"])
 sword.prefix = "Legendary"
-check("a rare prefix names its own list", MGQ_MpTrade::Items.token(sword), "uew9.7~5r0")
+check("a rare prefix names its own list", MGQ_MpTrade::Items.plain(sword)["prefix"], [5, "r", 0])
 sword.prefix = "Sharp"
-MGQ_MpTrade::Items.apply(MGQ_MpTrade::Items.read_offer("g0;#{token}*1"), MGQ_MpTrade::Items.read_offer("g0;uew9.8~*1"))
+MGQ_MpTrade::Items.apply(MGQ_MpTrade::Items.read_offer(offer(0, [token, plain, 1])), MGQ_MpTrade::Items.read_offer(offer(0, ["uew9.8~", { "copy" => { "rolls" => 8 }, "prefix" => nil }, 1])))
 check("applying gives the own copy away and keeps the other's as the party's own",
       [$game_party.item_number(sword), $game_party.added.map(&:rolls), $game_party.weapons.select(&:uniq_item?).map(&:rolls)], [0, [8], [8]])
 
@@ -415,7 +441,8 @@ before = [$game_party.item_number(potion), $game_party.gold]
 ticks
 MGQ_Multiplayer::Bridge.frame
 check("the DLL is told the save loaded, by which it asks the relay once per save", $trade_ticks.last.values_at("on_map", "save"), [true, $game_system.object_id])
-from_dll("trade.recover", { "save" => $game_system.object_id, "trades" => [["a" * 32, "friend", "g0;i1*1", "g5;i1*1"], [relay_id, "friend", "g0;i1*3", "g60;w2*1"]] })
+from_dll("trade.recover", { "save" => $game_system.object_id, "trades" => [["a" * 32, "friend", offer(0, listed("item", 1, 1)), offer(5, listed("item", 1, 1))],
+                                                                         [relay_id, "friend", offer(0, listed("item", 1, 3)), offer(60, listed("weapon", 2, 1))]] })
 check("the trades the DLL found wait for the map's own frame",
       [[$game_party.item_number(potion), $game_party.gold], $dll.map(&:first), $saved], [before, [], []])
 trade.on_map
@@ -431,7 +458,7 @@ $dll.clear
 $saved.clear
 before = $game_party.gold
 SceneManager.scene = Scene_Battle.new
-from_dll("trade.recover", { "save" => $game_system.object_id, "trades" => [["d" * 32, "friend", "g0", "g7"]] })
+from_dll("trade.recover", { "save" => $game_system.object_id, "trades" => [["d" * 32, "friend", offer(0), offer(7)]] })
 trade.on_map
 check("trades found in a battle apply and save nothing there", [$game_party.gold, $dll, $saved], [before, [], []])
 SceneManager.scene = Scene_Map.new
@@ -446,7 +473,7 @@ check("but on the next frame the player is free on the map, saved once", [$game_
 $dll.clear
 $saved.clear
 $game_message.busy = true
-from_dll("trade.recover", { "save" => $game_system.object_id, "trades" => [["e" * 32, "friend", "g0", "g9"]] })
+from_dll("trade.recover", { "save" => $game_system.object_id, "trades" => [["e" * 32, "friend", offer(0), offer(9)]] })
 trade.on_map
 $game_system = Game_System.new
 $game_message.busy = false
@@ -455,7 +482,7 @@ check("are dropped once another save was loaded, which the DLL asks the relay fo
 
 # Trades to recover that wait as the world closes.
 $game_message.busy = true
-from_dll("trade.recover", { "save" => $game_system.object_id, "trades" => [["f" * 32, "friend", "g0", "g4"]] })
+from_dll("trade.recover", { "save" => $game_system.object_id, "trades" => [["f" * 32, "friend", offer(0), offer(4)]] })
 trade.on_map
 trade.tick(false)
 $game_message.busy = false
@@ -470,7 +497,7 @@ def $game_party.gain_item(item, amount, *rest)
 end
 $bag_breaks = true
 before = [$game_party.item_number(potion), $game_party.gold]
-mine, theirs = MGQ_MpTrade::Items.read_offer("g10;i1*1"), MGQ_MpTrade::Items.read_offer("g0;w2*1")
+mine, theirs = MGQ_MpTrade::Items.read_offer(offer(10, listed("item", 1, 1))), MGQ_MpTrade::Items.read_offer(offer(0, listed("weapon", 2, 1)))
 results = [MGQ_MpTrade::Recovery.apply_once("c" * 32, mine, theirs), MGQ_MpTrade::Recovery.apply_once("c" * 32, mine, theirs)]
 check("a trade that fails partway is applied once only",
       [results, [$game_party.item_number(potion), $game_party.gold]], [[false, true], [before[0] - 1, before[1] - 10]])

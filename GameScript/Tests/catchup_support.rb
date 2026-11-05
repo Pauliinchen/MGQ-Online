@@ -2,7 +2,9 @@
 #  catchup_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Answered the side a player takes along by engine.rb's rule of the side
+#      Paulinchen  2026-11-05: Wrote a story's keys as the rows the DLL hands the scripts
+#                            - Stood in for the shared companions through the DLL's topics
+#                            - Answered the side a player takes along by engine.rb's rule of the side
 #                            - Let a test put the Medal King's switches and the items an event takes away in place
 #                            - Stopped loading story_found.rbx, whose items the story replay hands over
 #                            - Dropped the stand-in of the game's frame counter, which no script reads
@@ -36,7 +38,7 @@ $logs = []
 # Stands in for the mod's log: records each line in $logs and prints it.
 module MGQ_Multiplayer; module Log; def self.write(m); $logs << m; puts "  log: #{m}"; end; end; end
 $calls = []
-$state = ""
+$raid_story = {}
 $notices = []
 $messages = []
 $raid = true
@@ -45,49 +47,6 @@ $telling = false
 
 # Stands in for Multiplayer.rb around the DLL link.
 module MGQ_Multiplayer
-  # Stands in for the DLL link of the shared companions: each call is noted and starts, and the
-  # state is what $state holds.
-  module Link
-    # The requests of the exports, whose header says busy once one starts, as the DLL's does.
-    KINDS = { "mp_raid_story_fetch" => "fetch", "mp_raid_companions_add" => "companions" }
-
-    # A function of the DLL, which notes its calls.
-    Function = Struct.new(:name) do
-      # Notes the call, marks its request busy in $state, and answers that it started.
-      #
-      # @param args [Array] The arguments of the call.
-      # @return [Integer] 1.
-      def call(*args)
-        check_dll_call(name, args)
-        $calls << [name, args]
-        kind = KINDS[name]
-        $state = "#{kind}=busy\n" + $state.gsub(/^#{kind}(_\w+)?=.*\n/, "") if kind
-        1
-      end
-    end
-    # Answers a function of the DLL that notes its calls.
-    def self.function(name); Function.new(name); end
-    # Reads the shared companions' state as the DLL hands it over.
-    #
-    # @param name [String] The export.
-    # @param size [Integer] The buffer's size.
-    # @return [String] The text, in binary.
-    def self.read(name, size)
-      check_dll_call(name, ["", size])
-      head = $state.split("\n\n", 2)[0].to_s
-      (head.empty? ? "" : head + "\n\n").dup.force_encoding("ASCII-8BIT")
-    end
-    # Reads a state the DLL describes, as Link.parse does.
-    #
-    # @param text [String] The description.
-    # @return [Hash] The values by key, the payload under :payload.
-    def self.parse(text)
-      head, payload = text.force_encoding("UTF-8").split("\n\n", 2)
-      state = { :payload => payload.to_s }
-      head.to_s.split("\n").each { |line| key, value = line.split("=", 2); state[key] = value if value }
-      state
-    end
-  end
 end
 # Stands in for the overworld sync: the player is in a world with nobody else.
 module MGQ_MpOverworldSync
@@ -503,18 +462,15 @@ def new_game(variables = {}, switches = [], level = 10)
   MGQ_MpWorldCatchup.loaded
 end
 
-# Writes a story's keys as the relay's tracks keep them.
+# Writes a story's keys as the DLL hands the scripts the relay's track (StoryPlain).
 #
 # @param variables [Hash] Variables by id.
 # @param switches [Array<Integer>] Switches on.
 # @param selfs [Hash] Self switches by key.
-# @return [Hash{String => String}] The keys and their values.
+# @return [Array<Array>] Each key's kind, key and value.
 def packed(variables = {}, switches = [], selfs = {})
-  keys = {}
-  switches.each { |id| keys["s#{id}"] = "1" }
-  variables.each { |id, value| keys["v#{id}"] = MGQ_MpStoryState.encode_value(value) }
-  selfs.each { |key, value| keys["ss#{key.join('.')}"] = value ? "1" : "0" }
-  keys
+  switches.map { |id| [0, id, true] } + variables.map { |id, value| [1, id, MGQ_MpStoryState.plain_variable(value)] } +
+    selfs.map { |key, value| [2, key, value ? true : false] }
 end
 
 # Hands the game the world's track as the DLL does after the relay sent it, with the world's
@@ -524,7 +480,7 @@ end
 #   "part", "route", "done" and "checkpoints" (each separated by commas), "comps", "start" (the
 #   story markers where the world's log starts) and "log" (the keys where it starts that differ
 #   from the track's).
-# @param keys [Hash{String => String}] The track's keys, see packed.
+# @param keys [Array<Array>] The track's keys, see packed.
 def relay(fields, keys = {})
   world = { "rev" => 1, "part" => "1", "route" => "none", "done" => "", "checkpoints" => "", "comps" => "" }.merge(fields)
   hand_track(world, keys, "track" => "world", "part" => world["part"].to_s)
@@ -533,7 +489,7 @@ end
 # Hands the game the track of their own the relay put a player behind on: their part's checkpoint.
 #
 # @param part [String] The part.
-# @param keys [Hash{String => String}] The checkpoint's keys, see packed.
+# @param keys [Array<Array>] The checkpoint's keys, see packed.
 # @param fields [Hash] The world's summary, as relay takes it.
 def checkpoint(part, keys, fields = {})
   world = { "rev" => 1, "part" => "2", "route" => "none", "done" => "", "checkpoints" => part, "comps" => "" }.merge(fields)
@@ -544,7 +500,7 @@ end
 #
 # @param from [String] The part they leave.
 # @param to [String] The part they move to, or "world".
-# @param keys [Hash{String => String}] The track's keys, see packed.
+# @param keys [Array<Array>] The track's keys, see packed.
 # @param fields [Hash] The world's summary, as relay takes it.
 # @param by [String] "level", or "cap" when another mod's cap opened the gate.
 def moved(from, to, keys, fields = {}, by = "level")
@@ -558,7 +514,7 @@ end
 # Hands the game a whole track and the world's summary, and names the world's shared companions.
 #
 # @param world [Hash] The summary and companions, see relay.
-# @param keys [Hash{String => String}] The track's keys.
+# @param keys [Array<Array>] The track's keys, see packed.
 # @param state [Hash] The state's fields that differ, see track_take.
 def hand_track(world, keys, state)
   list = lambda { |text| text.to_s.split(",") }
@@ -566,7 +522,7 @@ def hand_track(world, keys, state)
               "start" => world["start"] }
   $takes << track_take(keys, world["log"] ? state.merge("log" => world["log"]) : state, world["rev"])
   $fake.post("story.status", story_status("track" => state["track"], "part" => state["part"], "gate" => state["gate"], "rev" => world["rev"], "world" => summary, "pending" => true))
-  $state = "world=w1\nrev=#{world['rev']}\ncomps=#{world['comps']}\nfetch=done#{world['companions'] ? "\ncompanions=#{world['companions']}" : ''}\n\n"
+  $raid_story = { "world" => "w1", "rev" => world["rev"], "comps" => list.call(world["comps"]).map(&:to_i), "fetch" => "done", "companions" => world["companions"] }
 end
 
 # Runs frames as the game does: the map's update, then the scripts' writes and the bridge's batch

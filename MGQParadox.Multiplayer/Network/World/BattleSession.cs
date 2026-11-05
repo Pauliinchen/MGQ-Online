@@ -2,7 +2,8 @@
 //  BattleSession.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Told the served battle's state as the starter's own, whether it takes players in too
+//      Paulinchen  2026-11-05: Took the players' seats as numbers and handed out the inbox's entries and the state as values, for the bridge's topics
+//                            - Told the served battle's state as the starter's own, whether it takes players in too
 //      Paulinchen  2026-10-30: Kept the serve's time-out, the refusals that last the session, the channel's open time-out and the starter's front in the world room
 //      Paulinchen  2026-10-15: Created
 //
@@ -19,6 +20,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using MGQOnline.Game.Battles.Wire;
+using MGQOnline.Game.World;
 using MGQParadox.Multiplayer.Network.Relay;
 using MGQParadox.Multiplayer.Network.Transport;
 
@@ -82,11 +84,6 @@ internal sealed partial class BattleSession
     public const string OpenTimeoutCode = "open_timeout";
 
     /// <summary>
-    /// The header of <see cref="Describe"/> that names the refusal that ended every later serve of this game session.
-    /// </summary>
-    public const string LastingHeader = "lasting";
-
-    /// <summary>
     /// The most players a battle may have, as BATTLE_LIMITS in Relay/core/battles.js says.
     /// </summary>
     public const int MaxPlayers = 16;
@@ -95,16 +92,6 @@ internal sealed partial class BattleSession
     /// The longest setup the relay takes in base64, as BATTLE_LIMITS in Relay/core/battles.js says.
     /// </summary>
     public const int MaxSetupBase64 = 1_000_000;
-
-    /// <summary>
-    /// The state header of <see cref="Describe"/>.
-    /// </summary>
-    private const string StateHeader = "state";
-
-    /// <summary>
-    /// The seat header of an entry.
-    /// </summary>
-    private const string SeatHeader = "seat";
 
     /// <summary>
     /// What the relay starts the text frame with that tells the game its seat.
@@ -178,7 +165,7 @@ internal sealed partial class BattleSession
     /// <summary>
     /// What arrived on the channel and the game script has not taken yet.
     /// </summary>
-    private readonly ConcurrentQueue<string> _inbox = new();
+    private readonly ConcurrentQueue<BattleEntry> _inbox = new();
 
     /// <summary>
     /// Counts serves and opens, so a network thread of an earlier one changes nothing.
@@ -346,10 +333,10 @@ internal sealed partial class BattleSession
     /// </summary>
     /// <param name="world">The world's id, its room's.</param>
     /// <param name="battle">The battle's id.</param>
-    /// <param name="seats">The world seats of the battle's players, separated by commas.</param>
+    /// <param name="seats">The world seats of the battle's players.</param>
     /// <param name="setup">What the server needs to host the battle.</param>
     /// <returns><see langword="false"/> outside that world, without a player, or for an id, seats or a setup that are not as they should be.</returns>
-    public bool Serve(string world, string battle, string seats, string setup)
+    public bool Serve(string world, string battle, IReadOnlyList<long> seats, string setup)
     {
         if (WorldOf(world) is not { } code || Playing() is not { } player)
         {
@@ -359,7 +346,7 @@ internal sealed partial class BattleSession
 
         if (!BattleIdPattern().IsMatch(battle) || SeatsOf(seats) is not { } players || setup.Length == 0 || (Encoding.UTF8.GetByteCount(setup) + 2) / 3 * 4 > MaxSetupBase64)
         {
-            Log.Write($"battle {battle} not served: the id, the seats '{seats}' or the setup ({setup.Length} characters) are not as they should be");
+            Log.Write($"battle {battle} not served: the id, the seats {string.Join(",", seats)} or the setup ({setup.Length} characters) are not as they should be");
             return false;
         }
 
@@ -461,61 +448,56 @@ internal sealed partial class BattleSession
     }
 
     /// <summary>
-    /// Looks at the oldest inbox entry, without taking it; a channel that did not open in time ends first.
+    /// Gets whether an entry waits in the inbox.
     /// </summary>
-    /// <returns>The entry: <c>kind</c> (seat, message or closed), <c>seat</c>, <c>code</c> for closed, and a message's text; or <see langword="null"/> while none waits.</returns>
-    public string? PeekEntry()
+    public bool HasEntries => !_inbox.IsEmpty;
+
+    /// <summary>
+    /// Takes every inbox entry, oldest first; a channel that did not open in time ends first.
+    /// </summary>
+    /// <returns>The entries, none while none waits.</returns>
+    public IReadOnlyList<BattleEntry> TakeEntries()
     {
         Connection? stale;
+        var taken = new List<BattleEntry>();
 
         lock (_gate)
         {
             stale = TimeOut();
-        }
 
-        stale?.Stop();
-        return _inbox.TryPeek(out var entry) ? entry : null;
-    }
-
-    /// <summary>
-    /// Takes the oldest inbox entry, if it is still the one <see cref="PeekEntry"/> handed out, since
-    /// a full inbox drops its oldest entry meanwhile.
-    /// </summary>
-    /// <param name="entry">The entry <see cref="PeekEntry"/> handed out.</param>
-    public void TakeEntry(string entry)
-    {
-        lock (_gate)
-        {
-            if (_inbox.TryPeek(out var oldest) && ReferenceEquals(oldest, entry))
+            while (_inbox.TryDequeue(out var entry))
             {
-                _inbox.TryDequeue(out _);
+                taken.Add(entry);
+            }
 
-                if (_dropped > 0)
-                {
-                    Log.Write($"battle inbox has room again after dropping its {_dropped} oldest entries");
-                    _dropped = 0;
-                }
+            if (_dropped > 0 && taken.Count > 0)
+            {
+                Log.Write($"battle inbox has room again after dropping its {_dropped} oldest entries");
+                _dropped = 0;
             }
         }
+
+        stale?.Stop();
+        return taken;
     }
 
     /// <summary>
-    /// Describes the battle for the game script; a serve or an opening that took too long ends first.
+    /// Tells how the battle stands; a serve or an opening that took too long ends first.
     /// </summary>
-    /// <returns><c>state</c> (idle, serving, served, refused, opening, open or closed), <c>code</c> for a refusal or a close, and <c>lasting</c> once a refusal ended every later serve.</returns>
-    public string Describe()
+    /// <returns>The state (idle, serving, served, refused, opening, open or closed), the code of a refusal or a close, and the refusal that ended every later serve.</returns>
+    public BattleStatus Status()
     {
         Connection? stale;
-        string described;
+        BattleStatus status;
 
         lock (_gate)
         {
             stale = TimeOut();
-            described = new Message([new(StateHeader, _state.ToString().ToLowerInvariant()), new(CodeHeader, _code), new(LastingHeader, _lasting)]).Encode();
+            status = new BattleStatus(_state.ToString().ToLowerInvariant(), _code, _lasting);
         }
 
         stale?.Stop();
-        return described;
+        return status;
     }
 
     /// <summary>
@@ -665,22 +647,22 @@ internal sealed partial class BattleSession
     }
 
     /// <summary>
-    /// Reads the seats of a battle's players.
+    /// Checks the seats of a battle's players.
     /// </summary>
-    /// <param name="text">The seats, separated by commas.</param>
+    /// <param name="given">The seats.</param>
     /// <returns>The seats, or <see langword="null"/> unless they are 1 to <see cref="MaxPlayers"/> distinct world seats.</returns>
-    internal static int[]? SeatsOf(string text)
+    internal static int[]? SeatsOf(IReadOnlyList<long> given)
     {
         var seats = new List<int>();
 
-        foreach (var part in text.Split(','))
+        foreach (var seat in given)
         {
-            if (!int.TryParse(part, NumberStyles.None, CultureInfo.InvariantCulture, out var seat) || seat >= RelayWorldChannel.Everyone || seats.Contains(seat))
+            if (seat < 0 || seat >= RelayWorldChannel.Everyone || seats.Contains((int)seat))
             {
                 return null;
             }
 
-            seats.Add(seat);
+            seats.Add((int)seat);
         }
 
         return seats.Count is > 0 and <= MaxPlayers ? [.. seats] : null;
@@ -946,7 +928,7 @@ internal sealed partial class BattleSession
     /// </summary>
     /// <param name="generation">The generation the entry belongs to.</param>
     /// <param name="entry">The entry.</param>
-    private void Enqueue(int generation, string entry)
+    private void Enqueue(int generation, BattleEntry entry)
     {
         lock (_gate)
         {
@@ -1081,21 +1063,8 @@ internal sealed partial class BattleSession
     /// <returns>The fields and the rest.</returns>
     private static (Dictionary<string, string> Fields, string Body) FieldsOf(string text)
     {
-        var end = text.IndexOf("\n\n", StringComparison.Ordinal);
-        var head = end < 0 ? text : text[..end];
-        var fields = new Dictionary<string, string>(StringComparer.Ordinal);
-
-        foreach (var line in head.Split('\n'))
-        {
-            var separator = line.IndexOf('=');
-
-            if (separator >= 0)
-            {
-                fields[line[..separator]] = line[(separator + 1)..];
-            }
-        }
-
-        return (fields, end < 0 ? string.Empty : text[(end + 2)..]);
+        var fields = WorldFields.Parse(text, out var body);
+        return (fields.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal), body);
     }
 
     /// <summary>
@@ -1105,7 +1074,22 @@ internal sealed partial class BattleSession
     /// <param name="battle">The battle's id.</param>
     /// <param name="line">The battle line.</param>
     /// <returns>The message.</returns>
-    private static string FrontText(string kind, string battle, string line) => $"battle={kind}\nbid={battle}\n\n{line}";
+    private static string FrontText(string kind, string battle, string line) => MessageOf(kind, battle, line);
+
+    /// <summary>
+    /// Writes a message of the battle: its kind and the battle in the fields, then its body.
+    /// </summary>
+    /// <param name="kind">The message's kind.</param>
+    /// <param name="battle">The battle's id.</param>
+    /// <param name="body">The body.</param>
+    /// <returns>The message.</returns>
+    internal static string MessageOf(string kind, string battle, string body)
+    {
+        var fields = new WorldFields();
+        fields.Set("battle", kind);
+        fields.Set("bid", battle);
+        return fields.Encode(body);
+    }
 
     /// <summary>
     /// Writes texts as the battle line's pairs.
@@ -1129,15 +1113,14 @@ internal sealed partial class BattleSession
     }
 
     /// <summary>
-    /// Writes an inbox entry.
+    /// Makes an inbox entry.
     /// </summary>
     /// <param name="kind">The entry's kind.</param>
     /// <param name="seat">The seat it is of.</param>
     /// <param name="code">The code of a closed entry, <see langword="null"/> for others.</param>
     /// <param name="text">A message's text, empty for others.</param>
     /// <returns>The entry.</returns>
-    private static string Entry(string kind, int seat, string? code, string text) =>
-        new Message([new(Message.Kind, kind), new(SeatHeader, seat.ToString(CultureInfo.InvariantCulture)), new(CodeHeader, code)], text).Encode();
+    private static BattleEntry Entry(string kind, int seat, string? code, string text) => new(kind, seat, code, text);
 
     /// <summary>
     /// An open channel and the thread that sends its messages in order and pings the relay while
@@ -1233,3 +1216,20 @@ internal sealed partial class BattleSession
         }
     }
 }
+
+/// <summary>
+/// An entry of a served battle's inbox.
+/// </summary>
+/// <param name="Kind">What it is: <see cref="BattleSession.SeatKind"/>, <see cref="BattleSession.MessageKind"/> or <see cref="BattleSession.ClosedKind"/>.</param>
+/// <param name="Seat">The seat it is of.</param>
+/// <param name="Code">Why the channel ended, for a closed entry.</param>
+/// <param name="Text">A message's text, empty for the others.</param>
+internal sealed record BattleEntry(string Kind, int Seat, string? Code, string Text);
+
+/// <summary>
+/// How a served battle stands.
+/// </summary>
+/// <param name="State">idle, serving, served, refused, opening, open or closed.</param>
+/// <param name="Code">Why the relay refused the battle or its channel ended.</param>
+/// <param name="Lasting">The refusal that ended every later serve of the game session.</param>
+internal sealed record BattleStatus(string State, string? Code, string? Lasting);

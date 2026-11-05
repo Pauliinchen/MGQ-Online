@@ -2,6 +2,7 @@
 //  WorldDirectory.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Dropped the list's text for the scripts, which read it through the directory's topic
 //      Paulinchen  2026-10-31: Worded what the player reads plainly, leaving causes and internals to the log
 //                            - Used the join code, which moved beside the world code
 //      Paulinchen  2026-10-30: Left installing a world's mods to the Mod Framework
@@ -80,11 +81,6 @@ internal sealed class WorldDirectory
     /// Why the list or the action failed.
     /// </summary>
     private const string ErrorHeader = "error";
-
-    /// <summary>
-    /// Whether the list was made for one of the relay's admins, who sees every world and may delete any.
-    /// </summary>
-    private const string AdminHeader = "admin";
 
     /// <summary>
     /// Which action ran.
@@ -515,19 +511,6 @@ internal sealed class WorldDirectory
         $"mod catalog: {catalog.Mods.Count} mod(s)"
         + (catalog.Mods.Count > 0 ? ": " + string.Join(", ", catalog.Mods.Select(mod => $"{mod.Key} {OnOneField(mod.Version)} ({mod.ScriptKind}, {mod.Files.Count.ToString(CultureInfo.InvariantCulture)} file(s))")) : string.Empty)
         + (catalog.Personal.Count > 0 ? $"; personal: {string.Join(", ", catalog.Personal.Select(mod => mod.Key))}" : string.Empty);
-
-    /// <summary>
-    /// Describes the list for the game script.
-    /// </summary>
-    /// <returns><c>state</c> ("loading", "ready" or "failed"), <c>error</c> and <c>admin</c> (1 for an admin), then one line per world, a line <c>unread</c> after a world whose mods, mod hashes and settings are not read yet (see <see cref="Open"/>), and one line per player: <c>world</c>, id, seats, players online, creator's id, when last active, creator's name, name, starting save ("none", "pending" or "ready"), 1 when hidden, 1 when new players choose where to start, 1 without a password, 1 when featured, 1 when only games with the same data may enter, the creator's game data, the mods it needs, its description, the creator's hashes of required mods outside the catalog, its mod settings, its type ("classic" or "raid"), how a Raid World shares companions ("off", "story" or "all"), a Raid World's difficulty (-2 to 4, empty when it sets none), 1 when it turns other mods off, a Raid World's squad settings (see <see cref="RaidSquad"/>, empty when it keeps none), 1 when a Classic world's players meet raid bosses; <c>member</c>, id, 1 when online, name; each separated by tabs.</returns>
-    public string DescribeList()
-    {
-        lock (_gate)
-        {
-            var worlds = _worlds?.Select(WithDetails);
-            return new Message([new(StateHeader, ListState()), new(ErrorHeader, _listError), new(AdminHeader, _admin ? "1" : null)], worlds != null ? ListText(worlds) : string.Empty).Encode();
-        }
-    }
 
     /// <summary>
     /// Gets the list's revision, which moves whenever a fetch starts or ends or the opened world's mods were read.
@@ -1180,42 +1163,6 @@ internal sealed class WorldDirectory
         ex.GetBaseException().Message + (ex is DirectoryException directory
             ? $" (status {(directory.Status is { } status ? ((int)status).ToString(CultureInfo.InvariantCulture) : "none")}{(directory.Code != null ? $", code {directory.Code}" : string.Empty)})"
             : string.Empty);
-
-    /// <summary>
-    /// Writes the list as the game script reads it.
-    /// </summary>
-    /// <param name="worlds">The worlds.</param>
-    /// <returns>The lines.</returns>
-    private static string ListText(IEnumerable<ListedWorld> worlds)
-    {
-        var text = new StringBuilder();
-
-        foreach (var world in worlds)
-        {
-            text.Append("world\t").Append(world.Id).Append('\t').Append(world.Seats.ToString(CultureInfo.InvariantCulture))
-                .Append('\t').Append(world.Online.ToString(CultureInfo.InvariantCulture)).Append('\t').Append(world.CreatorId)
-                .Append('\t').Append(world.Active.ToString(CultureInfo.InvariantCulture)).Append('\t').Append(OnOneField(world.CreatorName))
-                .Append('\t').Append(OnOneField(world.Name)).Append('\t').Append(OnOneField(world.Start)).Append('\t').Append(world.Hidden ? '1' : '0')
-                .Append('\t').Append(world.Choose ? '1' : '0').Append('\t').Append(world.Open ? '1' : '0').Append('\t').Append(world.Featured ? '1' : '0')
-                .Append('\t').Append(world.About.Strict ? '1' : '0').Append('\t').Append(OnOneField(world.About.Data)).Append('\t').Append(OnOneField(world.About.Mods))
-                .Append('\t').Append(OnOneField(world.About.Description)).Append('\t').Append(OnOneField(world.About.ModHashes))
-                .Append('\t').Append(OnOneField(world.About.Settings)).Append('\t').Append(OnOneField(world.Type)).Append('\t').Append(OnOneField(world.Share))
-                .Append('\t').Append(world.Difficulty is { } difficulty ? difficulty.ToString(CultureInfo.InvariantCulture) : string.Empty)
-                .Append('\t').Append(world.OtherModsOff ? '1' : '0').Append('\t').Append(world.Squad).Append('\t').Append(world.RaidBosses ? '1' : '0').Append('\n');
-
-            if (world.ModsUnread)
-            {
-                text.Append("unread\n");
-            }
-
-            foreach (var member in world.Members.OrderByDescending(member => member.Online).ThenBy(member => member.Name, StringComparer.OrdinalIgnoreCase))
-            {
-                text.Append("member\t").Append(member.Id).Append('\t').Append(member.Online ? '1' : '0').Append('\t').Append(OnOneField(member.Name)).Append('\n');
-            }
-        }
-
-        return text.ToString();
-    }
 
     /// <summary>
     /// Keeps a name inside its field.

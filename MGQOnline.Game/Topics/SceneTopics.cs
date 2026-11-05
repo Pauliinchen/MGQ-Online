@@ -2,6 +2,7 @@
 //  SceneTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Took a change's arguments as values and gave a message's back as values
 //      Paulinchen  2026-10-28: Created
 //
 //----------------------------------------------------------------
@@ -19,16 +20,15 @@ namespace MGQOnline.Game.Topics;
 /// <summary>
 /// The bridge topics of the story's scene (<see cref="SceneQueue"/> and <see cref="SceneChecks"/>),
 /// which both hosts answer through <see cref="SharedTopics"/>, since coop_scene.rbx loads on the
-/// battle server too. A change's arguments cross as the line the battle line codec writes of them
-/// (<see cref="WireWriter"/>), which the DLL reads back with no game facts: a scene names no battler,
-/// symbol or database entry.
+/// battle server too. A change's arguments cross as plain values (<see cref="WirePlain"/>), and a
+/// message carries them as a battle line (<see cref="WireWriter"/>), which the DLL reads back with no
+/// game facts: a scene names no battler, symbol or database entry.
 /// </summary>
 public static class SceneTopics
 {
     /// <summary>
-    /// Keeps a change of the teller's scene: <c>kind</c>, <c>line</c> (its arguments), <c>map</c>,
-    /// <c>logged</c> and <c>skip</c> (whether the player holds the game's skip) in; whether the
-    /// line read out.
+    /// Keeps a change of the teller's scene: <c>kind</c>, <c>args</c> (its arguments), <c>map</c>,
+    /// <c>logged</c> and <c>skip</c> (whether the player holds the game's skip) in; true once kept.
     /// </summary>
     public const string Change = "scene.change";
 
@@ -46,16 +46,16 @@ public static class SceneTopics
     public const string Clear = "scene.clear";
 
     /// <summary>
-    /// Checks a message of the teller's scene for a viewer: <c>kind</c>, <c>line</c>, <c>map</c>
-    /// (the teller's) and <c>here</c> (the player's) in; a text refusing the whole message, else the
-    /// refusal of each change in its order (nil for one that passes) out; nil when the line does
-    /// not read.
+    /// Checks a message of the teller's scene for a viewer: <c>kind</c>, <c>line</c> (the message's
+    /// arguments), <c>map</c> (the teller's) and <c>here</c> (the player's) in; <c>args</c> (the
+    /// arguments as values) and <c>refusals</c> (a text refusing the whole message, else the refusal
+    /// of each change in its order, nil for one that passes) out; nil when the line does not read.
     /// </summary>
     public const string Take = "scene.take";
 
     /// <summary>
     /// Checks one change of a picture or the screen for a battle's playback: <c>kind</c> and
-    /// <c>line</c> in; the refusal or nil out.
+    /// <c>args</c> in; the refusal or nil out.
     /// </summary>
     public const string Check = "scene.check";
 
@@ -81,12 +81,7 @@ public static class SceneTopics
         context.Register(Change, (_, request) =>
         {
             RubyHash fields = request.AsHash();
-            if (Parse(fields["line"]) is not { } args)
-            {
-                return false;
-            }
-
-            queue.Add(fields["kind"].AsText(), args, fields["map"].AsInt(), fields["logged"].AsBool(), fields["skip"].AsBool());
+            queue.Add(fields["kind"].AsText(), WirePlain.ListOf(fields["args"]), fields["map"].AsInt(), fields["logged"].AsBool(), fields["skip"].AsBool());
             return true;
         });
         context.Register(Flush, (host, request) => FlushOf(queue, request, host.Frame));
@@ -99,8 +94,7 @@ public static class SceneTopics
         context.Register(Check, (_, request) =>
         {
             RubyHash fields = request.AsHash();
-            string? refusal = Parse(fields["line"]) is { } args ? SceneChecks.Refusal(fields["kind"].AsText(), args) : SceneChecks.BadArguments;
-            return refusal;
+            return SceneChecks.Refusal(fields["kind"].AsText(), WirePlain.ListOf(fields["args"]));
         });
     }
 
@@ -142,14 +136,25 @@ public static class SceneTopics
     /// Answers <see cref="Take"/>.
     /// </summary>
     /// <param name="fields">The request.</param>
-    /// <returns>The refusals.</returns>
-    private static RubyValue? TakeOf(RubyHash fields)
+    /// <returns>The arguments and the refusals, nil when the line does not read.</returns>
+    private static RubyHash? TakeOf(RubyHash fields)
     {
         if (Parse(fields["line"]) is not { } values)
         {
             return null;
         }
 
+        return new RubyHash { { "args", WirePlain.ToPlain(values) }, { "refusals", Refusals(fields, values) } };
+    }
+
+    /// <summary>
+    /// Tells what a viewer refuses of a message's changes.
+    /// </summary>
+    /// <param name="fields">The request.</param>
+    /// <param name="values">The message's arguments.</param>
+    /// <returns>A text refusing the whole message, else the refusal of each change.</returns>
+    private static RubyValue Refusals(RubyHash fields, IReadOnlyList<WireValue> values)
+    {
         string kind = fields["kind"].AsText();
         int map = fields["map"].AsInt();
         int here = fields["here"].AsInt();

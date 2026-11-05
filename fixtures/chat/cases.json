@@ -637,9 +637,8 @@
           "op": "receive",
           "seat": 4,
           "fields": {
-            "chat": "far",
+            "mchat": "far",
             "name": "Faraway",
-            "ch": "say",
             "map": "7"
           },
           "answer": {
@@ -712,9 +711,8 @@
           "op": "receive",
           "seat": 2,
           "fields": {
-            "chat": "near",
+            "mchat": "near",
             "name": "Friend",
-            "ch": "say",
             "map": "5"
           },
           "answer": {
@@ -8155,9 +8153,8 @@
           "op": "receive",
           "seat": 2,
           "fields": {
-            "chat": "on the map",
+            "mchat": "on the map",
             "name": "Friend",
-            "ch": "say",
             "map": "5"
           },
           "answer": {

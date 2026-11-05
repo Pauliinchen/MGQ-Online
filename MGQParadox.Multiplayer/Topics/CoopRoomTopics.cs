@@ -2,7 +2,8 @@
 //  CoopRoomTopics.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Timed the matchmaking by the bridge's frame
+//      Paulinchen  2026-11-05: Took the rates, the invite fields and the messages as values, written and read by their kinds
+//                            - Timed the matchmaking by the bridge's frame
 //                            - Turned down an invite the player stayed busy for every frame, in any scene
 //                            - Read whether the player types in the chat box
 //                            - Took a party member's request to join a battle late, its answers and its late invite past the map's gate in a Classic world too
@@ -19,6 +20,7 @@ using MGQOnline.Bridge;
 using MGQOnline.Bridge.Ruby;
 using MGQOnline.Game.Coop;
 using MGQOnline.Game.Ids;
+using MGQOnline.Game.Topics;
 using MGQOnline.Game.World;
 
 namespace MGQParadox.Multiplayer.Topics;
@@ -333,7 +335,7 @@ internal sealed class CoopRoomTopics : ICoopHost
             return new RubyArray(match.RaidCandidates(Seats(fields["viewers"]), Seats(fields["stays_out"])).Select(peer => (RubyValue)peer.Seat));
         });
         context.Register(TakeOffTopic, (_, request) => topics.Run(request.AsHash(), fields =>
-            room.At(fields["seat"].AsInt()) is { } peer ? match.TakeOff(peer, FieldsOf(fields["fields"].AsHash())) : []));
+            room.At(fields["seat"].AsInt()) is { } peer ? match.TakeOff(peer, MessageTopics.FieldsOf(fields["fields"].AsHash())) : []));
         context.Register(LeaderWaitTopic, (_, _) => match.LeaderWait());
         context.Register(LeaderEndTopic, (_, request) =>
         {
@@ -430,7 +432,7 @@ internal sealed class CoopRoomTopics : ICoopHost
     /// Reads a battle the scripts hand over.
     /// </summary>
     /// <param name="fields">{"troop", "escape", "lose", "encounter", "encountering", "joining",
-    /// "asked_hot", "side", "pools_won", "boss", "rates", "invite_fields" ([name, value] each),
+    /// "asked_hot", "side", "pools_won", "boss", "rates" (numbers), "invite_fields" ([name, value] each),
     /// "viewers", "leading" ([seat, bid] or nil), "stays_out"}.</param>
     /// <returns>The battle.</returns>
     private static CoopOffer OfferOf(RubyHash fields)
@@ -447,8 +449,8 @@ internal sealed class CoopRoomTopics : ICoopHost
             IsTrue(fields["side"]),
             IsTrue(fields["pools_won"]),
             IsTrue(fields["boss"]),
-            TextOf(fields["rates"]) ?? string.Empty,
-            [.. (fields["invite_fields"].IsNil ? [] : fields["invite_fields"].AsArray()).Select(pair => new KeyValuePair<string, string>(pair.AsArray()[0].AsText(), pair.AsArray()[1].AsText()))],
+            MessageFields.Write("rates", fields["rates"]),
+            [.. (fields["invite_fields"].IsNil ? [] : fields["invite_fields"].AsArray()).Select(pair => new KeyValuePair<string, string>(pair.AsArray()[0].AsText(), MessageFields.Write(pair.AsArray()[0].AsText(), pair.AsArray()[1])))],
             Seats(fields["viewers"]),
             leading.IsNil ? null : (leading.AsArray()[0].AsInt(), leading.AsArray()[1].AsText()),
             Seats(fields["stays_out"]));
@@ -460,38 +462,6 @@ internal sealed class CoopRoomTopics : ICoopHost
     /// <param name="value">[seat, bid], nil for none.</param>
     /// <returns>The host's seat and the battle's id, <see langword="null"/> for none.</returns>
     private static (int Seat, string BattleId)? BattleOf(RubyValue value) => value.IsNil ? null : (value.AsArray()[0].AsInt(), value.AsArray()[1].AsText());
-
-    /// <summary>
-    /// Reads a message's fields the scripts hand over.
-    /// </summary>
-    /// <param name="hash">The fields, each a text.</param>
-    /// <returns>The fields.</returns>
-    private static WorldFields FieldsOf(RubyHash hash)
-    {
-        var fields = new WorldFields();
-        foreach (KeyValuePair<RubyValue, RubyValue> pair in hash)
-        {
-            fields.Set(pair.Key.AsText(), pair.Value.IsNil ? string.Empty : pair.Value.AsText());
-        }
-
-        return fields;
-    }
-
-    /// <summary>
-    /// Writes a message's fields for the scripts.
-    /// </summary>
-    /// <param name="fields">The fields.</param>
-    /// <returns>The Hash.</returns>
-    private static RubyHash HashOf(WorldFields fields)
-    {
-        var hash = new RubyHash();
-        foreach (KeyValuePair<string, string> field in fields)
-        {
-            hash.Add(field.Key, field.Value);
-        }
-
-        return hash;
-    }
 
     /// <summary>
     /// Reads a list of seats, nil as none.
@@ -530,7 +500,7 @@ internal sealed class CoopRoomTopics : ICoopHost
         { "troop", action.Troop is { } troop ? troop : RubyNil.Value },
         { "escape", action.Escape },
         { "lose", action.Lose },
-        { "fields", action.Fields is null ? RubyNil.Value : HashOf(action.Fields) },
+        { "fields", action.Fields is null ? RubyNil.Value : MessageTopics.HashOf(action.Fields) },
     };
 
     /// <summary>
@@ -556,7 +526,7 @@ internal sealed class CoopRoomTopics : ICoopHost
             return;
         }
 
-        _context.Events.Post(MessageEvent, new RubyHash { { "seat", peer.Seat }, { "fields", HashOf(message) } });
+        _context.Events.Post(MessageEvent, new RubyHash { { "seat", peer.Seat }, { "fields", MessageTopics.HashOf(message) } });
     }
 
     /// <summary>
@@ -689,7 +659,7 @@ internal sealed class CoopRoomTopics : ICoopHost
         {
             RubyHash fields = request.AsHash();
             Tell(fields["facts"].AsHash());
-            bool settled = _room.At(fields["seat"].AsInt()) is { } peer && _asking.TakeOff(peer, FieldsOf(fields["fields"].AsHash()));
+            bool settled = _room.At(fields["seat"].AsInt()) is { } peer && _asking.TakeOff(peer, MessageTopics.FieldsOf(fields["fields"].AsHash()));
             PostChanged();
             return settled;
         });
@@ -726,7 +696,7 @@ internal sealed class CoopRoomTopics : ICoopHost
             JoinPrompt prompt = _join.Frame(FrameOf(fields));
             RubyHash answer = StatusOf([]);
             answer.Add("target", prompt.Target is { } target ? new RubyArray { target.Host.Seat, target.BattleId } : RubyNil.Value);
-            answer.Add("side", prompt.Side is { } side ? new RubyArray { side.Troop, side.Rates, side.Label } : RubyNil.Value);
+            answer.Add("side", prompt.Side is { } side ? new RubyArray { side.Troop, MessageFields.Read("rates", side.Rates), side.Label } : RubyNil.Value);
             answer.Add("freeze", prompt.Freeze is { } freeze ? new RubyArray { freeze.Troop, freeze.Name } : RubyNil.Value);
             answer.Add("busy_reason", prompt.Busy);
             answer.Add("asked", prompt.Asked);
@@ -782,7 +752,7 @@ internal sealed class CoopRoomTopics : ICoopHost
             { "lose", outcome.Encounter.Lose },
             { "release", new RubyArray(outcome.Release.Select(seat => (RubyValue)seat)) },
             { "stays_out", new RubyArray(outcome.StaysOut.Select(seat => (RubyValue)seat)) },
-            { "host", host is null ? RubyNil.Value : new RubyHash { { "escape", host.Escape }, { "lose", host.Lose }, { "rates", host.Rates }, { "served", host.Served } } },
+            { "host", host is null ? RubyNil.Value : new RubyHash { { "escape", host.Escape }, { "lose", host.Lose }, { "rates", MessageFields.Read("rates", host.Rates) }, { "served", host.Served } } },
         };
     }
 
@@ -800,7 +770,7 @@ internal sealed class CoopRoomTopics : ICoopHost
     /// <summary>
     /// Reads what the scripts tell of a frame on the map for the join prompt.
     /// </summary>
-    /// <param name="fields">{"reads", "pressed", "changing", "busy", "sides" ([host seat, troop, rates,
+    /// <param name="fields">{"reads", "pressed", "changing", "busy", "sides" ([host seat, troop, rates (numbers),
     /// boss steps or nil, name] each, or nil), "freeze" ([troop, name] or nil)}.</param>
     /// <returns>The frame.</returns>
     private static JoinFrame FrameOf(RubyHash fields)
@@ -808,7 +778,7 @@ internal sealed class CoopRoomTopics : ICoopHost
         List<JoinSide>? sides = fields["sides"].IsNil ? null : [.. ListOf(fields["sides"]).Select(side =>
         {
             List<RubyValue> parts = [.. side.AsArray()];
-            return new JoinSide(parts[0].AsInt(), parts[1].AsInt(), TextOf(parts[2]) ?? string.Empty, parts[3].IsNil ? null : parts[3].AsLong(), TextOf(parts[4]) ?? string.Empty);
+            return new JoinSide(parts[0].AsInt(), parts[1].AsInt(), MessageFields.Write("rates", parts[2]), parts[3].IsNil ? null : parts[3].AsLong(), TextOf(parts[4]) ?? string.Empty);
         })];
         RubyValue freeze = fields["freeze"];
         return new JoinFrame(IsTrue(fields["reads"]), IsTrue(fields["pressed"]), IsTrue(fields["changing"]), BusyOf(fields["busy"]), sides,

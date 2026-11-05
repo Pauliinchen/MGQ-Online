@@ -2,7 +2,10 @@
 #  battles_sync.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Held a player's missing messages for the grace the DLL's Sessions counts, by the bridge's frame
+#      Paulinchen  2026-11-05: Read a message's number as a number and sent the last number taken in its field
+#                            - Had C# write the names and the commands and read the commands
+#                            - Asked every player of the battle who came back for what they sent, every game numbering its messages
+#                            - Held a player's missing messages for the grace the DLL's Sessions counts, by the bridge's frame
 #      Paulinchen  2026-11-01: Named the Mod Framework's interface by its own name
 #                            - Built the waiting box on the Mod Framework's components, its leave offer naming the bound cancel key and taking a click
 #      Paulinchen  2026-10-31: Took the question box, the look and the places from the Mod Framework
@@ -529,12 +532,11 @@ module MGQ_MpBattlesSync
 
     # Every player of the battle hears of one who leaves, not only the host who takes them out.
     Departures.left(peer) if kind == "leave"
-    return Sequence.resend(seat, message[:payload].to_s) if kind == Sequence::RESYNC_KIND
+    number = message[Sequence::NUMBER_FIELD]
+    return Sequence.resend(seat, number.to_i) if kind == Sequence::RESYNC_KIND
+    return Channel.receive(seat, kind, message[:payload].to_s) unless number.is_a?(Integer) && number.between?(0, Sequence::MAX_NUMBER)
 
-    number = message[Sequence::NUMBER_FIELD].to_s
-    return Channel.receive(seat, kind, message[:payload].to_s) unless number =~ /\A\d{1,9}\z/
-
-    Sequence.take(seat, number.to_i, kind, message[:payload].to_s)
+    Sequence.take(seat, number, kind, message[:payload].to_s)
   end
 
   # Asks the DLL whether a battle message is one of the running live battle's, and logs why not.
@@ -706,7 +708,7 @@ module MGQ_MpBattlesSync
   # @return [String] The names of this game's party and troop, each with its characters outside the
   #   battle, which the guest swaps for its own.
   def self.names
-    Wire.line([party_side.map(&:name), troop_side.map(&:name)])
+    Wire.write([party_side.map(&:name), troop_side.map(&:name)])
   end
 
   # Lists the party's characters the stream names: those in the battle, then those outside it.
@@ -1006,7 +1008,7 @@ module MGQ_MpBattlesSync
       end
       order = MGQ_MpBattlesSync.mode.own_order
       @built = "#{summary($game_party.battle_members, commands)}#{order ? "; order #{order.join(', ')}" : ''}"
-      order ? Wire.line([commands, order]) : Wire.line([commands])
+      Wire.write(order ? [commands, order] : [commands])
     end
 
     # Writes an action as a command, followed by the skills chained after it when it has any.
@@ -1078,7 +1080,7 @@ module MGQ_MpBattlesSync
     # @param body [String] The commands.
     # @param seat [Integer, nil] The guest's world seat in a co-op battle, whose characters take them.
     def self.apply(body, seat = nil)
-      values = Wire.parse(body.to_s)
+      values = Wire.read(body)
       commands = values && values[0]
       return MGQ_MpBattlesSync.log("unreadable commands from #{MGQ_MpBattlesSync.who(seat)} (#{body.to_s.size} bytes), the computer's kept") unless commands.is_a?(Array)
 
@@ -1244,14 +1246,14 @@ module MGQ_MpBattlesSync
   # sender keeps the last KEPT_SENDS it sent each player; whoever sees a player of the battle come
   # back asks them for what came after the last number taken (RESYNC_KIND); the receiver takes
   # each number once and in order.
-  #
-  # Games of 0.6.8 and before number nothing and ignore the number, so the battle asks no game
-  # again before one of its messages came numbered.
   module Sequence
     # The message's field that carries its number.
     NUMBER_FIELD = "sq"
 
-    # The message that asks a player for what they sent after a number, as its body.
+    # The highest number a message carries.
+    MAX_NUMBER = 999_999_999
+
+    # The message that asks a player for what they sent after a number, in its NUMBER_FIELD.
     RESYNC_KIND = "resync"
 
     # Messages kept per player to send again, about fifty seconds of the host's stream.
@@ -1263,7 +1265,6 @@ module MGQ_MpBattlesSync
       @taken = {}
       @held = {}
       @held_since = {}
-      @numbering = []
     end
 
     # Numbers a message to a player, keeps it, and sends it unless the player is away.
@@ -1301,7 +1302,6 @@ module MGQ_MpBattlesSync
     # @param body [String] The rest.
     def self.take(seat, number, kind, body)
       reset unless @taken
-      @numbering << seat unless @numbering.include?(seat)
       last = @taken[seat]
       if last && number <= last
         return MGQ_MpBattlesSync.log_once([:taken_before, seat, MGQ_MpBattlesSync.battle_id], "left out #{kind[0, 40]} from #{MGQ_MpBattlesSync.who(seat)}, taken before")
@@ -1357,10 +1357,11 @@ module MGQ_MpBattlesSync
       return unless MGQ_MpBattlesSync.role && MGQ_MpBattlesSync.world? && !MGQ_MpBattlesSync.served?
 
       seat = Seats.of_kept(peer)
-      return unless seat && Array(@numbering).include?(seat)
+      return unless seat
 
+      reset unless @taken
       last = @taken[seat].to_i
-      MGQ_MpBattlesSync.tell(peer.seat, RESYNC_KIND, MGQ_MpBattlesSync.battle_id, last.to_s)
+      MGQ_MpBattlesSync.tell(peer.seat, RESYNC_KIND, MGQ_MpBattlesSync.battle_id, "", last)
       MGQ_MpBattlesSync.log("#{MGQ_MpBattlesSync.who(seat)} is back: asked for what they sent after message #{last}")
     end
 
@@ -1368,16 +1369,16 @@ module MGQ_MpBattlesSync
     # those before.
     #
     # @param seat [Integer] The seat the battle knows them by.
-    # @param body [String] The number of the last message they took.
-    def self.resend(seat, body)
+    # @param last [Integer] The number of the last message they took.
+    def self.resend(seat, last)
       return unless (MGQ_MpBattlesSync.player_seats | MGQ_MpBattlesSync.expected).include?(seat)
 
       counter = (@sent || {})[seat]
       return MGQ_MpBattlesSync.log("#{MGQ_MpBattlesSync.who(seat)} asked for messages again, none kept for them") unless counter
 
-      counter[1].reject! { |entry| entry[0] <= body.to_i }
+      counter[1].reject! { |entry| entry[0] <= last }
       sent = counter[1].select { |entry| transmit(seat, entry) }
-      MGQ_MpBattlesSync.log("#{MGQ_MpBattlesSync.who(seat)} asked for what came after message #{body.to_i}: sent #{sent.size} of #{counter[1].size} again")
+      MGQ_MpBattlesSync.log("#{MGQ_MpBattlesSync.who(seat)} asked for what came after message #{last}: sent #{sent.size} of #{counter[1].size} again")
     end
   end
 

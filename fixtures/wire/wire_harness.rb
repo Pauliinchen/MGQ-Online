@@ -2,14 +2,17 @@
 #  wire_harness.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Left loading the codec to its users, the old script's for the cases and the scripts' values for the check
 #      Paulinchen  2026-10-23: Created
 #
 #----------------------------------------------------------------
 
-# Runs the real battles_sync_wire.rbx outside the game for its golden cases: stand-ins for the
-# game classes it writes and reads, the game facts the cases share, and the description of a
-# value both the fixtures and MGQOnline.Game.Tests use. make_fixtures.rb writes the cases with it,
-# GameScript/Tests/wire_fixtures_test.rb checks them again.
+# Runs battles_sync_wire.rbx outside the game for the battle line codec's golden cases: stand-ins
+# for the game classes it writes and reads, the game facts the cases share, and the description of
+# a value both the fixtures and MGQOnline.Game.Tests use. make_fixtures.rb writes the cases with it
+# from the script that still kept the codec, GameScript/Tests/wire_fixtures_test.rb checks the
+# values the scripts hand over and take back against them. Each loads its script, then calls
+# WireHarness.prepare.
 #
 # A value's description is JSON: nil, true and false as themselves, {"i" => "42"},
 # {"f" => <the double's 16 hex digits>}, {"sym" => text}, {"s" => text}, {"ref" => "a0"},
@@ -168,8 +171,6 @@ class Tone
   end
 end
 
-load File.expand_path("../../GameScript/Multiplayer/Scripts/battles_sync_wire.rbx", __dir__)
-
 # The database classes by their token kinds.
 WIRE_ENTRIES = { "k" => RPG::Skill, "t" => RPG::Item, "z" => RPG::State, "w" => RPG::Weapon, "a" => RPG::Armor }.freeze
 
@@ -178,25 +179,11 @@ $data_skills, $data_items, $data_states, $data_weapons, $data_armors = WIRE_ENTR
   size && [nil] + (1...size).map { |id| entry.new(id) }
 end
 
-MGQ_MpBattlesSync::Wire.instance_variable_set(:@symbols, WIRE_GAME["symbols"].each_with_object({}) { |text, all| all[text] = text.to_sym })
-
-# Writes and reads the golden cases with the real codec.
+# Builds the golden cases' values and describes what the codec read.
 module WireHarness
-  # Writes described values as a line with Wire.line.
-  #
-  # @param values [Array] The values' descriptions.
-  # @return [String] The line.
-  def self.encode(values)
-    MGQ_MpBattlesSync::Wire.line(values.map { |value| build(value) })
-  end
-
-  # Reads a line with Wire.parse, battlers by their references.
-  #
-  # @param line [String] The line.
-  # @return [Array, nil] The values' descriptions, nil when the line does not read.
-  def self.decode(line)
-    values = MGQ_MpBattlesSync::Wire.parse(line) { |ref| Game_Battler.new(ref) }
-    values && values.map { |value| describe(value) }
+  # Gives the loaded script the symbols of WIRE_GAME as the game's own.
+  def self.prepare
+    MGQ_MpBattlesSync::Wire.instance_variable_set(:@symbols, WIRE_GAME["symbols"].each_with_object({}) { |text, all| all[text] = text.to_sym })
   end
 
   # Gives a case's line.

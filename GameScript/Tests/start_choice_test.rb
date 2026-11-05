@@ -2,6 +2,7 @@
 #  start_choice_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Read the directory's list and the player's id through the DLL's topics
 #      Paulinchen  2026-11-01: Dropped the checks that read the old screen prototype instead of the scripts
 #                            - Dropped the stand-in of the title screen's commands, which no script hooks any more
 #                            - Stopped loading the deleted ui_boxes.rbx
@@ -86,7 +87,6 @@ end
 # Stand-ins for the mod's base script and its DLL.
 $sounds = []
 $calls = []
-$dll = {}
 # The mod's base script: always available, never outdated, with a player named Me and an empty
 # world.ini.
 module MGQ_Multiplayer
@@ -104,30 +104,8 @@ module MGQ_Multiplayer
   module Ini; def self.read(_path); {}; end; def self.load(_path, _quiet = false); {}; end; end
   # Leaves a path as it is.
   def self.path(name); name; end
-  # The link to the DLL: records each call in $calls and reads its values from $dll.
-  module Link
-    # Answers the player's id.
-    def self.player_id; "me"; end
-    # A DLL function: a call is checked against its signature, recorded and answered with 1.
-    Function = Struct.new(:name, :signature) do
-      # Checks a call's arguments against the signature, records the call in $calls and answers 1.
-      def call(*args); check_dll_call(name, args); $calls << [name, signature, args]; 1; end
-    end
-    # A DLL function with its signature from the export table of Multiplayer.rb.
-    def self.function(name); Function.new(name, dll_signature(name)); end
-    # The DLL's value of a name, from $dll.
-    def self.read(name, _size); $dll[name].to_s; end
-    # Reads a DLL answer: its name=value lines up to a blank line, and the rest as :payload.
-    #
-    # @param text [String] The answer.
-    # @return [Hash] The values by name, and the payload under :payload.
-    def self.parse(text)
-      head, payload = text.split("\n\n", 2)
-      state = { :payload => payload.to_s }
-      head.to_s.split("\n").each { |line| k, v = line.split("=", 2); state[k] = v if v }
-      state
-    end
-  end
+  # Stands in for the player's id, as the DLL tells it.
+  module Player; def self.id; "me"; end; end
 end
 
 require_relative "world_screen_support"
@@ -162,7 +140,7 @@ check("the button comes last", form.fields.last.row, 10)
 check("a form with Players choose ticked alone can be sent", (form[:name] = "W"; form[:password] = "p"; form[:choose] = true; form.problem), nil)
 
 # The directory.
-$dll["mp_dir_list"] = "state=ready\n\nworld\tw1\t4\t0\tc\t0\tC\tFree\tnone\t0\t1\nworld\tw2\t4\t0\tc\t0\tC\tFixed\tready\t1\t0\nworld\tw3\t4\t0\tc\t0\tC\tOld\tnone\t0\n"
+$directory = directory_list([listed_value("w1", "Free", "choose" => true), listed_value("w2", "Fixed", "start" => "ready", "hidden" => true), listed_value("w3", "Old")])
 _, _, listed, = MGQ_MpWorld::Directory.list
 check("the list reads which worlds let their players choose", listed.map { |world| world.choose }, [true, false, false])
 

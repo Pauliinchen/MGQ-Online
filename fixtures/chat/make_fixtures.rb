@@ -2,6 +2,7 @@
 #  make_fixtures.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Named a map line's fields as the DLL sends them now, under mchat
 #      Paulinchen  2026-11-01: Named the close keys in the help tab's last line as ChatModel names them
 #      Paulinchen  2026-10-31: Wrote the texts C# words anew as C# words them
 #                            - Created
@@ -326,6 +327,16 @@ scenario("the party chat", [
 REWORDED = { "You are in no party, so nobody hears the party chat." => "You are not in a party.",
               "Enter sends, Esc or the numpad's 0 closes." => "Enter sends, Esc or Numpad 0 closes." }
 
+# A map line went to the old scripts as "chat" marked "ch" "say"; the cases name its fields as the
+# DLL sends them now, under "mchat".
+SCENARIOS.each do |scenario|
+  scenario["steps"].each do |step|
+    fields = step["fields"]
+    next unless step["op"] == "receive" && fields && fields["ch"] == "say"
+
+    step["fields"] = Hash[fields.reject { |key, _| key == "ch" }.map { |key, value| [key == "chat" ? "mchat" : key, value] }]
+  end
+end
 text = JSON.pretty_generate({ "scenarios" => SCENARIOS }) + "\n"
 File.write(File.join(__dir__, "cases.json"), REWORDED.inject(text) { |cases, (old, now)| cases.gsub(old, now) })
 puts "wrote #{SCENARIOS.size} scenarios"

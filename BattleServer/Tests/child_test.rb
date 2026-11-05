@@ -2,6 +2,7 @@
 #  child_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Read a setup's mods without loading the game's scripts
 #      Paulinchen  2026-10-30: Covered the mods a child reads of its setup before the core opens
 #      Paulinchen  2026-10-28: Covered the game data's fingerprint a child hands the core
 #      Paulinchen  2026-10-23: Covered the battle a child without the core refuses
@@ -185,8 +186,6 @@ end
 check("with MGQ Online loaded the child hands the core the game data's fingerprint after the handshake",
       [enter_child(library), $steps], [[true, ""], [:load, :sandbox, :handshake, [:call, "core.game_data", "1:0a0b0c0d"]]])
 
-# MGQ Online's scripts that read a setup's mods, loaded as the game loads them.
-%w[core_log battles_sync_wire battles_served].each { |name| load File.expand_path("../../GameScript/Multiplayer/Scripts/#{name}.rbx", __dir__) }
 MGQ_Multiplayer::Bridge.close
 wanted = []
 ServedMods.define_singleton_method(:fetch) { |mods, _relay, _log = $stderr| wanted << mods; [] }

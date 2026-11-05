@@ -2,6 +2,8 @@
 #  raid_difficulty_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Pushed the difficulty as the number the DLL reads
+#                            - Asked whether the DLL is a development build through its topic
 #      Paulinchen  2026-11-01: Dropped the stand-in of the title screen's commands, which no script hooks any more
 #                            - Stopped loading the deleted ui_boxes.rbx
 #                            - Dropped the stand-ins of the name box and letters of the deleted text screen
@@ -123,7 +125,6 @@ module DataManager
 end
 
 $calls = []
-$dll = {}
 $ini = {}
 # Stands in for the mod's base script and its DLL, whose calls go into $calls.
 module MGQ_Multiplayer
@@ -149,28 +150,6 @@ module MGQ_Multiplayer
   module Player; def self.share; end; def self.name; "Me"; end; end
   # Stands in for the ini files, which live in $ini by path.
   module Ini; def self.read(path); ($ini[path] || {}).dup; end; def self.load(path, _quiet = false); read(path); end; def self.write(path, values); $ini[path] = values.dup; true; end; end
-  # Stands in for the DLL link, whose state reads come from $dll by function.
-  module Link
-    # A function of the DLL, which notes each call in $calls with its signature.
-    Function = Struct.new(:name, :signature) do
-      # Notes the call, refusing arguments its signature does not name.
-      def call(*args); check_dll_call(name, args); $calls << [name, signature, args]; 1; end
-    end
-    # Answers a function of the DLL with its signature from Multiplayer.rb.
-    def self.function(name); Function.new(name, dll_signature(name)); end
-    # Answers what $dll holds for a function.
-    def self.read(name, _size); $dll[name].to_s; end
-    # Reads the DLL's description as Link.parse does: key=value lines, an empty line, the payload.
-    #
-    # @param text [String] The text.
-    # @return [Hash] The fields, with the payload under :payload.
-    def self.parse(text)
-      head, payload = text.split("\n\n", 2)
-      state = { :payload => payload.to_s }
-      head.to_s.split("\n").each { |line| k, v = line.split("=", 2); state[k] = v if v }
-      state
-    end
-  end
 end
 # Stands in for the world's mods, sharing no settings.
 module MGQ_MpWorldMods; def self.shared?(_settings); false; end; end
@@ -325,7 +304,9 @@ saved_form[:choose] = true
 check("ticked with a save, its new players start from it, never with the player's choice", [saved_form.from_save?, saved_form.choose?, saved_form.problem], [true, false, nil])
 MGQ_MpWorld.instance_variable_set(:@dev_build, nil)
 $calls.clear
-check("the DLL tells a development build once", [MGQ_MpWorld.dev_build?, MGQ_MpWorld.dev_build?, $calls.map { |call| call[0] }], [true, true, ["mp_dev_build"]])
+$dev_build = true
+check("the DLL tells a development build once", [MGQ_MpWorld.dev_build?, MGQ_MpWorld.dev_build?, $calls.map { |call| call[0] }], [true, true, ["update.dev_build"]])
+$dev_build = nil
 MGQ_MpWorld.instance_variable_set(:@dev_build, false)
 
 # The game's state: the enemy rates' common event notes each time it works them out.
@@ -423,9 +404,9 @@ $game_map.update
 check("and puts the game on the world's difficulty", [$game_variables[902], $rates.last], [2, 2])
 
 # The relay's push changes the world's difficulty.
-$routes[MGQ_MpOverworldSync::DIFFICULTY_FIELD].call(nil, MGQ_MpOverworldSync::DIFFICULTY_FIELD => "4")
+$routes[MGQ_MpOverworldSync::DIFFICULTY_FIELD].call(nil, MGQ_MpOverworldSync::DIFFICULTY_FIELD => 4)
 check("a push not from the relay is ignored", MGQ_MpWorld.difficulty, 2)
-$routes[MGQ_MpOverworldSync::DIFFICULTY_FIELD].call(nil, MGQ_MpOverworldSync::DIFFICULTY_FIELD => "4", :relay => true)
+$routes[MGQ_MpOverworldSync::DIFFICULTY_FIELD].call(nil, MGQ_MpOverworldSync::DIFFICULTY_FIELD => 4, :relay => true)
 check("the relay's push changes the world's difficulty and says so", [MGQ_MpWorld.difficulty, $notices.last], [4, "The world plays on PARADOX now."])
 $game_map.update
 check("which the next look plays on at once", [$game_variables[902], $rates.last], [4, 4])

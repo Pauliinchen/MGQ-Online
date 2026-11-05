@@ -2,7 +2,8 @@
 #  battles_coop_join.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Told whether the battle takes players in, is full, ends or is closed, as the rules in C# tell it
+#      Paulinchen  2026-11-05: Told the battle's players in rbn whether or not it takes players in
+#                            - Told whether the battle takes players in, is full, ends or is closed, as the rules in C# tell it
 #                            - Read the Join Battle hotkey in a Classic world too, for a party member's battle the player missed
 #                            - Took a party member's request to join in a Classic world
 #                            - Left a press near a battle that takes nobody in to the DLL, which tells the player why
@@ -73,9 +74,8 @@ module MGQ_MpBattlesJoin
 
   # The fields this script adds to the state the player's game tells the others, as the rules in
   # C# tell them (topic coop.room): "rbn", the players of the battle the player hosts or fights
-  # alone, those taken in counted, while it takes players in, else 0, and "rbs", whether it takes
-  # players in ("open") or why not ("full", "ending", "gathering", "pvp" or "closed"), which the
-  # others' Sessions read.
+  # alone, those taken in counted, and "rbs", whether it takes players in ("open") or why not
+  # ("full", "ending", "gathering", "pvp" or "closed"), which the others' Sessions read.
   #
   # @return [Hash] The fields.
   def self.state_fields

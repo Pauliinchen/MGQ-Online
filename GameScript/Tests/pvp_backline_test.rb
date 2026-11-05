@@ -2,7 +2,9 @@
 #  pvp_backline_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Checked that the other side's Backline gets the game's start with the troop once, and a swap none again
+#      Paulinchen  2026-11-05: Wrote and read the Frontline's message through the codec's stand-in
+#                            - Stood in for the player's id the DLL tells through its topic
+#                            - Checked that the other side's Backline gets the game's start with the troop once, and a swap none again
 #      Paulinchen  2026-11-01: Checked the option's row in Options > Mods, which the Mod Framework keeps
 #      Paulinchen  2026-10-31: Took the mod's prefix from ui_online.rbx
 #      Paulinchen  2026-10-30: Opened the bridge to the stand-in of the DLL, which checks the Frontlines and names the stream's kinds
@@ -26,8 +28,8 @@ $log = []
 module MGQ_Multiplayer
   # Stands in for the log, which notes each line in $log.
   module Log; def self.write(m); $log << m; end; end
-  # Stands in for the DLL link: the player's id is always me-id-000.
-  module Link; def self.player_id; "me-id-000"; end; end
+  # Stands in for the player's id, as the DLL tells it: always me-id-000.
+  module Player; def self.id; "me-id-000"; end; end
   # Stands in for Discord, which is not running.
   module Discord; def self.available?; false; end; end
 end
@@ -35,6 +37,7 @@ end
 load_bridge
 $fake = FakeBridge.new
 answer_live($fake)
+answer_wire($fake)
 # The plans of the battlers the scripts build.
 require_relative "battlers_support"
 answer_battlers($fake)
@@ -203,17 +206,11 @@ module MGQ_MpBattlesSync
   module Recorder; def self.active?; true; end; def self.flush; $posted << [:flush]; end; end
   # Stands in for the battle's channel, noting each post in $posted.
   module Channel; def self.post(kind, body); $posted << [kind, body]; end; end
-  # Stands in for the stream's wire format, which is Marshal here.
-  module Wire
-    # Writes values as a line.
-    def self.line(values); Marshal.dump(values); end
-    # Reads a line's values back.
-    def self.parse(text); Marshal.load(text); end
-  end
 end
 $posted = []
 
 load File.join(SCRIPTS_DIR, "core_log.rbx")
+load_script "battles_sync_wire"
 # Gives the PvP battle the log it writes with.
 module MGQ_MpBattlesPvp; extend MGQ_MpLog; LOG_TAG = "pvp battle"; end
 # The first words of the mod's settings in Options > Mods.
@@ -278,7 +275,7 @@ own.each(&:make_actions)
 check("swapped back in the same round, the character commands again", [own[1].inputable?, own[1].actions], [true, [:attack]])
 $scene.bench_member_ok
 mode.share_order
-check("the host tells the guest its Frontline before the turn's events", $posted, [[:flush], [backline::FRONT_MESSAGE, Marshal.dump([[1, 3]])]])
+check("the host tells the guest its Frontline before the turn's events", $posted, [[:flush], [backline::FRONT_MESSAGE, wire_line([[1, 3]])]])
 $posted.clear
 $game_troop.turn_count = 1
 own.each(&:make_actions)
@@ -296,7 +293,7 @@ check("and is not started again, keeping its TP, counters and states", others.ma
 others[2].make_actions
 mode.share_order
 check("and the commands a guest sent for it", others[2].actions, [])
-mode.take(backline::FRONT_MESSAGE, $scene, Marshal.dump([[6, 7]]))
+mode.take(backline::FRONT_MESSAGE, $scene, wire_line([[6, 7]]))
 check("a guest takes the host's Frontline from the stream", $game_troop.members.map(&:id), [6, 7])
 [[5, 5], [5, 9], [5], "x", nil].each { |front| mode.take_order(nil, front) }
 check("a Frontline that does not fit the team is left out", $game_troop.members.map(&:id), [6, 7])

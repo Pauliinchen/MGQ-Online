@@ -2,6 +2,7 @@
 //  TradeOffers.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Wrote and read an offer, which the scripts no longer build or split
 //      Paulinchen  2026-10-30: Created
 //
 //----------------------------------------------------------------
@@ -96,6 +97,45 @@ public static class TradeOffers
         }
 
         return gold <= 0;
+    }
+
+    /// <summary>
+    /// Writes an offer as games of every release write it: <c>g</c> and the gold, then each item's
+    /// token, a star and its amount, separated by semicolons.
+    /// </summary>
+    /// <param name="gold">The gold.</param>
+    /// <param name="items">Each item's token (see <see cref="TradeItems.Token"/>) and amount.</param>
+    /// <returns>The offer.</returns>
+    public static string Write(long gold, IEnumerable<(string Token, long Amount)> items)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+        return string.Join(';', items.Select(item => $"{item.Token}*{item.Amount.ToString(CultureInfo.InvariantCulture)}").Prepend($"g{gold.ToString(CultureInfo.InvariantCulture)}"));
+    }
+
+    /// <summary>
+    /// Reads an offer as the scripts read one: the last gold part counts, each part that names an
+    /// item adds it, any other part is left out.
+    /// </summary>
+    /// <param name="offer">The offer.</param>
+    /// <returns>The gold and each item's token and amount.</returns>
+    public static (long Gold, List<(string Token, int Amount)> Items) Read(string offer)
+    {
+        ArgumentNullException.ThrowIfNull(offer);
+        long gold = 0;
+        List<(string Token, int Amount)> items = [];
+        foreach (string part in RubySplit(offer, ';'))
+        {
+            if (IsGold(part))
+            {
+                gold = long.Parse(part.AsSpan(1), NumberStyles.None, CultureInfo.InvariantCulture);
+            }
+            else if (Entry(part) is { } entry)
+            {
+                items.Add(entry);
+            }
+        }
+
+        return (gold, items);
     }
 
     /// <summary>

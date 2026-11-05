@@ -2,6 +2,7 @@
 #  ui_party_box.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Kept and read its switch in Player.ini as true or false, which the DLL writes as 1 or 0
 #      Paulinchen  2026-11-01: Built the box on the Mod Framework's components, docked at the top right under the game's windows
 #                            - Changed the size by a click on the size hint too
 #                            - Asked the wheels of the Mod Framework whether one is open
@@ -67,14 +68,14 @@ module MGQ_MpPartyBox
   #
   # @return [Boolean] Whether it does.
   def self.small?
-    @small = MGQ_Multiplayer::Player.setting(SMALL_SETTING).to_s == "1" if @small.nil?
+    @small = MGQ_Multiplayer::Player.setting(SMALL_SETTING) == true if @small.nil?
     @small
   end
 
   # Makes the box small or full, keeping the choice in Player.ini.
   def self.toggle
     @small = !small?
-    MGQ_Multiplayer::Player.store(SMALL_SETTING, @small ? 1 : 0)
+    MGQ_Multiplayer::Player.store(SMALL_SETTING, @small)
     log("party box made #{@small ? 'small: names and pings only' : 'full'}")
     Sound.play_cursor
   end

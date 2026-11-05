@@ -2,6 +2,7 @@
 //  ServerBridge.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Registered the topics that write and read the battle channel's lines of the relay
 //      Paulinchen  2026-10-28: Registered the game data topic and the story names topic
 //                            - Named the linked SQLite version in core.runtime
 //      Paulinchen  2026-10-23: Registered the topics both hosts answer
@@ -67,6 +68,7 @@ internal static class ServerBridge
         events.Register(context);
         StoryIndexTopic.Register(context, events, log);
         StoryNamesTopic.Register(context, () => events.Folder);
+        RelayLineTopics.Register(context);
     }
 
     /// <summary>

@@ -43,7 +43,7 @@ public sealed class WorldFields : IEnumerable<KeyValuePair<string, string>>
     public string? this[string key] => places.TryGetValue(key, out int place) ? pairs[place].Value : null;
 
     /// <summary>
-    /// Reads a message as the scripts' <c>Link.parse</c> does: key=value lines up to the first empty
+    /// Reads a message as another game wrote it: key=value lines up to the first empty
     /// line, then the body; a line without "=" is skipped and a later field replaces an earlier one
     /// in its place.
     /// </summary>
@@ -158,7 +158,7 @@ public sealed class WorldFields : IEnumerable<KeyValuePair<string, string>>
     }
 
     /// <summary>
-    /// Writes the fields as a message, as the scripts' <c>Me.encode</c> does: key=value lines with
+    /// Writes the fields as a message, as every game writes it: key=value lines with
     /// every line break in a value turned into a space, then an empty line.
     /// </summary>
     /// <param name="body">What follows the fields.</param>

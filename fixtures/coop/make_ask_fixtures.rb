@@ -2,6 +2,8 @@
 #  make_ask_fixtures.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Told every battle's state in its host's rbs beside its players in rbn
+#                            - Told why a battle near takes nobody in on the press, as C# does
 #      Paulinchen  2026-10-31: Read the old scripts from a commit that feat/refactor holds
 #                            - Wrote the texts C# words anew as C# words them
 #      Paulinchen  2026-10-30: Created
@@ -336,6 +338,26 @@ end
 
 ASKS = []
 
+# Adds to the last step what the press on a battle near that takes nobody in tells since these
+# scripts (#74): why, in the notification box, and the log line.
+#
+# @param steps [Array<Hash>] The scenario's steps.
+# @param text [String] What the box tells.
+# @param log [String] The log line.
+def told(steps, text, log)
+  outcome = steps.last["outcome"]
+  outcome["box"] << ["message", "join_battle", nil, text, 240]
+  outcome["logs"] << log
+end
+
+# Names whether a battle of a count of players takes more in, as its host's state tells it in "rbs".
+#
+# @param count [Integer] The players in it.
+# @return [String] "open", "full" or "closed" for a battle that takes nobody in.
+def rbs_of(count)
+  count >= 4 ? "full" : count >= 1 ? "open" : "closed"
+end
+
 # A battle near the player on map 5 whose host P5 entered the map first, with the players its
 # state tells.
 #
@@ -343,7 +365,7 @@ ASKS = []
 # @param state [Hash] What the host's state says besides.
 # @return [Array] The host and the guest who fights in it.
 def battle_near(count = 2, state = {})
-  [peer(5, { "scene" => "battle", "rb" => "hb1", "rbh" => "5", "rbn" => count.to_s, "since" => "100", "x" => "9", "y" => "10" }.merge(state)),
+  [peer(5, { "scene" => "battle", "rb" => "hb1", "rbh" => "5", "rbn" => count.to_s, "rbs" => rbs_of(count), "since" => "100", "x" => "9", "y" => "10" }.merge(state)),
    peer(6, { "scene" => "battle", "rb" => "hb1", "rbh" => "5", "x" => "8", "y" => "10" })]
 end
 
@@ -385,7 +407,7 @@ ASKS << scenario("an encounter asks no battle: a boss, a far or full battle, non
   ask(s)
 end
 ASKS << scenario("of two battles near the one whose host entered the map first is asked",
-                 battle_near + [peer(9, { "scene" => "battle", "rb" => "hb2", "rbh" => "9", "rbn" => "1", "since" => "50", "x" => "11", "y" => "10" })]) do |s|
+                 battle_near + [peer(9, { "scene" => "battle", "rb" => "hb2", "rbh" => "9", "rbn" => "1", "rbs" => "open", "since" => "50", "x" => "11", "y" => "10" })]) do |s|
   ask(s)
 end
 ASKS << scenario("party members near are asked along where the battle has room for them all",
@@ -469,7 +491,7 @@ ASKS << scenario("the prompt offers the nearest battle that takes players in, an
   prompt(s, true)
 end
 ASKS << scenario("a battle near that takes nobody in offers a side battle, else a frozen fight",
-                 battle_near(4) + [peer(9, { "scene" => "battle", "rb" => "hb2", "rbh" => "9", "rbn" => "4", "x" => "11", "y" => "11", "since" => "250" })]) do |s|
+                 battle_near(4) + [peer(9, { "scene" => "battle", "rb" => "hb2", "rbh" => "9", "rbn" => "4", "rbs" => "full", "x" => "11", "y" => "11", "since" => "250" })]) do |s|
   $sides = { 5 => [81, "100,100,100,100,100,100"], 9 => [82, "90,90,90,90,90,90"] }
   prompt(s)
   $boss_steps = { 82 => 0 }
@@ -481,6 +503,7 @@ ASKS << scenario("a battle near that takes nobody in offers a side battle, else 
   prompt(s, true)
   $freeze = nil
   prompt(s, true)
+  told(s, "P5's battle is full.", "join battle: P5 (seat 5)'s battle hb1 takes nobody in (full): told the player")
 end
 ASKS << scenario("a request waits for the host's answer: a refusal, no answer, an invite", battle_near(1)) do |s|
   prompt(s, true)

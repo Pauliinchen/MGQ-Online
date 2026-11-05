@@ -2,6 +2,8 @@
 #  duel_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Handed the team and took a team duel's sides as values, which the DLL writes and reads
+#                            - Expected the players a challenge names as a list
 #      Paulinchen  2026-10-30: Checked the script's side of the DLL's handshake on the fake bridge instead of the handshake
 #      Paulinchen  2026-10-23: Set up the parties through the party's view, as the DLL keeps them
 #      Paulinchen  2026-10-23: Started the stand-in battle without the deleted mirror match flag
@@ -58,12 +60,12 @@ $backline_wanted = true
 $duels.view = MGQ_MpBattlesDuel::NO_VIEW.merge("inviting" => true, "targets" => ["friend"], "invite_ends" => 3600, "doing" => ["Challenging to a duel", 3600])
 duel.invite("friend")
 check("a challenge names its target and the Backline", $duels.requests("duel.challenge").last, { "target" => "friend", "backline" => true })
-check("and the state tells the view's challenge at once", MGQ_MpOverworldSync::Me.current.values_at("challenge", "challenge_to", "challenge_backline"), [1, "friend", 1])
+check("and the state tells the view's challenge at once", MGQ_MpOverworldSync::Me.current.values_at("challenge", "challenge_to", "challenge_backline"), [1, ["friend"], 1])
 check("which the line above the player's head names with its seconds", MGQ_MpActions.doing_text(duel.own_doing)[1] =~ /\AChallenging to a duel \(\d+ s\)\z/ ? true : false, true)
 $backline_wanted = false
 $duels.view = MGQ_MpBattlesDuel::NO_VIEW
 duel.accept(peer)
-check("accepting hands the player's team while they are free", $duels.requests("duel.accept").last, { "seat" => 2, "free" => true, "team" => "game-1\tbackline=0\nmember=me" })
+check("accepting hands the player's team while they are free", $duels.requests("duel.accept").last, { "seat" => 2, "free" => true, "team" => ["game-1", "backline=0\nmember=me"] })
 $role = :host
 duel.accept(peer)
 $role = nil
@@ -75,7 +77,7 @@ check("a duel message goes to the DLL with its sender's seat", $duels.requests("
 $duels.calls.clear
 duel_event("duel.need_team", { "id" => 1, "theirs" => "backline=1\nmember=7\nmember=8", "own" => "pvp", "builds" => nil })
 check("a team to read is counted, and the player's own team written", $duels.requests("duel.team").last,
-      { "id" => 1, "count" => 2, "line" => "game-1\tbackline=0\nmember=me", "backline" => false })
+      { "id" => 1, "count" => 2, "line" => ["game-1", "backline=0\nmember=me"], "backline" => false })
 duel_event("duel.need_team", { "id" => 2, "theirs" => "backline=0\nnobody", "own" => "pvp", "builds" => nil })
 check("a team that does not read gets no team written", $duels.requests("duel.team").last, { "id" => 2, "count" => 0 })
 duel_event("duel.need_team", { "id" => 3, "theirs" => nil, "own" => "coop", "builds" => ["member=x", ""] })
@@ -88,17 +90,17 @@ check("a notice of the DLL reaches the notice box", MGQ_MpOverworldSync::Status.
 
 # A duel the DLL hands over starts from the map.
 duel_event("duel.need_team", { "id" => 4, "theirs" => "backline=1\nmember=7", "own" => nil, "builds" => nil })
-duel_event("duel.start", { "role" => "guest", "bid" => "c1", "seat" => 2, "name" => "Friend", "team" => "backline=1\nmember=7", "backline" => true, "sides" => "", "same_side" => false })
+duel_event("duel.start", { "role" => "guest", "bid" => "c1", "seat" => 2, "name" => "Friend", "team" => "backline=1\nmember=7", "backline" => true, "sides" => [], "same_side" => false })
 duel.on_map
 check("a duel waiting to start begins with the DLL's word, when free", $duels.requests("duel.begin").last, { "bid" => "c1", "free" => true })
 check("and starts as guest of the challenger, with the members read before and the Backline",
       [$joined.last, $started.last[0, 3]], [[:guest, "c1", [2], "Friend", :pvp], ["Friend", ["member=7"], true]])
-duel_event("duel.start", { "role" => "host", "bid" => "c2", "seat" => 2, "name" => "Friend", "team" => "member=9", "backline" => false, "sides" => "", "same_side" => false })
+duel_event("duel.start", { "role" => "host", "bid" => "c2", "seat" => 2, "name" => "Friend", "team" => "member=9", "backline" => false, "sides" => [], "same_side" => false })
 $start_fails = true
 duel.on_map
 $start_fails = false
 check("a duel whose battle could not start is called off", [$joined.last[0, 2], $duels.requests("duel.withdraw").last], [[:host, "c2"], "c2"])
-duel_event("duel.start", { "role" => "host", "bid" => "c3", "seat" => 2, "name" => "Friend", "team" => "member=9", "backline" => false, "sides" => "", "same_side" => false })
+duel_event("duel.start", { "role" => "host", "bid" => "c3", "seat" => 2, "name" => "Friend", "team" => "member=9", "backline" => false, "sides" => [], "same_side" => false })
 $duels.begin = false
 joined = $joined.size
 duel.on_map
@@ -107,15 +109,15 @@ check("one the DLL dropped or gave up meanwhile does not start", $joined.size - 
 hosts = [[2, "Friend", "b", [], 8, [0], 4, 0]]
 others = [[0, "Me", "b", [], 8, [0], 2, 0], [3, "Pal", "b", [], 8, [0], 2, 0]]
 duel_event("duel.start", { "role" => "team", "bid" => "g9", "seat" => 2, "name" => "Friend", "team" => "", "backline" => false,
-                           "sides" => MGQ_MpBattlesSync::Wire.line([hosts, others]), "same_side" => false })
+                           "sides" => [hosts, others], "same_side" => false })
 duel.on_map
 check("a team duel's guest joins its host, its sides as the player stands", [$joined.last, $prepared.map { |side| side.is_a?(Array) ? side.map(&:seat) : side }],
       [[:guest, "g9", [2], "Friend", :pvp, true], [[0, 3], [2], false]])
 duel_event("duel.start", { "role" => "team", "bid" => "g10", "seat" => nil, "name" => "", "team" => "", "backline" => false,
-                           "sides" => MGQ_MpBattlesSync::Wire.line([others, hosts]), "same_side" => true })
+                           "sides" => [others, hosts], "same_side" => true })
 duel.on_map
 check("and its host hosts every other player", [$joined.last, $started.last[0]], [[:host, "g10", [3, 2], "the duel", :pvp, true], "Side leader"])
-duel_event("duel.start", { "role" => "host", "bid" => "c4", "seat" => 2, "name" => "Friend", "team" => "member=9", "backline" => false, "sides" => "", "same_side" => false })
+duel_event("duel.start", { "role" => "host", "bid" => "c4", "seat" => 2, "name" => "Friend", "team" => "member=9", "backline" => false, "sides" => [], "same_side" => false })
 $open = false
 world_frame
 $open = true

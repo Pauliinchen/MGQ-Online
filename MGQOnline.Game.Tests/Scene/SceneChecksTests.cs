@@ -2,6 +2,7 @@
 //  SceneChecksTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Handed the topics a change's arguments as values and took a message's back as values
 //      Paulinchen  2026-10-28: Created
 //
 //----------------------------------------------------------------
@@ -82,12 +83,13 @@ public sealed class SceneChecksTests
             new WireList("event.balloon", new WireList(1, 3)),
             new WireList("picture.rotate", new WireList(14, 1_000_000_000)));
 
-        RubyValue verdicts = Call(SceneTopics.Take, new RubyHash { { "kind", "batch" }, { "line", batch }, { "map", 8 }, { "here", 7 } });
-        RubyValue lone = Call(SceneTopics.Take, new RubyHash { { "kind", "screen.start_fadeout" }, { "line", WireWriter.Line(30) }, { "map", 8 }, { "here", 7 } });
-        RubyValue malformed = Call(SceneTopics.Take, new RubyHash { { "kind", "batch" }, { "line", WireWriter.Line("picture.rotate") }, { "map", 7 }, { "here", 7 } });
+        RubyHash verdicts = Call(SceneTopics.Take, new RubyHash { { "kind", "batch" }, { "line", batch }, { "map", 8 }, { "here", 7 } }).AsHash();
+        RubyHash lone = Call(SceneTopics.Take, new RubyHash { { "kind", "screen.start_fadeout" }, { "line", WireWriter.Line(30) }, { "map", 8 }, { "here", 7 } }).AsHash();
+        RubyValue malformed = Call(SceneTopics.Take, new RubyHash { { "kind", "batch" }, { "line", WireWriter.Line("picture.rotate") }, { "map", 7 }, { "here", 7 } }).AsHash()["refusals"];
 
-        Assert.Equal(new RubyArray { RubyNil.Value, "the player is still on the way, on map 7", SceneChecks.BadArguments }, verdicts);
-        Assert.Equal(new RubyArray { RubyNil.Value }, lone);
+        Assert.Equal(new RubyArray { RubyNil.Value, "the player is still on the way, on map 7", SceneChecks.BadArguments }, verdicts["refusals"]);
+        Assert.Equal(new RubyArray { "event.balloon", new RubyArray { 1, 3 } }, verdicts["args"].AsArray()[1]);
+        Assert.Equal(new RubyArray { RubyNil.Value }, lone["refusals"]);
         Assert.Equal((RubyValue)SceneChecks.BadBatch, malformed);
     }
 
@@ -100,7 +102,7 @@ public sealed class SceneChecksTests
     {
         RubyValue verdicts = Call(SceneTopics.Take, new RubyHash { { "kind", "picture.move" }, { "line", "i12	i0	f1e400	i0	i100	i100	i255	i0	i30" }, { "map", 7 }, { "here", 7 } });
 
-        Assert.Equal(new RubyArray { SceneChecks.BadArguments }, verdicts);
+        Assert.Equal(new RubyArray { SceneChecks.BadArguments }, verdicts.AsHash()["refusals"]);
     }
 
     /// <summary>
@@ -110,8 +112,8 @@ public sealed class SceneChecksTests
     [Fact]
     public void Flush_HandsTheMessagesOnce()
     {
-        Call(SceneTopics.Change, new RubyHash { { "kind", "picture.show" }, { "line", WireWriter.Line(3, "cg", 0, 0, 0, 100, 100, 255, 0) }, { "map", 7 }, { "logged", true }, { "skip", false } });
-        Call(SceneTopics.Change, new RubyHash { { "kind", "map.camera" }, { "line", WireWriter.Line(new WireFloat(6.0), new WireFloat(5.0)) }, { "map", 7 }, { "logged", false }, { "skip", false } });
+        Call(SceneTopics.Change, new RubyHash { { "kind", "picture.show" }, { "args", new RubyArray { 3, "cg", 0, 0, 0, 100, 100, 255, 0 } }, { "map", 7 }, { "logged", true }, { "skip", false } });
+        Call(SceneTopics.Change, new RubyHash { { "kind", "map.camera" }, { "args", new RubyArray { new RubyHash { { "float", "6.0" } }, new RubyHash { { "float", "5.0" } } } }, { "map", 7 }, { "logged", false }, { "skip", false } });
 
         RubyValue messages = Call(SceneTopics.Flush, RubyNil.Value);
         RubyValue nothing = Call(SceneTopics.Flush, RubyNil.Value);

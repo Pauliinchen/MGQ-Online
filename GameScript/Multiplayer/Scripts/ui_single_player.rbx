@@ -2,6 +2,7 @@
 #  ui_single_player.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Took the slot to resume as the number or name the DLL reads
 #      Paulinchen  2026-11-01: Named the Mod Framework's interface by its own name
 #      Paulinchen  2026-10-31: Kept its rows through the Mod Framework
 #                            - Worded what the player reads plainly, leaving causes and internals to the log
@@ -278,15 +279,13 @@ module MGQ_MpSinglePlayer
     RESUME_FILE
   end
 
-  # Tells the slot the game last saved to or loaded from before the restart, see SLOT_SETTING: a
-  # number for a slot, the name of an autosave, 0 when none was kept.
+  # Tells the slot the game last saved to or loaded from before the restart, see SLOT_SETTING, as the
+  # DLL reads it: a number for a slot, the name of an autosave, 0 when none was kept.
   #
   # @return [Integer, String] The slot.
   def self.resume_slot
-    slot = MGQ_Multiplayer::Player.setting(SLOT_SETTING).to_s
-    return 0 if slot.empty?
-
-    slot =~ /\A\d+\z/ ? slot.to_i : slot
+    slot = MGQ_Multiplayer::Player.setting(SLOT_SETTING)
+    slot.nil? || slot == "" ? 0 : slot
   end
 
   # Removes the game kept for a restart.

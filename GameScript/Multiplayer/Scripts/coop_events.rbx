@@ -2,7 +2,9 @@
 #  coop_events.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Asked the DLL's one decision whether a list is the player's own, a Pocket Castle resident's or a resumed raid fight's, and whether a telling moves the world's story on
+#      Paulinchen  2026-11-05: Took the self switches a sort needs as the game keys them
+#                            - Told whether the player's story scene plays as true or false
+#                            - Asked the DLL's one decision whether a list is the player's own, a Pocket Castle resident's or a resumed raid fight's, and whether a telling moves the world's story on
 #                            - Left what an event ended early or kept from starting leaves to the one guard of the game's flow, in place of the fade-ins of a dark screen on frame timers
 #                            - Counted its timers by the bridge's frame
 #      Paulinchen  2026-11-01: Hashed a list's shape through story_replay.rbx, which names the places of the kept commands by the same codes
@@ -527,11 +529,13 @@ module MGQ_MpCoopEvents
   # its events database cannot read.
   #
   # @param needs [Hash] The kept needs, see add_needs.
-  # @return [Hash] The values, by kind and id.
+  # @return [Hash] The values, by kind and id; the self switches' as pairs of key and value, since a
+  #   Hash that crosses the bridge has no Array keys.
   def self.values_of(needs)
     values = {}
     needs.each do |kind, ids|
-      values[kind] = Hash[ids.keys.map { |id| [id, value_of(kind, id)] }]
+      pairs = ids.keys.map { |id| [id, value_of(kind, id)] }
+      values[kind] = kind == "ss" ? pairs : Hash[pairs]
     end
     values
   end
@@ -539,13 +543,13 @@ module MGQ_MpCoopEvents
   # Reads one value the DLL named.
   #
   # @param kind [String] "s", "v", "ss", "ps", "pv" or "ce".
-  # @param id [Integer, String] The switch, variable or common event, or the self switch as "map.event.letter".
+  # @param id [Integer, Array] The switch, variable or common event, or the self switch as the game keys it.
   # @return [Boolean, Integer, Array, nil] The value; a common event's commands as rows_of writes them,
   #   nil for none.
   def self.value_of(kind, id)
     case kind
     when "s" then $game_switches ? $game_switches[id] == true : false
-    when "ss" then $game_self_switches ? $game_self_switches[self_switch_key(id)] == true : false
+    when "ss" then $game_self_switches && id.is_a?(Array) ? $game_self_switches[id] == true : false
     when "v" then $game_variables ? number($game_variables[id]) : 0
     when "ps" then defined?(MGQ_MpStoryState) && MGQ_MpStoryState.personal_switch?(id) ? true : false
     when "pv" then defined?(MGQ_MpStoryState) && MGQ_MpStoryState.personal_variable?(id) ? true : false
@@ -560,15 +564,6 @@ module MGQ_MpCoopEvents
   def self.common_rows(id)
     common = $data_common_events && id.is_a?(Integer) && id > 0 ? $data_common_events[id] : nil
     common && common.list ? rows_of(common.list) : nil
-  end
-
-  # Reads a self switch's key from the name the DLL gives it.
-  #
-  # @param name [String] Such as "750.12.A".
-  # @return [Array] Its map, event and letter.
-  def self.self_switch_key(name)
-    map_id, event_id, letter = name.to_s.split(".")
-    [map_id.to_i, event_id.to_i, letter]
   end
 
   # Reads a variable as a branch does, its to_i, nil for a value without a number.
@@ -1123,9 +1118,9 @@ module MGQ_MpCoopEvents
 
   # The fields the party's events add to the state the player's game tells the others.
   #
-  # @return [Hash] "telling": 1 while the player's story scene plays for the party.
+  # @return [Hash] "telling": true while the player's story scene plays for the party.
   def self.state_fields
-    { "telling" => story_playing? ? 1 : 0 }
+    { "telling" => story_playing? ? true : false }
   end
 
   # Reports whether the player shares the chests they open: with their party in a Classic world.

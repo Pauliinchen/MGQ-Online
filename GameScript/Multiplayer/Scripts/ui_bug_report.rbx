@@ -2,7 +2,8 @@
 #  ui_bug_report.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Told an untranslated game in the report by its own name of the story's progress variable
+#      Paulinchen  2026-11-05: Read the player's id through a topic
+#                            - Told an untranslated game in the report by its own name of the story's progress variable
 #      Paulinchen  2026-11-01: Built the form on the Mod Framework's components
 #                            - Left when the report opens, its refusals, sending and the outcome to the DLL
 #                            - Took the wheel's screenshot once the action wheel is gone and waited while any mod's screen holds the game
@@ -421,7 +422,7 @@ module MGQ_MpBugReport
   #
   # @return [String] Such as "<Player> (0123abcd...)".
   def self.player_text
-    "#{MGQ_Multiplayer::Player.name || 'no name'} (#{MGQ_Multiplayer::Link.player_id})"
+    "#{MGQ_Multiplayer::Player.name || 'no name'} (#{MGQ_Multiplayer::Player.id})"
   end
 
   # Names the open world with its id in the directory.

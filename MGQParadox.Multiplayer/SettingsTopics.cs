@@ -2,17 +2,21 @@
 //  SettingsTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Handed the chat's size, the slot to resume and the switches as values, read from the texts every release wrote, and took a whole number or a switch to keep
 //      Paulinchen  2026-10-23: Shared the state of Player.ini with the lists of worlds
 //                            - Took the Player.ini the other topics share
 //                            - Created
 //
 //----------------------------------------------------------------
 
+using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using MGQOnline.Bridge;
 using MGQOnline.Bridge.Ruby;
+using MGQOnline.Game.World;
 using MGQParadox.Multiplayer.Network.World;
 
 namespace MGQParadox.Multiplayer;
@@ -63,6 +67,22 @@ internal static class SettingsTopics
     public const string WriteTopic = "ini.write";
 
     /// <summary>
+    /// The settings the scripts read as values, by key, each read from the text Player.ini keeps.
+    /// </summary>
+    private static readonly Dictionary<string, Func<string, RubyValue>> Values = new(StringComparer.Ordinal)
+    {
+        ["chat_size"] = SizeOf,
+        ["resume_slot"] = SlotOf,
+        ["sp_raid_bosses"] = FlagOf,
+        ["leader_hud"] = FlagOf,
+        ["sp_leader_hud"] = FlagOf,
+        ["party_box_small"] = FlagOf,
+        ["raid_bar_small"] = FlagOf,
+        ["raid_bar_map"] = FlagOf,
+        ["raid_bar_battle"] = FlagOf,
+    };
+
+    /// <summary>
     /// Registers the topics on a context.
     /// </summary>
     /// <param name="context">The context the handshake opened.</param>
@@ -98,14 +118,14 @@ internal static class SettingsTopics
     /// Describes Player.ini as it stands.
     /// </summary>
     /// <param name="player">The Player.ini.</param>
-    /// <returns>{"values" => {setting => value}, the player key left out, "readable" => whether it was read or is missing, "notice" => what
+    /// <returns>{"values" => {setting => value, see <see cref="Values"/>}, the player key left out, "readable" => whether it was read or is missing, "notice" => what
     /// the notification box tells or nil, "name" => the name the others see or nil}.</returns>
     internal static RubyHash State(PlayerIni player)
     {
         var values = new RubyHash();
         foreach (var (key, value) in player.Settings)
         {
-            values.Add(key, value);
+            values.Add(key, Values.TryGetValue(key, out Func<string, RubyValue>? read) ? read(value) : value);
         }
 
         return new RubyHash { { "values", values }, { "readable", player.Readable }, { "notice", player.Notice }, { "name", player.Name } };
@@ -127,16 +147,53 @@ internal static class SettingsTopics
     /// <summary>
     /// Reads the changes of Player.ini a request names.
     /// </summary>
-    /// <param name="request">{setting => value, nil for one to remove}.</param>
+    /// <param name="request">{setting => value, a text, a whole number or true or false (written as 1 or 0), nil for one to remove}.</param>
     /// <returns>The changes in order.</returns>
     /// <exception cref="BridgeRequestException">A change names the player key, which only the DLL makes.</exception>
     private static List<KeyValuePair<string, string?>> ChangesOf(RubyValue request)
     {
-        var changes = request.AsHash().Select(pair => new KeyValuePair<string, string?>(pair.Key.AsText(), pair.Value.IsNil ? null : pair.Value.AsText())).ToList();
+        var changes = request.AsHash().Select(pair => new KeyValuePair<string, string?>(pair.Key.AsText(), pair.Value.IsNil ? null : pair.Value switch
+            {
+                RubyBool flag => flag.Flag ? "1" : "0",
+                RubyInteger number => number.Value.ToString(CultureInfo.InvariantCulture),
+                _ => pair.Value.AsText(),
+            })).ToList();
         return changes.Any(change => change.Key == PlayerIni.KeySetting)
             ? throw new BridgeRequestException("The player key is kept by the DLL alone.")
             : changes;
     }
+
+    /// <summary>
+    /// Reads a size as Player.ini keeps it, <c>&lt;width&gt;x&lt;height&gt;</c>.
+    /// </summary>
+    /// <param name="text">The text.</param>
+    /// <returns>[width, height], nil for a text that names no size of both above 0.</returns>
+    private static RubyValue SizeOf(string text)
+    {
+        string[] parts = text.Split('x');
+        return parts.Length == 2 && WorldFields.ToI(parts[0]) is > 0 and var width && WorldFields.ToI(parts[1]) is > 0 and var height ? new RubyArray { width, height } : RubyNil.Value;
+    }
+
+    /// <summary>
+    /// Reads the slot a game kept for a restart was last saved to or loaded from: a number for a
+    /// save slot, the name of an autosave.
+    /// </summary>
+    /// <param name="text">The text.</param>
+    /// <returns>The slot's number, else the text.</returns>
+    private static RubyValue SlotOf(string text) =>
+        text.Length > 0 && text.All(char.IsAsciiDigit) && long.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out long slot) ? slot : text;
+
+    /// <summary>
+    /// Reads a switch as Player.ini keeps it, 1 or 0.
+    /// </summary>
+    /// <param name="text">The text.</param>
+    /// <returns>True for 1, false for 0, nil for another text.</returns>
+    private static RubyValue FlagOf(string text) => text switch
+    {
+        "1" => RubyBool.True,
+        "0" => RubyBool.False,
+        _ => RubyNil.Value,
+    };
 
     /// <summary>
     /// Reads another key=value file.

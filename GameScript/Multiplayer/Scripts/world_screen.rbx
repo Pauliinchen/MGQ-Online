@@ -2,6 +2,7 @@
 #  world_screen.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Made a world of the directory through the directory's own reader
 #      Paulinchen  2026-11-01: Dropped the form window no screen draws with any more
 #                            - Named the Mod Framework's interface by its own name
 #                            - Showed a world's players, mods and description and the mod picker in the list box of the Mod Framework's components
@@ -287,15 +288,7 @@ module MGQ_MpWorldScreen
   # @param values [Hash] The world, as screen.list tells it.
   # @return [MGQ_MpWorld::Directory::ListedWorld] The world.
   def self.listed_of(values)
-    directory = MGQ_MpWorld::Directory
-    fields = directory::ListedWorld.members.map do |field|
-      case field
-      when :members then values["members"].map { |id, online, name| directory::Member.new(id, online, name) }
-      when :squad then MGQ_MpWorld.squad_from(values["squad"])
-      else values[field.to_s]
-      end
-    end
-    directory::ListedWorld.new(*fields)
+    MGQ_MpWorld::Directory.listed_of(values)
   end
 end
 

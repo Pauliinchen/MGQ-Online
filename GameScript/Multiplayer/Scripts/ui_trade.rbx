@@ -2,6 +2,7 @@
 #  ui_trade.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Told a change of an offer by its gold, tokens and amounts instead of its text
 #      Paulinchen  2026-11-01: Built the trade screen of the Mod Framework's components in one window
 #                            - Asked for the gold in the framework's number box
 #                            - Stepped back by the game's cancel from the bag to its tab and from an offer to Confirm
@@ -209,7 +210,7 @@ module MGQ_MpTradeUi
       list = @bags[index]
       list.rows = MGQ_MpTrade::Items.bag.select { |item| MGQ_MpTradeUi.in_category?(item, category) }.map { |item| bag_row(item, session) }
       list.index = 0
-      @bag_offer = MGQ_MpTrade::Items.write_offer(session.mine)
+      @bag_offer = MGQ_MpTrade::Items.key(session.mine)
     end
 
     # Changes how many of a row's item the offer holds: the cursor sound and the row drawn anew,
@@ -230,7 +231,7 @@ module MGQ_MpTradeUi
 
       Sound.play_cursor
       list.set_row(place, bag_row(item, session))
-      @bag_offer = MGQ_MpTrade::Items.write_offer(session.mine)
+      @bag_offer = MGQ_MpTrade::Items.key(session.mine)
     end
 
     # Offers all of a row's item, or none once all are offered.
@@ -425,8 +426,8 @@ module MGQ_MpTradeUi
       own = side == :mine
       offer = own ? session.mine : session.theirs
       confirmed = own ? session.confirmed : session.their_confirmed?
-      text = MGQ_MpTrade::Items.write_offer(offer)
-      shown = [text, confirmed, session.stage]
+      offer_key = MGQ_MpTrade::Items.key(offer)
+      shown = [offer_key, confirmed, session.stage]
       before = @shown[side]
       return if shown == before
 
@@ -437,7 +438,7 @@ module MGQ_MpTradeUi
       parts[:mark].text = confirmed ? "Confirmed" : "Not confirmed"
       parts[:mark].color = confirmed ? :good : :dim
       parts[:list].rows = offer_rows(offer)
-      parts[:box].pulse if !own && before && before[0] != text
+      parts[:box].pulse if !own && before && before[0] != offer_key
     end
 
     # Lists an offer's rows: the gold, then each item with its amount, an item this game does not
@@ -476,7 +477,7 @@ module MGQ_MpTradeUi
     #
     # @param session [MGQ_MpTrade::Session] The trade.
     def show_bag(session)
-      return if MGQ_MpTrade::Items.write_offer(session.mine) == @bag_offer
+      return if MGQ_MpTrade::Items.key(session.mine) == @bag_offer
 
       list = @bags[@tabs.index]
       kept = list.index

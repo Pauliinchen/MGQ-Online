@@ -2,7 +2,8 @@
 //  EventTopics.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-05: Answered a sort with the one decision, which tells the player's own lists and the Pocket Castle's residents
+//      Paulinchen  2026-11-05: Named the self switches a sort needs as the game keys them
+//                            - Answered a sort with the one decision, which tells the player's own lists and the Pocket Castle's residents
 //                            - Read the common events the scripts hand over
 //                            - Told the scripts the maps of the Pocket Castle's residents
 //      Paulinchen  2026-10-28: Answered the command index of every page a map names in one call
@@ -24,7 +25,6 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Globalization;
 using System.Linq;
 using MGQOnline.Bridge;
 using MGQOnline.Bridge.Ruby;
@@ -446,7 +446,7 @@ internal static class EventTopics
     /// The live values a request hands over, which notes every one the sort read that it lacks:
     /// <c>s</c> (switch id to true or false), <c>v</c> (variable id to its number, nil for none),
     /// <c>ps</c> and <c>pv</c> (switch or variable id to whether it is the player's own), <c>ss</c>
-    /// (self switch "map.event.letter", such as "750.12.A", to true or false), <c>ce</c> (common event
+    /// (pairs of a self switch, [map, event, letter] as the game keys it, and true or false), <c>ce</c> (common event
     /// id to its commands, each [code, indent, parameters], nil for none in the game).
     /// </summary>
     /// <param name="values">The values, <see langword="null"/> for none.</param>
@@ -458,9 +458,9 @@ internal static class EventTopics
         private readonly SortedDictionary<string, SortedSet<long>> _missing = new(StringComparer.Ordinal);
 
         /// <summary>
-        /// The self switches read that the request lacks, as their names in <c>ss</c>.
+        /// The self switches read that the request lacks, by map, event and letter.
         /// </summary>
-        private readonly SortedSet<string> _missingSelfSwitches = new(StringComparer.Ordinal);
+        private readonly SortedSet<(int Map, int Event, string Letter)> _missingSelfSwitches = [];
 
         /// <inheritdoc />
         public bool Switch(long id) => Read("s", id) is RubyBool { Flag: true };
@@ -482,13 +482,13 @@ internal static class EventTopics
         /// <inheritdoc />
         public bool SelfSwitch(int map, int eventId, string letter)
         {
-            string name = string.Create(CultureInfo.InvariantCulture, $"{map}.{eventId}.{letter}");
-            if (values?["ss"] is RubyHash known && known.TryGetValue(name, out RubyValue? value))
+            var key = new RubyArray { map, eventId, letter };
+            if (values?["ss"] is RubyArray known && known.FirstOrDefault(pair => pair is RubyArray { Count: 2 } found && found[0].Equals(key)) is RubyArray { } pair)
             {
-                return value is RubyBool { Flag: true };
+                return pair[1] is RubyBool { Flag: true };
             }
 
-            _missingSelfSwitches.Add(name);
+            _missingSelfSwitches.Add((map, eventId, letter));
             return false;
         }
 
@@ -519,7 +519,7 @@ internal static class EventTopics
 
             if (_missingSelfSwitches.Count > 0)
             {
-                needs["ss"] = new RubyArray(_missingSelfSwitches.Select(name => (RubyValue)name));
+                needs["ss"] = new RubyArray(_missingSelfSwitches.Select(key => (RubyValue)new RubyArray { key.Map, key.Event, key.Letter }));
             }
 
             return new RubyHash { { "needs", needs } };

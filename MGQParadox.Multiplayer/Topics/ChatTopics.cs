@@ -2,6 +2,7 @@
 //  ChatTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-05: Sent a map line under a field of its own
 //      Paulinchen  2026-11-01: Dropped the topics of sending a line, Escape and a refused character, which no script calls
 //                            - Took the chat's messages, the close keys of the help tab, and told each line's tag, name and fade apart
 //      Paulinchen  2026-10-31: Answered the chat model's topics and posted its view, sounds and notices
@@ -325,10 +326,8 @@ internal sealed class ChatTopics : IChatHost
                 fields.Set("name", name);
                 break;
             case ChatModel.Map:
-                // A map line goes out marked say, the map chat's name before, which released games read.
-                fields.Set("chat", text);
+                fields.Set("mchat", text);
                 fields.Set("name", name);
-                fields.Set("ch", "say");
                 fields.Set("map", map);
                 break;
             case ChatModel.Whisper:

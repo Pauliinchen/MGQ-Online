@@ -2,7 +2,8 @@
 #  world_freeze.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-05: Read the bridge's frame as its clock
+#      Paulinchen  2026-11-05: Left writing and reading a frozen fight's text to the DLL, handing it the fight as values
+#                            - Read the bridge's frame as its clock
 #      Paulinchen  2026-10-28: Read the fights each side plays in the other's stead from the freeze's tables
 #      Paulinchen  2026-10-23: Sent and took each frozen fight as a key of the relay's story tracks instead of a list beside the whole story
 #      Paulinchen  2026-10-17: Created
@@ -13,63 +14,34 @@
 # that battle (see battles_raid_freeze.rbx), and the world's story keeps it there for every player
 # until the boss's pools are defeated or its BEATEN marker is met, its own or that of the fight the
 # other side plays in its stead. Each frozen fight is one key of the relay's story tracks by its
-# troop (f<troop>), which the whole world keeps, players behind included, merged here as a union by
-# troop; a fight that ended is ENDED, which replaces it for every game. An end is final for the
-# world: the boss dies once, so no game freezes that troop or the one the other side fights in its
-# stead again. An entry's held keys are the switches, variables and self switches the world's story
-# shares at their value from before the fight's event ran (see MGQ_MpWorldStory.held_value), so
-# nobody's story moves past the fight while it is frozen.
+# troop (f<troop>), whose text the DLL writes and reads (FrozenFightText), which the whole world
+# keeps, players behind included, merged here as a union by troop; a fight that ended is ENDED,
+# which replaces it for every game. An end is final for the world: the boss dies once, so no game
+# freezes that troop or the one the other side fights in its stead again. An entry's held keys are
+# the switches, variables and self switches the world's story shares at their value from before the
+# fight's event ran (see MGQ_MpWorldStory.held_value), so nobody's story moves past the fight while
+# it is frozen.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpWorldFreeze
   # Frozen fights the list holds at most.
   MAX_ENTRIES = 32
 
-  # Sprite rows one frozen fight's stand-ins have at most.
-  MAX_ROWS = 64
-
   # Held keys one frozen fight has at most.
   MAX_HELD = 512
 
-  # Fields of a sprite row, see the entry's "tableau".
-  ROW_SIZE = 13
-
-  # The place of the character name among a sprite row's fields, the only text among them.
-  ROW_NAME = 5
-
-  # The places of a sprite row's boss and hide flags, each 1 or 0.
-  ROW_FLAGS = [11, 12]
-
-  # Fields of an entry in the list's text.
-  ENTRY_FIELDS = 9
-
   # What a fight's key holds once the fight ended, which the relay keeps in place of the fight.
-  ENDED = "0"
+  ENDED = false
 
-  # The longest entry the relay keeps (maxFreezeLength of Relay/core/story.js), past which it would
-  # refuse the whole write.
-  MAX_ENTRY_LENGTH = 65_536
-
-  # The largest integer an entry's text carries, which keeps a broken text from making huge numbers.
-  MAX_INTEGER = 2_147_483_647
+  # The topic that answers a fight as another game reads it back, see StoryTopics.FrozenEntry in the
+  # DLL.
+  ENTRY_TOPIC = "story.freeze_entry"
 
   # Frames between two looks whether a frozen fight ended, a second.
   CHECK_FRAMES = 60
 
-  # What a site key looks like, see MGQ_MpRaidFreeze.tables.
-  SITE_KEY = /\A(map:\d+:\d+:\d+|ce:\d+)\z/
-
-  # The bytes of a free text written as they are; every other byte is escaped as %XX.
-  PLAIN_BYTE = /[^A-Za-z0-9_$!\-]/n
-
-  # What an escaped text looks like.
-  ESCAPED = /\A(?:[A-Za-z0-9_$!\-]|%[0-9A-Fa-f]{2})*\z/
-
-  # What an integer of the list's text looks like.
-  INTEGER = /\A-?\d{1,10}\z/
-
-  # The letters of the held keys' kinds in the list's text: a switch, a variable, a self switch.
-  KIND_LETTERS = ["s", "v", "x"]
+  # The letters the log names the held keys' kinds by: a switch, a variable, a self switch.
+  KIND_LETTERS = ["s", "v", "ss"]
 
   extend MGQ_MpLog
 
@@ -209,8 +181,7 @@ module MGQ_MpWorldFreeze
     rebuild if merged
     return true unless merged
 
-    text = encode_entry(clean)
-    asked = text && defined?(MGQ_MpWorldStory) && MGQ_MpWorldStory.write_freeze(clean["troop"], text.split("|", 2)[1])
+    asked = defined?(MGQ_MpWorldStory) && MGQ_MpWorldStory.write_freeze(clean["troop"], plain_entry(clean))
     log("the frozen fight against troop #{clean['troop']} #{asked ? 'goes to the world' : 'stays this game\'s own: no Raid World story takes it'}")
     true
   rescue => e
@@ -234,16 +205,16 @@ module MGQ_MpWorldFreeze
   # Takes the frozen fights of the world's story the relay handed: each fight's key by its troop,
   # merged into the list, and the ends, for good, whatever the player's part.
   #
-  # @param keys [Hash{Integer => String}] Each fight's key by troop: the fight as encode_entry writes
-  #   it after its troop, or ENDED.
+  # @param keys [Hash{Integer => Object}] Each fight's key by troop: the fight as the DLL reads it
+  #   (FrozenFightText), ENDED, or nil for a fight it cannot read.
   def self.take_keys(keys)
     note_world
-    ended = keys.select { |_troop, text| text == ENDED }.keys
+    ended = keys.select { |_troop, value| value == ENDED }.keys
     changed = take_ended(ended)
-    keys.each do |troop, text|
-      next if text == ENDED
+    keys.each do |troop, value|
+      next if value == ENDED
 
-      entry = decode_entry("#{troop}|#{text}")
+      entry = value.is_a?(Hash) && boss?(troop) ? game_entry(value) : nil
       next log_once([:unread, troop], "dropped the world's frozen fight against troop #{troop}: this game cannot read it") unless entry
 
       reason = end_reason(entry)
@@ -397,7 +368,7 @@ module MGQ_MpWorldFreeze
   # Merges a frozen fight into the list: a fight already known keeps its fields and gains the held
   # keys it lacks, its own value winning a key both hold; a fight that ended for the world is refused.
   #
-  # @param entry [Hash] The entry, read by decode.
+  # @param entry [Hash] The entry, see clean.
   # @param source [String] Whose it is, for the log.
   # @return [Boolean] Whether the list changed.
   def self.merge(entry, source)
@@ -451,188 +422,52 @@ module MGQ_MpWorldFreeze
   def self.held_text(held)
     return "nothing" if held.empty?
 
-    names = held.first(10).map { |kind, key, value| "#{kind == 2 ? "ss#{key.join('.')}" : "#{KIND_LETTERS[kind]}#{key}"} #{value.inspect}" }
+    names = held.first(10).map { |kind, key, value| "#{KIND_LETTERS[kind]}#{key.is_a?(Array) ? key.join('.') : key} #{value.inspect}" }
     names.join(", ") + (held.size > 10 ? ", ..." : "")
   end
 
-  # Reads an entry as the list's text would carry it, the fields of the player's own record and
-  # what the text cannot carry left out.
+  # Reads an entry as another game reads it back from the relay's track, the fields of the player's
+  # own record and what the track cannot carry left out (the DLL's FrozenFightText).
   #
   # @param entry [Hash] The entry.
-  # @return [Hash, nil] The entry, nil for one that is none.
+  # @return [Hash, nil] The entry, nil for one that is none or longer than the relay keeps.
   def self.clean(entry)
     return nil unless entry.is_a?(Hash)
 
-    text = encode_entry(entry)
-    text ? decode_entry(text) : nil
+    read = MGQ_Multiplayer::Bridge.call(ENTRY_TOPIC, plain_entry(entry))
+    read.is_a?(Hash) ? game_entry(read) : nil
   end
 
-  # Writes one frozen fight: troop, site, outer site, scene, the tableau's map, rows and blocked
-  # events, the starter's spot and the held keys.
+  # Turns an entry into what the DLL takes: its fields alone, each held value as the DLL takes it
+  # (MGQ_MpStoryKeys.plain_of), a variable whose value no story carries left out.
   #
   # @param entry [Hash] The entry.
-  # @return [String, nil] The text, nil for an entry that is none or longer than the relay keeps.
-  def self.encode_entry(entry)
-    site = entry["site"].to_s
-    outer = entry["outer"].to_s
-    return nil unless site =~ SITE_KEY && outer =~ SITE_KEY
+  # @return [Hash] The entry.
+  def self.plain_entry(entry)
+    held = Array(entry["held"]).map do |kind, key, value|
+      plain = MGQ_MpStoryKeys.plain_of(kind, value)
+      next log_once([:unsent, kind, key], "left the held #{KIND_LETTERS[kind]}#{key} out: its value is no kind the story carries") if plain.nil?
 
-    map, rows, blocked = entry["tableau"]
-    rows = rows.map { |row| encode_row(row) }
-    return nil if rows.include?(nil)
-
-    spot = entry["spot"].map { |value| written_integer(value) }
-    held = entry["held"].map { |item| encode_held(item) }.compact
-    fields = [site, outer, entry["scene"] ? 1 : 0, written_integer(map), rows.join(","),
-              blocked.map { |id| written_integer(id) }.join("."), spot.join("."), held.join(",")].join("|")
-    if fields.size > MAX_ENTRY_LENGTH
-      return log_once([:long, entry["troop"]], "left the frozen fight against troop #{entry['troop']} out: #{fields.size} characters, more than the relay keeps")
+      [kind, key, plain]
     end
-
-    "#{written_integer(entry['troop'])}|#{fields}"
-  rescue => e
-    log_once([:encode, e.class], "writing a frozen fight failed: #{e.class}: #{e.message}")
-    nil
+    { "troop" => entry["troop"], "site" => entry["site"], "outer" => entry["outer"], "scene" => entry["scene"] ? true : false,
+      "tableau" => entry["tableau"], "spot" => entry["spot"], "held" => held.compact }
   end
 
-  # Writes a sprite row, its character name escaped.
+  # Turns an entry the DLL read into the game's values, see plain_entry.
   #
-  # @param row [Array] The row, see battles_raid_freeze.rbx.
-  # @return [String, nil] The text, nil for a row that is none.
-  def self.encode_row(row)
-    return nil unless row.is_a?(Array) && row.size == ROW_SIZE
-
-    row.each_with_index.map { |value, place| place == ROW_NAME ? escape(value.to_s) : written_integer(value).to_s }.join(":")
+  # @param entry [Hash] The entry.
+  # @return [Hash] The entry.
+  def self.game_entry(entry)
+    entry.merge("held" => Array(entry["held"]).map { |kind, key, value| [kind, key, MGQ_MpStoryKeys.game_value(kind, value)] })
   end
 
-  # Writes a held key: a switch as s<id>~T or ~F, a variable as v<id>~ and its escaped value, a self
-  # switch as x<map>.<event>.<escaped letter>~T or ~F.
+  # Reports whether a troop is a raid boss's, the only fights the list takes.
   #
-  # @param item [Array] The key as kind, key and value.
-  # @return [String, nil] The text, nil for a variable whose value no story carries, such as a list.
-  def self.encode_held(item)
-    kind, key, value = item
-    case kind
-    when 0 then "s#{written_integer(key)}~#{value ? 'T' : 'F'}"
-    when 1
-      written = MGQ_MpStoryState.encode_value(value.nil? ? 0 : value)
-      return log_once([:unsent, key], "left the held variable v#{key} out: its value is no kind the story carries") if written.empty?
-
-      "v#{written_integer(key)}~#{escape(written)}"
-    when 2 then "x#{written_integer(key[0])}.#{written_integer(key[1])}.#{escape(key[2].to_s)}~#{value ? 'T' : 'F'}"
-    end
-  end
-
-  # Writes an integer for the list's text.
-  #
-  # @param value [Object] The value.
-  # @return [Integer] The integer.
-  # @raise [ArgumentError] For a value that is no integer within MAX_INTEGER.
-  def self.written_integer(value)
-    raise ArgumentError, "#{value.inspect} is no integer the list carries" unless value.is_a?(Integer) && value.abs <= MAX_INTEGER
-
-    value
-  end
-
-  # Escapes a free text: each byte outside PLAIN_BYTE as %XX, so no separator of the list's text
-  # appears in it.
-  #
-  # @param text [String] The text.
-  # @return [String] The escaped text, of plain ASCII.
-  def self.escape(text)
-    text.dup.force_encoding("ASCII-8BIT").gsub(PLAIN_BYTE) { |byte| format("%%%02X", byte.ord) }.force_encoding("UTF-8")
-  end
-
-  # Reads an escaped text, see escape.
-  #
-  # @param text [String] The escaped text.
-  # @return [String, nil] The text, nil for a text that is not escaped so or no valid UTF-8.
-  def self.unescape(text)
-    return nil unless text =~ ESCAPED
-
-    plain = text.dup.force_encoding("ASCII-8BIT").gsub(/%([0-9A-Fa-f]{2})/n) { [$1.hex].pack("C") }.force_encoding("UTF-8")
-    plain.valid_encoding? ? plain : nil
-  end
-
-  # Reads one frozen fight, see encode_entry.
-  #
-  # @param text [String] The text.
-  # @return [Hash, nil] The entry, nil for a text that is none or a troop that is no boss.
-  def self.decode_entry(text)
-    fields = text.split("|", -1)
-    return nil unless fields.size == ENTRY_FIELDS
-
-    troop = read_integer(fields[0])
-    return nil unless troop && troop > 0 && defined?(MGQ_MpRaidBosses) && MGQ_MpRaidBosses.boss?(troop)
-    return nil unless fields[1] =~ SITE_KEY && fields[2] =~ SITE_KEY && %w(0 1).include?(fields[3])
-
-    map = read_integer(fields[4])
-    rows = fields[5].split(",", -1).map { |row| decode_row(row) }
-    return nil unless map && rows.size.between?(1, MAX_ROWS) && !rows.include?(nil) && rows.count { |row| row[ROW_FLAGS[0]] == 1 } == 1
-
-    blocked = fields[6].split(".", -1).map { |id| read_integer(id) }
-    spot = fields[7].split(".", -1).map { |value| read_integer(value) }
-    held = fields[8].split(",", -1).map { |item| decode_held(item) }
-    return nil if blocked.include?(nil) || spot.size != 4 || spot.include?(nil) || held.size > MAX_HELD || held.include?(nil)
-
-    { "troop" => troop, "site" => fields[1], "outer" => fields[2], "scene" => fields[3] == "1", "tableau" => [map, rows, blocked], "spot" => spot, "held" => held }
-  rescue
-    nil
-  end
-
-  # Reads a sprite row, see encode_row.
-  #
-  # @param text [String] The text.
-  # @return [Array, nil] The row, nil for a text that is none.
-  def self.decode_row(text)
-    fields = text.split(":", -1)
-    return nil unless fields.size == ROW_SIZE
-
-    row = fields.each_with_index.map { |field, place| place == ROW_NAME ? unescape(field) : read_integer(field) }
-    return nil if row.include?(nil) || ROW_FLAGS.any? { |place| row[place] != 0 && row[place] != 1 }
-
-    row
-  end
-
-  # Reads a held key, see encode_held.
-  #
-  # @param text [String] The text.
-  # @return [Array, nil] The key as kind, key and value, nil for a text that is none.
-  def self.decode_held(text)
-    return nil unless text =~ /\A([svx])([^~]*)~(.*)\z/
-
-    letter = $1
-    key = $2
-    value = $3
-    case letter
-    when "s"
-      id = read_integer(key)
-      id && id > 0 && %w(T F).include?(value) ? [0, id, value == "T"] : nil
-    when "v"
-      id = read_integer(key)
-      written = unescape(value)
-      read = written && !written.empty? ? MGQ_MpStoryState.decode_value(written) : nil
-      id && id > 0 && !read.nil? && (!read.is_a?(String) || read.valid_encoding?) ? [1, id, read] : nil
-    when "x"
-      parts = key.split(".", -1)
-      return nil unless parts.size == 3 && %w(T F).include?(value)
-
-      map = read_integer(parts[0])
-      event = read_integer(parts[1])
-      self_letter = unescape(parts[2])
-      map && event && self_letter && !self_letter.empty? ? [2, [map, event, self_letter], value == "T"] : nil
-    end
-  end
-
-  # Reads an integer of the list's text.
-  #
-  # @param text [String] The text.
-  # @return [Integer, nil] The integer, nil for a text that is none or past MAX_INTEGER.
-  def self.read_integer(text)
-    return nil unless text =~ INTEGER
-
-    value = text.to_i
-    value.abs <= MAX_INTEGER ? value : nil
+  # @param troop [Integer] The troop.
+  # @return [Boolean] Whether it is.
+  def self.boss?(troop)
+    troop.is_a?(Integer) && troop > 0 && defined?(MGQ_MpRaidBosses) && MGQ_MpRaidBosses.boss?(troop) ? true : false
   end
 end
 

@@ -2,6 +2,9 @@
 #  raid_tiers_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-05: Kept the single player switch and pushed the raid bosses as true or false, as the DLL hands them
+#                            - Expected the invite's tier as true
+#                            - Dropped the stand-in of the DLL's exports, which the tiers never call
 #      Paulinchen  2026-10-31: Stood in for the Mod Framework's rows
 #      Paulinchen  2026-10-30: Read the stats through the pools' wrap
 #      Paulinchen  2026-10-23: Stood in for the ids coop.rbx makes up
@@ -29,33 +32,14 @@ $raid = false
 $in_world = false
 $raid_bosses = false
 
-# The DLL, whose calls are noted in $calls.
+# The mod's base script.
 module MGQ_Multiplayer
-  # Stands in for the DLL link.
-  module Link
-    # A function of the DLL, which notes its calls.
-    Function = Struct.new(:name) do
-      # Notes the call in $calls, refusing arguments its signature does not name.
-      #
-      # @param args [Array] The arguments.
-      # @return [Integer] 1, the DLL took the call.
-      def call(*args)
-        check_dll_call(name, args)
-        $calls << [name, args]
-        1
-      end
-    end
-    # Answers a function of the DLL.
-    def self.function(name); Function.new(name); end
-    # Answers that the DLL knows no pools.
-    def self.read(_name, _size); ""; end
-  end
   # Stands in for Player.ini, its settings in $settings.
   module Player
     # Reads a setting.
     def self.setting(key); $settings[key]; end
-    # Keeps a setting as text.
-    def self.store(key, value); $settings[key] = value.to_s; true; end
+    # Keeps a setting as the DLL hands it back: true or false as they are, the rest as text.
+    def self.store(key, value); $settings[key] = value == true || value == false || value.is_a?(Integer) ? value : value.to_s; true; end
   end
 end
 # Stands in for the world's sync: its routes in $routes, its notices in $notices, in a world while
@@ -128,7 +112,7 @@ module MGQ_MpBattlesSync
   module Waiting; def self.active?; false; end; end
 end
 # Stands in for the co-op battles' enemy rates.
-module MGQ_MpBattlesCoop; def self.rates_text; "100,100,0"; end; end
+module MGQ_MpBattlesCoop; def self.rates; [100, 100, 0]; end; end
 
 # The game's switches, as the game keeps them.
 class Game_Switches
@@ -364,7 +348,7 @@ end
 
 # Has the relay, or someone else, push a Classic world's raid bosses.
 #
-# @param value [String] "1" or "0".
+# @param value [Boolean] Whether they are on, as the DLL reads the push.
 # @param relay [Boolean] Whether the relay pushes it.
 def push(value, relay = true)
   message = { MGQ_MpOverworldSync::RAID_BOSSES_FIELD => value }
@@ -376,16 +360,16 @@ end
 reset
 check("single player's raid bosses are off at first", tiers.single_player?, false)
 tiers.choose(true)
-check("turned on, Player.ini keeps it", [$settings["sp_raid_bosses"], tiers.single_player?], ["1", true])
+check("turned on, Player.ini keeps it", [$settings["sp_raid_bosses"], tiers.single_player?], [true, true])
 tiers.choose(false)
-check("and off again", [$settings["sp_raid_bosses"], tiers.single_player?], ["0", false])
+check("and off again", [$settings["sp_raid_bosses"], tiers.single_player?], [false, false])
 check("its Mod Config row is left to ui_single_player.rbx", $options.any? { |option| option[:key] == tiers::OPTION }, false)
 check("the relay's push of a Classic world's raid bosses has its route", $routes.key?(MGQ_MpOverworldSync::RAID_BOSSES_FIELD), true)
 
 # When the story bosses fight as raid bosses.
 reset
 check("outside a world they are off until the player turns them on", tiers.active?, false)
-$settings["sp_raid_bosses"] = "1"
+$settings["sp_raid_bosses"] = true
 tiers.instance_variable_set(:@single_player, nil)
 check("Player.ini's setting turns them on", tiers.active?, true)
 $raid = true
@@ -472,7 +456,7 @@ enemy.hp = 100
 $game_map.interpreter.clear
 BattleManager.battle_end(2)
 check("a lost battle is over", tiered, nil)
-check("its retry's invite says it fights at its tier", tiers.retrying { tiers.invite_fields(71) }, { "tiers" => 1 })
+check("its retry's invite says it fights at its tier", tiers.retrying { tiers.invite_fields(71) }, { "tiers" => true })
 BattleManager.retry_battle
 check("the retry fights at its tier again, the boss at full HP", [tiered, enemy.mhp, enemy.hp], [[71, 1, 9], 4000, 4000])
 BattleManager.battle_end(1)
@@ -495,7 +479,7 @@ check("a tier that names no defense leaves it", [enemy.def, enemy.mdf, MGQ_MpRai
 # Co-op battles: the invite says whether the boss fights at its tier, and a guest follows it.
 reset
 tiers.choose(true)
-check("the invite of an event's battle of a boss at its tier says so", event_invite(71), { "tiers" => 1 })
+check("the invite of an event's battle of a boss at its tier says so", event_invite(71), { "tiers" => true })
 check("one of an earlier phase, a troop that is no boss or a battle no event started says nothing",
       [event_invite(609), event_invite(31), tiers.invite_fields(71)], [{}, {}, {}])
 tiers.choose(false)
@@ -504,8 +488,8 @@ tiers.choose(true)
 $raid = true
 check("nor in a Raid World", event_invite(71), {})
 reset
-tiers.note_invite("troop" => "71", "tiers" => "1")
-check("the leader of a battle a member's request marked invites the others with it too", tiers.invite_fields(71), { "tiers" => 1 })
+tiers.note_invite("troop" => "71", "tiers" => true)
+check("the leader of a battle a member's request marked invites the others with it too", tiers.invite_fields(71), { "tiers" => true })
 BattleManager.setup(71)
 check("a guest of an invite that says so fights at the tier, even with the raid bosses off itself", [tiered, enemy.mhp, enemy.hp], [[71, 1, 9], 4000, 4000])
 reset
@@ -519,22 +503,22 @@ check("a fight left over on the map, as a refused lead leaves it, labels no late
 battle_scene = Scene_Battle.new
 SceneManager.define_singleton_method(:scene) { battle_scene }
 check("a member who hosts its battle at its start, once the leader would not lead it, still invites with the tier",
-      [tiers.invite_fields(71), tiers.invite_fields(72)], [{ "tiers" => 1 }, {}])
+      [tiers.invite_fields(71), tiers.invite_fields(72)], [{ "tiers" => true }, {}])
 SceneManager.define_singleton_method(:scene) { nil }
 reset
-tiers.note_invite("troop" => "71", "tiers" => "1")
+tiers.note_invite("troop" => "71", "tiers" => true)
 BattleManager.setup(610)
 check("so does one of another troop", tiered, nil)
 reset
 $raid = true
-tiers.note_invite("troop" => "71", "tiers" => "1")
+tiers.note_invite("troop" => "71", "tiers" => true)
 $raid = false
 BattleManager.setup(71)
 check("an invite noted in a Raid World is ignored", tiered, nil)
 
 # A guest's troop built anew from its host's gets the tier's max HP at once.
 reset
-tiers.note_invite("troop" => "71", "tiers" => "1")
+tiers.note_invite("troop" => "71", "tiers" => true)
 BattleManager.setup(71)
 rebuilt = [Game_Enemy.new(0, 1)]
 rebuilt[0].hp = 400
@@ -558,17 +542,14 @@ check("the title screen forgets the lost battle", tiered, nil)
 # The relay's push of a Classic world's raid bosses.
 reset
 $in_world = true
-push("1", false)
+push(true, false)
 check("a push not from the relay is ignored", [$takes, $notices], [[], []])
-push("1")
+push(true)
 check("the relay's push turns them on in a Classic world and tells the player", [$takes, $raid_bosses, $notices], [[true], true, ["The world's story bosses fight as raid bosses now."]])
-push("1")
+push(true)
 check("the same value again changes nothing", [$takes.size, $notices.size], [1, 1])
-push("0")
+push(false)
 check("and off", [$raid_bosses, $notices.last], [false, "The world's story bosses fight as usual now."])
-push("2")
-push("")
-check("a value that is neither is ignored", [$takes.size, $notices.size], [2, 2])
 $raid = true
-push("1")
+push(true)
 check("a Raid World takes none and tells nothing", [$raid_bosses, $notices.size], [false, 2])
