@@ -29,6 +29,12 @@
 
   </PropertyGroup>
 
+  <!-- NativeAOT's compiler at 10.0.14, which fixes advisory GHSA-p3jp-9v83-76w9; the SDK brings an
+       older one. -->
+  <ItemGroup>
+    <KnownILCompilerPack Update="Microsoft.DotNet.ILCompiler" ILCompilerPackVersion="10.0.14" />
+  </ItemGroup>
+
   <ItemGroup>
     <InternalsVisibleTo Include="MGQParadox.Multiplayer.Tests" />
   </ItemGroup>

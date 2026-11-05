@@ -23,6 +23,12 @@
     <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
   </PropertyGroup>
 
+  <!-- NativeAOT's compiler at 10.0.14, which fixes advisory GHSA-p3jp-9v83-76w9; the SDK brings an
+       older one. -->
+  <ItemGroup>
+    <KnownILCompilerPack Update="Microsoft.DotNet.ILCompiler" ILCompilerPackVersion="10.0.14" />
+  </ItemGroup>
+
   <!-- -p:BakedHeapHardLimit=<bytes> bakes a GC heap limit into the library, so the battle server
        needs no DOTNET_GCHeapHardLimit. -->
   <ItemGroup Condition="'$(BakedHeapHardLimit)' != ''">
