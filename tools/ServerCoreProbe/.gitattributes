@@ -1,2 +1,0 @@
-# shell scripts run on Linux and must keep Unix line endings
-*.sh text eol=lf
