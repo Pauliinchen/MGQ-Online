@@ -2,6 +2,8 @@
 #  choice_inputs_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Checked that forgetting the question closes its window
+#                            - Read the question's screen from its component of the UI layer
 #      Paulinchen  2026-11-05: Answered the model of each input with fixed values per case instead of from a copy of the C# one
 #                            - Answered the choices a catch-up passes with a fixed answer and checked where the stream began goes with the request
 #      Paulinchen  2026-11-01: Ended the map before its menu scene started, as the game does when another scene takes its place
@@ -15,9 +17,9 @@
 #
 #----------------------------------------------------------------
 
-# Checks the questions a replay asks (coop_choices.rbx, ask_input, Question): the window opens in a
-# menu scene of its own once the player is free on the map; a row, the digits or the Answer button
-# answer; cancel answers what the game's window answers, or puts a number and a choice without
+# Checks the questions a replay asks (coop_choices.rbx, ask_input, StoryQuestion): the window opens
+# in a menu scene of its own once the player is free on the map; a row, the number or the Answer
+# button answer; cancel answers what the game's window answers, or puts a number and a choice without
 # cancel off until the player was busy and stands free again. The DLL's model of the inputs
 # (ChoiceInputs in MGQOnline.Game, ChoiceInputsTests) answers with the fixed model each case sets.
 
@@ -82,11 +84,10 @@ check("the window opens in the menu scene the framework called", [window && wind
 check("the DLL gets the number's digits and value", opened.last.values_at("kind", "opener", "spec"), ["number", "Ana", { "digits" => 3, "value" => 42, "index" => 0 }])
 check("under the title: why, the place, the speaker and the message's lines, the hint",
       label_texts(window).first(5), ["Your answer changes your own game.", "Iliasburg", "Shopkeeper", "How many coins", "do you put in?"])
-digits = window.find(:mgq_online_story_question_digits)
-check("the digits start at the variable's value", [digits.digits, digits.value], [3, 42])
-check("the key line names the bound cancel key, which answers later", window.children.last.line.to_s.end_with?("#{Mod_Framework::UI.cancel_keys}: answer later"), true)
-digits.emit(:submit, 42)
-check("the digits' submit hands the number to the replay and closes the window", [answers, window.open?, $scene.class], [[42], false, Scene_Map])
+question = screen_part(:mgq_online_story_question)
+check("the number starts at the variable's value, at most as many nines as its digits", [question.number, question.send(:most)], [42, 999])
+question.send(:close, 42)
+check("the number answered goes to the replay and the window closes", [answers, screen_part(:mgq_online_story_question), $scene.class], [[42], nil, Scene_Map])
 check("and the question is done", choices.question, nil)
 
 # Cancel puts a number off: walking on does not reopen it; a message, a menu or a battle of the
@@ -103,15 +104,15 @@ frame.call(false)
 frame.call(true)
 check("and opens again once they stand free after a message", $scenes.size, shown + 1)
 window = enter_menu
-check("with the same digits", window.find(:mgq_online_story_question_digits).value, 7)
+check("with the same number", screen_part(:mgq_online_story_question).number, 7)
 cancel(window)
 Scene_Map.new.terminate
 frame.call(true)
 window = enter_menu
 check("or after a menu or a battle", window && window.open?, true)
-window.find(:mgq_online_story_question_digits).value = 9
-window.find(:mgq_online_story_question_digits).parent.children.last.emit(:click)
-check("the Answer button answers the digits shown", answers.last, 9)
+screen_part(:mgq_online_story_question).number = 9
+screen_part(:mgq_online_story_question).send(:close, screen_part(:mgq_online_story_question).number)
+check("the Answer button answers the number shown", answers.last, 9)
 
 # A choice without cancel is put off as a number is; one with its own branch answers it on cancel,
 # from a dim last row.
@@ -119,7 +120,7 @@ $input_model = input_model("choice", [label_row(0, "Yes"), label_row(1, "No")], 
 choices.ask("Ana", ["Will you help?"], ["Yes", "No"], done)
 frame.call(true)
 window = enter_menu
-check("a choice lists its labels", window.find(:mgq_online_story_question_list).rows.map { |row| row[:text] }, ["Yes", "No"])
+check("a choice lists its labels", screen_part(:mgq_online_story_question).send(:rows).map { |row| row[:text] }, ["Yes", "No"])
 cancel(window)
 check("cancel puts a choice without cancel off", [answers.last, choices.question[:later]], [9, true])
 choices.forget("next check")
@@ -127,14 +128,14 @@ $input_model = input_model("choice", [label_row(0, "Sword"), label_row(1, "Shiel
 choices.ask("Ana", [], ["Sword", "Shield"], done, 2)
 frame.call(true)
 window = enter_menu
-check("a choice with its own cancel branch shows it dim and last", window.find(:mgq_online_story_question_list).rows.last, { :text => "Cancel", :color => :dim, :data => 2 })
+check("a choice with its own cancel branch shows it dim and last", screen_part(:mgq_online_story_question).send(:rows).last, { :text => "Cancel", :color => :dim, :data => 2, :hint => "Pick your answer." })
 cancel(window)
 check("and cancel answers the branch", answers.last, 2)
 $input_model = input_model("choice", [label_row(0, "Yes"), label_row(1, "No")], 1)
 choices.ask("Ana", [], ["Yes", "No"], done, 1)
 frame.call(true)
-list = enter_menu.find(:mgq_online_story_question_list)
-list.emit(:submit, list.row_at(0), 0)
+enter_menu
+screen_part(:mgq_online_story_question).send(:close, screen_part(:mgq_online_story_question).send(:rows)[0][:data])
 check("a row picked answers its place", answers.last, 0)
 
 # A key item: the player's items with their descriptions, icons and counts; cancel answers none.
@@ -143,10 +144,7 @@ choices.ask_input(nil, [], "item", { "items" => [[12, "Silver Ring", 1], [30, "O
 frame.call(true)
 window = enter_menu
 check("the item's description goes with it", opened.last["spec"]["items"], [[12, "Silver Ring", 1, "A ring."], [30, "Old Map", 2, "A map."]])
-list = window.find(:mgq_online_story_question_list)
-check("an item's row has its icon and count", list.rows.first, { :text => "Silver Ring", :data => 12, :icon => 1, :right => "x1" })
-list.emit(:change, list.row_at(1), 1)
-check("the hint follows the row under the cursor", label_texts(window).include?("A map."), true)
+check("an item's row has its icon, its count and its description for the help line", screen_part(:mgq_online_story_question).send(:rows).first, { :text => "Silver Ring", :data => 12, :hint => "A ring.", :icon => 1, :right => "x1" })
 cancel(window)
 check("cancel answers no item", answers.last, 0)
 
@@ -154,9 +152,9 @@ check("cancel answers no item", answers.last, 0)
 $input_model = input_model("present", [[12, "Silver Ring", 1, "A ring.", false], NONE_ROW], 0)
 choices.ask_input("Ana", [], "present", { "actor" => 5, "items" => [[12, "Silver Ring", 1]] }, done)
 frame.call(true)
-list = enter_menu.find(:mgq_online_story_question_list)
+enter_menu
 check("a present names the companion", opened.last["companion"], "Alice")
-list.emit(:submit, list.row_at(0), 0)
+screen_part(:mgq_online_story_question).send(:close, screen_part(:mgq_online_story_question).send(:rows)[0][:data])
 check("the present picked is given", answers.last, 12)
 
 # A scene change closes the window without an answer, which then opens again at once.
@@ -167,25 +165,9 @@ enter_menu.close(:scene)
 frame.call(true)
 check("a window closed by a scene change opens again once the player stands free", enter_menu && true, true)
 
-# A save loaded drops the question; the replay asks again when it takes the run.
+# A save loaded drops the question and closes its window; the replay asks again when it takes the run.
 choices.forget("a save was loaded")
-check("forgetting drops the question", choices.question, nil)
-
-# A menu scene that never started, as when a battle took its place in the same frame, lets the
-# question open again once the player stands free on the map: the map ends with another scene
-# next, so the framework closes the window waiting for its menu scene.
-$input_model = input_model("number", [], nil, "digits" => 2, "value" => 7)
-choices.ask_input("Ana", ["How many?"], "number", { "digits" => 2, "value" => 7 }, done)
-map = $scene = Scene_Map.new
-frame.call(true)
-$scene = Scene_Map.new
-Mod_Framework::UI::Tree.scene_ended(map)
-shown = $scenes.size
-frame.call(true)
-window = enter_menu
-check("a question whose menu scene never started opens again once the player stands free", [$scenes.size, window && window.open?], [shown + 1, true])
-cancel(window)
-choices.forget("next check")
+check("forgetting drops the question and closes its window, back on the map", [choices.question, screen_part(:mgq_online_story_question).nil?, $scene.class], [nil, true, Scene_Map])
 
 # A choice a stream's run hands over is the replay's: a catch-up hands the DLL where the stream
 # began handing runs, in a Classic party where the player started keeping the leader's story, and

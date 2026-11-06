@@ -2,6 +2,7 @@
 #  story_screens_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Found a screen's component of the UI layer
 #      Paulinchen  2026-11-05: Loaded the fixed answers of the story's telling instead of the stand-in of the choices' rules
 #      Paulinchen  2026-11-01: Created
 #
@@ -74,6 +75,15 @@ end
 # @param window [Mod_Framework::UI::Window] The window.
 def cancel(window)
   window.receive("close")
+end
+
+# Finds the component of an open screen of the layer.
+#
+# @param id [Symbol] The screen's id.
+# @return [Mod_Framework::UI::Component, nil] The component, nil while none is open.
+def screen_part(id)
+  top = Mod_Framework::UI::Engine::Layer.tops.find { |each| each.id == id.to_s && !each.closed }
+  top && top.mount.component
 end
 
 # Hands out the texts of a window's labels, in their order.

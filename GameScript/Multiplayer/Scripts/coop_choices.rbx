@@ -2,6 +2,8 @@
 #  coop_choices.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Closed the screens of the choices and of the replay's question once what they ask is forgotten
+#                            - Drew the screen of the story's choices and the replay's question as windows of the Mod Framework's UI layer, the number typed in a numeric field
 #      Paulinchen  2026-11-05: Told the offers to sync a story and read them as values, the DLL writing them
 #                            - Caught a Classic member up again once they answered a choice the leader's story is past
 #                            - Asked the DLL the route of the leader's story an offer brings the player to
@@ -714,7 +716,7 @@ module MGQ_MpCoopChoices
 
     @question[:shown] = true
     input = open_question
-    return Question.open(@question, input) if input
+    return open_question_screen(@question, input) if input
 
     @question[:later] = true
     log("the DLL did not open the #{@question[:kind]} a replay asks: it is asked again once the player stands free after a message, menu, battle or transfer")
@@ -809,7 +811,8 @@ module MGQ_MpCoopChoices
 
   # The question a replay waits on.
   #
-  # @return [Hash, nil] The question, see ask_input, with :input once the DLL opened it; nil for none.
+  # @return [Hash, nil] The question, see ask_input, with :input once the DLL opened it and :handle,
+  #   the Mod Framework's handle of its window, once that opened; nil for none.
   def self.question
     @question
   end
@@ -908,13 +911,13 @@ module MGQ_MpCoopChoices
     end
     @screen = { :title => title, :keys => keys, :buttons => buttons, :route => route, :leader => name, :done => done, :valid => valid, :answers => answers }
     log("showing the screen \"#{title}\" with #{keys.empty? ? 'no choices' : keys.join(', ')}")
-    Screen.open(@screen)
+    open_screen(@screen)
   end
 
   # The screen of choices that shows.
   #
-  # @return [Hash, nil] The screen, see show_screen, with :answers, each choice's outcome picked;
-  #   nil while none shows.
+  # @return [Hash, nil] The screen, see show_screen, with :answers, each choice's outcome picked,
+  #   and :handle, the Mod Framework's handle of its window; nil while none shows.
   def self.screen
     @screen
   end
@@ -954,13 +957,15 @@ module MGQ_MpCoopChoices
     screen[:done].call(answers)
   end
 
-  # Forgets what waits, as when a save is loaded or the world closes.
+  # Forgets what waits, as when a save is loaded or the world closes, and closes the screen of
+  # choices and the question's screen that show it.
   #
   # @param reason [String] Why, for the log.
   def self.forget(reason)
     waiting = [@accepted && 'the accepted offer', @prompts.any? && "the choices #{@prompts.join(', ')}", @queued && "the Great Decision's outcome",
                @raid_route && "the world's route to confirm", @question && "the #{@question[:kind]} a replay asks"].select { |what| what }
     log("forgot #{waiting.join(', ')}: #{reason}") unless waiting.empty?
+    shown = [@screen && @screen[:handle], @question && @question[:handle]].compact
     @accepted = nil
     @prompts.clear
     @screen = nil
@@ -969,6 +974,7 @@ module MGQ_MpCoopChoices
     @personal = nil
     @question = nil
     @prompts_later = false
+    shown.each { |handle| handle.close }
   end
 
   # Takes a message about the choices. Called by coop.rbx.
@@ -1052,33 +1058,61 @@ module MGQ_MpCoopChoices
   #
   # @param entries [Array<Array(String, String)>] Each [keys, what they do]; the keys "cancel"
   #   stand for the game's cancel button.
-  # @return [Array<Hash>] The entries, as Mod_Framework::UI::KeyHelp takes them.
+  # @return [Array<Hash>] The entries, as the key help takes them.
   def self.key_entries(entries)
     entries.map { |key, text| key == "cancel" ? { :button => :B, :text => text } : { :key => key, :text => text } }
   end
 
-  # The screen of the story's choices: a row per choice whose outcome turns, the line of what the
-  # picked outcome of the cursor's choice brings, and the buttons, in a menu scene of its own.
-  module Screen
+  # What a screen the Mod Framework did not open closes with, which keeps what it asks waiting.
+  REFUSED = "the Mod Framework did not open it"
+
+  # Opens the screen of the story's choices, keeping its handle as :handle; one the Mod Framework
+  # refuses closes at once and waits, see screen_closed.
+  #
+  # @param screen [Hash] The screen, see show_screen.
+  def self.open_screen(screen)
+    screen[:handle] = UI.open(StoryChoices, :screen => screen) { |_value, why| screen_closed(screen, why) }
+    screen_closed(screen, REFUSED) unless screen[:handle]
+  end
+
+  # Opens the screen of the question a replay waits on, keeping its handle as :handle; one the Mod
+  # Framework refuses closes at once and waits, see question_closed.
+  #
+  # @param question [Hash] The question, see ask_input.
+  # @param input [Hash] What the DLL opened of it.
+  def self.open_question_screen(question, input)
+    question[:handle] = UI.open(StoryQuestion, :question => question, :input => input) { |answer, why| question_closed(why, answer) }
+    question_closed(REFUSED, nil) unless question[:handle]
+  end
+
+  # The screen of the story's choices: a row per choice whose outcome Left, Right and confirm turn,
+  # the help line with the cursor's choice, the line of what its picked outcome brings, and the
+  # buttons, in a menu scene of its own over the map. Sync story with another player, the player's
+  # own outcome and the world's route share it.
+  class StoryChoices < UI::Component
     # Id of the window, which keeps the focus of a window made anew.
     ID = :mgq_online_story_choices
 
     # Id of the list of choices.
     LIST_ID = :mgq_online_story_choices_list
 
-    # Width of the choices' names.
-    LABEL_WIDTH = 150
+    # Id of the help line.
+    HELP_ID = :mgq_online_story_choices_help
+
+    # Ids of the button that confirms and of the one that cancels.
+    CONFIRM_ID = :mgq_online_story_choices_confirm
+    CANCEL_ID = :mgq_online_story_choices_cancel
 
     # The rows of choices shown at most; the rest scroll.
     MOST_ROWS = 8
 
-    # The lines the hint takes at most.
+    # The lines the help line takes at most.
     HINT_LINES = 2
 
     # What heads the choices.
     HEADING = "Your choices"
 
-    # The hints of the confirm button with choices and without, and of the cancel button.
+    # The help of the confirm button with choices and without, and of the cancel button.
     CONFIRM_HINT = "Takes every outcome shown."
     NOTHING_HINT = "Nothing to choose: confirm to go on."
     CANCEL_HINT = "Leaves your story as it is."
@@ -1090,105 +1124,126 @@ module MGQ_MpCoopChoices
     CANCEL_TEXT = "cancel"
     LATER_TEXT = "answer later"
 
-    # Opens the screen, in a menu scene of its own over the map.
-    #
-    # @param screen [Hash] The screen, see MGQ_MpCoopChoices.show_screen.
-    # @return [Mod_Framework::UI::Window] The window.
-    def self.open(screen)
-      width = MGQ_MpCoopChoices.screen_width
+    # The screen: its title, choices, buttons, the outcomes picked and the rest, see
+    # MGQ_MpCoopChoices.show_screen; its answers change as the player turns them.
+    param :screen
+
+    # The place of the list's cursor row, the first choice under the heading as it opens.
+    state :row, 1
+
+    # How often an outcome was turned, which renders the rows anew.
+    state :turns, 0
+
+    # Says the help of the choice the cursor stands on as the screen first shows.
+    def mounted
+      say(hint_of(current))
+    end
+
+    # Describes the screen.
+    def render
       sync = screen[:buttons].size > 1
-      options = { :id => ID, :title => screen[:title], :center => true, :width => width, :max_size => [width, Graphics.height - SCREEN_ROOM], :menu => true }
-      options[:if] = lambda { screen[:valid].call || true } if screen[:valid]
-      window = UI::Window.new(options)
-      parts = build(window, screen, sync)
-      window.on(:close) { |why| MGQ_MpCoopChoices.screen_closed(screen, why) }
-      show(parts, screen, parts[:list].row_at(parts[:list].index))
-      window.open
-    end
-
-    # Adds the parts of the screen to its window.
-    #
-    # @param window [Mod_Framework::UI::Window] The window.
-    # @param screen [Hash] The screen.
-    # @param sync [Boolean] Whether it is the leader's offer, which the player may cancel.
-    # @return [Hash] The parts: :hint, :list and :note.
-    def self.build(window, screen, sync)
       choices = !screen[:keys].empty?
-      parts = { :hint => window.add_label("", :wrap => true, :most_lines => HINT_LINES, :color => :dim) }
-      parts[:list] = window.add_list(:id => LIST_ID, :rows => rows_of(screen), :sides => true, :label_width => LABEL_WIDTH, :leave_ends => true, :shoulder_pages => false,
-                                     :most_rows => MOST_ROWS, :grow => 1, :quiet => true, :visible => choices)
-      parts[:note] = window.add_label("", :wrap => true, :steady => true, :font_size => :small, :visible => choices)
-      buttons = window.add_row(:justify => :end, :gap => UI::Style::GAP)
-      confirm = buttons.add_button(screen[:buttons][0], :closes => true)
-      confirm.on(:click) { screen[:confirmed] = true }
-      confirm.on(:focus) { parts[:hint].text = choices ? CONFIRM_HINT : NOTHING_HINT }
-      buttons.add_button(screen[:buttons][1], :closes => true).on(:focus) { parts[:hint].text = CANCEL_HINT } if sync
-      window.add_key_help(MGQ_MpCoopChoices.key_entries(KEYS + [["cancel", sync ? CANCEL_TEXT : LATER_TEXT]]))
-      list = parts[:list]
-      list.on(:side) { |row, _index, step| turn(parts, screen, row, step) }
-      list.on(:submit) { |row, _index| turn(parts, screen, row, 1) }
-      list.on(:change) { |row, _index| show(parts, screen, row) }
-      list.on(:focus) { show(parts, screen, list.row_at(list.index)) }
-      parts
-    end
-
-    # Lists the rows: the heading, then each choice's title with its picked outcome.
-    #
-    # @param screen [Hash] The screen.
-    # @return [Array<Hash>] The rows.
-    def self.rows_of(screen)
-      rows = screen[:keys].map do |key|
-        found = MGQ_MpCoopChoices.branch(key) || [key.to_s, key.to_s, 0, ""]
-        { :label => found[1], :value => MGQ_MpCoopChoices.labels(key)[screen[:answers][key]].to_s, :data => key }
+      width = MGQ_MpCoopChoices.screen_width
+      params = { id: ID, menu: true, movable: false, width: width, max_size: [width, Graphics.height - SCREEN_ROOM] }
+      params[:if] = -> { screen[:valid].call || true } if screen[:valid]
+      window screen[:title].to_s, params do
+        help_line lines: HINT_LINES, id: HELP_ID
+        list rows, id: LIST_ID, bind_index: :row, most_rows: MOST_ROWS, autofocus: true, visible: choices,
+                   on_side: ->(item, step) { turn(item, step) }, on_submit: ->(item) { turn(item, 1) }, on_change: ->(item) { say(hint_of(item)) }
+        text -> { note_of(current) }, wrap: true, typo: :body2, visible: choices
+        stack row: true, justify: :end do
+          button screen[:buttons][0].to_s, id: CONFIRM_ID, variant: :filled, help: (choices ? CONFIRM_HINT : NOTHING_HINT), on_click: -> { confirm }
+          button(screen[:buttons][1].to_s, id: CANCEL_ID, help: CANCEL_HINT, on_click: :close) if sync
+        end
+        key_help entries: MGQ_MpCoopChoices.key_entries(KEYS + [["cancel", sync ? CANCEL_TEXT : LATER_TEXT]])
       end
-      [{ :heading => HEADING }] + rows
     end
 
-    # Turns a choice's outcome by a step, round its outcomes, and shows the rows and the note anew.
+    private
+
+    # Lists the rows: the heading, then each choice's title with its picked outcome between arrows.
     #
-    # @param parts [Hash] The parts, see build.
-    # @param screen [Hash] The screen.
-    # @param row [Hash] The choice's row.
+    # @return [Array<Hash>] The rows.
+    def rows
+      list = screen[:keys].map do |key|
+        found = MGQ_MpCoopChoices.branch(key) || [key.to_s, key.to_s, 0, ""]
+        offered = MGQ_MpCoopChoices.labels(key)
+        { :text => found[1].to_s, :value => offered[screen[:answers][key]].to_s, :less => offered.size > 1, :more => offered.size > 1, :data => key }
+      end
+      [{ :heading => HEADING }] + list
+    end
+
+    # Tells the row the cursor stands on.
+    #
+    # @return [Hash, nil] The row, nil for none.
+    def current
+      rows[row]
+    end
+
+    # Tells the help of a choice: what it is about.
+    #
+    # @param item [Hash, nil] The choice's row.
+    # @return [String, nil] The help, nil for none.
+    def hint_of(item)
+      key = item.is_a?(Hash) ? item[:data] : nil
+      found = key && MGQ_MpCoopChoices.branch(key)
+      found ? found[3].to_s : nil
+    end
+
+    # Tells what the picked outcome of a choice brings, asked anew, since one choice's note can
+    # read another's answer.
+    #
+    # @param item [Hash, nil] The choice's row.
+    # @return [String] The note, "" for none.
+    def note_of(item)
+      key = item.is_a?(Hash) ? item[:data] : nil
+      return "" unless key
+
+      MGQ_MpCoopChoices.note(key, screen[:answers][key], screen[:answers], screen[:route], screen[:leader]).to_s
+    end
+
+    # Says a text in the help line.
+    #
+    # @param text [String, nil] The text, nil to clear it.
+    def say(text)
+      part(HELP_ID).say(text)
+    end
+
+    # Turns a choice's outcome by a step, round its outcomes.
+    #
+    # @param item [Hash] The choice's row.
     # @param step [Integer] 1 for the next outcome, -1 for the one before.
-    def self.turn(parts, screen, row, step)
-      key = row[:data]
+    def turn(item, step)
+      key = item[:data]
       offered = MGQ_MpCoopChoices.labels(key)
       return if offered.empty?
 
       before = screen[:answers][key]
       screen[:answers][key] = (before + step) % offered.size
       Sound.play_cursor
-      MGQ_MpCoopChoices.log("#{row[:label]}: \"#{offered[before]}\" -> \"#{offered[screen[:answers][key]]}\"")
-      parts[:list].rows = rows_of(screen)
-      show(parts, screen, parts[:list].row_at(parts[:list].index))
+      MGQ_MpCoopChoices.log("#{item[:text]}: \"#{offered[before]}\" -> \"#{offered[screen[:answers][key]]}\"")
+      self.turns = turns + 1
     end
 
-    # Shows the hint of a choice and the note of what its picked outcome brings, asked anew, since
-    # one choice's note can read another's answer.
-    #
-    # @param parts [Hash] The parts, see build.
-    # @param screen [Hash] The screen.
-    # @param row [Hash, nil] The choice's row, nil for none.
-    def self.show(parts, screen, row)
-      key = row.is_a?(Hash) ? row[:data] : nil
-      return unless key
-
-      found = MGQ_MpCoopChoices.branch(key)
-      parts[:hint].text = found ? found[3].to_s : ""
-      parts[:note].text = MGQ_MpCoopChoices.note(key, screen[:answers][key], screen[:answers], screen[:route], screen[:leader])
+    # Takes every outcome shown and closes the screen.
+    def confirm
+      screen[:confirmed] = true
+      close
     end
   end
 
   # The screen of a question a replay asks: its title, why it is asked and the place, the message's
-  # last lines under their speaker, then the answers as rows, or the digits with a button that
-  # answers, in a menu scene of its own over the map.
-  module Question
+  # last lines under their speaker, then the answers as rows, or the number with a button that
+  # answers it, the help line and the key line, in a menu scene of its own over the map. The game's
+  # cancel closes it, which answers what the question's cancel answers or puts it off.
+  class StoryQuestion < UI::Component
     # Id of the window, which keeps the focus of a window made anew.
     ID = :mgq_online_story_question
 
-    # Ids of the list of answers and of the digits.
+    # Ids of the list of answers, the number and the help line.
     LIST_ID = :mgq_online_story_question_list
-    DIGITS_ID = :mgq_online_story_question_digits
+    NUMBER_ID = :mgq_online_story_question_number
+    HELP_ID = :mgq_online_story_question_help
 
     # What the line under the title says.
     WHY_TEXT = "Your answer changes your own game."
@@ -1202,93 +1257,78 @@ module MGQ_MpCoopChoices
     # The rows of answers shown at most; the rest scroll.
     MOST_ROWS = 8
 
-    # The lines the hint takes at most.
+    # The lines the help line takes at most.
     HINT_LINES = 2
 
-    # Opens the screen of a question, in a menu scene of its own over the map.
-    #
-    # @param question [Hash] The question, see MGQ_MpCoopChoices.ask_input.
-    # @param input [Hash] What the DLL opened of it, see ChoiceTopics.InputOpen.
-    # @return [Mod_Framework::UI::Window] The window.
-    def self.open(question, input)
+    # The question, see MGQ_MpCoopChoices.ask_input.
+    param :question
+
+    # What the DLL opened of it, see ChoiceTopics.InputOpen: its kind, title, rows or digits, the
+    # number it starts at, the place cancel answers, its hint and its keys.
+    param :input
+
+    # The number set so far.
+    state(:number) { input["value"].to_i }
+
+    # Says the question's hint as the screen first shows.
+    def mounted
+      hint = input["hint"].to_s
+      part(HELP_ID).say(hint) unless hint.empty?
+    end
+
+    # Describes the screen.
+    def render
       width = MGQ_MpCoopChoices.screen_width
-      window = UI::Window.new(:id => ID, :title => input["title"], :center => true, :width => width, :max_size => [width, Graphics.height - SCREEN_ROOM], :menu => true)
-      add_head(window, question)
-      answer = nil
-      take = lambda do |value|
-        answer = value
-        window.close(:submit)
+      window input["title"].to_s, id: ID, menu: true, movable: false, width: width, max_size: [width, Graphics.height - SCREEN_ROOM] do
+        stack row: true do
+          text WHY_TEXT, grow: 1
+          text(question[:place].to_s, color: :dim) unless question[:place].to_s.empty?
+        end
+        divider
+        speaker, lines = MGQ_MpCoopChoices.speaker_of(question[:lines])
+        text(speaker.to_s, color: :system) if speaker
+        lines.last(MESSAGE_LINES).each_with_index { |line, place| text line.to_s, escapes: true, key: [:line, place] }
+        divider
+        if input["kind"] == "number"
+          stack row: true, justify: :center do
+            numeric_field bind: :number, id: NUMBER_ID, min: 0, max: most, autofocus: true, on_submit: ->(value) { close(value) }
+            button ANSWER_TEXT, on_click: -> { close(number) }
+          end
+        else
+          list rows, id: LIST_ID, escapes: true, most_rows: MOST_ROWS, autofocus: true, bind_index: :start,
+                     on_submit: ->(item) { close(item[:data]) }, on_change: ->(item) { part(HELP_ID).say(item[:hint]) }
+        end
+        help_line lines: HINT_LINES, id: HELP_ID
+        key_help entries: MGQ_MpCoopChoices.key_entries(input["keys"] || [])
       end
-      if input["kind"] == "number"
-        list = nil
-        add_digits(window, input, take)
-      else
-        list = add_list(window, input, take)
-      end
-      hint = window.add_label(input["hint"].to_s, :wrap => true, :most_lines => HINT_LINES, :color => :dim)
-      list.on(:change) { |_row, index| hint.text = input["rows"][index][3].to_s if index >= 0 && input["rows"][index] } if list
-      window.add_key_help(MGQ_MpCoopChoices.key_entries(input["keys"]))
-      window.on(:close) { |why| MGQ_MpCoopChoices.question_closed(why, answer) }
-      window.open
     end
 
-    # Adds the line of why and where, and the message under its speaker, between lines across.
+    # The row the list starts on, as the DLL opened it.
+    state(:start) { input["index"].to_i }
+
+    private
+
+    # Tells the most a number may be: as many nines as it has digits.
     #
-    # @param window [Mod_Framework::UI::Window] The window.
-    # @param question [Hash] The question.
-    def self.add_head(window, question)
-      head = window.add_row(:gap => UI::Style::GAP)
-      head.add_label(WHY_TEXT, :grow => 1, :shrink => true)
-      head.add_label(question[:place], :color => :dim) unless question[:place].to_s.empty?
-      window.add_divider
-      speaker, lines = MGQ_MpCoopChoices.speaker_of(question[:lines])
-      window.add_label(speaker, :color => :system) if speaker
-      lines.last(MESSAGE_LINES).each { |line| window.add_label(line.to_s, :escapes => true) }
-      window.add_divider
+    # @return [Integer] The most.
+    def most
+      10**[input["digits"].to_i, 1].max - 1
     end
 
-    # Adds the answers as rows: a choice's labels, or the items with their icons and counts, with
-    # the cancel answer's own row last and dim.
+    # Lists the rows of a question that lists its answers: a choice's labels, or the items with
+    # their icons and counts, the cancel answer's own row last and dim.
     #
-    # @param window [Mod_Framework::UI::Window] The window.
-    # @param input [Hash] The question as the DLL opened it.
-    # @param take [Proc] Takes the answer picked.
-    # @return [Mod_Framework::UI::List] The list.
-    def self.add_list(window, input, take)
-      list = window.add_list(:id => LIST_ID, :rows => rows_of(input), :index => input["index"].to_i, :escapes => true, :most_rows => MOST_ROWS, :grow => 1,
-                             :shoulder_pages => false)
-      list.on(:submit) { |row, _index| take.call(row[:data]) }
-      list
-    end
-
-    # Lists the rows of a question that lists its answers.
-    #
-    # @param input [Hash] The question as the DLL opened it.
     # @return [Array<Hash>] The rows.
-    def self.rows_of(input)
+    def rows
       items = input["kind"] != "choice"
-      input["rows"].map do |answer, name, count, _hint, cancel|
-        next { :text => name.to_s, :color => :dim, :data => answer } if cancel
+      input["rows"].map do |answer, name, count, hint, cancel|
+        next { :text => name.to_s, :color => :dim, :data => answer, :hint => hint } if cancel
 
-        row = { :text => name.to_s, :data => answer }
+        row = { :text => name.to_s, :data => answer, :hint => hint }
         row[:icon] = $data_items[answer].icon_index if items && $data_items[answer]
         row[:right] = "x#{count}" if count
         row
       end
-    end
-
-    # Adds the digits of a number with the button that answers it.
-    #
-    # @param window [Mod_Framework::UI::Window] The window.
-    # @param input [Hash] The question as the DLL opened it.
-    # @param take [Proc] Takes the number answered.
-    # @return [Mod_Framework::UI::NumberField] The digits.
-    def self.add_digits(window, input, take)
-      row = window.add_row(:justify => :center, :gap => UI::Style::GAP)
-      digits = row.add_number_field(:id => DIGITS_ID, :digits => input["digits"].to_i, :value => input["value"].to_i)
-      digits.on(:submit) { |value| take.call(value) }
-      row.add_button(ANSWER_TEXT).on(:click) { take.call(digits.value) }
-      digits
     end
   end
 end

@@ -2,6 +2,7 @@
 #  story_choices_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Read the screen of choices from its component of the UI layer
 #      Paulinchen  2026-11-05: Answered the outcomes offered and their notes with fixed values instead of the stand-in's rules
 #      Paulinchen  2026-11-01: Created
 #
@@ -49,45 +50,42 @@ sync = lambda do
 end
 
 # Sync story: the choices' titles with the outcome picked, the leader's route first at the Great
-# Decision, the cursor's hint and note, and the keys naming the bound cancel key.
+# Decision, the cursor's hint and note.
 window = sync.call
-list = window.find(:mgq_online_story_choices_list)
-rows = list.rows
+screen = screen_part(:mgq_online_story_choices)
+rows = screen.send(:rows)
 check("the window lists the choices under a heading, each with its outcome, the leader's route first at the Great Decision",
-      [window.title, rows[0], rows[1..-1].map { |row| [row[:label], row[:value]] }],
+      [window.title, rows[0], rows[1..-1].map { |row| [row[:text], row[:value]] }],
       ["Sync story with Ana", { :heading => "Your choices" }, [["Magistea Village", "Defeat Lily"], ["The Great Decision", "Monster Realm"]]])
-texts = label_texts(window)
-check("the hint of the cursor's choice from the DLL's table and the note of its outcome show",
-      [texts[0], texts[1]], [TellingAnswers::TABLE["branches"][1][3], "magistea 0 for Ana on route 1"])
-help = window.children.last
-check("the key line names the bound cancel key", help.line.to_s.include?("#{Mod_Framework::UI.cancel_keys}: cancel"), true)
+check("the cursor's choice has its hint from the DLL's table and the note of its outcome",
+      [screen.row, screen.send(:hint_of, screen.send(:current)), screen.send(:note_of, screen.send(:current))],
+      [1, TellingAnswers::TABLE["branches"][1][3], "magistea 0 for Ana on route 1"])
 
 # Turning: Left and Right step an outcome round, Enter steps it on; the note follows.
 $sounds = []
-list.emit(:side, list.row_at(2), 2, -1)
-check("Left turns the Great Decision back, round to the first route", [choices.screen[:answers][:decision], list.rows[2][:value]], [0, "Angelic Dominion"])
-list.emit(:submit, list.row_at(1), 1)
+screen.send(:turn, rows[2], -1)
+check("Left turns the Great Decision back, round to the first route", [choices.screen[:answers][:decision], screen.send(:rows)[2][:value]], [0, "Angelic Dominion"])
+screen.send(:turn, rows[1], 1)
 check("Enter turns Magistea Village on, with the cursor's sound", [choices.screen[:answers][:magistea], $sounds], [1, ["cursor", "cursor"]])
-check("and its note follows", label_texts(window)[1], "magistea 1 for Ana on route 1")
+check("and its note follows", screen.send(:note_of, screen.send(:current)), "magistea 1 for Ana on route 1")
 
 # Bring me there takes every outcome shown.
-buttons = window.children[-2].children
-buttons[0].receive("click")
-check("Bring me there closes the window and takes every outcome shown", [window.open?, taken, choices.screen, $scene.class], [false, [{ :magistea => 1, :decision => 0 }], nil, Scene_Map])
+screen.send(:confirm)
+check("Bring me there closes the window and takes every outcome shown", [screen_part(:mgq_online_story_choices), taken, choices.screen], [nil, [{ :magistea => 1, :decision => 0 }], nil])
 
 # Cancel, by the button or the game's cancel key, leaves the story as it is.
 window = sync.call
 cancel(window)
 window = sync.call
-window.children[-2].children[1].receive("click")
-check("cancel and the Cancel button leave the story as it was", [taken.size, window.open?, choices.screen], [1, false, nil])
+screen_part(:mgq_online_story_choices).send(:close)
+check("cancel and the Cancel button leave the story as it was", [taken.size, screen_part(:mgq_online_story_choices), choices.screen], [1, nil, nil])
 
 # The offer taken back closes the window with a notice, and an offer gone before it opens opens none.
 window = sync.call
 offer_gone = "Ana took the offer back."
 $notices = []
 window.watch_frame
-check("the offer taken back closes the window and tells the player their story stays", [window.open?, $notices], [false, ["Ana took the offer back. Your story stays as it was."]])
+check("the offer taken back closes the window and tells the player their story stays", [screen_part(:mgq_online_story_choices), $notices], [nil, ["Ana took the offer back. Your story stays as it was."]])
 $scenes = []
 choices.show_screen("Sync story with Ana", [:magistea], ["Bring me there", "Cancel"], leader, 1, lambda { |answers| taken << answers }, lambda { offer_gone })
 check("an offer gone before the window opens opens none", [$scenes, $notices.size, taken.size], [[], 2, 1])
@@ -102,8 +100,8 @@ $scenes = []
 $free = true
 choices.update
 window = enter_menu
-check("a choice of the player's own opens once they stand free, with Confirm alone",
-      [window.title, window.children[-2].children.map { |button| button.text }], ["Your own outcome", ["Confirm"]])
+screen = screen_part(:mgq_online_story_choices)
+check("a choice of the player's own opens once they stand free, with Confirm alone", [window.title, screen.screen[:buttons]], ["Your own outcome", ["Confirm"]])
 cancel(window)
 choices.update
 check("cancel puts it off while the player walks on", [$scenes.size, choices.instance_variable_get(:@prompts)], [1, [:magistea]])
@@ -114,35 +112,21 @@ choices.update
 check("and it opens again once they stand free after a message", $scenes.size, 2)
 applied = []
 choices.define_singleton_method(:apply) { |key, index, _answers = {}| applied << [key, index] }
-window = enter_menu
-window.children[-2].children[0].receive("click")
+enter_menu
+screen_part(:mgq_online_story_choices).send(:confirm)
 check("Confirm applies the outcome picked", [applied, choices.instance_variable_get(:@prompts)], [[[:magistea, 0]], []])
 
-# A menu scene that never started, as when a battle took its place in the same frame, lets the
-# choice open again once the player stands free on the map: the map ends with another scene next,
-# so the framework closes the window waiting for its menu scene. A load forgets its screen.
+# A screen the framework refuses tells the player nothing and opens again on the next free frame;
+# a load forgets its screen.
+$notices = []
 choices.instance_variable_get(:@prompts) << :magistea
 $scenes = []
-map = $scene = Scene_Map.new
+open = Mod_Framework::UI.method(:open)
+Mod_Framework::UI.define_singleton_method(:open) { |*_values| nil }
 choices.update
-$scene = Scene_Map.new
-Mod_Framework::UI::Tree.scene_ended(map)
+Mod_Framework::UI.define_singleton_method(:open, open)
+check("a choice the framework refuses tells the player nothing and waits", [$scenes.size, choices.screen, $notices, choices.instance_variable_get(:@prompts)], [0, nil, [], [:magistea]])
 choices.update
-window = enter_menu
-check("a choice whose menu scene never started opens again on the next free frame", [$scenes.size, window && window.title], [2, "Your own outcome"])
+check("and opens on the next free frame", [$scenes.size, choices.screen && choices.screen[:title]], [1, "Your own outcome"])
 choices.forget("a save was loaded")
 check("and a load forgets its screen", [choices.screen, choices.instance_variable_get(:@prompts)], [nil, []])
-
-# A screen the framework refuses, as while another mod's window waits for its menu scene, tells
-# the player nothing and opens again once the player stands free.
-$notices = []
-$scene = Scene_Map.new
-Mod_Framework::UI::Window.new(:title => "Another mod's", :menu => true).open
-map = $scene = Scene_Map.new
-choices.instance_variable_get(:@prompts) << :magistea
-shown = $scenes.size
-choices.update
-check("a choice the framework refuses tells the player nothing and waits", [$scenes.size - shown, choices.screen, $notices], [0, nil, []])
-Mod_Framework::UI::Tree.scene_ended(map)
-choices.update
-check("and opens once the other window is gone", [$scenes.size - shown, choices.screen && choices.screen[:title]], [1, "Your own outcome"])

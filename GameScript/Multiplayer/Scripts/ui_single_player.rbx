@@ -2,6 +2,7 @@
 #  ui_single_player.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Offered the restart through UI.confirm, Later lit first
 #      Paulinchen  2026-11-05: Took the slot to resume as the number or name the DLL reads
 #      Paulinchen  2026-11-01: Named the Mod Framework's interface by its own name
 #      Paulinchen  2026-10-31: Kept its rows through the Mod Framework
@@ -143,17 +144,17 @@ module MGQ_MpSinglePlayer
     @now = {}
   end
 
-  # Offers to start the game again once a row changed, Restart picked first, since the player just
-  # changed a row that needs it, on the map while nothing runs there. Called
-  # by the map every frame no scene change is in the way.
+  # Offers to start the game again once a row changed, Later lit first as on every restart
+  # question, on the map while nothing runs there and no other question is open. Called by the map
+  # every frame no scene change is in the way.
   def self.on_map
-    return unless @changed && quiet? && !Mod_Framework::UI::Confirm.open?
+    return unless @changed && quiet?
     unless MGQ_Multiplayer.available?
       settle
       return log("no restart offered: the DLL that starts the game again is missing")
     end
 
-    settle if Mod_Framework::UI::Confirm.ask(RESTART_QUESTION, RESTART_CHOICES, :index => 0) { |yes| answered(yes) }
+    settle if Mod_Framework::UI.confirm(RESTART_QUESTION, :yes => RESTART_CHOICES[0], :no => RESTART_CHOICES[1]) { |yes| answered(yes) }
   rescue => e
     log_once(:on_map, "offering a restart failed: #{e.class}: #{e.message}")
   end

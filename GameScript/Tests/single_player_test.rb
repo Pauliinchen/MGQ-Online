@@ -2,6 +2,7 @@
 #  single_player_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Expected the restart offered through UI.confirm with Later lit first
 #      Paulinchen  2026-11-05: Expected the slot kept as a number and the switches as true or false
 #      Paulinchen  2026-11-01: Named the Mod Framework's interface by its own name, and took the framework away only for the restart's answer
 #      Paulinchen  2026-10-31: Read the single player group from MGQ_Multiplayer::SP_PREFIX
@@ -125,10 +126,16 @@ SceneManager.run
 module MGQ_MpNotices; def self.message(key, text, _frames = nil); $notices << [key, text]; end; end
 # Stands in for the Mod Framework's question of the update at the title screen, asked while $update_offer is set.
 module MGQ_MpWorld::Update; def self.asking?; $update_offer == true; end; end
-# The confirm box: each question noted in $asks with its block in $answer, open while
-# $confirm_open is set.
-Mod_Framework::UI::Confirm.define_singleton_method(:ask) { |question, choices, options = {}, &answer| $asks << [question, choices]; $yes_first = options[:index] == 0; $answer = answer; true }
-Mod_Framework::UI::Confirm.define_singleton_method(:open?) { $confirm_open == true }
+# The question box: each question noted in $asks with its block in $answer; while $confirm_open is
+# set another question is open, so it asks nothing and answers false.
+Mod_Framework::UI.define_singleton_method(:confirm) do |question, params = {}, &answer|
+  next false if $confirm_open
+
+  $asks << [question, [params[:yes], params[:no]]]
+  $yes_first = params[:lit] == :yes
+  $answer = answer
+  true
+end
 
 sp = MGQ_MpSinglePlayer
 hud = MGQ_MpLeaderHud
@@ -270,7 +277,7 @@ check("a change at the title, before any game is played, offers nothing", $asks,
 reset
 change
 map_frame
-check("a change while playing outside a world offers to start the game again on the map, Restart picked first", [$asks, $yes_first], [[[sp::RESTART_QUESTION, ["Restart", "Later"]]], true])
+check("a change while playing outside a world offers to start the game again on the map, Later lit first", [$asks, $yes_first], [[[sp::RESTART_QUESTION, ["Restart", "Later"]]], false])
 map_frame
 check("once", $asks.size, 1)
 reset

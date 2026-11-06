@@ -2,6 +2,7 @@
 #  coop_events_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Kept the screen of choices open through the script's open_screen
 #      Paulinchen  2026-11-05: Answered the scopes of a Classic party and the companion filter with fixed values instead of from copies of the C# rules
 #                            - Answered which of the leader's changes a member takes, the merge of a member's requests, the Medal King's gifts and whether an event leaves the part and what of the story changed with fixed values per case instead of from copies of the C# rules
 #                            - Answered the Classic catch-up, the side, the key item loan and how a member plays the leader's story with the recorded answer of each call instead of from engine.rb
@@ -2296,7 +2297,7 @@ load_script "coop_choices"
 choices = MGQ_MpCoopChoices
 # The screen of choices stays open as asked: its window on the Mod Framework has its own tests
 # (story_choices_test.rb), and the framework here runs without its DLL, which refuses every window.
-MGQ_MpCoopChoices::Screen.define_singleton_method(:open) { |screen| screen }
+MGQ_MpCoopChoices.define_singleton_method(:open_screen) { |screen| screen }
 { 5 => "Alice", 26 => "Ilias", 163 => "Lily", 167 => "Lucia", 287 => "Succubus", 288 => "Natasha", 540 => "Amira", 153 => "Sphinx", 241 => "Priestess",
   245 => "Miria", 334 => "Spider Princess" }.each { |id, name| $data_actors[id] = Actor.new(name) }
 
