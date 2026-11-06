@@ -6,6 +6,7 @@
 #                            - Gave its UI ids the mgq_online_ prefix
 #                            - Kept the box at its own or the player's width, a long place or name cut to fit
 #      Paulinchen  2026-11-06: Drew the box as a hud of the Mod Framework's UI layer, its players as rows of a list in columns
+#                            - Read the players while the box hides too, so it shows again once someone is listed
 #      Paulinchen  2026-11-05: Kept and read its switch in Player.ini as true or false, which the DLL writes as 1 or 0
 #      Paulinchen  2026-11-01: Built the box on the Mod Framework's components, docked at the top right under the game's windows
 #                            - Changed the size by a click on the size hint too
@@ -206,11 +207,15 @@ module MGQ_MpPartyBox
     away?(row) ? AWAY_LABEL : MGQ_MpPlayerColor.label(row.player, row.member)
   end
 
-  # Reports whether the box hides: while the World overview is open or it lists nobody, as it last
-  # read the players.
+  # Reports whether the box hides: while the World overview is open or it lists nobody, reading the
+  # players when due.
+  #
+  # The box's watch is asked only while it shows, so the hiding reads the players itself or the box
+  # would never show again.
   #
   # @return [Boolean] Whether it does.
   def self.hidden?
+    serial
     @hidden ? true : false
   end
 

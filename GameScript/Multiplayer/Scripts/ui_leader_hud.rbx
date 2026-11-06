@@ -2,6 +2,9 @@
 #  ui_leader_hud.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-09: Framed each level bar in a darker shade of its own color
+#                            - Made the leader's square as tall as the name and both bars beside it
+#                            - Drew the level bars as the Mod Framework's progress bars with a border of their own color
 #      Paulinchen  2026-11-08: Showed the leader as an avatar of the Mod Framework
 #                            - Gave its UI ids the mgq_online_ prefix
 #      Paulinchen  2026-11-06: Read the room at the top left through the Mod Framework's UI.room
@@ -331,16 +334,19 @@ module MGQ_MpLeaderHud
     # Its width by size.
     WIDTHS = { LARGE => 240, SMALL => 170 }
 
-    # The side of the picture's square by size: as high as the name and both bars beside it.
-    PICTURE_SIDES = { LARGE => 56, SMALL => 34 }
+    # The side of the picture's square by size: as high as the name's row and both bars beside it,
+    # with the room between them.
+    PICTURE_SIDES = { LARGE => 60, SMALL => 44 }
 
     # The colors of the HP and the MP bar, from their left end to their right end.
     BAR_COLORS = { :hp => [:mgq_online_hp_left, :mgq_online_hp_right], :mp => [:mgq_online_mp_left, :mgq_online_mp_right] }
 
     # The levels whose bars show across the bottom, in their order, each with its colors from its
-    # left end to its right end.
-    LEVEL_COLORS = [[:base, [:mgq_online_base_left, :mgq_online_base_right]], [:class, [:mgq_online_job_left, :mgq_online_job_right]],
-                    [:tribe, [:mgq_online_race_left, :mgq_online_race_right]]]
+    # left end to its right end and its border, 80 % of its left color, a little darker than the
+    # fill; the framework's border: :shade is darker still.
+    LEVEL_COLORS = [[:base, [:mgq_online_base_left, :mgq_online_base_right], [160, 120, 32]],
+                    [:class, [:mgq_online_job_left, :mgq_online_job_right], [32, 120, 56]],
+                    [:tribe, [:mgq_online_race_left, :mgq_online_race_right], [104, 56, 152]]]
 
     # The steps of a bar's value, so a bar of any max fills smoothly.
     STEPS = 1000
@@ -371,9 +377,9 @@ module MGQ_MpLeaderHud
           end
         end
         stack spacing: (large ? 0.5 : 0) do
-          LEVEL_COLORS.each do |kind, colors|
+          LEVEL_COLORS.each do |kind, colors, edge|
             progress value: -> { (MGQ_MpLeaderHud.exp_rate(MGQ_MpLeaderHud.leader, kind) * STEPS).round }, max: STEPS, colors: colors,
-                     size: :small, key: kind
+                     border: edge, size: :small, key: kind
           end
         end
       end
