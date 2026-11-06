@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-06: Drew the trade screen through the UI layer: Q and W step the bag by ten, Page Up and Down page it, cancel in an offer asks
+#                            - Told the chat whether the gold box or the question is open
 #      Paulinchen  2026-11-05: Told a change of an offer by its gold, tokens and amounts instead of its text
 #      Paulinchen  2026-11-01: Built the trade screen of the Mod Framework's components in one window
 #                            - Asked for the gold in the framework's number box
@@ -110,6 +111,21 @@ module MGQ_MpTradeUi
 
     [MGQ_MpTrade::Items.key(session.mine), MGQ_MpTrade::Items.key(session.theirs), session.confirmed, session.their_confirmed?, session.stage,
      status_line(session)]
+  end
+
+  # Notes the gold box or the question the screen opened, which holds the game's buttons over the
+  # screen until it closes.
+  #
+  # @param handle [Object, false, nil] The box's handle, false or nil when it did not open.
+  def self.asked(handle)
+    @asked = handle || nil
+  end
+
+  # Tells whether the screen's gold box or question is open, which the chat box waits for.
+  #
+  # @return [Boolean] Whether one is.
+  def self.asking?
+    @asked && @asked.open? ? true : false
   end
 
   # Runs a part of the screen; a failure is logged with its place, and the trade is cancelled,
@@ -302,6 +318,7 @@ module MGQ_MpTradeUi
                                               note: "You have #{$game_party.gold} #{unit}", ok: "Offer", cancel: "Back") do |gold, _shown|
         MGQ_MpTradeUi.guard("the gold box") { take_gold(gold) }
       end
+      MGQ_MpTradeUi.asked(box)
       MGQ_MpTrade.log("the gold box did not open") unless box
     end
 
@@ -339,6 +356,7 @@ module MGQ_MpTradeUi
       asked = UI.confirm(format(CANCEL_QUESTION, session.name), yes: CANCEL_YES, no: CANCEL_NO) do |yes|
         MGQ_MpTradeUi.guard("the cancel question") { answer_cancel(yes) }
       end
+      MGQ_MpTradeUi.asked(asked)
       MGQ_MpTrade.log("the question did not open, so trading goes on") unless asked
     end
 

@@ -2,6 +2,7 @@
 #  ui_chat_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Left how the UI layer draws the chat to the in-game suite and kept the gates, the model's calls and the bubbles' players
 #      Paulinchen  2026-11-05: Handed the kept size as the width and lines the DLL reads
 #                            - Checked that a scene whose class has no name reaches the chat's model by the class it builds on
 #      Paulinchen  2026-11-01: Checked the chat on the Mod Framework's components against the chat's model
@@ -28,11 +29,11 @@
 #
 #----------------------------------------------------------------
 
-# Covers ui_chat.rbx on the Mod Framework's components against the chat's model on the fake bridge
-# (chat_support.rb) and the component tree (bridge_support.rb): where the log shows and starts, the
-# hotkey and the gates that open the box, the typing, the keys and the clicks handed to the model,
-# the view shown in the tabs, the lines and the box, the player's menu, the bubbles on their
-# players, and the game's own lines. The chat's rules are MGQOnline.Game.Tests'.
+# Covers ui_chat.rbx against the chat's model on the fake bridge (chat_support.rb): where the log
+# shows and starts, the hotkey and the gates that open the box, the typing and the keys handed to
+# the model, the rows of the view's lines, the bubbles' players, and the game's own lines. How the
+# UI layer draws the chat is the in-game suite's (32_step9_b_chat.rb); the chat's rules are
+# MGQOnline.Game.Tests'.
 
 # The game's font, as far as the components measure with it.
 class Font
@@ -59,7 +60,6 @@ require_relative "world_support"
 
 ui = Mod_Framework::UI
 chat = MGQ_MpChat
-tree = $fake_tree
 model = $fake_chat
 friend = { "id" => "friend", "name" => "Friend", "sprite" => "Actor2", "index" => 3, "map" => 5, "x" => 10, "y" => 10, "d" => 4, "speed" => 4, "hidden" => 0, "scene" => "map" }
 $inbox << entry("seat", 0)
@@ -67,13 +67,16 @@ $inbox << entry("message", 2, told(friend))
 MGQ_MpOverworldSync.tick
 MGQ_MpOverworld.update_ghosts
 
-# Tells a part of the open log's root.
-#
-# @param name [Symbol] :tabs, :lines, :row, :label or :field.
-# @return [Mod_Framework::UI::Component] The part.
-def part(name)
-  MGQ_MpChat.instance_variable_get(:"@#{name}")
-end
+# A character's place on the screen, which a bubble follows.
+class Game_Character; def screen_x; 0; end; end
+
+# The chats' colors, which the framework's DLL takes as names in the game, taken as names here.
+declarations = Mod_Framework::UI::Engine::Declarations
+known_color = declarations.method(:color?)
+declarations.define_singleton_method(:color?) { |value| MGQ_MpChat::CHANNEL_RGB.key?(value) || known_color.call(value) }
+
+# Stands in for whether the action wheel is open, which ui_actions.rbx tells, from $wheel_open.
+MGQ_MpActions.define_singleton_method(:wheel_open?) { $wheel_open ? true : false }
 
 # Posts a view of the chat's model and lets the frame take it.
 #
@@ -83,144 +86,62 @@ def view(changes)
   ui_frame
 end
 
-# The log on the map, closed and empty.
+# The log on the map: nothing to show, then lines.
 map_frame
-root = chat.root
-expected_height = chat::TAB_ROW + chat::ROW * 6 + chat::BOX_ROW
-check("the map shows the log in its own place, at the bottom left above the status line, its box closed",
-      [root.open?, root.id, root.place_name, root.at, root.size, root.frame, root.closable, root.z, root.mouse],
-      [true, :chat, "Chat", [8, 480 - 96 - expected_height], [400, expected_height], false, false, 99, :parts])
-check("with no line to show it hides, so the player arranges it only while it shows lines", root.hide_while.call, true)
-check("the three places are listed for Interface Positions before the log shows there",
-      [:chat, :battle_chat, :menu_chat].map { |id| registered_box(id) && registered_box(id)[0] }, ["Chat", "Battle chat", "Menu chat"])
+check("with nothing to show the log shows nowhere, so the player arranges it only while it shows lines", chat.root, nil)
+lines = [["[Party] ", "Friend: ", "wait at the inn", "member", "party", "friend", nil], ["", "* ", "Friend left the battle.", "system", nil, nil, 6]]
+view("lines" => lines)
+map_frame
+check("a line shows the log in the map's own place", [chat.root && chat.root.open?, chat.place], [true, :chat])
+height = chat::TAB_ROW + chat::ROW * 6 + chat::BOX_ROW
+check("it starts at the bottom left, above the status line, 400 wide and 6 lines high", chat.default_place(:chat), [[8, 480 - 96 - height], [400, height]])
 $player_ini["chat_size"] = [450, 8]
-check("a size kept in chat_size by earlier builds is its default", chat.default_place(:chat),
-      [[8, 480 - 96 - (chat::TAB_ROW + chat::ROW * 8 + chat::BOX_ROW)], [450, chat::TAB_ROW + chat::ROW * 8 + chat::BOX_ROW]])
+check("a size kept in chat_size by earlier builds is its default", chat.default_place(:chat)[1], [450, chat::TAB_ROW + chat::ROW * 8 + chat::BOX_ROW])
 $player_ini["chat_size"] = [300, 2]
 check("one smaller than the least size starts at the least", chat.default_place(:chat)[1], chat::MIN_SIZE)
 $player_ini.delete("chat_size")
-
-# The closed log's lines.
-closed_lines = [["[Party] ", "Friend: ", "wait at the inn", "member", "party", "friend", nil], ["", "* ", "Friend left the battle.", "system", nil, nil, 6]]
-view("lines" => closed_lines, "unread" => [])
-rows = part(:lines).rows
+rows = chat.rows(false)
 check("a line shows its tag in the chat's color, the name in the sender's and the text plain, and no name takes a click while the box is closed",
-      [rows[0].map { |each| [each[:text], each[:color]] }, rows[0].any? { |each| each.key?(:data) }],
-      [[["[Party] ", chat::CHANNEL_COLORS["party"]], ["Friend: ", ui::Style::MEMBER], ["wait at the inn", ui::Style::TEXT]], false])
-check("a game line's mark is dim, and a line in its last frames fades", [rows[1][:parts][0][:color], rows[1][:opacity]], [ui::Style::DIM, 255 * 6 / 12])
-check("the closed log shows, but its tabs only while one holds unread lines", [root.hide_while.call, part(:tabs).visible?], [false, false])
-view("unread" => ["global"])
-check("a tab with unread lines marks its tab and shows the tabs dimmed", [part(:tabs).visible?, part(:tabs).opacity, part(:tabs).tab(1).badge],
-      [true, chat::CLOSED_TABS_OPACITY, true])
-view("lines" => [], "unread" => [])
+      rows[0], [{ :text => "[Party] ", :color => :mgq_online_chat_party }, { :text => "Friend: ", :color => :ally }, { :text => "wait at the inn" }])
+check("a game line's mark is dim, and a line in its last frames fades", [rows[1][:parts][0][:color], rows[1][:opacity]], [:dim, 255 * 6 / 12])
+check("open, another player's name takes a click", chat.rows(true)[0][1][:data], "friend")
+check("the tabs show above the closed log only while one holds unread lines", [chat.unread_shown?, (view("unread" => ["global"]); chat.unread_shown?)],
+      [false, true])
+view("unread" => [])
 
-# The hotkey opens the box, which holds the game's buttons and types.
+# The hotkey opens the box through the model, which the others see.
 $pressed = MGQ_MpHotkeys.code(:chat)
 map_frame
-ui_frame
-field = part(:field)
 check("T opens the box through the chat's model, naming the keys that close it as it types, Esc and Numpad 0, not the X that types an x",
-      model.requests("chat.open"), [{ "key" => true, "scene" => "Scene_Map", "close" => "Esc or Numpad 0" }])
-check("open, the log is framed above everything, takes clicks and holds the game's buttons, its field typing",
-      [root.frame, root.closable, root.captures, root.z, root.mouse, part(:row).visible?, field.editor.nil?, $mgq_text_input ? true : false],
-      [true, true, true, ui::Z[:typing], true, true, false, true])
+      [model.requests("chat.open"), chat.typing?], [[{ "key" => true, "scene" => "Scene_Map", "close" => "Esc or Numpad 0" }], true])
+MGQ_MpOverworldSync.tick
 check("the others see the player types", MGQ_MpOverworldSync::Me.scene, "typing")
 check("the box names the chat it sends to in its color, and the empty box its hint without a close key",
-      [part(:label).text, part(:label).color, field.placeholder], ["Global:", chat::CHANNEL_COLORS["global"], chat::BOX_HINT])
-check("the tabs, the label and the field draw in the small font", [part(:tabs).font_size, part(:label).font_size, field.font_size], [:small, :small, :small])
-
-# Typing, Enter and the keys with Alt go to the model.
-$typed = "hi"
-map_frame
-check("what is typed goes to the model with the caret", model.requests("chat.typed").last, { "text" => "hi", "cursor" => 2 })
-field.caret = 1
-view("lines" => [["", "* ", "Friend joined.", "system", nil, nil, nil]])
-check("a line that comes keeps the caret where the player moved it", [field.text, field.caret], ["hi", 1])
-view("box" => ["hi", 2, false], "channel" => "party")
-view("box" => ["", 0, false])
-check("a view that took a command out of the box sets the field's text and caret, and the label its chat", [field.text, field.caret, part(:label).text], ["", 0, "Party:"])
-tree.post([[field.node, "key", 0x26 | 0x100], [field.node, "key", 0x27 | 0x100]])
-ui_frame
+      [chat.label, chat.label_color, chat.hint], ["Global:", nil, chat::BOX_HINT])
+chat.typed("hi")
+check("what is typed goes to the model with the caret at its end", model.requests("chat.typed").last, { "text" => "hi", "cursor" => 2 })
+chat.key("Alt+Up")
+chat.key("Alt+Right")
 check("Alt with Up brings back a line sent and Alt with Right steps the tabs, through the model", model.requests("chat.alt"), [[0, -1], [1, 0]])
-view("tabs" => %w[all global map party whisper], "tab" => "map")
-check("the tabs the view names show, the picked one lit", [(0..5).map { |index| part(:tabs).tab(index).visible? }, part(:tabs).index],
-      [[true, true, true, true, true, false], 2])
-tree.post([[part(:tabs).tab(3).node, "click"]])
-ui_frame
-check("a click on a tab picks it through the model", model.requests("chat.tab"), ["party"])
-
-# The names that fit a whisper.
-view("box" => ["/w F", 4, false], "suggestions" => ["Friend", "Fiona"], "pick" => 0)
-check("the names that fit show over the field", field.completions, ["Friend", "Fiona"])
-tree.post([[field.node, "key", 0x28]])
-ui_frame
-tree.post([[field.node, "key", 0x09]])
-ui_frame
-check("Down moves the pick through the model and Tab takes it", [model.requests("chat.pick"), model.requests("chat.take_pick").size], [[1], 1])
-view("box" => ["/w F", 4, false], "suggestions" => ["Friend", "Fiona"], "pick" => 1)
-check("the pick the model holds lights in the field's list", field.completion_index, 1)
-view("pick" => 0)
-model.calls.clear
-names = ui::Tree.roots.find { |each| each.is_a?(ui::CompletionBox) }
-names.instance_variable_get(:@list).emit(:submit, "Fiona", 1)
-ui_frame
-check("a click on the second name picks it through the model before taking it", model.calls, [["chat.pick", 1], ["chat.take_pick", nil]])
-view("box" => ["", 0, false], "suggestions" => [], "channel" => "whisper", "whisper_to" => "Friend")
-check("the box names whom it whispers to", part(:label).text, "To Friend:")
-
-# The help tab takes no typing.
-view("tab" => "help", "box" => ["", 0, true])
-check("on the help tab the field takes no typing and its hint names the close keys",
-      [field.read_only, part(:label).text, field.placeholder], [true, "Help:", "#{chat::HELP_HINT} #{ui.close_hint}"])
-view("tab" => "all", "box" => ["", 0, false], "channel" => "global", "whisper_to" => nil)
-
-# A player's menu from their name.
-view("lines" => [["", "Friend: ", "hello", "other", "global", "friend", nil], ["", "Me: ", "hi", "me", "global", nil, nil]])
-rows = part(:lines).rows
-check("open, another player's name takes a click, the player's own not", rows.map { |row| row.find { |each| each[:data] } ? true : false }, [true, false])
-$mouse = [120, 300]
-logged = logged_lines { part(:lines).emit(:click, rows[0], rows[0][0]) }
-menu = ui::Menu.current
-choices = menu.instance_variable_get(:@choices).map { |choice| choice[:text] }
-check("a click on it opens their menu at the pointer, above the box, with what the scripts offer and a whisper",
-      [menu.nil?, choices.last, choices.size > 1, menu.z > root.z, logged.grep(/menu of Friend opened from the chat/).size], [false, "Whisper", true, true, 1])
-menu.close(:cancel)
-check("cancel closes the menu alone", [ui::Menu.current, chat.typing?], [nil, true])
-
-# A battle keeps the box open in its own place.
-battle = Scene_Battle.new
-SceneManager.scene = battle
-view("box" => ["on my way", 9, false])
-battle.update_basic
-check("in a battle the log shows in the battle's place, the open box keeping its text",
-      [chat.root.id, chat.root.open?, root.open?, part(:field).text, chat.root.z], [:battle_chat, true, false, "on my way", ui::Z[:typing]])
-logged_lines { part(:lines).emit(:click, part(:lines).rows[0], part(:lines).rows[0][0]) }
-menu = ui::Menu.current
-check("off the map a name's menu offers the whisper alone", menu.instance_variable_get(:@choices).map { |choice| choice[:text] }, ["Whisper"])
-menu.instance_variable_get(:@list).emit(:submit, nil, 0)
-ui_frame
-check("which whispers to that player through the model", model.requests("chat.whisper"), [2])
-
-# Cancel closes the box; the log stays.
-$sounds.clear
-$down = [ui::ESCAPE_KEY]
-tree.post([[chat.root.node, "cancel"]])
-ui_frame
-$down = []
-check("cancel closes the box through the model once, with one cancel sound, the log staying",
-      [model.requests("chat.close"), $sounds.count("cancel"), chat.typing?, chat.root.open?, chat.root.closable, part(:field).editor],
-      [["cancel (Esc)"], 1, false, true, false, nil])
-check("the closed log's lines and tabs take no clicks, so they reach the game's windows below", [part(:lines).mouse, part(:tabs).mouse], [false, false])
-SceneManager.scene = Scene_Map.new
-map_frame
-check("back on the map the log shows in the map's place again", chat.root.id, :chat)
-
-# Enter sends through the model, which closes the box.
+chat.key("Tab")
+check("Tab without names showing does nothing", model.requests("chat.take_pick"), [])
+model.view = model.view.merge("suggestions" => ["Friend", "Fiona"])
+chat.take_name(1)
+check("a name taken from the box's list is picked through the model, then taken", [model.requests("chat.pick"), model.requests("chat.take_pick").size], [[1], 1])
+model.view = model.view.merge("channel" => "whisper", "whisper_to" => "Friend")
+chat.take_view(model.view)
+check("the box names whom it whispers to, in the whisper's color", [chat.label, chat.label_color], ["To Friend:", :mgq_online_chat_whisper])
+chat.pick_tab("help")
+model.view = model.view.merge("tab" => "help")
+chat.take_view(model.view)
+check("on the help tab the box takes no typing and its hint names the close keys", [chat.help_tab?, chat.hint.start_with?(chat::HELP_HINT)], [true, true])
+check("a tab picked goes to the model", model.requests("chat.tab"), ["help"])
+model.view = model.view.merge("tab" => "all", "channel" => "global", "whisper_to" => nil, "suggestions" => [])
+chat.cancelled
+check("cancel closes the box through the model, the log staying", [model.requests("chat.close"), chat.typing?, chat.root.open?], [["cancel"], false, true])
 chat.start_typing
-ui_frame
-$typed = "\r"
-map_frame
-check("Enter goes to the model, and the closed box gives the keys back at once", [model.requests("chat.enter").size, chat.typing?, $mgq_text_input ? true : false], [1, false, false])
+chat.enter
+check("Enter goes to the model, which closes the box", [model.requests("chat.enter").size, chat.typing?], [1, false])
 
 # The gates of the map.
 $game_message.busy = true
@@ -250,13 +171,13 @@ check("but it opens while the player waits for the party's story", chat.typing?,
 $party_waiting = false
 $game_map.interpreter.running = false
 chat.stop_typing
-MGQ_MpActions.wheel.instance_variable_set(:@open, true)
+$wheel_open = true
 $pressed = MGQ_MpHotkeys.code(:chat)
 map_frame
 check("the action wheel keeps T from opening the box", chat.typing?, false)
-MGQ_MpActions.wheel.instance_variable_set(:@open, false)
-# A scene of menus the chat follows, such as a shop: a question of a mod holds the buttons there,
-# while a window that hosts the scene, such as the trade screen's, holds none over it.
+$wheel_open = false
+
+# A scene of menus the chat follows, such as a shop: a question of a mod holds the buttons there.
 class Scene_TestShop < Scene_Base; end
 chat.follow_scene(Scene_TestShop)
 shop = Scene_TestShop.new
@@ -266,13 +187,10 @@ $pressed = MGQ_MpHotkeys.code(:chat)
 shop.update_basic
 check("while a question of a mod holds the buttons in a shop, the chat key waits", chat.typing?, false)
 ui::Capture.stop(:confirm)
-host = ui::Window.new(:title => "Trade", :size => :screen, :hosts_scene => true).open
 $pressed = MGQ_MpHotkeys.code(:chat)
 shop.update_basic
-check("a window that hosts the scene, such as the trade screen's, holds the buttons but none over the scene: the chat key opens the box over it",
-      [ui::Capture.on?, chat.typing?], [true, true])
+check("without it the chat key opens the box in the shop's place", [chat.typing?, chat.place], [true, :menu_chat])
 chat.stop_typing
-host.close
 staged = []
 $world_fake.answer("chat.scene") { |request| staged << request; nil }
 SceneManager.scene = Class.new(Scene_TestShop).new
@@ -281,45 +199,29 @@ MGQ_Multiplayer::Bridge.frame
 check("a scene whose class has no name, such as one a mod makes, reaches the chat's model by the class it builds on", staged.last["scene"], "Scene_TestShop")
 $world_fake.answer("chat.scene") { |_request| nil }
 SceneManager.scene = Scene_Map.new
+map_frame
+check("back on the map the log shows in the map's place again", chat.place, :chat)
 
 # The bubbles.
 view("bubbles" => { 2 => ["hello", "party"], chat::OWN_SEAT => ["hi", "global"] })
-friend_bubble = chat.bubbles[2]
-own_bubble = chat.bubbles[chat::OWN_SEAT]
-check("a bubble follows its sender's ghost just over their name, in their line's chat's color, the player's own over their ping",
-      [friend_bubble.open?, friend_bubble.follow.equal?(MGQ_MpOverworldSync::Peers.at(2).ghost), friend_bubble.lift, friend_bubble.color, friend_bubble.text,
-       own_bubble.follow.equal?($game_player), own_bubble.lift],
-      [true, true, chat::GHOST_LIFT, chat::CHANNEL_COLORS["party"], "hello", true, chat::OWN_LIFT])
-$inbox << entry("message", 2, told(friend.merge("party" => "theirs", "invite" => 1)))
-MGQ_MpOverworldSync.tick
-chat.place_bubbles
-check("a line over the name lifts the bubble above it", friend_bubble.lift, chat::GHOST_LIFT + chat::LINE_LIFT)
-MGQ_MpActions.wheel.instance_variable_set(:@open, true)
-hidden = own_bubble.hide_while.call
-MGQ_MpActions.wheel.instance_variable_set(:@open, false)
-check("the player's own bubble hides while the action wheel is open", [hidden, own_bubble.hide_while.call], [true, false])
+check("a bubble shows over each sender the view names, following their ghost or the player",
+      [chat.bubbles.keys.sort, chat.bubble_character(2).equal?(MGQ_MpOverworldSync::Peers.at(2).ghost), chat.bubble_character(chat::OWN_SEAT).equal?($game_player)],
+      [[chat::OWN_SEAT, 2], true, true])
+$wheel_open = true
+hidden = chat.bubble_hidden?(chat::OWN_SEAT)
+$wheel_open = false
+check("the player's own bubble hides while the action wheel is open", [hidden, chat.bubble_hidden?(chat::OWN_SEAT)], [true, false])
 view("bubbles" => { 2 => ["hello", "party"] })
-check("a bubble the view no longer has closes", [own_bubble.open?, chat.bubbles.keys], [false, [2]])
-
-# Bubbles of players this map does not show.
-$inbox << entry("message", 3, told(friend.merge("id" => "far", "name" => "Far", "map" => 9)))
-MGQ_MpOverworldSync.tick
-MGQ_MpOverworld.update_ghosts
-view("bubbles" => { 2 => ["hello", "party"], 3 => ["far away", "global"] })
-far_bubble = chat.bubbles[3]
-check("a Global line from a player on another map makes a bubble that follows no one and stays hidden, while the bubble of a player here shows",
-      [far_bubble.open?, far_bubble.follow, far_bubble.hide_while.call, friend_bubble.hide_while.call], [true, nil, true, false])
+check("a bubble the view no longer has goes", chat.bubbles.keys, [2])
 $inbox << entry("message", 2, told(friend.merge("map" => 9)))
 MGQ_MpOverworldSync.tick
 MGQ_MpOverworld.update_ghosts
-chat.place_bubbles
-check("a sender who leaves the map while their bubble shows hides it instead of leaving it where they stood",
-      [friend_bubble.open?, friend_bubble.follow, friend_bubble.hide_while.call], [true, nil, true])
+check("a sender who leaves the map hides their bubble instead of leaving it where they stood", chat.bubble_hidden?(2), true)
 
 # The game's own lines, and the world closing.
 chat.system("Friend left the battle.")
 check("a game line goes to the model", model.requests("chat.game_line"), ["Friend left the battle."])
 $open = false
 MGQ_MpOverworldSync.tick
-check("closing the world closes the log and the bubbles", [chat.root, friend_bubble.open?, chat.bubbles], [nil, false, {}])
+check("closing the world closes the log and the bubbles", [chat.root, chat.bubbles], [nil, {}])
 $open = true

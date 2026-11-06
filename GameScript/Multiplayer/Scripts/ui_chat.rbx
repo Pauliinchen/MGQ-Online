@@ -2,6 +2,8 @@
 #  ui_chat.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Drew the chat's log, box, player menu and bubbles through the UI layer
+#                            - Named the chats' colors once
 #      Paulinchen  2026-11-05: Took the log's size kept in Player.ini as the width and lines the DLL reads
 #                            - Named a scene whose class has no name by the class it builds on, so the chat's model always gets one
 #      Paulinchen  2026-11-01: Built the chat log, its tabs, its box, a player's menu and the bubbles of the Mod Framework's components
@@ -117,14 +119,15 @@
 # same map, and in the chat log at the bottom left. Its hotkey (T unless the player binds another,
 # see core_hotkeys.rbx) or the action wheel of ui_actions.rbx opens the chat box.
 #
-# The chat's rules are the DLL's chat model (the chat.* topics): this script builds the log, its tabs,
-# its box, a player's menu and the bubbles of the Mod Framework's components, shows the model's view
-# in them and hands their typing, keys and clicks to the model. It keeps where and when the chat
-# opens, the bubbles' characters and the menu's choices.
+# The chat's rules are the DLL's chat model (the chat.* topics): this script shows the model's view
+# through the UI layer, the log with its tabs and its box in a window that rests under the game's
+# windows while closed, a player's menu and the bubbles, and hands the typing, the keys and the
+# clicks to the model. It keeps where and when the chat opens, the bubbles' characters and the
+# menu's choices.
 #
 # It must never interrupt the game, so its per-frame work rescues.
 module MGQ_MpChat
-  # The Mod Framework's interface, whose components the chat is made of.
+  # The Mod Framework's UI.
   UI = Mod_Framework::UI
 
   # The topic that opens the chat box: {"key", "scene", "close"}.
@@ -185,17 +188,21 @@ module MGQ_MpChat
   # What the box row says before the text, by the chat chosen; a whisper names whom it goes to.
   LABELS = { "global" => "Global:", "map" => "Map:", "party" => "Party:", "help" => "Help:" }
 
-  # The chats' colors, those of World of Warcraft: the tags, the bubbles, the tabs and the box row.
-  CHANNEL_COLORS = { "global" => UI::Style::TEXT, "map" => Color.new(255, 192, 192), "party" => Color.new(170, 170, 255), "whisper" => Color.new(255, 128, 255) }
+  # The chats' colors, those of World of Warcraft, each named once as the script loads: the tags,
+  # the bubbles, the tabs and the box row. Global is plain text.
+  CHANNEL_COLORS = { "map" => :mgq_online_chat_map, "party" => :mgq_online_chat_party, "whisper" => :mgq_online_chat_whisper }
+
+  # The colors the chats' names stand for.
+  CHANNEL_RGB = { :mgq_online_chat_map => [255, 192, 192], :mgq_online_chat_party => [170, 170, 255], :mgq_online_chat_whisper => [255, 128, 255] }
 
   # The chats whose lines draw their text in the chat's color too.
   COLORED_TEXT = %w[map whisper]
 
   # The colors of a sender's name by whose line it is; anyone else's is plain text.
-  NAME_COLORS = { "me" => UI::Style::OWN, "member" => UI::Style::MEMBER, "admin" => UI::Style::GOLD, "system" => UI::Style::DIM }
+  NAME_COLORS = { "me" => :own, "member" => :ally, "admin" => :gold, "system" => :dim }
 
   # The color of a notice of the relay's own.
-  NOTICE_COLOR = Color.new(255, 64, 64)
+  NOTICE_COLOR = :error
 
   # What the empty box says. It names no close key, by the player's wish.
   BOX_HINT = "↑↓: scroll   Alt: more   /help: help"
@@ -209,22 +216,25 @@ module MGQ_MpChat
   # The keys with Alt the box claims, each as its step through the tabs and through the lines sent.
   ALT_KEYS = { "Alt+Left" => [-1, 0], "Alt+Right" => [1, 0], "Alt+Up" => [0, -1], "Alt+Down" => [0, 1] }
 
-  # The places of the log, each kept on its own: its name while the player arranges, the room kept
-  # below it and its depth while closed. The map's lies above the map's pictures and under the
-  # game's message and the mod's wheels; the battle's and the menus' above their scenes' windows.
-  PLACES = { :chat => ["Chat", 96, 99], :battle_chat => ["Battle chat", 200, UI::Z[:wheels]], :menu_chat => ["Menu chat", 8, UI::Z[:wheels]] }
+  # The keys the box claims while it types: Tab takes the lit name or does nothing, and the Alt keys.
+  BOX_KEYS = ["Tab"] + ALT_KEYS.keys
+
+  # The places of the log, each kept on its own under its id: its name while the player arranges,
+  # the room kept below it, and the layer it rests in while closed: the map's under the game's
+  # message, the battle's and the menus' above their scenes' windows.
+  PLACES = { :chat => ["Chat", 96, :hud], :battle_chat => ["Battle chat", 200, :over], :menu_chat => ["Menu chat", 8, :over] }
 
   # Room between the log and the screen's left edge where it starts.
   MARGIN = 8
 
-  # Height of the tabs' row: a tab in the small font on its plate.
-  TAB_ROW = UI::SMALL_LINE_HEIGHT + 2 * UI::Button::PAD_Y
+  # Height of the tabs' row.
+  TAB_ROW = 24
 
-  # Height of a line of the log.
-  ROW = UI::SMALL_LINE_HEIGHT
+  # Height of a line of the log in its small font.
+  ROW = 18
 
-  # Height of the box row: the label and the field in the small font.
-  BOX_ROW = UI::SMALL_LINE_HEIGHT
+  # Height of the box row.
+  BOX_ROW = 22
 
   # The fewest lines of the log, which leave room for the list of fitting names above the box.
   MIN_ROWS = 5
@@ -240,34 +250,26 @@ module MGQ_MpChat
   # The log's size without SIZE_SETTING: its width and its lines.
   DEFAULT_SIZE = [400, 6]
 
-  # How opaque the tabs draw above the closed log.
-  CLOSED_TABS_OPACITY = 160
-
   # The frames over which a line of the closed log fades out, as the view counts them.
-  FADE_FRAMES = UI::Style::FADE_FRAMES
+  FADE_FRAMES = 12
 
-  # Pixels above the player's feet a bubble points at: just over their ping.
-  OWN_LIFT = 64
-
-  # Pixels above another player's feet a bubble points at: just over their name.
-  GHOST_LIFT = 68
-
-  # Pixels a bubble goes higher while a line, such as an invite, shows over the name.
-  LINE_LIFT = 24
+  # Where the box lies among the windows while it types, above a window that hosts its scene,
+  # such as the trade screen's.
+  TYPING_Z = 50
 
   # The chat's view, see take_view; nil before the DLL told one.
   @view = nil
 
-  # The log's root, nil while it shows nowhere.
+  # Counts the views taken, which the log's window watches.
+  @serial = 0
+
+  # The log's window, nil while it shows nowhere.
   @root = nil
 
-  # The place of the log's root, one of PLACES.
+  # The place of the log's window, one of PLACES.
   @place = nil
 
-  # What the root shows of the view, by part, so only what changed is set.
-  @shown = {}
-
-  # The bubbles, by seat.
+  # The bubbles' handles, by seat.
   @bubbles = {}
 
   # The scenes besides the map and battles where the chat box opens, see follow_scene.
@@ -277,6 +279,11 @@ module MGQ_MpChat
 
   # What starts this script's lines in the log.
   LOG_TAG = "chat"
+
+  class << self
+    # @return [Integer] Counts the views taken.
+    attr_reader :serial
+  end
 
   # Reports whether the chat box is open.
   #
@@ -292,16 +299,23 @@ module MGQ_MpChat
     @view
   end
 
-  # Tells the log's root.
+  # Tells the log's window.
   #
-  # @return [Mod_Framework::UI::Box, nil] The root, nil while it shows nowhere.
+  # @return [Object, nil] Its handle, nil while it shows nowhere.
   def self.root
     @root
   end
 
+  # Tells the place the log shows in.
+  #
+  # @return [Symbol, nil] One of PLACES, nil while it shows nowhere.
+  def self.place
+    @root ? @place : nil
+  end
+
   # Tells the bubbles.
   #
-  # @return [Hash{Integer => Mod_Framework::UI::Bubble}] The bubbles by seat, OWN_SEAT the player's.
+  # @return [Hash{Integer => Object}] Their handles by seat, OWN_SEAT the player's.
   def self.bubbles
     @bubbles
   end
@@ -352,14 +366,14 @@ module MGQ_MpChat
     MGQ_Multiplayer::Bridge.call(topic, request)
   end
 
-  # Takes the chat's view and shows it in the log's root and the bubbles.
+  # Takes the chat's view, which the log's window and the bubbles show.
   #
   # @param view [Hash, nil] The view, see the DLL's chat.view; anything else is left alone.
   def self.take_view(view)
     return unless view.is_a?(Hash)
 
     @view = view
-    refresh
+    @serial += 1
     refresh_bubbles
   end
 
@@ -370,8 +384,8 @@ module MGQ_MpChat
     !typing? && Array(@view && @view["lines"]).empty?
   end
 
-  # Tells the log's size until the player resizes it through the layout: SIZE_SETTING's, which the
-  # DLL reads as a width and lines, else DEFAULT_SIZE.
+  # Tells the log's size until the player resizes it: SIZE_SETTING's, which the DLL reads as a
+  # width and lines, else DEFAULT_SIZE.
   #
   # @return [Array<Integer>] Its width and its lines.
   def self.size
@@ -391,202 +405,201 @@ module MGQ_MpChat
     [[MARGIN, Graphics.height - PLACES[place][1] - height], [width, height]]
   end
 
-  # Shows the log in a place, making its root unless it shows there already.
+  # Tells the scenes a place's log shows in: the map's on the map alone, so the live map behind a
+  # menu shows none, the battle's in battles, the menus' in the scenes follow_scene names.
+  #
+  # @param place [Symbol] One of PLACES.
+  # @return [Array<Class>] The scenes.
+  def self.scenes_of(place)
+    case place
+    when :chat then [Scene_Map]
+    when :battle_chat then [Scene_Battle]
+    else @menu_scenes.dup
+    end
+  end
+
+  # Shows the log in a place while it has something to show, opening its window unless it shows
+  # there already, and closes it once it has nothing.
   #
   # @param place [Symbol] One of PLACES.
   def self.show_in(place)
+    return drop_root if empty?
     return if @root && @root.open? && @place == place
 
     drop_root
     return unless available?
 
     @place = place
-    @root = build_root(place)
-    @shown = {}
-    @root.open
-    return drop_root unless @root.open?
-
-    refresh
+    @root = UI.open(ChatBox, :place => place) { |_result, why| MGQ_MpChat.log("the #{PLACES[place][0]} log closed: #{why}") unless why == :script }
   end
 
-  # Closes the log's root, if it shows.
+  # Closes the log's window, if it shows.
   def self.drop_root
     root = @root
     @root = nil
     root.close if root && root.open?
   end
 
-  # Makes the log's root of a place: the tabs, the lines and the box row.
-  #
-  # @param place [Symbol] One of PLACES.
-  # @return [Mod_Framework::UI::Box] The root.
-  def self.build_root(place)
-    name, _room, depth = PLACES[place]
-    at, extent = default_place(place)
-    root = UI::Box.new(:id => place, :place_name => name, :at => at, :size => extent, :min_size => MIN_SIZE, :movable => true, :resizable => true,
-                       :frame => false, :z => depth, :mouse => :parts, :hide_while => lambda { MGQ_MpChat.empty? }, :log => self)
-    @tabs = root.add_tabs(:pages => false, :pad_shoulders => true, :font_size => :small)
-    TABS.each { |tab| @tabs.add_tab(TAB_NAMES[tab], :color => CHANNEL_COLORS.fetch(tab, UI::Style::TEXT)) }
-    @lines = root.add_log(:grow => 1, :font_size => :small, :mouse => false, :scrollbar => false)
-    @row = root.add_row(:gap => 4, :visible => false)
-    @label = @row.add_label("", :font_size => :small)
-    @field = @row.add_text_field(:grow => 1, :max_length => MAX_LENGTH, :keys => ALT_KEYS.keys, :letters => false, :placeholder => BOX_HINT,
-                                 :font_size => :small)
-    @field.steer(@lines)
-    wire(root)
-    root
-  end
-
-  # Hands the parts' events to the chat's model.
-  #
-  # @param root [Mod_Framework::UI::Box] The root.
-  def self.wire(root)
-    root.on(:cancel) { MGQ_MpChat.cancelled; false }
-    root.on(:close) { |why| MGQ_MpChat.log("the #{root.place_name} log closed: #{why}") unless why == :script }
-    @tabs.on(:change) { |index| MGQ_MpChat.take_view(MGQ_MpChat.call(TAB_TOPIC, TABS[index])) }
-    @lines.on(:click) { |_row, part| MGQ_MpChat.open_menu(part[:data]) }
-    @field.on(:change) { |text| MGQ_MpChat.typed(text) }
-    @field.on(:submit) { |_text| MGQ_MpChat.take_view(MGQ_MpChat.call(ENTER_TOPIC)) }
-    @field.on(:key) { |key| MGQ_MpChat.take_view(MGQ_MpChat.call(ALT_TOPIC, ALT_KEYS[key])) if ALT_KEYS[key] }
-    @field.on(:completion) { |index| MGQ_MpChat.move_pick(index) }
-    @field.on(:complete) { |_name, index| MGQ_MpChat.take_name(index) }
-  end
-
-  # Hands what the box holds after typing to the chat's model, with where its caret stands.
+  # Hands what the box holds after typing to the chat's model, its caret at the end.
   #
   # @param text [String] The box's text.
   def self.typed(text)
-    take_view(call(TYPED_TOPIC, "text" => text, "cursor" => @field.caret))
+    take_view(call(TYPED_TOPIC, "text" => text.to_s, "cursor" => text.to_s.length))
   end
 
-  # Closes the chat box on the game's cancel, which the framework plays its sound for; the log's
-  # root stays, showing the recent lines.
-  def self.cancelled
-    take_view(call(CLOSE_TOPIC, "cancel (#{cancel_key})"))
+  # Hands Enter in the box to the model, which sends the line or closes the empty box.
+  def self.enter
+    take_view(call(ENTER_TOPIC))
   end
 
-  # Names the key that cancelled, for the log.
+  # Hands a key the box claims to the model: Tab takes the lit name while names show, the Alt keys
+  # step the tabs and bring back lines sent.
   #
-  # @return [String] "Esc", "Numpad 0", "pad" or "the cancel key" for a key bound to cancel.
-  def self.cancel_key
-    keys = UI::Key
-    return UI::ESCAPE_NAME if keys.down?(UI::ESCAPE_KEY)
-    return UI::NUMPAD_NAME if UI::NUMPAD_ZERO.any? { |code| keys.down?(code) }
+  # @param name [String] The key, such as "Alt+Left".
+  def self.key(name)
+    return take_view(call(ALT_TOPIC, ALT_KEYS[name])) if ALT_KEYS[name]
+    return unless name == "Tab" && !suggestions.empty?
 
-    UI::Pad.press?(:B) ? "pad" : "the cancel key"
-  rescue
-    "the cancel key"
-  end
-
-  # Moves the pick through the fitting names to the one the box's list lights.
-  #
-  # @param index [Integer] Its place in the list.
-  def self.move_pick(index)
-    step = index.to_i - (@view ? @view["pick"].to_i : 0)
-    take_view(call(PICK_TOPIC, step)) unless step == 0
-  end
-
-  # Takes a fitting name the box's list gave: Enter or Tab take the lit one, a click any one, which
-  # the model picks first.
-  #
-  # @param index [Integer] Its place in the list.
-  def self.take_name(index)
-    move_pick(index)
     take_view(call(TAKE_PICK_TOPIC))
   end
 
-  # Shows the view in the log's root: only what changed since it showed last.
-  def self.refresh
-    return unless @root && @root.open?
-
-    view = @view || {}
-    box = view["box"]
-    open = !box.nil?
-    show_open(open) if @shown[:open] != open
-    show_tabs(view, open)
-    show_lines(view, open)
-    show_box(view, box) if open
-    @shown[:open] = open
-    @shown[:tab] = view["tab"]
-  rescue => e
-    log("showing the chat FAILED: #{e.class}: #{e.message}")
-  end
-
-  # Opens or closes the log's box: framed, above everything and holding the game's buttons while the
-  # player types; while closed, without a frame and letting the pointer pass, but for arranging.
+  # Picks a tab through the model.
   #
-  # @param open [Boolean] Whether the box is open.
-  def self.show_open(open)
-    root = @root
-    root.frame = open
-    root.z = open ? UI::Z[:typing] : PLACES[@place][2]
-    root.closable = open
-    root.captures = open
-    root.mouse = open ? true : :parts
-    @lines.mouse = open
-    @tabs.mouse = open
-    @lines.scrollbar = open
-    @row.visible = open
-    @tabs.opacity = open ? UI::Component::OPAQUE : CLOSED_TABS_OPACITY
-    if open
-      @lines.scroll_to_end
-      @field.focus
-    elsif @shown.key?(:open)
-      @field.blur
-    end
+  # @param tab [String] Its name, one of TABS.
+  def self.pick_tab(tab)
+    take_view(call(TAB_TOPIC, tab)) if tab && tab != view_tab
   end
 
-  # Shows the tabs the view names, the picked one and the unread ones; above the closed log only
-  # while a tab holds unread lines and the log shows lines.
+  # Closes the chat box on the game's cancel, which the framework plays its sound for; the log's
+  # window stays, showing the recent lines.
+  def self.cancelled
+    take_view(call(CLOSE_TOPIC, "cancel"))
+  end
+
+  # Takes a fitting name the box gave: Enter or Tab take the lit one, a click any one, which the
+  # model picks first.
   #
-  # @param view [Hash] The view.
-  # @param open [Boolean] Whether the box is open.
-  def self.show_tabs(view, open)
-    shown = Array(view["tabs"])
-    unread = Array(view["unread"])
-    if @shown[:tabs] != [shown, unread]
-      @shown[:tabs] = [shown, unread]
-      TABS.each_with_index do |tab, index|
-        part = @tabs.tab(index)
-        part.visible = shown.include?(tab) unless part.visible? == shown.include?(tab)
-        part.badge = unread.include?(tab)
-      end
-    end
-    index = TABS.index(view["tab"]) || 0
-    @tabs.index = index unless @tabs.index == index
-    @tabs.visible = open || (!unread.empty? && !Array(view["lines"]).empty?)
+  # @param index [Integer] Its place in the list.
+  def self.take_name(index)
+    step = index.to_i - (@view ? @view["pick"].to_i : 0)
+    take_view(call(PICK_TOPIC, step)) unless step == 0
+    take_view(call(TAKE_PICK_TOPIC))
   end
 
-  # Shows the view's lines, each as its tag, its sender's name and its text in their colors; open,
-  # a name another player can be clicked on. Another tab goes to the newest line.
+  # Tells the tab the view shows.
   #
-  # @param view [Hash] The view.
-  # @param open [Boolean] Whether the box is open.
-  def self.show_lines(view, open)
-    lines = Array(view["lines"])
-    unless @shown[:lines] == [lines, open]
-      @shown[:lines] = [lines, open]
-      @lines.rows = lines.map { |line| row_of(line, open) }
-    end
-    @lines.scroll_to_end if open && @shown[:open] && @shown[:tab] != view["tab"]
+  # @return [String] One of TABS.
+  def self.view_tab
+    (@view && @view["tab"]) || "all"
   end
 
-  # Makes a row of the log of a line of the view.
+  # Tells the tabs the view shows, in their order.
+  #
+  # @return [Array<String>] The tabs.
+  def self.tabs
+    shown = Array(@view && @view["tabs"])
+    TABS.select { |tab| shown.include?(tab) }
+  end
+
+  # Tells whether a tab holds lines the player did not read.
+  #
+  # @param tab [String] The tab.
+  # @return [Boolean] Whether it does.
+  def self.unread?(tab)
+    Array(@view && @view["unread"]).include?(tab)
+  end
+
+  # Tells whether the tabs show above the closed log: while a tab holds unread lines and the log
+  # shows lines.
+  #
+  # @return [Boolean] Whether they do.
+  def self.unread_shown?
+    !Array(@view && @view["unread"]).empty? && !Array(@view && @view["lines"]).empty?
+  end
+
+  # Tells the text the model holds in the box.
+  #
+  # @return [String] The text, empty while the box is closed.
+  def self.box_text
+    box = @view && @view["box"]
+    box ? box[0].to_s : ""
+  end
+
+  # Tells whether the box shows the help tab, which takes no typing.
+  #
+  # @return [Boolean] Whether it does.
+  def self.help_tab?
+    view_tab == "help"
+  end
+
+  # Tells what the box row says before the text: the chat it sends to, whom a whisper goes to.
+  #
+  # @return [String] The label.
+  def self.label
+    return LABELS["help"] if help_tab?
+
+    channel = @view && @view["channel"]
+    channel == "whisper" && @view["whisper_to"] ? "To #{@view['whisper_to']}:" : LABELS[channel].to_s
+  end
+
+  # Tells the color of the box row's label: the chat's it sends to, plain on the help tab.
+  #
+  # @return [Symbol, nil] The color's name, nil for plain text.
+  def self.label_color
+    help_tab? ? nil : CHANNEL_COLORS[@view && @view["channel"]]
+  end
+
+  # Tells the names that fit what the box holds, which it offers.
+  #
+  # @return [Array<String>] The names.
+  def self.suggestions
+    Array(@view && @view["suggestions"])
+  end
+
+  # Tells what the empty box says: the help tab's with the close keys, the Alt controls while the
+  # player holds the left Alt, else the plain hint.
+  #
+  # @return [String] The hint.
+  def self.hint
+    return "#{HELP_HINT} #{UI.close_hint}" if help_tab?
+
+    UI::Layout.arranging? ? ALT_HINT : BOX_HINT
+  end
+
+  # Lists the log's rows of the view's lines.
+  #
+  # @param open [Boolean] Whether the box is open, in which a name can be clicked.
+  # @return [Array] The rows.
+  def self.rows(open)
+    Array(@view && @view["lines"]).map { |line| row_of(line, open) }
+  end
+
+  # Makes a row of the log of a line of the view: its tag, its sender's name and its text in their
+  # colors; open, another player's name can be clicked.
   #
   # @param line [Array] [tag, name, text, who, channel, id, fade].
-  # @param open [Boolean] Whether the box is open, in which a name can be clicked.
+  # @param open [Boolean] Whether the box is open.
   # @return [Array<Hash>, Hash] The row's parts, with its opacity while it fades.
   def self.row_of(line, open)
     tag, name, text, who, channel, id, fade = line
     parts = []
-    parts << { :text => tag, :color => who == "admin" ? UI::Style::GOLD : CHANNEL_COLORS.fetch(channel, UI::Style::TEXT) } unless tag.to_s.empty?
+    parts << colored(tag, who == "admin" ? :gold : CHANNEL_COLORS[channel]) unless tag.to_s.empty?
     unless name.to_s.empty?
-      part = { :text => name, :color => NAME_COLORS.fetch(who, UI::Style::TEXT) }
+      part = colored(name, NAME_COLORS[who])
       part[:data] = id if open && id
       parts << part
     end
-    parts << { :text => text.to_s, :color => text_color(who, channel) }
-    fade ? { :parts => parts, :opacity => UI::Component::OPAQUE * fade.to_i / FADE_FRAMES } : parts
+    parts << colored(text.to_s, text_color(who, channel))
+    fade ? { :parts => parts, :opacity => 255 * fade.to_i / FADE_FRAMES } : parts
+  end
+
+  # Makes a part of a row, colored when a color is named.
+  #
+  # @param text [String] Its text.
+  # @param color [Symbol, nil] Its color's name, nil for plain text.
+  # @return [Hash] The part.
+  def self.colored(text, color)
+    color ? { :text => text, :color => color } : { :text => text }
   end
 
   # Picks the color of a line's text: a notice of the relay's own red, the chats of COLORED_TEXT in
@@ -594,59 +607,16 @@ module MGQ_MpChat
   #
   # @param who [String] Whose line it is.
   # @param channel [String, nil] Its chat.
-  # @return [Color] The color.
+  # @return [Symbol, nil] The color's name, nil for plain text.
   def self.text_color(who, channel)
     return NOTICE_COLOR if who == "notice"
 
-    COLORED_TEXT.include?(channel) ? CHANNEL_COLORS[channel] : UI::Style::TEXT
+    COLORED_TEXT.include?(channel) ? CHANNEL_COLORS[channel] : nil
   end
 
-  # Shows the open box: the chat it sends to, the fitting names, the help tab's box that takes no
-  # typing, and the text and the caret once the model changed them, such as a command taken out or a
-  # line sent brought back; the caret the player moves stays.
-  #
-  # @param view [Hash] The view.
-  # @param box [Array] [text, cursor, locked].
-  def self.show_box(view, box)
-    text, cursor, locked = box
-    help = view["tab"] == "help"
-    label = help ? LABELS["help"] : view["channel"] == "whisper" && view["whisper_to"] ? "To #{view['whisper_to']}:" : LABELS[view["channel"]].to_s
-    color = help ? UI::Style::TEXT : CHANNEL_COLORS.fetch(view["channel"], UI::Style::TEXT)
-    @label.text = label unless @label.text == label
-    @label.color = color unless @label.color.equal?(color)
-    @field.read_only = locked ? true : false unless @field.read_only == (locked ? true : false)
-    show_hint
-    if @shown[:box] != [text, cursor] && @field.text != text.to_s
-      @field.text = text.to_s
-      @field.caret = cursor.to_i
-    end
-    @shown[:box] = [text, cursor]
-    names = Array(view["suggestions"])
-    @field.completions = names unless @field.completions == names
-    pick = view["pick"].to_i
-    @field.completion_index = pick unless names.empty? || @field.completion_index == pick
-  end
-
-  # Shows the empty box's hint: the help tab's with the close keys, the Alt controls while the left
-  # Alt is held, else the plain hint.
-  def self.show_hint
-    hint = if @view && @view["tab"] == "help"
-             "#{HELP_HINT} #{UI.close_hint}"
-           elsif UI::Key.down?(UI::Layout::ALT_KEY)
-             ALT_HINT
-           else
-             BOX_HINT
-           end
-    @field.placeholder = hint unless @field.placeholder == hint
-  end
-
-  # Follows a frame of a scene the chat shows in: the hint by the left Alt while the box is open.
-  def self.frame_update
-    show_hint if typing? && @root && @root.open?
-  end
-
-  # Opens the menu of a player whose name was clicked in the log: what every script offers with them
-  # and a whisper; off the map, in a battle, a shop, the casino or a trade, the whisper alone.
+  # Opens the menu of a player whose name was clicked in the log at the pointer: what every script
+  # offers with them and a whisper; off the map, in a battle, a shop, the casino or a trade, the
+  # whisper alone. A choice that cannot be taken now is greyed with why as its tooltip.
   #
   # @param id [String] Their player id.
   def self.open_menu(id)
@@ -657,106 +627,71 @@ module MGQ_MpChat
     whisper = MGQ_MpActions::Option.new("Whisper", lambda { MGQ_MpChat.take_view(MGQ_MpChat.call(WHISPER_TOPIC, peer.seat)) }, nil)
     options = SceneManager.scene.is_a?(Scene_Map) ? MGQ_MpActions.peer_options(peer) + [whisper] : [whisper]
     choices = options.map { |option| { :text => option.text.to_s, :enabled => !option.run.nil?, :tooltip => option.refusal } }
-    at = UI::Mouse.position || [MARGIN, Graphics.height / 2]
-    menu = UI::Menu.open(choices, :title => name, :at => at, :log => self) do |index, _choice|
-      MGQ_MpChat.menu_taken(name, options, index)
-    end
+    menu = UI.menu(choices, :title => name, :at => :pointer) { |_choice, index| MGQ_MpChat.menu_taken(name, options, index) }
     return log("the menu of #{name} did not open: another menu is open") unless menu
 
-    menu.on(:refuse) { |choice| MGQ_MpChat.menu_refused(name, choice) }
     log("menu of #{name} opened from the chat: #{options.map { |option| option.text }.join(', ')}")
   end
 
-  # Takes a choice of a player's menu, or its close without one, then gives the box its typing back.
-  # A choice that leaves, such as accepting a duel, closes the chat box too.
+  # Takes a choice of a player's menu, or its close without one. A choice that leaves, such as
+  # accepting a duel, closes the chat box too.
   #
   # @param name [String] The player's name.
   # @param options [Array<MGQ_MpActions::Option>] The menu's choices.
   # @param index [Integer, nil] The choice taken, nil when the menu closed without one.
   def self.menu_taken(name, options, index)
     option = index && options[index]
-    if option
-      log("menu of #{name} closed: chose #{option.text}")
-      MGQ_MpActions.choose(option) { stop_typing("#{option.text} leaves the chat") if option.leaves }
-    else
-      log("menu of #{name} closed: no choice taken")
-    end
-    @field.focus if typing? && @root && @root.open?
+    return log("menu of #{name} closed: no choice taken") unless option
+
+    log("menu of #{name} closed: chose #{option.text}")
+    MGQ_MpActions.choose(option) { stop_typing("#{option.text} leaves the chat") if option.leaves }
   end
 
-  # Notes a choice of a player's menu that cannot be taken now and says why on the status line.
-  #
-  # @param name [String] The player's name.
-  # @param choice [Hash] The choice.
-  def self.menu_refused(name, choice)
-    log("refused #{choice[:text]} in the menu of #{name}: #{choice[:tooltip] || 'it cannot be chosen now'}")
-    MGQ_MpOverworldSync.notice(choice[:tooltip]) if choice[:tooltip]
-  end
-
-  # Shows a bubble above each player the view has one for, in their line's chat's color, and closes
-  # those it has none for any longer.
+  # Shows a bubble above each player the view has one for, and hides those it has none for any
+  # longer; outside a world none shows.
   def self.refresh_bubbles
     wanted = MGQ_MpOverworldSync.in_world? && @view.is_a?(Hash) ? (@view["bubbles"] || {}) : {}
     (@bubbles.keys - wanted.keys).each do |seat|
       bubble = @bubbles.delete(seat)
-      bubble.close if bubble.open?
+      bubble.hide if bubble && bubble.shown?
     end
-    wanted.each do |seat, (text, channel)|
-      color = CHANNEL_COLORS.fetch(channel, UI::Style::TEXT)
-      bubble = @bubbles[seat]
-      if bubble && bubble.open?
-        bubble.text = text unless bubble.text == text
-        bubble.color = color unless bubble.color.equal?(color)
-      else
-        @bubbles[seat] = make_bubble(seat, text, color)
-      end
+    wanted.each_key do |seat|
+      next if @bubbles[seat] && @bubbles[seat].shown?
+
+      bubble = available? ? UI.show(ChatBubble, :seat => seat) : nil
+      bubble ? @bubbles[seat] = bubble : @bubbles.delete(seat)
     end
   rescue => e
     log("showing the bubbles FAILED: #{e.class}: #{e.message}")
   end
 
-  # Makes a bubble above a player, hidden while this map does not show them; the player's own hides
-  # while the action wheel is open too.
+  # Tells the line a player's bubble says.
   #
   # @param seat [Integer] Their seat, OWN_SEAT for the player.
-  # @param text [String] The line.
-  # @param color [Color] Its chat's color.
-  # @return [Mod_Framework::UI::Bubble] The bubble.
-  def self.make_bubble(seat, text, color)
-    hide = lambda { bubble_target(seat)[0].nil? || (seat == OWN_SEAT && MGQ_MpActions.wheel.open?) }
-    bubble = UI::Bubble.new(:text => text, :color => color, :keep => true, :log => self, :hide_while => hide)
-    place_bubble(seat, bubble)
-    bubble.open
+  # @return [Array(String, String), nil] Its text and its chat, nil while the view has none.
+  def self.bubble_of(seat)
+    bubbles = @view.is_a?(Hash) ? (@view["bubbles"] || {}) : {}
+    bubbles[seat]
   end
 
-  # Keeps each bubble on its player as they move, change map or show a line over their name.
-  # Called by the map's spriteset every frame, the live map's behind a menu too.
-  def self.place_bubbles
-    @bubbles.each { |seat, bubble| place_bubble(seat, bubble) }
-  rescue => e
-    log("placing the bubbles FAILED: #{e.class}: #{e.message}")
-  end
-
-  # Keeps a bubble on its player: the character it follows and how far above their feet it points.
+  # Finds whom a player's bubble follows: the player, or another player's ghost on this map.
   #
   # @param seat [Integer] Their seat, OWN_SEAT for the player.
-  # @param bubble [Mod_Framework::UI::Bubble] The bubble.
-  def self.place_bubble(seat, bubble)
-    character, lift = bubble_target(seat)
-    bubble.follow = character unless bubble.follow.equal?(character)
-    bubble.lift = lift unless bubble.lift == lift
-  end
-
-  # Finds whom a bubble follows and how far above their feet it points: just over the player's
-  # ping, or just over another player's name, higher while a line shows over it.
-  #
-  # @param seat [Integer] Their seat, OWN_SEAT for the player.
-  # @return [Array(Game_Character, Integer)] The character, nil without one, and the pixels.
-  def self.bubble_target(seat)
-    return [$game_player, OWN_LIFT + (MGQ_MpActions.own_line ? LINE_LIFT : 0)] if seat == OWN_SEAT
+  # @return [Game_Character, nil] The character, nil while this map does not show them.
+  def self.bubble_character(seat)
+    return $game_player if seat == OWN_SEAT
 
     peer = MGQ_MpOverworldSync::Peers.at(seat)
-    [peer && peer.ghost, GHOST_LIFT + (peer && MGQ_MpOverworldSync.label_line_of(peer) ? LINE_LIFT : 0)]
+    peer && peer.ghost
+  end
+
+  # Tells whether a player's bubble hides now: while this map does not show them, and the player's
+  # own while the action wheel is open.
+  #
+  # @param seat [Integer] Their seat, OWN_SEAT for the player.
+  # @return [Boolean] Whether it hides.
+  def self.bubble_hidden?(seat)
+    bubble_character(seat).nil? || (seat == OWN_SEAT && MGQ_MpActions.wheel_open?)
   end
 
   # Names a scene as the chat's model reads it: by its class, or for a class without a name, such
@@ -811,15 +746,13 @@ module MGQ_MpChat
     chat_key = MGQ_MpHotkeys.pressed?(:chat)
     return drop_root unless MGQ_MpOverworldSync.in_world?
 
-    show_in(:chat)
-    if typing?
-      frame_update
-    elsif chat_key && available? && !MGQ_MpActions.wheel.open? && map_open?
+    if !typing? && chat_key && available? && !MGQ_MpActions.wheel_open? && map_open?
       Sound.play_ok
       start_typing(MGQ_MpHotkeys.code(:chat))
-    elsif chat_key
-      MGQ_MpHotkeys.log_refusal(:chat, !available? ? 'the keyboard cannot reach the game' : MGQ_MpActions.wheel.open? ? 'the action wheel is open' : 'an event runs on the map')
+    elsif !typing? && chat_key
+      MGQ_MpHotkeys.log_refusal(:chat, !available? ? 'the keyboard cannot reach the game' : MGQ_MpActions.wheel_open? ? 'the action wheel is open' : 'an event runs on the map')
     end
+    show_in(:chat)
   rescue => e
     log("chat failed: #{e.class}: #{e.message}")
   end
@@ -858,25 +791,33 @@ module MGQ_MpChat
   #
   # @param place [Symbol] The log's place, one of PLACES.
   # @param where [String] The scene, for the log.
-  # @param menus [Boolean] Whether the scene is one of menus, where the chat box waits while another
-  #   box, such as a question, holds the buttons over the scene, since that box reads them past it; a
-  #   window that hosts the scene, such as the trade screen's, holds none over it.
+  # @param menus [Boolean] Whether the scene is one of menus, where the chat box waits while a box
+  #   of a mod, such as a question, holds the buttons over the scene.
   def self.chat_anywhere(place, where, menus = false)
     chat_key = MGQ_MpHotkeys.pressed?(:chat)
     return drop_root unless MGQ_MpOverworldSync.in_world?
 
-    show_in(place)
-    held = menus && !typing? && UI::Capture.over_scene?
-    if typing?
-      frame_update
-    elsif chat_key && available? && !held
+    held = menus && !typing? && held_over_scene?
+    if !typing? && chat_key && available? && !held
       Sound.play_ok
       start_typing(MGQ_MpHotkeys.code(:chat))
-    elsif chat_key
+    elsif !typing? && chat_key
       MGQ_MpHotkeys.log_refusal(:chat, held ? "another box of the mod holds the buttons" : "the keyboard cannot reach the game")
     end
+    show_in(place)
   rescue => e
     log("#{where} chat failed: #{e.class}: #{e.message}")
+  end
+
+  # Tells whether a box of a mod holds the game's buttons over a scene of menus, such as a question,
+  # which the chat box waits for. The trade screen's own window is the scene's, so over it only its
+  # gold box and its question count.
+  #
+  # @return [Boolean] Whether one does.
+  def self.held_over_scene?
+    return MGQ_MpTradeUi.asking? if defined?(Scene_MpTrade) && SceneManager.scene.is_a?(Scene_MpTrade)
+
+    UI.busy?
   end
 
   # Tells whether the chat box opens in a scene: the map, a battle and the scenes follow_scene names.
@@ -903,6 +844,141 @@ module MGQ_MpChat
   def self.follow_scene(owner)
     @menu_scenes << owner unless @menu_scenes.include?(owner)
   end
+
+  # The chat in one of its places: while closed, the picked tab's recent lines without a frame,
+  # resting under the game's windows and letting the pointer through, the tabs only while lines
+  # wait unread; while open, framed above everything with the tabs, every kept line and the box.
+  class ChatBox < UI::Component
+    # Where it shows, one of PLACES.
+    param :place
+
+    # The tab picked, by its id.
+    state(:picked_tab) { ChatBox.tab_id(place, MGQ_MpChat.view_tab) }
+
+    watch { MGQ_MpChat.serial }
+    watch { follow_tab }
+
+    # Names a tab's id in a place.
+    #
+    # @param place [Symbol] One of PLACES.
+    # @param tab [String] One of TABS.
+    # @return [Symbol] The id.
+    def self.tab_id(place, tab)
+      :"#{place}_tab_#{tab}"
+    end
+
+    # Describes the chat.
+    def render
+      open = MGQ_MpChat.typing?
+      name, _room, rest = PLACES[place]
+      at, size = MGQ_MpChat.default_place(place)
+      window nil, id: place, place_name: name, shown_in: MGQ_MpChat.scenes_of(place), captures: :typing, frame: open, mouse: open ? :all : :none,
+                  layer: open ? :windows : rest, z: open ? TYPING_Z : 0, resizable: true, min_size: MIN_SIZE, at: at, width: size[0], height: size[1],
+                  on_cancel: -> { MGQ_MpChat.cancelled; false } do
+        tabs bind: :picked_tab, pages: false, id: :"#{place}_tabs", visible: open || MGQ_MpChat.unread_shown?, on_change: ->(picked) { pick(picked) } do
+          MGQ_MpChat.tabs.each do |each|
+            color = CHANNEL_COLORS[each]
+            tab TAB_NAMES[each], { id: ChatBox.tab_id(place, each), badge: MGQ_MpChat.unread?(each) }.merge(color ? { color: color } : {})
+          end
+        end
+        log MGQ_MpChat.rows(open), id: :"#{place}_log", rows_shown: :fill, wheel_rows: 3, scrollbar: open, keep_place: true,
+                                   on_click: ->(_row, part) { MGQ_MpChat.open_menu(part[:data]) if part[:data] }
+        component(ChatLine, place: place) if open
+      end
+    end
+
+    private
+
+    # Picks a tab the player clicked or stepped to through the model.
+    #
+    # @param picked [Symbol] The tab's id.
+    def pick(picked)
+      MGQ_MpChat.pick_tab(TABS.find { |each| ChatBox.tab_id(place, each) == picked })
+    end
+
+    # Keeps the picked tab on the view's, which the model decides.
+    #
+    # @return [String] The view's tab.
+    def follow_tab
+      shown = MGQ_MpChat.view_tab
+      wanted = ChatBox.tab_id(place, shown)
+      self.picked_tab = wanted unless picked_tab == wanted
+      shown
+    end
+  end
+
+  # The open box's row: the chat it sends to and the line typed, which types as it shows.
+  class ChatLine < UI::Component
+    # Where the chat shows, one of PLACES.
+    param :place
+
+    # The line typed, as the model holds it.
+    state(:line) { MGQ_MpChat.box_text }
+
+    watch { follow_box }
+
+    # Describes the row.
+    def render
+      color = MGQ_MpChat.label_color
+      stack row: true do
+        text MGQ_MpChat.label, { typo: :body2 }.merge(color ? { color: color } : {})
+        text_field nil, id: field_id, bind: :line, grow: 1, max_length: MAX_LENGTH, read_only: MGQ_MpChat.help_tab?, placeholder: -> { MGQ_MpChat.hint },
+                        letters: false, steer: :"#{place}_log", keys: BOX_KEYS, completions: ->(_word) { MGQ_MpChat.suggestions },
+                        on_change: ->(text) { MGQ_MpChat.typed(text) }, on_submit: ->(_text) { MGQ_MpChat.enter },
+                        on_key: ->(name) { MGQ_MpChat.key(name) }, on_complete: ->(_text, index) { MGQ_MpChat.take_name(index) }
+      end
+    end
+
+    # Types into the line as the box opens.
+    def mounted
+      part(field_id).focus
+    end
+
+    private
+
+    # Names the line's id.
+    #
+    # @return [Symbol] The id.
+    def field_id
+      :"#{place}_field"
+    end
+
+    # Keeps the line on the model's text, which changes it as a command is taken out or a line
+    # sent comes back.
+    #
+    # @return [String] The model's text.
+    def follow_box
+      text = MGQ_MpChat.box_text
+      self.line = text unless line == text
+      text
+    end
+  end
+
+  # A chat line over its sender on this map, in its chat's color, as long as the model keeps it.
+  class ChatBubble < UI::Component
+    # The sender's seat, OWN_SEAT for the player.
+    param :seat
+
+    watch { [MGQ_MpChat.bubble_of(seat), MGQ_MpChat.bubble_character(seat)] }
+
+    # Describes the bubble.
+    def render
+      text, channel = MGQ_MpChat.bubble_of(seat) || ["", nil]
+      color = CHANNEL_COLORS[channel]
+      bubble({ id: :"mgq_online_chat_bubble_#{seat == OWN_SEAT ? 'own' : seat}", follow: seat == OWN_SEAT ? :player : MGQ_MpChat.bubble_character(seat) || :player, side: :top,
+               hide_while: -> { MGQ_MpChat.bubble_hidden?(seat) } }.merge(color ? { color: color } : {})) do
+        text text, typo: :body2, wrap: true, most_lines: 3
+      end
+    end
+  end
+end
+
+# The chats' colors, named once.
+
+begin
+  MGQ_MpChat::CHANNEL_RGB.each { |name, rgb| Mod_Framework::UI.color(name, rgb) }
+rescue => e
+  MGQ_MpChat.log("chat colors FAILED: #{e.class}: #{e.message}")
 end
 
 # What the chat takes from the DLL's chat model: its view, its sounds and the relay's notices.
@@ -913,14 +989,6 @@ begin
   MGQ_Multiplayer::Bridge.on(MGQ_MpChat::ANNOUNCE_EVENT) { |text| MGQ_MpNotices.announce(text) if defined?(MGQ_MpNotices) }
 rescue => e
   MGQ_MpChat.log("chat model FAILED: #{e.class}: #{e.message}")
-end
-
-# The log's places, which Interface Positions lists and puts back before the log first shows there.
-
-begin
-  MGQ_MpChat::PLACES.each { |id, (name, _room, _depth)| Mod_Framework::UI::Layout.register(id, name, :min_size => MGQ_MpChat::MIN_SIZE) }
-rescue => e
-  MGQ_MpChat.log("layout FAILED: #{e.class}: #{e.message}")
 end
 
 # What this script takes part in of the world's frames, through overworld_sync.rbx.
@@ -946,13 +1014,6 @@ begin
   # After the map's update, the chat box. The game checks its own keys there too, only while no
   # scene change is in the way.
   MGQ_MpHooks.after(Scene_Map, :update_scene, "ui_chat") { MGQ_MpChat.on_map unless scene_changing? }
-
-  # After the map's sprites, the log unless the map shows behind a menu, and the bubbles on their
-  # players, the live map's behind a menu too.
-  MGQ_MpHooks.after(Spriteset_Map, :update, "ui_chat") do
-    MGQ_MpChat.show_in(:chat) if mgq_mp_hud? && MGQ_MpOverworldSync.in_world?
-    MGQ_MpChat.place_bubbles
-  end
 
   # Around the map's update, the chat box while a message stops the map's own update.
   MGQ_MpHooks.before(Scene_Map, :update, "ui_chat") { MGQ_MpChat.map_updating }
