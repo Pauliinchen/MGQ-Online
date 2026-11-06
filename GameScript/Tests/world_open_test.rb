@@ -2,7 +2,8 @@
 #  world_open_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Reached the Mod Framework's engine under its own name
+#      Paulinchen  2026-11-06: Checked that a refusal of this version on the world screen waits for its question to close instead of leaving
+#                            - Reached the Mod Framework's engine under its own name
 #                            - Checked that a refusal of this version asks for the update at the title at once and after a game at the next title
 #                            - Acted on the world screen as its window of the UI layer hands over what the player does
 #      Paulinchen  2026-11-05: Answered the squad rules' text with fixed values and checked what goes to the DLL instead of the rule
@@ -509,6 +510,33 @@ $required.clear
 update.needed("version" => "9.9.9", "have" => "0.7.0")
 check("a refusal at the title asks at once", [$required.size, update.asking?], [1, true])
 $required.last[3].call(:declined)
+
+# A refusal on the world screen while one of its questions is open, where the framework's question
+# cannot open and declines at once: the screen keeps the request and asks again a while after its
+# own question closed, and leaves for the title only once the player went back from that one.
+screen = new_scene
+$scene = screen
+$required.clear
+$returned = false
+Mod_Framework::Mods.define_singleton_method(:require) do |name, version, options = {}, &done|
+  next done.call(:declined) || :declined if screen.popup_open?
+
+  $required << [name, version, options, done]
+  :asking
+end
+screen.play("steps" => [["say", "Turn your other mods off to enter?"], ["confirm", "other_mods", [["Turn them off", "yes"], ["Back", "cancel"]]]])
+update.needed("version" => "9.9.9", "have" => "0.7.0")
+screen.update
+check("a refusal while a question of the world screen is open keeps the screen and asks nothing yet", [$returned, $required.size, screen.popup_open?], [false, 0, true])
+answer_question(screen, false)
+frames = 0
+until !$required.empty? || frames > 100
+  screen.update
+  frames += 1
+end
+check("once its question closed the screen asks for the release a while later", [$required.size, frames > 1, $returned], [1, true, false])
+$required.last[3].call(:declined)
+check("and going back from that question leaves for the title", $returned, true)
 $scene = nil
 $outdated = false
 

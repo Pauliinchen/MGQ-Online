@@ -2,7 +2,8 @@
 #  world_screen_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Reached the Mod Framework's engine under its own name
+#      Paulinchen  2026-11-06: Checked that mods the Mod Framework finds ready while the DLL finds them differing refuse the entry
+#                            - Reached the Mod Framework's engine under its own name
 #                            - Checked the screen as its window of the UI layer hands over what the player does, the mods a world needs going to the Mod Framework's dialog
 #      Paulinchen  2026-11-05: Answered the list, the details, the choices, the list box, the forms and the mod picker with the values each check sets instead of their stand-ins
 #                            - Read the directory's list and the player's id through the DLL's topics
@@ -240,6 +241,13 @@ scene.play("steps" => [["needed_mods", "Sunset", [{ "name" => "Mod C", "differs"
 needed[3].call(:back)
 run_later(scene)
 check("going back from the dialog gives the entry up", screen_requests("screen.answer").last, { "answer" => "back" })
+Mod_Framework::Mods.define_singleton_method(:ask_needed) { |place, mods, options = {}, &block| block.call(:ready); :ready }
+answers = screen_requests("screen.answer").size
+scene.play("steps" => [["needed_mods", "Sunset", [{ "name" => "Level Cap", "version" => "1.4.0", "differs" => true }]]])
+run_later(scene)
+check("mods the Mod Framework finds ready at once while the DLL found them differing refuse the entry instead of going on",
+      [said(scene), screen_requests("screen.answer").drop(answers), scene.idle?],
+      ["Sunset needs mods that differ here, which the Mod Framework cannot change: Level Cap. Check the Patch folder, then try again.", [{ "answer" => "back" }], true])
 
 # Busy.
 $sounds = []

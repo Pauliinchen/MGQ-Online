@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-11-06: Asked for a world's differing mods through the Mod Framework's dialog of the mods it needs, which installs them and starts the game again where it must
+//                            - Refused a world whose mods still differ right after the Mod Framework made them ready, instead of asking again
 //      Paulinchen  2026-11-01: Had the scripts note a world started from another player's starting save, whose side is not the player's
 //      Paulinchen  2026-10-30: Compared this game's data with a world's once the world's mods loaded, warning of a difference instead of asking or keeping the game out
 //                            - Entered a world that turns other mods off without parking them, which the Mod Framework's session leaves out
@@ -339,6 +340,12 @@ internal sealed partial class WorldEntering
     private bool _fresh;
 
     /// <summary>
+    /// Whether the Mod Framework just made the world's mods ready, so a check that still finds some
+    /// differing refuses instead of asking again.
+    /// </summary>
+    private bool _modsJustReady;
+
+    /// <summary>
     /// Creates the steps.
     /// </summary>
     /// <param name="context">The context, whose topics of other areas the steps ask.</param>
@@ -673,15 +680,36 @@ internal sealed partial class WorldEntering
             return true;
         }
 
+        string differing = string.Join(", ", rows.Select(row => row.AsHash()["text"].AsText()));
+        if (_modsJustReady)
+        {
+            Log($"not entering {EntryText}: the Mod Framework made its mods ready, yet these still differ here: {differing}");
+            Refuse($"{_entry.Name} still needs mods that differ here: {differing}. Check the Patch folder, then try again.");
+            Back();
+            return false;
+        }
+
         RubyArray needed = new(rows.Select(row => row.AsHash()).Select(row => (RubyValue)new RubyHash
         {
             { "name", row["name"] },
             { "version", row["worlds"] },
-            { "differs", row["yours"].AsText() == ModCheck.Differs },
+            { "differs", CopyDiffers(row) },
         }));
-        Log($"{EntryText} needs mods that differ here: {string.Join(", ", rows.Select(row => row.AsHash()["text"].AsText()))}; asking through the Mod Framework");
+        Log($"{EntryText} needs mods that differ here: {differing}; asking through the Mod Framework");
         _steps.Add(new RubyArray { "needed_mods", _entry.Name, needed });
         return false;
+    }
+
+    /// <summary>
+    /// Tells whether this game has a copy of a required mod that is not the world's, which the Mod
+    /// Framework's own version check may miss, such as one of a version the relay never saw.
+    /// </summary>
+    /// <param name="row">The mod check's row.</param>
+    /// <returns>Whether it does.</returns>
+    private static bool CopyDiffers(RubyHash row)
+    {
+        string yours = row["yours"].AsText();
+        return yours != ModCheck.NotInstalled && (row["worlds"].IsNil || yours != row["worlds"].AsText());
     }
 
     /// <summary>
@@ -889,7 +917,15 @@ internal sealed partial class WorldEntering
         Log($"the mods of {EntryText} are ready, entering it");
         _context.Ask(ModCheckTopics.ForgetTopic);
         _steps.Add(new RubyArray { "forget_installed" });
-        Chain();
+        _modsJustReady = true;
+        try
+        {
+            Chain();
+        }
+        finally
+        {
+            _modsJustReady = false;
+        }
     }
 
     /// <summary>

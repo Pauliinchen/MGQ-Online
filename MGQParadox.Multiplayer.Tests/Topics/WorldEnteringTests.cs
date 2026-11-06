@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-11-06: Checked the mods a world needs handed to the Mod Framework's dialog, in place of the download, the install and the restart
+//                            - Checked that mods still differing right after they were made ready are refused, not asked for again
 //      Paulinchen  2026-11-01: Checked that a starting save another player made is noted as theirs, and the creator's own not
 //      Paulinchen  2026-10-30: Checked the game data once the world's mods loaded, warned of or taken as the creator's, in place of the question and the refusal on entering
 //                            - Checked that a world that turns other mods off waits for the catalog, without the parking
@@ -263,7 +264,7 @@ public sealed class WorldEnteringTests : IDisposable
 
     /// <summary>
     /// Asserts that a world whose required mods differ here hands the scripts the mods it needs, each
-    /// with the world's version and whether this game's copy differs from the creator's, for the Mod
+    /// with the world's version and whether this game has a copy that is not the world's, for the Mod
     /// Framework's dialog; that entering goes on once the dialog made them ready, with what Patch held
     /// forgotten; and that going back from it gives up the entry.
     /// </summary>
@@ -277,16 +278,17 @@ public sealed class WorldEnteringTests : IDisposable
             {
                 "rows", ready ? new RubyArray() : new RubyArray([
                     new RubyHash { { "name", "Level Cap" }, { "key", "levelcap" }, { "yours", "1.3.5" }, { "worlds", "1.4.0" }, { "text", "Level Cap: yours 1.3.5, the world's 1.4.0" }, { "downloadable", true } },
-                    new RubyHash { { "name", "Mod C" }, { "yours", "differs" }, { "worlds", RubyNil.Value }, { "text", "Mod C: yours differs from the world creator's copy" }, { "downloadable", false } }])
+                    new RubyHash { { "name", "Mod C" }, { "yours", "differs" }, { "worlds", RubyNil.Value }, { "text", "Mod C: yours differs from the world creator's copy" }, { "downloadable", false } },
+                    new RubyHash { { "name", "Party Sheet" }, { "key", "party" }, { "yours", "not installed" }, { "worlds", "1.5.2" }, { "text", "Party Sheet: not installed, the world's 1.5.2" }, { "downloadable", true } }])
             },
             { "summary", "Plain needs mods." },
         });
-        _directory.List(World("w1", open: true, mods: "!Level Cap; !Mod C"));
+        _directory.List(World("w1", open: true, mods: "!Level Cap; !Mod C; !Party Sheet"));
 
         RubyValue? asked = _topics.Call(WorldEntering.EnterTopic, new RubyHash { { "id", "w1" }, { "folder", RubyNil.Value }, { "name", "Plain" }, { "gone", false }, { "me", Me } });
         RubyArray step = asked!.AsHash()["steps"].AsArray()[0].AsArray();
         Assert.Equal(["needed_mods", "Plain"], [step[0].AsText(), step[1].AsText()]);
-        Assert.Equal([("Level Cap", "1.4.0", false), ("Mod C", (string?)null, true)],
+        Assert.Equal([("Level Cap", "1.4.0", true), ("Mod C", (string?)null, true), ("Party Sheet", "1.5.2", false)],
                      step[2].AsArray().Select(mod => mod.AsHash()).Select(mod => (mod["name"].AsText(), mod["version"].IsNil ? null : mod["version"].AsText(), mod["differs"].AsBool())));
 
         Assert.Equal(["back"], Answer("back"));
@@ -295,6 +297,27 @@ public sealed class WorldEnteringTests : IDisposable
         ready = true;
         Assert.Equal(["forget_installed", "busy unlock"], Answer("mods_ready"));
         Assert.Contains(_asked, asked => asked.Topic == "mods.forget");
+    }
+
+    /// <summary>
+    /// Asserts that a world whose mods still differ by MGQ Online's check once the Mod Framework made
+    /// them ready, such as a copy of a version the relay never saw, is refused instead of asked for
+    /// again, and that the next entry asks once more.
+    /// </summary>
+    [Fact]
+    public void Enter_RefusesModsStillDifferingRightAfterTheyWereMadeReady()
+    {
+        Area("mods.check", _ => new RubyHash
+        {
+            { "known", true },
+            { "rows", new RubyArray([new RubyHash { { "name", "Level Cap" }, { "key", "levelcap" }, { "yours", "unknown" }, { "worlds", "1.4.0" }, { "text", "Level Cap: yours unknown, the world's 1.4.0" }, { "downloadable", true } }]) },
+            { "summary", "Plain needs mods." },
+        });
+        _directory.List(World("w1", open: true, mods: "!Level Cap"));
+
+        Assert.Equal(["needed_mods"], Enter("w1"));
+        Assert.Equal(["forget_installed", "buzz", "say Plain still needs mods that differ here: Level Cap: yours unknown, the world's 1.4.0. Check the Patch folder, then try again.", "back"], Answer("mods_ready"));
+        Assert.Equal(["needed_mods"], Enter("w1"));
     }
 
     /// <summary>

@@ -2,7 +2,8 @@
 #  world.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Asked the Mod Framework for the update wherever the relay turns this version away, naming the version the DLL runs
+#      Paulinchen  2026-11-06: Kept a refusal of this version on the world screen whose question could not open, asking again once none of the screen's questions is open
+#                            - Asked the Mod Framework for the update wherever the relay turns this version away, naming the version the DLL runs
 #                            - Named the colors of featured and Raid Worlds by MGQ Online's own color names, and read the bounds of a number's field
 #      Paulinchen  2026-11-05: Took a difficulty the relay pushed as the number the DLL reads
 #                            - Told no world type or sharing of a form other than the new world's, which alone sets them
@@ -755,8 +756,14 @@ module MGQ_MpWorld
     # The toast's key, so a second refusal replaces the first toast in place.
     TOAST_KEY = :mgq_online_update
 
+    # The frames the world screen waits before it asks again for a question that could not open.
+    RETRY_FRAMES = 30
+
     # Asks the Mod Framework for the release to play, the title's commands waiting for the answer.
     # On the world screen, going back leaves it for the title, where the player picked Multiplayer.
+    #
+    # The framework declines at once when its question cannot open, such as while a question of the
+    # world screen is open; the world screen then keeps the request instead of leaving unasked.
     #
     # @param scene [Scene_Title, Scene_MpWorlds] The scene that asks.
     # @return [Symbol] :off, so the framework leaves the title's commands to the answer.
@@ -765,16 +772,51 @@ module MGQ_MpWorld
       commands = MGQ_MpGame.get(scene, :command_window)
       commands.deactivate if commands && !commands.disposed?
       version = MGQ_Multiplayer.newer_version
+      retried = !@retry.nil?
+      @retry = nil
       @asking = true
-      MGQ_MpWorld.log("asking the Mod Framework for release #{version}#{MGQ_Multiplayer.rollback? ? ', a step back' : ''}, #{MGQ_Multiplayer::UpdateCheck.have || 'an unknown version'} runs")
+      MGQ_MpWorld.log("asking the Mod Framework for release #{version}#{MGQ_Multiplayer.rollback? ? ', a step back' : ''}, #{MGQ_Multiplayer::UpdateCheck.have || 'an unknown version'} runs") unless retried
+      calling = true
+      unshown = false
       Mod_Framework::Mods.require(SLUG, version, :exact => MGQ_Multiplayer.rollback?, :have => MGQ_Multiplayer::UpdateCheck.have,
                                                  :reason => MGQ_Multiplayer.rollback? ? ROLLBACK_REASON : REASON,
                                                  :action => MGQ_Multiplayer::Stages::OPEN_ACTION) do |result|
         @asking = false
-        MGQ_MpWorld.log("the Mod Framework's update to #{version}: #{result}")
-        answered(scene, commands) unless result == :restarting
+        if calling && result == :declined && world_screen?(scene)
+          unshown = true
+        else
+          MGQ_MpWorld.log("the Mod Framework's update to #{version}: #{result}")
+          answered(scene, commands) unless result == :restarting
+        end
       end
+      calling = false
+      keep(version, retried) if unshown
       :off
+    end
+
+    # Keeps the request for the release to play while its question could not open on the world
+    # screen, which asks again a while later once none of its questions is open.
+    #
+    # @param version [String] The release to play.
+    # @param again [Boolean] Whether the request was kept before, which the log told already.
+    def self.keep(version, again)
+      MGQ_MpWorld.log("the question of release #{version} could not open on the world screen; asking again once none of its questions is open") unless again
+      @retry = RETRY_FRAMES
+    end
+
+    # Asks again for the release to play once the world screen kept the request a while and none of
+    # its questions is open. Called by the world screen every frame.
+    #
+    # @param scene [Scene_MpWorlds] The world screen.
+    # @param question_open [Boolean] Whether one of its questions is open.
+    def self.on_world_screen_update(scene, question_open)
+      return unless @retry
+      return @retry = nil unless MGQ_Multiplayer.outdated?
+
+      @retry -= 1 if @retry > 0
+      return if @retry > 0 || question_open || asking?
+
+      ask(scene)
     end
 
     # Goes on once the player did not update: the title's commands take the input again, and the

@@ -2,7 +2,9 @@
 #  world_screen.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Moved the focus and said the lines at the top without rescuing an error of the UI layer
+#      Paulinchen  2026-11-06: Asked again for a release to play whose question could not open while one of the screen's was
+#                            - Refused a world whose mods the Mod Framework finds ready while MGQ Online's check finds them differing, instead of asking again
+#                            - Moved the focus and said the lines at the top without rescuing an error of the UI layer
 #                            - Drew the world screen, its details, forms and formation limits through the UI layer
 #                            - Opened a world's players, mods and description and the mod picker in MGQ Online's list box, a mod added by name removed through its context menu
 #                            - Asked for the mods a world needs in the Mod Framework's dialog, in place of the download and the list box
@@ -456,7 +458,8 @@ class Scene_MpWorlds < Scene_MenuBase
   end
 
   # Asks for the player's name the first time, runs what a menu or a question answered, follows a
-  # running action, and keeps the list and the details fresh.
+  # running action, asks again for a release to play whose question could not open, and keeps the
+  # list and the details fresh.
   def update
     started = Time.now
     @spent = {}
@@ -473,6 +476,7 @@ class Scene_MpWorlds < Scene_MenuBase
     return start_from_own if @own_start
 
     timed(:action) { follow_steps } if @busy
+    MGQ_MpWorld::Update.on_world_screen_update(self, popup_open?)
     timed(:details) { follow_details }
     timed(:list) { look_at_list }
     log_slow_frame(Time.now - started)
@@ -985,6 +989,9 @@ class Scene_MpWorlds < Scene_MenuBase
   # what can be done and enters, which starts the game again into the world where a mod that runs
   # already changes. The DLL hears whether the mods are ready, or the player went back.
   #
+  # A :ready at once means the framework found nothing to change where the DLL found mods that
+  # differ; going on would have the DLL ask again forever, so the entry is refused.
+  #
   # @param name [String] The world's name.
   # @param mods [Array<Hash>] Each mod "name", "version" (the world's, nil for any) and "differs".
   def ask_mods(name, mods)
@@ -993,12 +1000,19 @@ class Scene_MpWorlds < Scene_MenuBase
     log_screen("asking the Mod Framework for the mods #{name} needs: #{needed.map { |mod| "#{mod[:name]} #{mod[:version] || 'any'}#{mod[:differs] ? ', this copy differs' : ''}" }.join('; ')}")
     restart = [MGQ_Multiplayer::Stages::REJOIN_ACTION, @entry ? @entry.id.to_s : ""]
     @mods_asked = true
-    return if Mod_Framework::Mods.ask_needed(name, needed, :restart => restart) { |result| later { mods_answered(result) } }
+    asking = true
+    handle = Mod_Framework::Mods.ask_needed(name, needed, :restart => restart) { |result| later { mods_answered(result) } unless asking }
+    asking = false
+    return if handle && handle != :ready
 
     @mods_asked = nil
-
-    log_screen("the mods #{name} needs could not be compared")
-    refuse("The mods #{name} needs could not be checked. Try again in a moment.")
+    if handle == :ready
+      log_screen("the mods #{name} needs differ by MGQ Online's check, yet the Mod Framework finds nothing to change: #{needed.map { |mod| mod[:name] }.join(', ')}")
+      refuse("#{name} needs mods that differ here, which the Mod Framework cannot change: #{needed.map { |mod| mod[:name] }.join(', ')}. Check the Patch folder, then try again.")
+    else
+      log_screen("the mods #{name} needs could not be compared")
+      refuse("The mods #{name} needs could not be checked. Try again in a moment.")
+    end
     answer("back")
   end
 
