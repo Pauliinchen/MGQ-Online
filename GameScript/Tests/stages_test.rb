@@ -2,6 +2,7 @@
 #  stages_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Checked that a script that did not load keeps the mod off, its hooks asleep, and tells the player once
 #      Paulinchen  2026-11-01: Dropped the check of a tag the package declares in the mod's folder
 #      Paulinchen  2026-10-31: Checked that the mod stays off without the Mod Framework, and logs whether the framework keeps it off and keeps the game running behind other windows as its first stage loads
 #      Paulinchen  2026-10-30: Created
@@ -10,7 +11,7 @@
 
 # Covers how Multiplayer.rb loads: without the Mod Framework all at once, under it as a Title mod,
 # its title part as the game starts and the rest as the player enters the game, with the hooks
-# asleep in a game entered without the mod.
+# asleep in a game entered without the mod or once a script did not load.
 
 require_relative "support"
 require "fileutils"
@@ -29,7 +30,7 @@ module MGQ_Multiplayer
   SCRIPTS = %w[core_hooks ui world coop battles]
   BOOT_SCRIPTS = %w[core_hooks ui]
   WORLD_SCRIPTS = %w[world]
-  module Log; def self.write(line); $log << line; end; def self.settle(open); $calls << [:settled, open]; end; end
+  module Log; def self.write(line); $log << line; end; def self.settle(open); $calls << [:settled, open]; end; def self.flush; end; end
   module Player; def self.readable?; false; end; end
   def self.start; $calls << :start; end
   def self.log_framework_gap; $calls << :framework_gap; end
@@ -41,7 +42,12 @@ MGQ_Multiplayer.module_eval(source[/  MOD_FRAMEWORK_REQUIRED = .*\n/])
 MGQ_Multiplayer.module_eval(source[/  def self\.path\(name\)\n.*?\n  end\n/m])
 MGQ_Multiplayer.module_eval(source[/  def self\.load_scripts\(names = SCRIPTS, part = false\)\n.*?\n  end\n/m])
 MGQ_Multiplayer.module_eval(source[/  def self\.load_script\(name, part\)\n.*?\n  end\n/m])
+MGQ_Multiplayer.module_eval(source[/  HALF_LOADED_MESSAGE = .*\n/])
+MGQ_Multiplayer.module_eval(source[/  HALF_LOADED_SECONDS = .*\n/])
+MGQ_Multiplayer.module_eval(source[/  def self\.half_loaded\?\n.*?\n  end\n/m])
+MGQ_Multiplayer.module_eval(source[/  def self\.stay_off\n.*?\n  end\n/m])
 MGQ_Multiplayer.module_eval(source[/  module Stages\n.*?\n  end\n/m])
+Mod_Framework.define_singleton_method(:toast) { |text, options = {}| $calls << [:toast, text, options]; nil }
 
 # Stands in for the game's scenes.
 module SceneManager; def self.scene; :title; end; end
@@ -51,6 +57,7 @@ def fresh_stages
   $calls.clear
   $loaded.clear
   MGQ_Multiplayer.instance_variable_set(:@loaded, [])
+  MGQ_Multiplayer.instance_variable_set(:@half_loaded, nil)
   stages = MGQ_Multiplayer::Stages
   [:@staged, :@everything_loaded, :@world_loaded].each { |name| stages.instance_variable_set(name, nil) }
   stages.instance_variable_set(:@waiting, [])
@@ -169,5 +176,26 @@ Dir.mktmpdir do |game|
     Mod_Framework::Mods.instance_variable_set(:@enter_blocks, [])
     Mod_Framework::Mods.enter("New Game")
     check("a game entered without the mod loads none of its rest and its hooks sleep", [$loaded, $asleep.call], [%w[core_hooks ui], true])
+
+    # A script of the rest that did not load, such as an old copy the Mod Framework refused, while
+    # the player starts a New Game.
+    fresh_stages
+    $log.clear
+    Mod_Framework::Mods.entered = false
+    Mod_Framework::Mods.instance_variable_set(:@enter_blocks, [])
+    MGQ_Multiplayer::Stages.boot
+    MGQ_Multiplayer::Stages.when_loaded("test") { $calls << :loaded }
+    File.delete(File.join(folder, "world.rbx"))
+    Mod_Framework::Mods.enter("New Game")
+    Mod_Framework::Mods.restarts["multiplayer.open"].call(nil)
+    Mod_Framework::Mods.restarts["multiplayer.rejoin"].call("w7")
+    Mod_Framework::Mods.restarts["multiplayer.invite"].call("mgqmp2;abcdefghjkmnpqrs;r1;4")
+    reached = $calls.select { |call| call == :loaded || (call.is_a?(Array) && [:world_screen, :restarted_for, :invite].include?(call[0])) }
+    check("a script that did not load keeps the mod off for the game session: its hooks sleep, and nothing that waited for every script nor any world screen runs",
+          [$asleep.call, reached], [true, []])
+    check("the log names the script that did not load once and the player sees one notice that the mod did not load",
+          [$log.last(2), $calls.select { |call| call.is_a?(Array) && call[0] == :toast }],
+          [["loaded 2 of 3 scripts, not world", "Monster Girl Quest! Online is off for this game session, since some of its scripts did not load"],
+           [[:toast, MGQ_Multiplayer::HALF_LOADED_MESSAGE, { :severity => :error, :seconds => MGQ_Multiplayer::HALF_LOADED_SECONDS }]]])
   end
 end

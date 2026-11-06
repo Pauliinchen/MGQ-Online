@@ -2,6 +2,7 @@
 #  loader_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Stood in for stay_off, which the stages test covers
 #      Paulinchen  2026-11-05: Dropped the raid pools' beaten markers from the formats kept, which the DLL reads now
 #                            - Checked that no script builds or reads a format of C#, the network or a store C# reads, naming what stays with why
 #                            - Checked that only the bridge loads exports of the DLL and that no script calls an old export or writes or reads a message's key=value lines
@@ -232,6 +233,7 @@ harness.const_set(:Log, Module.new.tap { |mod| mod.define_singleton_method(:writ
 harness.module_eval(source[/  def self\.path\(name\)\n.*?\n  end\n/m])
 harness.module_eval(source[/  def self\.load_scripts\(names = SCRIPTS, part = false\)\n.*?\n  end\n/m])
 harness.module_eval(source[/  def self\.load_script\(name, part\)\n.*?\n  end\n/m])
+harness.define_singleton_method(:stay_off) { nil }
 
 Dir.mktmpdir do |game|
   Dir.chdir(game) do
@@ -345,7 +347,7 @@ module LoaderTestGate
   module Log; def self.write(line); LINES << line; end; end
 end
 LoaderTestGate.module_eval(source[/  MOD_FRAMEWORK_REQUIRED = .*\n/])
-%w[available? framework_ready? framework_gap log_framework_gap].each do |name|
+%w[available? half_loaded? framework_ready? framework_gap log_framework_gap].each do |name|
   LoaderTestGate.module_eval(source[/  def self\.#{Regexp.escape(name)}\n.*?\n  end\n/m])
 end
 

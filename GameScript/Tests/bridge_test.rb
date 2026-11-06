@@ -2,7 +2,8 @@
 #  bridge_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Cleared the request it refuses on purpose, which would fail the file at its end
+#      Paulinchen  2026-11-06: Took half_loaded? along with available?, which asks it
+#                            - Cleared the request it refuses on purpose, which would fail the file at its end
 #      Paulinchen  2026-11-05: Checked that the events of a topic no script takes yet are held until one does
 #                            - Checked that a DLL that does not load is logged by what happened, never as older
 #                            - Started the mod with the bridge alone, the DLL starting as it shakes hands
@@ -71,6 +72,7 @@ module MGQ_Multiplayer
 end
 MGQ_Multiplayer.module_eval(source[/  MOD_FRAMEWORK_REQUIRED = .*\n/])
 MGQ_Multiplayer.module_eval(source[/  def self\.available\?\n.*?\n  end\n/m])
+MGQ_Multiplayer.module_eval(source[/  def self\.half_loaded\?\n.*?\n  end\n/m])
 MGQ_Multiplayer.module_eval(source[/  def self\.framework_ready\?\n.*?\n  end\n/m])
 MGQ_Multiplayer.module_eval(source[/  def self\.framework_gap\n.*?\n  end\n/m])
 MGQ_Multiplayer.module_eval(source[/  def self\.start\n.*?\n  end\n/m])

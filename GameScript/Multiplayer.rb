@@ -2,7 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Took the release the relay's refusal of this version names, and the version the DLL runs
+#      Paulinchen  2026-11-06: Kept the mod off for the game session once any of its scripts did not load, telling the player once
+#                            - Took the release the relay's refusal of this version names, and the version the DLL runs
 #                            - Dropped world_overview_mods.rbx, since other mods add their overview pages through UI.patch
 #      Paulinchen  2026-11-05: Kept true or false and whole numbers in Player.ini as the DLL writes them, the rest as text
 #                            - Held the events of a topic no script takes yet until its handler comes
@@ -246,17 +247,24 @@ module MGQ_Multiplayer
   # filled in.
   ROLLBACK_MESSAGE = "Monster Girl Quest! Online %s is the version to play now. Pick Multiplayer on the title screen to install it."
 
+  # What the game says once when some of the mod's scripts did not load, which keeps it off.
+  HALF_LOADED_MESSAGE = "Monster Girl Quest! Online did not load, so multiplayer is off. Reinstall or update the mod."
+
+  # Seconds HALF_LOADED_MESSAGE shows while the notices show.
+  HALF_LOADED_SECONDS = 15
+
   # The bridge topic that waits until the world room sent what the scripts handed it, as the game
   # closes (WorldRoomTopics in the DLL).
   ROOM_DRAIN_TOPIC = "world.drain"
 
   # Tells whether the mod can run.
   #
-  # @return [Boolean] Whether the mod is on, its DLL is in the mod folder and the bridge to it
-  #   opened, which a stand-in DLL, an older one or one of another bridge version never lets happen,
-  #   and the Mod Framework of at least MOD_FRAMEWORK_REQUIRED runs with its DLL.
+  # @return [Boolean] Whether the mod is on, none of its scripts failed to load, its DLL is in the
+  #   mod folder and the bridge to it opened, which a stand-in DLL, an older one or one of another
+  #   bridge version never lets happen, and the Mod Framework of at least MOD_FRAMEWORK_REQUIRED
+  #   runs with its DLL.
   def self.available?
-    @available == true && framework_ready?
+    @available == true && !half_loaded? && framework_ready?
   end
 
   # Tells whether the Mod Framework the mod needs runs with its DLL.
@@ -330,7 +338,7 @@ module MGQ_Multiplayer
   def self.closing(error)
     Log.write(closing_text(error)) unless @closed_by && @closed_by[0].equal?(error)
     @closed_by = [error]
-    MGQ_MpStoryKeys.flush if defined?(MGQ_MpStoryKeys)
+    MGQ_MpStoryKeys.flush if defined?(MGQ_MpStoryKeys) && !half_loaded?
     Log.hand_over
     Bridge.call(ROOM_DRAIN_TOPIC)
     Log.flush
@@ -402,11 +410,13 @@ module MGQ_Multiplayer
   end
 
   # Loads some of the mod's other scripts in the order of SCRIPTS, each once per game session. One
-  # that is missing or fails is logged, and the others load all the same.
+  # that is missing or fails is logged, and the others load all the same, but the mod then stays off
+  # (stay_off).
   #
   # @param names [Array<String>] The scripts, all of SCRIPTS by default.
   # @param part [Boolean] Whether they belong to the title part, which the Mod Framework loads and
   #   counts as in use (Mods.load_part).
+  # @return [Boolean] Whether every one of them loaded.
   def self.load_scripts(names = SCRIPTS, part = false)
     @loaded ||= []
     wanted = SCRIPTS.select { |name| names.include?(name) && !@loaded.include?(name) }
@@ -414,6 +424,31 @@ module MGQ_Multiplayer
     failed = wanted.reject { |name| load_script(name, part) }
     MGQ_MpHooks.report if defined?(MGQ_MpHooks)
     Log.write("loaded #{wanted.size - failed.size} of #{wanted.size} scripts#{failed.empty? ? '' : ", not #{failed.join(', ')}"}")
+    stay_off unless failed.empty?
+    failed.empty?
+  end
+
+  # Tells whether some of the mod's scripts did not load, which keeps the mod off for the game
+  # session: its hooks sleep (Stages.asleep?) and available? answers false.
+  #
+  # @return [Boolean] Whether some did not load.
+  def self.half_loaded?
+    @half_loaded == true
+  end
+
+  # Turns the mod off for the rest of the game session once some of its scripts did not load, and
+  # tells the player once through the Mod Framework's notices.
+  #
+  # A mod running half loaded calls into the missing scripts and ends the game.
+  def self.stay_off
+    return if @half_loaded
+
+    @half_loaded = true
+    Log.write("Monster Girl Quest! Online is off for this game session, since some of its scripts did not load")
+    Log.flush
+    ::Mod_Framework.toast(HALF_LOADED_MESSAGE, :severity => :error, :seconds => HALF_LOADED_SECONDS)
+  rescue => e
+    Log.write("telling the player that the mod is off failed: #{e.class}: #{e.message}")
   end
 
   # Loads one of the mod's other scripts at the top level.
@@ -564,15 +599,15 @@ module MGQ_Multiplayer
     # logs why the mod stays off when the Mod Framework cannot carry it, hands the settings the Mod
     # Framework took over to it, keeps the game running behind other windows and loads
     # BOOT_SCRIPTS. Every hook then sleeps while the player is in a game entered without the mod,
-    # such as one turned off at the title.
+    # such as one turned off at the title, or once a script did not load.
     def self.load_title
       MGQ_Multiplayer.start
       MGQ_Multiplayer.log_framework_gap
       hand_over_settings
       ::Mod_Framework.keep_running = true if MGQ_Multiplayer.available?
-      MGQ_Multiplayer.load_scripts(BOOT_SCRIPTS, true)
-      MGQ_MpHooks.sleep_while { MGQ_Multiplayer::Stages.asleep? }
-      MGQ_Multiplayer.install_hooks
+      loaded = MGQ_Multiplayer.load_scripts(BOOT_SCRIPTS, true)
+      MGQ_MpHooks.sleep_while { MGQ_Multiplayer::Stages.asleep? } if defined?(MGQ_MpHooks)
+      MGQ_Multiplayer.install_hooks if loaded
     end
 
     # Hands the settings of Player.ini the Mod Framework keeps now (HANDED_OVER) over to its
@@ -611,36 +646,39 @@ module MGQ_Multiplayer
       Player.change(Hash[handed.keys.map { |key| [key, nil] }])
     end
 
-    # Loads the rest of SCRIPTS as the player enters the game with the mod. The Mod Framework runs
-    # it inside its entering, which lets the hooks the scripts put on SceneManager.run set up.
+    # Loads the rest of SCRIPTS as the player enters the game with the mod, none once the mod is
+    # off. The Mod Framework runs it inside its entering, which lets the hooks the scripts put on
+    # SceneManager.run set up.
     def self.load_rest
-      MGQ_Multiplayer.load_scripts
-      everything_loaded
+      return if MGQ_Multiplayer.half_loaded?
+
+      everything_loaded if MGQ_Multiplayer.load_scripts
     end
 
     # Loads the world screens once, which the title part brings to the title, and writes this
     # game's data for whoever reads it from outside the game.
+    #
+    # @return [Boolean] Whether the world screens may open, false once the mod is off.
     def self.load_world
-      return unless staged? && !@world_loaded
-
-      @world_loaded = true
-      MGQ_Multiplayer.load_scripts(WORLD_SCRIPTS, true)
-      MGQ_MpWorld::GameData.write_file if defined?(MGQ_MpWorld::GameData)
+      if staged? && !@world_loaded && !MGQ_Multiplayer.half_loaded?
+        @world_loaded = true
+        loaded = MGQ_Multiplayer.load_scripts(WORLD_SCRIPTS, true)
+        MGQ_MpWorld::GameData.write_file if loaded && defined?(MGQ_MpWorld::GameData)
+      end
+      !MGQ_Multiplayer.half_loaded?
     end
 
     # Opens the world screen from the title's Multiplayer command, or after the restart an update
     # of the mod made.
     def self.open_worlds
-      load_world
-      MGQ_MpWorld.open_world_screen(SceneManager.scene)
+      MGQ_MpWorld.open_world_screen(SceneManager.scene) if load_world
     end
 
     # Enters a world again after the restart the Mod Framework made for its mods.
     #
     # @param world [String] The world's id.
     def self.rejoin(world)
-      load_world
-      MGQ_MpWorldMods.restarted_for(world)
+      MGQ_MpWorldMods.restarted_for(world) if load_world
     end
 
     # Takes a Discord invite into a world again at the title, which the restart on the way back to
@@ -648,8 +686,7 @@ module MGQ_Multiplayer
     #
     # @param code [String] The invite's join secret.
     def self.invite(code)
-      load_world
-      MGQ_MpWorld::Invite.receive(code.to_s)
+      MGQ_MpWorld::Invite.receive(code.to_s) if load_world
     end
 
     # Tells whether the way back to the title starts the game again, as the Mod Framework does once
@@ -680,12 +717,12 @@ module MGQ_Multiplayer
       staged? ? ::Mod_Framework::Mods.enter(reason, only ? { :only => only } : {}) : false
     end
 
-    # Tells whether the hooks sleep: the player entered the game without the mod, whose title part
-    # loaded as the game started.
+    # Tells whether the hooks sleep: some of the mod's scripts did not load, or the player entered
+    # the game without the mod, whose title part loaded as the game started.
     #
     # @return [Boolean] Whether they do.
     def self.asleep?
-      staged? && !@everything_loaded && ::Mod_Framework::Mods.entered?
+      MGQ_Multiplayer.half_loaded? || (staged? && !@everything_loaded && ::Mod_Framework::Mods.entered?)
     end
 
     # Runs a block once every script loaded, at once when they did: a script of the title part
