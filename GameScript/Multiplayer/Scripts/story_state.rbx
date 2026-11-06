@@ -2,7 +2,8 @@
 #  story_state.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Left the lists' place 0 out of the keys a Classic party member asks about, which the DLL refuses
+#      Paulinchen  2026-11-06: Read the story's data past a replay's stand-in, which the catch-up reads before a companion joins
+#                            - Left the lists' place 0 out of the keys a Classic party member asks about, which the DLL refuses
 #      Paulinchen  2026-11-05: Left writing and reading the tracks' texts of a variable's value to the DLL
 #                            - Handed the whole story and what of it changed to the DLL as values, which writes and reads them
 #                            - Asked the DLL's one rule which side the player took along in Iliasville
@@ -234,11 +235,13 @@ module MGQ_MpStoryState
   end
 
   # Reads the data the game keeps for its switches, variables or self switches, past its handling
-  # of single entries.
+  # of single entries; while a story replay stands in for them, the data of the object it stands in
+  # for.
   #
-  # @param object [Game_Switches, Game_Variables, Game_SelfSwitches] The object.
+  # @param object [Game_Switches, Game_Variables, Game_SelfSwitches, MGQ_MpStoryReplay::Keys] The object.
   # @return [Array, Hash] The data itself, not a copy.
   def self.data_of(object)
+    object = object.own if defined?(MGQ_MpStoryReplay::Keys) && object.is_a?(MGQ_MpStoryReplay::Keys)
     MGQ_MpGame.get(object, :data)
   end
 

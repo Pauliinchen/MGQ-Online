@@ -2,7 +2,8 @@
 #  story_replay_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Gave the party a member whose levels the game keeps per kind in one Hash
+#      Paulinchen  2026-11-06: Checked that a join in a replay reads the receiver's own story
+#                            - Gave the party a member whose levels the game keeps per kind in one Hash
 #                            - Dropped the checks of the replayer's lists against recorded ones
 #      Paulinchen  2026-11-05: Handed and expected sites as plain values
 #                            - Handed and expected the keys, values and things a replay reads as [kind, key] with values
@@ -321,6 +322,14 @@ check("a Makina chest replayed for a receiver whose 2045 is off gives the Makina
       [done.state, $game_party.item_number(606), $game_switches[2045], $game_self_switches[[215, 23, "A"]]], [:done, 1, true, true])
 check("and neither the receiver's map nor the mod's hooks on the interpreter saw it", [$game_self_switches[[3, 23, "A"]], $hooked], [false, []])
 check("the replay notes the receiver's own keys it read", done.reads, { [0, 2045] => false })
+
+# A companion joining in a replay: the catch-up's look before the join reads the whole story the
+# replay stands in for, the receiver's own.
+new_game
+$game_switches[2045] = true
+page(215, 24, [c(355, "$story = [$game_switches, $game_variables, $game_self_switches].map { |keys| MGQ_MpStoryState.data_of(keys) }"), c(129, 45, 0, 0)])
+replay(["map", 215, 24, 1])
+check("a join in a replay reads the receiver's own story past the replay's stand-ins", [$story[0][2045], $story[1].class, $story[2].class], [true, Array, Hash])
 
 # A world chest whose opened key arrived by value already (588:9): it reads the run's start value,
 # gives, and the save keeps its own value of the key.
