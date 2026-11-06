@@ -2,6 +2,7 @@
 //  trades.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Sent the player's key in the X-MGQ-Player header only
 //      Paulinchen  2026-11-05: Tested the player's key taken from the header or the body only
 //      Paulinchen  2026-10-12: Covered the sealed offers kept beside each trade
 //                            - Covered the limit on trades a player opened that ended cancelled within a day
@@ -407,12 +408,12 @@ test("a player has at most so many open trades at once", async () => {
 
 test("the routes reach the trades, and a body past the limit is refused", async () => {
   const { trades, ids } = await newTrades();
-  const ask = (method, path, body) => handleTradeRequest(trades, method, new URL(`https://relay${path}`), async () => (body === undefined ? "" : typeof body === "string" ? body : JSON.stringify(body)));
+  const ask = (method, path, body, player = null) => handleTradeRequest(trades, method, new URL(`https://relay${path}`), async () => (body === undefined ? "" : typeof body === "string" ? body : JSON.stringify(body)), player);
 
-  assert.deepEqual((await ask("POST", `/v1/trades/${TRADE}/commit`, commitOf(ALICE, ids.bob))).body, { state: "pending" });
-  assert.deepEqual((await ask("POST", `/v1/trades/${TRADE}/commit`, commitOf(BOB, ids.alice))).body, { state: "committed" });
-  assert.deepEqual((await ask("POST", `/v1/trades/${TRADE}/done`, { player: BOB })).body, { state: "committed" });
-  assert.deepEqual((await ask("POST", `/v1/trades/${TRADE}/cancel`, { player: ALICE })).body, { state: "committed" });
+  assert.deepEqual((await ask("POST", `/v1/trades/${TRADE}/commit`, commitOf(ALICE, ids.bob), ALICE)).body, { state: "pending" });
+  assert.deepEqual((await ask("POST", `/v1/trades/${TRADE}/commit`, commitOf(BOB, ids.alice), BOB)).body, { state: "committed" });
+  assert.deepEqual((await ask("POST", `/v1/trades/${TRADE}/done`, {}, BOB)).body, { state: "committed" });
+  assert.deepEqual((await ask("POST", `/v1/trades/${TRADE}/cancel`, {}, ALICE)).body, { state: "committed" });
   assert.equal((await ask("POST", `/v1/trades/${tradeId(5)}/commit`, "x".repeat(TRADE_LIMITS.maxBodyLength + 1))).status, 413);
   assert.equal((await ask("POST", `/v1/trades/${tradeId(5)}/commit`, "no json")).status, 400);
   assert.equal((await ask("DELETE", `/v1/trades/${TRADE}`)).status, 404);
@@ -420,7 +421,7 @@ test("the routes reach the trades, and a body past the limit is refused", async 
   assert.equal((await handleTradeRequest(trades, "POST", new URL(`https://relay/v1/trades/${tradeId(6)}/commit`), async () => null)).status, 413, "a body the platform could not read whole is too large too");
 });
 
-test("the routes take the player's key from the X-MGQ-Player header before the body, never from the address", async () => {
+test("the routes take the player's key from the X-MGQ-Player header only, never from the body or the address", async () => {
   const { trades, ids } = await newTrades();
   const ask = (method, path, body, player) => handleTradeRequest(trades, method, new URL(`https://relay${path}`), async () => (body === undefined ? "" : JSON.stringify(body)), player);
   const { player: _alice, ...aliceCommit } = commitOf(ALICE, ids.bob);

@@ -2,6 +2,7 @@
 //  design_builds.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Ran over SQLite stores in memory
 //      Paulinchen  2026-10-22: Tested the format route on formats a push no longer skips to
 //                            - Tested that a build whose result cannot be kept fails
 //                            - Tested that the world rooms hear racing publishes in the order the builds went live
@@ -14,7 +15,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { gunzipSync } from "node:zlib";
-import { memoryDesignStore } from "./design_store_memory.js";
+import { openSqliteDesignStore } from "../node/design_store_sqlite.js";
 import { DESIGN_LIMITS, DesignBook, SNAPSHOT_FORMAT, handleGameDesignRequest } from "./designs.js";
 import { DESIGNERS, NOW, compiledBuild, entity, fakeCompiler, fixture, seedEntities, send } from "./test_designs.js";
 
@@ -44,7 +45,7 @@ async function buildBook({ compiler = fakeCompiler(), ...options } = {}) {
   const frames = [];
   const presence = { of: () => ({ online: false, editing: null }), broadcast: (frame) => frames.push(frame) };
   const unlimited = { build: { burst: 1000, refillMs: 1 }, publish: { burst: 1000, refillMs: 1 }, push: { burst: 1000, refillMs: 1 } };
-  const book = new DesignBook(memoryDesignStore(), { clock: () => NOW * 1000, presence, compiler, rateLimits: unlimited, ...options });
+  const book = new DesignBook(openSqliteDesignStore(":memory:"), { clock: () => NOW * 1000, presence, compiler, rateLimits: unlimited, ...options });
 
   for (const designer of [DESIGNERS.A, DESIGNERS.B]) {
     await book.store.putDesigner({ id: designer.id, name: designer.name, admin: designer.admin, addedBy: "test", at: NOW });

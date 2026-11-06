@@ -2,7 +2,9 @@
 //  gate.js
 //
 //  Changelog:
-//      Paulinchen  2026-11-06: Named the lowest version the relay serves in X-MGQ-Min-Version beside a refusal of a game too old for it
+//      Paulinchen  2026-11-06: Held the PvP rooms older games ask for to X-MGQ-Features, so those games get the update refusal
+//                            - Named the lowest version the relay serves in X-MGQ-Min-Version beside a refusal of a game too old for it
+//                            - Refused a request that names no version and dropped the PvP room answer and the long drain before a refusal
 //      Paulinchen  2026-11-05: Held the story mapping games read to the lowest version too
 //                            - Listed the worlds with their mods for the website and the World Admin tool only
 //                            - Answered every request to a PvP room with the update refusal
@@ -26,7 +28,6 @@
 
 import { bossRouteOf } from "./bosses.js";
 import { routeIs } from "./http.js";
-import { MOD_LIMITS } from "./mods.js";
 import { REFUSAL_HEADER, parseFeatures } from "./relay.js";
 import { REPORT_LIMITS } from "./reports.js";
 import { storyRouteOf } from "./story.js";
@@ -34,14 +35,9 @@ import { MAPPING_GAME_ROUTE } from "./story_mapping.js";
 
 /**
  * The request header in which a game names its version, such as `0.6.5`, or DEVELOPMENT_VERSION
- * for a development build and the World Admin tool; released games up to 0.6.4 send none.
+ * for a development build and the World Admin tool.
  */
 export const VERSION_HEADER = "X-MGQ-Version";
-
-/**
- * The version a request counts as when it names none, the last release that names none.
- */
-export const UNNAMED_VERSION = "0.6.4";
 
 /**
  * The stamp of a development build and the World Admin tool, which passes on every relay.
@@ -87,15 +83,9 @@ export const WORLD_ROOM_UPDATE_CODE = "update";
 export const MIN_VERSION_HEADER = "X-MGQ-Min-Version";
 
 /**
- * What the relay tells a game too old for it, in the body and, for a PvP room, in REFUSAL_HEADER.
+ * What the relay tells a game too old for it.
  */
 export const UPDATE_NEEDED = "Update MGQ Online to play online.";
-
-/**
- * The route of the PvP rooms, which only games older than every version the relay serves open and
- * which it answers with UPDATE_NEEDED alone.
- */
-const PVP_ROOM_ROUTE = "room";
 
 /**
  * What a route asks of a game: `features` the X-MGQ-Features header, which every game from 0.6.0
@@ -160,11 +150,10 @@ export const DESIGNER_RULE = Object.freeze({
 const ADMIN_WRITES = new Set(["publish", "rollback"]);
 
 /**
- * How much of a refused request's body is read and dropped before the refusal is answered, as much
- * as the largest body a gated route takes, an uploaded mod's or a bug report's, and for as long as a
- * bug report may take.
+ * How long a refused request's body is read and dropped before the refusal is answered, as long as
+ * a bug report may take.
  */
-export const DRAIN_LIMITS = Object.freeze({ maxBytes: Math.max(REPORT_LIMITS.maxBodyBytes, MOD_LIMITS.maxUploadBytes), readMs: REPORT_LIMITS.bodyReadMs });
+export const DRAIN_LIMITS = Object.freeze({ readMs: REPORT_LIMITS.bodyReadMs });
 
 /**
  * A version: numbers separated by dots, with an optional suffix and build data.
@@ -178,7 +167,7 @@ const VERSION_PATTERN = /^(\d+(?:\.\d+)*)(-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?
  *
  * @param {URL} url The request's address.
  * @param {string} [method] The request's HTTP method; none counts as a change.
- * @returns {string | null} GATE.features for the world directory's and the mod catalog's routes, the Raid World admin, story and boss routes included, the trades, the bug reports, the world rooms, the game's design routes and the story mapping games read; GATE.designer for the Raid Designer's routes; null for every other route and a GET of the mod catalog.
+ * @returns {string | null} GATE.features for the world directory's and the mod catalog's routes, the Raid World admin, story and boss routes included, the trades, the bug reports, the world rooms, the PvP rooms older games ask for, the game's design routes and the story mapping games read; GATE.designer for the Raid Designer's routes; null for every other route and a GET of the mod catalog.
  */
 export function gateOf(url, method = undefined) {
   if (routeIs(url, "mods") && method === "GET") {
@@ -186,7 +175,7 @@ export function gateOf(url, method = undefined) {
   }
 
   if (storyRouteOf(url) || bossRouteOf(url) || routeIs(url, "trades") || routeIs(url, "reports") || routeIs(url, "world") || routeIs(url, "worlds") || routeIs(url, "mods")
-      || routeIs(url, GAME_DESIGN_ROUTE) || routeIs(url, MAPPING_GAME_ROUTE)) {
+      || routeIs(url, "room") || routeIs(url, GAME_DESIGN_ROUTE) || routeIs(url, MAPPING_GAME_ROUTE)) {
     return GATE.features;
   }
 
@@ -343,8 +332,7 @@ function sent(header) {
 
 /**
  * Tells whether a game is too old for a route: it lacks the X-MGQ-Features header a route of
- * GATE.features asks for, or names a version that is none or older than the lowest the relay serves,
- * a game naming none counting as UNNAMED_VERSION.
+ * GATE.features asks for, or names no version or one older than the lowest the relay serves.
  *
  * Only DEVELOPMENT_VERSION always passes, so a development build reaches every relay while a
  * pre-release such as `0.7.0-beta` is held to its numbers. GATE.designer passes here, since the
@@ -365,7 +353,7 @@ export function tooOld(gate, featuresHeader, versionHeader, minVersion) {
     return true;
   }
 
-  const version = parseVersion(sent(versionHeader) ? versionHeader : UNNAMED_VERSION);
+  const version = parseVersion(versionHeader);
   return version === null || (!version.development && compareVersions(version.parts, minVersionOf(minVersion)) < 0);
 }
 
@@ -381,21 +369,16 @@ export function listsWorldMods(featuresHeader) {
 }
 
 /**
- * Turns a game too old for the relay away before its request is routed, and every request to a PvP
- * room whatever it names.
+ * Turns a game too old for the relay away before its request is routed.
  *
  * @param {URL} url The request's address.
  * @param {string | null | undefined} featuresHeader The request's FEATURES_HEADER.
  * @param {string | null | undefined} versionHeader The request's VERSION_HEADER.
  * @param {string | null | undefined} [minVersion] The relay's MIN_VERSION setting.
  * @param {string} [method] The request's HTTP method, see gateOf.
- * @returns {{status: number, reason: string, socket: boolean, code: string | null, minimum: string | null} | null} The refusal, with whether the route is a PvP room's or a world room's, answered as a refused WebSocket, the code to name in REFUSAL_HEADER, which only a PvP room's and a world room's carry, and the lowest version the relay serves to name in MIN_VERSION_HEADER, which a PvP room's lacks, since no version opens one; null when the game may go on.
+ * @returns {{status: number, reason: string, socket: boolean, code: string | null, minimum: string | null} | null} The refusal, with whether the route is a world room's, answered as a refused WebSocket, the code to name in REFUSAL_HEADER, which only a world room's carries, and the lowest version the relay serves to name in MIN_VERSION_HEADER; null when the game may go on.
  */
 export function updateRefusal(url, featuresHeader, versionHeader, minVersion, method = undefined) {
-  if (routeIs(url, PVP_ROOM_ROUTE)) {
-    return { status: UPDATE_STATUS, reason: UPDATE_NEEDED, socket: true, code: UPDATE_NEEDED, minimum: null };
-  }
-
   if (!tooOld(gateOf(url, method), featuresHeader, versionHeader, minVersion)) {
     return null;
   }
@@ -407,12 +390,12 @@ export function updateRefusal(url, featuresHeader, versionHeader, minVersion, me
 }
 
 /**
- * Names the headers a refusal of a game too old for the relay carries: its code in REFUSAL_HEADER
- * and the lowest version the relay serves in MIN_VERSION_HEADER, each where it has one.
+ * Names the headers a refusal of a game too old for the relay carries: its code in REFUSAL_HEADER,
+ * where it has one, and the lowest version the relay serves in MIN_VERSION_HEADER.
  *
  * @param {{code: string | null, minimum: string | null}} refusal The refusal, see updateRefusal.
  * @returns {Object<string, string>} The headers.
  */
 export function refusalHeaders(refusal) {
-  return { ...(refusal.code ? { [REFUSAL_HEADER]: refusal.code } : {}), ...(refusal.minimum ? { [MIN_VERSION_HEADER]: refusal.minimum } : {}) };
+  return { ...(refusal.code ? { [REFUSAL_HEADER]: refusal.code } : {}), [MIN_VERSION_HEADER]: refusal.minimum };
 }

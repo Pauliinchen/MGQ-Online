@@ -2,6 +2,7 @@
 //  http.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Took over the body read up to a limit
 //      Paulinchen  2026-10-07: Created
 //
 //----------------------------------------------------------------
@@ -97,4 +98,30 @@ export async function readJson(readBody, maxLength) {
 export async function withJson(readBody, maxLength, handle) {
   const body = await readJson(readBody, maxLength);
   return body === TOO_LARGE ? tooLarge(maxLength) : handle(body);
+}
+
+/**
+ * Reads a response's body up to a limit.
+ *
+ * @param {Response} response The response.
+ * @param {number} limit The most bytes taken.
+ * @param {string} what What the body is, for the error.
+ * @returns {Promise<Uint8Array>} The bytes.
+ * @throws {Error} When the body is longer.
+ */
+export async function readLimited(response, limit, what) {
+  const chunks = [];
+  let size = 0;
+
+  for await (const chunk of response.body ?? []) {
+    size += chunk.length;
+
+    if (size > limit) {
+      throw new Error(`the ${what} is longer than ${limit} bytes`);
+    }
+
+    chunks.push(chunk);
+  }
+
+  return Buffer.concat(chunks);
 }

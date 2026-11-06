@@ -2,6 +2,7 @@
 //  StoryIdsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Dropped the Cloudflare relay's folder from the scan
 //      Paulinchen  2026-11-05: Left out the generator's review aids, which keep the retired event checker's tables as it wrote them
 //                            - Created
 //
@@ -33,7 +34,6 @@ public sealed partial class StoryIdsTests
         ("BattleServer", ".rb"),
         ("Relay/core", ".js"),
         ("Relay/node", ".js"),
-        ("Relay/cloudflare", ".js"),
         (".", ".cs"),
     ];
 

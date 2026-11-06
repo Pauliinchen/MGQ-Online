@@ -2,6 +2,7 @@
 //  relay.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Dropped the test of the deadline lookup
 //      Paulinchen  2026-11-05: Tested a world room's keys taken from the headers only
 //                            - Dropped the tests of the PvP rooms
 //      Paulinchen  2026-10-30: Dropped the test of the presence list
@@ -17,7 +18,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  CHAT_LIMITS, CLOSE, EVERYONE, IN, LIMITS, REPLACED, RateLimiter, chatLineOf, newPeer, newWorldPeer, nextWorldDeadline,
+  CHAT_LIMITS, CLOSE, EVERYONE, IN, LIMITS, REPLACED, RateLimiter, chatLineOf, newPeer, newWorldPeer,
   parseRoute, replacedBy, routeWorldMessage, seatChangeText, seatText, takeChatLine, takeMessage, takeSeat, worldOverdue,
 } from "./relay.js";
 
@@ -131,11 +132,6 @@ test("worldOverdue closes each connection on its own once it lasted too long", (
 
   assert.deepEqual(closed, [{ index: 0, code: CLOSE.connectionExpired, reason: "the connection lasted too long" }]);
   assert.deepEqual(worldOverdue(peers, T0 + LIMITS.worldConnectionMs - 1), []);
-});
-
-test("nextWorldDeadline names the oldest connection's end", () => {
-  assert.equal(nextWorldDeadline([]), null);
-  assert.equal(nextWorldDeadline([newWorldPeer(1, WHO, T0 + 5000), newWorldPeer(0, WHO, T0)]), T0 + LIMITS.worldConnectionMs);
 });
 
 test("RateLimiter lets each address go on a burst, then once per refill, and forgets the least recent addresses", () => {

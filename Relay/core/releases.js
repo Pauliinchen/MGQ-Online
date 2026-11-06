@@ -2,6 +2,7 @@
 //  releases.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Compared versions by the gate's comparison
 //      Paulinchen  2026-10-22: Cleared the current release once a newer one than it was published after it was set
 //                            - Kept the release games should run and the lowest one the relay serves, which its admins set
 //      Paulinchen  2026-10-12: Created
@@ -13,7 +14,7 @@
 // games show as a notice and older ones as an admin's line. Beside it the release control: which
 // release games should run and the lowest one the relay serves, both set by its admins.
 
-import { minVersionOf } from "./gate.js";
+import { compareVersions, minVersionOf } from "./gate.js";
 import { badRequest, notFound } from "./http.js";
 import { VERSION } from "./relay.js";
 
@@ -83,25 +84,14 @@ export async function readLatestVersion(repo, fetcher) {
 }
 
 /**
- * Compares two versions part by part, a missing part counting as 0.
+ * Compares two release versions such as 0.6.5 by their numbers, see compareVersions.
  *
- * @param {string} a A version, like 0.6.5.
+ * @param {string} a A version.
  * @param {string} b Another version.
  * @returns {number} Below 0 when a is older, 0 when they are the same, above 0 when a is newer.
  */
-export function compareVersions(a, b) {
-  const left = a.split(".").map(Number);
-  const right = b.split(".").map(Number);
-
-  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
-    const difference = (left[index] ?? 0) - (right[index] ?? 0);
-
-    if (difference !== 0) {
-      return difference;
-    }
-  }
-
-  return 0;
+function versionOrder(a, b) {
+  return compareVersions(a.split(".").map(Number), b.split(".").map(Number));
 }
 
 /**
@@ -141,7 +131,7 @@ export class ReleaseWatch {
     const latest = await readLatestVersion(this.repo, this.fetch);
     const seen = await this.store.getRelease();
 
-    if (seen && compareVersions(latest, seen) <= 0) {
+    if (seen && versionOrder(latest, seen) <= 0) {
       return null;
     }
 
@@ -243,7 +233,7 @@ export class ReleaseControl {
         return null;
       }
 
-      if (compareVersions(this.latest, latestAtSet) <= 0 || compareVersions(this.latest, current) <= 0) {
+      if (versionOrder(this.latest, latestAtSet) <= 0 || versionOrder(this.latest, current) <= 0) {
         return null;
       }
 
@@ -297,7 +287,7 @@ export class ReleaseControl {
     const before = { current: this.kept.current, min: this.kept.min };
     const next = { current: current === undefined ? before.current : current, min: min === undefined ? before.min : min };
 
-    if (next.current !== null && compareVersions(next.min ?? this.envMin, next.current) > 0) {
+    if (next.current !== null && versionOrder(next.min ?? this.envMin, next.current) > 0) {
       return { status: 400, body: { error: "the lowest release may not be above the current one", code: RELEASE_REFUSAL.minAboveCurrent } };
     }
 

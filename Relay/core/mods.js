@@ -2,6 +2,8 @@
 //  mods.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Took the player's key from the X-MGQ-Player header only
+//                            - Read a release file through the shared body read
 //      Paulinchen  2026-11-05: Took the player's key from the header or the body only, never from the address
 //      Paulinchen  2026-10-30: Let admins tag a mod and set what each version requires, which the games list
 //      Paulinchen  2026-10-22: Downloaded a link mod's file only when its link leads to a new release
@@ -34,9 +36,8 @@
 // only hashes and the version, and it never runs anything it reads. An admin's game sends a mod's Mod Config options,
 // which the relay keeps for the World Admin tool, since only a running game can read them.
 
-import { readLimited } from "./bodies.js";
 import { playerIdOf } from "./directory.js";
-import { badRequest, notFound, tooLarge, withJson } from "./http.js";
+import { badRequest, notFound, readLimited, tooLarge, withJson } from "./http.js";
 import { HASH, cleanText, hexOf, isId } from "./ids.js";
 import { VERSION } from "./relay.js";
 
@@ -135,9 +136,6 @@ export function modKey(name) {
 
 /**
  * Tells why a cleaned mod name may not name a mod.
- *
- * Cloudflare finds a mod's file pieces by its key followed by ':', so a key with ':' would share
- * the pieces of another mod.
  *
  * @param {string} cleaned The name, cleaned.
  * @param {string} [missing] The refusal for a name without a key.
@@ -765,11 +763,7 @@ async function download(url, fetcher, limits, maxBytes) {
       throw new Error(`the release file is larger than ${maxBytes} bytes`);
     }
 
-    const bytes = await readLimited(answer.body, maxBytes);
-
-    if (!bytes) {
-      throw new Error(`the release file is larger than ${maxBytes} bytes`);
-    }
+    const bytes = await readLimited(answer, maxBytes, "release file");
 
     if (bytes.length === 0) {
       throw new Error(`the release file must be 1 to ${maxBytes} bytes`);
@@ -1214,12 +1208,11 @@ export function cleanOptions(options, limits = MOD_LIMITS) {
  * @param {URL} url The request's address.
  * @param {() => Promise<string | null>} readBody Reads the request's body as text, null when it is too large to read.
  * @param {(limit: number) => Promise<Uint8Array | null>} readBytes Reads the request's body as bytes, null when it is longer than the limit.
- * @param {string | null} [player] The X-MGQ-Player header of the request, which wins over the key in its body.
+ * @param {string | null} [player] The X-MGQ-Player header of the request.
  * @returns {Promise<{status: number, body: object, bytes?: Uint8Array | ReadableStream<Uint8Array>}>} The answer, sent as the bytes when there are any.
  */
 export async function handleModRequest(catalog, method, url, readBody, readBytes, player = null) {
   const parts = url.pathname.split("/").filter((part) => part.length > 0);
-  const fromBody = (body) => player || body?.player;
   const json = (handle, maxLength = catalog.limits.maxJsonLength) => withJson(readBody, maxLength, handle);
 
   if (parts[0] !== VERSION || parts[1] !== "mods") {
@@ -1240,15 +1233,15 @@ export async function handleModRequest(catalog, method, url, readBody, readBytes
   }
 
   if (parts.length === 2 && method === "POST") {
-    return json((body) => catalog.setLink(fromBody(body), body?.name, body?.link));
+    return json((body) => catalog.setLink(player, body?.name, body?.link));
   }
 
   if (parts.length === 3 && parts[2] === "check" && method === "POST") {
-    return json((body) => catalog.check(fromBody(body)));
+    return json((body) => catalog.check(player));
   }
 
   if (parts.length === 4 && parts[3] === "delete" && method === "POST") {
-    return json((body) => catalog.remove(fromBody(body), parts[2]));
+    return json((body) => catalog.remove(player, parts[2]));
   }
 
   if (parts.length === 4 && parts[3] === "upload" && method === "POST") {
@@ -1257,23 +1250,23 @@ export async function handleModRequest(catalog, method, url, readBody, readBytes
   }
 
   if (parts.length === 4 && parts[3] === "options" && method === "POST") {
-    return json((body) => catalog.setOptions(fromBody(body), parts[2], body?.version, body?.options), catalog.limits.maxOptionsBytes);
+    return json((body) => catalog.setOptions(player, parts[2], body?.version, body?.options), catalog.limits.maxOptionsBytes);
   }
 
   if (parts.length === 4 && parts[3] === "personal" && method === "POST") {
-    return json((body) => catalog.setPersonal(fromBody(body), parts[2], body?.personal));
+    return json((body) => catalog.setPersonal(player, parts[2], body?.personal));
   }
 
   if (parts.length === 4 && parts[3] === "name" && method === "POST") {
-    return json((body) => catalog.setName(fromBody(body), parts[2], body?.name));
+    return json((body) => catalog.setName(player, parts[2], body?.name));
   }
 
   if (parts.length === 4 && parts[3] === "tag" && method === "POST") {
-    return json((body) => catalog.setTag(fromBody(body), parts[2], body?.tag));
+    return json((body) => catalog.setTag(player, parts[2], body?.tag));
   }
 
   if (parts.length === 4 && parts[3] === "requires" && method === "POST") {
-    return json((body) => catalog.setRequires(fromBody(body), parts[2], body?.version, body?.requires));
+    return json((body) => catalog.setRequires(player, parts[2], body?.version, body?.requires));
   }
 
   if (parts.length === 4 && parts[3] === "file" && method === "GET") {

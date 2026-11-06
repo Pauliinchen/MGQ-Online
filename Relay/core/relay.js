@@ -2,6 +2,8 @@
 //  relay.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Dropped the deadline lookup only the Cloudflare relay used
+//                            - Ran one piece of work at a time through one shared queue
 //      Paulinchen  2026-11-05: Dropped the Raid World feature, which every game the relay serves plays
 //                            - Took a world room's player key and auth key from the headers only, never from the address
 //                            - Dropped the PvP rooms, which only older games opened
@@ -23,10 +25,9 @@
 //
 //----------------------------------------------------------------
 
-// The relay's rules, the same on every server: which requests it takes, who may take a seat in a
-// world room, how fast and how large messages may be, and when a connection ends. It keeps no
-// state and touches no socket, so a thin layer per platform (Cloudflare, Node) can store the games
-// its own way. A world room seats the games of one world.
+// The relay's rules: which requests it takes, who may take a seat in a world room, how fast and how
+// large messages may be, and when a connection ends. It keeps no state and touches no socket. A
+// world room seats the games of one world.
 
 import { CONTROL_CHARACTERS, cleanText, isHash, isId } from "./ids.js";
 
@@ -163,6 +164,21 @@ export const RATE_LIMITS = Object.freeze({
   // Downloading starting saves and mod files, 20 at once and then two a minute.
   downloads: Object.freeze({ burst: 20, refillMs: 30 * 1000 }),
 });
+
+/**
+ * Makes a queue that runs one piece of work at a time, each after every earlier one finished, so
+ * a read and write of a store never interleaves with another request's.
+ *
+ * @returns {<T>(work: () => Promise<T>) => Promise<T>} Runs the work in turn and hands back what it returns.
+ */
+export function workQueue() {
+  let tail = Promise.resolve();
+  return (work) => {
+    const result = tail.then(work);
+    tail = result.catch(() => {});
+    return result;
+  };
+}
 
 /**
  * Counts what each address does against a rate limit, in memory.
@@ -445,15 +461,4 @@ export function worldOverdue(peers, now, limits = LIMITS) {
     .map((peer, index) => ({ index, due: now - peer.joinedAt >= limits.worldConnectionMs }))
     .filter((entry) => entry.due)
     .map(({ index }) => ({ index, code: CLOSE.connectionExpired, reason: "the connection lasted too long" }));
-}
-
-/**
- * Tells when the relay has to look at a world room's deadlines next.
- *
- * @param {{joinedAt: number}[]} peers The records of the games in the room.
- * @param {typeof LIMITS} [limits] The limits.
- * @returns {number | null} The time in milliseconds of the next deadline, or null for an empty room.
- */
-export function nextWorldDeadline(peers, limits = LIMITS) {
-  return peers.length === 0 ? null : Math.min(...peers.map((peer) => peer.joinedAt)) + limits.worldConnectionMs;
 }

@@ -2,6 +2,7 @@
 //  story_catchup.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Ran over SQLite stores in memory
 //      Paulinchen  2026-11-05: Tested a world chest without chest flags, and one kept before read without them
 //                            - Dropped the check of the prize counts
 //      Paulinchen  2026-10-31: Checked that a world chest's flags still go to released builds
@@ -16,6 +17,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { openSqliteStores } from "../node/sqlite_store.js";
 import { CATCHUP_TABLES, STORY_TABLES } from "./story_catchup.js";
 import { MAPPING_REFUSAL, StoryMapping, readRow } from "./story_mapping.js";
 
@@ -30,29 +32,12 @@ const ADMIN = "ad".repeat(16);
 const JOIN = Object.freeze({ actor: 5, persona: 5, site: "map:6:30:2", part: "1", step: 6, side: null, marks: [["v", 1001, 7]], gate: 2, rule: "start", index: 169, ran: true });
 
 /**
- * Makes a story mapping with the catch-up tables over a store in memory.
+ * Makes a story mapping with the catch-up tables over a SQLite database in memory.
  *
  * @returns {StoryMapping} The mapping.
  */
 function makeMapping() {
-  const tables = new Map();
-  const histories = new Map();
-  let meta;
-  const table = (name) => tables.get(name) ?? tables.set(name, new Map()).get(name);
-  const store = {
-    getMeta: async () => structuredClone(meta),
-    all: async (name) => [...table(name).values()].map((entry) => structuredClone(entry)),
-    get: async (name, id) => structuredClone(table(name).get(id)),
-    history: async (name, id) => structuredClone(histories.get(`${name}\n${id}`) ?? []),
-    commit: async (commit, keep) => {
-      meta = structuredClone(commit.meta);
-      commit.puts.forEach(({ table: name, entry }) => table(name).set(entry.id, structuredClone(entry)));
-      commit.removes.forEach(({ table: name, id }) => table(name).delete(id));
-      commit.changes.forEach(({ table: name, id, change }) => histories.set(`${name}\n${id}`, [change, ...(histories.get(`${name}\n${id}`) ?? [])].slice(0, keep)));
-    },
-    getIndex: async () => undefined,
-  };
-  return new StoryMapping(store, { tables: STORY_TABLES, clock: () => 1000 });
+  return new StoryMapping(openSqliteStores(":memory:").mapping, { tables: STORY_TABLES, clock: () => 1000 });
 }
 
 test("the relay numbers rows without a key of their own, never twice, and games read them in story order", async () => {

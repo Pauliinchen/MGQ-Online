@@ -2,6 +2,7 @@
 //  designs_socket.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Ran over SQLite stores in memory
 //      Paulinchen  2026-11-05: Tested a world room's address beside the designer socket, as the PvP rooms are gone
 //                            - Named the version of a current game on the game's room
 //      Paulinchen  2026-10-22: Tested the design epoch of the greeting
@@ -16,7 +17,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WebSocket } from "ws";
-import { memoryDesignStore } from "../core/design_store_memory.js";
+import { openSqliteDesignStore } from "./design_store_sqlite.js";
 import { DesignerReleases } from "../core/designer_releases.js";
 import { VERSION_HEADER } from "../core/gate.js";
 import { FEATURES_HEADER } from "../core/relay.js";
@@ -63,7 +64,7 @@ before(async () => {
   writeFileSync(releases.exePath(sha256), EXE);
   releases.restore({ ...releases.current, sha256, size: EXE.length });
 
-  const designs = await fixtureBook(memoryDesignStore(), { releases: () => releases });
+  const designs = await fixtureBook(openSqliteDesignStore(":memory:"), { releases: () => releases });
   // The fixtures' clock stands still; the socket's presence runs on real time.
   designs.presence.clock = Date.now;
   relay = createRelay({ checkEveryMs: 3_600_000, sweepEveryMs: 3_600_000, log: QUIET, designs });
@@ -247,7 +248,7 @@ test("the release and its file are served with ranges to a listed designer of an
 });
 
 test("the release routes answer none on a relay without designer releases", async () => {
-  const bare = createRelay({ checkEveryMs: 3_600_000, sweepEveryMs: 3_600_000, log: QUIET, designs: await fixtureBook(memoryDesignStore()) });
+  const bare = createRelay({ checkEveryMs: 3_600_000, sweepEveryMs: 3_600_000, log: QUIET, designs: await fixtureBook(openSqliteDesignStore(":memory:")) });
   await new Promise((resolve) => bare.server.listen(0, "127.0.0.1", resolve));
 
   try {

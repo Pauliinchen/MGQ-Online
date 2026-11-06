@@ -2,6 +2,7 @@
 //  reports.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Counted the reports by the relay's rate limiter in place of a window limiter of their own
 //      Paulinchen  2026-10-12: Handled one report at a time and refused a busy, rate-limited or keyless report before reading its body
 //                            - Read a report's body for at most 60 seconds
 //                            - Uploaded large text files as blobs of their own
@@ -11,16 +12,16 @@
 //
 //----------------------------------------------------------------
 
-// The bug reports players send from the game, the same on every server. The relay commits a
+// The bug reports players send from the game. The relay commits a
 // report's files to a private repository and opens a public issue that links them, so only the
 // developer can open the files while the player's title and text are public. Text files are
 // unpacked here, since GitHub keeps them readable only as text; the screenshot's base64 goes on as
-// sent, since decoding it would cost time a free Cloudflare plan does not grant.
+// sent.
 
 import { playerIdOf } from "./directory.js";
 import { badRequest, notFound, tooLarge } from "./http.js";
 import { CONTROL_CHARACTERS, hexOf, isId } from "./ids.js";
-import { VERSION } from "./relay.js";
+import { RateLimiter, VERSION } from "./relay.js";
 
 /**
  * The limits a report keeps.
@@ -53,13 +54,13 @@ export const REPORT_LIMITS = Object.freeze({
 export const REPORT_FILE = Object.freeze({ index: "report.md", screenshot: "screenshot.png" });
 
 /**
- * How many reports a player or an address may send: at most `max` within `windowMs`.
+ * How many reports a player and an address may send: a burst, then one more each refill, so a
+ * player sends at most 10 a day and an address 6 an hour.
  */
-export const REPORT_RATES = Object.freeze([
-  Object.freeze({ of: "player", max: 3, windowMs: 60 * 60 * 1000 }),
-  Object.freeze({ of: "player", max: 10, windowMs: 24 * 60 * 60 * 1000 }),
-  Object.freeze({ of: "address", max: 6, windowMs: 60 * 60 * 1000 }),
-]);
+export const REPORT_RATES = Object.freeze({
+  player: Object.freeze({ burst: 3, refillMs: 144 * 60 * 1000 }),
+  address: Object.freeze({ burst: 6, refillMs: 10 * 60 * 1000 }),
+});
 
 /**
  * Where reports go unless the relay's settings name other repositories or another branch.
@@ -151,85 +152,6 @@ export function reportSettingsOf(env) {
     filesRepo: setting("REPORT_FILES_REPO") ?? REPORT_DEFAULTS.filesRepo,
     branch: setting("REPORT_FILES_BRANCH") ?? REPORT_DEFAULTS.branch,
   };
-}
-
-/**
- * Counts what each player or address does within a sliding window, in memory.
- */
-export class WindowLimiter {
-  /**
-   * Creates the limiter.
-   *
-   * @param {{max: number, windowMs: number}} limit At most `max` turns within `windowMs`.
-   * @param {() => number} [clock] The clock, which tests change.
-   * @param {number} [maxKeys] Most players or addresses remembered; the least recent ones are forgotten first.
-   */
-  constructor(limit, clock = Date.now, maxKeys = 10_000) {
-    this.limit = limit;
-    this.clock = clock;
-    this.maxKeys = maxKeys;
-    this.turns = new Map();
-  }
-
-  /**
-   * Tells whether a player or address has a turn left.
-   *
-   * @param {string | null | undefined} key The player or address; without one nothing is limited.
-   * @returns {boolean} Whether it may go on.
-   */
-  allows(key) {
-    return !key || this.recent(key).length < this.limit.max;
-  }
-
-  /**
-   * Takes one turn for a player or address.
-   *
-   * @param {string | null | undefined} key The player or address; without one nothing is counted.
-   */
-  take(key) {
-    if (!key) {
-      return;
-    }
-
-    const times = [...this.recent(key), this.clock()];
-
-    // Taken out and put back, so the map keeps the least recent keys in front.
-    this.turns.delete(key);
-    this.turns.set(key, times);
-
-    for (const oldest of this.turns.keys()) {
-      if (this.turns.size <= this.maxKeys) {
-        break;
-      }
-
-      this.turns.delete(oldest);
-    }
-  }
-
-  /**
-   * Gives back the last turn a player or address took, as for a report refused after its turn was
-   * taken.
-   *
-   * @param {string | null | undefined} key The player or address; without one nothing is given back.
-   */
-  giveBack(key) {
-    const times = key ? this.turns.get(key) : undefined;
-
-    if (times?.length) {
-      times.pop();
-    }
-  }
-
-  /**
-   * Lists the times a player or address took a turn within the window.
-   *
-   * @param {string} key The player or address.
-   * @returns {number[]} The times, oldest first.
-   */
-  recent(key) {
-    const since = this.clock() - this.limit.windowMs;
-    return (this.turns.get(key) ?? []).filter((time) => time > since);
-  }
 }
 
 /**
@@ -630,7 +552,8 @@ export class ReportDesk {
     this.random = random;
     this.limits = limits;
     this.log = log;
-    this.rates = rates.map((rate) => ({ of: rate.of, limiter: new WindowLimiter(rate, clock) }));
+    this.players = new RateLimiter(rates.player, clock);
+    this.addresses = new RateLimiter(rates.address, clock);
     this.pending = 0;
   }
 
@@ -645,12 +568,12 @@ export class ReportDesk {
 
   /**
    * Lets a report in before its body is read: checks that the relay takes reports, the player's
-   * key, the rate limits and that fewer than limits.maxPending reports are handled, then takes the
-   * report's turn and a place, which release gives back.
+   * key, the rate limits, which take the report's turn, and that fewer than limits.maxPending
+   * reports are handled, then takes a place, which release gives back.
    *
    * @param {unknown} key The player's key.
    * @param {string | null} address The address the report came from, null when unknown.
-   * @returns {Promise<{counted: {player: string, address: string | null}} | {refusal: {status: number, body: object}}>} The player's id and the address the turn was taken for, or why the report is refused.
+   * @returns {Promise<{refusal?: {status: number, body: object}}>} Why the report is refused, nothing when it is let in.
    */
   async admit(key, address) {
     if (!this.enabled) {
@@ -661,9 +584,9 @@ export class ReportDesk {
       return { refusal: { status: 401, body: { error: "a player key is needed", code: REPORT_REFUSAL.player } } };
     }
 
-    const counted = { player: await playerIdOf(key), address };
+    const player = await playerIdOf(key);
 
-    if (!this.allows(counted)) {
+    if (!this.players.take(player) || !this.addresses.take(address)) {
       return { refusal: tooMany() };
     }
 
@@ -672,9 +595,8 @@ export class ReportDesk {
     }
 
     // Taken with no await since the questions, so reports sent at once cannot all pass them.
-    this.take(counted);
     this.pending++;
-    return { counted };
+    return {};
   }
 
   /**
@@ -686,17 +608,15 @@ export class ReportDesk {
 
   /**
    * Takes the body of a report admit let in: checks it and its text files, then hands it to
-   * GitHub. A report refused for its body gives its turn back.
+   * GitHub.
    *
-   * @param {{player: string, address: string | null}} counted The player's id and the address, as admit answered them.
    * @param {string | null} body The body, null when it was too large to read.
    * @returns {Promise<{status: number, body: object}>} The issue's number and address and the report's id, or why the report is refused.
    */
-  async send(counted, body) {
+  async send(body) {
     const checked = await this.check(body);
 
     if (checked.refusal) {
-      this.giveBack(counted);
       return checked.refusal;
     }
 
@@ -723,38 +643,6 @@ export class ReportDesk {
 
     const refusal = await checkTexts(parsed.report.files, this.limits);
     return refusal ? { refusal } : parsed;
-  }
-
-  /**
-   * Tells whether a player and an address have a report left under every rate limit.
-   *
-   * @param {{player: string, address: string | null}} counted The player's id and the address.
-   * @returns {boolean} Whether they have.
-   */
-  allows(counted) {
-    return this.rates.every(({ of, limiter }) => limiter.allows(counted[of]));
-  }
-
-  /**
-   * Takes a turn for a player and an address under every rate limit.
-   *
-   * @param {{player: string, address: string | null}} counted The player's id and the address.
-   */
-  take(counted) {
-    for (const { of, limiter } of this.rates) {
-      limiter.take(counted[of]);
-    }
-  }
-
-  /**
-   * Gives back the turn take took for a player and an address.
-   *
-   * @param {{player: string, address: string | null}} counted The player's id and the address.
-   */
-  giveBack(counted) {
-    for (const { of, limiter } of this.rates) {
-      limiter.giveBack(counted[of]);
-    }
   }
 
   /**
@@ -992,8 +880,7 @@ function githubFailed() {
 
 /**
  * Answers a request to the report route. A report is let in before its body is read, so a busy
- * relay keeps no body in memory; a refused report's body is still read and dropped, since
- * Cloudflare breaks a request whose object answers before it read the body.
+ * relay keeps no body in memory; a refused report's body is still read and dropped.
  *
  * @param {ReportDesk} desk The desk.
  * @param {string} method The HTTP method.
@@ -1023,11 +910,10 @@ export async function handleReportRequest(desk, method, url, readBody, client, d
     try {
       body = await readBody(AbortSignal.timeout(desk.limits.bodyReadMs));
     } catch {
-      desk.giveBack(admitted.counted);
       return badRequest("the body could not be read");
     }
 
-    return await desk.send(admitted.counted, body);
+    return await desk.send(body);
   } finally {
     desk.release();
   }

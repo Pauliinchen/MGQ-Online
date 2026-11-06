@@ -2,6 +2,7 @@
 //  story_seed.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Ran over SQLite stores in memory
 //      Paulinchen  2026-10-28: Counted the seeded rules by the rules the relay knows
 //                            - Seeded the reviewed rows of every story table and kept a table the admins emptied empty
 //                            - Created
@@ -15,7 +16,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CATCHUP_RULES, STORY_TABLES } from "../core/story_catchup.js";
 import { StoryMapping } from "../core/story_mapping.js";
-import { memoryMappingStore, openStores } from "./server.js";
+import { openStores } from "./server.js";
 import { STORY_SEED_FOLDER, readStorySeeds, seedStoryTables } from "./story_seed.js";
 
 /**
@@ -24,7 +25,7 @@ import { STORY_SEED_FOLDER, readStorySeeds, seedStoryTables } from "./story_seed
  * @returns {StoryMapping} The mapping.
  */
 function makeMapping() {
-  return new StoryMapping(memoryMappingStore(), { tables: STORY_TABLES, clock: () => 1000 });
+  return new StoryMapping(openStores().mapping, { tables: STORY_TABLES, clock: () => 1000 });
 }
 
 test("the seed files hold the hand-kept rules and the reviewed rows of story tables, which fill a fresh relay at its start", async () => {

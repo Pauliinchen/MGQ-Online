@@ -2,6 +2,7 @@
 //  DirectoryClient.Story.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Fetched the story without naming the known revision
 //      Paulinchen  2026-10-23: Fetched the story mapping, and dropped the story's writes, checkpoints and route lock, which play on tracks
 //      Paulinchen  2026-10-15: Wrote and read a Raid World's story key by key, and fetched it without its keys while this game holds them
 //      Paulinchen  2026-10-12: Carried the level caps of the world's story
@@ -29,18 +30,16 @@ namespace MGQParadox.Multiplayer.Network.World;
 internal sealed partial class DirectoryClient
 {
     /// <summary>
-    /// Fetches a Raid World's story state as it stands.
+    /// Fetches a Raid World's story state as it stands: its revision and the shared companions.
     /// </summary>
     /// <param name="world">The world.</param>
     /// <param name="playerKey">The player's key.</param>
     /// <param name="authKey">The auth key made from the world's token.</param>
-    /// <param name="known">The revision this game knows, which the relay then answers without the story's keys; <see langword="null"/> for none.</param>
     /// <returns>The state.</returns>
     /// <exception cref="DirectoryException">The relay could not be reached, the world is no Raid World, or the player may not read it.</exception>
-    public StoryState GetStory(string world, string playerKey, string authKey, long? known = null)
+    public StoryState GetStory(string world, string playerKey, string authKey)
     {
-        var query = known is { } rev ? string.Create(CultureInfo.InvariantCulture, $"?known={rev}") : string.Empty;
-        using var document = SendStory(HttpMethod.Get, StoryAddress(world, query), $"raid story {Log.Short(world)}", null, playerKey, authKey, null, out _, repeatKey: $"raid story {world}");
+        using var document = SendStory(HttpMethod.Get, StoryAddress(world, string.Empty), $"raid story {Log.Short(world)}", null, playerKey, authKey, null, out _, repeatKey: $"raid story {world}");
         return StoryState.Read(document.RootElement);
     }
 

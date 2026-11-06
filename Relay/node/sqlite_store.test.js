@@ -2,6 +2,9 @@
 //  sqlite_store.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Checked the database in memory without a path
+//                            - Read the kept story through its keys
+//                            - Kept the derived index through the relay's own call
 //      Paulinchen  2026-11-05: Kept the story the store test starts from as older games wrote it, as games write no story over HTTP
 //      Paulinchen  2026-10-31: Covered the story tracks' run entries kept over a restart and dropped with their track
 //                            - Covered the place a world's log starts at kept over a restart
@@ -161,7 +164,7 @@ test("openStores opens the database the environment names, and memory without on
   onDisk.close();
 
   const inMemory = await openStores(undefined);
-  assert.equal(inMemory.path, undefined);
+  assert.equal(inMemory.path, ":memory:");
   assert.deepEqual(await inMemory.trades.allTrades(), []);
   inMemory.close();
 
@@ -181,7 +184,7 @@ test("a Raid World's story and its checkpoints outlast a restart, and each world
 
   const second = openSqliteStores(path);
   const reopened = new WorldStory(second.stories(WORLD));
-  assert.deepEqual(await reopened.get().then((answer) => [answer.body.rev, answer.body.p, answer.body.keys.v, answer.body.checkpoints]), [2, 19, "1001:n19", ["1"]]);
+  assert.deepEqual([(await reopened.get()).body.rev, (await reopened.keys()).get("v1001"), (await reopened.kept()).checkpoints], [2, "n19", ["1"]]);
   assert.equal((await second.stories(WORLD).getCheckpoint("1")).lists.v, "1001:n18");
   assert.equal((await new WorldStory(second.stories("f".repeat(32))).get()).body.rev, 0, "another world has a story of its own");
 
@@ -293,7 +296,7 @@ test("the story mapping outlasts a restart with each row's last changes and the 
     await mapping.edit({ edits: [{ table: "keys", ...edit, row: { key: "v1009", kind } }] }, admin);
   }
 
-  await mapping.putIndex({ built: 3, events: [[228, 51]] }, admin);
+  await mapping.keepIndex({ built: 3, events: [[228, 51]] }, admin);
   const broken = { meta: { rev: 9, rowsRev: 9, next: {} }, puts: [{ table: "story_keys", entry: { id: "s1", row: {} } }, { table: "no such table", entry: { id: "s1", row: {} } }], removes: [], changes: [] };
   await assert.rejects(first.mapping.commit(broken, 2));
   first.close();

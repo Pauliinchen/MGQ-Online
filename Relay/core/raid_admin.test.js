@@ -2,6 +2,7 @@
 //  raid_admin.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Dropped the tests of the keyed story's admin writes, route lock and pushes
 //      Paulinchen  2026-11-05: Kept the stories the tests start from as older games wrote them, as games write no story over HTTP
 //      Paulinchen  2026-11-01: Covered the pins refused for keys the story mapping does not share
 //      Paulinchen  2026-10-31: Covered the admin view, keys, pins and route lock of a world whose story runs on tracks
@@ -98,6 +99,7 @@ function makeWorld() {
       const pinned = await story.kept();
       return { pinOf: (key) => pinOf(pinned, key), keys: Object.keys(pinned?.pinned ?? {}) };
     },
+    story: () => story.keys(),
     send: (_player, text) => heard.push(JSON.parse(text.slice("track ".length))),
   });
   const world = { story, bosses, tracks: tracksOf() };
@@ -146,52 +148,6 @@ test("the admin view leaves a keyed story's keys out unless the request asks for
   assert.deepEqual([plain.status, plain.body.story.rev, plain.body.story.p, plain.body.story.keys, plain.body.story.keyed], [200, 1, 10, undefined, undefined]);
   const keyed = await ask("GET", "?keys=1");
   assert.deepEqual([keyed.body.story.keyed, keyed.body.story.keys.v], [true, "1001:n10"]);
-});
-
-test("an admin sets switches, variables and self switches by id as a revision every game takes, and the counters follow", async () => {
-  const { kept, ask } = makeWorld();
-  assert.deepEqual(await ask("POST", "/keys", { s: { 5: true } }).then((answer) => [answer.status, answer.body.code]), [409, "none"], "a story nobody wrote has no keys yet");
-  keepKeyed(kept, { s: "5", v: "1001:n10,30:n1", ss: "12.3.A" }, { p: 10 });
-
-  const set = await ask("POST", "/keys", { s: { 5: false, 6: true }, v: { 1001: 18, 30: 1, 31: "Lime", 32: 1.5, 33: true }, ss: { "12.3.A": false } });
-  assert.equal(set.status, 200, JSON.stringify(set.body));
-  assert.deepEqual([set.body.rev, set.body.wrev, set.body.p], [2, 2, 18], "the counters follow variable 1001");
-  assert.deepEqual(set.push.delta, { s: "6", sf: "5", v: "31:sTGltZQ==,32:f1.5,33:T,1001:n18", ss: "", ssf: "12.3.A", a: "", f: "" }, "a key that holds the value already is no change");
-  assert.deepEqual([set.push.rev, set.push.prev], [2, 1]);
-  assert.equal(set.audit, `admin ${ADMIN_ID} set keys of rev 2: ${JSON.stringify(set.push.delta)}`, "the log names who set what");
-
-  assert.equal((await ask("POST", "/keys", { v: { 1: null } })).status, 400);
-  assert.equal((await ask("POST", "/keys", { s: { 0: true } })).status, 400);
-  assert.equal((await ask("POST", "/keys", { ss: { "12.3": true } })).status, 400);
-  assert.equal((await ask("POST", "/keys", {})).status, 400, "a request that names no key");
-  assert.equal((await ask("POST", "/keys", { s: { 5: true } }, "other")).status, 403);
-});
-
-test("an admin pins keys at values, which sets them for every game and keeps them against writes, and takes pins off again", async () => {
-  const { kept, ask } = makeWorld();
-  keepKeyed(kept, { s: "12", v: "1001:n10,1201:n2" }, { p: 10 });
-  kept.story.pins = ["v1300-1310"];
-
-  const pinned = await ask("POST", "/pins", { keys: { s12: true, v1201: 5, "ss858.139.A": false, v1202: "Lime" } });
-  assert.equal(pinned.status, 200, JSON.stringify(pinned.body));
-  assert.deepEqual(pinned.push.delta, { s: "", sf: "", v: "1201:n5,1202:sTGltZQ==", ss: "", ssf: "858.139.A", a: "", f: "" }, "a key pinned at the value it holds is no change");
-  assert.deepEqual(pinned.body.pins, { keys: { s12: true, v1201: 5, "ss858.139.A": false, v1202: "Lime" }, rules: ["v1300-1310"] });
-  assert.equal(pinned.body.wrev, 2);
-
-  const view = await ask("GET", "");
-  assert.deepEqual(view.body.pins, pinned.body.pins, "the admin view shows the pins");
-  assert.deepEqual(await ask("POST", "/keys", { v: { 1201: 6 } }).then((answer) => [answer.status, answer.body.code, answer.body.keys]), [409, "pinned", ["v1201"]]);
-
-  const again = await ask("POST", "/pins", { keys: { v1201: 5 } });
-  assert.deepEqual([again.body.rev, again.push], [2, undefined], "pinning a key at the value it holds makes no revision");
-
-  const cleared = await ask("POST", "/pins/clear", { keys: ["v01201", "v1300-1310", "s99"] });
-  assert.deepEqual(cleared.body, { cleared: ["v1201", "v1300-1310"], pins: { keys: { s12: true, "ss858.139.A": false, v1202: "Lime" }, rules: [] } });
-
-  assert.equal((await ask("POST", "/pins", { keys: { s12: 1 } })).status, 400);
-  assert.equal((await ask("POST", "/pins", { keys: { x12: true } })).status, 400);
-  assert.equal((await ask("POST", "/pins/clear", { keys: "s12" })).status, 400);
-  assert.equal((await ask("POST", "/pins", { keys: { s12: true } }, "other")).status, 403);
 });
 
 test("on a world whose story runs on tracks, the admin view, keys, pins and route lock act on the world's track, and its keyed story keeps the companions alone", async () => {

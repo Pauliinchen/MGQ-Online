@@ -2,6 +2,7 @@
 //  directory.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Sent the player's key in the X-MGQ-Player header only
 //      Paulinchen  2026-11-05: Tested that a Raid World lets in every game the version gate passes
 //                            - Tested the player's key and auth key taken from the headers only
 //                            - Dropped the tests of released games sent to update at a world with long mods
@@ -524,7 +525,7 @@ test("handleDirectoryRequest routes the public requests and names the world an e
   const bytes = (value) => async (limit) => (value.length > limit ? null : value);
   const url = (path) => new URL(`https://relay.test${path}`);
 
-  assert.equal((await handleDirectoryRequest(directory, "POST", url("/v1/worlds"), body(await newWorld({ start: true, hidden: true })))).status, 201);
+  assert.equal((await handleDirectoryRequest(directory, "POST", url("/v1/worlds"), body(await newWorld({ start: true, hidden: true })), undefined, { player: CREATOR })).status, 201);
   assert.equal((await handleDirectoryRequest(directory, "GET", url("/v1/worlds"), body(null))).body.worlds.length, 0);
   assert.equal((await handleDirectoryRequest(directory, "GET", url("/v1/worlds"), body(null), undefined, { player: CREATOR })).body.worlds.length, 1);
   assert.equal((await handleDirectoryRequest(directory, "GET", url(`/v1/worlds/${WORLD}/lock`), body(null))).status, 200);
@@ -536,9 +537,9 @@ test("handleDirectoryRequest routes the public requests and names the world an e
   assert.deepEqual((await handleDirectoryRequest(directory, "GET", url(`/v1/worlds/${WORLD}/start`), body(null), undefined, { player: OTHER, auth: AUTH })).bytes, Uint8Array.of(9, 8));
 
   assert.equal((await handleDirectoryRequest(directory, "GET", url(`/v1/worlds/${WORLD}/chat`), body(null), undefined, { player: CREATOR })).body.lines.length, 0);
-  assert.equal((await handleDirectoryRequest(directory, "POST", url(`/v1/worlds/${WORLD}/chat`), body({ player: CREATOR, text: "hi" }))).status, 403);
+  assert.equal((await handleDirectoryRequest(directory, "POST", url(`/v1/worlds/${WORLD}/chat`), body({ text: "hi" }), undefined, { player: CREATOR })).status, 403);
 
-  const deleted = await handleDirectoryRequest(directory, "POST", url(`/v1/worlds/${WORLD}/delete`), body({ player: CREATOR }));
+  const deleted = await handleDirectoryRequest(directory, "POST", url(`/v1/worlds/${WORLD}/delete`), body({}), undefined, { player: CREATOR });
   assert.equal(deleted.status, 200);
   assert.equal(deleted.id, WORLD);
   assert.equal(deleted.close, true);
@@ -675,7 +676,7 @@ test("handleDirectoryRequest takes the player key of the header before the body'
   assert.equal((await handleDirectoryRequest(directory, "GET", url(`/v1/worlds?player=${OTHER}`), body(null), undefined, { player: CREATOR })).body.worlds.length, 1);
   assert.equal((await handleDirectoryRequest(directory, "GET", url(`/v1/worlds?player=${CREATOR}`), body(null))).body.worlds.length, 0, "a key in the address counts for nothing");
   assert.equal((await handleDirectoryRequest(directory, "POST", url(`/v1/worlds/${WORLD}/start`), body(null), async () => Uint8Array.of(1), { player: CREATOR })).status, 200);
-  assert.equal((await handleDirectoryRequest(directory, "POST", url(`/v1/worlds/${WORLD}/edit`), body({ player: OTHER, seats: 8 }), undefined, { player: CREATOR })).status, 200);
+  assert.equal((await handleDirectoryRequest(directory, "POST", url(`/v1/worlds/${WORLD}/edit`), body({ seats: 8 }), undefined, { player: CREATOR })).status, 200);
 
   const tooLong = async () => JSON.stringify(await newWorld({ id: "1".repeat(32), description: "x".repeat(DIRECTORY_LIMITS.maxJsonLength) }));
   assert.equal((await handleDirectoryRequest(directory, "POST", url("/v1/worlds"), tooLong)).status, 413);
@@ -892,7 +893,7 @@ test("handleDirectoryRequest makes a Raid World with a starting save and takes i
   const body = (value) => async () => JSON.stringify(value);
   const bytes = async () => Uint8Array.of(7, 7);
 
-  assert.equal((await handleDirectoryRequest(directory, "POST", url("/v1/worlds"), body(await newWorld({ type: "raid", start: true })), bytes)).status, 201);
+  assert.equal((await handleDirectoryRequest(directory, "POST", url("/v1/worlds"), body(await newWorld({ type: "raid", start: true })), bytes, { player: CREATOR })).status, 201);
   assert.equal((await handleDirectoryRequest(directory, "POST", url(`/v1/worlds/${WORLD}/start`), body(null), bytes, { player: CREATOR })).status, 200);
 });
 
@@ -997,7 +998,7 @@ test("an edit over HTTP hands the mods rule on with the world it is for", async 
   await directory.create(await newWorld({ type: "raid", mods: "Level Cap" }));
   const url = new URL(`https://relay.test/v1/worlds/${WORLD}/edit`);
 
-  const answer = await handleDirectoryRequest(directory, "POST", url, async () => JSON.stringify({ player: CREATOR, otherModsOff: false }), async () => null);
+  const answer = await handleDirectoryRequest(directory, "POST", url, async () => JSON.stringify({ otherModsOff: false }), async () => null, { player: CREATOR });
   assert.deepEqual([answer.status, answer.id, answer.modsRule], [200, WORLD, { off: false, mods: "Level Cap" }]);
 });
 

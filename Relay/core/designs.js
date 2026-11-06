@@ -2,6 +2,8 @@
 //  designs.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Dropped the answer of a relay that keeps no designs
+//                            - Ran one piece of work at a time through one shared queue
 //      Paulinchen  2026-10-23: Took debris type entities
 //      Paulinchen  2026-10-22: Took hazard entities
 //                            - Handed out the design epoch with the seq and refused pushes made before a restore
@@ -29,10 +31,10 @@ import { playerIdOf, sha256Hex } from "./directory.js";
 import { DEFAULT_DESIGNER_MIN_VERSION, DESIGN_ROUTE, GAME_DESIGN_ROUTE, designFormatOf, designerRefusal, designerRuleOf, parseVersion } from "./gate.js";
 import { notFound, routeIs } from "./http.js";
 import { CONTROL_CHARACTERS, cleanText, isId } from "./ids.js";
-import { RATE_LIMITS, RateLimiter } from "./relay.js";
+import { RATE_LIMITS, RateLimiter, workQueue } from "./relay.js";
 
 /**
- * @typedef {object} DesignStore What the design book keeps its entities, history, pushes and designers in, see core/design_store_memory.js and node/design_store_sqlite.js.
+ * @typedef {object} DesignStore What the design book keeps its entities, history, pushes and designers in, see node/design_store_sqlite.js.
  * @property {() => Promise<{seq: number, epoch: string, designFormat: number | undefined, minFormat: number | undefined}>} state The newest push's seq, 0 before the first, the design epoch and the design formats, undefined while never set.
  * @property {(id: string) => Promise<object | undefined>} entity An entity's row with its designer's name, a tombstone included.
  * @property {(query: {since: number, after: string, limit: number, tombstones: boolean}) => Promise<object[]>} entities The rows changed after a seq whose ids come after an id, sorted by id.
@@ -45,7 +47,6 @@ import { RATE_LIMITS, RateLimiter } from "./relay.js";
  * @property {(designer: {id: string, name: string, admin: boolean, addedBy: string, at: number}) => Promise<void>} putDesigner Adds a designer, or changes the name and admin flag of one.
  * @property {(id: string) => Promise<void>} removeDesigner Removes a designer.
  * @property {(id: string, at: number) => Promise<void>} seen Notes when a designer was last seen.
- * @property {() => Promise<Record<string, object[]>>} exportTables Every design table's rows, blobs without their bytes.
  * @property {(sha256: string) => Promise<Uint8Array | undefined>} blob A blob's gzipped bytes.
  * @property {(sha256: string) => Promise<{sha256: string, kind: string, size: number, at: number} | undefined>} blobInfo A blob's row without its bytes, `size` the bytes before gzip.
  * @property {(build: {seq: number, by: string, at: number}) => Promise<number>} addBuild Adds a queued build and hands out its id, never one handed out before.
@@ -57,7 +58,6 @@ import { RATE_LIMITS, RateLimiter } from "./relay.js";
  * @property {() => Promise<{build_id: number, previous_build_id: number | null, by: string, at: number} | undefined>} live The live build's row.
  * @property {(live: {buildId: number, previousBuildId: number | null, by: string, at: number}) => Promise<void>} setLive Sets the live build and the one before it.
  * @property {(keep: number) => Promise<{builds: number, blobs: number}>} tidyBuilds Drops the builds past the newest `keep` but the live, the previous and unfinished ones, then every blob no build names; hands out how many of each.
- * @property {(rows: Record<string, object[]>, blobs: Map<string, Uint8Array>) => Promise<void>} importTables Writes exported rows and blobs into an empty store.
  * @property {() => void} close Closes the store.
  */
 
@@ -214,15 +214,6 @@ export function designRouteOf(url) {
   } catch {
     return { rest: [""] };
   }
-}
-
-/**
- * The answer of every design route on a relay that keeps no designs, such as the Cloudflare relay.
- *
- * @returns {{status: number, body: object}} The answer.
- */
-export function noDesigns() {
-  return { status: 404, body: { code: "no_designs" } };
 }
 
 /**
@@ -777,7 +768,7 @@ export class DesignBook {
     this.worldTeller = null;
     /** @type {Promise<void>} The world notices queued so far, told one after another in the order their builds went live. */
     this.notices = Promise.resolve();
-    this.queue = Promise.resolve();
+    this.exclusive = workQueue();
     this.compiles = Promise.resolve();
   }
 
@@ -1683,18 +1674,6 @@ export class DesignBook {
     return bytes ? { status: 200, body: {}, bytes, headers: { ...headers, "Content-Type": "application/gzip" } } : none();
   }
 
-  /**
-   * Runs one read and write of the design at a time, so a second push reads the first.
-   *
-   * @template T
-   * @param {() => Promise<T>} work The work.
-   * @returns {Promise<T>} Its result.
-   */
-  exclusive(work) {
-    const result = this.queue.then(work);
-    this.queue = result.catch(() => {});
-    return result;
-  }
 }
 
 /**

@@ -2,6 +2,7 @@
 //  designs_server.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Dropped the tests of the migration
 //      Paulinchen  2026-10-22: Answered the builds route on a relay without a compiler
 //      Paulinchen  2026-10-21: Created
 //
@@ -16,8 +17,6 @@ import { DESIGN_LIMITS } from "../core/designs.js";
 import { Directory, playerIdOf } from "../core/directory.js";
 import { PLAYER_HEADER } from "../core/relay.js";
 import { DESIGNERS, RELAY_ADMIN_KEY, fixtureBook } from "../core/test_designs.js";
-import { openSqliteDesignStore } from "./design_store_sqlite.js";
-import { migrate } from "./migrate.js";
 import { createRelay, openStores } from "./server.js";
 
 /**
@@ -100,31 +99,4 @@ test("a push takes up to 2 MiB and every other design route up to 256 KiB, past 
 test("a refused push still has its whole body read, so the refusal reaches the designer", async () => {
   const refused = await call("POST", "/v1/designs/push", { ...A, "X-MGQ-Designer-Version": "1.0.0" }, { designFormat: 1, changes: [{ id: "state:300", kind: "state", schema: 1, baseRev: 0, body: { text: "x".repeat(1024 * 1024) } }] });
   assert.deepEqual(refused, { status: 426, body: { code: "update", minimum: "1.2.0", minFormat: 1 } });
-});
-
-test("the migration hands out the design tables in format 2 and the copy carries them into a new database", async () => {
-  const list = await call("GET", "/v1/migration", { [PLAYER_HEADER]: ADMIN });
-  assert.equal(list.body.format, 2);
-
-  const tables = (await call("GET", "/v1/migration/designs", { [PLAYER_HEADER]: ADMIN })).body.tables;
-  assert.ok(tables.design_entities.length >= 7);
-  assert.equal((await call("GET", "/v1/migration/designs", { [PLAYER_HEADER]: DESIGNERS.A.key })).status, 403);
-  assert.equal((await call("GET", `/v1/migration/designs/blobs/${"ab".repeat(32)}`, { [PLAYER_HEADER]: ADMIN })).status, 404);
-
-  const database = join(folder, "copy.db");
-  await migrate({ from: address, key: ADMIN, database, log: () => {} });
-  const copy = openSqliteDesignStore(database);
-
-  try {
-    assert.deepEqual(JSON.parse(JSON.stringify(await copy.exportTables())), tables);
-  } finally {
-    copy.close();
-  }
-});
-
-test("the copy still reads format 1 of a relay that keeps no designs, such as the Cloudflare relay, and refuses a format it does not know", async () => {
-  const relayOf = (format) => async () => new Response(JSON.stringify({ format, worlds: [], mods: [], trades: [] }), { status: 200 });
-  const counts = await migrate({ from: "https://relay.test", key: ADMIN, database: join(folder, "format1.db"), fetch: relayOf(1), log: () => {} });
-  assert.deepEqual(counts, { worlds: 0, starts: 0, stories: 0, checkpoints: 0, pools: 0, mods: 0, files: 0, trades: 0 });
-  await assert.rejects(migrate({ from: "https://relay.test", key: ADMIN, database: join(folder, "format3.db"), fetch: relayOf(3), log: () => {} }), /format 3/);
 });

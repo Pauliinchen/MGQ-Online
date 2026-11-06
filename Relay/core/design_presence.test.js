@@ -2,6 +2,7 @@
 //  design_presence.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Ran over SQLite stores in memory
 //      Paulinchen  2026-10-22: Greeted designers with the design epoch
 //      Paulinchen  2026-10-21: Created
 //
@@ -9,7 +10,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { memoryDesignStore } from "./design_store_memory.js";
+import { openSqliteDesignStore } from "../node/design_store_sqlite.js";
 import {
   DESIGN_CLOSE, DESIGN_SOCKET, DesignPresence, admitDesigner, buildFrame, helloFrame, leftFrame, liveFrame, presenceFrame, pushedFrame, readEditing, releaseFrame,
 } from "./designs.js";
@@ -241,7 +242,7 @@ test("broadcast reaches every open socket, and disconnect closes every socket of
 });
 
 test("the socket admits a current listed designer, closes on others with 4403 or 4426 and refuses other paths", async () => {
-  const store = memoryDesignStore();
+  const store = openSqliteDesignStore(":memory:");
   const book = await fixtureBook(store);
 
   const admitted = await admitDesigner(book, ["socket"], clientOf(A));
@@ -259,7 +260,7 @@ test("the socket admits a current listed designer, closes on others with 4403 or
 
 test("the designer list shows who the presence has online", async () => {
   const { presence } = testPresence();
-  const book = await fixtureBook(memoryDesignStore(), { presence });
+  const book = await fixtureBook(openSqliteDesignStore(":memory:"), { presence });
   const socket = fakeSocket();
   presence.join({ id: DESIGNERS.A.id, name: DESIGNERS.A.name, admin: true }, { seq: 0, epoch: EPOCH }, socket);
   presence.editing(socket, editing(BOSS, null));
@@ -269,18 +270,18 @@ test("the designer list shows who the presence has online", async () => {
 });
 
 test("a removed designer is named for its sockets to close", async () => {
-  const book = await fixtureBook(memoryDesignStore());
+  const book = await fixtureBook(openSqliteDesignStore(":memory:"));
   const removed = await send(book, { method: "DELETE", path: `/v1/designs/designers/${DESIGNERS.B.id}`, headers: A, body: null });
   assert.deepEqual(removed, { status: 200, body: {}, removed: DESIGNERS.B.id });
 });
 
 test("the release routes answer none without a release, serve listed designers of any version and limit the file to three an hour", async () => {
-  const bare = await fixtureBook(memoryDesignStore());
+  const bare = await fixtureBook(openSqliteDesignStore(":memory:"));
   assert.deepEqual(await send(bare, { method: "GET", path: "/v1/designs/release", headers: A, body: null }), { status: 404, body: { code: "none" } });
   assert.deepEqual(await send(bare, { method: "GET", path: "/v1/designs/release/file", headers: A, body: null }), { status: 404, body: { code: "none" } });
 
   const time = { now: NOW * 1000 };
-  const store = memoryDesignStore();
+  const store = openSqliteDesignStore(":memory:");
   const book = await fixtureBook(store, { releases: fixtureReleases });
   book.releaseFiles.clock = () => time.now;
   const file = (headers) => send(book, { method: "GET", path: "/v1/designs/release/file", headers, body: null });

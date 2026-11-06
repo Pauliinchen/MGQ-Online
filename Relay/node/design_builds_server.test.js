@@ -2,6 +2,7 @@
 //  design_builds_server.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Ran over SQLite stores in memory
 //      Paulinchen  2026-11-05: Sent the auth key in its header
 //                            - Named the version of a current game with the game
 //      Paulinchen  2026-10-31: Named keys with the game in the world room, as a Raid World asks
@@ -17,13 +18,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
 import WebSocket from "ws";
-import { memoryDesignStore } from "../core/design_store_memory.js";
+import { openSqliteDesignStore } from "./design_store_sqlite.js";
 import { DesignBook } from "../core/designs.js";
 import { Directory, sha256Hex } from "../core/directory.js";
 import { VERSION_HEADER } from "../core/gate.js";
 import { AUTH_HEADER, FEATURES_HEADER, PLAYER_HEADER } from "../core/relay.js";
 import { DESIGNERS, NOW } from "../core/test_designs.js";
-import { createRelay, memoryStore, openStores } from "./server.js";
+import { createRelay, openStores } from "./server.js";
 import { removeStubCompilers, stubCompiler } from "./test_design_compiler.js";
 
 /**
@@ -74,13 +75,13 @@ async function startRelay({ worldNotice, database, mode = {} }) {
   const { compiler, setMode } = stubCompiler(mode);
   const folder = mkdtempSync(join(tmpdir(), "mgq-builds-server-"));
   const stores = database ? await openStores(join(folder, "relay.db")) : null;
-  const designs = new DesignBook(stores ? stores.designs : memoryDesignStore(), { compiler, worldNotice });
+  const designs = new DesignBook(stores ? stores.designs : openSqliteDesignStore(":memory:"), { compiler, worldNotice });
 
   for (const designer of [DESIGNERS.A, DESIGNERS.B]) {
     await designs.store.putDesigner({ id: designer.id, name: designer.name, admin: designer.admin, addedBy: "test", at: NOW });
   }
 
-  const directory = new Directory(stores ? stores.directory : memoryStore());
+  const directory = new Directory(stores ? stores.directory : openStores().directory);
   const relay = createRelay({ checkEveryMs: 3_600_000, sweepEveryMs: 3_600_000, log: LOG, directory, designs, ...(stores ? { stories: stores.stories, bosses: stores.bosses } : {}) });
   await new Promise((resolve) => relay.server.listen(0, "127.0.0.1", resolve));
   cleanups.push(async () => {

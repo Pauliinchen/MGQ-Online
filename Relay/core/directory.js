@@ -2,6 +2,7 @@
 //  directory.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Took the player's key from the X-MGQ-Player header only
 //      Paulinchen  2026-11-05: Let every game the version gate passes into a Raid World and dropped the mod settings feature
 //                            - Took the player's key and auth key from the headers only, never from the address
 //                            - Listed the worlds without their mods unless told otherwise and dropped the limits of released games before 0.6.8
@@ -1316,14 +1317,13 @@ function cleanSettings(text) {
  * @param {URL} url The request's address.
  * @param {() => Promise<string | null>} readBody Reads the request's body as text, null when it is too large to read.
  * @param {(limit: number) => Promise<Uint8Array | null>} readBytes Reads the request's body as bytes, null when it is longer than the limit.
- * @param {{player?: string | null, auth?: string | null, address?: string | null, modsListed?: boolean}} [client] The PLAYER_HEADER and AUTH_HEADER of the request, the player's key winning over the one in its body, the address it came from, and whether the list names each world's mods, mod hashes and settings, as it does only when told so.
+ * @param {{player?: string | null, auth?: string | null, address?: string | null, modsListed?: boolean}} [client] The PLAYER_HEADER and AUTH_HEADER of the request, the address it came from, and whether the list names each world's mods, mod hashes and settings, as it does only when told so.
  * @returns {Promise<{status: number, body: object, bytes?: Uint8Array | ReadableStream<Uint8Array>, close?: boolean, kick?: string, difficulty?: number, squad?: object, raidBosses?: boolean, modsRule?: {off: boolean, mods: string}, modSettings?: {by: string, settings: string}, id?: string}>} The answer, sent as the bytes when there are any, and what the platform layer must do beyond it for the world with that id.
  */
 export async function handleDirectoryRequest(directory, method, url, readBody, readBytes, client = {}) {
   const parts = url.pathname.split("/").filter((part) => part.length > 0);
   const header = client.player || null;
   const address = client.address ?? null;
-  const fromBody = (body) => header ?? body?.player;
   const json = (handle) => withJson(readBody, directory.limits.maxJsonLength, handle);
 
   if (parts[0] !== VERSION || parts[1] !== "worlds") {
@@ -1339,7 +1339,7 @@ export async function handleDirectoryRequest(directory, method, url, readBody, r
   }
 
   if (parts.length === 2 && method === "POST") {
-    return json((body) => directory.create(body && typeof body === "object" && header ? { ...body, player: header } : body, address));
+    return json((body) => directory.create(body && typeof body === "object" ? { ...body, player: header } : body, address));
   }
 
   if (parts.length === 4 && parts[3] === "lock" && method === "GET") {
@@ -1347,15 +1347,15 @@ export async function handleDirectoryRequest(directory, method, url, readBody, r
   }
 
   if (parts.length === 4 && parts[3] === "delete" && method === "POST") {
-    return json(async (body) => ({ ...(await directory.remove(parts[2], fromBody(body))), id: parts[2] }));
+    return json(async (body) => ({ ...(await directory.remove(parts[2], header)), id: parts[2] }));
   }
 
   if (parts.length === 4 && parts[3] === "edit" && method === "POST") {
-    return json(async (body) => ({ ...(await directory.edit(parts[2], fromBody(body), body)), id: parts[2] }));
+    return json(async (body) => ({ ...(await directory.edit(parts[2], header, body)), id: parts[2] }));
   }
 
   if (parts.length === 4 && parts[3] === "ban" && method === "POST") {
-    return json(async (body) => ({ ...(await directory.ban(parts[2], fromBody(body), body?.target)), id: parts[2] }));
+    return json(async (body) => ({ ...(await directory.ban(parts[2], header, body?.target)), id: parts[2] }));
   }
 
   if (parts.length === 4 && parts[3] === "start" && method === "POST") {
@@ -1371,7 +1371,7 @@ export async function handleDirectoryRequest(directory, method, url, readBody, r
   }
 
   if (parts.length === 4 && parts[3] === "chat" && method === "POST") {
-    return json(async (body) => ({ ...(await directory.sayAsAdmin(parts[2], fromBody(body), body?.text, body?.name)), id: parts[2] }));
+    return json(async (body) => ({ ...(await directory.sayAsAdmin(parts[2], header, body?.text, body?.name)), id: parts[2] }));
   }
 
   return notFound("route");

@@ -17,12 +17,10 @@ Milestones (spec H): **M1** needs steps 1 to 5 (backup, then the relay with desi
 ## What changes for the live relay
 
 Only additions:
-- new routes `/v1/designs/*`, `/v1/raid-design` and `/v1/raid-design/<sha256>`, the designer socket `/v1/designs/socket`, and `/v1/migration/designs` for the relay's admins;
+- new routes `/v1/designs/*`, `/v1/raid-design` and `/v1/raid-design/<sha256>`, the designer socket `/v1/designs/socket`;
 - the database steps (`node/schema.js`): step 1 is the tables the relay already has (`CREATE TABLE IF NOT EXISTS`, nothing changes), steps 2 and 3 add the design tables;
 - the design epoch, a random id in `design_meta`, and `relay.design-seq` beside the database, which the relay writes after every design push (see [step 7](#7-restoring-a-backup)), so the database's folder must stay writable for `mgq-relay`, as it already is for the `-wal` file;
-- `GET /v1/migration` answers `format` 2 instead of 1; nothing but `node/migrate.js`, which reads both, uses it (the website and the World Admin tool do not);
 - the game's version gate is unchanged: the designer gate applies to the design routes only, and released games never call them;
-- the Cloudflare relay answers the design routes with 404 `no_designs`; it is frozen and needs no deploy.
 
 Older code runs on a database that took the new steps: it makes its tables with `CREATE TABLE IF NOT EXISTS` and never reads `user_version` or the design tables, so rolling back the code needs no restore of the database.
 
@@ -115,7 +113,6 @@ Then hash-check the live files against the branch as in step 1.
 
 - Games: a released game lists the worlds and joins one as before.
 - Designers: an admin designer starts the designer against the live relay, sees itself listed, then `raid-designer import --format1 <copy of RaidDesign.json> --push --server https://relay.mgqonline.org --key-file <key>` (M1 step 4; it refuses with exit 6 when the import dropped parts, unless `--accept-dropped`).
-- Migration export: `MGQ_ADMIN_KEY=<an admin's player key> node /opt/mgq-online/Relay/node/migrate.js http://127.0.0.1:8080 /tmp/migration-check.sqlite` copies everything, the design tables too, and checks the copy; delete `/tmp/migration-check.sqlite` afterwards.
 - The next nightly backup line counts the design rows.
 
 ## 6. Server builds (M2)

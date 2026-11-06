@@ -2,6 +2,8 @@
 //  admin.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Took over the check of an admin key from the migration, which is gone
+//                            - Took an admin's key from the X-MGQ-Player header only
 //      Paulinchen  2026-11-05: Took an admin's key on the routes that read from the X-MGQ-Player header only
 //      Paulinchen  2026-10-23: Answered the story mapping's admin routes
 //      Paulinchen  2026-10-22: Handed out and set the release games should run and the lowest one the relay serves
@@ -17,7 +19,7 @@
 
 import { playerIdOf } from "./directory.js";
 import { badRequest, notFound, withJson } from "./http.js";
-import { cleanText } from "./ids.js";
+import { cleanText, isId } from "./ids.js";
 import { VERSION } from "./relay.js";
 import { MAPPING_ADMIN_ROUTE, handleMappingAdminRequest } from "./story_mapping.js";
 
@@ -49,6 +51,16 @@ export function adminRouteOf(url) {
 }
 
 /**
+ * Makes the check whether a player key is one of the relay's admins.
+ *
+ * @param {Set<string>} admins The admins' player ids.
+ * @returns {(key: unknown) => Promise<boolean>} The check.
+ */
+export function adminCheck(admins) {
+  return async (key) => isId(key) && admins.has(await playerIdOf(key));
+}
+
+/**
  * Answers a request to the relay's admin routes, for the relay's admins only.
  *
  * @param {{stats: () => Promise<object>, announce: (text: string) => Promise<number>, release: import("./releases.js").ReleaseControl, releaseSet?: (answer: {status: number, body: object, before?: object}, admin: string) => void, mapping?: import("./story_mapping.js").StoryMapping}} relay What the platform layer does: hands out the figures of what it carries now, says a line in every world with players online, answering in how many, keeps the release control, hears of each change an admin made to it, and keeps the story mapping, whose routes answer 404 without it.
@@ -77,13 +89,11 @@ export async function handleAdminRequest(relay, method, url, rest, readBody, hea
 
   if (rest.length === 1 && rest[0] === "release" && method === "POST") {
     return withJson(readBody, MAX_BODY_LENGTH, async (body) => {
-      const key = header || body?.player;
-
-      if (!(await isAdmin(key))) {
+      if (!(await isAdmin(header))) {
         return refused;
       }
 
-      const admin = await playerIdOf(key);
+      const admin = await playerIdOf(header);
       const answer = await relay.release.set(body, admin);
       relay.releaseSet?.(answer, admin);
       return { status: answer.status, body: answer.body };
@@ -92,7 +102,7 @@ export async function handleAdminRequest(relay, method, url, rest, readBody, hea
 
   if (rest.length === 1 && rest[0] === "announce" && method === "POST") {
     return withJson(readBody, MAX_BODY_LENGTH, async (body) => {
-      if (!(await isAdmin(header || body?.player))) {
+      if (!(await isAdmin(header))) {
         return refused;
       }
 

@@ -2,6 +2,7 @@
 //  mods.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Sent the player's key in the X-MGQ-Player header only
 //      Paulinchen  2026-11-05: Took the uploading player's key from the header only
 //      Paulinchen  2026-10-30: Covered the tags and the requirements of the catalog's mods
 //                            - Left the mod keys to the golden keys
@@ -210,10 +211,10 @@ test("the options route reads a body larger than the other routes take", async (
   const { catalog } = await newCatalog({ tag: "v1.4.0", script: "# cap" });
   await catalog.setLink(ADMIN, "Level Cap", LATEST);
   const choices = Array.from({ length: 60 }, (_, index) => ({ value: String(index), name: `Choice ${index} `.padEnd(150, "x") }));
-  const body = JSON.stringify({ player: ADMIN, version: "1.4.0", options: [{ key: "mod_level_cap", name: "Level Cap", type: "i", default: "0", choices }] });
+  const body = JSON.stringify({ version: "1.4.0", options: [{ key: "mod_level_cap", name: "Level Cap", type: "i", default: "0", choices }] });
 
   assert.ok(body.length > 8192);
-  const answer = await handleModRequest(catalog, "POST", new URL("https://relay/v1/mods/levelcap/options"), async () => body, async () => null);
+  const answer = await handleModRequest(catalog, "POST", new URL("https://relay/v1/mods/levelcap/options"), async () => body, async () => null, ADMIN);
   assert.equal(answer.status, 200);
   assert.equal((await catalog.list()).body.mods[0].options[0].choices.length, 60);
 });
@@ -398,19 +399,19 @@ test("handleModRequest routes the catalog's requests", async () => {
   const body = (value) => async () => JSON.stringify(value);
   const none = async () => null;
 
-  assert.equal((await handleModRequest(catalog, "POST", url("/v1/mods"), body({ player: ADMIN, name: "Level Cap", link: LATEST }), none)).status, 200);
+  assert.equal((await handleModRequest(catalog, "POST", url("/v1/mods"), body({ name: "Level Cap", link: LATEST }), none, ADMIN)).status, 200);
   assert.equal((await handleModRequest(catalog, "GET", url("/v1/mods"), body({}), none)).body.mods.length, 1);
 
   state.tag = "v1.4.0";
-  const checked = await handleModRequest(catalog, "POST", url("/v1/mods/check"), body({ player: ADMIN }), none);
+  const checked = await handleModRequest(catalog, "POST", url("/v1/mods/check"), body({}), none, ADMIN);
   assert.equal(checked.body.mods[0].version, "1.4.0");
-  assert.equal((await handleModRequest(catalog, "POST", url("/v1/mods/check"), body({ player: OTHER }), none)).status, 403);
+  assert.equal((await handleModRequest(catalog, "POST", url("/v1/mods/check"), body({}), none, OTHER)).status, 403);
 
   const pack = await packed([["Pack/a.luka", "A"]]);
   assert.notEqual((await handleModRequest(catalog, "POST", url(`/v1/mods/pack/upload?player=${ADMIN}&name=Pack&version=2`), body({}), async () => pack.upload)).status, 200, "a key in the address counts for nothing");
   assert.equal((await handleModRequest(catalog, "POST", url("/v1/mods/pack/upload?name=Pack&version=2"), body({}), async () => pack.upload, ADMIN)).status, 200);
   assert.deepEqual((await handleModRequest(catalog, "GET", url("/v1/mods/pack/file"), body({}), none)).bytes, pack.zip);
-  assert.equal((await handleModRequest(catalog, "POST", url("/v1/mods/pack/delete"), body({ player: ADMIN }), none)).status, 200);
+  assert.equal((await handleModRequest(catalog, "POST", url("/v1/mods/pack/delete"), body({}), none, ADMIN)).status, 200);
   assert.equal((await handleModRequest(catalog, "PUT", url("/v1/mods"), body({}), none)).status, 404);
   assert.equal((await handleModRequest(catalog, "GET", url("/v1/worlds"), body({}), none)).status, 404);
 });
@@ -600,14 +601,14 @@ test("handleModRequest routes marking a mod personal and adding one by name", as
   const body = (value) => async () => JSON.stringify(value);
   const none = async () => null;
 
-  const added = await handleModRequest(catalog, "POST", url(`/v1/mods/${encodeURIComponent("victoryscreen")}/name`), body({ player: ADMIN, name: "Victory_Screen" }), none);
+  const added = await handleModRequest(catalog, "POST", url(`/v1/mods/${encodeURIComponent("victoryscreen")}/name`), body({ name: "Victory_Screen" }), none, ADMIN);
   assert.deepEqual([added.status, added.body.mod.kind], [200, NAME_ONLY]);
-  assert.equal((await handleModRequest(catalog, "POST", url("/v1/mods/victoryscreen/name"), body({ player: OTHER, name: "Victory_Screen" }), none)).status, 403);
+  assert.equal((await handleModRequest(catalog, "POST", url("/v1/mods/victoryscreen/name"), body({ name: "Victory_Screen" }), none, OTHER)).status, 403);
 
   const unmarked = await handleModRequest(catalog, "POST", url("/v1/mods/victoryscreen/personal"), body({ personal: false }), none, ADMIN);
   assert.deepEqual([unmarked.status, unmarked.body.mod.personal], [200, false], "the player header counts");
-  assert.equal((await handleModRequest(catalog, "POST", url("/v1/mods/victoryscreen/personal"), body({ player: ADMIN, personal: "no" }), none)).status, 400);
-  assert.equal((await handleModRequest(catalog, "POST", url("/v1/mods/nomod/personal"), body({ player: ADMIN, personal: true }), none)).status, 404);
+  assert.equal((await handleModRequest(catalog, "POST", url("/v1/mods/victoryscreen/personal"), body({ personal: "no" }), none, ADMIN)).status, 400);
+  assert.equal((await handleModRequest(catalog, "POST", url("/v1/mods/nomod/personal"), body({ personal: true }), none, ADMIN)).status, 404);
   assert.equal((await handleModRequest(catalog, "GET", url("/v1/mods/victoryscreen/personal"), body({}), none)).status, 404);
 });
 
@@ -662,10 +663,10 @@ test("handleModRequest routes tagging a mod and setting what a version requires"
   const none = async () => null;
   await catalog.setLink(ADMIN, "Level Cap", LATEST);
 
-  assert.equal((await handleModRequest(catalog, "POST", url("/v1/mods/levelcap/tag"), body({ player: ADMIN, tag: "Data" }), none)).body.mod.tag, "Data");
+  assert.equal((await handleModRequest(catalog, "POST", url("/v1/mods/levelcap/tag"), body({ tag: "Data" }), none, ADMIN)).body.mod.tag, "Data");
   const required = await handleModRequest(catalog, "POST", url("/v1/mods/levelcap/requires"), body({ requires: [{ slug: "mod-framework" }] }), none, ADMIN);
   assert.deepEqual([required.status, required.body.mod.requires], [200, [{ slug: "mod-framework", minVersion: "" }]]);
-  assert.equal((await handleModRequest(catalog, "POST", url("/v1/mods/levelcap/requires"), body({ player: OTHER, requires: [] }), none)).status, 403);
+  assert.equal((await handleModRequest(catalog, "POST", url("/v1/mods/levelcap/requires"), body({ requires: [] }), none, OTHER)).status, 403);
 });
 
 test("a mod removed during the schedule's check stays removed", async () => {

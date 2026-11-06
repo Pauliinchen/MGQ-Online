@@ -2,6 +2,7 @@
 //  bosses.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Ran one piece of work at a time through one shared queue
 //      Paulinchen  2026-10-21: Let an admin defeat every pool of a troop at once
 //      Paulinchen  2026-10-10: Kept each boss pool as the share of its raid max HP left
 //      Paulinchen  2026-10-09: Created
@@ -15,7 +16,7 @@
 
 import { badRequest, notFound, withJson } from "./http.js";
 import { CONTROL_CHARACTERS, isId } from "./ids.js";
-import { RateLimiter, VERSION } from "./relay.js";
+import { RateLimiter, VERSION, workQueue } from "./relay.js";
 
 /**
  * The limits a world's raid bosses keep.
@@ -169,7 +170,7 @@ export class WorldBosses {
     this.clock = clock;
     this.limits = limits;
     this.reports = new RateLimiter(limits.reports, clock);
-    this.queue = Promise.resolve();
+    this.exclusive = workQueue();
   }
 
   /**
@@ -435,18 +436,6 @@ export class WorldBosses {
     return `the boss's key must be 1 to ${this.limits.maxKeyLength} characters without control characters or spaces at either end`;
   }
 
-  /**
-   * Runs one read and write of the pools at a time, so a second report reads the first.
-   *
-   * @template T
-   * @param {() => Promise<T>} work The work.
-   * @returns {Promise<T>} Its result.
-   */
-  exclusive(work) {
-    const result = this.queue.then(work);
-    this.queue = result.catch(() => {});
-    return result;
-  }
 }
 
 /**

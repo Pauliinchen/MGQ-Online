@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-11-06: Turned every request away with 426 and the lowest version once a test says so
+//                            - Kept only the revision and the shared companions of a Raid World's story
 //      Paulinchen  2026-11-05: Let every game into a Raid World, as the relay no longer refuses one without its features
 //                            - Listed every world without its mods
 //      Paulinchen  2026-10-31: Dropped the PvP rooms, which no game connects to any more
@@ -566,13 +567,8 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
 }
 
     /// <summary>
-    /// How many story writes the relay took in all Raid Worlds.
-    /// </summary>
-    public int StoryWrites { get; private set; }
-
-    /// <summary>
-    /// Answers a Raid World's story requests, for its players only: the story, a write, a checkpoint,
-    /// the route lock and the shared companions; then tells every game of the world of a change.
+    /// Answers a Raid World's story requests, for its players only: the story and the shared
+    /// companions; then tells every game of the world of a change.
     /// </summary>
     /// <param name="context">The request.</param>
     /// <param name="parts">The path's parts, "v1", "worlds", the world and "story" first.</param>
@@ -586,8 +582,6 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
         var key = PlayerKeyOf(context);
         (int Status, JsonNode Body) answer;
         long? push = null;
-        string? pushText = null;
-        var known = long.TryParse(context.Request.QueryString["known"], NumberStyles.None, CultureInfo.InvariantCulture, out var held) ? held : (long?)null;
 
         lock (_gate)
         {
@@ -613,10 +607,7 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
                 var before = story.Rev;
                 answer = parts[4..] switch
                 {
-                    [] when method == "GET" => (200, story.Get(known)),
-                    [] when method == "POST" => story.Write(body!),
-                    ["checkpoint", var part] when method == "GET" => story.Checkpoint(part),
-                    ["route"] when method == "POST" => story.Lock(body!["route"]!.GetValue<string>()),
+                    [] when method == "GET" => (200, story.Get()),
                     ["companions"] when method == "POST" => story.Add(body!["ids"]!.AsArray().Select(node => node!.GetValue<int>())),
                     _ => (404, Error("there is no such route")),
                 };
@@ -624,8 +615,6 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
                 if (story.Rev != before)
                 {
                     push = story.Rev;
-                    pushText = story.PushText;
-                    StoryWrites += story.WRev == story.Rev ? 1 : 0;
                 }
             }
         }
@@ -638,7 +627,7 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
 
         if (push is { } rev)
         {
-            Tell(id, pushText ?? $"story {rev}");
+            Tell(id, $"story {rev}");
         }
     }
 
@@ -2060,75 +2049,15 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
     }
 
     /// <summary>
-    /// A Raid World's story as the relay keeps it, see Relay/core/story.js.
+    /// What games read of a Raid World's story, see Relay/core/story.js: its revision and the
+    /// shared companions.
     /// </summary>
     private sealed class TestStory
     {
         /// <summary>
-        /// The routes in their order, with the counter of each.
-        /// </summary>
-        private static readonly (string Route, string Counter)[] Routes = [("ad", "r1141"), ("mr", "r1142"), ("chaos", "r1143")];
-
-        /// <summary>
-        /// The counters of the last write.
-        /// </summary>
-        private JsonObject _counters = new() { ["p"] = 0, ["r1141"] = 0, ["r1142"] = 0, ["r1143"] = 0, ["clear"] = new JsonArray() };
-
-        /// <summary>
-        /// The routes the world finished.
-        /// </summary>
-        private readonly List<string> _done = [];
-
-        /// <summary>
         /// The shared companions.
         /// </summary>
         private readonly SortedSet<int> _comps = [];
-
-        /// <summary>
-        /// The level caps the story unlocked.
-        /// </summary>
-        private readonly SortedSet<int> _caps = [];
-
-        /// <summary>
-        /// Each part's checkpoint, its state with the sealed story.
-        /// </summary>
-        private readonly Dictionary<string, JsonObject> _checkpoints = [];
-
-        /// <summary>
-        /// The route locked.
-        /// </summary>
-        private string _route = "none";
-
-        /// <summary>
-        /// Where the last story teleport went.
-        /// </summary>
-        private JsonNode? _end;
-
-        /// <summary>
-        /// The sealed story.
-        /// </summary>
-        private string _blob = string.Empty;
-
-        /// <summary>
-        /// The story key by key, as the relay keeps a keyed story; <see langword="null"/> while it is sealed or nobody wrote it.
-        /// </summary>
-        private Dictionary<string, string>? _keys;
-
-        /// <summary>
-        /// The keys each write of the keyed story changed, by revision.
-        /// </summary>
-        private readonly List<(long Rev, HashSet<string> Keys)> _log = [];
-
-        /// <summary>
-        /// The revision from which on the log tells every write.
-        /// </summary>
-        private long _logBase;
-
-        /// <summary>
-        /// The text frame that tells the room the story's last change, <see langword="null"/> for the
-        /// revision alone, as for a sealed story.
-        /// </summary>
-        public string? PushText { get; private set; }
 
         /// <summary>
         /// The revision, which every change counts up.
@@ -2136,369 +2065,10 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
         public long Rev { get; private set; }
 
         /// <summary>
-        /// The revision of the last write.
+        /// Writes what a game reads.
         /// </summary>
-        public long WRev { get; private set; }
-
-        /// <summary>
-        /// Writes the state a game reads.
-        /// </summary>
-        /// <param name="withBlob">Whether to add the sealed story.</param>
-        /// <returns>The state.</returns>
-        public JsonObject State(bool withBlob)
-        {
-            var state = new JsonObject
-            {
-                ["rev"] = Rev,
-                ["wrev"] = WRev,
-                ["p"] = _counters["p"]!.GetValue<int>(),
-                ["r1141"] = _counters["r1141"]!.GetValue<int>(),
-                ["r1142"] = _counters["r1142"]!.GetValue<int>(),
-                ["r1143"] = _counters["r1143"]!.GetValue<int>(),
-                ["clear"] = _counters["clear"]!.DeepClone(),
-                ["part"] = PartOf(_counters),
-                ["route"] = _route,
-                ["done"] = new JsonArray(_done.Select(route => (JsonNode)route).ToArray()),
-                ["end"] = _end?.DeepClone(),
-                ["comps"] = new JsonArray(_comps.Select(id => (JsonNode)id).ToArray()),
-                ["caps"] = new JsonArray(_caps.Select(cap => (JsonNode)cap).ToArray()),
-                ["checkpoints"] = new JsonArray(_checkpoints.Keys.Select(part => (JsonNode)part).ToArray()),
-            };
-
-            if (withBlob && _keys is { } keys)
-            {
-                state["keyed"] = true;
-                state["keys"] = ListsOf(keys);
-            }
-            else if (withBlob)
-            {
-                state["blob"] = _blob;
-            }
-
-            return state;
-        }
-
-        /// <summary>
-        /// Hands out the story, without the keyed story's lists for a game that holds its revision.
-        /// </summary>
-        /// <param name="known">The revision the game holds, <see langword="null"/> for none.</param>
-        /// <returns>The state.</returns>
-        public JsonObject Get(long? known)
-        {
-            if (_keys is null || known != Rev)
-            {
-                return State(true);
-            }
-
-            var state = State(false);
-            state["same"] = true;
-            return state;
-        }
-
-        /// <summary>
-        /// Takes a write built on the last sealed story whose counters are not behind it.
-        /// </summary>
-        /// <param name="body">The write.</param>
-        /// <returns>The answer.</returns>
-        public (int, JsonNode) Write(JsonNode body)
-        {
-            PushText = null;
-
-            if (body["set"] is JsonObject set)
-            {
-                return WriteKeys(body, set);
-            }
-
-            var baseRev = body["base"]!.GetValue<long>();
-            var counters = body["counters"]!.AsObject();
-
-            if (_keys is not null)
-            {
-                return Refuse("the world keeps its story key by key", "update");
-            }
-
-            if (baseRev < WRev || baseRev > Rev)
-            {
-                return Refuse("the story moved on", "rev");
-            }
-
-            if (Compare(KeyOf(counters), KeyOf(_counters)) < 0)
-            {
-                return Refuse("the write is behind the world's story", "behind");
-            }
-
-            var route = RouteOf(counters);
-            var clear = counters["clear"]?.AsArray().Select(node => node!.GetValue<string>()).ToList() ?? [];
-            var onLocked = route == _route || (route == "none" && clear.Contains(_route));
-
-            if (_route != "none" && !_done.Contains(_route) && (!onLocked || clear.Any(cleared => cleared != _route && !_done.Contains(cleared))))
-            {
-                return Refuse("another route was chosen first", "route");
-            }
-
-            if (_blob.Length > 0 && PartOf(counters) != PartOf(_counters))
-            {
-                var checkpoint = State(true);
-                checkpoint["rev"] = WRev;
-                _checkpoints[PartOf(_counters)] = checkpoint;
-            }
-
-            foreach (var cleared in counters["clear"]?.AsArray().Select(node => node!.GetValue<string>()) ?? [])
-            {
-                if (!_done.Contains(cleared))
-                {
-                    _done.Add(cleared);
-                }
-            }
-
-            _route = route != "none" ? route : _done.Contains(_route) ? "none" : _route;
-
-            if (counters.ContainsKey("end"))
-            {
-                _end = counters["end"]?.DeepClone();
-            }
-
-            _caps.UnionWith(counters["caps"]?.AsArray().Select(node => node!.GetValue<int>()) ?? []);
-
-            _counters = new JsonObject { ["p"] = counters["p"]!.GetValue<int>(), ["r1141"] = counters["r1141"]!.GetValue<int>(), ["r1142"] = counters["r1142"]!.GetValue<int>(), ["r1143"] = counters["r1143"]!.GetValue<int>(), ["clear"] = (counters["clear"] ?? new JsonArray()).DeepClone() };
-            _blob = body["blob"]!.GetValue<string>();
-            WRev = ++Rev;
-            var answer = State(false);
-            answer["accepted"] = true;
-            return (200, answer);
-        }
-
-        /// <summary>
-        /// Takes a write of the keys a game changed: each key unless a write after its base changed
-        /// it, which the first writer keeps. A sealed story or none starts keyed with a write on its
-        /// own revision.
-        /// </summary>
-        /// <param name="body">The write.</param>
-        /// <param name="set">The keys it changed, as lists.</param>
-        /// <returns>The answer.</returns>
-        private (int, JsonNode) WriteKeys(JsonNode body, JsonObject set)
-        {
-            var baseRev = body["base"]!.GetValue<long>();
-            var counters = body["counters"]!.AsObject();
-
-            if (baseRev < (_keys is null ? Rev : _logBase) || baseRev > Rev)
-            {
-                return Refuse("the story moved on", "rev");
-            }
-
-            if (Compare(KeyOf(counters), KeyOf(_counters)) < 0)
-            {
-                return Refuse("the write is behind the world's story", "behind");
-            }
-
-            var keys = new Dictionary<string, string>(_keys ?? [], StringComparer.Ordinal);
-            var changed = _keys is null ? [] : _log.Where(entry => entry.Rev > baseRev).SelectMany(entry => entry.Keys).ToHashSet();
-            var applied = new Dictionary<string, string>(StringComparer.Ordinal);
-            var kept = new Dictionary<string, string>(StringComparer.Ordinal);
-
-            foreach (var (key, value) in KeysOf(set))
-            {
-                if (keys.TryGetValue(key, out var own) && own == value)
-                {
-                    continue;
-                }
-
-                if (changed.Contains(key))
-                {
-                    kept[key] = keys[key];
-                    continue;
-                }
-
-                keys[key] = value;
-                applied[key] = value;
-            }
-
-            if ((_keys is not null || _blob.Length > 0) && PartOf(counters) != PartOf(_counters))
-            {
-                var checkpoint = State(true);
-                checkpoint["rev"] = WRev;
-                _checkpoints[PartOf(_counters)] = checkpoint;
-            }
-
-            foreach (var cleared in counters["clear"]?.AsArray().Select(node => node!.GetValue<string>()) ?? [])
-            {
-                if (!_done.Contains(cleared))
-                {
-                    _done.Add(cleared);
-                }
-            }
-
-            var route = RouteOf(counters);
-            _route = route != "none" ? route : _done.Contains(_route) ? "none" : _route;
-
-            if (counters.ContainsKey("end"))
-            {
-                _end = counters["end"]?.DeepClone();
-            }
-
-            _caps.UnionWith(counters["caps"]?.AsArray().Select(node => node!.GetValue<int>()) ?? []);
-            _counters = new JsonObject { ["p"] = counters["p"]!.GetValue<int>(), ["r1141"] = counters["r1141"]!.GetValue<int>(), ["r1142"] = counters["r1142"]!.GetValue<int>(), ["r1143"] = counters["r1143"]!.GetValue<int>(), ["clear"] = (counters["clear"] ?? new JsonArray()).DeepClone() };
-            var before = Rev;
-            WRev = ++Rev;
-
-            if (_keys is null)
-            {
-                _logBase = Rev;
-            }
-            else
-            {
-                _log.Add((Rev, applied.Keys.ToHashSet()));
-            }
-
-            _keys = keys;
-            _blob = string.Empty;
-            Push(before, applied);
-            var answer = State(false);
-            answer["accepted"] = true;
-            answer["kept"] = ListsOf(kept);
-            answer["moved"] = changed.Count > 0;
-            return (200, answer);
-        }
-
-        /// <summary>
-        /// Notes the text frame of a keyed story's change for the room.
-        /// </summary>
-        /// <param name="before">The revision the change followed.</param>
-        /// <param name="delta">The keys it changed.</param>
-        private void Push(long before, Dictionary<string, string> delta)
-        {
-            PushText = _keys is null ? null : "storyd " + new JsonObject { ["rev"] = Rev, ["prev"] = before, ["delta"] = ListsOf(delta), ["state"] = State(false) }.ToJsonString();
-        }
-
-        /// <summary>
-        /// Reads lists into keys, as the relay does.
-        /// </summary>
-        /// <param name="lists">The lists.</param>
-        /// <returns>The keys and their values.</returns>
-        private static IEnumerable<(string Key, string Value)> KeysOf(JsonObject lists)
-        {
-            IEnumerable<string> Items(string name) => lists[name]?.GetValue<string>() is { Length: > 0 } list ? list.Split(name == "f" ? ';' : ',') : [];
-
-            foreach (var item in Items("s"))
-            {
-                yield return ($"s{item}", "1");
-            }
-
-            foreach (var item in Items("sf"))
-            {
-                yield return ($"s{item}", "0");
-            }
-
-            foreach (var item in Items("v"))
-            {
-                yield return ($"v{item[..item.IndexOf(':')]}", item[(item.IndexOf(':') + 1)..]);
-            }
-
-            foreach (var item in Items("ss"))
-            {
-                yield return ($"ss{item}", "1");
-            }
-
-            foreach (var item in Items("ssf"))
-            {
-                yield return ($"ss{item}", "0");
-            }
-
-            foreach (var item in Items("a"))
-            {
-                yield return ($"a{item[..item.IndexOf(':')]}", item[(item.IndexOf(':') + 1)..]);
-            }
-
-            foreach (var item in Items("f"))
-            {
-                yield return ($"f{item[..item.IndexOf('|')]}", item[(item.IndexOf('|') + 1)..]);
-            }
-        }
-
-        /// <summary>
-        /// Writes keys as lists, as the relay does.
-        /// </summary>
-        /// <param name="keys">The keys and their values.</param>
-        /// <returns>The lists.</returns>
-        private static JsonObject ListsOf(Dictionary<string, string> keys)
-        {
-            var lists = new Dictionary<string, List<string>> { ["s"] = [], ["sf"] = [], ["v"] = [], ["ss"] = [], ["ssf"] = [], ["a"] = [], ["f"] = [] };
-
-            foreach (var (key, value) in keys)
-            {
-                if (key.StartsWith("ss", StringComparison.Ordinal))
-                {
-                    lists[value == "1" ? "ss" : "ssf"].Add(key[2..]);
-                }
-                else if (key.StartsWith('s'))
-                {
-                    lists[value == "1" ? "s" : "sf"].Add(key[1..]);
-                }
-                else if (key.StartsWith('a'))
-                {
-                    lists["a"].Add($"{key[1..]}:{value}");
-                }
-                else if (key.StartsWith('f'))
-                {
-                    lists["f"].Add($"{key[1..]}|{value}");
-                }
-                else
-                {
-                    lists["v"].Add($"{key[1..]}:{value}");
-                }
-            }
-
-            return new JsonObject(lists.Select(list => new KeyValuePair<string, JsonNode?>(list.Key, string.Join(list.Key == "f" ? ';' : ',', list.Value))));
-        }
-
-        /// <summary>
-        /// Hands out a part's checkpoint.
-        /// </summary>
-        /// <param name="part">The part.</param>
-        /// <returns>The answer, 404 with code none for a part without one.</returns>
-        public (int, JsonNode) Checkpoint(string part)
-        {
-            if (!_checkpoints.TryGetValue(part, out var checkpoint))
-            {
-                return (404, new JsonObject { ["error"] = "the world has no checkpoint of this part", ["code"] = "none" });
-            }
-
-            var answer = checkpoint.DeepClone().AsObject();
-            answer["part"] = part;
-            return (200, answer);
-        }
-
-        /// <summary>
-        /// Locks a route, the first one chosen winning.
-        /// </summary>
-        /// <param name="route">The route.</param>
-        /// <returns>The answer.</returns>
-        public (int, JsonNode) Lock(string route)
-        {
-            if (_route == route)
-            {
-                return (200, State(true));
-            }
-
-            if (_route != "none")
-            {
-                return Refuse("another route was chosen first", "route");
-            }
-
-            if (_done.Contains(route))
-            {
-                return Refuse("the world finished this route", "finished");
-            }
-
-            if (route == "chaos" && !(_done.Contains("ad") && _done.Contains("mr")))
-            {
-                return Refuse("the third way opens once both other routes are finished", "closed");
-            }
-
-            _route = route;
-            Push(Rev++, []);
-            return (200, State(true));
-        }
+        /// <returns>The revision and the shared companions.</returns>
+        public JsonObject Get() => new() { ["rev"] = Rev, ["comps"] = new JsonArray(_comps.Select(id => (JsonNode)id).ToArray()) };
 
         /// <summary>
         /// Adds shared companions.
@@ -2512,67 +2082,11 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
 
             if (_comps.Count != before)
             {
-                Push(Rev++, []);
+                Rev++;
             }
 
-            return (200, State(true));
+            return (200, Get());
         }
-
-        /// <summary>
-        /// Refuses with the state as it stands.
-        /// </summary>
-        /// <param name="error">Why.</param>
-        /// <param name="code">The code that names why.</param>
-        /// <returns>The answer.</returns>
-        private (int, JsonNode) Refuse(string error, string code)
-        {
-            var answer = State(true);
-            answer["error"] = error;
-            answer["code"] = code;
-            return (409, answer);
-        }
-
-        /// <summary>
-        /// Finds the route whose counter is above 0.
-        /// </summary>
-        /// <param name="counters">The counters.</param>
-        /// <returns>The route, "none" for none.</returns>
-        private static string RouteOf(JsonObject counters) =>
-            Routes.FirstOrDefault(route => counters[route.Counter]!.GetValue<int>() > 0).Route ?? "none";
-
-        /// <summary>
-        /// Tells the part counters are in.
-        /// </summary>
-        /// <param name="counters">The counters.</param>
-        /// <returns>The part.</returns>
-        private static string PartOf(JsonObject counters)
-        {
-            var route = RouteOf(counters);
-            var p = counters["p"]!.GetValue<int>();
-            return route != "none" ? route : p < 19 ? "1" : p < 34 ? "2" : "3";
-        }
-
-        /// <summary>
-        /// Places counters in the story's order.
-        /// </summary>
-        /// <param name="counters">The counters.</param>
-        /// <returns>The routes returned from, 1001, the route's counter, and the routes finished.</returns>
-        private static int[] KeyOf(JsonObject counters)
-        {
-            var route = RouteOf(counters);
-            var clear = counters["clear"]?.AsArray().Select(node => node!.GetValue<string>()).ToList() ?? [];
-            var step = route == "none" ? 0 : counters[Routes.First(entry => entry.Route == route).Counter]!.GetValue<int>();
-            return [clear.Count(cleared => cleared != route), counters["p"]!.GetValue<int>(), step, clear.Count];
-        }
-
-        /// <summary>
-        /// Compares two places in the story's order.
-        /// </summary>
-        /// <param name="a">One place.</param>
-        /// <param name="b">The other.</param>
-        /// <returns>Below 0 when a comes first, 0 when both are the same, above 0 when b does.</returns>
-        private static int Compare(int[] a, int[] b) =>
-            a.Zip(b, (x, y) => x.CompareTo(y)).FirstOrDefault(order => order != 0);
     }
 
     /// <summary>

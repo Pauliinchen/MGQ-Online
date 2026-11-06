@@ -2,6 +2,7 @@
 //  reports.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Tested the rate limits as a burst and a refill
 //      Paulinchen  2026-10-12: Checked busy, rate-limited and keyless reports refused before their body is read, one report at a time and the body deadline
 //                            - Checked large text files uploaded as blobs and a report with a broken text file uploading nothing
 //                            - Moved the test of the Worker's report object to cloudflare/worker.test.js
@@ -14,7 +15,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { gzipSync } from "node:zlib";
-import { REPORT_DEFAULTS, REPORT_LIMITS, ReportDesk, WindowLimiter, base64Of, checkTexts, fileLink, handleReportRequest, issueMarkdown, parseReport, reportSettingsOf, unpackText } from "./reports.js";
+import { REPORT_DEFAULTS, REPORT_LIMITS, ReportDesk, base64Of, checkTexts, fileLink, handleReportRequest, issueMarkdown, parseReport, reportSettingsOf, unpackText } from "./reports.js";
 
 /**
  * The reporting player's key.
@@ -432,10 +433,9 @@ test("only POST /v1/reports is a route", async () => {
   assert.equal((await handleReportRequest(desk, "POST", new URL("https://relay/v1/report"), untouched, client, untouched)).status, 404);
 });
 
-test("a player sends at most 3 reports an hour and 10 a day, and an address 6 an hour", async () => {
+test("a player sends 3 reports at once and one more every 144 minutes, and an address 6 at once and one more every 10 minutes", async () => {
   const { desk, time } = newDesk();
   const send = (player, address = ADDRESS) => post(desk, bodyOf(), { player, address });
-  const hour = 60 * 60 * 1000;
 
   for (let count = 0; count < 3; count++) {
     assert.equal((await send(PLAYER, null)).status, 201);
@@ -443,19 +443,9 @@ test("a player sends at most 3 reports an hour and 10 a day, and an address 6 an
 
   const limited = await send(PLAYER, null);
   assert.deepEqual([limited.status, limited.body.code], [429, "rate"]);
-
-  for (let hours = 1; hours <= 3; hours++) {
-    time.now += hour;
-
-    for (let count = 0; count < (hours === 3 ? 1 : 3); count++) {
-      assert.equal((await send(PLAYER, null)).status, 201);
-    }
-  }
-
-  time.now += hour;
-  assert.equal((await send(PLAYER, null)).status, 429, "the eleventh report of a day");
-  time.now += 24 * hour;
+  time.now += 144 * 60 * 1000;
   assert.equal((await send(PLAYER, null)).status, 201);
+  assert.equal((await send(PLAYER, null)).status, 429);
 
   const others = Array.from({ length: 7 }, (_, index) => (index + 16).toString(16).repeat(16));
 
@@ -463,31 +453,9 @@ test("a player sends at most 3 reports an hour and 10 a day, and an address 6 an
     assert.equal((await send(other)).status, 201);
   }
 
-  assert.equal((await send(others[6])).status, 429, "the seventh report of an address within an hour");
-  assert.equal((await send(others[6], "198.51.100.7")).status, 201);
-});
-
-test("a refused report counts against no rate limit", async () => {
-  const { desk } = newDesk();
-
-  const brokenThird = bodyOf({}, [FILES[0], FILES[1], { name: LOG_NAME, ...packed("plain", false), gzip: true }, FILES[3]]);
-  const unreadable = async () => {
-    throw new Error("connection reset");
-  };
-
-  for (let count = 0; count < 5; count++) {
-    assert.equal((await post(desk, bodyOf({ title: "" }))).status, 400);
-    assert.equal((await post(desk, bodyOf({}, [{ name: "report.md", content: "AAAA", gzip: true }]))).status, 400);
-    assert.equal((await post(desk, brokenThird)).status, 400);
-    assert.equal((await post(desk, null)).status, 413);
-    assert.deepEqual(await sent(desk, bodyOf(), undefined, unreadable).answer, { status: 400, body: { error: "the body could not be read" } });
-  }
-
-  for (let count = 0; count < 3; count++) {
-    assert.equal((await post(desk, bodyOf())).status, 201);
-  }
-
-  assert.equal((await post(desk, bodyOf())).status, 429, "a gzip refused after the turn was taken gave it back");
+  assert.equal((await send(others[6])).status, 429, "the seventh report of an address at once");
+  time.now += 10 * 60 * 1000;
+  assert.equal((await send(others[6])).status, 201);
 });
 
 test("a report past its rate limit is refused before its body is read, and its body drained", async () => {
@@ -740,28 +708,6 @@ test("a text file past 8 MiB unpacked, or all of them past 24 MiB together, is r
   const { desk, github } = newDesk({ limits });
   assert.equal((await post(desk, bodyOf({}, [file("report.md", 100), file("a.log", 51)]))).status, 413);
   assert.equal(github.requests.length, 0);
-});
-
-test("the window limiter forgets turns older than its window and the least recent keys", () => {
-  const time = { now: 0 };
-  const limiter = new WindowLimiter({ max: 2, windowMs: 100 }, () => time.now, 2);
-
-  limiter.take("a");
-  limiter.take("a");
-  assert.equal(limiter.allows("a"), false);
-  assert.equal(limiter.allows(null), true);
-  time.now = 100;
-  assert.equal(limiter.allows("a"), true);
-
-  limiter.take("b");
-  limiter.take("c");
-  assert.deepEqual([...limiter.turns.keys()], ["b", "c"]);
-
-  limiter.take("c");
-  limiter.giveBack("c");
-  limiter.giveBack(null);
-  limiter.giveBack("unknown");
-  assert.deepEqual(limiter.recent("c"), [100]);
 });
 
 test("the settings fall back to the default repositories and branch", () => {

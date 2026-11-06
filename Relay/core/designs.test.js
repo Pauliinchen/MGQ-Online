@@ -2,6 +2,7 @@
 //  designs.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Ran over SQLite stores in memory
 //      Paulinchen  2026-10-22: Tested that a push from another design epoch is refused
 //                            - Tested that a push raises the design format one named step only and that the format route lowers it
 //                            - Tested that a seeded admin stays demoted
@@ -12,7 +13,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { memoryDesignStore } from "./design_store_memory.js";
+import { openSqliteDesignStore } from "../node/design_store_sqlite.js";
 import { DESIGN_KINDS, DESIGN_LIMITS, DesignBook, ENTITY_ID, SEEDED_BY, designRouteOf, designerIdOf } from "./designs.js";
 import { playerIdOf } from "./directory.js";
 import { DEFAULT_DESIGNER_MIN_VERSION } from "./gate.js";
@@ -34,7 +35,7 @@ const B = { ...A, "X-MGQ-Designer": DESIGNERS.B.key };
  * @returns {Promise<DesignBook>} The book.
  */
 function freshBook() {
-  return fixtureBook(memoryDesignStore());
+  return fixtureBook(openSqliteDesignStore(":memory:"));
 }
 
 /**
@@ -44,7 +45,7 @@ function freshBook() {
  * @returns {Promise<DesignBook>} The book.
  */
 async function bookWithPushes(pushes) {
-  const book = new DesignBook(memoryDesignStore(), { clock: () => NOW * 1000, rateLimits: { push: pushes } });
+  const book = new DesignBook(openSqliteDesignStore(":memory:"), { clock: () => NOW * 1000, rateLimits: { push: pushes } });
 
   for (const designer of [DESIGNERS.A, DESIGNERS.B]) {
     await book.store.putDesigner({ id: designer.id, name: designer.name, admin: designer.admin, addedBy: "test", at: 0 });
@@ -105,7 +106,7 @@ test("every contract fixture parses, and every exchange is replayed here", () =>
 });
 
 test("the contract's exchanges are answered as the fixtures show, compared as canonical JSON", async () => {
-  const results = await replayScenarios(() => memoryDesignStore());
+  const results = await replayScenarios(() => openSqliteDesignStore(":memory:"));
   assert.ok(results.length >= 20, `${results.length} exchanges replayed`);
 
   for (const { file, name, expected, actual } of results) {
@@ -220,7 +221,7 @@ test("a push naming another design epoch is refused with the current epoch and c
 });
 
 test("a released designer's push raises the design format and the lowest format, a development build's never does", async () => {
-  const store = memoryDesignStore();
+  const store = openSqliteDesignStore(":memory:");
   const book = await fixtureBook(store);
   const dev = { ...A, "X-MGQ-Designer-Version": "0.0.0-dev" };
 
@@ -278,7 +279,7 @@ test("a development build reads as any designer and writes only as an admin or w
   assert.deepEqual((await push(book, devB, [change("state:1", 0, {})])).body, { code: "dev_build" });
   assert.equal((await push(book, { ...A, "X-MGQ-Designer-Version": "0.0.0-dev" }, [change("state:1", 0, {})])).status, 200);
 
-  const open = new DesignBook(memoryDesignStore(), { allowDev: true });
+  const open = new DesignBook(openSqliteDesignStore(":memory:"), { allowDev: true });
   await open.store.putDesigner({ id: DESIGNERS.B.id, name: "B", admin: false, addedBy: "test", at: 0 });
   assert.equal((await push(open, devB, [change("state:1", 0, {})])).status, 200);
 });
@@ -329,7 +330,7 @@ test("a push tells what to send the other designers, and the rate limit counts e
 });
 
 test("me names any key's id, renames a listed designer and notes when it was seen", async () => {
-  const store = memoryDesignStore();
+  const store = openSqliteDesignStore(":memory:");
   const book = await fixtureBook(store);
   const me = (headers, method = "GET", body = null) => send(book, { method, path: "/v1/designs/me", headers, body });
 
@@ -365,7 +366,7 @@ test("designer admins and relay admins manage the designers; a relay admin can n
 });
 
 test("the admins DESIGNER_ADMINS names are added under the start of their id, and a listed one keeps its row", async () => {
-  const store = memoryDesignStore();
+  const store = openSqliteDesignStore(":memory:");
   const book = new DesignBook(store, { clock: () => NOW * 1000 });
   await store.putDesigner({ id: DESIGNERS.B.id, name: DESIGNERS.B.name, admin: false, addedBy: "test", at: 0 });
   await book.seedAdmins([DESIGNERS.A.id, DESIGNERS.B.id]);
@@ -375,7 +376,7 @@ test("the admins DESIGNER_ADMINS names are added under the start of their id, an
 });
 
 test("a seeded admin demoted through the designer routes stays demoted when the relay seeds again, and a removed one comes back", async () => {
-  const store = memoryDesignStore();
+  const store = openSqliteDesignStore(":memory:");
   const book = new DesignBook(store, { clock: () => NOW * 1000 });
   await book.seedAdmins([DESIGNERS.A.id, DESIGNERS.B.id]);
   assert.equal((await send(book, { method: "PUT", path: `/v1/designs/designers/${DESIGNERS.B.id}`, headers: A, body: { admin: false } })).status, 200);
@@ -389,9 +390,9 @@ test("a seeded admin demoted through the designer routes stays demoted when the 
 });
 
 test("the lowest designer version is the setting's, every version without a setting, and other paths are no routes", async () => {
-  assert.equal(new DesignBook(memoryDesignStore()).minVersion, DEFAULT_DESIGNER_MIN_VERSION);
-  assert.equal(new DesignBook(memoryDesignStore(), { minVersion: "0.0.0-dev" }).minVersion, DEFAULT_DESIGNER_MIN_VERSION);
-  assert.equal(new DesignBook(memoryDesignStore(), { minVersion: " 1.4 " }).minVersion, "1.4");
+  assert.equal(new DesignBook(openSqliteDesignStore(":memory:")).minVersion, DEFAULT_DESIGNER_MIN_VERSION);
+  assert.equal(new DesignBook(openSqliteDesignStore(":memory:"), { minVersion: "0.0.0-dev" }).minVersion, DEFAULT_DESIGNER_MIN_VERSION);
+  assert.equal(new DesignBook(openSqliteDesignStore(":memory:"), { minVersion: " 1.4 " }).minVersion, "1.4");
 
   const book = await freshBook();
   await seedEntities(book.store, [entity("rules", 1, {})]);

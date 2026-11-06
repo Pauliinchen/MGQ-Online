@@ -2,6 +2,8 @@
 //  bosses.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Sent the player's key in the X-MGQ-Player header only
+//                            - Ran the admin routes over a world with story tracks
 //      Paulinchen  2026-11-05: Kept the story the admin test starts from with its route lock, as games lock no route over HTTP
 //                            - Took the admin's key on the story view from the header only
 //      Paulinchen  2026-10-31: Wrote the Raid World's story key by key
@@ -16,7 +18,9 @@ import assert from "node:assert/strict";
 import { BOSS_LIMITS, WorldBosses, bossRouteOf, bossText, handleBossRequest, leftOf, readKey } from "./bosses.js";
 import { WORLD_TYPE } from "./directory.js";
 import { handleRaidAdminRequest, raidAdminRouteOf } from "./raid_admin.js";
+import { openSqliteStores } from "../node/sqlite_store.js";
 import { STORY_LIMITS, WorldStory } from "./story.js";
+import { StoryTracks } from "./story_tracks.js";
 
 /**
  * A player's id.
@@ -339,13 +343,9 @@ test("the routes are read from the address, and the router answers each", async 
  * @returns {{world: {story: WorldStory, bosses: WorldBosses}, kept: {story: object | undefined}, adminOf: (key: unknown) => Promise<object>, asked: unknown[], time: {now: number}}} The world, what its story's store keeps, the directory's answer, the keys it was asked about, and the pools' clock.
  */
 function makeAdminWorld(type = WORLD_TYPE.raid) {
-  const kept = { story: undefined };
-  const story = new WorldStory({
-    get: async () => structuredClone(kept.story),
-    put: async (next) => void (kept.story = structuredClone(next)),
-    getCheckpoint: async () => undefined,
-    remove: async () => void (kept.story = undefined),
-  }, { limits: STORY_LIMITS });
+  const stores = openSqliteStores(":memory:");
+  const story = new WorldStory(stores.stories(WORLD), { limits: STORY_LIMITS });
+  const tracks = new StoryTracks(stores.tracks(WORLD), { mapping: async () => ({ rev: 1, tables: { keys: [], events: [], parts: [] }, index: null }), send: () => {} });
   const asked = [];
   const adminOf = async (key) => {
     asked.push(key);
@@ -353,22 +353,21 @@ function makeAdminWorld(type = WORLD_TYPE.raid) {
   };
   const { bosses, time } = makeBosses();
 
-  return { world: { story, bosses }, kept, adminOf, asked, time };
+  return { world: { story, bosses, tracks }, adminOf, asked, time };
 }
 
 test("admins read a Raid World's counters and pools, fill a pool up and take the route lock back; nobody else may", async () => {
-  const { world, kept, adminOf, asked, time } = makeAdminWorld();
+  const { world, adminOf, asked, time } = makeAdminWorld();
   const url = (path) => new URL(`https://relay/v1/worlds/${WORLD}/raid${path}`);
   const body = (value) => async () => JSON.stringify(value);
   const none = async () => "";
 
-  kept.story = { ...world.story.first(), rev: 2, wrev: 1, counters: { p: 40, r1141: 0, r1142: 0, r1143: 0, clear: [] }, part: "3", route: "mr" };
   await world.bosses.report(ALICE, "Morrigan", { battle: "b1", seq: 1, delta: 0.25, max: MAX }, "Luka");
   await world.bosses.report(BOB, "Lilith", { battle: "b2", seq: 1, delta: 0, max: 900, killed: true }, "Alice");
 
   const read = await handleRaidAdminRequest(world, "GET", url(""), [], none, "admin", adminOf);
   assert.equal(read.status, 200);
-  assert.deepEqual([read.body.story.p, read.body.story.route, read.body.story.keys, read.body.regenPerMinute], [40, "mr", undefined, 0.03]);
+  assert.deepEqual([read.body.story.p, read.body.story.route, read.body.story.keys, read.body.regenPerMinute], [0, "none", undefined, 0.03]);
   assert.deepEqual(read.body.bosses, [
     { key: "Lilith", left: 0, max: 900, defeated: true, at: time.now, by: "Alice", hp: 0, reports: 1, byPlayer: BOB },
     { key: "Morrigan", left: 0.75, max: MAX, defeated: false, at: time.now, by: null, hp: 3_750_000, reports: 1, byPlayer: null },
@@ -380,16 +379,14 @@ test("admins read a Raid World's counters and pools, fill a pool up and take the
   assert.deepEqual([killed.status, killed.bosses], [200, [{ key: "Morrigan", left: 0, max: MAX, defeated: true }]]);
   assert.equal((await handleRaidAdminRequest(world, "POST", url("/bosses/kill"), ["bosses", "kill"], body({ keys: ["Morrigan"] }), "other", adminOf)).status, 403);
 
-  const reset = await handleRaidAdminRequest(world, "POST", url("/bosses/Lilith/reset"), ["bosses", "Lilith", "reset"], body({ player: "admin" }), null, adminOf);
+  const reset = await handleRaidAdminRequest(world, "POST", url("/bosses/Lilith/reset"), ["bosses", "Lilith", "reset"], body({}), "admin", adminOf);
   assert.deepEqual([reset.status, reset.body.left, reset.body.reset, reset.boss], [200, 1, true, { key: "Lilith", left: 1, max: 900, defeated: false }]);
 
-  const cleared = await handleRaidAdminRequest(world, "POST", url("/route/clear"), ["route", "clear"], body({ player: "admin" }), null, adminOf);
-  assert.deepEqual([cleared.status, cleared.body.route, cleared.body.cleared, cleared.push], [200, "none", true, 3]);
-  const again = await handleRaidAdminRequest(world, "POST", url("/route/clear"), ["route", "clear"], body({}), "admin", adminOf);
-  assert.deepEqual([again.body.cleared, again.push], [false, undefined]);
+  const cleared = await handleRaidAdminRequest(world, "POST", url("/route/clear"), ["route", "clear"], body({}), "admin", adminOf);
+  assert.deepEqual([cleared.status, cleared.body.route, cleared.body.cleared], [200, "none", false]);
 
-  assert.equal((await handleRaidAdminRequest(world, "POST", url("/route/clear"), ["route", "clear"], body({ player: "other" }), null, adminOf)).status, 403);
-  assert.equal((await handleRaidAdminRequest(world, "POST", url("/route/clear"), ["route", "clear"], body(5), null, adminOf)).status, 400);
+  assert.equal((await handleRaidAdminRequest(world, "POST", url("/route/clear"), ["route", "clear"], body({ player: "admin" }), "other", adminOf)).status, 403, "a key in the body counts for nothing");
+  assert.equal((await handleRaidAdminRequest(world, "POST", url("/route/clear"), ["route", "clear"], body(5), "admin", adminOf)).status, 400);
   assert.equal((await handleRaidAdminRequest(world, "POST", url("/route/clear"), ["route", "clear"], async () => null, null, adminOf)).status, 413);
   assert.equal((await handleRaidAdminRequest(world, "POST", url("/story"), ["story"], body({}), "admin", adminOf)).status, 404);
   assert.ok(asked.includes("other"));

@@ -2,6 +2,7 @@
 //  backup.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Dropped the comparison of the design tables through their export
 //      Paulinchen  2026-10-22: Counted the design epoch in the backup line
 //                            - Tested the line of a database without worlds or design tables
 //                            - Created
@@ -132,7 +133,6 @@ test("the script copies the open database with its design tables, keeps the newe
   try {
     assert.deepEqual(await copy.directory.get(WORLD.id), WORLD);
     assert.deepEqual(await copy.directory.getStart(WORLD.id), await stores.directory.getStart(WORLD.id));
-    assert.deepEqual(JSON.parse(JSON.stringify(await copy.designs.exportTables())), JSON.parse(JSON.stringify(await stores.designs.exportTables())));
     assert.equal((await copy.designs.state()).seq, 3);
   } finally {
     copy.close();

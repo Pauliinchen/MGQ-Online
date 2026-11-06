@@ -2,6 +2,8 @@
 //  releases.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Ran over SQLite stores in memory
+//                            - Dropped the test of the comparison of versions, which the gate tests
 //      Paulinchen  2026-11-05: Tested 0.7.0 as the lowest release while the setting names none
 //      Paulinchen  2026-10-30: Dropped the test of the update line
 //      Paulinchen  2026-10-22: Tested the current release cleared by a newer release only
@@ -12,7 +14,8 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { RELEASE_REPO, ReleaseControl, ReleaseWatch, compareVersions, handleReleaseRequest, readLatestVersion } from "./releases.js";
+import { openSqliteStores } from "../node/sqlite_store.js";
+import { RELEASE_REPO, ReleaseControl, ReleaseWatch, handleReleaseRequest, readLatestVersion } from "./releases.js";
 
 /**
  * Stands in for GitHub's latest release page, which leads to the tag of the release it names.
@@ -33,26 +36,6 @@ function latestPage(release) {
 }
 
 /**
- * Keeps the newest release seen and the release control in memory.
- *
- * @returns {{getRelease: () => Promise<string | undefined>, putRelease: (version: string) => Promise<void>, getControl: () => Promise<object | undefined>, putControl: (record: object) => Promise<void>, seen: {version?: string, control?: object}}} The store and what it holds.
- */
-function memoryRelease() {
-  const seen = {};
-  return {
-    getRelease: async () => seen.version,
-    putRelease: async (version) => {
-      seen.version = version;
-    },
-    getControl: async () => seen.control,
-    putControl: async (record) => {
-      seen.control = record;
-    },
-    seen,
-  };
-}
-
-/**
  * The player id of the admin who sets the release control in the tests.
  */
 const ADMIN_ID = "ad".repeat(16);
@@ -70,20 +53,13 @@ test("readLatestVersion fails when the page leads to no release's tag", async ()
   await assert.rejects(readLatestVersion(RELEASE_REPO, latestPage({ tag: "v0.6.5", status: 200 }).fetch), /answered 200/);
 });
 
-test("compareVersions compares part by part, a missing part counting as 0", () => {
-  assert.ok(compareVersions("0.6.10", "0.6.9") > 0);
-  assert.ok(compareVersions("0.6.4", "0.6.5") < 0);
-  assert.equal(compareVersions("0.6", "0.6.0"), 0);
-  assert.ok(compareVersions("0.6.3.1", "0.6.3") > 0);
-});
-
 test("the watch only keeps the first release it reads, then announces each newer one once", async () => {
-  const store = memoryRelease();
+  const store = openSqliteStores(":memory:").releases;
   const release = { tag: "v0.6.4" };
   const watch = new ReleaseWatch(store, { fetch: async (...args) => latestPage(release).fetch(...args) });
 
   assert.equal(await watch.check(), null);
-  assert.equal(store.seen.version, "0.6.4");
+  assert.equal(await store.getRelease(), "0.6.4");
   assert.equal(await watch.check(), null);
 
   release.tag = "v0.6.5";
@@ -92,26 +68,26 @@ test("the watch only keeps the first release it reads, then announces each newer
 
   release.tag = "v0.6.4";
   assert.equal(await watch.check(), null, "a release taken back announces nothing");
-  assert.equal(store.seen.version, "0.6.5");
+  assert.equal(await store.getRelease(), "0.6.5");
 });
 
 test("the watch reads the repository it is given", async () => {
   const page = latestPage({ tag: "v1.0.0" });
-  await new ReleaseWatch(memoryRelease(), { fetch: page.fetch, repo: "someone/fork" }).check();
+  await new ReleaseWatch(openSqliteStores(":memory:").releases, { fetch: page.fetch, repo: "someone/fork" }).check();
   assert.deepEqual(page.asked, ["https://github.com/someone/fork/releases/latest"]);
 });
 
 test("the release control serves the MIN_VERSION setting and no current release until an admin sets them", async () => {
-  const control = await new ReleaseControl(memoryRelease(), { envMin: "0.6.7" }).load();
+  const control = await new ReleaseControl(openSqliteStores(":memory:").releases, { envMin: "0.6.7" }).load();
   assert.deepEqual(control.view(), { current: null, min: "0.6.7", repo: RELEASE_REPO });
   assert.deepEqual(control.adminView(), { current: null, min: "0.6.7", repo: RELEASE_REPO, envMin: "0.6.7", updatedAt: null, updatedBy: null });
-  assert.equal(new ReleaseControl(memoryRelease()).min, "0.7.0", "without the setting, the gate's default");
+  assert.equal(new ReleaseControl(openSqliteStores(":memory:").releases).min, "0.7.0", "without the setting, the gate's default");
   assert.deepEqual(handleReleaseRequest(control, "GET", new URL("https://relay.test/v1/release")), { status: 200, body: control.view() });
   assert.equal(handleReleaseRequest(control, "POST", new URL("https://relay.test/v1/release")).status, 404);
 });
 
 test("an admin sets the current and the lowest release, keeps what is left out and clears either back with null", async () => {
-  const store = memoryRelease();
+  const store = openSqliteStores(":memory:").releases;
   const control = await new ReleaseControl(store, { envMin: "0.6.7", clock: () => 5000 }).load();
 
   const set = await control.set({ current: "0.6.8", min: "0.6.7.7" }, ADMIN_ID);
@@ -129,7 +105,7 @@ test("an admin sets the current and the lowest release, keeps what is left out a
 });
 
 test("the release control refuses a lowest release above the current one and anything that is no version", async () => {
-  const control = await new ReleaseControl(memoryRelease(), { envMin: "0.6.7" }).load();
+  const control = await new ReleaseControl(openSqliteStores(":memory:").releases, { envMin: "0.6.7" }).load();
   await control.set({ current: "0.6.8" }, ADMIN_ID);
 
   assert.deepEqual(await control.set({ min: "0.6.8.1" }, ADMIN_ID), { status: 400, body: { error: "the lowest release may not be above the current one", code: "min_above_current" } });
@@ -144,7 +120,7 @@ test("the release control refuses a lowest release above the current one and any
 });
 
 test("a release published after the current one was set clears it, while the latest seen when it was set keeps a rollback", async () => {
-  const store = memoryRelease();
+  const store = openSqliteStores(":memory:").releases;
   await store.putRelease("0.6.8");
   const control = await new ReleaseControl(store, { envMin: "0.6.7", clock: () => 7000 }).load();
   await control.set({ current: "0.6.7.7", min: "0.6.7.7" }, ADMIN_ID);
@@ -158,7 +134,7 @@ test("a release published after the current one was set clears it, while the lat
 });
 
 test("a current release set ahead of the latest stays once it is published, and one set before any release was read waits for the next", async () => {
-  const store = memoryRelease();
+  const store = openSqliteStores(":memory:").releases;
   const control = await new ReleaseControl(store, { envMin: "0.6.7" }).load();
   await control.set({ current: "0.6.7.7" }, ADMIN_ID);
   assert.equal(await control.seen("0.6.8"), null, "an older latest the watch reads first");

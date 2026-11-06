@@ -2,6 +2,7 @@
 //  story_tracks.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Dropped the checks of a world never on tracks
 //      Paulinchen  2026-11-05: Checked that a found item's run goes on the world's track and on every player's own
 //                            - Dropped the check of used up items' marks, whose runs the story replay hands over
 //      Paulinchen  2026-11-01: Checked that an item any player found reaches players behind and the world from them, though the mapping's row of the found marks predates the rule
@@ -579,8 +580,6 @@ test("a state hands the world's keys at the start of its log where they differ f
 });
 
 test("an admin's keys go on the world's track as a revision every game on it hears, its part following, and leave the tracks of players behind as they are", async () => {
-  assert.equal(await makeWorld().tracks.setKeys(new Map([["v50", "n4"]]), "admin"), null, "a world whose story never ran on tracks");
-
   const world = await startedWorld(10, [BOB], { pins: { v60: "n2" } });
   await write(world, ALICE, 1, [["v1001", "n19"]]);
   await world.enter(CARA, 2);
@@ -605,9 +604,6 @@ test("an admin's keys go on the world's track as a revision every game on it hea
 });
 
 test("an admin reads the world's story with its part and routes, and takes back the route lock unless the world is on that route", async () => {
-  const none = makeWorld();
-  assert.deepEqual([await none.tracks.view(false), await none.tracks.clearRoute()], [null, null], "a world whose story never ran on tracks");
-
   const world = await startedWorld(40, [BOB]);
   await world.say(ALICE, { t: "route", route: "mr" });
   const view = await world.tracks.view(false);

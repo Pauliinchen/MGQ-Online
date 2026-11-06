@@ -2,6 +2,8 @@
 //  design_store_sqlite.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Took the design epoch over from the memory store, which is gone
+//                            - Dropped the export and import of every table, which only the migration used
 //      Paulinchen  2026-10-22: Kept the design epoch and made a new one after a restore from a backup
 //                            - Kept the live build each build was compiled against
 //                            - Kept the builds, their blobs and the live build
@@ -16,27 +18,22 @@
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { EPOCH_KEY, newEpoch } from "../core/design_store_memory.js";
-import { DESIGN_TABLE_NAMES, STEPS, migrate } from "./schema.js";
+import { hexOf } from "../core/ids.js";
+import { STEPS, migrate } from "./schema.js";
 
 /**
- * The column each design table is sorted by when it is handed out whole.
+ * The design meta key of the design epoch.
  */
-const ORDER = Object.freeze({
-  designers: "id",
-  design_meta: "key",
-  design_pushes: "seq",
-  design_entities: "id",
-  design_history: "id, rev",
-  design_blobs: "sha256",
-  design_builds: "id",
-  design_live: "channel",
-});
+const EPOCH_KEY = "epoch";
 
 /**
- * A column's name as the design tables write them, the only names an imported row may use.
+ * Makes a new design epoch.
+ *
+ * @returns {string} 32 random hex characters.
  */
-const COLUMN = /^[a-z][a-z0-9_]*$/;
+function newEpoch() {
+  return hexOf(crypto.getRandomValues(new Uint8Array(16)));
+}
 
 /**
  * The name of a revision's designer: as the push named them, else as the designer list names them.
@@ -85,7 +82,6 @@ export function openSqliteDesignStore(path, { log = () => {} } = {}) {
   const historyRow = db.prepare("INSERT OR REPLACE INTO design_history (id, rev, schema, body, deleted, by, at) VALUES (?, ?, ?, ?, ?, ?, ?)");
   const prune = db.prepare("DELETE FROM design_history WHERE id = ? AND rev NOT IN (SELECT rev FROM design_history WHERE id = ? ORDER BY rev DESC LIMIT ?)");
   const metaRow = db.prepare("INSERT OR REPLACE INTO design_meta (key, value) VALUES (?, ?)");
-  const clearMeta = db.prepare("DELETE FROM design_meta");
   const designer = db.prepare("SELECT * FROM designers WHERE id = ?");
   const designers = db.prepare("SELECT * FROM designers ORDER BY name, id");
   const designerRow = db.prepare(`INSERT INTO designers (id, name, admin, added_by, at, last_seen) VALUES (?, ?, ?, ?, ?, NULL)
@@ -93,7 +89,6 @@ export function openSqliteDesignStore(path, { log = () => {} } = {}) {
   const removeDesigner = db.prepare("DELETE FROM designers WHERE id = ?");
   const seen = db.prepare("UPDATE designers SET last_seen = ? WHERE id = ?");
   const blob = db.prepare("SELECT gz FROM design_blobs WHERE sha256 = ?");
-  const blobBytes = db.prepare("UPDATE design_blobs SET gz = ? WHERE sha256 = ?");
   const blobRow = db.prepare("INSERT OR IGNORE INTO design_blobs (sha256, kind, size, gz, at) VALUES (?, ?, ?, ?, ?)");
   const blobInfo = db.prepare("SELECT sha256, kind, size, at FROM design_blobs WHERE sha256 = ?");
   const buildRow = db.prepare("INSERT INTO design_builds (seq, status, by, at) VALUES (?, 'queued', ?, ?)");
@@ -225,32 +220,7 @@ export function openSqliteDesignStore(path, { log = () => {} } = {}) {
       });
       return counts;
     },
-    exportTables: async () => Object.fromEntries(DESIGN_TABLE_NAMES.map((name) => [name, db.prepare(`SELECT * FROM ${name} ORDER BY ${ORDER[name]}`).all()
-      .map(({ gz, ...row }) => plain(row))])),
     blob: async (sha256) => blob.get(sha256)?.gz,
-    importTables: async (rows, bytes) => transaction(db, () => {
-      if (rows.design_meta) {
-        clearMeta.run();
-      }
-
-      for (const name of DESIGN_TABLE_NAMES) {
-        for (const row of rows[name] ?? []) {
-          // A blob's bytes come apart from its row, so the row is first kept with none.
-          const values = name === "design_blobs" ? { ...row, gz: new Uint8Array(0) } : row;
-          const columns = Object.keys(values);
-
-          if (!columns.every((column) => COLUMN.test(column))) {
-            throw new Error(`a row of ${name} names a column that is no plain name`);
-          }
-
-          db.prepare(`INSERT INTO ${name} (${columns.join(", ")}) VALUES (${columns.map(() => "?").join(", ")})`).run(...columns.map((column) => values[column]));
-        }
-      }
-
-      for (const [sha256, gz] of bytes) {
-        blobBytes.run(Uint8Array.from(gz), sha256);
-      }
-    }),
     close: () => db.close(),
   };
 }

@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-11-06: Took the code of a refusal of this version from Relays
+//                            - Dropped the story delta frame, which the relay sends no more
 //      Paulinchen  2026-11-05: Dropped the refusal of a Raid World to a game without its features, which the relay no longer sends
 //      Paulinchen  2026-10-31: Worded what the player reads plainly, leaving causes and internals to the log
 //                            - Handed the world's mod settings the relay tells to the game script as a mod_settings entry
@@ -136,12 +137,6 @@ internal sealed class WorldSession
     /// The story's revision now, in a <see cref="StoryKind"/> entry.
     /// </summary>
     public const string RevHeader = "rev";
-
-    /// <summary>
-    /// The word that starts the relay's text frame of what a write changed of a Raid World's story
-    /// kept key by key, which this game takes as a <see cref="StoryKind"/> entry.
-    /// </summary>
-    public const string StoryDeltaText = "storyd";
 
     /// <summary>
     /// The word that starts the story tracks' text frames both ways, as Relay/README.md names it.
@@ -980,12 +975,6 @@ internal sealed class WorldSession
             return;
         }
 
-        if (text.StartsWith($"{StoryDeltaText} ", StringComparison.Ordinal))
-        {
-            TakeStoryDelta(generation, connection, text[(StoryDeltaText.Length + 1)..]);
-            return;
-        }
-
         if (text.StartsWith($"{TrackText} ", StringComparison.Ordinal))
         {
             TakeTrack(generation, connection, text[(TrackText.Length + 1)..]);
@@ -1103,46 +1092,6 @@ internal sealed class WorldSession
         }
 
         Log.Write($"world story changed at the relay, rev {number}");
-    }
-
-    /// <summary>
-    /// Tells the game script that a Raid World's story kept key by key changed, as a
-    /// <see cref="StoryKind"/> entry with its revision, as the relay's push of a write's change says.
-    /// </summary>
-    /// <param name="generation">The open this belongs to.</param>
-    /// <param name="connection">The connection it came over.</param>
-    /// <param name="json">The push: <c>rev</c>, <c>prev</c>, <c>delta</c> and <c>state</c>.</param>
-    private void TakeStoryDelta(int generation, Connection connection, string json)
-    {
-        long rev;
-
-        try
-        {
-            using var document = JsonDocument.Parse(json);
-            rev = document.RootElement.TryGetProperty("rev", out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out var number) ? number : -1;
-        }
-        catch (JsonException)
-        {
-            rev = -1;
-        }
-
-        if (rev < 0)
-        {
-            Log.Write("world room story change ignored, it names no revision");
-            return;
-        }
-
-        lock (_gate)
-        {
-            if (generation != _generation || connection != _connection)
-            {
-                return;
-            }
-
-            Enqueue(new Message([new(Message.Kind, StoryKind), new(RevHeader, rev.ToString(CultureInfo.InvariantCulture))]).Encode());
-        }
-
-        Log.Write($"world story changed at the relay, rev {rev}");
     }
 
     /// <summary>

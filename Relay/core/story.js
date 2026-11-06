@@ -2,6 +2,8 @@
 //  story.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Ran one piece of work at a time through one shared queue
+//                            - Handed games the story's revision and shared companions alone and dropped the admin's keyed writes, the route lock and the write log
 //      Paulinchen  2026-11-05: Dropped the games' story writes, part checkpoint reads and route locks over HTTP, which only games without story tracks used; the keyed story stays as world data
 //                            - Dropped the keys feature and the refusal of games without it, which the version gate turns away
 //                            - Read the story's ids from story_ids.json, which the generator writes from MGQOnline.Game's StoryIds
@@ -41,7 +43,7 @@
 
 import { badRequest, notFound, withJson } from "./http.js";
 import { isId } from "./ids.js";
-import { VERSION } from "./relay.js";
+import { VERSION, workQueue } from "./relay.js";
 import STORY_IDS from "./story_ids.json" with { type: "json" };
 
 /**
@@ -53,7 +55,6 @@ export const STORY_LIMITS = Object.freeze({
   maxCompanions: 2000,
   maxCompanionsPerAdd: 500,
   maxActorId: 99_999,
-  maxCaps: 200,
   // A keyed story's lists: all of them together, a late story's thousands of switches, variables
   // and self switches with room to spare, and the longest value a variable may hold.
   maxListsLength: 1_800_000,
@@ -61,22 +62,11 @@ export const STORY_LIMITS = Object.freeze({
   // The longest frozen raid boss fight: its stand-ins and the keys it holds.
   maxFreezeLength: 65_536,
   maxId: 99_999,
-  // The keys of the writes a keyed story remembers, which tell what changed since an older base.
-  logKeys: 20_000,
-  logWrites: 200,
-  // The longest push of a write's changed keys; a longer one tells the revision alone.
-  maxDeltaLength: 60_000,
   // The keys an admin sets at once, and the JSON body that names them.
   maxAdminKeys: 2000,
   maxAdminBodyLength: 128 * 1024,
   maxPins: 5000,
 });
-
-/**
- * The word the text frame starts with that hands every game of a world what a write changed, as
- * `storyd <JSON>`.
- */
-export const STORY_DELTA = "storyd";
 
 /**
  * The lists a keyed story travels in: the switches on and off, the variables with their values, the
@@ -90,11 +80,6 @@ export const LISTS = Object.freeze(["s", "sf", "v", "ss", "ssf", "a", "f"]);
  * semicolons, each its troop and its fight split by the first bar.
  */
 const FREEZES = "f";
-
-/**
- * The list of the companions' affection, each of which only goes up.
- */
-const AFFECTIONS = "a";
 
 /**
  * A companion's affection as the games write it: a whole number above 0.
@@ -423,40 +408,6 @@ export function activeRoute(counters) {
 }
 
 /**
- * Reports whether counters name a route under way before the Great Decision, which no game tells:
- * every event that takes a route moves variable 1001 to the decision too.
- *
- * @param {{p: number, r1141: number, r1142: number, r1143: number}} counters The counters.
- * @returns {boolean} Whether they do.
- */
-export function outOfOrder(counters) {
-  return activeRoute(counters) !== ROUTE.none && counters.p < GREAT_DECISION;
-}
-
-/**
- * Reads counters as the story they can be: a route under way before the Great Decision, which an
- * older game wrote, as none, so a write without it goes on from there.
- *
- * @param {{p: number, r1141: number, r1142: number, r1143: number, clear: string[]}} counters The counters.
- * @returns {{p: number, r1141: number, r1142: number, r1143: number, clear: string[]}} The counters, the same object when in order.
- */
-export function inOrder(counters) {
-  return outOfOrder(counters) ? { ...counters, ...routeCounters(counters, () => 0) } : counters;
-}
-
-/**
- * Reports whether a story's route lock came with a route under way before the Great Decision, see
- * outOfOrder, and goes with it.
- *
- * @param {object | undefined} story The story as kept.
- * @returns {string} The route locked, ROUTE.none when none is or the lock goes.
- */
-function lockOf(story) {
-  const locked = story?.route ?? ROUTE.none;
-  return story && outOfOrder(story.counters) && locked === activeRoute(story.counters) ? ROUTE.none : locked;
-}
-
-/**
  * Tells which part of the story counters are in.
  *
  * @param {{p: number, r1141: number, r1142: number, r1143: number}} counters The counters.
@@ -521,17 +472,6 @@ export function compareKeys(a, b) {
   }
 
   return 0;
-}
-
-/**
- * Adds level caps to those a world's story unlocked.
- *
- * @param {number[]} kept The caps kept so far.
- * @param {number[]} added The caps a write names.
- * @returns {number[]} Every cap once, lowest first.
- */
-export function mergeCaps(kept, added) {
-  return [...new Set([...kept, ...added])].sort((a, b) => a - b);
 }
 
 /**
@@ -674,24 +614,6 @@ export function countersOf(keys, fallback) {
 }
 
 /**
- * Writes the text frame that tells every game of a world its story changed: what a write changed
- * with the state after it (`storyd <JSON>`, see STORY_DELTA), or the revision alone, which the games
- * fetch (`story <rev>`), for a story nobody wrote key by key yet or a change too long for a frame.
- *
- * @param {number | {rev: number, prev: number, delta: object, state: object}} push The revision, or the change.
- * @param {typeof STORY_LIMITS} [limits] The limits.
- * @returns {string} The frame.
- */
-export function storyPushText(push, limits = STORY_LIMITS) {
-  if (typeof push === "number") {
-    return storyText(push);
-  }
-
-  const text = `${STORY_DELTA} ${JSON.stringify(push)}`;
-  return text.length <= limits.maxDeltaLength ? text : storyText(push.rev);
-}
-
-/**
  * @typedef {object} StoryStore Where one world's story is kept: the story with its counters, and one checkpoint per part.
  * @property {() => Promise<object | undefined>} get Reads the story, undefined before the first write.
  * @property {(story: object, checkpoint: object | null) => Promise<void>} put Writes the story, and a checkpoint with it, in one step where the platform allows.
@@ -713,188 +635,23 @@ export class WorldStory {
     this.store = store;
     this.clock = clock;
     this.limits = limits;
-    this.queue = Promise.resolve();
+    this.exclusive = workQueue();
   }
 
   /**
-   * Hands out the story as it stands.
+   * Hands out what games read of the story: its revision and the shared companions.
    *
-   * @param {number | null} [known] The revision the asking game knows, which a keyed story at that
-   *   revision answers without its lists.
-   * @returns {Promise<{status: number, body: object}>} The story's state with its story, see stateOf; with `same` and without the story for the known revision.
+   * @returns {Promise<{status: number, body: {rev: number, comps: number[]}}>} The answer.
    */
-  async get(known = null) {
-    return this.exclusive(async () => {
-      const story = await this.store.get();
-      return story?.lists && known === story.rev ? { status: 200, body: { ...stateOf(story, false), same: true } } : { status: 200, body: stateOf(story, true) };
-    });
+  async get() {
+    return this.exclusive(async () => ({ status: 200, body: sharedOf(await this.store.get()) }));
   }
 
   /**
-   * Makes the story a revision leaves: its counters, the routes it finished, the route lock, the
-   * part, the endpoint, the level caps, and the checkpoint of the part it first left; a story an
-   * older game wrote with a route under way before the Great Decision is repaired. Called inside
-   * exclusive.
-   *
-   * @param {object | undefined} story The story as it stands.
-   * @param {{counters: object, end: object | null | undefined, caps: number[]}} read The revision's counters, endpoint (undefined keeps the story's) and level caps.
-   * @param {string} player The id of the player who made the revision.
-   * @returns {{next: object, checkpoint: object | null}} The story without its lists, and the checkpoint to keep, null for none.
-   */
-  advance(story, read, player) {
-    const route = activeRoute(read.counters);
-    // A story an older game wrote with a route under way before the Great Decision: the level caps
-    // it named and the checkpoint of the part it seemed to leave go with it.
-    const repaired = story && outOfOrder(story.counters);
-    const done = [...(story?.done ?? [])];
-
-    for (const cleared of read.counters.clear) {
-      if (!done.includes(cleared)) {
-        done.push(cleared);
-      }
-    }
-
-    const locked = lockOf(story);
-    // Once every route was finished the locked one is finished from the start, so the lock ends
-    // only with the return from it, not with the first write that has no route under way.
-    const returned = done.includes(locked) && (!(story?.done ?? []).includes(locked) || activeRoute(inOrder(story?.counters ?? FIRST_COUNTERS)) === locked);
-    const part = partOf(read.counters);
-    // Only a part's first end is its checkpoint: the world leaves Part 3 once for every route,
-    // and a later end would hand a player behind a story that already finished a route.
-    const checkpoint = story?.lists && !repaired && story.part !== part && !story.checkpoints.includes(story.part) ? checkpointOf(story) : null;
-    const checkpoints = checkpoint ? [...story.checkpoints, story.part] : (story?.checkpoints ?? []).filter((kept) => !(repaired && kept === part));
-
-    const rev = (story?.rev ?? 0) + 1;
-    const next = {
-      rev,
-      wrev: rev,
-      counters: read.counters,
-      part,
-      route: route !== ROUTE.none ? route : returned ? ROUTE.none : locked,
-      done,
-      end: read.end === undefined ? (story?.end ?? null) : read.end,
-      comps: story?.comps ?? [],
-      caps: mergeCaps(repaired ? [] : (story?.caps ?? []), read.caps).slice(-this.limits.maxCaps),
-      checkpoints,
-      at: this.clock(),
-      by: player,
-      ...(story?.pins ? { pins: story.pins } : {}),
-      ...(story?.pinned ? { pinned: story.pinned } : {}),
-    };
-    return { next, checkpoint };
-  }
-
-  /**
-   * Sets keys of a keyed story as an admin asks, as a new revision every game takes: its counters
-   * follow the keys as a game's write's do.
-   *
-   * @param {any} request The keys, see readAdminKeys.
-   * @param {string} admin The admin's player id, whom the revision names as its writer.
-   * @returns {Promise<{status: number, body: object, push?: object}>} The new state with `set` (the lists of the keys that changed), and the change to tell every game; or 409 with code `none` for a story that is not keyed, `pinned` with `keys` for keys pinned at other values; or why the request is wrong.
-   */
-  async setKeys(request, admin) {
-    const read = readAdminKeys(request, this.limits);
-
-    if (read.error) {
-      return badRequest(read.error);
-    }
-
-    return this.exclusive(async () => {
-      const story = await this.store.get();
-
-      if (!story?.lists) {
-        return { status: 409, body: { error: "only a keyed story has keys an admin sets", code: STORY_REFUSAL.none } };
-      }
-
-      const pinned = [...read.keys].filter(([key, value]) => pinOf(story, key) !== undefined && value !== pinOf(story, key)).map(([key]) => key);
-
-      if (pinned.length > 0) {
-        return { status: 409, body: { error: "an admin pinned these keys at other values", code: STORY_REFUSAL.pinned, keys: pinned } };
-      }
-
-      const keys = readLists(story.lists, { ...this.limits, maxListsLength: Infinity }).keys;
-      const applied = new Map([...read.keys].filter(([key, value]) => keys.get(key) !== value));
-
-      for (const [key, value] of applied) {
-        keys.set(key, value);
-      }
-
-      const { next, checkpoint, push } = this.adminRevision(story, keys, applied, admin);
-      await this.store.put(next, checkpoint);
-      return { status: 200, body: { ...stateOf(next, false), set: listsOf(applied) }, push };
-    });
-  }
-
-  /**
-   * Makes the revision an admin's change of a keyed story's keys leaves, which every game takes as
-   * it takes a write: its counters follow the keys. Called inside exclusive.
-   *
-   * @param {object} story The story as it stands.
-   * @param {Map<string, string>} keys Every key of the story after the change.
-   * @param {Map<string, string>} applied The keys the change set, which the log and the push name.
-   * @param {string} admin The admin's player id.
-   * @returns {{next: object, checkpoint: object | null, push: object}} The story to keep, the checkpoint of a part it left, and the change to tell every game.
-   */
-  adminRevision(story, keys, applied, admin) {
-    const { next, checkpoint } = this.advance(story, { counters: countersOf(keys, story.counters), end: undefined, caps: [] }, admin);
-    const log = [...story.log, { rev: next.rev, keys: [...applied.keys()] }];
-    let logBase = story.logBase;
-
-    while (log.length > this.limits.logWrites || log.reduce((count, entry) => count + entry.keys.length, 0) > this.limits.logKeys) {
-      logBase = log.shift().rev;
-    }
-
-    Object.assign(next, { lists: listsOf(keys), log, logBase });
-    return { next, checkpoint, push: { rev: next.rev, prev: story.rev, delta: listsOf(applied), state: stateOf(next, false) } };
-  }
-
-  /**
-   * Pins keys of a keyed story at values, as an admin asks: sets them, as a new revision every game
-   * takes when one changes, and keeps them so against every later write, see pinOf. A key pinned
-   * again takes its new value.
+   * Keeps pins as an admin asks, which the world's track holds: the story's keys stay as they are.
+   * A key pinned again takes its new value.
    *
    * @param {any} request `keys`, each key as the story names it ("s12", "v1201", "ss858.139.A") to its value, see readPins.
-   * @param {string} admin The admin's player id.
-   * @returns {Promise<{status: number, body: object, push?: object}>} The state with `set` (the lists of the keys that changed) and `pins`, see pinsView, and the change to tell every game when a key changed; or 409 with code `none` for a story that is not keyed; or why the request is wrong.
-   */
-  async pinKeys(request, admin) {
-    const read = readPins(request?.keys, this.limits);
-
-    if (read.error) {
-      return badRequest(read.error);
-    }
-
-    return this.exclusive(async () => {
-      const story = await this.store.get();
-
-      if (!story?.lists) {
-        return { status: 409, body: { error: "only a keyed story pins keys", code: STORY_REFUSAL.none } };
-      }
-
-      const pinned = { ...(story.pinned ?? {}), ...Object.fromEntries(read.keys) };
-
-      if (Object.keys(pinned).length > this.limits.maxPins) {
-        return { status: 413, body: { error: `a story keeps at most ${this.limits.maxPins} pinned keys` } };
-      }
-
-      const keys = readLists(story.lists, { ...this.limits, maxListsLength: Infinity }).keys;
-      const applied = new Map([...read.keys].filter(([key, value]) => keys.get(key) !== value));
-
-      for (const [key, value] of applied) {
-        keys.set(key, value);
-      }
-
-      const changed = applied.size > 0 ? this.adminRevision({ ...story, pinned }, keys, applied, admin) : { next: { ...story, pinned }, checkpoint: null };
-      await this.store.put(changed.next, changed.checkpoint);
-      return { status: 200, body: { ...stateOf(changed.next, false), set: listsOf(applied), pins: pinsView(changed.next) }, ...(changed.push ? { push: changed.push } : {}) };
-    });
-  }
-
-  /**
-   * Keeps pins as an admin asks for a world whose story runs on tracks, which hold them on the
-   * world's track: the story's keys stay as they are. A key pinned again takes its new value.
-   *
-   * @param {any} request `keys`, see pinKeys.
    * @returns {Promise<{status: number, body: object}>} `pins`, see pinsView; or why the request is wrong.
    */
   async keepPins(request) {
@@ -962,48 +719,10 @@ export class WorldStory {
   }
 
   /**
-   * Tells every game what a change of the story that left its keys as they were made of it: the
-   * state alone for a keyed story, the revision for one nobody wrote key by key yet.
-   *
-   * @param {object | undefined} story The story before.
-   * @param {object} next The story after.
-   * @returns {number | object} The push, see storyPushText.
-   */
-  pushOf(story, next) {
-    return next.lists ? { rev: next.rev, prev: story?.rev ?? 0, delta: listsOf([]), state: stateOf(next, false) } : next.rev;
-  }
-
-  /**
-   * Takes back the route locked at the Great Decision, as an admin asks, so the next player who
-   * chooses sets it again. Refused while the world's story is on the locked route, since another
-   * route locked then would turn away every write of both routes.
-   *
-   * @returns {Promise<{status: number, body: object, push?: number | object}>} The state with `cleared` (whether a route was locked), and the change to tell every game when it changed, see storyPushText; or 409 with the state and code `started` while the world's story is on the locked route.
-   */
-  async clearRoute() {
-    return this.exclusive(async () => {
-      const story = await this.store.get();
-      const locked = story?.route ?? ROUTE.none;
-
-      if (locked === ROUTE.none) {
-        return { status: 200, body: { ...stateOf(story, false), cleared: false } };
-      }
-
-      if (activeRoute(story.counters) === locked) {
-        return { status: 409, body: { ...stateOf(story, false), error: "the world's story is on the locked route already", code: STORY_REFUSAL.started } };
-      }
-
-      const next = { ...story, route: ROUTE.none, rev: story.rev + 1 };
-      await this.store.put(next, null);
-      return { status: 200, body: { ...stateOf(next, false), cleared: true }, push: this.pushOf(story, next) };
-    });
-  }
-
-  /**
    * Adds companions to the world's shared list, which only grows.
    *
    * @param {any} ids The companions' actor ids.
-   * @returns {Promise<{status: number, body: object, push?: number | object}>} The state, and the change to tell every game when the list grew, see storyPushText; or why the ids are wrong.
+   * @returns {Promise<{status: number, body: object, push?: number}>} The revision and the companions, see get, and the revision to tell every game when the list grew; or why the ids are wrong.
    */
   async addCompanions(ids) {
     const actor = (id) => Number.isInteger(id) && id >= 1 && id <= this.limits.maxActorId;
@@ -1026,12 +745,12 @@ export class WorldStory {
       }
 
       if (comps.size === before) {
-        return { status: 200, body: stateOf(story, true) };
+        return { status: 200, body: sharedOf(story) };
       }
 
       const next = { ...(story ?? this.first()), comps: [...comps].sort((a, b) => a - b), rev: (story?.rev ?? 0) + 1 };
       await this.store.put(next, null);
-      return { status: 200, body: stateOf(next, true), push: this.pushOf(story, next) };
+      return { status: 200, body: sharedOf(next), push: next.rev };
     });
   }
 
@@ -1064,7 +783,7 @@ export class WorldStory {
   }
 
   /**
-   * Makes the story of a world nobody wrote yet, for a route lock or a companion that comes first.
+   * Makes the story of a world nobody wrote yet, for a pin or a companion that comes first.
    *
    * @returns {object} The story, at revision 0 without keys.
    */
@@ -1072,58 +791,17 @@ export class WorldStory {
     return { rev: 0, wrev: 0, counters: { ...FIRST_COUNTERS, clear: [] }, part: PART.one, route: ROUTE.none, done: [], end: null, comps: [], caps: [], checkpoints: [], at: this.clock(), by: null };
   }
 
-  /**
-   * Runs one read and write of the story at a time, so a second write reads the first.
-   *
-   * @template T
-   * @param {() => Promise<T>} work The work.
-   * @returns {Promise<T>} Its result.
-   */
-  exclusive(work) {
-    const result = this.queue.then(work);
-    this.queue = result.catch(() => {});
-    return result;
-  }
 }
 
-/**
- * Makes a part's checkpoint of the story as it stands: its lists, without the
- * log of writes that only the current story keeps.
- *
- * @param {object} story The story as kept.
- * @returns {object} The checkpoint.
- */
-function checkpointOf(story) {
-  const kept = { rev: story.wrev, wrev: story.wrev, counters: story.counters, part: story.part, route: story.route, done: story.done, end: story.end, at: story.at, by: story.by };
-  return { ...kept, lists: story.lists };
-}
 
 /**
- * Makes the state a game reads of the story.
+ * Makes what games read of the story.
  *
  * @param {object | undefined} story The story as kept, undefined before the first write.
- * @param {boolean} withKeys Whether to add a keyed story's lists under `keys` with `keyed`.
- * @returns {object} `rev` (every change counts it up), `wrev` (the revision of the last write), `p`, `r1141`, `r1142`, `r1143`, `clear`, `part`, `route`, `done`, `end`, `comps`, `caps` (the level caps the story unlocked, lowest first), `checkpoints` and `at`, and the keys when asked for.
+ * @returns {{rev: number, comps: number[]}} Its revision, which every change counts up, and the shared companions.
  */
-export function stateOf(story, withKeys) {
-  const counters = story?.counters ?? FIRST_COUNTERS;
-  const state = {
-    rev: story?.rev ?? 0,
-    wrev: story?.wrev ?? 0,
-    p: counters.p,
-    ...routeCounters(counters),
-    clear: [...counters.clear],
-    part: story?.part ?? PART.one,
-    route: story?.route ?? ROUTE.none,
-    done: [...(story?.done ?? [])],
-    end: story?.end ?? null,
-    comps: [...(story?.comps ?? [])],
-    caps: [...(story?.caps ?? [])],
-    checkpoints: [...(story?.checkpoints ?? [])],
-    at: story?.at ?? 0,
-  };
-
-  return withKeys && story?.lists ? { ...state, keyed: true, keys: story.lists } : state;
+function sharedOf(story) {
+  return { rev: story?.rev ?? 0, comps: [...(story?.comps ?? [])] };
 }
 
 /**
@@ -1145,13 +823,11 @@ export function storyRouteOf(url) {
  * @param {string} method The HTTP method.
  * @param {string[]} rest The address's parts after `story`, see storyRouteOf.
  * @param {() => Promise<string | null>} readBody Reads the request's body as text, null when it is too large to read.
- * @param {string} player The asking player's id.
- * @param {number | null} [known] The revision a GET names in `known`, see WorldStory.get.
- * @returns {Promise<{status: number, body: object, push?: number | object}>} The answer, and the change to tell every game of the world when the story changed, see storyPushText.
+ * @returns {Promise<{status: number, body: object, push?: number}>} The answer, and the revision to tell every game of the world when the story changed, see storyText.
  */
-export async function handleStoryRequest(story, method, rest, readBody, player, known = null) {
+export async function handleStoryRequest(story, method, rest, readBody) {
   if (rest.length === 0 && method === "GET") {
-    return story.get(known);
+    return story.get();
   }
 
   if (rest.length === 1 && rest[0] === "companions" && method === "POST") {

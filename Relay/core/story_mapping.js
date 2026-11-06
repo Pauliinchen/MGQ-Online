@@ -2,6 +2,9 @@
 //  story_mapping.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Took an admin's key from the X-MGQ-Player header only
+//                            - Ran one piece of work at a time through one shared queue
+//                            - Dropped the admin routes of the derived index, which nothing calls
 //      Paulinchen  2026-11-05: Left the fields a table names no more out of the rows kept before, as games and admins read them
 //                            - Took an admin's key on the mapping's reads from the X-MGQ-Player header only
 //                            - Named a key outside the story's ids in the example of a refused key
@@ -24,7 +27,7 @@
 import { playerIdOf } from "./directory.js";
 import { badRequest, notFound, withJson } from "./http.js";
 import { cleanText } from "./ids.js";
-import { VERSION } from "./relay.js";
+import { VERSION, workQueue } from "./relay.js";
 
 /**
  * The limits the story mapping keeps.
@@ -40,7 +43,6 @@ export const MAPPING_LIMITS = Object.freeze({
   // The derived index: one entry per map event whose self switches are shared, of about 70,000
   // events in the game.
   maxIndexEvents: 100_000,
-  maxIndexBodyLength: 1_000_000,
   // The common events of the derived index, of about 10,000 in the game.
   maxIndexCommons: 10_000,
   // The names of the game's keys, maps and events kept with the index, of about 70,000 events.
@@ -638,7 +640,7 @@ export class StoryMapping {
     /** The clock. */
     this.clock = clock;
     /** The work under way, which every change waits for. */
-    this.queue = Promise.resolve();
+    this.exclusive = workQueue();
     /** What games read at the revision it names, until a change. */
     this.gameView = null;
   }
@@ -697,18 +699,6 @@ export class StoryMapping {
   async history(table, id) {
     const spec = this.tableOf(table);
     return spec ? { status: 200, body: { table, id, history: await this.store.history(spec.store, id) } } : notFound("table");
-  }
-
-  /**
-   * Hands an admin the derived index whole, without the game's names (see names).
-   *
-   * @returns {Promise<{status: number, body: object}>} `rowsRev` and `index` (`built`, `stale`, `events` as `[map, event]` pairs, `commons`, `author`, `time`; null before the first).
-   */
-  async index() {
-    const meta = await this.meta();
-    const index = await this.store.getIndex();
-    const view = index ? { built: index.built, stale: index.built !== meta.rowsRev, events: index.events, commons: index.commons ?? [], author: index.author, time: index.time } : null;
-    return { status: 200, body: { rowsRev: meta.rowsRev, index: view } };
   }
 
   /**
@@ -890,17 +880,6 @@ export class StoryMapping {
   }
 
   /**
-   * Keeps the derived index an admin sends, see keepIndex.
-   *
-   * @param {any} request See keepIndex.
-   * @param {string} admin The player id of the admin who sent it.
-   * @returns {Promise<{status: number, body: object, audit?: string}>} See keepIndex.
-   */
-  async putIndex(request, admin) {
-    return this.keepIndex(request, admin);
-  }
-
-  /**
    * Keeps the derived index of the map events and common events whose self switches are shared,
    * which the battle server builds from the rows of one revision and the game's events, and the
    * game's names it read on the way. Raises the revision, since games read it with the rows.
@@ -1054,18 +1033,6 @@ export class StoryMapping {
     return typeof name === "string" && Object.hasOwn(this.tables, name) ? this.tables[name] : undefined;
   }
 
-  /**
-   * Runs work after the work under way, so two batches never read the same revision.
-   *
-   * @template T
-   * @param {() => Promise<T>} work The work.
-   * @returns {Promise<T>} What it returns.
-   */
-  exclusive(work) {
-    const result = this.queue.then(work);
-    this.queue = result.catch(() => {});
-    return result;
-  }
 }
 
 /**
@@ -1204,10 +1171,6 @@ export async function handleMappingAdminRequest(mapping, method, url, rest, read
       return mapping.summary();
     }
 
-    if (parts.length === 1 && parts[0] === "index") {
-      return mapping.index();
-    }
-
     if (parts.length === 1 && parts[0] === "names") {
       return mapping.names();
     }
@@ -1224,16 +1187,11 @@ export async function handleMappingAdminRequest(mapping, method, url, rest, read
       return badRequest("the request must be a JSON object");
     }
 
-    const key = header || body.player;
-    return (await isAdmin(key)) ? work(body, await playerIdOf(key)) : refused;
+    return (await isAdmin(header)) ? work(body, await playerIdOf(header)) : refused;
   });
 
   if (method === "POST" && parts.length === 1 && parts[0] === "edit") {
     return post(mapping.limits.maxBodyLength, (body, admin) => mapping.edit(body, admin));
-  }
-
-  if (method === "POST" && parts.length === 1 && parts[0] === "index") {
-    return post(mapping.limits.maxIndexBodyLength, (body, admin) => mapping.putIndex(body, admin));
   }
 
   return notFound("route");

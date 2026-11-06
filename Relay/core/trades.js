@@ -2,6 +2,8 @@
 //  trades.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Took the player's key from the X-MGQ-Player header only
+//                            - Ran one piece of work at a time through one shared queue
 //      Paulinchen  2026-11-05: Took the player's key from the header or the body only, never from the address
 //      Paulinchen  2026-10-12: Kept the sealed offers beside each trade and dropped them once a trade is cancelled
 //                            - Limited the trades a player opened that ended cancelled within a day
@@ -22,7 +24,7 @@
 import { playerIdOf } from "./directory.js";
 import { badRequest, notFound, withJson } from "./http.js";
 import { ID, isHash, isId } from "./ids.js";
-import { VERSION } from "./relay.js";
+import { VERSION, workQueue } from "./relay.js";
 
 /**
  * The limits the trades keep.
@@ -78,7 +80,7 @@ export class TradeBook {
     this.worldOf = worldOf;
     this.clock = clock;
     this.limits = limits;
-    this.queue = Promise.resolve();
+    this.exclusive = workQueue();
   }
 
   /**
@@ -416,19 +418,6 @@ export class TradeBook {
     return isId(key) ? playerIdOf(key) : null;
   }
 
-  /**
-   * Runs work after every earlier one finished, so reading and writing a trade never interleaves
-   * with another request's.
-   *
-   * @template T
-   * @param {() => Promise<T>} work The work.
-   * @returns {Promise<T>} What the work returns.
-   */
-  exclusive(work) {
-    const result = this.queue.then(work);
-    this.queue = result.catch(() => {});
-    return result;
-  }
 }
 
 /**
@@ -527,7 +516,7 @@ function answerOf(record) {
  * @param {string} method The HTTP method.
  * @param {URL} url The request's address.
  * @param {() => Promise<string | null>} readBody Reads the request's body as text, null when it is too large to read.
- * @param {string | null} [player] The X-MGQ-Player header of the request, which wins over the key in its body.
+ * @param {string | null} [player] The X-MGQ-Player header of the request.
  * @returns {Promise<{status: number, body: object}>} The answer.
  */
 export async function handleTradeRequest(trades, method, url, readBody, player = null) {
@@ -547,13 +536,13 @@ export async function handleTradeRequest(trades, method, url, readBody, player =
 
   if (parts.length === 4 && method === "POST" && ["commit", "cancel", "done"].includes(parts[3])) {
     return withJson(readBody, trades.limits.maxBodyLength, (parsed) => {
-      const body = player && parsed && typeof parsed === "object" ? { ...parsed, player } : parsed;
+      const body = parsed && typeof parsed === "object" ? { ...parsed, player } : parsed;
 
       if (parts[3] === "commit") {
         return trades.commit(parts[2], body);
       }
 
-      return parts[3] === "cancel" ? trades.cancel(parts[2], body?.player) : trades.done(parts[2], body?.player);
+      return parts[3] === "cancel" ? trades.cancel(parts[2], player) : trades.done(parts[2], player);
     });
   }
 

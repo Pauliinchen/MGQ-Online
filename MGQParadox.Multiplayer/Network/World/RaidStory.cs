@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-11-06: Told the player to update once the relay turned this version away
+//                            - Fetched the story without naming the known revision
 //      Paulinchen  2026-11-05: Took the companions' ids as numbers and described the state as values, for the bridge's topics
 //      Paulinchen  2026-10-23: Kept only the world's shared companions, since the story itself plays on tracks
 //                            - Took the parts a checkpoint may be of from StoryParts of MGQOnline.Game
@@ -90,20 +91,13 @@ internal sealed class RaidStory
     public TimeSpan[] RetryDelays { get; init; } = [TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10)];
 
     /// <summary>
-    /// Fetches the world's state as it stands, asking the relay to leave the story's keys out while
-    /// it is at the revision this game knows.
+    /// Fetches the world's state as it stands.
     /// </summary>
     /// <param name="world">The world the game is in.</param>
     /// <returns><see langword="false"/> while a fetch runs, without a player, or outside that world.</returns>
     public bool Fetch(string world) => Run(Kind.Fetch, world, "fetching the world's shared companions", (client, me) =>
     {
-        long? known;
-        lock (_gate)
-        {
-            known = _world == world ? _known?.Rev : null;
-        }
-
-        var state = client.GetStory(world, me.Key, me.Auth, known);
+        var state = client.GetStory(world, me.Key, me.Auth);
         Keep(world, state);
         return new Outcome(Kind.Done, Rev: state.Rev, Detail: $"rev {state.Rev}, {state.Comps.Count} shared companion(s)");
     }, repeats: true);

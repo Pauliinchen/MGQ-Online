@@ -2,6 +2,8 @@
 //  story_mapping.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Ran over SQLite stores in memory
+//                            - Kept the derived index through the relay's own call
 //      Paulinchen  2026-11-01: Covered the shared self switches the whole world keeps
 //      Paulinchen  2026-10-31: Covered the game's working values among the personal keys
 //      Paulinchen  2026-10-28: Covered the seeding of the tables that hold no rows yet
@@ -13,6 +15,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { openSqliteStores } from "../node/sqlite_store.js";
 import { playerIdOf } from "./directory.js";
 import { BATTLE_SERVER_AUTHOR, MAPPING_LIMITS, MAPPING_REFUSAL, SEED_AUTHOR, StoryMapping, handleMappingAdminRequest, handleMappingGameRequest } from "./story_mapping.js";
 
@@ -27,31 +30,6 @@ const ADMIN = "ad".repeat(16);
 const PLAYER = "a1".repeat(16);
 
 /**
- * Makes a store of the story mapping in memory.
- *
- * @returns {import("./story_mapping.js").StoryMappingStore} The store.
- */
-function memoryStore() {
-  const kept = { meta: undefined, index: undefined, tables: new Map(), histories: new Map() };
-  const table = (name) => kept.tables.get(name) ?? kept.tables.set(name, new Map()).get(name);
-
-  return {
-    getMeta: async () => structuredClone(kept.meta),
-    all: async (name) => [...table(name).values()].map((entry) => structuredClone(entry)),
-    get: async (name, id) => structuredClone(table(name).get(id)),
-    history: async (name, id) => structuredClone(kept.histories.get(`${name}\n${id}`) ?? []),
-    commit: async (commit, keep) => {
-      kept.meta = structuredClone(commit.meta);
-      commit.puts.forEach(({ table: name, entry }) => table(name).set(entry.id, structuredClone(entry)));
-      commit.removes.forEach(({ table: name, id }) => table(name).delete(id));
-      commit.changes.forEach(({ table: name, id, change }) => kept.histories.set(`${name}\n${id}`, [change, ...(kept.histories.get(`${name}\n${id}`) ?? [])].slice(0, keep)));
-      kept.index = commit.index ? structuredClone(commit.index) : kept.index;
-    },
-    getIndex: async () => structuredClone(kept.index),
-  };
-}
-
-/**
  * Makes a story mapping in memory, and a request to its admin routes as the admin unless another
  * key is given.
  *
@@ -59,7 +37,7 @@ function memoryStore() {
  * @returns {{mapping: StoryMapping, ask: (method: string, path: string, body?: object, key?: string) => Promise<{status: number, body: object, audit?: string}>}} The mapping and the request.
  */
 function makeMapping(limits = {}) {
-  const mapping = new StoryMapping(memoryStore(), { limits: { ...MAPPING_LIMITS, ...limits }, clock: () => 1000 });
+  const mapping = new StoryMapping(openSqliteStores(":memory:").mapping, { limits: { ...MAPPING_LIMITS, ...limits }, clock: () => 1000 });
   const isAdmin = async (key) => key === ADMIN;
   const ask = (method, path, body = {}, key = ADMIN) => {
     const url = new URL(`https://relay/v1/admin/story${path}`);
@@ -189,7 +167,6 @@ test("only the relay's admins read or change the mapping", async () => {
   assert.equal((await ask("GET", "", {}, PLAYER)).status, 403);
   assert.equal((await ask("GET", "/keys", {}, PLAYER)).status, 403);
   assert.equal((await ask("POST", "/edit", { edits: [add("keys", { key: "v1001", kind: "one_way" })] }, PLAYER)).status, 403);
-  assert.equal((await ask("POST", "/index", { built: 0, events: [] }, PLAYER)).status, 403);
   assert.deepEqual((await ask("GET", "")).body, { rev: 0, rowsRev: 0, tables: { keys: 0, events: 0 }, index: null });
 });
 
@@ -197,10 +174,9 @@ test("the derived index keeps the rows' revision it was built from and goes stal
   const { mapping, ask } = makeMapping();
   await ask("POST", "/edit", { edits: [add("keys", { key: "s2010", kind: "shared" })] });
 
-  assert.equal((await ask("POST", "/index", { built: 0, events: [[7, 60]] })).body.code, MAPPING_REFUSAL.rev);
-  const kept = await ask("POST", "/index", { built: 1, events: [[7, 60], [5, 27], [7, 60]] });
+  assert.equal((await mapping.keepIndex({ built: 0, events: [[7, 60]] }, BATTLE_SERVER_AUTHOR)).body.code, MAPPING_REFUSAL.rev);
+  const kept = await mapping.keepIndex({ built: 1, events: [[7, 60], [5, 27], [7, 60]] }, BATTLE_SERVER_AUTHOR);
   assert.deepEqual([kept.body.rev, kept.body.index.events, kept.body.index.stale], [2, 2, false]);
-  assert.deepEqual((await ask("GET", "/index")).body.index.events, [[5, 27], [7, 60]]);
 
   const game = (known) => handleMappingGameRequest(mapping, "GET", new URL(`https://relay/v1/story-mapping${known === undefined ? "" : `?known=${known}`}`));
   assert.deepEqual((await game()).body, { rev: 2, tables: { keys: [{ key: "s2010", kind: "shared" }], events: [] }, index: { built: 1, stale: false, events: [[5, 27], [7, 60]], commons: [] } });
@@ -221,8 +197,6 @@ test("the battle server's index keeps its common events and the game's names, wh
   const kept = await mapping.keepIndex({ built: 1, events: [[7, 60]], commons: [380, 154, 380], names }, BATTLE_SERVER_AUTHOR);
   assert.deepEqual([kept.status, kept.body.index.commons, kept.body.index.author], [200, 2, BATTLE_SERVER_AUTHOR]);
 
-  const index = (await ask("GET", "/index")).body.index;
-  assert.deepEqual([index.commons, "names" in index], [[154, 380], false]);
   const game = (await handleMappingGameRequest(mapping, "GET", new URL("https://relay/v1/story-mapping"))).body.index;
   assert.deepEqual(game, { built: 1, stale: false, events: [[7, 60]], commons: [154, 380] });
   assert.deepEqual((await ask("GET", "/names")).body, { rowsRev: 1, names: { built: 1, stale: false, names, author: BATTLE_SERVER_AUTHOR, time: 1000 } });

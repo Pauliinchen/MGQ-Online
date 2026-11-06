@@ -2,6 +2,9 @@
 //  battles.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Ran over SQLite stores in memory
+//                            - Read the derived index from the mapping's summary
+//                            - Sent the player's key in the X-MGQ-Player header only
 //      Paulinchen  2026-11-05: Named the version of a current game with every game
 //      Paulinchen  2026-10-31: Covered a battle server out of reach
 //                            - Named keys with every game, as a Raid World asks
@@ -26,7 +29,7 @@ import { BATTLE_LIMITS, SERVER_SEAT } from "../core/battles.js";
 import { Directory, playerIdOf, sha256Hex } from "../core/directory.js";
 import { VERSION_HEADER } from "../core/gate.js";
 import { AUTH_HEADER, CLOSE, FEATURES_HEADER, PING, PLAYER_HEADER, PONG, REFUSAL_HEADER } from "../core/relay.js";
-import { NODE_LIMITS, battleServerOf, createRelay, memoryStore } from "./server.js";
+import { NODE_LIMITS, battleServerOf, createRelay, openStores } from "./server.js";
 
 /**
  * The world's auth key.
@@ -142,7 +145,7 @@ before(async () => {
     socket.on("error", () => {});
   });
   await new Promise((resolve) => battleServer.listen(0, "127.0.0.1", resolve));
-  const directory = new Directory(memoryStore(), { clock: () => now, rates: TEST_RATES, admins: [await playerIdOf(ADMIN)] });
+  const directory = new Directory(openStores().directory, { clock: () => now, rates: TEST_RATES, admins: [await playerIdOf(ADMIN)] });
   relay = createRelay({ clock: () => now, checkEveryMs: 3_600_000, sweepEveryMs: 3_600_000, directory, log: { info: () => {}, error: () => {} },
                         battleServer: { host: "127.0.0.1", port: battleServer.address().port }, battleLimits: TEST_BATTLE_LIMITS });
   bare = createRelay({ checkEveryMs: 3_600_000, sweepEveryMs: 3_600_000, log: { info: () => {}, error: () => {} } });
@@ -189,9 +192,9 @@ function playerKey(number) {
 async function makeWorld(world, fields = {}, base = httpBase) {
   const response = await fetch(base, {
     method: "POST",
-    headers: GAME,
+    headers: { ...GAME, [PLAYER_HEADER]: CREATOR },
     body: JSON.stringify({
-      id: world, name: `World ${world.slice(-3)}`, seats: 8, player: CREATOR, playerName: "Creator", authHash: await sha256Hex(AUTH),
+      id: world, name: `World ${world.slice(-3)}`, seats: 8, playerName: "Creator", authHash: await sha256Hex(AUTH),
       lock: { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(40) }, ...fields,
     }),
   });
@@ -436,7 +439,7 @@ test("a battle server out of reach refuses as no battle server, so the starter h
   await new Promise((resolve) => closed.listen(0, "127.0.0.1", resolve));
   const port = closed.address().port;
   await new Promise((resolve) => closed.close(resolve));
-  const directory = new Directory(memoryStore(), { clock: () => now, rates: TEST_RATES });
+  const directory = new Directory(openStores().directory, { clock: () => now, rates: TEST_RATES });
   const unreachable = createRelay({ clock: () => now, checkEveryMs: 3_600_000, sweepEveryMs: 3_600_000, directory, log: { info: () => {}, error: () => {} },
                                     battleServer: { host: "127.0.0.1", port }, battleLimits: TEST_BATTLE_LIMITS });
   await new Promise((resolve) => unreachable.server.listen(0, "127.0.0.1", resolve));
@@ -556,7 +559,7 @@ test("the admins' stats hold the battle server's answer to a ping, and null for 
   await new Promise((resolve) => closed.listen(0, "127.0.0.1", resolve));
   const port = closed.address().port;
   await new Promise((resolve) => closed.close(resolve));
-  const directory = new Directory(memoryStore(), { admins: [await playerIdOf(ADMIN)] });
+  const directory = new Directory(openStores().directory, { admins: [await playerIdOf(ADMIN)] });
   const unreachable = createRelay({ checkEveryMs: 3_600_000, sweepEveryMs: 3_600_000, directory, log: { info: () => {}, error: () => {} }, battleServer: { host: "127.0.0.1", port } });
   await new Promise((resolve) => unreachable.server.listen(0, "127.0.0.1", resolve));
   assert.equal((await stats(`http://127.0.0.1:${unreachable.server.address().port}/v1/worlds`)).battleServer, null);
@@ -566,7 +569,7 @@ test("the admins' stats hold the battle server's answer to a ping, and null for 
 test("after an admin changed the mapping's rows the battle server derives the story index, and a refusal keeps none", async () => {
   const admin = `${httpBase.replace("/worlds", "")}/admin/story`;
   const edit = (key) => fetch(`${admin}/edit`, { method: "POST", headers: { [PLAYER_HEADER]: ADMIN, "Content-Type": "application/json" }, body: JSON.stringify({ edits: [{ table: "keys", op: "add", row: { key, kind: "shared" } }] }) });
-  const index = async () => (await (await fetch(`${admin}/index`, { headers: { [PLAYER_HEADER]: ADMIN } })).json()).index;
+  const index = async () => (await (await fetch(admin, { headers: { [PLAYER_HEADER]: ADMIN } })).json()).index;
   const settled = async (done) => {
     for (let tries = 0; tries < 100 && !done(await index()); tries++) {
       await new Promise((resolve) => setTimeout(resolve, 20));
@@ -584,6 +587,6 @@ test("after an admin changed the mapping's rows the battle server derives the st
   await settled((kept) => kept && !kept.stale);
   const asked = served.flatMap((connection) => connection.lines).filter((line) => line.op === "story_index").at(-1);
   assert.deepEqual([asked.rowsRev, asked.keys, asked.events], [2, [{ key: "s61", kind: "shared" }, { key: "v1001", kind: "shared" }], []]);
-  assert.deepEqual(await index(), { built: 2, stale: false, events: [[7, 60]], commons: [154], author: "battle server", time: now });
+  assert.deepEqual(await index(), { built: 2, stale: false, events: 1, commons: 1, author: "battle server", time: now });
   assert.deepEqual((await (await fetch(`${admin}/names`, { headers: { [PLAYER_HEADER]: ADMIN } })).json()).names.names, NAMES);
 });

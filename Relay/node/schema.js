@@ -62,7 +62,7 @@ const DESIGN_BUILD_BASE = ["ALTER TABLE design_builds ADD COLUMN base_build_id I
 export const STEPS = Object.freeze([RELAY_TABLES, DESIGN_TABLES, DESIGN_BUILD_BASE]);
 
 /**
- * The tables the design steps add, in the order a migration copies them.
+ * The tables the design steps add.
  */
 export const DESIGN_TABLE_NAMES = Object.freeze(["designers", "design_meta", "design_pushes", "design_entities", "design_history", "design_blobs", "design_builds", "design_live"]);
 

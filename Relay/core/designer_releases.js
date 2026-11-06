@@ -2,6 +2,7 @@
 //  designer_releases.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Read a release file through the shared body read
 //      Paulinchen  2026-10-23: Checked the latest designer release every 10 minutes
 //      Paulinchen  2026-10-21: Created
 //
@@ -18,6 +19,7 @@ import { once } from "node:events";
 import { createReadStream, createWriteStream } from "node:fs";
 import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { readLimited } from "./http.js";
 
 /**
  * The repository whose releases the relay serves, unless DESIGNER_REPO names another.
@@ -190,32 +192,6 @@ async function hashFile(path) {
   }
 
   return { sha256: hash.digest("hex"), size };
-}
-
-/**
- * Reads a response's body up to a limit.
- *
- * @param {Response} response The response.
- * @param {number} limit The most bytes taken.
- * @param {string} what What the body is, for the error.
- * @returns {Promise<Uint8Array>} The bytes.
- * @throws {Error} When the body is longer.
- */
-async function readLimited(response, limit, what) {
-  const chunks = [];
-  let size = 0;
-
-  for await (const chunk of response.body ?? []) {
-    size += chunk.length;
-
-    if (size > limit) {
-      throw new Error(`the ${what} is longer than ${limit} bytes`);
-    }
-
-    chunks.push(chunk);
-  }
-
-  return Buffer.concat(chunks);
 }
 
 /**

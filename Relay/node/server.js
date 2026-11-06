@@ -3,6 +3,10 @@
 //
 //  Changelog:
 //      Paulinchen  2026-11-06: Named the lowest version the relay serves beside a refusal of a game too old for it
+//                            - Pushed the story's revision alone after the shared companions changed
+//                            - Answered a game too old at once, without reading its body first
+//                            - Dropped the migration routes
+//                            - Kept everything in a SQLite database in memory when no database is named, in place of the stores in memory
 //      Paulinchen  2026-11-05: Dropped the games' story writes, checkpoint reads and route locks over HTTP, which only games without story tracks used
 //                            - Played every Raid World on tracks and told every game the world's mod settings, as every game the relay serves does both
 //                            - Took the player's key and auth key from the headers only, the admin routes' too
@@ -86,21 +90,20 @@
 
 // The relay as a plain Node server, for a rented machine behind a TLS proxy such as Caddy. It keeps
 // its rooms in memory and its world directory, mod catalog and trades in memory or in a SQLite
-// database, and follows the core's rules, so it behaves like the Cloudflare relay. It writes one
-// line per request to stdout and every error it catches to stderr.
+// database, and follows the core's rules. It writes one line per request to stdout and every error
+// it catches to stderr.
 
 import { createReadStream } from "node:fs";
 import http from "node:http";
 import net from "node:net";
 import { pathToFileURL } from "node:url";
 import { WebSocketServer } from "ws";
-import { adminRouteOf, handleAdminRequest } from "../core/admin.js";
+import { adminCheck, adminRouteOf, handleAdminRequest } from "../core/admin.js";
 import {
   BATTLE_END, BATTLE_LIMITS, BATTLE_REFUSAL, BattleTable, EVERY_PLAYER, SERVER_SEAT, battleClosedText, battleRouteOf, battleSeatText, bossLine, messageLine,
   playerMessage, presenceLine, readOpen, readServerLine, serveLine, serverFrame,
 } from "../core/battles.js";
 import { BOSS_LIMITS, WorldBosses, bossRouteOf, bossText, handleBossRequest } from "../core/bosses.js";
-import { memoryDesignStore } from "../core/design_store_memory.js";
 import { DESIGNER_RELEASE_LIMITS, DesignerReleases, byteRangeOf, designerReleaseSettingsOf } from "../core/designer_releases.js";
 import {
   DESIGN_CLOSE, DESIGN_READER_HEADER, DESIGN_SOCKET, DesignBook, admitDesigner, designRouteOf, gameDesignRouteOf, handleDesignRequest, handleGameDesignRequest, pushedFrame, releaseFrame,
@@ -110,16 +113,17 @@ import {
   DEFAULT_MIN_VERSION, DESIGN_FORMAT_HEADER, DESIGNER_HEADER, DESIGNER_VERSION_HEADER, DRAIN_LIMITS, VERSION_HEADER, listsWorldMods, refusalHeaders, updateRefusal,
 } from "../core/gate.js";
 import { routeIs, withJson } from "../core/http.js";
-import { adminCheck, exportWorldData, handleMigrationRequest, migrationRouteOf } from "../core/migration.js";
 import { ModCatalog, handleModRequest } from "../core/mods.js";
 import { handleRaidAdminRequest, raidAdminRouteOf } from "../core/raid_admin.js";
 import { RELEASE_REPO, RELEASE_ROUTE, ReleaseControl, ReleaseWatch, UPDATE_NAME, handleReleaseRequest, updateLine } from "../core/releases.js";
 import { ReportDesk, handleReportRequest, reportSettingsOf } from "../core/reports.js";
-import { STORY_LIMITS, WorldStory, handleStoryRequest, noRaidWorld, pinOf, storyPushText, storyRouteOf } from "../core/story.js";
+import { STORY_LIMITS, WorldStory, handleStoryRequest, noRaidWorld, pinOf, storyRouteOf, storyText } from "../core/story.js";
 import { STORY_TABLES } from "../core/story_catchup.js";
 import { BATTLE_SERVER_AUTHOR, MAPPING_ADMIN_ROUTE, MAPPING_GAME_ROUTE, MAPPING_REFUSAL, StoryMapping, handleMappingGameRequest } from "../core/story_mapping.js";
 import { StoryTracks, TRACK_FRAME } from "../core/story_tracks.js";
 import { seedStoryTables } from "./story_seed.js";
+import { openSqliteStores } from "./sqlite_store.js";
+import { openSqliteDesignStore } from "./design_store_sqlite.js";
 import { TradeBook, handleTradeRequest } from "../core/trades.js";
 import { DesignCompiler, designCompilerSettingsOf } from "./design_compiler.js";
 import {
@@ -283,249 +287,6 @@ function stamped(log) {
 }
 
 /**
- * Keeps world entries and starting saves in memory, as the directory's store.
- *
- * @returns {import("../core/directory.js").DirectoryStore} The store.
- */
-export function memoryStore() {
-  const entries = new Map();
-  const starts = new Map();
-  const chats = new Map();
-
-  return {
-    get: async (id) => (entries.has(id) ? structuredClone(entries.get(id)) : undefined),
-    put: async (entry) => void entries.set(entry.id, structuredClone(entry)),
-    remove: async (id) => {
-      entries.delete(id);
-      starts.delete(id);
-      chats.delete(id);
-    },
-    all: async () => [...entries.values()].map((entry) => structuredClone(entry)),
-    putStart: async (id, bytes) => void starts.set(id, Uint8Array.from(bytes)),
-    getStart: async (id) => starts.get(id),
-    putChat: async (id, lines) => void chats.set(id, structuredClone(lines)),
-    getChat: async (id) => (chats.has(id) ? structuredClone(chats.get(id)) : undefined),
-  };
-}
-
-/**
- * Keeps the newest release of the mod the relay has seen and the release control in memory, as
- * the release watch's and the release control's store.
- *
- * @returns {import("../core/releases.js").ReleaseStore} The store.
- */
-export function memoryReleaseStore() {
-  let seen;
-  let control;
-
-  return {
-    getRelease: async () => seen,
-    putRelease: async (version) => {
-      seen = version;
-    },
-    getControl: async () => (control ? structuredClone(control) : undefined),
-    putControl: async (record) => {
-      control = structuredClone(record);
-    },
-  };
-}
-
-/**
- * Keeps the mod catalog and uploaded mods' zips in memory, as the catalog's store.
- *
- * @returns {import("../core/mods.js").ModStore} The store.
- */
-export function memoryModStore() {
-  const mods = new Map();
-  const files = new Map();
-
-  return {
-    getMod: async (key) => (mods.has(key) ? structuredClone(mods.get(key)) : undefined),
-    putMod: async (entry) => void mods.set(entry.key, structuredClone(entry)),
-    removeMod: async (key) => {
-      mods.delete(key);
-      files.delete(key);
-    },
-    allMods: async () => [...mods.values()].map((entry) => structuredClone(entry)),
-    putModFile: async (key, bytes) => void files.set(key, Uint8Array.from(bytes)),
-    getModFile: async (key) => files.get(key),
-  };
-}
-
-/**
- * Keeps the trades in memory, as the trades' store.
- *
- * @returns {import("../core/trades.js").TradeStore} The store.
- */
-export function memoryTradeStore() {
-  const trades = new Map();
-  const sealed = new Map();
-
-  return {
-    getTrade: async (id) => (trades.has(id) ? structuredClone(trades.get(id)) : undefined),
-    putTrade: async (record, { sealed: offers = {}, drop = [] } = {}) => {
-      trades.set(record.id, structuredClone(record));
-
-      for (const [player, text] of Object.entries(offers)) {
-        sealed.set(`${record.id}:${player}`, text);
-      }
-
-      for (const player of drop) {
-        sealed.delete(`${record.id}:${player}`);
-      }
-    },
-    getSealed: async (id, player) => sealed.get(`${id}:${player}`),
-    removeTrade: async (id, players = []) => {
-      trades.delete(id);
-
-      for (const player of players) {
-        sealed.delete(`${id}:${player}`);
-      }
-    },
-    allTrades: async () => [...trades.values()].map((record) => structuredClone(record)),
-  };
-}
-
-/**
- * Keeps the Raid Worlds' stories and their checkpoints in memory, one store per world.
- *
- * @returns {(id: string) => import("../core/story.js").StoryStore} Makes the store of a world's story.
- */
-export function memoryStoryStores() {
-  const stories = new Map();
-  const checkpoints = new Map();
-
-  return (id) => ({
-    get: async () => (stories.has(id) ? structuredClone(stories.get(id)) : undefined),
-    put: async (story, checkpoint) => {
-      stories.set(id, structuredClone(story));
-
-      if (checkpoint) {
-        checkpoints.set(`${id}:${checkpoint.part}`, structuredClone(checkpoint));
-      }
-    },
-    getCheckpoint: async (part) => (checkpoints.has(`${id}:${part}`) ? structuredClone(checkpoints.get(`${id}:${part}`)) : undefined),
-    remove: async () => {
-      stories.delete(id);
-
-      for (const key of [...checkpoints.keys()].filter((key) => key.startsWith(`${id}:`))) {
-        checkpoints.delete(key);
-      }
-    },
-  });
-}
-
-/**
- * Keeps the Raid Worlds' story tracks in memory, one store per world.
- *
- * @returns {(id: string) => import("../core/story_tracks.js").TrackStore} Makes the store of a world's tracks.
- */
-export function memoryTrackStores() {
-  const worlds = new Map();
-  const worldOf = (id) => worlds.get(id) ?? worlds.set(id, { meta: undefined, keys: new Map(), runs: new Map(), players: new Map(), checkpoints: new Map() }).get(id);
-
-  return (id) => {
-    const keysOf = (track) => worldOf(id).keys.get(track) ?? worldOf(id).keys.set(track, new Map()).get(track);
-
-    return {
-      getMeta: async () => structuredClone(worldOf(id).meta),
-      getKeys: async (track) => [...keysOf(track)],
-      getRuns: async (track) => structuredClone(worldOf(id).runs.get(track) ?? []),
-      getPlayer: async (player) => structuredClone(worldOf(id).players.get(player)),
-      getCheckpoint: async (part) => structuredClone(worldOf(id).checkpoints.get(part)),
-      commit: async ({ meta, keys = [], runs = [], players = [], checkpoint }) => {
-        const world = worldOf(id);
-        world.meta = meta ? structuredClone(meta) : world.meta;
-
-        for (const { track, drop, set } of keys) {
-          if (drop) {
-            world.keys.delete(track);
-          }
-
-          set.forEach(([key, value]) => keysOf(track).set(key, value));
-        }
-
-        for (const { track, drop, add } of runs) {
-          const kept = drop ? [] : (world.runs.get(track) ?? []);
-          world.runs.set(track, [...kept, ...structuredClone(add)]);
-        }
-
-        players.forEach((record) => world.players.set(record.player, structuredClone(record)));
-
-        if (checkpoint) {
-          world.checkpoints.set(checkpoint.part, structuredClone(checkpoint.keys));
-        }
-      },
-      remove: async () => void worlds.delete(id),
-    };
-  };
-}
-
-/**
- * Keeps the Raid Worlds' boss pools in memory, one store per world.
- *
- * @returns {(id: string) => import("../core/bosses.js").BossStore} Makes the store of a world's boss pools.
- */
-export function memoryBossStores() {
-  const pools = new Map();
-  const worldPools = (id) => [...pools.keys()].filter((key) => key.startsWith(`${id}:`));
-
-  return (id) => ({
-    get: async (key) => (pools.has(`${id}:${key}`) ? structuredClone(pools.get(`${id}:${key}`)) : undefined),
-    put: async (pool) => void pools.set(`${id}:${pool.key}`, structuredClone(pool)),
-    all: async () => worldPools(id).map((key) => structuredClone(pools.get(key))),
-    remove: async (key) => void pools.delete(`${id}:${key}`),
-    removeAll: async () => {
-      for (const key of worldPools(id)) {
-        pools.delete(key);
-      }
-    },
-  });
-}
-
-/**
- * Keeps the story mapping in memory, as its store.
- *
- * @returns {import("../core/story_mapping.js").StoryMappingStore} The store.
- */
-export function memoryMappingStore() {
-  let meta;
-  let index;
-  /** @type {Map<string, Map<string, object>>} */
-  const tables = new Map();
-  /** @type {Map<string, object[]>} */
-  const histories = new Map();
-  const table = (name) => tables.get(name) ?? tables.set(name, new Map()).get(name);
-
-  return {
-    getMeta: async () => (meta ? structuredClone(meta) : undefined),
-    all: async (name) => [...table(name).values()].map((entry) => structuredClone(entry)),
-    get: async (name, id) => (table(name).has(id) ? structuredClone(table(name).get(id)) : undefined),
-    history: async (name, id) => structuredClone(histories.get(`${name}\n${id}`) ?? []),
-    commit: async (commit, keep) => {
-      meta = structuredClone(commit.meta);
-
-      for (const { table: name, entry } of commit.puts) {
-        table(name).set(entry.id, structuredClone(entry));
-      }
-
-      for (const { table: name, id } of commit.removes) {
-        table(name).delete(id);
-      }
-
-      for (const { table: name, id, change } of commit.changes) {
-        histories.set(`${name}\n${id}`, [structuredClone(change), ...(histories.get(`${name}\n${id}`) ?? [])].slice(0, keep));
-      }
-
-      if (commit.index) {
-        index = structuredClone(commit.index);
-      }
-    },
-    getIndex: async () => (index ? structuredClone(index) : undefined),
-  };
-}
-
-/**
  * Marks every player of every world offline, as the relay does when it starts: the world rooms
  * live in memory, so whoever the database still lists, from before a restart or from the relay a
  * copy came from, is in none of them.
@@ -549,28 +310,21 @@ export async function clearPresence(directory) {
 /**
  * Opens the stores the relay keeps its worlds, mods, trades, Raid Worlds' stories and boss pools,
  * the newest release of the mod it has seen, the release control, the story mapping, the Raid
- * Worlds' story tracks and the Raid designs in: a SQLite database at a path, or memory without one.
+ * Worlds' story tracks and the Raid designs in: a SQLite database at a path, or one in memory
+ * without one.
  *
- * @param {string | undefined} path The database's path, as DATABASE_VARIABLE names it; empty or undefined for memory.
- * @returns {Promise<{directory: import("../core/directory.js").DirectoryStore, mods: import("../core/mods.js").ModStore, trades: import("../core/trades.js").TradeStore, stories: (id: string) => import("../core/story.js").StoryStore, bosses: (id: string) => import("../core/bosses.js").BossStore, releases: import("../core/releases.js").ReleaseStore, mapping: import("../core/story_mapping.js").StoryMappingStore, tracks: (id: string) => import("../core/story_tracks.js").TrackStore, designs: import("../core/designs.js").DesignStore, close: () => void}>} The stores, and a way to close them.
+ * @param {string | undefined} [path] The database's path, as DATABASE_VARIABLE names it; empty or undefined for memory.
+ * @returns {{directory: import("../core/directory.js").DirectoryStore, mods: import("../core/mods.js").ModStore, trades: import("../core/trades.js").TradeStore, stories: (id: string) => import("../core/story.js").StoryStore, bosses: (id: string) => import("../core/bosses.js").BossStore, releases: import("../core/releases.js").ReleaseStore, mapping: import("../core/story_mapping.js").StoryMappingStore, tracks: (id: string) => import("../core/story_tracks.js").TrackStore, designs: import("../core/designs.js").DesignStore, close: () => void}} The stores, and a way to close them.
  */
-export async function openStores(path) {
-  if (path) {
-    const { openSqliteStores } = await import("./sqlite_store.js");
-    const { openSqliteDesignStore } = await import("./design_store_sqlite.js");
-    const stores = openSqliteStores(path);
-    const designs = openSqliteDesignStore(path, { log: (line) => console.log(`${new Date().toISOString()} ${line}`) });
-    const close = () => {
-      designs.close();
-      stores.close();
-    };
-    return { ...stores, designs, close };
-  }
-
-  return {
-    directory: memoryStore(), mods: memoryModStore(), trades: memoryTradeStore(), stories: memoryStoryStores(), bosses: memoryBossStores(), releases: memoryReleaseStore(), mapping: memoryMappingStore(), tracks: memoryTrackStores(),
-    designs: memoryDesignStore(), close: () => {},
+export function openStores(path) {
+  const file = path || ":memory:";
+  const stores = openSqliteStores(file);
+  const designs = openSqliteDesignStore(file, { log: (line) => console.log(`${new Date().toISOString()} ${line}`) });
+  const close = () => {
+    designs.close();
+    stores.close();
   };
+  return { ...stores, designs, close };
 }
 
 /**
@@ -733,16 +487,16 @@ function designerClientOf(request) {
 /**
  * Creates a relay server, not yet listening.
  *
- * @param {{limits?: typeof LIMITS, clock?: () => number, checkEveryMs?: number, sweepEveryMs?: number, directory?: Directory, mods?: ModCatalog, trades?: TradeBook, stories?: (id: string) => import("../core/story.js").StoryStore, storyLimits?: typeof STORY_LIMITS, bosses?: (id: string) => import("../core/bosses.js").BossStore, bossLimits?: typeof BOSS_LIMITS, log?: typeof consoleLog, reports?: ReportDesk, minVersion?: string, release?: ReleaseControl, releases?: ReleaseWatch | null, mapping?: StoryMapping, designs?: DesignBook, designerReleaseEveryMs?: number}} [options] Limits, clock, check and sweep intervals, directory, mod catalog, trades, the Raid Worlds' story stores, the stories' limits, the Raid Worlds' boss pool stores, the pools' limits, log, the bug report desk, off unless given, the lowest game version served while no admin set one, DEFAULT_MIN_VERSION unless given, which tests change, the release control, loaded, an empty one in memory over minVersion unless given, the watch of the mod's releases, off unless given, the story mapping with the catch-up tables, an empty one in memory unless given, the Raid Worlds' story track stores, the Raid designs, in memory unless given, and how often the designer releases are checked when the designs serve them.
+ * @param {{limits?: typeof LIMITS, clock?: () => number, checkEveryMs?: number, sweepEveryMs?: number, stores?: ReturnType<typeof openStores>, directory?: Directory, mods?: ModCatalog, trades?: TradeBook, stories?: (id: string) => import("../core/story.js").StoryStore, storyLimits?: typeof STORY_LIMITS, bosses?: (id: string) => import("../core/bosses.js").BossStore, bossLimits?: typeof BOSS_LIMITS, log?: typeof consoleLog, reports?: ReportDesk, minVersion?: string, release?: ReleaseControl, releases?: ReleaseWatch | null, mapping?: StoryMapping, designs?: DesignBook, designerReleaseEveryMs?: number}} [options] Limits, clock, check and sweep intervals, the stores every part not given keeps its data in, a SQLite database in memory unless given, directory, mod catalog, trades, the Raid Worlds' story stores, the stories' limits, the Raid Worlds' boss pool stores, the pools' limits, log, the bug report desk, off unless given, the lowest game version served while no admin set one, DEFAULT_MIN_VERSION unless given, which tests change, the release control, loaded, an empty one over minVersion unless given, the watch of the mod's releases, off unless given, the story mapping with the catch-up tables, an empty one unless given, the Raid Worlds' story track stores, the Raid designs, and how often the designer releases are checked when the designs serve them.
  * @returns {{server: http.Server, directory: Directory, mods: ModCatalog, trades: TradeBook, designs: DesignBook, storyOf: (id: string) => WorldStory, bossesOf: (id: string) => WorldBosses, tracksOf: (id: string) => StoryTracks, mapping: StoryMapping, check: () => void, sweep: () => Promise<void>, checkRelease: () => Promise<{version: string | null, worlds: number}>, checkDesignerRelease: () => Promise<string | null>, pingDesigners: () => void, deriveStoryIndex: () => Promise<void>, stop: () => Promise<void>}} The HTTP server to listen with, what it serves, the Raid designs, a world's story, a world's boss pools, a world's story tracks, the story mapping, a look at the deadlines, a sweep of what is kept too long, a check of the mod's releases, a check of the designer releases, a ping of the designer sockets, a request for the derived story index, and a way to stop everything.
  */
 export function createRelay({
-  limits = NODE_LIMITS, clock = Date.now, checkEveryMs = CHECK_EVERY_MS, sweepEveryMs = SWEEP_EVERY_MS, directory = new Directory(memoryStore(), { clock }),
-  mods = new ModCatalog(memoryModStore(), { clock }), trades = new TradeBook(memoryTradeStore(), (id) => directory.store.get(id), { clock }), stories = memoryStoryStores(),
-  storyLimits = STORY_LIMITS, bosses = memoryBossStores(), bossLimits = BOSS_LIMITS, log = consoleLog, reports = new ReportDesk(reportSettingsOf({}), { clock, log: stamped(log) }),
-  minVersion = DEFAULT_MIN_VERSION, release = new ReleaseControl(memoryReleaseStore(), { envMin: minVersion, clock }), releases = null, battleServer = null, battleLimits = BATTLE_LIMITS,
-  mapping = new StoryMapping(memoryMappingStore(), { tables: STORY_TABLES, clock }), tracks = memoryTrackStores(),
-  designs = new DesignBook(memoryDesignStore(), { clock, relayAdmins: directory.admins }), designerReleaseEveryMs = DESIGNER_RELEASE_LIMITS.checkEveryMs,
+  limits = NODE_LIMITS, clock = Date.now, checkEveryMs = CHECK_EVERY_MS, sweepEveryMs = SWEEP_EVERY_MS, stores = openStores(), directory = new Directory(stores.directory, { clock }),
+  mods = new ModCatalog(stores.mods, { clock }), trades = new TradeBook(stores.trades, (id) => directory.store.get(id), { clock }), stories = stores.stories,
+  storyLimits = STORY_LIMITS, bosses = stores.bosses, bossLimits = BOSS_LIMITS, log = consoleLog, reports = new ReportDesk(reportSettingsOf({}), { clock, log: stamped(log) }),
+  minVersion = DEFAULT_MIN_VERSION, release = new ReleaseControl(stores.releases, { envMin: minVersion, clock }), releases = null, battleServer = null, battleLimits = BATTLE_LIMITS,
+  mapping = new StoryMapping(stores.mapping, { tables: STORY_TABLES, clock }), tracks = stores.tracks,
+  designs = new DesignBook(stores.designs, { clock, relayAdmins: directory.admins }), designerReleaseEveryMs = DESIGNER_RELEASE_LIMITS.checkEveryMs,
 } = {}) {
   const started = clock();
   /** @type {Map<string, WorldStory>} */
@@ -955,17 +709,6 @@ export function createRelay({
       return;
     }
 
-    const migration = migrationRouteOf(url);
-
-    if (migration) {
-      const stores = { directory: directory.store, mods: mods.store, trades: trades.store };
-      const answer = await handleMigrationRequest(stores, (id) => exportWorldData(stories(id), bosses(id)), request.method, migration.rest, headerOf(request, PLAYER_HEADER), adminCheck(directory.admins),
-        designs.store);
-      response.writeHead(answer.status, { "Content-Type": answer.bytes ? "application/octet-stream" : "application/json" });
-      response.end(answer.bytes ?? JSON.stringify(answer.body));
-      return;
-    }
-
     const storyRoute = storyRouteOf(url);
     const bossRoute = bossRouteOf(url);
     const adminRoute = raidAdminRouteOf(url);
@@ -990,7 +733,7 @@ export function createRelay({
     const trading = routeIs(url, "trades");
 
     if (!routeIs(url, "worlds") && !catalog && !trading) {
-      // The same answers as the Cloudflare relay gives: a world room's address needs its WebSocket.
+      // A world room's address needs its WebSocket.
       const route = parseRoute(url, headerOf(request, PLAYER_HEADER), headerOf(request, AUTH_HEADER));
       const [status, reason] = "error" in route ? [400, route.error] : [426, "the relay only takes WebSockets"];
       response.writeHead(status, { "Content-Type": "text/plain" });
@@ -1069,7 +812,6 @@ export function createRelay({
       return;
     }
 
-    await drain(request, DRAIN_LIMITS.maxBytes, AbortSignal.timeout(DRAIN_LIMITS.readMs));
     response.writeHead(refusal.status, { "Content-Type": "application/json", ...refusalHeaders(refusal) });
     response.end(JSON.stringify({ error: refusal.reason }));
   }
@@ -1601,13 +1343,11 @@ export function createRelay({
       return noRaidWorld();
     }
 
-    const known = new URL(request.url, "http://relay").searchParams.get("known");
-    const answer = await handleStoryRequest(storyOf(route.id), request.method, route.rest, () => readText(request, storyLimits.maxSmallBodyLength), access.player,
-      known !== null && /^\d+$/.test(known) ? Number(known) : null);
+    const answer = await handleStoryRequest(storyOf(route.id), request.method, route.rest, () => readText(request, storyLimits.maxSmallBodyLength));
     await tidyDeleted(route.id);
 
     if (answer.push) {
-      tellWorld(route.id, storyPushText(answer.push, storyLimits));
+      tellWorld(route.id, storyText(answer.push));
     }
 
     return answer;
@@ -1644,7 +1384,7 @@ export function createRelay({
 
   /**
    * Answers a request to a Raid World's admin routes, for the relay's admins only, and tells every
-   * game of the world when the story or a pool changed.
+   * game of the world when a pool changed; the world's track tells its games itself.
    *
    * @param {http.IncomingMessage} request The request.
    * @param {URL} url The request's address.
@@ -1658,10 +1398,6 @@ export function createRelay({
 
     if (answer.audit) {
       log.info(`${new Date().toISOString()} world ${route.id}: ${answer.audit}`);
-    }
-
-    if (answer.push) {
-      tellWorld(route.id, storyPushText(answer.push, storyLimits));
     }
 
     for (const boss of [answer.boss, ...(answer.bosses ?? [])].filter(Boolean)) {
@@ -2364,7 +2100,7 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const database = process.env[DATABASE_VARIABLE];
 
   const admins = parseAdmins(process.env.ADMINS);
-  const stores = await openStores(database);
+  const stores = openStores(database);
   const directory = new Directory(stores.directory, { admins });
   const offline = await clearPresence(directory);
   const mods = new ModCatalog(stores.mods, { admins });

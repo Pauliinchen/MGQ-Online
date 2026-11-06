@@ -2,6 +2,8 @@
 //  story_tracks.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Ran one piece of work at a time through one shared queue
+//                            - Started the world's track from the keyed story for every admin request, without the guards for a world never on tracks
 //      Paulinchen  2026-11-05: Dropped the tracks feature, as every game the relay serves plays on tracks
 //                            - Kept every variable the game uses as a place each player's own, whatever its row says
 //                            - Read the story's ids from the table story.js hands on, the routes' counters too
@@ -31,6 +33,7 @@
 // `track <JSON>` text frames over their world room. An admin's keys, pins and route lock act on the
 // world's track only.
 
+import { workQueue } from "./relay.js";
 import {
   CLEAR_SWITCHES, FIRST_COUNTERS, FREEZE, FREEZE_ENDED, GREAT_DECISION, MAIN_PROGRESS, ROUTE, ROUTE_COUNTERS, STORY_IDS, VALUE as STORY_VALUE, activeRoute, compareKeys, countersOf, everyRouteDone, listsOf,
   partOf, storyKey,
@@ -427,7 +430,7 @@ export class StoryTracks {
     /** The clock, which dates each revision of the world's track. */
     this.clock = clock;
     /** The work under way, which every change waits for. */
-    this.queue = Promise.resolve();
+    this.exclusive = workQueue();
     /** The world's summary, loaded with the world's keys on first use. */
     this.meta = null;
     /** The world's keys. */
@@ -1402,14 +1405,10 @@ export class StoryTracks {
    * Holds the keys an admin pins on the world's track, as a revision every game on it takes. Called
    * once the pins changed.
    *
-   * @returns {Promise<Map<string, string>>} What changed, empty for a world whose story never ran on tracks.
+   * @returns {Promise<Map<string, string>>} What changed.
    */
   pinsChanged() {
     return this.exclusive(async () => {
-      if (!(await this.hasStarted())) {
-        return new Map();
-      }
-
       await this.ready();
       const changed = pinned(new Draft(WORLD_TRACK, this.world), await this.pins(), this.rules);
 
@@ -1426,26 +1425,13 @@ export class StoryTracks {
   }
 
   /**
-   * Tells whether the world's story runs on tracks, without starting them from its keyed story.
-   *
-   * @returns {Promise<boolean>} Whether it does.
-   */
-  started() {
-    return this.exclusive(() => this.hasStarted());
-  }
-
-  /**
    * Hands an admin the world's story: its summary, its counters and, when asked, its keys.
    *
    * @param {boolean} withKeys Whether to add the keys, as story.js listsOf writes them.
-   * @returns {Promise<{rev: number, part: string, route: string, done: string[], checkpoints: string[], at: number, counters: object, keys?: object} | null>} The story, null for a world whose story never ran on tracks.
+   * @returns {Promise<{rev: number, part: string, route: string, done: string[], checkpoints: string[], at: number, counters: object, keys?: object}>} The story.
    */
   view(withKeys) {
     return this.exclusive(async () => {
-      if (!(await this.hasStarted())) {
-        return null;
-      }
-
       await this.ready();
       return this.viewOf(withKeys);
     });
@@ -1458,14 +1444,10 @@ export class StoryTracks {
    *
    * @param {Map<string, string>} keys The keys and their values, as story.js readAdminKeys reads them.
    * @param {string} admin The admin's player id.
-   * @returns {Promise<{changed: Map<string, string>, view: object} | {code: string, keys: string[]} | null>} What changed with the world's story after it, see view; or the keys refused, with TRACK_CODE `bad` for keys the tracks cannot name, `mapping` for keys they keep not as set, `pinned` for keys pinned at other values; null for a world whose story never ran on tracks.
+   * @returns {Promise<{changed: Map<string, string>, view: object} | {code: string, keys: string[]}>} What changed with the world's story after it, see view; or the keys refused, with TRACK_CODE `bad` for keys the tracks cannot name, `mapping` for keys they keep not as set, `pinned` for keys pinned at other values.
    */
   setKeys(keys, admin) {
     return this.exclusive(async () => {
-      if (!(await this.hasStarted())) {
-        return null;
-      }
-
       await this.ready();
       const { pinOf } = await this.pins();
       const held = [...keys].filter(([key, value]) => pinOf(key) !== undefined && pinOf(key) !== value).map(([key]) => key);
@@ -1506,14 +1488,10 @@ export class StoryTracks {
    * keeps the pins.
    *
    * @param {Map<string, string>} keys The keys and their values, as story.js readPins reads them.
-   * @returns {Promise<{code: string, keys: string[]} | null>} The keys refused, see adminRefusal; null when the track holds them all, or for a world whose story never ran on tracks.
+   * @returns {Promise<{code: string, keys: string[]} | null>} The keys refused, see adminRefusal; null when the track holds them all.
    */
   pinRefusal(keys) {
     return this.exclusive(async () => {
-      if (!(await this.hasStarted())) {
-        return null;
-      }
-
       await this.ready();
       return adminRefusal(keys, this.rules, this.limits, true);
     });
@@ -1523,14 +1501,10 @@ export class StoryTracks {
    * Takes back the route locked for the world's track, as an admin asks, so the next player who
    * chooses sets it again; refused while the world's track is on the locked route.
    *
-   * @returns {Promise<{cleared: boolean, started?: true, view: object} | null>} Whether a lock was taken back, `started` when the world is on the locked route, and the world's story, see view; null for a world whose story never ran on tracks.
+   * @returns {Promise<{cleared: boolean, started?: true, view: object}>} Whether a lock was taken back, `started` when the world is on the locked route, and the world's story, see view.
    */
   clearRoute() {
     return this.exclusive(async () => {
-      if (!(await this.hasStarted())) {
-        return null;
-      }
-
       await this.ready();
 
       if (this.meta.route === ROUTE.none) {
@@ -1547,15 +1521,6 @@ export class StoryTracks {
       this.pushWorld(rev, new Map(), true);
       return { cleared: true, view: this.viewOf(false) };
     });
-  }
-
-  /**
-   * Tells whether the world's story ran on tracks, without starting them. Called inside exclusive.
-   *
-   * @returns {Promise<boolean>} Whether it did.
-   */
-  async hasStarted() {
-    return Boolean(this.meta ? this.meta.rev : (await this.store.getMeta())?.rev);
   }
 
   /**
@@ -1947,18 +1912,6 @@ export class StoryTracks {
     }
   }
 
-  /**
-   * Runs work after the work under way, so the tracks change in the order frames arrive.
-   *
-   * @template T
-   * @param {() => Promise<T>} work The work.
-   * @returns {Promise<T>} What it returns.
-   */
-  exclusive(work) {
-    const result = this.queue.then(work);
-    this.queue = result.catch(() => {});
-    return result;
-  }
 }
 
 /**
