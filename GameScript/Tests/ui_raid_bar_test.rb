@@ -2,6 +2,7 @@
 #  ui_raid_bar_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Read the bars the strip and the bars over the bosses show, leaving how they look to the in-game suite
 #      Paulinchen  2026-11-05: Answered the troops of the map's pages with fixed values in place of a copy of the DLL's command index
 #                            - Answered the bars and the pools with fixed values per case in place of a copy of the DLL's bars
 #                            - Answered the raid bosses' rules with fixed values per case and asked which troops show a bar in one call
@@ -330,12 +331,11 @@ def flat(bar)
   bar ? [bar.title, bar.gauges.map { |gauge| [gauge.name, gauge.hp, gauge.max] }] : nil
 end
 
-# Lists a bar's gauges: each one's rate and the texts it shows, the first that fits.
+# Lists the events whose bars over them show now.
 #
-# @param parts [MGQ_MpRaidBar::BarParts] The bar's parts.
-# @return [Array<Array>] Each gauge's rate and texts.
-def gauges_of(parts)
-  parts.gauges.map { |gauge| [gauge.rate, gauge.text] }
+# @return [Array<Game_Event>] The events.
+def overhead_events
+  MGQ_MpShown.keys_of(:raid_overhead).map { |key| key[1] }
 end
 
 # The battle's strip.
@@ -347,76 +347,59 @@ $game_troop.members[0].hp = 4500
 $bar_answers[[:battle, "Tier 9 Raid Boss"]] = [gauge("Queen Harpy", 5250, 7000, "75.0%")]
 check("the battle asks the DLL for its boss's bar with each enemy's HP as the battle has it and its pool, and shows what it hands back",
       [flat(bar.battle_bar), $bar_requests.last], [["Tier 9 Raid Boss", [["Queen Harpy", 5250, 7000]]], [:battle, { "title" => "Tier 9 Raid Boss", "enemies" => [["Queen Harpy", 4500, 6000, false, "Queen Harpy"]] }]])
-spriteset = Spriteset_Battle.new
-spriteset.update
-strip = spriteset.instance_variable_get(:@mgq_mp_raid_bar)
-root = strip.root
-check("the strip is the movable Raid boss bar, resized in width alone, under the game's windows over the battlers, not docked in battle",
-      [root.open?, root.id, root.place_name, root.resizable, root.under_windows, root.z, root.dock, root.at, root.min_size],
-      [true, :raid_bar, "Raid boss bar", :width, true, 90, nil, [0, 0], [MGQ_MpRaidBar::StripView.min_width, 36]])
-check("the boss's title in the title color and the name over the gauge on plates as wide as their texts, the hint of the hotkey that makes it small",
-      [texts_of(root), part_with_text(root, "Tier 9 Raid Boss").color, [part_with_text(root, "Tier 9 Raid Boss").plate, part_with_text(root, "Queen Harpy").plate], part_with_text(root, "Tab: bars").is_a?(ui::Button)],
-      [["Tier 9 Raid Boss", "Tab: bars", "Queen Harpy"], :title, [:text, :text], true])
-gauge = strip.parts.gauges.first
-check("the gauge framed, maroon from its top down, with a damage trail, and the HP with the share left inside, else the HP, else the share",
-      [gauge.framed, gauge.vertical, gauge.colors, gauge.trail, gauges_of(strip.parts)],
-      [true, true, MGQ_MpRaidBar::BarParts::FILL_COLORS, true, [[0.75, ["5250 / 7000  (75.0%)", "5250 / 7000", "75.0%"]]]])
+$docked_room[:top] = 86
+bar.update_battle
+check("the strip shows the battle's bar, the gauge three quarters full with the HP and the share left inside, else the HP, else the share",
+      [bar.strip_shown?, flat(bar.strip_bar), bar.fill(bar.strip_bar, 0), bar.gauge_texts(0)],
+      [true, ["Tier 9 Raid Boss", [["Queen Harpy", 5250, 7000]]], 750, ["5250 / 7000  (75.0%)", "5250 / 7000", "75.0%"]])
 sprite = Sprite_Battler.new(Struct.new(:boss).new(true).tap { |battler| def battler.boss?; boss; end })
-MGQ_MpRaidBar.battle_bottom = 86
 sprite.update_hp_bar
-check("the game's own boss bar moves below the strip while it lies at the top", sprite.instance_variable_get(:@hp_bar).y, 74)
+check("the game's own boss bar moves below the strip while it lies docked at the top", sprite.instance_variable_get(:@hp_bar).y, 74)
 $game_message.visible = true
 $game_message.position = 0
-spriteset.update
+bar.update_battle
 sprite.update_hp_bar
-check("the game's top message hides the strip, and the game's bar stays", [hidden_root?(root), sprite.instance_variable_get(:@hp_bar).y], [true, -12])
+check("the game's top message hides the strip, and the game's bar stays", [bar.strip_shown?, sprite.instance_variable_get(:@hp_bar).y], [false, -12])
 $game_message.visible = false
-spriteset.update
+bar.update_battle
 $bar_answers[[:battle, "Tier 9 Raid Boss"]] = [gauge("Queen Harpy", 5134, 7000, "73.3%")]
-spriteset.update
-check("numbers that changed wait a few frames", gauges_of(strip.parts).first[1][1], "5250 / 7000")
+bar.update_battle
+check("numbers that changed wait a few frames", bar.gauge_texts(0)[1], "5250 / 7000")
 $frame += MGQ_MpRaidBar::REDRAW_FRAMES
-spriteset.update
-check("then show", gauges_of(strip.parts).first[1][1], "5134 / 7000")
+bar.update_battle
+check("then show", bar.gauge_texts(0)[1], "5134 / 7000")
 $tab_pressed = true
-spriteset.update
+bar.update_battle
 $tab_pressed = false
-check("Tab makes it small and keeps the choice, its height easing down to the gauges alone, which it keeps at its bottom",
-      [$settings["raid_bar_small"], root.tail, $cursor_sounds], [true, true, 1])
-part_with_text(root, "Tab: bars").send(:emit, :click)
+check("Tab makes it small and keeps the choice", [$settings["raid_bar_small"], $cursor_sounds], [true, 1])
+bar.toggle_small
 check("a click on its hint shows it whole again", [$settings["raid_bar_small"], MGQ_MpRaidBar.small?], [false, false])
 # The chat, which the player types in while $chat_typing.
 module MGQ_MpChat; def self.typing?; $chat_typing; end; end
 $chat_typing = true
 $tab_pressed = true
-spriteset.update
+bar.update_battle
 $tab_pressed = false
 $chat_typing = false
 check("Tab typed into the chat box changes nothing, its refusal left to the hotkeys, which log none while the player types",
       [$settings["raid_bar_small"], $refusals], [false, [[:party_box, "the chat box is open"]]])
-spriteset.dispose
-check("the battle's sprites close the strip as they go", root.open?, false)
-spriteset.update
-check("a new battle's sprites make a new strip", spriteset.instance_variable_get(:@mgq_mp_raid_bar).equal?(strip), false)
-spriteset.dispose
+bar.end_battle
+check("the battle's sprites take the strip's bar away as they go", [bar.strip_shown?, bar.strip_bar], [false, nil])
+$docked_room[:top] = 0
 
 # A boss of several enemies in battle: a name and a gauge per enemy.
 reset
 pool.note_invite("troop" => "836", "pool" => 3)
 BattleManager.setup(836)
 $bar_answers[[:battle, "Tier 5 Raid Boss"]] = [gauge("Black Dahlia", 900, 900, "100.0%"), gauge("Black Mamba", 900, 900, "100.0%"), gauge("Black Rose", 900, 900, "100.0%")]
-spriteset = Spriteset_Battle.new
-spriteset.update
-strip = spriteset.instance_variable_get(:@mgq_mp_raid_bar)
-names = parts_of_kind(strip.root, ui::Label).select { |label| label.text.start_with?("Black") }
-check("the Three Nobles of Black are three gauges, each name over its own and shrinking with the others down to 14 so each fits",
-      [strip.parts.gauges.size, names.map(&:text), names.map(&:min_font_size).uniq], [3, ["Black Dahlia", "Black Mamba", "Black Rose"], [14]])
-first_gauges = strip.parts.gauges
+bar.update_battle
+shape = bar.strip_shape
+check("the Three Nobles of Black are three gauges, each with its name", shape[1], ["Black Dahlia", "Black Mamba", "Black Rose"])
 $bar_answers[[:battle, "Tier 5 Raid Boss"]][0] = gauge("Black Dahlia", 600, 900, "66.7%")
 $frame += MGQ_MpRaidBar::REDRAW_FRAMES
-spriteset.update
-check("the same boss keeps its gauges, so their trails drain on", strip.parts.gauges.equal?(first_gauges) || strip.parts.gauges == first_gauges, true)
-spriteset.dispose
+bar.update_battle
+check("the same boss renders nothing anew, so the gauges' trails drain on", [bar.strip_shape.equal?(shape), bar.fill(bar.strip_bar, 0)], [true, 667])
+bar.end_battle
 
 # The bosses' events on the map.
 reset
@@ -452,40 +435,30 @@ bar.map_bar(1599)
 check("with the game's own letters when the troop knows them", $bar_requests.last[1]["letters"], ["Ａ", "Ｂ"])
 $game_troop = Game_Troop.new
 $game_variables[41] = 0
-spriteset = Spriteset_Map.new([CharacterSprite.new(harpy, 200, 300, 48, true, 255), CharacterSprite.new(gate, 300, 50, 32, true, 255)])
-spriteset.update
-bars = spriteset.instance_variable_get(:@mgq_mp_raid_bars)
-overhead = bars.overhead
-above = overhead[harpy]
-check("a bar above the boss whose event shows, following the event, under its feet where the screen has no room above",
-      [overhead.size, above.root.follow.equal?(harpy), above.root.side, above.root.flip, above.root.mouse], [1, true, :above, true, false])
-check("with its title and its name over a thin gauge without numbers, 240 wide for a boss of one enemy",
-      [texts_of(above.root), above.parts.gauges.map { |each| [each.height, each.text] }, above.root.width], [["Tier 9 Raid Boss", "Queen Harpy"], [[8, nil]], 240])
-check("no strip while a boss's event shows", bars.strip, nil)
-spriteset.instance_variable_set(:@character_sprites, [CharacterSprite.new(harpy, 200, 300, 48, true, 255), CharacterSprite.new(gate, 300, 50, 32, true, 255)])
-spriteset.update
-check("once the map rebuilds its sprites after a transfer, the same bar still follows the event", [overhead[harpy].equal?(above), above.root.follow.equal?(harpy)], [true, true])
+sprites = [CharacterSprite.new(harpy, 200, 300, 48, true, 255), CharacterSprite.new(gate, 300, 50, 32, true, 255)]
+bar.update_map(sprites)
+check("a bar over the boss whose event shows, with its title and its enemy's name, and no strip while one shows",
+      [overhead_events.map { |event| event.x }, bar.overhead_shape(harpy), bar.strip_bar], [[10], ["Tier 9 Raid Boss", ["Queen Harpy"]], nil])
+bar.update_map(sprites.map { |sprite| sprite.dup })
+check("once the map rebuilds its sprites after a transfer, the same bar stays over the event", overhead_events.map { |event| event.x }, [10])
 $game_map.events.delete(1)
 $frame += MGQ_MpRaidBar::SCAN_FRAMES
-spriteset.update
-strip = bars.strip
-check("a boss without an event that shows gets the strip, docked at the top, which the boxes at the top corners make room for",
-      [overhead.size, strip.root.open?, hidden_root?(strip.root), strip.root.dock, strip.root.z, texts_of(strip.root).include?("Tab: bars")],
-      [0, true, false, :top, ui::Z[:labels], false])
+bar.update_map(sprites)
+check("a boss without an event that shows gets the strip", [overhead_events, flat(bar.strip_bar), bar.strip_shown?],
+      [[], ["Archangel", [["Metatronne", 24000, 24000], ["Sandalphone", 36000, 36000]]], true])
 gate.character_name = "!Flame"
 $frame += MGQ_MpRaidBar::SCAN_FRAMES
-spriteset.update
-check("a marker counts as the boss's sprite, and the strip hides again", [overhead.size, hidden_root?(strip.root)], [1, true])
-check("the bar of a boss of several enemies is 480 wide, a name and a thin gauge per enemy",
-      [overhead[gate].root.width, texts_of(overhead[gate].root), overhead[gate].parts.gauges.size], [480, ["Archangel", "Metatronne", "Sandalphone"], 2])
-bar_of_gate = overhead[gate]
+bar.update_map(sprites)
+check("a marker counts as the boss's sprite, and the strip hides again", [overhead_events.map { |event| event.x }, bar.strip_shown?], [[30], false])
+check("the bar of a boss of several enemies names each", bar.overhead_shape(gate), ["Archangel", ["Metatronne", "Sandalphone"]])
 $raid = false
-spriteset.update
-check("no bars outside a Raid World's story", [overhead.size, bar_of_gate.root.open?], [0, false])
+bar.update_map(sprites)
+check("no bars outside a Raid World's story", [overhead_events, bar.strip_bar], [[], nil])
 $raid = true
 gate.character_name = ""
-spriteset.dispose
-check("every bar closes once the map's sprites go", strip.root.open?, false)
+bar.update_map(sprites)
+bar.end_map
+check("every bar goes once the map's sprites go", [overhead_events, bar.strip_bar], [[], nil])
 
 # The raid bosses outside Raid Worlds: a battle's bar by its enemies' own HP, the map's full, each
 # turned off by its Mod Config row; a Raid World's bars go by the pools whatever those rows say.
@@ -567,13 +540,12 @@ $freeze_sprites = [standin_sprite]
 check("a frozen fight's boss stand-in counts as the boss's event, one whose troop shows no bar left out",
       bar.boss_events.map { |event, troop| [event.equal?(frozen_boss), troop] }, [[true, 71]])
 check("the steps to the boss count its stand-in", bar.distance_to_boss(71, 22, 21), 2)
-spriteset = Spriteset_Map.new([])
-spriteset.update
-overhead = spriteset.instance_variable_get(:@mgq_mp_raid_bars).overhead
-check("the bar stands above the stand-in's sprite", [overhead.size, overhead[frozen_boss] && overhead[frozen_boss].root.follow.equal?(standin_sprite)], [1, true])
+bar.update_map([], $freeze_sprites)
+check("the bar stands over the stand-in, following its sprite",
+      MGQ_MpShown.keys_of(:raid_overhead).map { |key| [key[1].equal?(frozen_boss), MGQ_MpRaidBar.overhead_bar(key[1]).title] }, [[true, "Tier 9 Raid Boss"]])
 $freeze_targets = []
 $freeze_sprites = []
 $frame += MGQ_MpRaidBar::SCAN_FRAMES
-spriteset.update
-check("and goes with it", [bar.boss_events, overhead.size], [[], 0])
-spriteset.dispose
+bar.update_map([])
+check("and goes with it", [bar.boss_events, overhead_events], [[], []])
+bar.end_map

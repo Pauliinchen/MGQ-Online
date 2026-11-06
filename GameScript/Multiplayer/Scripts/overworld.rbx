@@ -2,6 +2,8 @@
 #  overworld.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Drew the ghosts' labels, the own ping, the own line and the world status as huds of the Mod Framework's UI layer
+#                            - Named a ping's color by its name in the player's look
 #      Paulinchen  2026-11-05: Read a ghost's followers as values
 #      Paulinchen  2026-11-01: Named the Mod Framework's interface by its own name
 #                            - Built the ghosts' labels, the own ping, the own line and the world status on the Mod Framework's components
@@ -91,18 +93,13 @@ module MGQ_MpOverworld
   SOLID_OPACITY = 255
 
   # Colors of a ping, by the most milliseconds each stands for; above them all, the last.
-  PING_COLORS = [[100, Mod_Framework::UI::Style::GOOD], [200, Mod_Framework::UI::Style::WARN], [nil, Mod_Framework::UI::Style::BAD]]
+  PING_COLORS = [[100, :success], [200, :warning], [nil, :error]]
 
-  # Most milliseconds a ping shows; past them it shows as these with PING_PAST, which every ping
-  # column fits.
+  # Most milliseconds a ping shows; past them it shows as these with PING_PAST.
   PING_MOST = 999
 
   # What follows a ping past PING_MOST.
   PING_PAST = "+"
-
-  # Width of a ping column, which the widest ping, "999+ ms", fits in the style's small font,
-  # drawn right-aligned; see draw_ping.
-  PING_WIDTH = 64
 
   # What a party's title starts with in a box, see party_title.
   PARTY_TITLE = "Party"
@@ -165,8 +162,8 @@ module MGQ_MpOverworld
   # What starts this script's lines in the log.
   LOG_TAG = "overworld"
 
-  # Writes a ping as it shows, such as "80 ms" or "999+ ms", with the color that says how good it
-  # is.
+  # Writes a ping as it shows, such as "80 ms" or "999+ ms", with the name of the color that says
+  # how good it is.
   #
   # @param ping [String, Integer, nil] The milliseconds.
   # @return [Array, nil] The text and its color, nil for no ping.
@@ -176,19 +173,6 @@ module MGQ_MpOverworld
     milliseconds = ping.to_i
     text = "#{[milliseconds, PING_MOST].min}#{milliseconds > PING_MOST ? PING_PAST : ''} ms"
     [text, PING_COLORS.find { |most, _| most.nil? || milliseconds <= most }[1]]
-  end
-
-  # Draws a ping at the right end of its column, PING_WIDTH wide, in the style's small font and
-  # the ping's color, which the party box and the World overview share.
-  #
-  # @param bitmap [Bitmap] The box's picture.
-  # @param ping [Array] The ping's text and color, see ping_label.
-  # @param x [Integer] The column's left.
-  # @param y [Integer] The line's top.
-  # @param height [Integer] The line's height.
-  def self.draw_ping(bitmap, ping, x, y, height)
-    Mod_Framework::UI::Style.use_font(bitmap, Mod_Framework::UI::Style::SMALL_SIZE, ping[1])
-    bitmap.draw_text(x, y, PING_WIDTH, height, ping[0], 2)
   end
 
   # Moves the ghosts of the players on this map. Called by the map every frame.
@@ -528,209 +512,186 @@ class Sprite_MpGhostFollower < Sprite_Character
 end
 
 # What MGQ Online shows over the characters on the map and at its bottom left, on the Mod
-# Framework's components: the labels above the ghosts, the player's own ping and own line above
-# their head, and the world status.
+# Framework's UI layer: the labels over the ghosts, the player's own ping and own line over their
+# head, and the world status. The parts that follow a character stack upward by the framework's
+# rule and show over a CG.
 module MGQ_MpOverworld
   # The Mod Framework's interface.
   UI = Mod_Framework::UI
 
-  # How the party's size reads after a name.
-  SIZE_GAP = 6
+  # The most characters the line over the player's head keeps its seconds in: half the screen's
+  # width at about 9 pixels a character.
+  OWN_LINE_CHARS = 36
 
-  # A ghost's label above its head: the name the chat uses in its player's color (see
-  # MGQ_MpPlayerColor), the icon of what they do and a crown for a party leader before it, the
-  # party's size and the ping after it in the tiny font, and above it the line a script gives
-  # through overworld_sync.rbx, such as an invite. A box of the Mod Framework that follows the
-  # ghost's sprite, hidden with it; labels on one tile stack upward.
-  class GhostLabel
-    # Width of the label.
-    WIDTH = 240
+  # A ghost's label over its head: the line a script gives through overworld_sync.rbx, such as an
+  # invite, over the icon of what its player does, a crown for a party leader, the name the chat
+  # uses in its player's color (see MGQ_MpPlayerColor), the party's size and the ping. It hides
+  # while its player hides.
+  class GhostLabel < UI::Component
+    # The ghost's player.
+    param :peer
 
-    # Pixels the label reaches down over the ghost's sprite.
-    OVERLAP = 4
+    # The ghost the label follows.
+    param :ghost
 
-    # @return [Mod_Framework::UI::Box] The label's box.
-    attr_reader :root
+    # Renders it anew once what it shows changed.
+    watch(:every => 6) { MGQ_MpOverworld.label_of(peer) }
 
-    # Makes the label over a ghost's sprite and opens it, empty until the first update.
-    #
-    # @param sprite [Sprite_Character] The ghost's sprite.
-    # @param peer [MGQ_MpOverworldSync::Peers::Peer] The ghost's player.
-    def initialize(sprite, peer)
-      @peer = peer
-      @root = UI::Box.new(:frame => false, :follow => sprite, :side => :above, :follow_gap => -OVERLAP, :width => WIDTH, :mouse => false, :gap => 0,
-                          :z => UI::Z[:labels], :hide_while => lambda { @peer.state["hidden"].to_i == 1 })
-      @shown = nil
-      @root.open
-    end
-
-    # Builds the label anew once what it shows changed.
-    #
-    # @param peer [MGQ_MpOverworldSync::Peers::Peer] The ghost's player.
-    def update(peer)
-      @peer = peer
-      state = peer.state
-      above = MGQ_MpOverworldSync.label_line_of(peer)
-      badge = MGQ_MpOverworld.party_badge(peer)
-      name = MGQ_MpOverworld.name_tag(peer)
-      shown = [name, state["scene"], state["ping"], peer.member, above, badge]
-      return if shown == @shown
-
-      @shown = shown
-      @root.clear
-      @root.add_label(above[0].to_s, :align => :center, :color => above[1]) if above
-      line = @root.add_row(:justify => :center, :gap => 0)
-      icon = MGQ_MpOverworld::STATE_ICONS[state["scene"]]
-      line.add_icon(icon) if icon
-      line.add_icon(MGQ_MpOverworld::CROWN_ICON) if badge && badge[1]
-      line.add_label(name, :color => MGQ_MpPlayerColor.role(peer), :shrink => true)
-      line.add_label(badge[0], :font_size => :tiny, :color => peer.member ? :ally : :dim, :padding => [0, 0, 0, SIZE_GAP]) if badge
-      ping = MGQ_MpOverworld.ping_label(state["ping"])
-      line.add_label(ping[0], :font_size => :tiny, :color => ping[1], :padding => [0, 0, 0, SIZE_GAP]) if ping
-    end
-
-    # Closes the label, with its ghost's sprite.
-    def close
-      @root.close
+    # Describes the label.
+    def render
+      shown = MGQ_MpOverworld.label_of(peer)
+      above, icon, crown, name, color, badge, ping = shown
+      hud follow: ghost, side: :top, movable: false, mouse: :none, frame: false, shown_in: [Scene_Map, Scene_MenuBase],
+          hide_while: -> { peer.state["hidden"].to_i == 1 } do
+        text(above[0].to_s, align: :center, color: above[1]) if above
+        stack row: true, justify: :center, spacing: 1 do
+          text("\\I[#{icon}]", escapes: true) if icon
+          text("\\I[#{MGQ_MpOverworld::CROWN_ICON}]", escapes: true) if crown
+          text name, color: color
+          text(badge, typo: :overline, color: peer.member ? :mgq_online_member : :dim) if badge
+          text(ping[0], typo: :overline, color: ping[1]) if ping
+        end
+      end
     end
   end
 
-  # The player's own ping right above their head, after their party's size and a crown while they
-  # lead it: a box of the Mod Framework that follows the player, also on the map behind a menu.
-  class OwnPing
-    # Width of the line.
-    WIDTH = 200
+  # The player's own ping right over their head, after their party's size and a crown while they
+  # lead it, also on the map behind a menu.
+  class OwnPing < UI::Component
+    # Renders it anew once the ping, the party's size or the lead changed.
+    watch(:every => 6) { MGQ_MpOverworld.own_ping }
 
-    # @return [Mod_Framework::UI::Box] The line's box.
-    attr_reader :root
-
-    # Makes the line over the player and opens it, hidden until it has a ping or a party.
-    def initialize
-      @root = UI::Box.new(:frame => false, :follow => :player, :side => :above, :follow_gap => 0, :width => WIDTH, :mouse => false, :z => UI::Z[:labels],
-                          :hide_while => lambda { @shown.nil? || @shown == [nil, nil, nil] })
-      @shown = nil
-      @root.open
-    end
-
-    # Builds the line anew once the player's ping, party size or lead changed.
-    def update
-      in_world = MGQ_MpOverworldSync.in_world?
-      ping = in_world ? MGQ_MpOverworld.ping_label(MGQ_MpOverworldSync::Ping.measured) : nil
-      badge = in_world ? MGQ_MpOverworld.party_badge(:me) : nil
-      shown = [ping && ping[0], badge && badge[0], badge && badge[1]]
-      return if shown == @shown
-
-      @shown = shown
-      @root.clear
-      line = @root.add_row(:justify => :center, :gap => SIZE_GAP)
-      line.add_icon(MGQ_MpOverworld::CROWN_ICON) if badge && badge[1]
-      line.add_label(badge[0], :font_size => :tiny, :color => :ally) if badge
-      line.add_label(ping[0], :font_size => :tiny, :color => ping[1]) if ping
-    end
-
-    # Closes the line, with the map's sprites.
-    def close
-      @root.close
+    # Describes the line.
+    def render
+      ping, size, crown = MGQ_MpOverworld.own_ping
+      hud follow: :player, side: :top, movable: false, mouse: :none, frame: false, shown_in: [Scene_Map, Scene_MenuBase],
+          hide_while: -> { MGQ_MpOverworld.own_ping == [nil, nil, nil] } do
+        stack row: true, justify: :center, spacing: 1.5 do
+          text("\\I[#{MGQ_MpOverworld::CROWN_ICON}]", escapes: true) if crown
+          text(size, typo: :overline, color: :mgq_online_member) if size
+          text(ping[0], typo: :overline, color: ping[1]) if ping
+        end
+      end
     end
   end
 
-  # The line above the player's own ping: what the scripts say there, such as an invite to a party,
+  # The line over the player's own ping: what the scripts say there, such as an invite to a party,
   # a trade offer or the wait for the party's story (see MGQ_MpActions.own_lines), with its seconds
-  # while they fit, cut to half the screen's width, in the own color, fading in and out. Never on
-  # the map behind a menu.
-  class OwnLine
-    # How many times the line fits across the screen.
-    SCREEN_SHARE = 2
-
-    # @return [Mod_Framework::UI::Box] The line's box.
-    attr_reader :root
-
-    # Makes the line over the player and opens it, hidden while the scripts say nothing.
-    def initialize
-      @root = UI::Box.new(:frame => false, :follow => :player, :side => :above, :follow_gap => 0, :width => Graphics.width / SCREEN_SHARE, :mouse => false,
-                          :z => UI::Z[:labels], :fade => true, :hide_while => lambda { @lines.nil? })
-      @label = @root.add_label("", :align => :center, :color => :own)
-      @lines = nil
-      @root.open
-    end
-
-    # Shows what the scripts say now: with the seconds while that fits the line, else without them,
-    # cut to its width, so a cut only ever loses the end of a text, never a countdown that fits.
-    def update
-      lines = MGQ_MpActions.own_lines
-      @lines = lines
-      return unless lines
-
-      width = Graphics.width / SCREEN_SHARE
-      text = UI.font_bitmap(UI::Style::TEXT_SIZE).text_size(lines[0]).width <= width ? lines[0] : lines[1]
-      @label.text = text unless @label.text == text
-    end
-
-    # Closes the line, with the map's sprites.
-    def close
-      @root.close
+  # while they fit, cut to half the screen's width, in the own color. Never on the map behind a
+  # menu.
+  class OwnLine < UI::Component
+    # Describes the line.
+    def render
+      hud follow: :player, side: :top, movable: false, mouse: :none, frame: false, shown_in: [Scene_Map], width: Graphics.width / 2,
+          hide_while: -> { MGQ_MpActions.own_lines.nil? } do
+        text -> { MGQ_MpOverworld.own_line_text }, align: :center, color: :mgq_online_own
+      end
     end
   end
 
-  # The line at the bottom left of the map, until the player moves it: the connection's problem and
-  # the notices of the world, each wrapped into rows that fit with its icon before its first row,
-  # the newest at the bottom, the oldest rows going out at the top. A box of the Mod Framework under
-  # the game's windows, open in a world, empty while there is nothing to tell, so the player still
-  # finds it with Alt.
-  class WorldStatus
-    # The line's id, which names its place in the Mod Framework's settings.
+  # The world status at the bottom left of the map, until the player moves it: the connection's
+  # problem and the notices of the world, each with its icon before it, wrapped, the newest at the
+  # bottom, the oldest going out at the top. Empty while there is nothing to tell, so the player
+  # still finds it with Alt.
+  class WorldStatus < UI::Component
+    # The status's place id, which names its place in the Mod Framework's settings.
     ID = :world_status
 
-    # The line's name while the player arranges the boxes.
+    # The status's name while the player arranges the boxes.
     PLACE_NAME = "World status"
 
-    # Width of the line at its default.
-    WIDTH = 400
-
-    # Height of one row.
-    ROW = 22
-
-    # Rows the line has room for.
+    # Rows it shows at most.
     ROWS = 4
 
-    # Room between the line and the left and bottom edges of the screen at its default.
-    MARGIN = 8
+    # Its least width.
+    MIN_WIDTH = 266
 
-    # Least width of the line: two thirds of WIDTH, so the notices still break into few rows.
-    MIN_WIDTH = WIDTH * 2 / 3
+    # Renders it anew once the notices changed.
+    watch(:every => 6) { MGQ_MpOverworld.status_lines }
 
-    # @return [Mod_Framework::UI::Box] The line's box.
-    attr_reader :root
-
-    # Makes the line, closed until a world is open.
-    def initialize
-      @root = UI::Box.new(:id => ID, :place_name => PLACE_NAME, :frame => false, :under_windows => true, :z => UI::Z[:lines],
-                          :at => [MARGIN, Graphics.height - ROW * ROWS - MARGIN], :size => [WIDTH, ROW * ROWS], :movable => true, :resizable => :width,
-                          :min_size => [MIN_WIDTH, ROW * ROWS], :mouse => :parts, :tail => true, :gap => 0)
-      @shown = nil
-    end
-
-    # Opens the line in a world and closes it outside one, and shows the notices once they changed.
-    # Called by the map every frame.
-    def update
-      unless MGQ_MpOverworldSync.in_world?
-        @root.close if @root.open?
-        return
+    # Describes the status.
+    def render
+      hud id: ID, place_name: PLACE_NAME, anchor: :bottom_left, shown_in: [Scene_Map], mouse: :none, frame: false, resizable: :width,
+          min_size: [MIN_WIDTH, 0], hide_while: -> { !MGQ_MpOverworldSync.in_world? } do
+        stack tail: true, spacing: 0.5 do
+          MGQ_MpOverworld.status_lines.each_with_index do |(text, icon), index|
+            stack row: true, spacing: 1, key: index do
+              text("\\I[#{icon}]", escapes: true) if icon
+              text text.to_s, wrap: true, grow: 1
+            end
+          end
+        end
       end
-
-      @root.open unless @root.open?
-      notices = MGQ_MpOverworldSync::Status.shown.last(ROWS)
-      return if notices == @shown
-
-      @shown = notices
-      @root.clear
-      notices.each { |text, icon| @root.add_label(text.to_s, :wrap => true, :icon => icon || false, :row_height => ROW) }
     end
+  end
 
-    # Closes the line, with the map's sprites.
-    def close
-      @root.close
+  # Tells what a ghost's label shows: the line above, the icon of what its player does, whether
+  # they lead their party, their name and its color, the party's size and the ping.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The ghost's player.
+  # @return [Array] The label's parts, the same object while they stay.
+  def self.label_of(peer)
+    state = peer.state
+    badge = party_badge(peer)
+    shown = [MGQ_MpOverworldSync.label_line_of(peer), STATE_ICONS[state["scene"]], badge && badge[1] ? true : false, name_tag(peer),
+             MGQ_MpPlayerColor.role(peer), badge && badge[0], ping_label(state["ping"])]
+    @labels ||= {}
+    kept = @labels[peer]
+    kept == shown ? kept : (@labels[peer] = shown)
+  end
+
+  # Tells what the player's own ping shows: the ping, the party's size and whether they lead it.
+  #
+  # @return [Array] The ping (text and color), the size and the crown, each nil for none; the same
+  #   object while they stay.
+  def self.own_ping
+    in_world = MGQ_MpOverworldSync.in_world?
+    ping = in_world ? ping_label(MGQ_MpOverworldSync::Ping.measured) : nil
+    badge = in_world ? party_badge(:me) : nil
+    shown = [ping, badge && badge[0], badge && badge[1] ? true : nil]
+    @own_ping = shown unless @own_ping == shown
+    @own_ping
+  end
+
+  # Tells what the line over the player's head says: with the seconds while that fits half the
+  # screen's width, else without them, so a cut only ever loses the end of a text, never a
+  # countdown that fits.
+  #
+  # @return [String] The line, "" for none.
+  def self.own_line_text
+    lines = MGQ_MpActions.own_lines
+    return "" unless lines
+
+    lines[0].size <= OWN_LINE_CHARS ? lines[0] : lines[1]
+  end
+
+  # Tells the world status's lines.
+  #
+  # @return [Array<Array>] Each line's text and icon, the newest last, at most WorldStatus::ROWS;
+  #   the same object while they stay.
+  def self.status_lines
+    lines = MGQ_MpOverworldSync::Status.shown.last(WorldStatus::ROWS)
+    @status_lines = lines unless @status_lines == lines
+    @status_lines
+  end
+
+  # Shows the labels of the ghosts on the player's map and takes those of the others away, and
+  # keeps the player's own ping, own line and world status shown. Called by the map's sprites
+  # every frame.
+  #
+  # @param hud [Boolean] Whether the map shows the mod's HUD, not behind a menu.
+  def self.keep_labels(hud)
+    peers = ghosts
+    MGQ_MpShown.keys_of(:ghost_label).each do |key|
+      MGQ_MpShown.drop(key) unless peers.any? { |peer| peer.ghost.equal?(key[1]) }
     end
+    peers.each { |peer| MGQ_MpShown.keep([:ghost_label, peer.ghost], GhostLabel, peer: peer, ghost: peer.ghost) }
+    (@labels || {}).delete_if { |peer, _| !peers.include?(peer) }
+    MGQ_MpShown.keep(:own_ping, OwnPing)
+    return unless hud
+
+    MGQ_MpShown.keep(:own_line, OwnLine)
+    MGQ_MpShown.keep(WorldStatus::ID, WorldStatus)
   end
 end
 
@@ -739,29 +700,22 @@ end
 begin
   MGQ_MpHooks.after(Game_Map, :update, "overworld") { MGQ_MpOverworld.update_ghosts }
 
-  # After the map's sprites, a sprite and label per ghost on this map, a sprite per ghost's
-  # follower, the player's own ping and, unless the map shows behind a menu, the line above it and
-  # the status line. The own ping opens before the own line and the labels, so the labels on the
-  # player's tile stack above them.
+  # After the map's sprites, a sprite per ghost on this map and per ghost's follower, the labels over
+  # the ghosts and the player's own ping and, unless the map shows behind a menu, the line over it
+  # and the world status.
   MGQ_MpHooks.after(Spriteset_Map, :update, "overworld") do
     @mgq_mp_ghosts ||= {}
     @mgq_mp_followers ||= {}
     viewport = MGQ_MpGame.get(self, :viewport1)
     begin
-      (@mgq_mp_own_ping ||= MGQ_MpOverworld::OwnPing.new).update
-      (@mgq_mp_own_line ||= MGQ_MpOverworld::OwnLine.new).update if mgq_mp_hud?
-      (@mgq_mp_status ||= MGQ_MpOverworld::WorldStatus.new).update if mgq_mp_hud?
+      MGQ_MpOverworld.keep_labels(mgq_mp_hud?)
     rescue => e
-      MGQ_MpOverworld.log_once(:own_lines, "showing the lines above the player or the world status failed: #{e.class}: #{e.message}")
+      MGQ_MpOverworld.log_once(:labels, "showing the labels, the lines over the player or the world status failed: #{e.class}: #{e.message}")
     end
     peers = MGQ_MpOverworld.ghosts
 
     @mgq_mp_ghosts.keys.each do |ghost|
-      next if peers.any? { |peer| peer.ghost.equal?(ghost) }
-
-      sprite, label = @mgq_mp_ghosts.delete(ghost)
-      label.close
-      sprite.dispose
+      @mgq_mp_ghosts.delete(ghost).dispose unless peers.any? { |peer| peer.ghost.equal?(ghost) }
     end
 
     followers = peers.map { |peer| peer.ghost.followers }.flatten
@@ -769,31 +723,18 @@ begin
       @mgq_mp_followers.delete(follower).dispose unless followers.any? { |shown| shown.equal?(follower) }
     end
 
-    # Followers first, so a ghost's sprite and label draw over its followers on the same tile.
+    # Followers first, so a ghost's sprite draws over its followers on the same tile.
     followers.each do |follower|
       (@mgq_mp_followers[follower] ||= Sprite_MpGhostFollower.new(viewport, follower)).update
     end
 
-    peers.each do |peer|
-      unless @mgq_mp_ghosts[peer.ghost]
-        sprite = Sprite_Character.new(viewport, peer.ghost)
-        @mgq_mp_ghosts[peer.ghost] = [sprite, MGQ_MpOverworld::GhostLabel.new(sprite, peer)]
-      end
-      sprite, label = @mgq_mp_ghosts[peer.ghost]
-      sprite.update
-      label.update(peer)
-    end
+    peers.each { |peer| (@mgq_mp_ghosts[peer.ghost] ||= Sprite_Character.new(viewport, peer.ghost)).update }
   end
 
   MGQ_MpHooks.before(Spriteset_Map, :dispose, "overworld") do
-    (@mgq_mp_ghosts || {}).each_value do |sprite, label|
-      label.close
-      sprite.dispose
-    end
+    (@mgq_mp_ghosts || {}).each_value { |sprite| sprite.dispose }
     (@mgq_mp_followers || {}).each_value { |sprite| sprite.dispose }
     @mgq_mp_ghosts = @mgq_mp_followers = nil
-    [@mgq_mp_status, @mgq_mp_own_ping, @mgq_mp_own_line].compact.each { |part| part.close }
-    @mgq_mp_status = @mgq_mp_own_ping = @mgq_mp_own_line = nil
   end
 rescue => e
   MGQ_MpOverworld.log("hooks FAILED: #{e.class}: #{e.message}")

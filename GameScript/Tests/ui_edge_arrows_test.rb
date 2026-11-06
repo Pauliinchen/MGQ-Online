@@ -2,6 +2,7 @@
 #  ui_edge_arrows_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Checked the arrows shown and what they say, leaving how they look to the in-game suite
 #      Paulinchen  2026-11-01: Checked the arrows as markers of the Mod Framework, the players picked by the DLL's stand-in
 #                            - Hid the arrows behind any mod's screen that holds the game, as the Mod Framework tells
 #      Paulinchen  2026-10-31: Took a player's color from MGQ_MpPlayerColor and the strip at the top from MGQ_MpHud
@@ -14,8 +15,8 @@
 
 # Covers the arrows at the screen's edge, ui_edge_arrows.rbx: what the map tells the DLL's pick
 # (hud.arrows, whose rules and log MGQOnline.Game.Tests checks against their golden cases), what
-# hides every arrow, and the Mod Framework's markers made, kept, pointed and closed as the DLL picks
-# players.
+# hides every arrow, and the arrows shown, kept and taken away as the DLL picks players, with what
+# they say.
 
 require_relative "hud_support"
 
@@ -49,7 +50,6 @@ $world_bridge.answer(MGQ_MpEdgeArrows::FORGET_TOPIC) { |_request| $forgotten += 
 
 # The script under test.
 Arrows = MGQ_MpEdgeArrows
-ui = Mod_Framework::UI
 
 # Puts another player on the map with a ghost standing on a tile.
 #
@@ -112,51 +112,51 @@ $game_message.busy = true
 check("a message", Arrows.hidden_reason, "a message shows")
 $game_message.busy = false
 
-# The markers, through the map's hooks.
+# The arrows, through the map's hooks.
 spriteset = Spriteset_Map.new
+# Lists the players whose arrows show, by id.
+shown = lambda { MGQ_MpShown.keys_of(:edge_arrow).map { |key| key[1] } }
 $picked = []
 spriteset.update
-arrows = spriteset.instance_variable_get(:@mgq_mp_edge_arrows)
-check("the map's update makes the arrows, none while the DLL picks nobody", [arrows.class, arrows.markers], [Arrows::Markers, {}])
+check("the map's update shows no arrow while the DLL picks nobody", shown.call, [])
 member = arrive(2, "aa-member", "Member", 40, 4, true)
 $picked = [2]
 spriteset.update
-marker = arrows.markers["aa-member"]
-check("a member the DLL picks gets a marker toward their ghost's tile, in the members' color, with their name and tiles, under the game's windows",
-      [marker.class, marker.open?, marker.target, marker.text, marker.color, marker.under_windows, marker.z], [ui::Marker, true, [40, 4], "Member 37", :ally, true, ui::Z[:arrows]])
+member_peer = MGQ_MpOverworldSync::Peers.at(2)
+check("a member the DLL picks gets an arrow, in the members' color, with their name and tiles",
+      [shown.call, Arrows.label_of(member_peer), MGQ_MpPlayerColor.role(member_peer)], [["aa-member"], "Member 37", :mgq_online_member])
 walk(member, 40, 40)
 spriteset.update
-check("a ghost that moves turns the same marker toward its new tile, the tiles counted anew", [arrows.markers["aa-member"].equal?(marker), marker.target, marker.text], [true, [40, 40], "Member 73"])
+check("a ghost that moves keeps its arrow, the tiles counted anew", [shown.call, Arrows.label_of(member_peer)], [["aa-member"], "Member 73"])
 
 stranger = arrive(3, "bb-stranger", "Long Name Player Seven", 3, 40)
 $picked = [3, 2]
 spriteset.update
-other = arrows.markers["bb-stranger"]
-check("a second player gets a second marker, in plain text as a player outside the party, a long name cut before the tiles",
-      [arrows.markers.size, other.color, other.text.end_with?(" 36"), other.text.size < "Long Name Player Seven 36".size], [2, :text, true, true])
+stranger_peer = MGQ_MpOverworldSync::Peers.at(3)
+check("a second player gets a second arrow, in plain text as a player outside the party, a long name cut before the tiles",
+      [shown.call.sort, MGQ_MpPlayerColor.role(stranger_peer), Arrows.label_of(stranger_peer)], [["aa-member", "bb-stranger"], :text, "Long Name... 36"])
 
 $mgq_text_input = true
 spriteset.update
-check("the chat box hides every marker, which keep their players, and the DLL hears why with no ghosts",
-      [arrows.markers.size, hidden_root?(marker), hidden_root?(other), $arrow_requests.last.values_at("reason", "ghosts")], [2, true, true, [covered, {}]])
+check("the chat box hides every arrow, which keep their players, and the DLL hears why with no ghosts",
+      [shown.call.size, Arrows.hidden_reason, $arrow_requests.last.values_at("reason", "ghosts")], [2, covered, [covered, {}]])
 $mgq_text_input = nil
 spriteset.update
-check("closing it shows them again", [hidden_root?(marker), marker.open?], [false, true])
+check("closing it shows them again", [shown.call.size, Arrows.hidden_reason], [2, nil])
 
 $picked = [3]
 spriteset.update
-check("a player the DLL no longer picks loses their marker, which closes", [arrows.markers.keys, marker.open?], [["bb-stranger"], false])
+check("a player the DLL no longer picks loses their arrow", shown.call, ["bb-stranger"])
 $picked = [3, 2]
 spriteset.update
-check("picked again, they get a new one", [arrows.markers.size, arrows.markers["aa-member"].equal?(marker), arrows.markers["aa-member"].open?], [2, false, true])
+check("picked again, they get one again", shown.call.sort, ["aa-member", "bb-stranger"])
 
-# A failing frame is logged once, closes every marker and the map goes on.
+# A failing frame is logged once, takes every arrow away and the map goes on.
 MGQ_MpOverworldSync::Peers.at(2).ghost = Object.new
 2.times { spriteset.update }
-check("a frame that fails is logged once and closes the markers", [$logs.count { |line| line.start_with?("edge arrows: the arrows failed: NoMethodError") }, arrows.markers], [1, {}])
+check("a frame that fails is logged once and takes the arrows away", [$logs.count { |line| line.start_with?("edge arrows: the arrows failed: NoMethodError") }, shown.call], [1, []])
 MGQ_MpOverworldSync::Peers.at(2).ghost = Ghost.new
 MGQ_MpOverworldSync::Peers.at(2).ghost.moveto(40, 4)
 spriteset.update
-kept = arrows.markers.values
 spriteset.dispose
-check("the map's dispose closes the markers and has the DLL forget which it logged", [kept.map(&:open?), spriteset.instance_variable_get(:@mgq_mp_edge_arrows), $forgotten], [[false, false], nil, 1])
+check("the map's dispose takes the arrows away and has the DLL forget which it logged", [shown.call, $forgotten], [[], 1])

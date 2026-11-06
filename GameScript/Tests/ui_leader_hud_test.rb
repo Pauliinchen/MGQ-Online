@@ -2,6 +2,7 @@
 #  ui_leader_hud_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Left what the HUD shows to the in-game suite, checking what its bars read
 #      Paulinchen  2026-11-05: Expected the HUD's switches kept as true or false
 #      Paulinchen  2026-11-01: Read the HUD from the Mod Framework's components it builds
 #                            - Stood in for the emote wheel of the Mod Framework
@@ -15,10 +16,9 @@
 #
 #----------------------------------------------------------------
 
-# Covers the Leader HUD, ui_leader_hud.rbx: its box of the Mod Framework docked at the top left
-# under the game's windows, the Formation Leader's face or figure, name, level, bars and levels'
-# progress in the Large and Small sizes, the hotkey that switches them, hiding it, the map's top
-# left windows moved below the docked boxes, and its Mod Config rows.
+# Covers the Leader HUD, ui_leader_hud.rbx: what its bars read of the Formation Leader, the hotkey
+# that switches its sizes, hiding it, the map's top left windows moved below the parts there, and
+# its Mod Config rows. What it shows is the in-game suite's.
 
 require_relative "hud_support"
 
@@ -91,12 +91,6 @@ $leader = leader
 load_script "ui_leader_hud"
 
 hud = MGQ_MpLeaderHud
-ui = Mod_Framework::UI
-view = hud::View.new
-view.update
-root = view.root
-gauges = lambda { parts_of_kind(root, ui::Gauge) }
-picture = lambda { parts_of_kind(root, ui::Picture).first }
 
 check("its rows in the Mod Config: on and off, then the size, both kept by the mod",
       NWConst::Config::MOD_CONTENTS.select { |row| row[:mod_stored] }.map { |row| [row[:key], row[:values].call] }.last(2),
@@ -106,45 +100,21 @@ check("both in the Settings, the single player row left to ui_single_player.rbx"
        NWConst::Config::MOD_CONTENTS.any? { |row| row[:key] == hud::SP_SHOWN_OPTION }],
       [[MGQ_Multiplayer::OPTION_PREFIX + hud::SHOWN_OPTION_NAME, MGQ_Multiplayer::OPTION_PREFIX + hud::SIZE_OPTION_NAME], false])
 
-# The Large size: the face, the name, the level, both bars with their texts and the levels'
-# progress, in a box docked at the top left under the game's windows.
-check("it opens as the movable Leader HUD at the top left, before the notices, under the game's windows, the pointer passing but for its parts",
-      [root.open?, root.id, root.place_name, root.dock, root.dock_order, root.under_windows, root.movable, root.resizable, root.mouse],
-      [true, :leader_hud, "Leader HUD", :top_left, 10, true, true, false, :parts])
-check("in the Large size until the player picks another: 240 wide, the leader's face in its square",
-      [root.width, picture.call.face.face_name, picture.call.face.face_index, picture.call.figure], [240, "alice_fc1", 5, nil])
-check("the name and the base level", texts_of(root), ["Alice", "Lv 30"])
-check("the HP bar three quarters full in red with its name and numbers, the MP bar half full in blue",
-      gauges.call[0, 2].map { |gauge| [gauge.rate, gauge.label, gauge.value] } + [gauges.call[0].colors, gauges.call[1].colors],
-      [[0.75, "HP", "189 / 252"], [0.5, "MP", "40 / 80"], hud::View::HP_COLORS, hud::View::MP_COLORS])
+# What the bars read of the Formation Leader.
+check("the HP bar three quarters full with its numbers, the MP bar half full",
+      [hud.rate(:hp), hud.numbers(:hp), hud.rate(:mp), hud.numbers(:mp)], [0.75, "189 / 252", 0.5, "40 / 80"])
 check("the base level half done, the job at its highest full, the race just begun empty",
-      gauges.call[2, 3].map { |gauge| [gauge.rate, gauge.colors] }, hud::View::EXP_KINDS.zip([0.5, 1.0, 0.0]).map { |kind, rate| [rate, hud::View::EXP_COLORS[kind]] })
-
-# Nothing is set anew while nothing changed; a change of HP sets the bar.
-name_label = part_with_text(root, "Alice")
-sets = 0
-name_label.define_singleton_method(:text=) { |value| sets += 1; super(value) }
-view.update
-check("a frame where nothing changed sets nothing", sets, 0)
+      [:base, :class, :tribe].map { |kind| hud.exp_rate(leader, kind) }, [0.5, 1.0, 0.0])
+look = hud.look
 leader.hp = 63
-view.update
-check("a change of HP sets the bar's share and numbers", [gauges.call[0].rate, gauges.call[0].value], [0.25, "63 / 252"])
-
-# The Small size: the figure and bars without texts, in the same box.
-hud.resize("Small")
-view.update
-check("the Small size keeps Player.ini's choice: 170 wide, the leader's figure in the square, the bars without texts",
-      [$player_ini["leader_hud_size"], root.width, picture.call.figure.character_name, picture.call.face, gauges.call[0].label, gauges.call[0].value],
-      ["Small", 170, "Actor1", nil, nil, nil])
-check("in the same box, the name and level still showing", [view.root.equal?(root), root.open?, texts_of(root)], [true, true, ["Alice", "Lv 30"]])
-hud.resize("Large")
-view.update
+check("a change of HP renders nothing anew, the bar reading it", [hud.look.equal?(look), hud.rate(:hp)], [true, 0.25])
 
 # The size's hotkey switches the sizes, but not while the player types.
 $sounds = []
 $pressed = 0x48
 hud.on_map
-check("H makes it small, kept in Player.ini, with the cursor's sound", [hud.size, $player_ini["leader_hud_size"], $sounds], ["Small", "Small", ["cursor"]])
+check("H makes it small, kept in Player.ini, with the cursor's sound, and renders it anew",
+      [hud.size, $player_ini["leader_hud_size"], $sounds, hud.look.equal?(look)], ["Small", "Small", ["cursor"], false])
 $pressed = 0x48
 hud.on_map
 check("and large again", hud.size, "Large")
@@ -160,7 +130,7 @@ MGQ_Multiplayer::Log.define_singleton_method(:write) { |line| puts "  log: #{lin
 check("while the chat box is open the key changes nothing and the letter typed stays out of the log", [hud.size, logged], ["Large", []])
 MGQ_MpChat.singleton_class.send(:alias_method, :typing?, :leader_hud_test_typing?)
 
-# The map's top left windows move below the boxes docked there.
+# The map's top left windows move below the parts there.
 scene = Scene_Map.new
 name_window = Window_Stand.new(0)
 medal_window = Window_Stand.new(0)
@@ -169,19 +139,19 @@ scene.instance_variable_set(:@gain_medal_window, medal_window)
 SceneManager.scene = scene
 $docked_room[:top_left] = 92
 hud.lower_windows
-check("the map's name and the medal just won move 4 pixels below the boxes docked at the top left", [name_window.y, medal_window.y], [96, 96])
+check("the map's name and the medal just won move 4 pixels below the parts at the top left", [name_window.y, medal_window.y], [96, 96])
 $docked_room[:top_left] = 0
 hud.lower_windows
-check("and back where the game put them once nothing is docked there", [name_window.y, medal_window.y], [0, 0])
+check("and back where the game put them once nothing takes room there", [name_window.y, medal_window.y], [0, 0])
 
 # A message at the top, turning the HUD off and a party without a leader hide it.
 $game_message.visible = true
 $game_message.position = 0
-check("a message at the top hides it", [hud.shows?, hidden_root?(root)], [false, true])
+check("a message at the top hides it", hud.shows?, false)
 $game_message.visible = false
-check("it shows again once the message is gone", [hud.shows?, hidden_root?(root)], [true, false])
+check("it shows again once the message is gone", hud.shows?, true)
 hud.show(false)
-check("turned off it hides, kept in Player.ini", [hidden_root?(root), $player_ini["leader_hud"]], [true, false])
+check("turned off it hides, kept in Player.ini", [hud.shows?, $player_ini["leader_hud"]], [false, false])
 logged = []
 MGQ_Multiplayer::Log.define_singleton_method(:write) { |line| logged << line }
 $pressed = 0x48
@@ -191,33 +161,19 @@ check("while it is off the key changes nothing and the log says why",
       [hud.size, logged.grep(/ignored/)], ["Large", ["keys: hotkey H (Leader HUD Size) ignored: the HUD is off"]])
 hud.show(true)
 $leader = nil
-check("a party without a leader shows nothing", hidden_root?(root), true)
+check("a party without a leader shows nothing", hud.shows?, false)
 $leader = leader
 
 # Outside a world the single player row decides, inside a world the Settings row.
 in_world = MGQ_MpOverworldSync.method(:in_world?)
 hud.show(false)
 MGQ_MpOverworldSync.define_singleton_method(:in_world?) { false }
-check("outside a world the single player row follows the Settings row until the player sets it", [hud.on?, hidden_root?(root)], [false, true])
+check("outside a world the single player row follows the Settings row until the player sets it", [hud.on?, hud.shows?], [false, false])
 hud.show_sp(true)
-check("set, the single player row decides whatever the Settings row says", [hud.on?, hidden_root?(root), $player_ini["sp_leader_hud"]], [true, false, true])
+check("set, the single player row decides whatever the Settings row says", [hud.on?, hud.shows?, $player_ini["sp_leader_hud"]], [true, true, true])
 hud.show_sp(false)
-check("turned off there it hides, kept in Player.ini apart from the Settings row", [hud.on?, hidden_root?(root), $player_ini["sp_leader_hud"]], [false, true, false])
+check("turned off there it hides, kept in Player.ini apart from the Settings row", [hud.on?, hud.shows?, $player_ini["sp_leader_hud"]], [false, false, false])
 check("so the size hotkey changes nothing there", hud.busy_reason, "the HUD is off")
 hud.show(true)
 MGQ_MpOverworldSync.define_singleton_method(:in_world?, in_world)
-check("inside a world the Settings row decides, whatever the single player row says", [hud.on?, hidden_root?(root)], [true, false])
-hud.show_sp(true)
-
-# The map's sprites open the HUD and close it as they go; the map behind a menu shows none.
-spriteset = Spriteset_Map.new
-spriteset.update
-shown = spriteset.instance_variable_get(:@mgq_mp_leader_hud)
-spriteset.dispose
-check("the map's sprites open the HUD and close it with them", [shown.root.id, shown.root.open?, spriteset.instance_variable_get(:@mgq_mp_leader_hud)], [:leader_hud, false, nil])
-behind = Spriteset_Map.new
-behind.define_singleton_method(:mgq_mp_hud?) { false }
-behind.update
-check("the map behind a menu opens none", behind.instance_variable_get(:@mgq_mp_leader_hud), nil)
-view.close
-check("closed, its box is gone", root.open?, false)
+check("inside a world the Settings row decides, whatever the single player row says", [hud.on?, hud.shows?], [true, true])

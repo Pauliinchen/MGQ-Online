@@ -2,6 +2,8 @@
 #  ui_online.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Named MGQ Online's colors for the Mod Framework's UI layer and kept its HUD parts shown
+#                            - Named a player's color by MGQ Online's color names
 #      Paulinchen  2026-11-01: Dropped the name the old screens reached the Mod Framework's interface by
 #                            - Named a player's color as the Mod Framework's components take it, and left the room at the top to its docks
 #                            - Built the list box and the lines across the top of a screen on the Mod Framework's components
@@ -20,6 +22,78 @@ module MGQ_Multiplayer
 
   # What the names of the single player settings rows start with.
   SP_PREFIX = "[MGQ Online SP] "
+end
+
+# The colors MGQ Online's screens name, given once to the Mod Framework's UI layer: a player's own
+# color, a party member's, a Raid World's, a featured world's, and the fills of the HUD's bars.
+module MGQ_MpColors
+  # Each color's name and what it is: a color name of the player's look it follows, or red, green
+  # and blue.
+  COLORS = [
+    [:mgq_online_own, :own], [:mgq_online_member, :ally], [:mgq_online_raid, :error], [:mgq_online_featured, :gold],
+    [:mgq_online_hp_left, [150, 20, 20]], [:mgq_online_hp_right, [230, 60, 50]],
+    [:mgq_online_mp_left, [30, 80, 170]], [:mgq_online_mp_right, [70, 150, 240]],
+    [:mgq_online_base_left, [200, 150, 40]], [:mgq_online_base_right, [255, 220, 110]],
+    [:mgq_online_job_left, [40, 150, 70]], [:mgq_online_job_right, [110, 220, 120]],
+    [:mgq_online_race_left, [130, 70, 190]], [:mgq_online_race_right, [200, 140, 255]],
+    [:mgq_online_raid_top, [156, 32, 50]], [:mgq_online_raid_middle, [110, 16, 30]], [:mgq_online_raid_bottom, [70, 8, 18]]
+  ]
+
+  extend MGQ_MpLog
+
+  # What starts this script's lines in the log.
+  LOG_TAG = "ui"
+
+  # Names every color of COLORS, logging each the framework refuses.
+  def self.name_all
+    COLORS.each do |name, value|
+      begin
+        Mod_Framework::UI.color(name, value)
+      rescue => e
+        log("naming the color #{name} FAILED: #{e.message}")
+      end
+    end
+  end
+end
+
+# MGQ Online's HUD parts on the Mod Framework's UI layer, each shown once and kept: a hud stays
+# across the scenes, and F12 takes every part of the layer away, so each is shown again then.
+module MGQ_MpShown
+  # The handle of each part shown, by its key; false for one the framework refused, which is not
+  # asked again until it is dropped.
+  @handles = {}
+
+  # Shows a component once, and again after F12 took it away.
+  #
+  # @param key [Object] What the part is, such as :leader_hud.
+  # @param klass [Class] Its component class.
+  # @param params [Hash] Its params.
+  # @return [Object, nil] Its handle, nil while the framework refuses it.
+  def self.keep(key, klass, params = {})
+    handle = @handles[key]
+    return nil if handle == false
+    return handle if handle && handle.shown?
+
+    @handles[key] = Mod_Framework::UI.show(klass, params) || false
+    @handles[key] || nil
+  end
+
+  # Takes a part off the screen for good, until it is kept again.
+  #
+  # @param key [Object] What the part is.
+  def self.drop(key)
+    handle = @handles.delete(key)
+    handle.hide if handle && handle.shown?
+  end
+
+  # Lists the keys of the parts kept now that are Arrays starting with a kind, such as the labels
+  # over the other players' characters.
+  #
+  # @param kind [Symbol] The kind, such as :ghost_label.
+  # @return [Array<Array>] Their keys.
+  def self.keys_of(kind)
+    @handles.keys.select { |key| key.is_a?(Array) && key[0] == kind }
+  end
 end
 
 # The color a player is named in everywhere: Style::OWN for the player themself, Style::MEMBER for
@@ -79,14 +153,15 @@ module MGQ_MpPlayerColor
     { :own => OWN_NAME, :member => MEMBER_NAME }.fetch(pick(who, member, own), PLAIN_NAME)
   end
 
-  # Names a player's color as the Mod Framework's components take it in :color.
+  # Names a player's color as the Mod Framework's UI layer takes it in color:.
   #
   # @param who [Peer, Hash, String, Symbol] See id_of.
   # @param member [Boolean, nil] See of.
   # @param own [Boolean, nil] See of.
-  # @return [Symbol] :own for the player themself, :ally for a party member, :text for anyone else.
+  # @return [Symbol] :mgq_online_own for the player themself, :mgq_online_member for a party member,
+  #   :text for anyone else.
   def self.role(who, member = nil, own = nil)
-    { :own => :own, :member => :ally }.fetch(pick(who, member, own), :text)
+    { :own => :mgq_online_own, :member => :mgq_online_member }.fetch(pick(who, member, own), :text)
   end
 
   # Tells which of the three a player is, which of and label name in their own way.
@@ -418,4 +493,12 @@ class MGQ_MpInfoStrip
   def dispose
     @window.close
   end
+end
+
+# The colors MGQ Online's screens name.
+
+begin
+  MGQ_MpColors.name_all
+rescue => e
+  MGQ_MpColors.log("naming the colors FAILED: #{e.class}: #{e.message}")
 end

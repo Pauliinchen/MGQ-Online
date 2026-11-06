@@ -2,6 +2,7 @@
 #  battles_coop_join.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Showed the prompt as a hud of the Mod Framework's UI layer under the player
 #      Paulinchen  2026-11-05: Told the battle's players in rbn whether or not it takes players in
 #                            - Told whether the battle takes players in, is full, ends or is closed, as the rules in C# tell it
 #                            - Read the Join Battle hotkey in a Classic world too, for a party member's battle the player missed
@@ -296,41 +297,23 @@ module MGQ_MpBattlesJoin
 end
 
 module MGQ_MpBattlesJoin
-  # The prompt below the player's character while a battle near them takes them in, naming the
-  # hotkey that joins it, in the small font and the color every request and offer shares: a button
-  # of the Mod Framework that follows the player, kept whole on the screen at the map's edges,
-  # which a click presses as the hotkey does.
-  class Prompt
-    # Width of the prompt.
-    WIDTH = 240
-
-    # Pixels between the character's feet and the prompt.
-    GAP = 2
-
-    # @return [Mod_Framework::UI::Box] The prompt's box.
-    attr_reader :root
-
-    # Makes the prompt below the player and opens it, hidden while it has nothing to offer.
-    def initialize
-      @text = nil
-      @root = Mod_Framework::UI::Box.new(:frame => false, :follow => :player, :side => :below, :follow_gap => GAP, :on_screen => true, :width => WIDTH,
-                                         :mouse => :parts, :z => Mod_Framework::UI::Z[:labels], :hide_while => lambda { @text.nil? })
-      @button = @root.add_button("", :flat => true, :quiet => true, :font_size => :small, :color => :own, :align => :center)
-      @button.on(:click) { MGQ_MpBattlesJoin.click }
-      @root.open
+  # The prompt under the player's character while a battle near them takes them in, naming the
+  # hotkey that joins it, small and in the color every request and offer shares: a hud of the Mod
+  # Framework's UI layer that follows the player, kept whole on the screen at the map's edges, its
+  # one button pressed by a click as the hotkey does.
+  class Prompt < Mod_Framework::UI::Component
+    # Describes the prompt.
+    def render
+      hud follow: :player, side: :bottom, on_screen: true, movable: false, frame: false, shown_in: [Scene_Map],
+          hide_while: -> { MGQ_MpBattlesJoin.prompt_text.nil? } do
+        button -> { MGQ_MpBattlesJoin.prompt_text.to_s }, variant: :text, color: :mgq_online_own, on_click: -> { MGQ_MpBattlesJoin.click }
+      end
     end
+  end
 
-    # Shows what the prompt offers now, see MGQ_MpBattlesJoin.prompt_text. Called by the map every
-    # frame.
-    def update
-      @text = MGQ_MpBattlesJoin.prompt_text
-      @button.text = @text if @text && @button.text != @text
-    end
-
-    # Closes the prompt, with the map's sprites.
-    def close
-      @root.close
-    end
+  # Shows the prompt as the map is first seen, and again once F12 took it away.
+  def self.keep_prompt
+    MGQ_MpShown.keep(:join_prompt, Prompt)
   end
 end
 
@@ -349,19 +332,9 @@ begin
   # joins the battle once the host's invite came.
   MGQ_MpHooks.after(Scene_Map, :update_scene, "battles_coop_join") { MGQ_MpBattlesJoin.on_map(scene_changing?) }
 
-  # After the map's sprites, the prompt below the player's character, never on the map behind a
+  # After the map's sprites, the prompt under the player's character, never on the map behind a
   # menu.
-  MGQ_MpHooks.after(Spriteset_Map, :update, "battles_coop_join") do
-    next unless mgq_mp_hud?
-
-    (@mgq_mp_join_prompt ||= MGQ_MpBattlesJoin::Prompt.new).update
-  end
-
-  # Before the map's sprites go, the prompt goes with them.
-  MGQ_MpHooks.before(Spriteset_Map, :dispose, "battles_coop_join") do
-    @mgq_mp_join_prompt.close if @mgq_mp_join_prompt
-    @mgq_mp_join_prompt = nil
-  end
+  MGQ_MpHooks.after(Spriteset_Map, :update, "battles_coop_join") { MGQ_MpBattlesJoin.keep_prompt if mgq_mp_hud? }
 
   # Before the title screen starts, a request a reset interrupted is forgotten.
   MGQ_MpHooks.before(Scene_Title, :start, "battles_coop_join") { MGQ_MpBattlesJoin.drop }

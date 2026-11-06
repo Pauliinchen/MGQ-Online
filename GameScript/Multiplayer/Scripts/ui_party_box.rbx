@@ -2,6 +2,7 @@
 #  ui_party_box.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Drew the box as a hud of the Mod Framework's UI layer, its players as rows of a list in columns
 #      Paulinchen  2026-11-05: Kept and read its switch in Player.ini as true or false, which the DLL writes as 1 or 0
 #      Paulinchen  2026-11-01: Built the box on the Mod Framework's components, docked at the top right under the game's windows
 #                            - Changed the size by a click on the size hint too
@@ -52,6 +53,15 @@ module MGQ_MpPartyBox
 
   # What the log calls a party's leader.
   LEADER_LABEL = "leader"
+
+  # Frames between two readings of the party, a quarter of a second.
+  READ_FRAMES = 15
+
+  # How the map's title reads, with how many are on it.
+  MAP_TITLE = "Map %d"
+
+  # The row that says how many more players are on the map than the box lists.
+  MORE_TEXT = "+%d more"
 
   # The box's kind and the players it listed when last logged, see note_rows.
   @names = []
@@ -141,7 +151,10 @@ module MGQ_MpPartyBox
   # @param rows [Array<MGQ_MpWorldOverview::Row>] The players.
   # @return [Array] The players listed, and how many more there are, 0 when all fit.
   def self.capped(rows)
-    shown, more = UI.capped(rows, MAP_LINES)
+    return [rows, 0] if rows.size <= MAP_LINES
+
+    shown = rows.first(MAP_LINES - 1)
+    more = rows.size - shown.size
     own = rows.find { |row| row.player == :me }
     shown[-1] = own if own && more > 0 && shown.none? { |row| row.player == :me }
     [shown, more]
@@ -216,226 +229,161 @@ module MGQ_MpPartyBox
     log("changing the box's size by a click failed: #{e.class}: #{e.message}")
   end
 
-  # The box at the top right of the map, until the player moves it, that lists the player's party:
-  # the leader first with a crown, then the others by name, each with the icon of what they do,
-  # their formation's highest level and ping, and where they are on a smaller line below. Small, it
-  # lists only each player's icon, name and ping, at the right edge of the box's place. The title
-  # names the hotkey that changes the size at its right, which a click on it does too. A root of the
-  # Mod Framework docked at the top right under the game's windows; a wider box gives the names and
-  # the places more room, and its height follows the players.
+  # Reads the players every READ_FRAMES, and at once when the World overview opens or closes, and
+  # tells what the box shows: a new object once the players, its size or the hotkey's key changed.
   #
-  # In a Raid World the party's members show with their Frontline's highest level, and the other
-  # players on the player's map follow below the party under the map's title, a line each. Outside a
-  # party it is the map box instead: everyone on the player's map, the party's members first, each
-  # with their Frontline's highest level and ping, and no place, since all share the player's.
-  class View
-    # The box's id, which names its place in the Mod Framework's settings; the map box shares it.
+  # @return [Array] What the box shows.
+  def self.serial
+    overview = MGQ_MpWorldOverview.open?
+    now = MGQ_Multiplayer::Bridge.frame_number
+    read(overview) if @read_at.nil? || now - @read_at >= READ_FRAMES || now < @read_at || overview != @overview
+    @shown
+  rescue => e
+    log_once(:read, "reading the players of the box failed: #{e.class}: #{e.message}")
+    @shown
+  end
+
+  # Reads the players, see sections, and notes what the box shows; it hides while the World
+  # overview is open or there is nobody to list, keeping what it showed while it fades out.
+  #
+  # @param overview [Boolean] Whether the World overview is open.
+  def self.read(overview)
+    @read_at = MGQ_Multiplayer::Bridge.frame_number
+    @overview = overview
+    party, others = overview ? [[], []] : sections
+    rows = party + others
+    note_rows(rows, party.empty? && map_box?) unless overview
+    self.hidden = rows.empty?
+    return if rows.empty?
+
+    shown = [small?, MGQ_MpHotkeys.label(:party_box), party.size] +
+            rows.map { |row| [row.name, row.level, row.ping, row.badge, row.place, row.member, row.icon, away?(row)] }
+    return if @shown == shown
+
+    @shown = shown
+    @party = party
+    @others = others
+  end
+
+  # Lists the box's rows as it shows them now, each a row of the list: small, the party and the
+  # first others on the map; full, the party's members each over the place they are, then a heading
+  # "Map 5" over the others on the map, or the map box's players alone.
+  #
+  # @return [Array<Hash>] The rows.
+  def self.rows
+    party = @party || []
+    others = @others || []
+    small = small?
+    rows = []
+    if small
+      listed, more = capped(others)
+      (party + listed).each { |row| rows << player_row(row, false) }
+      rows << more_row(more) if more > 0
+    else
+      party.each do |row|
+        rows << player_row(row, true)
+        rows << { :cells => ["", "", { :text => row.place.to_s, :typo => :overline, :color => :heading }] }
+      end
+      rows << { :heading => format(MAP_TITLE, others.size) } unless party.empty? || others.empty?
+      listed, more = capped(others)
+      listed.each { |row| rows << player_row(row, true) }
+      rows << more_row(more) if more > 0
+    end
+    rows
+  end
+
+  # Writes the box's title: the party's with its size, or the map box's with how many are on the
+  # map.
+  #
+  # @return [String] Such as "Party 2 / 4" or "Map 5".
+  def self.title
+    return format(MAP_TITLE, (@others || []).size) if (@party || []).empty?
+
+    MGQ_MpOverworld.party_title(MGQ_MpOverworld.party_badge(:me))
+  end
+
+  # Tells the color of the box's title: the party's in the member's color, the map's in the text's.
+  #
+  # @return [Symbol] The color's name.
+  def self.title_color
+    (@party || []).empty? ? :text : :mgq_online_member
+  end
+
+  # Makes a player's row: the crown, the icon of what they do (the away icon while their
+  # connection is down), the name in their color, the level and the ping.
+  #
+  # @param row [MGQ_MpWorldOverview::Row] The player.
+  # @param level [Boolean] Whether the row shows the level.
+  # @return [Hash] The row.
+  def self.player_row(row, level)
+    crown = row.badge && row.badge[1] ? { :icons => [MGQ_MpOverworld::CROWN_ICON] } : ""
+    icon = away?(row) ? AWAY_ICON : row.icon
+    ping = row.ping ? { :text => row.ping[0], :color => row.ping[1], :typo => :caption, :align => :end } : ""
+    cells = [crown, icon ? { :icons => [icon] } : "", { :text => row.name.to_s, :color => color_of(row), :typo => :caption }]
+    cells << { :text => row.level.to_s, :typo => :caption } if level
+    { :cells => cells << ping }
+  end
+
+  # Makes the row that says how many more players are on the map than the box lists.
+  #
+  # @param more [Integer] How many more.
+  # @return [Hash] The row.
+  def self.more_row(more)
+    { :cells => ["", "", { :text => format(MORE_TEXT, more), :color => :dim, :typo => :caption }] }
+  end
+
+  # Shows the box as the map is first seen, and again once F12 took it away.
+  def self.keep_shown
+    MGQ_MpShown.keep(PartyBox::ID, PartyBox)
+  end
+
+  # The box at the top right of the map, until the player moves it, that lists the player's party
+  # or, in a Raid World, everyone on the map (see rows): a hud of the Mod Framework's UI layer under
+  # the game's windows. The full box's title names the hotkey that changes the size at its right,
+  # which a click on it does too; a wider box gives the names and the places more room.
+  class PartyBox < UI::Component
+    # The box's place id, which names its place in the Mod Framework's settings; the map box shares it.
     ID = :party_box
 
     # The box's name while the player arranges the boxes.
     PLACE_NAME = "Party box"
 
-    # Its place among the boxes docked at the top right.
-    DOCK_ORDER = 10
+    # Its place among the parts at the top right.
+    ORDER = 10
 
-    # Height of one line.
-    ROW = 22
-
-    # Height of the line with where a player is.
-    PLACE_ROW = 16
-
-    # Room between the box's side edges and its columns.
-    EDGE = 6
-
-    # Room above the first line and below the last, inside the box's frame.
-    SPACING = 2
-
-    # Widths of a line's columns: the crown, the state icon, the name (what is left), the level and
+    # Widths of a row's columns: the crown, the state icon, the name (what is left), the level and
     # the ping, which "999+ ms" fits.
-    COLUMNS = [22, 24, nil, 52, MGQ_MpOverworld::PING_WIDTH]
+    COLUMNS = [22, 24, nil, 52, 64]
 
-    # Widths of a line's columns in the small box, which has no level.
-    SMALL_COLUMNS = [22, 24, nil, MGQ_MpOverworld::PING_WIDTH]
+    # Widths of a row's columns in the small box, which has no level.
+    SMALL_COLUMNS = [22, 24, nil, 64]
 
-    # Room before the name, where the place below it starts.
-    NAME_LEFT = COLUMNS[0] + COLUMNS[1]
-
-    # Width of the box at its default, and the least: the columns up to the level, the level, a gap,
-    # the ping and the edges, so the level and the ping never meet.
+    # Width of the box at its default, and the least.
     WIDTH = 296
 
-    # Width of the small box, at the right edge of the box's place.
+    # Width of the small box.
     SMALL_WIDTH = 198
-
-    # Least height of the box: one line.
-    MIN_HEIGHT = ROW + 2 * SPACING
-
-    # Frames between two readings of the party, a quarter of a second.
-    READ_FRAMES = 15
 
     # What the title says at its right, with the hotkey that changes the box's size.
     SIZE_HINT = "%s: size"
 
-    # How the map's title reads, with how many are on it.
-    MAP_TITLE = "Map %d"
+    # Renders it anew once the players, its size or the hotkey's key changed.
+    watch { MGQ_MpPartyBox.serial }
 
-    # @return [Mod_Framework::UI::Box] The box.
-    attr_reader :root
-
-    # Makes the box and opens it, hidden until it reads the players.
-    def initialize
-      MGQ_MpPartyBox.hidden = true
-      @root = UI::Box.new(:id => ID, :place_name => PLACE_NAME, :frame => false, :under_windows => true, :z => UI::Z[:labels], :dock => :top_right,
-                          :dock_order => DOCK_ORDER, :movable => true, :resizable => :width, :min_size => [WIDTH, MIN_HEIGHT], :width => WIDTH,
-                          :mouse => :parts, :fade => true, :hide_while => lambda { MGQ_MpPartyBox.hidden? })
-      @frames = 0
-      @overview = nil
-      @drawn = nil
-      @root.open
-    end
-
-    # Reads the players every READ_FRAMES, and at once when the World overview opens or closes.
-    # Called by the map every frame.
-    def update
-      overview = MGQ_MpWorldOverview.open?
-      @frames -= 1
-      refresh(overview) if @frames <= 0 || overview != @overview
-    end
-
-    # Closes the box, with the map's sprites.
-    def close
-      @root.close
-    end
-
-    # Reads the players, see MGQ_MpPartyBox.sections, and builds the box anew if they, its size,
-    # its width or the hotkey's key changed; hides it while the World overview is open or there is
-    # nobody to list, keeping what it showed while it fades out.
-    #
-    # @param overview [Boolean] Whether the World overview is open.
-    def refresh(overview)
-      @frames = READ_FRAMES
-      @overview = overview
-      party, others = overview ? [[], []] : MGQ_MpPartyBox.sections
-      rows = party + others
-      MGQ_MpPartyBox.note_rows(rows, party.empty? && MGQ_MpPartyBox.map_box?) unless overview
-      MGQ_MpPartyBox.hidden = rows.empty?
-      return if rows.empty?
-
+    # Describes the box: the title with the size hint while full, then the rows.
+    def render
       small = MGQ_MpPartyBox.small?
-      drawn = [small, party.size, width, MGQ_MpHotkeys.label(:party_box)] +
-              rows.map { |row| [row.name, row.level, row.ping && row.ping[0], row.badge, row.place, row.member, row.icon, MGQ_MpPartyBox.away?(row)] }
-      return if drawn == @drawn
-
-      @drawn = drawn
-      build(party, others, small)
-    end
-
-    private
-
-    # Tells how wide the box is: as the player left it, WIDTH before it was laid out.
-    #
-    # @return [Integer] The width.
-    def width
-      @root.rect ? @root.rect.width : WIDTH
-    end
-
-    # Builds the box's panel: small, full with the party and the others on the map below it, or
-    # the map box outside a party.
-    #
-    # @param party [Array<MGQ_MpWorldOverview::Row>] The party, see MGQ_MpPartyBox.sections.
-    # @param others [Array<MGQ_MpWorldOverview::Row>] The others on the map, see MGQ_MpPartyBox.sections.
-    # @param small [Boolean] Whether the box is small.
-    def build(party, others, small)
-      @root.clear
-      panel = @root.add_box(:frame => true, :padding => [SPACING, EDGE, SPACING, EDGE], :gap => 0, :align => small ? :end : :stretch,
-                            :width => small ? SMALL_WIDTH : nil)
-      if small
-        listed, more = MGQ_MpPartyBox.capped(others)
-        (party + listed).each { |row| add_line(panel, row, false) }
-        add_more(panel, more)
-      elsif party.empty?
-        add_title(panel, format(MAP_TITLE, others.size), :text)
-        add_map(panel, others)
-      else
-        add_title(panel, MGQ_MpOverworld.party_title(MGQ_MpOverworld.party_badge(:me)), :ally)
-        party.each do |row|
-          add_line(panel, row, true)
-          add_place(panel, row.place)
+      rows = MGQ_MpPartyBox.rows
+      hud id: ID, place_name: PLACE_NAME, anchor: :top_right, order: ORDER, shown_in: [Scene_Map], resizable: :width,
+          min_size: [small ? SMALL_WIDTH : WIDTH, 0], hide_while: -> { MGQ_MpPartyBox.hidden? } do
+        unless small
+          stack row: true do
+            text MGQ_MpPartyBox.title, typo: :caption, color: MGQ_MpPartyBox.title_color, grow: 1
+            button format(SIZE_HINT, MGQ_MpHotkeys.label(:party_box)), variant: :text, color: :dim, on_click: -> { MGQ_MpPartyBox.click_size }
+          end
         end
-        return if others.empty?
-
-        panel.add_label(format(MAP_TITLE, others.size), :font_size => :small, :height => ROW)
-        add_map(panel, others)
+        list rows, cells: (small ? SMALL_COLUMNS : COLUMNS), dense: true, most_rows: [rows.size, 1].max
       end
-    end
-
-    # Adds the title line of the full box: the title at the left, cut to its room, and at the right
-    # the hint that names the hotkey that changes the box's size, which a click on it does too.
-    #
-    # @param panel [Mod_Framework::UI::Box] The panel.
-    # @param title [String] The title.
-    # @param color [Symbol] The title's color.
-    def add_title(panel, title, color)
-      line = panel.add_row(:height => ROW)
-      line.add_label(title, :grow => 1, :shrink => true, :font_size => :small, :color => color)
-      hint = line.add_button(format(SIZE_HINT, MGQ_MpHotkeys.label(:party_box)), :flat => true, :quiet => true, :font_size => :small, :color => :dim)
-      hint.on(:click) { MGQ_MpPartyBox.click_size }
-    end
-
-    # Adds the lines of the players on the map, up to MGQ_MpPartyBox::MAP_LINES, the last saying how
-    # many more there are.
-    #
-    # @param panel [Mod_Framework::UI::Box] The panel.
-    # @param rows [Array<MGQ_MpWorldOverview::Row>] The players.
-    def add_map(panel, rows)
-      shown, more = MGQ_MpPartyBox.capped(rows)
-      shown.each { |row| add_line(panel, row, true) }
-      add_more(panel, more)
-    end
-
-    # Adds a player's line: the crown, the icon of what they do (the away icon while their
-    # connection is down), the name in their color, the level and the ping.
-    #
-    # @param panel [Mod_Framework::UI::Box] The panel.
-    # @param row [MGQ_MpWorldOverview::Row] The player.
-    # @param level [Boolean] Whether the line shows the level.
-    def add_line(panel, row, level)
-      line = panel.add_grid(level ? COLUMNS : SMALL_COLUMNS, :height => ROW)
-      add_icon(line, row.badge && row.badge[1] ? MGQ_MpOverworld::CROWN_ICON : nil)
-      add_icon(line, MGQ_MpPartyBox.away?(row) ? MGQ_MpPartyBox::AWAY_ICON : row.icon)
-      line.add_label(row.name.to_s, :font_size => :small, :color => MGQ_MpPartyBox.color_of(row))
-      line.add_label(row.level.to_s, :font_size => :small) if level
-      if row.ping
-        line.add_label(row.ping[0], :font_size => :small, :align => :end, :color => row.ping[1])
-      else
-        line.add_column
-      end
-    end
-
-    # Adds an icon of the game's icon set to a line's cell, or an empty cell for none.
-    #
-    # @param line [Mod_Framework::UI::Grid] The line.
-    # @param icon [Integer, nil] The icon's index, nil for none.
-    def add_icon(line, icon)
-      icon ? line.add_icon(icon) : line.add_column
-    end
-
-    # Adds where a player is, under their name, shortened to fit the box.
-    #
-    # @param panel [Mod_Framework::UI::Box] The panel.
-    # @param place [String] Where they are.
-    def add_place(panel, place)
-      room = width - 2 * EDGE - NAME_LEFT
-      text = MGQ_MpWorldOverview.fit_place(place, room, UI.font_bitmap(UI::Style::TINY_SIZE))
-      panel.add_label(text, :font_size => :tiny, :color => :heading, :height => PLACE_ROW, :padding => [0, 0, 0, NAME_LEFT])
-    end
-
-    # Adds the line that says how many more players are on the map than the box lists.
-    #
-    # @param panel [Mod_Framework::UI::Box] The panel.
-    # @param more [Integer] How many more, 0 for none and no line.
-    def add_more(panel, more)
-      panel.add_label(format(UI::MORE_TEXT, more), :font_size => :small, :color => :dim, :height => ROW, :padding => [0, 0, 0, NAME_LEFT]) if more > 0
     end
   end
 end
@@ -448,20 +396,7 @@ begin
   MGQ_MpHooks.after(Scene_Map, :update_scene, "ui_party_box") { MGQ_MpPartyBox.on_map unless scene_changing? }
 
   # After the map's sprites, the party's box, never on the map behind a menu.
-  MGQ_MpHooks.after(Spriteset_Map, :update, "ui_party_box") do
-    next unless mgq_mp_hud?
-
-    begin
-      (@mgq_mp_party_box ||= MGQ_MpPartyBox::View.new).update
-    rescue => e
-      MGQ_MpPartyBox.log_once(:draw, "showing the party box failed: #{e.class}: #{e.message}")
-    end
-  end
-
-  MGQ_MpHooks.before(Spriteset_Map, :dispose, "ui_party_box") do
-    @mgq_mp_party_box.close if @mgq_mp_party_box
-    @mgq_mp_party_box = nil
-  end
+  MGQ_MpHooks.after(Spriteset_Map, :update, "ui_party_box") { MGQ_MpPartyBox.keep_shown if mgq_mp_hud? }
 rescue => e
   MGQ_MpPartyBox.log("hooks FAILED: #{e.class}: #{e.message}")
 end

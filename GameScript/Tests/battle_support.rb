@@ -2,6 +2,7 @@
 #  battle_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Stood in for UI.confirm and read the waiting box's lines from the wait
 #      Paulinchen  2026-11-05: Kept each message sent as the scripts hand it instead of as a copy of the DLL's codec writes it
 #                            - Answered the live battle's topics and the battlers' plans with the values each test sets
 #                            - Answered the topics that write and read battle lines
@@ -397,7 +398,7 @@ class Scene_Battle
   attr_accessor :changing
   def scene_changing?; @changing; end
   # A wait that never ends fails the test instead of hanging it.
-  def update_for_wait; $frames += 1; raise "a wait ran past #{WAIT_LIMIT} frames" if $frames > WAIT_LIMIT; $inject.call($frames) if $inject; Mod_Framework::UI::Confirm.collect; end
+  def update_for_wait; $frames += 1; raise "a wait ran past #{WAIT_LIMIT} frames" if $frames > WAIT_LIMIT; $inject.call($frames) if $inject; QuestionStandIn.collect; end
   def no_change_all_dead_on_bench?; :original; end
   def bench_member_ok; :original; end
   def bench_member_cancel; $bench_cancelled = true; end
@@ -463,14 +464,11 @@ end
 #
 # @return [Hash{Integer => String}] The lines by place, none while no waiting box is open.
 def waiting_lines
-  root = Mod_Framework::UI::Tree.roots.find { |each| each.id == :waiting_box }
-  return {} unless root
+  waiting = MGQ_MpBattlesSync::Waiting
+  return {} unless waiting.instance_variable_get(:@box)
 
-  labels = root.children.first(3)
-  leave = root.children[3]
   lines = {}
-  labels.each_with_index { |label, index| lines[index] = label.text if label.visible && !label.text.to_s.empty? }
-  lines[2] = leave.text if leave && leave.visible
+  [:text, :names, :time].each_with_index { |which, index| lines[index] = waiting.line(which) unless waiting.line(which).empty? }
   lines
 end
 # The cancel button, which $leave presses.
@@ -500,14 +498,23 @@ open_rules_bridge
 answer_live($world_bridge)
 answer_wire($world_bridge)
 load_script "ui_online"
-# Stands in for the Mod Framework's question box: each question lands in $asked, and $confirm
-# answers the open one at the next wait, as the framework collects it at every frame, true for yes,
-# false for no, nil to keep it open.
-module Mod_Framework::UI::Confirm
-  def self.ask(question, choices = ["Yes", "No"], &answer); ($asked ||= []) << [question, choices]; @block = answer; true; end
+# Stands in for the Mod Framework's question box: each question lands in $asked with its yes and no,
+# and $confirm answers the open one at the next wait, as the framework answers it at every frame,
+# true for yes, false for no, nil to keep it open.
+module QuestionStandIn
+  # The question's handle: whether it waits, and its close from outside, which answers no.
+  Handle = Struct.new(:waiting) do
+    def open?; QuestionStandIn.open?; end
+    def close(_reason = nil); QuestionStandIn.close; end
+  end
+  def self.ask(answer); @block = answer; Handle.new(true); end
   def self.open?; !@block.nil?; end
   def self.collect; return if @block.nil? || $confirm.nil?; block = @block; @block = nil; block.call($confirm); end
-  def self.close(_reason = nil); block = @block; @block = nil; block.call(false) if block; end
+  def self.close; block = @block; @block = nil; block.call(false) if block; end
+end
+Mod_Framework::UI.define_singleton_method(:confirm) do |question, params = {}, &answer|
+  ($asked ||= []) << [question, [params[:yes], params[:no]]]
+  QuestionStandIn.ask(answer)
 end
 load_script "coop_scope"
 load_script "coop_squad"

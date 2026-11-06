@@ -2,6 +2,7 @@
 #  battles_join_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Left how the prompt looks to the in-game suite
 #      Paulinchen  2026-11-05: Answered the squad math with fixed values per case
 #                            - Read the messages sent as the scripts hand them and handed those of other games as the DLL reads them
 #                            - Answered the co-op topics with the values each case sets and checked what the scripts ask and do with the answers
@@ -322,22 +323,6 @@ check("a hotkey with the same key turns Join Battle off, its prompt hidden and n
 $settings = nil
 map_frame
 check("the prompt shows again once the hotkey is free", join.prompt_text, "Press J to join battle")
-
-# The prompt below the player's character.
-prompt = join::Prompt.new
-prompt.update
-root = prompt.root
-button = root.children.first
-check("the prompt is a button following the player, under their feet, kept whole on the screen",
-      [root.follow, root.side, root.follow_gap, root.on_screen, root.width, button.class, button.text],
-      [:player, :below, 2, true, 240, Mod_Framework::UI::Button, "Press J to join battle"])
-check("in the small font and the player's own color, as every request and offer", [button.font_size, button.color, root.send(:hidden_now?)], [:small, :own, false])
-$scene_now = Object.new
-prompt.update
-check("it hides while it offers nothing", root.send(:hidden_now?), true)
-map_frame
-prompt.update
-prompt.close
 
 # The hotkey asks the host through the DLL.
 press

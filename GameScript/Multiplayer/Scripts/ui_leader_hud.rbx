@@ -2,6 +2,7 @@
 #  ui_leader_hud.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Drew the HUD as a hud of the Mod Framework's UI layer
 #      Paulinchen  2026-11-05: Kept and read its switches in Player.ini as true or false, which the DLL writes as 1 or 0
 #      Paulinchen  2026-11-01: Built the HUD on the Mod Framework's components, docked at the top left under the game's windows
 #                            - Asked the wheels of the Mod Framework whether one is open
@@ -21,8 +22,8 @@
 # and race level. The Large size shows their face and writes the numbers into the HP and MP bars,
 # the Small size shows their map sprite and the bars alone. The player turns it on and off and
 # picks its size in the Mod Config, or switches the size with its hotkey (H unless the player binds
-# another, see core_hotkeys.rbx), kept in Player.ini, so it shows in single player too. It is a box
-# of the Mod Framework docked at the top left, under the game's windows (see View).
+# another, see core_hotkeys.rbx), kept in Player.ini, so it shows in single player too. It is a hud
+# of the Mod Framework's UI layer at the top left, under the game's windows (see LeaderHud).
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpLeaderHud
@@ -216,7 +217,7 @@ module MGQ_MpLeaderHud
     scene = SceneManager.scene
     return unless scene.is_a?(Scene_Map)
 
-    room = UI::Layout.docked_room(:top_left)
+    room = UI::Layout.room(:top_left)
     offset = room > 0 ? room + BELOW : 0
     TOP_LEFT_WINDOWS.each do |field|
       window = MGQ_MpGame.get(scene, field)
@@ -252,7 +253,7 @@ module MGQ_MpLeaderHud
     exp = { :base => actor.base_exp, :class => actor.class_exp, :tribe => actor.tribe_exp }[kind].to_i
     low = actor.current_level_exp(kind).to_i
     high = actor.next_level_exp(kind).to_i
-    high > low ? UI.within((exp - low).to_f / (high - low), 0.0, 1.0) : 1.0
+    high > low ? [[(exp - low).to_f / (high - low), 0.0].max, 1.0].min : 1.0
   rescue => e
     log_once([:exp, kind], "reading the #{kind} level's progress failed: #{e.class}: #{e.message}")
     0.0
@@ -267,177 +268,156 @@ module MGQ_MpLeaderHud
     log(shown ? "added the Leader HUD to Options > Mods" : "no Leader HUD in Options > Mods, see the Mod Framework's log")
   end
 
-  # How a character looks in the HUD's square, what its Picture draws the face or the figure from: a
-  # new one each time they change, so the picture draws anew.
-  Looks = Struct.new(:face_name, :face_index, :character_name, :character_index)
+  # Tells what renders the HUD anew: the leader, their face and figure, and the size.
+  #
+  # @return [Array] The leader's id and look, and the size, the same object while they stay.
+  def self.look
+    actor = leader
+    looks = actor ? [actor.id, actor.face_name, actor.face_index, actor.character_name, actor.character_index] : nil
+    @look = [looks, size] unless @look && @look[0] == looks && @look[1] == size
+    @look
+  end
 
-  # The HUD's box on the map: a root of the Mod Framework docked at the top left, under the game's
-  # windows, which fades out while the HUD does not show (see MGQ_MpLeaderHud.shows?). Its parts are
-  # set only when what they show changed; another size builds them anew in the same box.
-  class View
-    # The box's id, which names its place in the Mod Framework's settings.
+  # Tells how full the leader's HP or MP bar is.
+  #
+  # @param kind [Symbol] :hp or :mp.
+  # @return [Float] The share, 0.0 to 1.0, 0.0 without a leader.
+  def self.rate(kind)
+    actor = leader
+    return 0.0 unless actor
+
+    [[(kind == :hp ? actor.hp_rate : actor.mp_rate).to_f, 0.0].max, 1.0].min
+  end
+
+  # Names the HP or the MP bar as the game does.
+  #
+  # @param kind [Symbol] :hp or :mp.
+  # @return [String] Such as "HP".
+  def self.bar_name(kind)
+    (kind == :hp ? Vocab.hp_a : Vocab.mp_a).to_s
+  end
+
+  # Writes the leader's HP or MP and its max, as the Large bars show them.
+  #
+  # @param kind [Symbol] :hp or :mp.
+  # @return [String] Such as "189 / 252", "" without a leader.
+  def self.numbers(kind)
+    actor = leader
+    return "" unless actor
+
+    kind == :hp ? format(POINTS_TEXT, actor.hp.to_i, actor.mhp.to_i) : format(POINTS_TEXT, actor.mp.to_i, actor.mmp.to_i)
+  end
+
+  # How the numbers in the HP and MP bars read.
+  POINTS_TEXT = "%d / %d"
+
+  # The HUD on the map: a hud of the Mod Framework's UI layer at the top left, under the game's
+  # windows, which fades out while the HUD does not show (see MGQ_MpLeaderHud.shows?). Its bars
+  # read the Formation Leader every frame; another leader, look or size renders it anew.
+  class LeaderHud < UI::Component
+    # The HUD's place id, which names its place in the Mod Framework's settings.
     ID = :leader_hud
 
-    # The box's name while the player arranges the boxes.
+    # The HUD's name while the player arranges the boxes.
     PLACE_NAME = "Leader HUD"
 
-    # Its place among the boxes docked at the top left, before the notices.
-    DOCK_ORDER = 10
+    # Its place among the parts at the top left, before the notices.
+    ORDER = 10
 
-    # Sizes of the parts of a box: its width, the room inside its frame, the font sizes of the name
-    # and of the texts in the bars (nil for bars without texts), the heights of the name's line, the
-    # HP and MP bars and the level bars, the gaps between the bars and between the level bars, and
-    # whether its picture is the map sprite rather than the face.
-    Layout = Struct.new(:width, :pad, :name_size, :number_size, :name_height, :bar_height, :bar_gap, :exp_height, :exp_gap, :sprite)
+    # Its width by size.
+    WIDTHS = { LARGE => 240, SMALL => 170 }
 
-    # The sizes' layouts, by MGQ_MpLeaderHud::SIZES.
-    LAYOUTS = {
-      MGQ_MpLeaderHud::LARGE => Layout.new(240, 6, :normal, :tiny, 20, 16, 2, 4, 2, false),
-      MGQ_MpLeaderHud::SMALL => Layout.new(170, 5, :small, nil, 18, 6, 2, 3, 1, true),
-    }
+    # The side of the picture's square by size: as high as the name and both bars beside it.
+    PICTURE_SIDES = { LARGE => 56, SMALL => 34 }
 
-    # Colors of the HP bar, from its left end to its right end.
-    HP_COLORS = [Color.new(150, 20, 20), Color.new(230, 60, 50)]
+    # The colors of the HP and the MP bar, from their left end to their right end.
+    BAR_COLORS = { :hp => [:mgq_online_hp_left, :mgq_online_hp_right], :mp => [:mgq_online_mp_left, :mgq_online_mp_right] }
 
-    # Colors of the MP bar, from its left end to its right end.
-    MP_COLORS = [Color.new(30, 80, 170), Color.new(70, 150, 240)]
+    # The levels whose bars show across the bottom, in their order, each with its colors from its
+    # left end to its right end.
+    LEVEL_COLORS = [[:base, [:mgq_online_base_left, :mgq_online_base_right]], [:class, [:mgq_online_job_left, :mgq_online_job_right]],
+                    [:tribe, [:mgq_online_race_left, :mgq_online_race_right]]]
 
-    # Colors of each level bar, from its left end to its right end, by EXP_KINDS.
-    EXP_COLORS = {
-      :base => [Color.new(200, 150, 40), Color.new(255, 220, 110)],
-      :class => [Color.new(40, 150, 70), Color.new(110, 220, 120)],
-      :tribe => [Color.new(130, 70, 190), Color.new(200, 140, 255)],
-    }
-
-    # The levels whose progress the bars at the bottom show, in their order from the top.
-    EXP_KINDS = [:base, :class, :tribe]
+    # The steps of a bar's value, so a bar of any max fills smoothly.
+    STEPS = 1000
 
     # How the base level after the name reads.
     LEVEL_TEXT = "Lv %d"
 
-    # How the numbers in the HP and MP bars read.
-    POINTS_TEXT = "%d / %d"
+    # Renders it anew for another leader, another look of them or another size.
+    watch(:every => 10) { MGQ_MpLeaderHud.look }
 
-    # @return [Mod_Framework::UI::Box] The HUD's box.
-    attr_reader :root
-
-    # Makes the box and opens it, empty until the first update fills it.
-    def initialize
-      @root = UI::Box.new(:id => ID, :place_name => PLACE_NAME, :under_windows => true, :z => UI::Z[:labels], :dock => :top_left, :dock_order => DOCK_ORDER,
-                          :movable => true, :resizable => false, :mouse => :parts, :fade => true, :hide_while => lambda { !MGQ_MpLeaderHud.shows? })
-      @size = nil
-      @shown = nil
-      @root.open
-    end
-
-    # Finds the layout of a size.
-    #
-    # @param size [String] The size, see MGQ_MpLeaderHud::SIZES.
-    # @return [Layout] Its layout.
-    def self.layout(size)
-      LAYOUTS[size] || LAYOUTS[MGQ_MpLeaderHud::SIZES.first]
-    end
-
-    # Finds the side of a layout's picture, as high as the name and both bars beside it.
-    #
-    # @param layout [Layout] The layout.
-    # @return [Integer] The side in pixels.
-    def self.face_side(layout)
-      layout.name_height + 2 * (layout.bar_gap + layout.bar_height)
-    end
-
-    # Builds the box anew once the size changed and sets what changed of the Formation Leader.
-    # Called by the map every frame.
-    def update
-      leader = MGQ_MpLeaderHud.leader
-      return unless leader
-
+    # Describes the HUD: the picture in a framed square at the left, the name and level over the HP
+    # and MP bars beside it, and the levels' bars across the bottom.
+    def render
       size = MGQ_MpLeaderHud.size
-      build(View.layout(size)) unless size == @size
-      @size = size
-      refresh(leader)
-    end
-
-    # Closes the box, with the map's sprites.
-    def close
-      @root.close
+      large = size == LARGE
+      side = PICTURE_SIDES[size]
+      hud id: ID, place_name: PLACE_NAME, anchor: :top_left, order: ORDER, shown_in: [Scene_Map], width: WIDTHS[size],
+          hide_while: -> { !MGQ_MpLeaderHud.shows? } do
+        stack row: true, spacing: 1.5 do
+          paper(width: side, height: side) { picture(large) }
+          stack grow: 1, spacing: 0.5 do
+            stack row: true do
+              text -> { leader_name }, typo: (large ? :subtitle2 : :caption), grow: 1
+              text -> { format(LEVEL_TEXT, leader_level) }, typo: :caption, color: :heading
+            end
+            bar(:hp, large)
+            bar(:mp, large)
+          end
+        end
+        stack spacing: (large ? 0.5 : 0) do
+          LEVEL_COLORS.each do |kind, colors|
+            progress value: -> { (MGQ_MpLeaderHud.exp_rate(MGQ_MpLeaderHud.leader, kind) * STEPS).round }, max: STEPS, colors: colors,
+                     size: :small, key: kind
+          end
+        end
+      end
     end
 
     private
 
-    # Builds the box's parts for a layout: the picture in a framed square at the left, the name and
-    # level over the HP and MP bars beside it, and the level bars across the bottom.
+    # Describes the leader's face for the Large size, their whole map figure for the Small one.
     #
-    # @param layout [Layout] The size's layout.
-    def build(layout)
-      @root.clear
-      @root.width = layout.width
-      @root.padding = layout.pad
-      @root.gap = layout.bar_gap
-      @layout = layout
-      @shown = nil
-      side = View.face_side(layout)
-      top = @root.add_row(:gap => layout.pad)
-      square = top.add_box(:frame => true, :padding => 0, :size => [side, side])
-      fit = layout.sprite ? { :fit => :whole, :anchor => :bottom } : {}
-      @picture = square.add_picture(fit.merge(:grow => 1))
-      column = top.add_column(:grow => 1, :gap => layout.bar_gap)
-      line = column.add_row(:height => layout.name_height)
-      @name = line.add_label("", :grow => 1, :shrink => true, :font_size => layout.name_size)
-      @level = line.add_label("", :color => :heading, :font_size => layout.name_size)
-      @hp = column.add_gauge(points_options(layout, HP_COLORS))
-      @mp = column.add_gauge(points_options(layout, MP_COLORS))
-      levels = @root.add_column(:gap => layout.exp_gap)
-      @levels = EXP_KINDS.map { |kind| levels.add_gauge(:colors => EXP_COLORS[kind], :height => layout.exp_height) }
+    # @param large [Boolean] Whether the HUD is Large.
+    def picture(large)
+      leader = MGQ_MpLeaderHud.leader
+      return unless leader
+
+      large ? image(face: leader, fit: :cover, height: :fill) : image(figure: leader, fit: :contain, anchor: :bottom, height: :fill)
     end
 
-    # Tells the options of the HP or MP bar of a layout.
+    # Describes the HP or the MP bar: while Large with its name at its left and its numbers inside.
     #
-    # @param layout [Layout] The size's layout.
-    # @param colors [Array(Color, Color)] The fill's colors at its left and right ends.
-    # @return [Hash] The options.
-    def points_options(layout, colors)
-      options = { :colors => colors, :height => layout.bar_height }
-      layout.number_size ? options.merge(:font_size => layout.number_size) : options
+    # @param kind [Symbol] :hp or :mp.
+    # @param large [Boolean] Whether the HUD is Large.
+    def bar(kind, large)
+      params = { value: -> { (MGQ_MpLeaderHud.rate(kind) * STEPS).round }, max: STEPS, colors: BAR_COLORS[kind], key: kind,
+                 size: (large ? :small : :medium) }
+      params.update(label: MGQ_MpLeaderHud.bar_name(kind), value_text: -> { MGQ_MpLeaderHud.numbers(kind) }) if large
+      progress params
     end
 
-    # Sets what the Formation Leader shows once any of it changed.
+    # Tells the leader's name.
     #
-    # @param actor [Game_Actor] The Formation Leader.
-    def refresh(actor)
-      content = [actor.id, actor.name, actor.face_name, actor.face_index, actor.character_name, actor.character_index, actor.base_level,
-                 actor.hp, actor.mhp, actor.mp, actor.mmp, actor.class_id, actor.tribe_id, actor.base_exp, actor.class_exp, actor.tribe_exp]
-      return if content == @shown
-
-      @shown = content
-      looks = Looks.new(actor.face_name.to_s, actor.face_index.to_i, actor.character_name.to_s, actor.character_index.to_i)
-      if @layout.sprite
-        @picture.figure = looks
-      else
-        @picture.face = looks
-      end
-      @name.text = actor.name.to_s
-      @level.text = format(LEVEL_TEXT, actor.base_level.to_i)
-      set_points(@hp, actor.hp_rate, Vocab.hp_a, actor.hp, actor.mhp)
-      set_points(@mp, actor.mp_rate, Vocab.mp_a, actor.mp, actor.mmp)
-      EXP_KINDS.each_with_index { |kind, index| @levels[index].rate = MGQ_MpLeaderHud.exp_rate(actor, kind) }
+    # @return [String] The name, "" without a leader.
+    def leader_name
+      leader = MGQ_MpLeaderHud.leader
+      leader ? leader.name.to_s : ""
     end
 
-    # Sets the HP or the MP bar: its share, and in a layout with texts its name at its left and its
-    # numbers at its right.
+    # Tells the leader's base level.
     #
-    # @param gauge [Mod_Framework::UI::Gauge] The bar.
-    # @param rate [Float] The share filled.
-    # @param name [String] The bar's name, such as HP.
-    # @param value [Integer] Its value.
-    # @param max [Integer] Its max.
-    def set_points(gauge, rate, name, value, max)
-      gauge.rate = UI.within(rate.to_f, 0.0, 1.0)
-      return unless @layout.number_size
-
-      gauge.label = name.to_s
-      gauge.value = format(POINTS_TEXT, value.to_i, max.to_i)
+    # @return [Integer] The level, 0 without a leader.
+    def leader_level
+      leader = MGQ_MpLeaderHud.leader
+      leader ? leader.base_level.to_i : 0
     end
+  end
+
+  # Shows the HUD as the map is first seen, and again once F12 took it away.
+  def self.keep_shown
+    MGQ_MpShown.keep(LeaderHud::ID, LeaderHud)
   end
 end
 
@@ -461,19 +441,11 @@ begin
   MGQ_MpHooks.after(Spriteset_Map, :update, "ui_leader_hud") do
     next unless mgq_mp_hud?
 
-    begin
-      (@mgq_mp_leader_hud ||= MGQ_MpLeaderHud::View.new).update
-    rescue => e
-      MGQ_MpLeaderHud.log_once(:draw, "showing the Leader HUD failed: #{e.class}: #{e.message}")
-    end
+    MGQ_MpLeaderHud.keep_shown
     MGQ_MpLeaderHud.lower_windows
   end
 
-  MGQ_MpHooks.before(Spriteset_Map, :dispose, "ui_leader_hud") do
-    @mgq_mp_leader_hud.close if @mgq_mp_leader_hud
-    @mgq_mp_leader_hud = nil
-    MGQ_MpLeaderHud.forget_windows
-  end
+  MGQ_MpHooks.before(Spriteset_Map, :dispose, "ui_leader_hud") { MGQ_MpLeaderHud.forget_windows }
 rescue => e
   MGQ_MpLeaderHud.log("hooks FAILED: #{e.class}: #{e.message}")
 end

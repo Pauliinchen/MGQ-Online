@@ -2,6 +2,7 @@
 #  components_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Stood in for the room of a zone's parts
 #      Paulinchen  2026-11-01: Created
 #
 #----------------------------------------------------------------
@@ -163,7 +164,8 @@ def hidden_root?(root)
   root.send(:hidden_now?)
 end
 
-# Tells the docked room the framework answers, which C# lays out in the game; a test sets it in
-# $docked_room by dock.
+# Tells the room the framework answers a zone's parts take, which C# lays out in the game; a test
+# sets it in $docked_room by zone.
 $docked_room = {}
 Mod_Framework::UI::Layout.define_singleton_method(:docked_room) { |dock| $docked_room[dock].to_i }
+Mod_Framework::UI::Layout.define_singleton_method(:room) { |zone| $docked_room[zone].to_i }

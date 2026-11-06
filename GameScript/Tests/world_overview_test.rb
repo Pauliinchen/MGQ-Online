@@ -2,6 +2,7 @@
 #  world_overview_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Read the small party box's rows, leaving how it looks to the in-game suite
 #      Paulinchen  2026-11-05: Answered the teleports' view with a fixed offer instead of from the party's stand-in
 #                            - Answered the title with fixed values per world
 #                            - Answered the lists, the told state and the pages with the values each check sets and checked what goes to the DLL, instead of what its stand-ins built
@@ -410,14 +411,16 @@ MGQ_MpPartyBox.on_map
 check("Tab makes it small, which Player.ini keeps", [MGQ_MpPartyBox.small?, $player_ini["party_box_small"]], [true, true])
 MGQ_MpPartyBox.instance_variable_set(:@small, nil)
 check("so it is small again after a restart", MGQ_MpPartyBox.small?, true)
-party_view = MGQ_MpPartyBox::View.new
-# Lists the names of the party box's lines.
-listed = lambda { parts_of_kind(party_view.root, Mod_Framework::UI::Grid).map { |line| parts_of_kind(line, Mod_Framework::UI::Label).first.text } }
-party_view.refresh(false)
-check("small, it lists only the crown, the names and the pings, in a narrower panel at the right edge",
-      [party_view.root.children.first.width, parts_of_kind(party_view.root, Mod_Framework::UI::Icon).map(&:icon).count(MGQ_MpOverworld::CROWN_ICON), listed.call,
-       texts_of(party_view.root).any? { |text| text.start_with?("Lv") }],
-      [MGQ_MpPartyBox::View::SMALL_WIDTH, 1, ["Friend", "Me"], false])
+MGQ_MpPartyBox.read(false)
+# Lists each row of the party box: its crown and its texts.
+listed = lambda do
+  MGQ_MpPartyBox.rows.map do |row|
+    cells = row[:cells].reject { |cell| cell == "" }
+    cells.select { |cell| cell[:icons] }.map { |cell| cell[:icons] }.flatten.select { |icon| icon == MGQ_MpOverworld::CROWN_ICON } + cells.select { |cell| cell[:text] }.map { |cell| cell[:text] }
+  end
+end
+check("small, it lists only the crown, the names and the pings", listed.call.map { |row| row.reject { |part| part.is_a?(String) && part.end_with?(" ms") } },
+      [[MGQ_MpOverworld::CROWN_ICON, "Friend"], ["Me"]])
 MGQ_MpChat.start_typing
 $pressed = MGQ_MpHotkeys.code(:party_box)
 MGQ_MpPartyBox.on_map
@@ -585,37 +588,42 @@ check("the crown only where the DLL gives the leader's, and every other player's
 check("the box follows the world's type", MGQ_MpPartyBox.map_box?, true)
 
 sections = MGQ_MpPartyBox.method(:sections)
-# Shows the box for the players of the map and the party a check gives, as it reads them.
+# Reads the box for the players of the map and the party a check gives, as it reads them.
 show_rows = lambda do |party_rows, other_rows|
   MGQ_MpPartyBox.define_singleton_method(:sections) { [party_rows, other_rows] }
-  party_view.refresh(false)
+  MGQ_MpPartyBox.read(false)
 end
+# Lists the box's rows: a heading's text, else each text with its color.
+rows_of = lambda do
+  MGQ_MpPartyBox.rows.map { |row| row[:heading] || row[:cells].select { |cell| cell.is_a?(Hash) && cell[:text] }.map { |cell| [cell[:text], cell[:color]] } }
+end
+# Lists the names the box shows, each row's first text.
+listed = lambda { rows_of.call.reject { |row| row.is_a?(String) }.map { |row| row.first.first } }
 # Tells the color the box names a player in.
-color_of = lambda { |name| part_with_text(party_view.root, name).color }
+color_of = lambda { |name| rows_of.call.find { |row| row.is_a?(Array) && row.first.first == name }.first[1] }
 MGQ_MpPartyBox.instance_variable_set(:@small, false)
 show_rows.call([], map_rows)
-check("it is titled with how many are on the map, a line each and no place",
-      [texts_of(party_view.root).first, listed.call], ["Map 4", ["Me", "member", "loner", "Stranger"]])
-check("party members are in their color, the player's own line and the others not", %w[Me member loner Stranger].map { |name| color_of.call(name) }, [:own, :ally, :text, :text])
+check("it is titled with how many are on the map, a row each and no place", [MGQ_MpPartyBox.title, listed.call], ["Map 4", ["Me", "member", "loner", "Stranger"]])
+check("party members are in their color, the player's own row and the others not", %w[Me member loner Stranger].map { |name| color_of.call(name) },
+      [:mgq_online_own, :mgq_online_member, :text, :text])
 crowd = map_rows * 3
 show_rows.call([], crowd)
-check("past ten lines it lists nine and says how many more", [listed.call.size, texts_of(party_view.root).last], [9, "+3 more"])
+check("past ten rows it lists nine and says how many more", [listed.call.size, listed.call.last], [10, "+3 more"])
 crowd = map_rows[1..-1] * 4 + map_rows.first(1)
 shown, more = MGQ_MpPartyBox.capped(crowd)
-check("cut short, it keeps the player's own line in place of the last listed", [shown.size, shown.last.player, shown.count { |row| row.player == :me }, more],
+check("cut short, it keeps the player's own row in place of the last listed", [shown.size, shown.last.player, shown.count { |row| row.player == :me }, more],
       [9, :me, 1, 4])
 MGQ_MpPartyBox.instance_variable_set(:@small, true)
 show_rows.call([], map_rows * 3)
-check("small, it keeps to ten lines too, the others in plain text", [listed.call.size, texts_of(party_view.root).last, color_of.call("loner")], [9, "+3 more", :text])
+check("small, it keeps to ten rows too, the others in plain text", [listed.call.size, listed.call.last, color_of.call("loner")], [10, "+3 more", :text])
 MGQ_MpPartyBox.instance_variable_set(:@small, false)
 MGQ_MpPartyBox.define_singleton_method(:sections, sections)
 party, others = MGQ_MpPartyBox.sections
 check("in a party the box lists the party first, with Frontline levels, then the others on the map",
       [party.map { |row| [row.name, row.level] }, others.map(&:name)], [[["Me", "Lv 40"], ["member", "Lv 33"]], ["loner", "Stranger"]])
-party_view.refresh(false)
-check("shown as the party box, its places below the members, then the map's title and a line for each other player",
-      texts_of(party_view.root).last(6), ["Map 2", "loner", "80 ms", "Stranger", "Lv 20", "80 ms"])
-party_view.close
+MGQ_MpPartyBox.read(false)
+check("shown as the party box, its places under the members, then the map's heading and a row for each other player",
+      rows_of.call.last(3).map { |row| row.is_a?(String) ? row : row.map { |text, _color| text } }, ["Map 2", ["loner", "", "80 ms"], ["Stranger", "Lv 20", "80 ms"]])
 
 MGQ_MpChat.stop_typing
 $pressed = MGQ_MpHotkeys.code(:party_box)

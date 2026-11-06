@@ -2,6 +2,7 @@
 #  ui_edge_arrows.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Made each arrow a marker of the Mod Framework's UI layer
 #      Paulinchen  2026-11-01: Made each arrow a marker of the Mod Framework, the players picked and logged by the DLL
 #                            - Hid the arrows while any mod's screen holds the game, as the Mod Framework tells
 #      Paulinchen  2026-10-31: Took a player's color from MGQ_MpPlayerColor and the strip at the top from MGQ_MpHud
@@ -21,7 +22,7 @@
 # message shows, and outside a world, fading in and out.
 #
 # The DLL picks the players and logs the arrows coming and going (hud.arrows); each arrow is a
-# marker of the Mod Framework, which places and draws it.
+# marker of the Mod Framework's UI layer, which places and draws it.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpEdgeArrows
@@ -31,8 +32,8 @@ module MGQ_MpEdgeArrows
   # The topic that forgets which arrows were logged, HudTopics.ForgetTopic.
   FORGET_TOPIC = "hud.arrows_forget"
 
-  # Pixels a player's name may take on the plate before it is cut.
-  NAME_WIDTH = 90
+  # Characters a player's name may take on the plate before it is cut.
+  NAME_CHARS = 12
 
   # How the plate reads: the name, then the tiles away.
   LABEL = "%s %d"
@@ -89,76 +90,64 @@ module MGQ_MpEdgeArrows
     Array(seats).map { |seat| MGQ_MpOverworldSync::Peers.at(seat) }.select { |peer| peer && peer.ghost }
   end
 
-  # Writes what an arrow's plate reads: the name above the player's ghost, cut, and the tiles away.
+  # Writes what an arrow's plate reads: the name over the player's ghost, cut, and the tiles away.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
   # @return [String] Such as "Ana 12".
   def self.label_of(peer)
-    format(LABEL, UI.cut(UI.font_bitmap(UI::Style::SMALL_SIZE), MGQ_MpOverworld.name_tag(peer), NAME_WIDTH), tiles_to(peer.ghost))
+    name = MGQ_MpOverworld.name_tag(peer)
+    name = "#{name[0, NAME_CHARS - 3]}..." if name.size > NAME_CHARS
+    ghost = peer.ghost
+    format(LABEL, name, ghost ? tiles_to(ghost) : 0)
   end
 
-  # The arrows of one map, a marker of the Mod Framework per player, kept while the DLL picks them
-  # and closed, fading out, once it does not.
-  class Markers
-    # Makes the arrows, none shown.
-    def initialize
-      @markers = {}
-    end
+  # Points the arrows at the players the DLL picks and takes the others away; while a reason
+  # hides them they keep their players and hide. Called by the map's sprites every frame.
+  def self.update
+    reason = hidden_reason
+    picked = pick(reason)
+    return if reason
 
-    # Hands out the markers, for the tests.
-    #
-    # @return [Hash{String => Mod_Framework::UI::Marker}] The markers by player id.
-    def markers
-      @markers
-    end
+    ids = picked.map { |peer| peer.state["id"].to_s }
+    MGQ_MpShown.keys_of(:edge_arrow).each { |key| MGQ_MpShown.drop(key) unless ids.include?(key[1]) }
+    picked.each { |peer| MGQ_MpShown.keep([:edge_arrow, peer.state["id"].to_s], EdgeArrow, peer: peer) }
+  rescue => e
+    log_once(:update, "the arrows failed: #{e.class}: #{e.message}")
+    drop_all
+  end
 
-    # Points the arrows at the players the DLL picks, closing the others; while a reason hides them
-    # they keep their players and hide. Called by the map every frame.
-    def update
-      reason = MGQ_MpEdgeArrows.hidden_reason
-      picked = MGQ_MpEdgeArrows.pick(reason)
-      return if reason
+  # Takes every arrow away and has the DLL forget which it logged, with the map's sprites.
+  def self.dispose
+    drop_all
+    MGQ_Multiplayer::Bridge.call(FORGET_TOPIC)
+  end
 
-      ids = picked.map { |peer| peer.state["id"].to_s }
-      (@markers.keys - ids).each { |id| @markers.delete(id).close }
-      picked.each { |peer| point_at(peer) }
-    rescue => e
-      MGQ_MpEdgeArrows.log_once(:update, "the arrows failed: #{e.class}: #{e.message}")
-      close_all
-    end
+  # Takes every arrow away.
+  def self.drop_all
+    MGQ_MpShown.keys_of(:edge_arrow).each { |key| MGQ_MpShown.drop(key) }
+  end
 
-    # Closes every arrow and has the DLL forget which it logged, with the map's sprites.
-    def dispose
-      close_all
-      MGQ_Multiplayer::Bridge.call(FORGET_TOPIC)
+  # A player's arrow: a marker of the Mod Framework's UI layer toward their ghost's tile, in their
+  # color, with their name and the tiles away; it hides while hidden_reason holds.
+  class EdgeArrow < UI::Component
+    # The player.
+    param :peer
+
+    # Describes the arrow.
+    def render
+      marker target: -> { tile }, text: -> { MGQ_MpEdgeArrows.label_of(peer) }, color: -> { MGQ_MpPlayerColor.role(peer) },
+             hide_while: -> { !MGQ_MpEdgeArrows.hidden_reason.nil? }
     end
 
     private
 
-    # Points a player's arrow at their ghost's tile, opening it for a player new to the arrows, and
-    # sets what changed of its plate and color.
+    # Tells the tile the player's ghost stands on.
     #
-    # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
-    def point_at(peer)
-      id = peer.state["id"].to_s
-      tile = [peer.ghost.x, peer.ghost.y]
-      text = MGQ_MpEdgeArrows.label_of(peer)
-      color = MGQ_MpPlayerColor.role(peer)
-      marker = @markers[id]
-      unless marker && marker.open?
-        @markers[id] = UI::Marker.new(:target => tile, :text => text, :color => color, :under_windows => true, :z => UI::Z[:arrows],
-                                      :hide_while => lambda { MGQ_MpEdgeArrows.hidden_reason }).open
-        return
-      end
-      marker.target = tile unless marker.target == tile
-      marker.text = text unless marker.text == text
-      marker.color = color unless marker.color == color
-    end
-
-    # Closes every arrow.
-    def close_all
-      @markers.each_value { |marker| marker.close }
-      @markers.clear
+    # @return [Array<Integer>] The tile, where it stood last once the ghost is gone.
+    def tile
+      ghost = peer.ghost
+      @tile = [ghost.x, ghost.y] if ghost
+      @tile || [0, 0]
     end
   end
 end
@@ -166,14 +155,9 @@ end
 begin
   # After the map's sprites, the arrows toward the players off the screen, never on the map behind
   # a menu.
-  MGQ_MpHooks.after(Spriteset_Map, :update, "ui_edge_arrows") do
-    (@mgq_mp_edge_arrows ||= MGQ_MpEdgeArrows::Markers.new).update if mgq_mp_hud?
-  end
+  MGQ_MpHooks.after(Spriteset_Map, :update, "ui_edge_arrows") { MGQ_MpEdgeArrows.update if mgq_mp_hud? }
 
-  MGQ_MpHooks.before(Spriteset_Map, :dispose, "ui_edge_arrows") do
-    @mgq_mp_edge_arrows.dispose if @mgq_mp_edge_arrows
-    @mgq_mp_edge_arrows = nil
-  end
+  MGQ_MpHooks.before(Spriteset_Map, :dispose, "ui_edge_arrows") { MGQ_MpEdgeArrows.dispose if mgq_mp_hud? }
 rescue => e
   MGQ_MpEdgeArrows.log("hooks FAILED: #{e.class}: #{e.message}")
 end

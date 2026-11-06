@@ -2,6 +2,7 @@
 #  ui_actions.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Named the line's color by its name in the player's look
 #      Paulinchen  2026-11-01: Dropped the lapse after a frame count, which nothing calls
 #                            - Named the Mod Framework's interface by its own name
 #                            - Left the line above the player's head to overworld.rbx
@@ -97,9 +98,9 @@ module MGQ_MpActions
   # The action wheel's id among the roots of the Mod Framework.
   WHEEL_ID = :mgq_online_action_wheel
 
-  # Color of the line above the player's own head, the style's own color, which the invites'
+  # Color of the line above the player's own head, MGQ Online's own color, which the invites'
   # notices share.
-  LINE_COLOR = Mod_Framework::UI::Style::OWN
+  LINE_COLOR = :mgq_online_own
 
   # How the seconds left are written after a doing in the line above the player's own head.
   TIME_LEFT = " (#{Mod_Framework::UI::SECONDS_TEXT})"

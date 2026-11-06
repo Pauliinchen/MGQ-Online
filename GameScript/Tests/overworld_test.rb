@@ -2,6 +2,7 @@
 #  overworld_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Checked what the labels, the own ping, the own line and the world status show, leaving how they look to the in-game suite
 #      Paulinchen  2026-11-06: Checked that a message's lists and Hashes reach the DLL whole
 #      Paulinchen  2026-11-05: Answered the teleports' view with fixed offers per case instead of from the party's stand-in
 #                            - Handed the other players' states and messages as the DLL reads them and expected the messages sent as the scripts hand them
@@ -168,34 +169,26 @@ $inbox << entry("message", 9, told(friend.merge("id" => "aa-other")))
 MGQ_MpOverworldSync::Peers.take_labels(9 => "Friend", 2 => "Friend (2)")
 MGQ_MpOverworldSync.tick
 other = MGQ_MpOverworldSync::Peers.at(9)
-ghost_sprite = Struct.new(:x, :y, :height, :visible, :opacity).new(0, 0, 32, true, 255)
-tag = MGQ_MpOverworld::GhostLabel.new(ghost_sprite, peer)
-tag.update(peer)
-check("a ghost's label is a box following its ghost's sprite, above its head", [tag.root.open?, tag.root.follow.equal?(ghost_sprite), tag.root.side], [true, true, :above])
-check("a name two players share shows as the DLL numbers it", [MGQ_MpOverworld.name_tag(other), texts_of(tag.root).first], ["Friend", "Friend (2)"])
+label = lambda { MGQ_MpOverworld.label_of(peer) }
+check("a name two players share shows as the DLL numbers it", [MGQ_MpOverworld.name_tag(other), label.call[3]], ["Friend", "Friend (2)"])
 MGQ_MpOverworldSync::Peers.remove(9)
 MGQ_MpOverworldSync::Peers.take_labels(2 => "Friend")
-tag.update(peer)
-check("and the label is built anew with the plain name once the other left", texts_of(tag.root).first, "Friend")
+check("and the label renders anew with the plain name once the other left", label.call[3], "Friend")
 
 # The name is in its player's color, and a player typing shows the keyboard, apart from the
 # event's bubble.
-icons_of = lambda { parts_of_kind(tag.root, Mod_Framework::UI::Icon).map(&:icon) }
 $inbox << entry("message", 2, told(friend.merge("scene" => "typing")))
 MGQ_MpOverworldSync.tick
-tag.update(peer)
 check("a player typing shows the keyboard, which is no bubble of an event, the one the party box takes from the row",
-      [icons_of.call, MGQ_MpOverworld::TYPING_ICON == MGQ_MpOverworld::STATE_ICONS["event"], MGQ_MpOverworld::STATE_ICONS["typing"]],
-      [[MGQ_MpOverworld::TYPING_ICON], false, MGQ_MpOverworld::TYPING_ICON])
-check("a player outside the party is named in plain text", part_with_text(tag.root, "Friend").color, :text)
+      [label.call[1], MGQ_MpOverworld::TYPING_ICON == MGQ_MpOverworld::STATE_ICONS["event"], MGQ_MpOverworld::STATE_ICONS["typing"]],
+      [MGQ_MpOverworld::TYPING_ICON, false, MGQ_MpOverworld::TYPING_ICON])
+check("a player outside the party is named in plain text", label.call[4], :text)
 $inbox << entry("message", 2, told(friend.merge("scene" => "event")))
 MGQ_MpOverworldSync.tick
-tag.update(peer)
-check("an event shows its own bubble", icons_of.call, [MGQ_MpOverworld::STATE_ICONS["event"]])
-peer.state["hidden"] = 1
-check("the label hides while its player's state says the ghost is hidden", tag.root.send(:hidden_now?), true)
-peer.state.delete("hidden")
-tag.close
+shown = label.call
+check("an event shows its own bubble", shown[1], MGQ_MpOverworld::STATE_ICONS["event"])
+check("a label whose parts stay renders nothing anew", label.call.equal?(shown), true)
+
 $inbox << entry("message", 2, told(friend))
 MGQ_MpOverworldSync.tick
 
@@ -426,22 +419,14 @@ end
 own_lines = MGQ_MpActions.method(:own_lines)
 MGQ_MpActions.define_singleton_method(:own_lines) { $own_line && [$own_line, $own_line.gsub(/ \(\d+ s\)/, "")] }
 $own_line = "Inviting to a party (15 s) . . ."
-own = MGQ_MpOverworld::OwnLine.new
-own.update
-own_label = own.root.children.first
-check("the own line is a box half the screen wide following the player, whose sprite the map rebuilds on a transfer, in the own color, fading",
-      [own.root.follow, own.root.width, own_label.color, own.root.fade, own_label.text], [:player, 320, :own, true, "Inviting to a party (15 s) . . ."])
+check("the own line says the doing with its seconds", MGQ_MpOverworld.own_line_text, "Inviting to a party (15 s) . . .")
 $own_line = "Asking Player A to teleport (45 s), Offering a trade (30 s) . . ."
-own.update
 check("two doings whose seconds overflow the line show without the seconds, which the line cuts, so no countdown that fits is lost",
-      own_label.text, "Asking Player A to teleport, Offering a trade . . .")
+      MGQ_MpOverworld.own_line_text, "Asking Player A to teleport, Offering a trade . . .")
 $own_line = "Asking A (45 s), Trade (30 s) . . ."
-own.update
-check("while a line that fits keeps every countdown", own_label.text, "Asking A (45 s), Trade (30 s) . . .")
+check("while a line that fits keeps every countdown", MGQ_MpOverworld.own_line_text, "Asking A (45 s), Trade (30 s) . . .")
 $own_line = nil
-own.update
-check("gone, the line hides with its text kept while it fades out", [own.root.send(:hidden_now?), own_label.text], [true, "Asking A (45 s), Trade (30 s) . . ."])
-own.close
+check("gone, the line says nothing", MGQ_MpOverworld.own_line_text, "")
 MGQ_MpActions.define_singleton_method(:own_lines, own_lines)
 
 check("an invite can be stopped", option(LEAVE), ["Stop inviting", true])
@@ -455,11 +440,8 @@ check("members", MGQ_MpCoop::Party.members.map { |peer| peer.state["name"] }, ["
 MGQ_MpOverworld.update_ghosts
 check("a member is solid", ghost.opacity, 255)
 check("the label knows the member", MGQ_MpOverworld.ghosts.first.member, true)
-member_tag = MGQ_MpOverworld::GhostLabel.new(ghost_sprite, peer)
-member_tag.update(peer)
-check("and names them in the members' color, with the party's size after the name in it too",
-      [part_with_text(member_tag.root, "Friend").color, part_with_text(member_tag.root, "2 / 4").color], [:ally, :ally])
-member_tag.close
+check("and names them in the members' color, with the party's size after the name",
+      MGQ_MpOverworld.label_of(peer).values_at(4, 5), [:mgq_online_member, "2 / 4"])
 # The view makes Friend the party's leader, whom the player stands near already.
 check("a member is not invited again, the wheel offers the teleport to the leader instead, closed as the DLL answers", option(PARTY), ["Teleport to Friend", false])
 $teleport_view = nil
@@ -552,7 +534,7 @@ check("and goes once the connection stands", MGQ_MpOverworldSync::Status.lines.i
 check("colors by quality", [MGQ_MpOverworld.ping_label(50)[0], MGQ_MpOverworld.ping_label(50)[1].equal?(MGQ_MpOverworld::PING_COLORS[0][1]),
                             MGQ_MpOverworld.ping_label(150)[1].equal?(MGQ_MpOverworld::PING_COLORS[1][1]), MGQ_MpOverworld.ping_label(999)[1].equal?(MGQ_MpOverworld::PING_COLORS[2][1])],
       ["50 ms", true, true, true])
-check("a ping past 999 ms shows as 999+ ms, red", [MGQ_MpOverworld.ping_label(1234)[0], MGQ_MpOverworld.ping_label(1234)[1].equal?(Mod_Framework::UI::Style::BAD), MGQ_MpOverworld.ping_label(999)[0]], ["999+ ms", true, "999 ms"])
+check("a ping past 999 ms shows as 999+ ms, red", [MGQ_MpOverworld.ping_label(1234)[0], MGQ_MpOverworld.ping_label(1234)[1], MGQ_MpOverworld.ping_label(999)[0]], ["999+ ms", :error, "999 ms"])
 status_of(nil)
 check("no connection, no ping shown", [ping.measured, MGQ_MpOverworld.ping_label(ping.measured)], [nil, nil])
 
@@ -763,46 +745,24 @@ $open = true
 measured = MGQ_MpOverworldSync::Ping.method(:measured)
 MGQ_MpOverworldSync::Ping.define_singleton_method(:measured) { $measured }
 $measured = nil
-own_ping = MGQ_MpOverworld::OwnPing.new
 party_badge = MGQ_MpOverworld.method(:party_badge)
 MGQ_MpOverworld.define_singleton_method(:party_badge) { |_player| $badge }
 $badge = nil
-own_ping.update
-check("the own ping is a box following the player, hidden without a party or a ping", [own_ping.root.follow, own_ping.root.send(:hidden_now?)], [:player, true])
+check("the own ping shows nothing without a party or a ping", MGQ_MpOverworld.own_ping, [nil, nil, nil])
 $measured = 45
 $badge = ["2 / 4", true]
-own_ping.update
-check("leading a party, it shows the crown, the party's size in the members' color and the ping in its own",
-      [parts_of_kind(own_ping.root, Mod_Framework::UI::Icon).map(&:icon), texts_of(own_ping.root), part_with_text(own_ping.root, "2 / 4").color,
-       part_with_text(own_ping.root, "45 ms").color.equal?(MGQ_MpOverworld.ping_label(45)[1]), own_ping.root.send(:hidden_now?)],
-      [[MGQ_MpOverworld::CROWN_ICON], ["2 / 4", "45 ms"], :ally, true, false])
-own_ping.close
+check("leading a party, it shows the crown, the party's size and the ping in its color",
+      MGQ_MpOverworld.own_ping, [MGQ_MpOverworld.ping_label(45), "2 / 4", true])
 MGQ_MpOverworld.define_singleton_method(:party_badge, party_badge)
 MGQ_MpOverworldSync::Ping.define_singleton_method(:measured, measured)
 
-# The status line: the notices wrapped, the newest at the bottom, its oldest rows going out at the
-# top.
+# The world status: the notices, the newest at the bottom.
 long = "You follow Tester A's story while in the party. You are as far along, so you keep what you play together."
 kept_notices = MGQ_MpOverworldSync::Status.instance_variable_get(:@notices).dup
 MGQ_MpOverworldSync::Status.instance_variable_set(:@notices, [])
 MGQ_MpOverworldSync::Status.notice("Short.", 4)
 MGQ_MpOverworldSync::Status.notice(long)
-line = MGQ_MpOverworld::WorldStatus.new
-line.update
-root = line.root
-labels = parts_of_kind(root, Mod_Framework::UI::Label)
-check("in a world the status line opens at the bottom left as the movable World status, widened only, under the game's windows",
-      [root.open?, root.id, root.place_name, root.at, root.size, root.resizable, root.min_size, root.under_windows],
-      [true, :world_status, "World status", [8, 480 - 88 - 8], [400, 88], :width, [266, 88], true])
-check("each notice a wrapped label with its icon before its first row, the newest at the bottom of a box that keeps its newest rows",
-      [labels.map(&:text), labels.map(&:wrap), labels.map(&:icon), root.tail], [["Short.", long], [true, true], [4, false], true])
-$open = false
-line.update
-check("outside a world it closes", root.open?, false)
-$open = true
-line.update
-check("and opens again in one, empty while there is nothing to tell", root.open?, true)
-line.close
+check("each notice with its icon, the newest at the bottom", MGQ_MpOverworld.status_lines, [["Short.", 4], [long, nil]])
 MGQ_MpOverworldSync::Status.instance_variable_set(:@notices, kept_notices)
 
 # The player's seat and when they entered their map, as the DLL tells them, and the seat forgotten

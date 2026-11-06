@@ -2,6 +2,7 @@
 #  battles_sync.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Showed the waiting box as a hud of the Mod Framework's UI layer above the battle's windows and asked to leave through UI.confirm
 #      Paulinchen  2026-11-05: Read a message's number as a number and sent the last number taken in its field
 #                            - Had C# write the names and the commands and read the commands
 #                            - Asked every player of the battle who came back for what they sent, every game numbering its messages
@@ -1579,31 +1580,20 @@ module MGQ_MpBattlesSync
   end
 
   # The box that says what the game waits for, whom it still waits for and for how long, and offers
-  # to leave the battle when the wait drags on, asking first: a box of the Mod Framework above the
-  # battle's windows, which the player moves and widens with Alt; its three lines keep their height.
+  # to leave the battle when the wait drags on, asking first: a hud of the Mod Framework's UI layer
+  # at the top, above the battle's windows, which the player moves and widens with Alt. It never
+  # takes the keys; the wait reads cancel itself.
   module Waiting
     # Width of the box where it starts.
     WIDTH = 360
 
-    # Lines of the box: the text, the names, and the seconds or the leave offer.
-    LINES = 3
+    # The box's least width.
+    MIN_WIDTH = 260
 
-    # Height of a line, as the game's Window_Base#line_height has it.
-    LINE_HEIGHT = 24
-
-    # Room between the box's edge and its lines, as the game's Window_Base#standard_padding has it.
-    PADDING = 12
-
-    # Height of the box, which the player cannot change.
-    HEIGHT = LINE_HEIGHT * LINES + 2 * PADDING
-
-    # Top of the box on the screen where it starts.
-    TOP = 120
-
-    # The box's place in the layout.
+    # The box's place id, which names its place in the Mod Framework's settings.
     LAYOUT_ID = :waiting_box
 
-    # The box's name in the layout's outlines.
+    # The box's name while the player arranges the boxes.
     LAYOUT_NAME = "Waiting box"
 
     # Frames a wait lasts before the box offers to leave the battle, ten seconds. Offered later, the
@@ -1627,12 +1617,14 @@ module MGQ_MpBattlesSync
     # What the player is asked before they leave a story's battle, which they then lose.
     LEAVE_LOSES_QUESTION = "Leave the battle? You lose it, and the others fight on."
 
-    # The answers to the leave question during a wait: leave, or stay and wait on.
-    LEAVE_CHOICES = ["Leave", "Stay"]
+    # The answer to the leave question that leaves.
+    LEAVE_CHOICE = "Leave"
 
-    # The answers to the leave question while the host waits for the commands: leave, or choose the
-    # host's own commands again.
-    BACK_CHOICES = ["Leave", "Choose again"]
+    # The answer that stays during a wait.
+    STAY_CHOICE = "Stay"
+
+    # The answer that chooses the host's own commands again while the host waits for them.
+    BACK_CHOICE = "Choose again"
 
     # What starts the names line unless the caller passes another.
     WAITING_PREFIX = "Waiting for: "
@@ -1643,16 +1635,15 @@ module MGQ_MpBattlesSync
     # What the names line calls the player.
     OWN_NAME = "you"
 
-    # Frames between two settings of the seconds line, one second.
-    REDRAW_FRAMES = Mod_Framework::UI::FRAMES_PER_SECOND
+    # Frames in a second, by which the seconds line counts.
+    FRAMES_PER_SECOND = 60
+
+    # How the seconds line reads.
+    SECONDS_TEXT = "%d s"
 
     # An open box.
     #
-    # @!attribute root [Mod_Framework::UI::Box] The box.
-    # @!attribute lines [Array<Mod_Framework::UI::Label>] Its lines: what the game waits for, the
-    #   players still waited for, and the seconds.
-    # @!attribute leave [Mod_Framework::UI::Button] The leave offer in place of the seconds, which a
-    #   click asks as cancel does.
+    # @!attribute handle [Object] The hud's handle.
     # @!attribute text [String] What the game waits for.
     # @!attribute details [Proc, nil] Names the players still waited for.
     # @!attribute prefix [String] What starts the names line.
@@ -1660,7 +1651,23 @@ module MGQ_MpBattlesSync
     # @!attribute seconds [Integer, nil] The seconds last shown, nil before the first.
     # @!attribute time [String] What the last line says, the seconds or the leave offer, "" before
     #   the first.
-    Box = Struct.new(:root, :lines, :leave, :text, :details, :prefix, :names, :seconds, :time)
+    # @!attribute offering [Boolean] Whether the last line offers to leave the battle.
+    Box = Struct.new(:handle, :text, :details, :prefix, :names, :seconds, :time, :offering)
+
+    # The box: what the game waits for, the players still waited for, and the seconds or, from
+    # LEAVE_FRAMES on, the leave offer, which a click asks as cancel does.
+    class WaitingBox < Mod_Framework::UI::Component
+      # Describes the box.
+      def render
+        hud id: LAYOUT_ID, place_name: LAYOUT_NAME, anchor: :top, layer: :over, shown_in: [Scene_Battle], resizable: :width, width: WIDTH,
+            min_size: [MIN_WIDTH, 0] do
+          text -> { Waiting.line(:text) }, align: :center
+          text -> { Waiting.line(:names) }, align: :center
+          text -> { Waiting.line(:time) }, align: :center, visible: -> { !Waiting.offering? }
+          button -> { Waiting.line(:time) }, variant: :text, align_self: :center, visible: -> { Waiting.offering? }, on_click: -> { Waiting.click_leave }
+        end
+      end
+    end
 
     # Opens the box with its first line set, the others empty, where the player left it.
     #
@@ -1671,17 +1678,33 @@ module MGQ_MpBattlesSync
     # @param prefix [String] What starts the names line, such as "Still choosing: ".
     # @return [Box] The box.
     def self.open(text, details = nil, prefix = WAITING_PREFIX)
-      least = least_width([text] + offers)
-      register_layout(least)
-      root = Mod_Framework::UI::Box.new(:id => LAYOUT_ID, :place_name => LAYOUT_NAME, :frame => true, :at => [(Graphics.width - WIDTH) / 2, TOP],
-                                        :size => [WIDTH, HEIGHT], :movable => true, :resizable => :width, :min_size => [least, HEIGHT],
-                                        :padding => PADDING, :gap => 0, :mouse => :parts)
-      lines = [text, "", ""].map { |line| root.add_label(line, :align => :center, :height => LINE_HEIGHT) }
-      leave = root.add_button("", :flat => true, :quiet => true, :visible => false, :height => LINE_HEIGHT)
-      leave.on(:click) { @leave_clicked = true }
       @leave_clicked = false
-      root.open
-      Box.new(root, lines, leave, text, details, prefix, nil, nil, "")
+      @box = Box.new(nil, text, details, prefix, nil, nil, "", false)
+      @box.handle = Mod_Framework::UI.show(WaitingBox)
+      @box
+    end
+
+    # Tells a line of the open box.
+    #
+    # @param which [Symbol] :text, :names or :time.
+    # @return [String] The line, "" without a box.
+    def self.line(which)
+      box = @box
+      return "" unless box
+
+      { :text => box.text.to_s, :names => names_line(box), :time => box.time.to_s }[which]
+    end
+
+    # Reports whether the open box offers to leave the battle in its last line.
+    #
+    # @return [Boolean] Whether it does.
+    def self.offering?
+      @box && @box.offering ? true : false
+    end
+
+    # Takes a click on the leave offer, which the wait asks as cancel.
+    def self.click_leave
+      @leave_clicked = true
     end
 
     # Writes the leave offers with the cancel key as the player bound it.
@@ -1699,31 +1722,6 @@ module MGQ_MpBattlesSync
       format(text, Mod_Framework::UI::Game.key_name(:B))
     end
 
-    # Makes the box movable with a least width, or another; nothing while the least width stays.
-    #
-    # @param min_width [Integer] The least width.
-    def self.register_layout(min_width)
-      return if min_width == @least
-
-      @least = min_width
-      Mod_Framework::UI::Layout.register(LAYOUT_ID, LAYOUT_NAME, :min_size => [min_width, HEIGHT], :resizable => :width)
-    end
-
-    # Tells the least width lines need to show whole, as far as WIDTH gives it, since a longer line
-    # is cut there already. The names line is left out: it is cut to the box's width.
-    #
-    # @param texts [Array<String>] The lines, such as what the game waits for and the leave offer.
-    # @return [Integer] The width.
-    def self.least_width(texts)
-      measure = Mod_Framework::UI.font_bitmap(Mod_Framework::UI::Style::TEXT_SIZE)
-      [texts.map { |text| measure.text_size(text.to_s).width }.max + 2 * PADDING, WIDTH].min
-    end
-
-    # Makes the box movable before any box opens, with the least width its leave offers need.
-    def self.register_at_load
-      register_layout(least_width(offers))
-    end
-
     # Writes the names line: the prefix and the names last shown, which the line cuts to its width.
     #
     # @param box [Box] The box.
@@ -1733,28 +1731,21 @@ module MGQ_MpBattlesSync
       names.empty? ? "" : "#{box.prefix}#{names.join(', ')}"
     end
 
-    # Sets what changed: the names line when the names differ from those shown, the seconds once
-    # every REDRAW_FRAMES, or the leave offer at LEAVE_FRAMES, which stays. Frames below 0 set no
-    # seconds.
+    # Notes what changed: the names when they differ from those shown, the seconds once every
+    # second, or the leave offer at LEAVE_FRAMES, which stays. Frames below 0 set no seconds.
     #
     # @param box [Box] The box.
     # @param frames [Integer] Frames the box has been open, 0 in the frame it opened.
     # @param back [Boolean] Whether cancel goes back to the host's own commands, see wait_for.
     def self.refresh(box, frames, back = false)
       names = names_of(box)
-      if names != box.names
-        box.names = names
-        box.lines[1].text = names_line(box)
-      end
+      box.names = names if names != box.names
       if frames == LEAVE_FRAMES
         box.time = offer(back ? BACK_TEXT : (Live.leaving_loses? ? LEAVE_LOSES_TEXT : LEAVE_TEXT))
-        box.lines[2].visible = false
-        box.leave.text = box.time
-        box.leave.visible = true
-      elsif frames >= 0 && frames < LEAVE_FRAMES && frames % REDRAW_FRAMES == 0
-        box.seconds = frames / REDRAW_FRAMES
-        box.time = Mod_Framework::UI::SECONDS_TEXT % box.seconds
-        box.lines[2].text = box.time
+        box.offering = true
+      elsif frames >= 0 && frames < LEAVE_FRAMES && frames % FRAMES_PER_SECOND == 0
+        box.seconds = frames / FRAMES_PER_SECOND
+        box.time = format(SECONDS_TEXT, box.seconds)
       end
     end
 
@@ -1797,7 +1788,7 @@ module MGQ_MpBattlesSync
       refresh(box, frames, back)
       return answer_to_leave if @leave_asked
       if frames == LEAVE_FRAMES
-        MGQ_MpBattlesSync.log("still waiting after #{LEAVE_FRAMES / Mod_Framework::UI::FRAMES_PER_SECOND} s (#{box.text}), cancel now asks whether to leave the battle")
+        MGQ_MpBattlesSync.log("still waiting after #{LEAVE_FRAMES / FRAMES_PER_SECOND} s (#{box.text}), cancel now asks whether to leave the battle")
       end
       clicked = @leave_clicked
       @leave_clicked = false
@@ -1809,7 +1800,7 @@ module MGQ_MpBattlesSync
       nil
     end
 
-    # Asks the player whether they leave the battle, "no" picked first.
+    # Asks the player whether they leave the battle, "no" lit first.
     #
     # @param back [Boolean] Whether "no" goes back to the host's own commands instead of waiting on.
     def self.ask_to_leave(back)
@@ -1817,15 +1808,15 @@ module MGQ_MpBattlesSync
       token = Object.new
       @leave_asked = token
       @leave_answer = nil
-      opened = Mod_Framework::UI::Confirm.ask(question, back ? BACK_CHOICES : LEAVE_CHOICES) do |yes|
+      @leave_question = Mod_Framework::UI.confirm(question, yes: LEAVE_CHOICE, no: back ? BACK_CHOICE : STAY_CHOICE) do |yes|
         # A question the wait closed answers later, after the wait is gone.
         @leave_answer = yes ? :left : (back ? :back : :stay) if @leave_asked.equal?(token)
       end
-      @leave_asked = nil unless opened
-      MGQ_MpBattlesSync.log(opened ? "asked the player whether to leave the battle" : "could not ask the player whether to leave the battle")
+      @leave_asked = nil unless @leave_question
+      MGQ_MpBattlesSync.log(@leave_question ? "asked the player whether to leave the battle" : "could not ask the player whether to leave the battle")
     end
 
-    # Takes the leave question's answer once given; the Mod Framework ticks the question at every
+    # Takes the leave question's answer once given; the Mod Framework answers the question at every
     # Input.update, the battle's waits' too.
     #
     # @return [Symbol, nil] :left or :back once answered so, nil while open or answered "Stay".
@@ -1835,6 +1826,7 @@ module MGQ_MpBattlesSync
 
       @leave_asked = nil
       @leave_answer = nil
+      @leave_question = nil
       MGQ_MpBattlesSync.log(answer == :left ? "the player confirmed leaving the battle" : "the player stays in the battle")
       answer == :stay ? nil : answer
     end
@@ -1843,9 +1835,11 @@ module MGQ_MpBattlesSync
     def self.drop_leave_question
       return unless @leave_asked
 
+      question = @leave_question
       @leave_asked = nil
       @leave_answer = nil
-      Mod_Framework::UI::Confirm.close("the wait ended")
+      @leave_question = nil
+      question.close("the wait ended") if question && question.open?
     end
 
     # Closes a box, and the leave question it asked.
@@ -1854,7 +1848,10 @@ module MGQ_MpBattlesSync
     # @return [nil] Always, so the caller's box is gone.
     def self.close(box)
       drop_leave_question
-      box.root.close if box
+      if box
+        box.handle.hide if box.handle && box.handle.shown?
+        @box = nil if @box.equal?(box)
+      end
       nil
     end
 
@@ -1933,14 +1930,6 @@ module MGQ_MpBattlesSync
     end
   end
 
-end
-
-# The waiting box in the layout, through ui_layout.rbx.
-
-begin
-  MGQ_MpBattlesSync::Waiting.register_at_load
-rescue => e
-  MGQ_MpBattlesSync.log("layout FAILED: #{e.class}: #{e.message}")
 end
 
 # What this script takes part in of the world's messages, through overworld_sync.rbx.
