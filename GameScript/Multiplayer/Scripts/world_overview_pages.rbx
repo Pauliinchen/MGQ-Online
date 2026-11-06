@@ -2,7 +2,9 @@
 #  world_overview_pages.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Renamed add_options to offer_row, which the Mod Framework's scan no longer takes for a call of the old UI
+#      Paulinchen  2026-11-06: Dropped the picture behind the Quests page, which page views no longer take
+#                            - Drew the icons of the heads and the pane's things with the icon part
+#                            - Renamed add_options to offer_row, which the Mod Framework's scan no longer takes for a call of the old UI
 #                            - Showed the pages in page views of the UI layer, their heads and panes as markup
 #      Paulinchen  2026-11-05: Read the raid bosses' tiers and the troop of a pool's boss from the DLL's table
 #                            - Read the Chaos route's variable from story_ids.rbx
@@ -626,14 +628,6 @@ module MGQ_MpWorldOverview
     row
   end
 
-  # Tells the picture behind an own page: Amira's Library picture faintly behind the Quests page.
-  #
-  # @param page [Symbol] One of SPLIT_PAGES.
-  # @return [Hash, nil] The view's backdrop, nil for none.
-  def self.backdrop(page)
-    page == :quests ? { :portrait => AMIRA, :opacity => BACKDROP_OPACITY, :anchor => :bottom_right } : nil
-  end
-
   # Tells how a character's picture shows, as the Quest Portraits row picks: by their face, else
   # by their map sprite.
   #
@@ -680,8 +674,6 @@ module MGQ_MpWorldOverview
       head = data.head
       view = { id: :"overview_#{kind}", row: ->(item) { overview.entry_row(item) }, bind: :picked, height: :fill,
                on_fold: ->(group, open) { overview.fold(kind, group, open) } }
-      backdrop = overview.backdrop(kind)
-      view[:backdrop] = backdrop if backdrop
       page_view data.rows, view do
         page_head(head && head.entry ? { pick: :head } : {}) { head_of(head) } if head
         page_pane { pane_of(overview.pick_pane(data, picked)) }
@@ -698,7 +690,7 @@ module MGQ_MpWorldOverview
         if head.looks
           image(MGQ_MpWorldOverview.picture_of(head.looks).merge(width: HEAD_PICTURE, height: HEAD_PICTURE))
         elsif head.icon
-          text "\\I[#{head.icon}]", escapes: true
+          icon head.icon
         end
         stack grow: 1 do
           stack row: true do
@@ -750,7 +742,7 @@ module MGQ_MpWorldOverview
     def item_of(item)
       stack row: true do
         if item.icon
-          text "\\I[#{item.icon}]", escapes: true
+          icon item.icon
         elsif item.looks
           image(MGQ_MpWorldOverview.picture_of(item.looks).merge(width: ITEM_PICTURE, height: ITEM_PICTURE))
         end

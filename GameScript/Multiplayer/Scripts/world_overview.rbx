@@ -2,7 +2,9 @@
 #  world_overview.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Rebuilt the overview as a window of the UI layer with its pages as tabs that wrap
+#      Paulinchen  2026-11-06: Dropped the opacity of the picture behind the Quests page
+#                            - Marked the Players tab from the players listed last, only while another page shows
+#                            - Rebuilt the overview as a window of the UI layer with its pages as tabs that wrap
 #                            - Took other mods' pages as tabs they append through UI.patch, without a cap
 #                            - Showed why a greyed choice of a player's menu cannot be taken as its tooltip
 #      Paulinchen  2026-11-05: Read the story's ids from story_ids.rbx
@@ -179,11 +181,8 @@ module MGQ_MpWorldOverview
   # where an entry starts.
   QUEST_COUNT = 11
 
-  # Amira's actor, whose Library picture shows faintly behind the Quests page.
+  # Amira's actor, who heads the Quests page.
   AMIRA = 540
-
-  # How opaque that picture is, out of 255.
-  BACKDROP_OPACITY = 36
 
   # How the reading pane joins a quest's title and who tells it.
   TITLE_JOIN = " · "
@@ -707,11 +706,15 @@ module MGQ_MpWorldOverview
     badge ? MGQ_MpOverworld.party_title(badge) : nil
   end
 
-  # Tells whether another player's call waits for the player, which marks the Players tab.
+  # Tells whether another player's call waits for the player, which marks the Players tab: of the
+  # players the DLL listed last, without asking it again or building their rows.
   #
   # @return [Boolean] Whether one does.
   def self.call_waiting?
-    rows.any? { |row| row.call } ? true : false
+    Array((@lists || lists)["players"]).any? do |told|
+      peer = told[0] == ME_SEAT ? nil : MGQ_MpOverworldSync::Peers.at(told[0])
+      peer && call_of(peer)
+    end
   end
 
   # Tells what the window shows that the framework cannot see change: the players' lists, the calls
@@ -846,7 +849,7 @@ module MGQ_MpWorldOverview
         end
         tabs bind: :page, wrap: true, arrows: true, id: TABS_ID, height: :fill, on_change: ->(id) { overview.turned(id) } do
           if overview.in_world?
-            tab(PAGES.assoc(:players)[1], id: :players, badge: -> { overview.call_waiting? && page != :players }) { players_page }
+            tab(PAGES.assoc(:players)[1], id: :players, badge: -> { page != :players && overview.call_waiting? }) { players_page }
             tab(PAGES.assoc(:world)[1], id: :world) { component(OverviewPage, kind: :world, key: :world) }
           end
           tab(PAGES.assoc(:quests)[1], id: :quests) { component(OverviewPage, kind: :quests, key: :quests) }

@@ -2,7 +2,8 @@
 #  world_overview_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Reached the Mod Framework's engine under its own name
+#      Paulinchen  2026-11-06: Dropped the check of the picture behind the Quests page
+#                            - Reached the Mod Framework's engine under its own name
 #                            - Answered the catch-up's topics with fixed values instead of recorded cases
 #                            - Read the small party box's rows, leaving how it looks to the in-game suite
 #                            - Read the overview's rows, menus, gate and pages from the script, leaving its window of the UI layer to the in-game suite
@@ -916,8 +917,6 @@ check("a companion's request picked shows in the pane by its title, beside the c
 overview.choose_portraits("Faces")
 check("with faces picked they show by their faces", [overview.picture_of(quests.head.looks).keys, overview.picture_of(pane.looks).keys], [[:face], [:face]])
 overview.choose_portraits("Sprites")
-check("Amira's Library picture lies faintly behind the page at its bottom right", overview.backdrop(:quests),
-      { :portrait => overview::AMIRA, :opacity => overview::BACKDROP_OPACITY, :anchor => :bottom_right })
 $frame = $frame.to_i + overview::READ_FRAMES
 kept = overview.model(:quests)
 $frame = $frame.to_i + overview::READ_FRAMES
