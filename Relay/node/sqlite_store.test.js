@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-11-08: Checked that the retired mod catalog's rows stay in the database for a rollback, in place of the catalog's own checks
+//                            - Read the kept story through what the story tracks start from
 //      Paulinchen  2026-11-06: Checked the database in memory without a path
 //                            - Read the kept story through its keys
 //                            - Kept the derived index through the relay's own call
@@ -180,7 +181,7 @@ test("a Raid World's story and its checkpoints outlast a restart, and each world
 
   const second = openSqliteStores(path);
   const reopened = new WorldStory(second.stories(WORLD));
-  assert.deepEqual([(await reopened.get()).body.rev, (await reopened.keys()).get("v1001"), (await reopened.kept()).checkpoints], [2, "n19", ["1"]]);
+  assert.deepEqual([(await reopened.get()).body.rev, (await reopened.trackStart()).keys.get("v1001"), (await reopened.kept()).checkpoints], [2, "n19", ["1"]]);
   assert.equal((await second.stories(WORLD).getCheckpoint("1")).lists.v, "1001:n18");
   assert.equal((await new WorldStory(second.stories("f".repeat(32))).get()).body.rev, 0, "another world has a story of its own");
 

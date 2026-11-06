@@ -2,6 +2,7 @@
 //  story.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Handed the story tracks the keyed story's route lock and part checkpoints with its keys
 //      Paulinchen  2026-11-06: Ran one piece of work at a time through one shared queue
 //                            - Handed games the story's revision and shared companions alone and dropped the admin's keyed writes, the route lock and the write log
 //      Paulinchen  2026-11-05: Dropped the games' story writes, part checkpoint reads and route locks over HTTP, which only games without story tracks used; the keyed story stays as world data
@@ -764,13 +765,31 @@ export class WorldStory {
   }
 
   /**
-   * Reads a keyed story's keys, which the world's story tracks start from.
+   * Reads what the world's story tracks start from: the keyed story's keys, its route lock and the
+   * keys of each part checkpoint that kept them.
    *
-   * @returns {Promise<Map<string, string> | undefined>} The keys, see readLists; undefined before the first write key by key.
+   * @returns {Promise<{keys: Map<string, string>, route: string, checkpoints: Map<string, Map<string, string>>} | undefined>} The start, keys as readLists reads them; undefined before the first write key by key.
    */
-  async keys() {
-    const story = await this.kept();
-    return story?.lists ? readLists(story.lists, this.limits).keys : undefined;
+  async trackStart() {
+    return this.exclusive(async () => {
+      const story = await this.store.get();
+
+      if (!story?.lists) {
+        return undefined;
+      }
+
+      const checkpoints = new Map();
+
+      for (const part of story.checkpoints ?? []) {
+        const keys = readLists((await this.store.getCheckpoint(part))?.lists, this.limits).keys;
+
+        if (keys) {
+          checkpoints.set(part, keys);
+        }
+      }
+
+      return { keys: readLists(story.lists, this.limits).keys, route: story.route ?? ROUTE.none, checkpoints };
+    });
   }
 
   /**

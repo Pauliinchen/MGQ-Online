@@ -2,6 +2,7 @@
 //  raid_admin.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Started the world's tracks from what the keyed story hands them
 //      Paulinchen  2026-11-06: Dropped the tests of the keyed story's admin writes, route lock and pushes
 //      Paulinchen  2026-11-05: Kept the stories the tests start from as older games wrote them, as games write no story over HTTP
 //      Paulinchen  2026-11-01: Covered the pins refused for keys the story mapping does not share
@@ -99,7 +100,7 @@ function makeWorld() {
       const pinned = await story.kept();
       return { pinOf: (key) => pinOf(pinned, key), keys: Object.keys(pinned?.pinned ?? {}) };
     },
-    story: () => story.keys(),
+    story: () => story.trackStart(),
     send: (_player, text) => heard.push(JSON.parse(text.slice("track ".length))),
   });
   const world = { story, bosses, tracks: tracksOf() };
@@ -168,7 +169,7 @@ test("on a world whose story runs on tracks, the admin view, keys, pins and rout
   assert.equal(set.audit, `admin ${ADMIN_ID} set keys of rev 2: ${JSON.stringify(set.body.set)}`);
   assert.deepEqual(heard.map(({ t, rev, keys, world: summary }) => [t, rev, keys, summary.route]), [["push", 2, { v50: "n4", v1141: "n1" }, "ad"]], "every game on the world's track hears it");
   assert.deepEqual(await ask("POST", "/keys", { s: { 100: true } }).then((answer) => [answer.status, answer.body.code, answer.body.keys]), [409, "mapping", ["s100"]]);
-  assert.equal(await world.story.keys(), undefined, "the keyed story keeps no keys");
+  assert.equal(await world.story.trackStart(), undefined, "the keyed story keeps no keys");
 
   heard.length = 0;
   const pinned = await ask("POST", "/pins", { keys: { v50: 7 } });

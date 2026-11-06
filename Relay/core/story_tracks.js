@@ -2,6 +2,8 @@
 //  story_tracks.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Kept the route lock and the part checkpoints of the keyed story a world's track starts from
+//      Paulinchen  2026-11-07: Put every run that gave or used up a found item on every other player's own track, keyed runs too
 //      Paulinchen  2026-11-06: Ran one piece of work at a time through one shared queue
 //                            - Started the world's track from the keyed story for every admin request, without the guards for a world never on tracks
 //      Paulinchen  2026-11-05: Dropped the tracks feature, as every game the relay serves plays on tracks
@@ -412,7 +414,7 @@ export class StoryTracks {
    * Makes the tracks.
    *
    * @param {TrackStore} store Where they live.
-   * @param {{mapping: () => Promise<object>, pins?: () => Promise<{pinOf: (key: string) => string | undefined, keys: string[]}>, story?: () => Promise<Map<string, string> | undefined>, send: (player: string, text: string) => void, limits?: typeof TRACK_LIMITS, clock?: () => number}} options The story mapping as games read it; the pins an admin set (the keyed story's, story.js pinOf, which also reads the ranges an older relay pinned at off) with the keys pinned one by one; the keys of the world's keyed story, which a world without tracks starts them from; how a frame reaches a player's game; the limits; the clock.
+   * @param {{mapping: () => Promise<object>, pins?: () => Promise<{pinOf: (key: string) => string | undefined, keys: string[]}>, story?: () => Promise<{keys: Map<string, string>, route: string, checkpoints: Map<string, Map<string, string>>} | undefined>, send: (player: string, text: string) => void, limits?: typeof TRACK_LIMITS, clock?: () => number}} options The story mapping as games read it; the pins an admin set (the keyed story's, story.js pinOf, which also reads the ranges an older relay pinned at off) with the keys pinned one by one; the world's keyed story (story.js trackStart), which a world without tracks starts them from; how a frame reaches a player's game; the limits; the clock.
    */
   constructor(store, { mapping, pins = async () => ({ pinOf: () => undefined, keys: [] }), story = async () => undefined, send, limits = TRACK_LIMITS, clock = Date.now }) {
     /** The store. */
@@ -421,7 +423,7 @@ export class StoryTracks {
     this.mapping = mapping;
     /** Reads the pins. */
     this.pins = pins;
-    /** Reads the keys of the world's keyed story. */
+    /** Reads the world's keyed story the tracks start from. */
     this.story = story;
     /** Sends a frame to a player's game. */
     this.send = send;
@@ -945,9 +947,9 @@ export class StoryTracks {
   /**
    * Keeps a player's run entry on their track when the run changed the track: a key of its step
    * was last changed there by the player's own write. Every key of its step the player's writes
-   * changed counts once. A run that gave or used up a found item and changed no key (`found`) goes
-   * on the world's track, which later joiners walk, and on every other player's own track, so a
-   * player behind gets the item at once. Called inside exclusive.
+   * changed counts once. A run that gave or used up a found item (`found`) goes on every other
+   * player's own track too, so a player behind gets the item at once, and one that changed no key
+   * on the world's track, which later joiners walk. Called inside exclusive.
    *
    * @param {string} player The player's id.
    * @param {string} track The player's track.
@@ -956,15 +958,16 @@ export class StoryTracks {
    * @returns {Promise<{track: string, entry: object}[]>} Each entry as kept, with its number `n`, by track; none when the run changed nothing of the track.
    */
   async keepRun(player, track, run, commit) {
-    if (run.found && run.keys.length === 0) {
-      const own = [...this.players.values()].map((record) => record.track?.id).filter((id) => id && id !== track);
-      return Promise.all([...new Set([WORLD_TRACK, ...own])].map((target) => this.addRun(target, run, commit)));
-    }
-
     const marks = this.marks.get(track) ?? new Map();
     const changed = run.keys.filter((key) => marks.get(key) === player);
     changed.forEach((key) => marks.delete(key));
-    return changed.length === 0 ? [] : [await this.addRun(track, run, commit)];
+    const targets = changed.length === 0 ? [] : [track];
+    if (run.found) {
+      const own = [...this.players.values()].map((record) => record.track?.id).filter((id) => id && id !== track);
+      targets.push(...(run.keys.length === 0 ? [WORLD_TRACK] : []), ...own);
+    }
+
+    return Promise.all([...new Set(targets)].map((target) => this.addRun(target, run, commit)));
   }
 
   /**
@@ -1810,6 +1813,16 @@ export class StoryTracks {
   }
 
   /**
+   * Reads the keys of the world's keyed story the tracks keep, leaving out every key that does not fit.
+   *
+   * @param {Map<string, string>} keys The keyed story's keys.
+   * @returns {Map<string, string>} The keys the tracks keep, none when there are more than a seed holds.
+   */
+  keptOfStory(keys) {
+    return this.readSeed(Object.fromEntries([...keys].filter(([key, value]) => KEY.test(key) && valueFits(key, value, this.limits)))).keys ?? new Map();
+  }
+
+  /**
    * Reads a game's level.
    *
    * @param {unknown} level `best` and `cap`, null without a cap.
@@ -1882,8 +1895,9 @@ export class StoryTracks {
 
   /**
    * Reads the world's summary and keys and the story mapping, once each; a world without tracks
-   * starts them from its keyed story, with no run entries before, and a world
-   * whose tracks kept no run entries yet starts its log where it stands, keeping its keys there.
+   * starts them from its keyed story, with its route lock and part checkpoints and no run entries
+   * before, and a world whose tracks kept no run entries yet starts its log where it stands,
+   * keeping its keys there.
    * Called inside exclusive.
    *
    * @returns {Promise<void>} Completes once read.
@@ -1895,11 +1909,21 @@ export class StoryTracks {
       this.meta = (await this.store.getMeta()) ?? { rev: 0, part: partOf(FIRST_COUNTERS), route: ROUTE.none, done: [], checkpoints: [], next: 1 };
       this.world = new Map(await this.store.getKeys(WORLD_TRACK));
       const story = this.meta.rev ? undefined : await this.story();
-      const seed = story ? this.readSeed(Object.fromEntries([...story].filter(([key, value]) => KEY.test(key) && valueFits(key, value, this.limits)))) : null;
+      const seed = story?.keys ? this.keptOfStory(story.keys) : null;
 
-      if (seed?.keys?.size > 0) {
+      if (seed?.size > 0) {
+        const checkpoints = [...story.checkpoints].map(([part, keys]) => ({ part, keys: [...this.keptOfStory(keys)] })).filter(({ keys }) => keys.length > 0);
+
+        // Each checkpoint goes in before the summary that names it, so a start cut short starts again whole.
+        for (const checkpoint of checkpoints) {
+          await this.store.commit({ checkpoint });
+        }
+
         const commit = {};
-        this.startWorld(seed.keys, commit);
+        this.startWorld(seed, commit);
+        const route = Object.keys(ROUTE_COUNTERS).includes(story.route) ? story.route : ROUTE.none;
+        this.meta = { ...this.meta, route, checkpoints: checkpoints.map(({ part }) => part) };
+        commit.meta = this.meta;
         await this.store.commit(commit);
       }
 

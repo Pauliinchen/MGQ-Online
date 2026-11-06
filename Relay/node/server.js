@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-11-08: Dropped the mod catalog and the check of its links, whose routes answer the update refusal
+//                            - Started a world's tracks from its keyed story's route lock and part checkpoints too
 //      Paulinchen  2026-11-06: Named the lowest version the relay serves beside a refusal of a game too old for it
 //                            - Pushed the story's revision alone after the shared companions changed
 //                            - Answered a game too old at once, without reading its body first
@@ -1464,7 +1465,7 @@ export function createRelay({
           const kept = await storyOf(id).kept();
           return { pinOf: (key) => pinOf(kept, key), keys: Object.keys(kept?.pinned ?? {}) };
         },
-        story: () => storyOf(id).keys(),
+        story: () => storyOf(id).trackStart(),
         send: (player, text) => tellWorld(id, text, (peer) => peer.tracks && peer.record.player === player),
         clock,
       }));

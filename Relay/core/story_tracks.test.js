@@ -2,6 +2,8 @@
 //  story_tracks.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Checked that a world's track keeps the route lock and the part checkpoints of the keyed story it starts from
+//      Paulinchen  2026-11-07: Checked that a found item's run that changed keys reaches a player behind on their own track at once
 //      Paulinchen  2026-11-06: Dropped the checks of a world never on tracks
 //      Paulinchen  2026-11-05: Checked that a found item's run goes on the world's track and on every player's own
 //                            - Dropped the check of used up items' marks, whose runs the story replay hands over
@@ -18,6 +20,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { WorldStory } from "./story.js";
 import { StoryTracks, TRACK_CODE, WORLD_TRACK, gateOpen, nextPart } from "./story_tracks.js";
 
 /**
@@ -120,7 +123,7 @@ function memoryStore() {
  * Makes a world's tracks and its games: each game enters with a seat, says frames and reads what it
  * heard since it last looked.
  *
- * @param {{pins?: Object<string, string>, story?: Map<string, string>, store?: import("./story_tracks.js").TrackStore}} [options] Keys an admin pinned, with their values; the keys of the world's keyed story; the store, a new one in memory when left out.
+ * @param {{pins?: Object<string, string>, story?: object, store?: import("./story_tracks.js").TrackStore}} [options] Keys an admin pinned, with their values; the world's keyed story as story.js trackStart reads it; the store, a new one in memory when left out.
  * @returns {{tracks: StoryTracks, pins: Object<string, string>, enter: (player: string, seat: number) => Promise<void>, say: (player: string, frame: object) => Promise<void>, heard: (player: string) => object[], answer: (player: string) => object | undefined}} The tracks and the games.
  */
 function makeWorld({ pins = {}, story, store = memoryStore() } = {}) {
@@ -532,16 +535,44 @@ test("a run that gave a found item and changed no key goes on the world's track 
   assert.deepEqual([world.heard(BOB), world.heard(CARA)].map((frames) => frames.filter((frame) => frame.t === "run").map((frame) => [frame.track, frame.run.id])),
     [[[WORLD_TRACK, "pass"]], [["t1", "pass"]]], "a player behind gets it on their own track at once");
 
+  await write(world, ALICE, 3, [["v50", "n1"]]);
+  await world.say(ALICE, { t: "write", seq: 4, track: WORLD_TRACK, run: { ...run("chest", ["v50"], 19), found: true } });
+  assert.deepEqual([world.heard(BOB), world.heard(CARA)].map((frames) => frames.filter((frame) => frame.t === "run").map((frame) => [frame.track, frame.run.id])),
+    [[[WORLD_TRACK, "chest"]], [["t1", "chest"]]], "so does a run that also changed keys of the world's story");
+
   await world.say(BOB, { t: "write", seq: 1, track: WORLD_TRACK, run: run("nothing", [], 10) });
   assert.equal(world.answer(BOB).code, TRACK_CODE.bad, "a run without a key and without a found item is no entry");
 });
 
 test("a world that kept a keyed story starts its tracks from it, with no run entries before", async () => {
-  const world = makeWorld({ story: new Map([["v1001", "n12"], ["v50", "n4"], ["s100", "1"], ["a5", "n3"]]) });
+  const world = makeWorld({ story: { keys: new Map([["v1001", "n12"], ["v50", "n4"], ["s100", "1"], ["a5", "n3"]]), route: "none", checkpoints: new Map() } });
   await world.enter(ALICE, 0);
   await world.say(ALICE, { t: "sync", level: { best: 99, cap: null }, seed: { v1001: "n12", v50: "n9" } });
   const [state] = world.heard(ALICE);
   assert.deepEqual([state.why, state.keys, state.cursor, state.last], ["sync", { v1001: "n12", v50: "n4" }, 0, 0]);
+});
+
+test("a world's track keeps the route lock and the part checkpoints of a keyed story from before tracks", async () => {
+  const lists = (v) => ({ s: "", sf: "", v, ss: "", ssf: "", a: "", f: "" });
+  const counters = (p) => ({ p, r1141: 0, r1142: 0, r1143: 0, clear: [] });
+  const kept = {
+    story: { rev: 9, wrev: 9, counters: counters(40), part: "3", route: "chaos", done: [], end: null, comps: [], caps: [], checkpoints: ["1"], at: 1000, by: ALICE, lists: lists("1001:n40,50:n6"), log: [], logBase: 9 },
+    checkpoint: { rev: 3, wrev: 3, counters: counters(19), part: "1", route: "none", done: [], end: null, at: 900, by: ALICE, lists: lists("1001:n10,50:n1") },
+  };
+  const story = new WorldStory({ get: async () => kept.story, put: async () => {}, getCheckpoint: async (part) => (part === "1" ? kept.checkpoint : undefined), remove: async () => {} });
+  const world = makeWorld({ story: await story.trackStart() });
+
+  await world.enter(ALICE, 0);
+  await world.say(ALICE, { t: "sync", level: { best: 99, cap: null }, seed: { v1001: "n40" } });
+  const [state] = world.heard(ALICE);
+  assert.deepEqual([state.why, state.world.part, state.world.route, state.world.checkpoints, state.keys.v50], ["sync", "3", "chaos", ["1"], "n6"]);
+  await world.say(ALICE, { t: "route", route: "ad" });
+  assert.equal(world.heard(ALICE)[0].code, TRACK_CODE.route, "another route stays locked out");
+
+  await world.enter(CARA, 1);
+  await world.say(CARA, { t: "sync", level: { best: 10, cap: null }, seed: { v1001: "n2", v50: "n9" } });
+  const [behind] = world.heard(CARA);
+  assert.deepEqual([behind.why, behind.part, behind.keys], ["behind", "1", { v1001: "n10", v50: "n1" }], "a player behind starts from the world's checkpoint, not their own story");
 });
 
 test("a world's summary names the place its log starts at, which a world kept from before run entries takes as it stands", async () => {

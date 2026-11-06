@@ -2,6 +2,7 @@
 //  story.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Read the keys the story tracks start from through what the keyed story hands them
 //      Paulinchen  2026-11-06: Dropped the tests of the keyed story's admin writes, route lock and pushes
 //                            - Dropped the check against recorded parts
 //      Paulinchen  2026-11-05: Dropped the tests of the games' story writes, checkpoint reads and route locks over HTTP, and covered the keyed story as world data
@@ -140,13 +141,13 @@ test("a story older games wrote key by key answers its revision and hands its ke
   keepKeyed(kept, { s: "5", v: "1001:n10,30:n2" }, { p: 10 }, { rev: 2 });
 
   assert.deepEqual((await story.get()).body, { rev: 2, comps: [] });
-  assert.deepEqual([...(await story.keys())], [["s5", "1"], ["v1001", "n10"], ["v30", "n2"]]);
+  assert.deepEqual([...(await story.trackStart()).keys], [["s5", "1"], ["v1001", "n10"], ["v30", "n2"]]);
 });
 
 test("a story an older relay kept sealed counts as one nobody wrote key by key", async () => {
   const { story, kept } = makeStory();
   kept.story = { ...story.first(), rev: 2, wrev: 2, counters: counters({ p: 6 }), blob: "c2VhbGVk" };
-  assert.deepEqual([(await story.get()).body, await story.keys()], [{ rev: 2, comps: [] }, undefined]);
+  assert.deepEqual([(await story.get()).body, await story.trackStart()], [{ rev: 2, comps: [] }, undefined]);
 });
 
 test("shared companions only grow, and the same ids again write nothing", async () => {
@@ -199,7 +200,7 @@ test("the routes are read from the address, and the router answers the reads and
     assert.equal((await handleStoryRequest(story, method, rest, body({ base: 1, counters: counters({ p: 41 }), set: {}, route: "ad" }))).status, 404, `${method} ${rest.join("/")}`);
   }
 
-  assert.equal((await story.keys()).get("v1001"), "n40", "no game writes the story over HTTP");
+  assert.equal((await story.trackStart()).keys.get("v1001"), "n40", "no game writes the story over HTTP");
   assert.equal(ROUTE.none, "none");
 });
 
