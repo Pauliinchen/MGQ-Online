@@ -2,6 +2,7 @@
 //  ActorBuild.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-07: Dropped the hero of a replaced Luka
 //      Paulinchen  2026-11-05: Created
 //
 //----------------------------------------------------------------
@@ -12,8 +13,7 @@ namespace MGQOnline.Game.Actors;
 
 /// <summary>
 /// A character's build, which another game rebuilds as a character of its own data: its make-up,
-/// the stats and rates its owner's game showed, what of the owner's save it reads, and the hero the
-/// owner's game plays in Luka's place.
+/// the stats and rates its owner's game showed, and what of the owner's save it reads.
 /// </summary>
 /// <remarks>
 /// Nothing of the save format leaves the game, since loading someone else's save data can run code.
@@ -32,7 +32,6 @@ namespace MGQOnline.Game.Actors;
 /// <param name="Rates">The rates the scripts compare in per mille, as the owner's game showed them.</param>
 /// <param name="Counters">The counters of the owner's save the character reads, see <see cref="BuildText.CounterCount"/>.</param>
 /// <param name="SwitchesOn">The switches on in the owner's save that the battle start states wait for.</param>
-/// <param name="Hero">The key of the hero Luka Replacer plays in Luka's place, empty for none.</param>
 public sealed record ActorBuild(
     long ActorId,
     long BaseLevel,
@@ -47,5 +46,4 @@ public sealed record ActorBuild(
     IReadOnlyList<long> Params,
     IReadOnlyList<long> Rates,
     IReadOnlyList<long> Counters,
-    IReadOnlyList<long> SwitchesOn,
-    string Hero);
+    IReadOnlyList<long> SwitchesOn);

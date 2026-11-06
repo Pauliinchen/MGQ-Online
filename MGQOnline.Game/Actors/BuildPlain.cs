@@ -2,6 +2,7 @@
 //  BuildPlain.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-07: Dropped the hero of a replaced Luka
 //      Paulinchen  2026-11-05: Created
 //
 //----------------------------------------------------------------
@@ -42,8 +43,8 @@ public static class BuildPlain
     /// </summary>
     /// <param name="facts">A Hash: "actor", "level", "class", "tribe", "levels" ([id, level]
     /// pairs), "param_plus", "skills", "abilities" and "equip_abilities" ([skill type, ids] pairs),
-    /// "equips" (see <see cref="ItemOf"/>), "params", "rates" (Floats), "counters", "switches" and
-    /// "hero".</param>
+    /// "equips" (see <see cref="ItemOf"/>), "params", "rates" (Floats), "counters" and
+    /// "switches".</param>
     /// <returns>The build.</returns>
     /// <exception cref="BridgeRequestException">A fact is of another kind.</exception>
     public static ActorBuild BuildOf(RubyValue facts)
@@ -64,8 +65,7 @@ public static class BuildPlain
             Wholes(hash["params"]),
             [.. List(hash["rates"]).Select(rate => PerMilleOf(Real(rate)))],
             Wholes(hash["counters"]),
-            Wholes(hash["switches"]),
-            hash["hero"].IsNil ? string.Empty : hash["hero"].AsText());
+            Wholes(hash["switches"]));
     }
 
     /// <summary>
@@ -92,7 +92,6 @@ public static class BuildPlain
             { "rates", new RubyArray(build.Rates.Select(FloatOf)) },
             { "counters", Plain(build.Counters) },
             { "switches", Plain(build.SwitchesOn) },
-            { "hero", build.Hero },
         };
     }
 

@@ -2,6 +2,7 @@
 #  trade_ui_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-07: Checked that the gold box opens on the framework's number box
 #      Paulinchen  2026-11-06: Left the screen's parts and keys to the in-game suite, since the UI layer draws them, and kept the scene's flows
 #                            - Dropped the stand-in's copy of the clamp of an amount, which the rules in C# decide
 #      Paulinchen  2026-11-05: Stood in for an offer's key in place of its text
@@ -42,6 +43,8 @@ class Bitmap
   # Frees nothing.
   def dispose; end
 end
+# The game's font, which the framework copies to measure texts.
+Font = Bitmap::Font
 
 # The game's system sounds, noted in $sounds.
 module Sound
@@ -214,5 +217,13 @@ scene = Scene_MpTrade.new
 scene.start
 check("a window the framework refuses is logged, the trade cancelled and the scene returned",
       [$trade_log.last, $calls, $returned], ["the trade screen's window did not open, so the trade is cancelled", [[:cancel]], 1])
+
+# The Gold button opens the framework's number box at the gold offered.
+new_trade
+scene = open_scene
+MGQ_MpTradeUi::TradeScreen.allocate.send(:ask_gold)
+check("the gold box opens over the screen at the gold offered, with params the number box takes",
+      [MGQ_MpTradeUi.asking?, $trade_log.last, $framework_log.grep(/UI\.number/)], [true, "gold box opened at 0 gold", []])
+scene.screen.close
 
 check("the chat follows the trade screen", $followed, [Scene_MpTrade])

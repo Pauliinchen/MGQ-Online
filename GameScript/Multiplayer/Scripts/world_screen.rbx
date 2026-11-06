@@ -2,6 +2,7 @@
 #  world_screen.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-07: Left the form back to its list when cancel reaches the screen from a field, and greyed menu choices through disabled:
 #      Paulinchen  2026-11-06: Asked again for a release to play whose question could not open while one of the screen's was
 #                            - Refused a world whose mods the Mod Framework finds ready while MGQ Online's check finds them differing, instead of asking again
 #                            - Moved the focus and said the lines at the top without rescuing an error of the UI layer
@@ -802,13 +803,16 @@ class Scene_MpWorlds < Scene_MenuBase
     resume_form
   end
 
-  # Takes cancel on the screen, which reaches it on a box as a whole: leaves for the title, or buzzes
-  # while an action of the DLL runs, which the screen waits for.
+  # Takes cancel on the screen, which reaches it from a field of the form entered once the field no
+  # longer types, or on a box as a whole: leaves the form back to its list, else leaves for the
+  # title; it buzzes while an action of the DLL runs, which the screen waits for.
   def cancelled
-    return leave_screen unless @busy
+    if @busy
+      Sound.play_buzzer
+      return log_screen("cancel while #{@busy} runs: the screen waits for it")
+    end
 
-    Sound.play_buzzer
-    log_screen("cancel while #{@busy} runs: the screen waits for it")
+    @form_symbol && @place == :form ? on_form_cancel : leave_screen
   end
 
   # Buzzes at what the player does while an action of the DLL runs.
@@ -939,7 +943,7 @@ class Scene_MpWorlds < Scene_MenuBase
   # @return [Boolean] Whether the menu opened.
   def ask_menu(question, choices, &answered)
     serial = (@asked = @asked.to_i + 1)
-    items = choices.map { |label, _symbol, enabled| { :text => label.to_s, :enabled => enabled != false } }
+    items = choices.map { |label, _symbol, enabled| { :text => label.to_s, :disabled => enabled == false } }
     params = { :width => MENU_WIDTH, :most_rows => MENU_ROWS }
     params[:title] = question.to_s unless question.to_s.empty?
     menu = UI.menu(items, params) do |_item, index|
@@ -1324,17 +1328,6 @@ class Scene_MpWorlds < Scene_MenuBase
     at = COMMANDS.index { |_text, symbol| symbol == @form_symbol }
     @command_index = at if at
     enter_form(@form_symbol, @field_key) unless @busy
-  end
-
-  # Tells where cancel in the form entered goes: the commands for a command's form, the worlds for a
-  # world's form, nowhere for the name form the player has to fill in first, whose cancel reaches
-  # the window and closes the screen.
-  #
-  # @return [Symbol, nil] The id of the list, nil for none.
-  def back_target
-    return nil if name_missing?
-
-    WORLD_FORMS.include?(@form_symbol) ? :worlds : :commands
   end
 
   # Notes the field that took the focus, which the form goes back to.
@@ -1994,8 +1987,6 @@ class Scene_MpWorlds < Scene_MenuBase
     # Describes the field.
     def render
       common = { id: field_id, help: input_field.hint, disabled: !page.enabled?(input_field) }
-      back = scene.back_target if page.equal?(scene.form)
-      common[:cancel_to] = back if back
       case input_field.kind
       when :text, :password, :id
         text_field input_field.label, common.merge(bind: :value, password: input_field.kind == :password, max_length: input_field.max_chars, allowed: input_field.allowed,

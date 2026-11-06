@@ -38,7 +38,7 @@ public readonly record struct SettingValue(char Type, BigInteger Integer, double
 public sealed record SettingOption(string Key, string Short, IReadOnlyList<KeyValuePair<string, string>> Names);
 
 /// <summary>
-/// A group of Mod Config, one mod's options, as Mod Config Remake groups them.
+/// A group of Mod Config: one mod's options.
 /// </summary>
 /// <param name="Name">The mod's name, as the group's first row names it.</param>
 /// <param name="Options">Its options.</param>
@@ -316,8 +316,7 @@ public static class SharedSettings
     public static RubyArray PlainValues(string? text) => new(Values(text).Select(pair => (RubyValue)new RubyArray { pair.Key, PlainOf(pair.Value) }));
 
     /// <summary>
-    /// Tells whether two values are the same, decimals within a margin, as Mod Config Remake finds a
-    /// value among an option's values.
+    /// Tells whether two values are the same, decimals within a margin.
     /// </summary>
     /// <param name="one">A value.</param>
     /// <param name="other">The other value.</param>

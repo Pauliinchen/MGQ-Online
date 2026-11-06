@@ -2,6 +2,7 @@
 #  world_screen_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-07: Cancelled in the form through the screen's window, and read a greyed menu choice from disabled:
 #      Paulinchen  2026-11-06: Stood in for the UI layer's menu, and acted on the screen as its window of the layer hands over what the player does
 #      Paulinchen  2026-11-01: Created
 #
@@ -200,7 +201,7 @@ end
 #
 # @return [Array<Boolean>] Whether each can.
 def menu_enabled
-  StandInDialogs.menu.asked[0].map { |choice| choice[:enabled] }
+  StandInDialogs.menu.asked[0].map { |choice| !choice[:disabled] }
 end
 
 # Picks a choice of the open menu, as confirm on it does, and runs what the screen does with it.
@@ -244,12 +245,10 @@ def type_in(text)
   scene.submitted(page, field, typed) if text.end_with?("\r")
 end
 
-# Cancels in the form entered once its field stopped typing, as the framework does: the focus goes
-# back to the list the form's fields name, whose box tells the screen it took the keys; the name
-# form the player has to fill in first names none, so cancel reaches the screen.
+# Cancels in the form entered once its field stopped typing, as the framework does: cancel reaches
+# the screen's window.
 #
 # @param scene [Scene_MpWorlds] The screen.
 def cancel_form(scene)
-  back = scene.back_target
-  back ? scene.entered(back) : scene.cancelled
+  scene.cancelled
 end

@@ -164,7 +164,7 @@ The creator can change Max Players, Mods, *Shared Mod Settings*, *Turn off other
 
 ### Mods of a world
 
-*Mods* in the create or edit form opens a list of the mods in your `Patch` folder, all unlisted at first. The mod loader, this mod, the Mod Framework and Mod Config Remake aren't in it.
+*Mods* in the create or edit form opens a list of the mods in your `Patch` folder, all unlisted at first. The mod loader, this mod and the Mod Framework aren't in it.
 
 - **Enter** or a click on a mod lists or unlists it. *List all your mods* at the top lists every one at once, and then *Unlist all your mods* unlists them again.
 - Each mod has two buttons at the right, under the columns *Required* and *Essential*, reached with the right arrow or a click: the red **!** makes it required, the orange **?** essential. A filled button shows how a mod is named; pressing it again makes the mod only listed.

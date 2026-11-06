@@ -2,6 +2,7 @@
 //  BattleSessionTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-07: Picked the relay overload of a new battle by name
 //      Paulinchen  2026-11-06: Dropped the checks that replayed recorded cases
 //      Paulinchen  2026-11-05: Carried the fields of a request the starter passes on as values, the seats it brings along among them
 //                            - Carried the front's messages between the starter and the server's scripts, which hand over and take values
@@ -591,7 +592,7 @@ public sealed class BattleSessionTests
         /// </summary>
         /// <param name="key">The player's key.</param>
         /// <returns>The battle.</returns>
-        public BattleSession NewBattle(string key) => NewBattle(key, null);
+        public BattleSession NewBattle(string key) => NewBattle(key, relay: null);
 
         /// <summary>
         /// Makes one player's served battle in this world, reaching a relay of the test's, on a

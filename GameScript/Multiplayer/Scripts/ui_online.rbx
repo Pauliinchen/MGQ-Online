@@ -2,6 +2,7 @@
 #  ui_online.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-07: Went back from the list box's Name field to its rows when cancel reaches the window
 #      Paulinchen  2026-11-06: Asked again for a HUD part the UI layer refused, a while later or in a new scene
 #                            - Read a player's color in the player's look through UI.color_now
 #                            - Named MGQ Online's colors for the Mod Framework's UI layer and kept its HUD parts shown
@@ -356,7 +357,7 @@ class MGQ_MpListBox < Mod_Framework::UI::Component
   # Describes the window.
   def render
     window title.to_s, id: ID, place_name: NAME, close_outside: true, resizable: true, at: [SIDE, TOP],
-                       width: Graphics.width - 2 * SIDE, height: Graphics.height - TOP - BOTTOM, min_size: MIN_SIZE do
+                       width: Graphics.width - 2 * SIDE, height: Graphics.height - TOP - BOTTOM, min_size: MIN_SIZE, on_cancel: -> { cancelled } do
       text(source.note.to_s, color: note_color, typo: :subtitle1, id: :list_box_note) if source.note
       if description
         paper scroll: :vertical, focusable: true, height: :fill, autofocus: true do
@@ -387,6 +388,19 @@ class MGQ_MpListBox < Mod_Framework::UI::Component
   end
 
   private
+
+  # Takes cancel that reached the window: from the Name field, which no longer types, the field goes
+  # and the rows take the focus again; otherwise the window closes.
+  #
+  # @return [Boolean] Whether the window closes.
+  def cancelled
+    return true unless naming
+
+    Sound.play_cancel
+    self.naming = false
+    part(LIST).focus
+    false
+  end
 
   # Tells the row the list's cursor is on.
   #
@@ -435,7 +449,7 @@ class MGQ_MpListBoxName < Mod_Framework::UI::Component
 
   # Describes the field.
   def render
-    field = { id: MGQ_MpListBox::FIELD, cancel_to: MGQ_MpListBox::LIST, on_submit: ->(name) { box.add(name) } }
+    field = { id: MGQ_MpListBox::FIELD, on_submit: ->(name) { box.add(name) } }
     field[:max_length] = max_length if max_length
     field[:typing_help] = typing_help if typing_help
     text_field "Name", field

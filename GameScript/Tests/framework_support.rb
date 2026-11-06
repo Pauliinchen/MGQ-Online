@@ -2,6 +2,7 @@
 #  framework_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-07: Named the cancel keys that leave a text field, as the Mod Framework asks the DLL
 #      Paulinchen  2026-11-06: Judged every key one a hotkey may take, as the Mod Framework asks the DLL
 #                            - Reached the Mod Framework's engine under its own name
 #                            - Took the Mod Framework's scripts only from MGQ_MOD_FRAMEWORK_DIR, since the mod no longer ships them
@@ -122,11 +123,14 @@ end
 
 # Opens the framework's bridge with a FakeBridge, whose events of the interface (topics starting
 # "ui.") its drain hands to the framework and the rest to MGQ Online's bridge, judges every key one
-# a hotkey may take, and counts the DLL as working.
+# a hotkey may take, names Escape and the numpad's 0 as the cancel keys that leave a text field, as
+# the DLL does for MGQ Online's fields, which type every character, and counts the DLL as working.
 #
 # @param fake [FakeBridge] The DLL's side.
 def open_framework(fake)
   fake.answer(Mod_Framework::Options::Keys::JUDGE_TOPIC) { |_code| "bind" }
+  leaving = [Mod_Framework::UI::ESCAPE_KEY] + Mod_Framework::UI::NUMPAD_ZERO
+  fake.answer(Mod_Framework::UI::LEAVE_FIELD_TOPIC) { |(_takes, codes)| codes & leaving }
   Mod_Framework.bridge.open(fake)
   fake.ui_context = Mod_Framework.bridge.instance_variable_get(:@context)
   Mod_Framework.available = true

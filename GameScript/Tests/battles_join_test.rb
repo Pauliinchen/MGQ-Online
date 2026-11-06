@@ -2,6 +2,7 @@
 #  battles_join_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-07: Typed through a text box of the Mod Framework instead of the old typing flag
 #      Paulinchen  2026-11-06: Held the keys in $down down too, as the Mod Framework reads a hotkey's key
 #                            - Reached the Mod Framework's engine under its own name
 #                            - Named the action line's color as the scripts name it
@@ -349,9 +350,7 @@ $log.clear
 $coop.set("coop.join_frame", "target" => [5, "b1"], "asked" => true)
 press
 $coop.set("coop.join_frame", nil)
-$mgq_text_input = true
-press
-$mgq_text_input = nil
+while_typing { press }
 check("a press the DLL asked the host for, or one while the player types, logs nothing", $log.grep(/ignored: /), [])
 reset
 

@@ -2,6 +2,7 @@
 //  SessionMods.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Dropped another mod from the mods every player has
 //      Paulinchen  2026-10-30: Created
 //
 //----------------------------------------------------------------
@@ -27,10 +28,10 @@ public sealed record SessionPlan(IReadOnlyList<string> Only, IReadOnlyList<strin
 public static class SessionMods
 {
     /// <summary>
-    /// The keys of the mods every player has, which no world turns off: the mod loader, this mod, the
-    /// Mod Framework's loader and its old entry file, and Mod Config Remake, which older releases shipped.
+    /// The keys of the mods every player has, which no world turns off: the mod loader, this mod, and
+    /// the Mod Framework's loader and its old entry file.
     /// </summary>
-    public static readonly IReadOnlySet<string> SharedKeys = new HashSet<string>(StringComparer.Ordinal) { "patch", "multiplayer", "!modframework", "modframework", "0modconfigremake" };
+    public static readonly IReadOnlySet<string> SharedKeys = new HashSet<string>(StringComparer.Ordinal) { "patch", "multiplayer", "!modframework", "modframework" };
 
     /// <summary>
     /// Most mods a text names before it counts the rest.

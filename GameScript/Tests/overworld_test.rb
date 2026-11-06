@@ -2,6 +2,7 @@
 #  overworld_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-07: Read a greyed wheel choice from disabled:
 #      Paulinchen  2026-11-06: Expected the DLL to hear that the player chose to leave the party
 #                            - Drew the outline's frame in a color of its own
 #                            - Took the action wheel's choices as the wheel of the UI layer tells them, leaving its keys to the in-game suite
@@ -274,7 +275,7 @@ check("every state but walking has an icon", (%w[battle event menu items equip s
 def take_choice(direction)
   open_action_wheel
   choice = direction == :CENTER ? MGQ_MpActions.wheel_middle : MGQ_MpActions.wheel_choices[MGQ_MpActions.wheel_places.index(direction)]
-  return MGQ_MpActions.refused(choice) unless choice[:enabled]
+  return MGQ_MpActions.refused(choice) if choice[:disabled]
 
   MGQ_MpActions.taken(choice)
   MGQ_MpActions.closed(:submit)
@@ -312,7 +313,7 @@ check("nobody near: invite greyed", option(PARTY), ["Invite to a party", false])
 check("a Classic world has no story to teleport to", option(STORY), ["Teleport to the story", false])
 check("chat offered, and a direction without a choice has none", [option(CHAT), MGQ_MpActions.wheel_options.key?(:DOWN_RIGHT)], [["Chat (T)", true], false])
 check("the wheel's choices are the registered ones in their order, those that cannot be taken dim",
-      MGQ_MpActions.wheel_choices.map { |choice| [choice[:text], choice[:enabled]] }, [PARTY, LEAVE, STORY, CHAT].map { |direction| option(direction) })
+      MGQ_MpActions.wheel_choices.map { |choice| [choice[:text], !choice[:disabled]] }, [PARTY, LEAVE, STORY, CHAT].map { |direction| option(direction) })
 check("the wheel may open on the free map of a world", MGQ_MpActions.free_reason, nil)
 open_action_wheel
 check("open, the other scripts see it open and the line above the player's head hides", [MGQ_MpActions.wheel.open?, MGQ_MpActions.own_lines], [true, nil])

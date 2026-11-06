@@ -2,6 +2,7 @@
 #  ui_trade.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-07: Left the way back from the bag to its tab to the framework and gave the gold box its unit as adornment:
 #      Paulinchen  2026-11-06: Took how many of an item an offer holds and why a step changed nothing from the rules in C#
 #      Paulinchen  2026-11-06: Drew the trade screen through the UI layer: Q and W step the bag by ten, Page Up and Down page it, cancel in an offer asks
 #                            - Told the chat whether the gold box or the question is open
@@ -59,9 +60,6 @@ module MGQ_MpTradeUi
 
   # Lines the status takes at most.
   STATUS_LINES = 2
-
-  # Digits of the largest amount of gold the gold box takes.
-  GOLD_DIGITS = 9
 
   # Items one press of Q or W offers more or fewer.
   PAGE_STEP = 10
@@ -188,7 +186,7 @@ module MGQ_MpTradeUi
           button "Cancel", id: :mgq_online_trade_cancel, on_click: -> { ask_cancel }
         end
         list bag, id: :mgq_online_trade_bag, bind: :bag_item, height: :fill, rows_shown: :fill, describe: true, empty: "Nothing to trade",
-                  row: ->(item) { bag_row(item) }, disabled: committing, cancel_to: :mgq_online_trade_tabs,
+                  row: ->(item) { bag_row(item) }, disabled: committing,
                   on_side: ->(item, step) { MGQ_MpTradeUi.guard("the bag") { step_bag(item, step) } },
                   on_submit: ->(item) { MGQ_MpTradeUi.guard("the bag") { all_or_none(item) } },
                   on_page: ->(step) { MGQ_MpTradeUi.guard("the bag") { step_bag(bag_item, step * PAGE_STEP) if bag_item } }
@@ -312,7 +310,7 @@ module MGQ_MpTradeUi
 
       unit = Vocab::currency_unit
       MGQ_MpTrade.log("gold box opened at #{session.mine.gold.to_i} gold")
-      box = UI.number(session.mine.gold.to_i, digits: GOLD_DIGITS, min: 0, max: $game_party.gold, unit: unit,
+      box = UI.number(session.mine.gold.to_i, min: 0, max: $game_party.gold, adornment: unit,
                                               note: "You have #{$game_party.gold} #{unit}", ok: "Offer", cancel: "Back") do |gold, _shown|
         MGQ_MpTradeUi.guard("the gold box") { take_gold(gold) }
       end

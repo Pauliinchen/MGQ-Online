@@ -2,6 +2,7 @@
 #  stages_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-07: Checked that the title's Multiplayer command is greyed through disabled: only while the mod cannot run
 #      Paulinchen  2026-11-06: Checked that a script that did not load keeps the mod off, its hooks asleep, and tells the player once
 #                            - Checked that the game's message box tells where to get a Mod Framework that is not installed
 #      Paulinchen  2026-11-01: Dropped the check of a tag the package declares in the mod's folder
@@ -36,7 +37,6 @@ module MGQ_Multiplayer
   BOOT_SCRIPTS = %w[core_hooks ui]
   WORLD_SCRIPTS = %w[world]
   module Log; def self.write(line); $log << line; end; def self.settle(open); $calls << [:settled, open]; end; def self.flush; end; end
-  module Player; def self.readable?; false; end; end
   def self.start; $calls << :start; end
   def self.log_framework_gap; $calls << :framework_gap; end
   def self.install_hooks; $calls << :hooks; end
@@ -137,8 +137,8 @@ Dir.mktmpdir do |game|
     Mod_Framework.define_singleton_method(:keep_running=) { |on| $calls << [:keep_running, on] }
     MGQ_Multiplayer::Stages.boot
     name, options, picked = Mod_Framework::Mods.commands.first
-    check("under the framework the title's Multiplayer command comes after Continue, on while the DLL runs",
-          [name, options[:after], options[:enabled].call(:window)], ["Multiplayer", :continue, true])
+    check("under the framework the title's Multiplayer command comes after Continue, greyed only while the DLL does not run",
+          [name, options[:after], options[:disabled].call(:window)], ["Multiplayer", :continue, false])
     check("as the game starts the DLL starts, the log says whether the framework keeps the mod off, the game keeps running behind other windows and the first stage loads through the framework, which counts the mod as used",
           [$calls, Mod_Framework::Mods.parts, $loaded], [[:start, :framework_gap, [:keep_running, true], :hooks], %w[Scripts/core_hooks.rbx Scripts/ui.rbx], %w[core_hooks ui]])
     check("the hooks sleep only in a game entered without the mod", [$asleep.call, MGQ_Multiplayer::Stages.staged?], [false, true])

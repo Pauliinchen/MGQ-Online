@@ -2,6 +2,7 @@
 #  ui_edge_arrows_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-07: Typed through a text box of the Mod Framework instead of the old typing flag
 #      Paulinchen  2026-11-06: Reached the Mod Framework's engine under its own name
 #                            - Checked the arrows shown and what they say, leaving how they look to the in-game suite
 #      Paulinchen  2026-11-01: Checked the arrows as markers of the Mod Framework, the players picked by the DLL's stand-in
@@ -106,9 +107,7 @@ $open = true
 Mod_Framework::UI::Engine::Capture.start(:a_wheel)
 check("a wheel or the World overview, which hold the game's buttons", Arrows.hidden_reason, covered)
 Mod_Framework::UI::Engine::Capture.stop(:a_wheel)
-$mgq_text_input = true
-check("the chat box, which types", Arrows.hidden_reason, covered)
-$mgq_text_input = nil
+while_typing { check("the chat box, which types", Arrows.hidden_reason, covered) }
 $game_message.busy = true
 check("a message", Arrows.hidden_reason, "a message shows")
 $game_message.busy = false
@@ -137,11 +136,11 @@ stranger_peer = MGQ_MpOverworldSync::Peers.at(3)
 check("a second player gets a second arrow, in plain text as a player outside the party, a long name cut before the tiles",
       [shown.call.sort, MGQ_MpPlayerColor.role(stranger_peer), Arrows.label_of(stranger_peer)], [["aa-member", "bb-stranger"], :text, "Long Name... 36"])
 
-$mgq_text_input = true
-spriteset.update
-check("the chat box hides every arrow, which keep their players, and the DLL hears why with no ghosts",
-      [shown.call.size, Arrows.hidden_reason, $arrow_requests.last.values_at("reason", "ghosts")], [2, covered, [covered, {}]])
-$mgq_text_input = nil
+while_typing do
+  spriteset.update
+  check("the chat box hides every arrow, which keep their players, and the DLL hears why with no ghosts",
+        [shown.call.size, Arrows.hidden_reason, $arrow_requests.last.values_at("reason", "ghosts")], [2, covered, [covered, {}]])
+end
 spriteset.update
 check("closing it shows them again", [shown.call.size, Arrows.hidden_reason], [2, nil])
 

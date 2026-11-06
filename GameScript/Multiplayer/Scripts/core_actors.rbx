@@ -2,6 +2,7 @@
 #  core_actors.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-07: Dropped the hero of a replaced Luka, which named another mod
 #      Paulinchen  2026-11-05: Dropped writing and reading an item as text, which a trade's tokens in the DLL do
 #                            - Handed the characters' and items' facts to C#, which writes and reads their text
 #      Paulinchen  2026-10-31: Compared a rebuild with its owner's game outside of battle, as that game measured it
@@ -106,10 +107,10 @@ module MGQ_MpActors
     # Texts whose reading is kept, since a battle's start reads each player's builds several times.
     KEPT_READINGS = 16
 
-    # A character's build: its make-up, the stats and rates its owner's game showed, what of the
-    # owner's save the character reads, and the hero the owner's game plays in Luka's place.
+    # A character's build: its make-up, the stats and rates its owner's game showed, and what of the
+    # owner's save the character reads.
     Member = Struct.new(:actor_id, :base_level, :class_id, :tribe_id, :level_list, :param_plus, :skill_ids,
-                        :abilities, :equip_abilities, :equips, :params, :rates, :counters, :switches_on, :hero)
+                        :abilities, :equip_abilities, :equips, :params, :rates, :counters, :switches_on)
 
     # The facts C# read of the texts read last, by text and limit.
     @readings = {}
@@ -152,8 +153,8 @@ module MGQ_MpActors
 
     # Lists a character's facts, as the game keeps them.
     #
-    # The counters, the switches and the hero come from the player's save, which the receiver's
-    # save would stand in for.
+    # The counters and the switches come from the player's save, which the receiver's save would
+    # stand in for.
     #
     # @param actor [Game_Actor] The character.
     # @return [Hash] The facts by name, see MGQOnline.Game's BuildPlain.
@@ -172,19 +173,7 @@ module MGQ_MpActors
         "params" => (0...PARAM_COUNT).map { |id| actor.param(id) },
         "rates" => RATES.keys.map { |id| actor.xparam(id) },
         "counters" => COUNTERS.map { |counter| counter_of(actor, counter) },
-        "switches" => switches_on(actor),
-        "hero" => hero_of(actor))
-    end
-
-    # Reads the hero a character shows.
-    #
-    # @param actor [Game_Actor] The character.
-    # @return [String] The hero's key, empty without Luka Replacer or for any character but Luka.
-    def self.hero_of(actor)
-      defined?(MGQ_LukaReplacer) ? MGQ_LukaReplacer.hero_key(actor).to_s : ""
-    rescue => e
-      MGQ_MpActors.log_once(:hero_of, "could not read a character's hero, writing none: #{e.class}: #{e.message}")
-      ""
+        "switches" => switches_on(actor))
     end
 
     # Reads a save counter of a party member.
@@ -273,8 +262,7 @@ module MGQ_MpActors
         facts["params"],
         facts["rates"].map { |rate| MGQ_MpActors.float(rate) },
         facts["counters"],
-        facts["switches"],
-        facts["hero"].to_s)
+        facts["switches"])
       log_left_out(member, facts)
       member
     end
@@ -492,8 +480,7 @@ class Game_MpActor < Game_Actor
   # @return [Integer, nil] The place, nil elsewhere.
   attr_accessor :mp_place
 
-  # Rebuilds a character of another game, Luka as the hero its owner's game plays when this game
-  # has Luka Replacer too.
+  # Rebuilds a character of another game.
   #
   # @param member [MGQ_MpActors::Builds::Member] The character's build.
   # @param player [String] Who the character belongs to.
@@ -501,7 +488,6 @@ class Game_MpActor < Game_Actor
     super(member.actor_id)
     @member = member
     @player = player
-    MGQ_LukaReplacer.dress(self, member.hero) if defined?(MGQ_LukaReplacer)
     rebuild
     log_rebuild
   end
@@ -515,10 +501,9 @@ class Game_MpActor < Game_Actor
 
   # Logs what the rebuild made of the character.
   def log_rebuild
-    hero = @member.hero.empty? ? "" : ", hero #{@member.hero}#{defined?(MGQ_LukaReplacer) ? '' : ' (no Luka Replacer here, plays as Luka)'}"
     MGQ_MpActors.log("rebuilt #{@player}'s #{MGQ_MpLog.named($data_actors, @member.actor_id)}: Lv#{@member.base_level}, " \
                      "job #{MGQ_MpLog.named($data_classes, @class_id)} Lv#{@level_list[@class_id]}, race #{MGQ_MpLog.named($data_classes, @tribe_id)} Lv#{@level_list[@tribe_id]}, " \
-                     "#{@skills.size} skills, #{@equips.count { |slot| slot.object }} of #{@equips.size} slots equipped#{hero}, #{mhp} HP")
+                     "#{@skills.size} skills, #{@equips.count { |slot| slot.object }} of #{@equips.size} slots equipped, #{mhp} HP")
   rescue
   end
 

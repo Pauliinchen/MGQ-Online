@@ -2,6 +2,8 @@
 #  world_mods_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Named no other mod in a check
+#      Paulinchen  2026-11-07: Read the options a world sets from the rows Options > Mods greys, and kept a row its mod keeps itself out of a world's settings
 #      Paulinchen  2026-11-06: Left installing a world's mods to the Mod Framework's dialog, which the world screen's test hands over
 #      Paulinchen  2026-11-05: Answered the mods texts, the mod keys and the world entered with fixed values instead of from their stand-ins
 #                            - Pushed the mods rule as the flag the DLL reads
@@ -139,7 +141,7 @@ end
 GameSystem = Struct.new(:conf)
 $game_system = GameSystem.new({})
 
-# The options mods offer in Mod Config Remake, and its lock.
+# The options mods offer in Options > Mods.
 module NWConst
   # Mod Config's options.
   module Config
@@ -149,11 +151,11 @@ module NWConst
     DATA = { :mod_level_cap => [1, 0] }
     # The names of the options' values.
     DATA_TEXT = { :mod_level_cap => { 1 => { :name => "On" }, 0 => { :name => "Off" } } }
-    # The rows mods add: shared, personal, hotkey, global and Return rows, and options with :values.
+    # The rows mods add: shared, kept by their mod, hotkey, global and Return rows, and options with :values.
     MOD_CONTENTS = [
       { :key => :mod_level_cap, :name => "[Level Cap] Level Cap", :sub => true },
       { :key => :mod_level_cap_limits, :name => "     -> Job and Race Limits", :sub => true },
-      { :key => :mod_level_cap_look, :name => "   Window Colour", :sub => true, :personal => true },
+      { :key => :mod_level_cap_look, :name => "   Window Colour", :sub => true, :mod_stored => true },
       { :key => :mod_party_sheet_hotkey, :name => "[Party Sheet] Hotkey", :sub => true, :keybind => true },
       { :key => :mod_party_sheet_theme, :name => "[Party Sheet] Theme", :sub => true },
       { :key => :mod_party_sheet_write, :name => "     -> Write Party Sheet", :sub => false },
@@ -418,12 +420,14 @@ module MGQ_MpWorld; def self.open?; $world_open; end; end
 row_key = MGQ_MpWorldMods::SHARED_OPTION
 # The row of Shared Mod Settings as Options > Mods shows it, nil while it does not show.
 row = lambda { Mod_Framework::Options.shown_rows.find { |entry| entry[:key] == row_key } }
+# The keys of the rows Options > Mods greys.
+greyed = lambda { mods.greyed(NWConst::Config::MOD_CONTENTS).select { |entry| entry[:disabled] }.map { |entry| entry[:key] } }
 creator = MGQ_MpOverworldSync::Peers::Peer.new(2, { "id" => "creator", "name" => "Creator", "mod_settings" => "abc" })
 # A listed world with Level Cap and Party Sheet, of a creator and with mod settings.
 world = lambda { |creator_id, settings| MGQ_MpWorld::Directory::ListedWorld.new("w1", 4, 0, creator_id, 0, "Creator", "Modded", "none", [], false, false, true, false, false, "", "!Level Cap; Party Sheet", "", "", settings) }
 # The request of the last call of a settings topic.
 asked = lambda { |topic| found = $settings_calls.reverse.find { |name, _| name == topic }; found && found[1] }
-shared = "@shared=o:1;mod_level_cap=i:0;mod_party_sheet_theme=y:dark;mod_party_sheet_hotkey=i:7;global_thing=i:9;mod_level_cap_look=i:3;mod_missing=i:7"
+shared = "@shared=o:1;mod_level_cap=i:0;mod_party_sheet_theme=y:dark;mod_party_sheet_hotkey=i:7;global_thing=i:9;mod_level_cap_look=i:3;mod_missing=i:7;mgq_mp_shared_mod_settings=i:1"
 # The world the DLL describes once entered, another player's unless a check says otherwise.
 entered = lambda do |id, name, creator_id, mods_text, values, shared|
   { "id" => id, "name" => name, "creator_id" => creator_id, "creator_name" => "Creator", "mods" => mods_text, "values" => values, "own" => false,
@@ -431,7 +435,7 @@ entered = lambda do |id, name, creator_id, mods_text, values, shared|
 end
 $settings_world = entered.call("w1", "Modded", "creator", "!Level Cap; Party Sheet",
                                [["mod_level_cap", 0], ["mod_party_sheet_theme", { "symbol" => "dark" }], ["mod_party_sheet_hotkey", 7], ["global_thing", 9], ["mod_level_cap_look", 3],
-                                ["mod_missing", 7]], true)
+                                ["mod_missing", 7], ["mgq_mp_shared_mod_settings", 1]], true)
 $settings_details = "Mod settings: shared"
 
 check("the details say what the DLL says of a world's settings", [mods.details_text(world.call("creator", "@shared=o:1"), "me"), asked.call("settings.details")],
@@ -447,30 +451,31 @@ check("but outside a world it does not show", row.call, nil)
 mods.enter_world(world.call("creator", shared), "me")
 check("entering a world hands the DLL the world as the list has it", asked.call("settings.enter"),
       { "world" => { "id" => "w1", "name" => "Modded", "creator_id" => "creator", "creator_name" => "Creator", "mods" => "!Level Cap; Party Sheet", "settings" => shared }, "me" => "me", "fresh" => true })
-check("and shows the row in the group of Monster Girl Quest! Online's settings, personal, with On and Off, Off at first",
-      [row.call[:name], row.call[:sub], row.call[:personal], NWConst::Config::DATA[row_key], NWConst::Config::DATA_TEXT[row_key].map { |value, text| [value, text[:name]] }, NWConst::Config::DEFAULT[row_key]],
-      ["[MGQ Online Settings] Shared Mod Settings", true, true, [1, 0], [[1, "On"], [0, "Off"]], 0])
+check("and shows the row in the group of Monster Girl Quest! Online's settings, with On and Off, Off at first",
+      [row.call[:name], row.call[:sub], NWConst::Config::DATA[row_key], NWConst::Config::DATA_TEXT[row_key].map { |value, text| [value, text[:name]] }, NWConst::Config::DEFAULT[row_key]],
+      ["[MGQ Online Settings] Shared Mod Settings", true, [1, 0], [[1, "On"], [0, "Off"]], 0])
 check("a player who did not create the world may not change it, and its help names the creator",
       [Mod_Framework::Options.enabled?(row.call), row.call[:help].call], [false, "Creator created this world and chose this. While On, the world's mod options are set for you here."])
 $game_system.conf = { :mod_level_cap => 1, :mod_party_sheet_theme => :light, :mod_party_sheet_hotkey => 0x51, :global_thing => 5, :mod_level_cap_look => 1 }
-Mod_Framework::Options.world_keys = nil
+mods.lock([])
 DataManager.load_game(1)
-check("a save loaded in the world takes its settings, and Options > Mods shows them as set by the world",
-      [$game_system.conf[:mod_level_cap], $game_system.conf[:mod_party_sheet_theme], Mod_Framework::Options.world_keys], [0, :dark, [:mod_level_cap, :mod_party_sheet_theme]])
-check("but none of a mod the player lacks, of the game's own options, of a key binding or of an option marked personal",
-      [$game_system.conf[:mod_party_sheet_hotkey], $game_system.conf[:global_thing], $game_system.conf[:mod_level_cap_look], $game_system.conf.key?(:mod_missing)], [0x51, 5, 1, false])
+check("a save loaded in the world takes its settings, and Options > Mods greys them",
+      [$game_system.conf[:mod_level_cap], $game_system.conf[:mod_party_sheet_theme], greyed.call], [0, :dark, [:mod_level_cap, :mod_party_sheet_theme]])
+check("but none of a mod the player lacks, of the game's own options, of a key binding, of an option its mod keeps itself or of Shared Mod Settings",
+      [$game_system.conf[:mod_party_sheet_hotkey], $game_system.conf[:global_thing], $game_system.conf[:mod_level_cap_look], $game_system.conf.key?(:mod_missing),
+       $game_system.conf.key?(row_key)], [0x51, 5, 1, false, false])
 check("and the DLL hears which options were set, and no creator's options from another player", asked.call("settings.loaded"),
       { "options" => [], "known" => [], "applied" => ["mod_level_cap", "mod_party_sheet_theme"] })
 $loaded = nil
 DataManager.singleton_class.send(:alias_method, :plugin_load_game, :load_game)
 DataManager.define_singleton_method(:load_game) { |index| load_game_without_rescue(index) }
-Mod_Framework::Options.world_keys = nil
+mods.lock([])
 DataManager.load_game(1)
-check("a load_game a translation plugin replaced still takes the world's settings", [$loaded, Mod_Framework::Options.world_keys], [true, [:mod_level_cap, :mod_party_sheet_theme]])
+check("a load_game a translation plugin replaced still takes the world's settings", [$loaded, greyed.call], [true, [:mod_level_cap, :mod_party_sheet_theme]])
 DataManager.singleton_class.send(:alias_method, :load_game, :plugin_load_game)
-Mod_Framework::Options.world_keys = nil
+mods.lock([])
 DataManager.setup_new_game
-check("so does a new game in a world", Mod_Framework::Options.world_keys, [:mod_level_cap, :mod_party_sheet_theme])
+check("so does a new game in a world", greyed.call, [:mod_level_cap, :mod_party_sheet_theme])
 
 $notices.clear
 $settings_steps << [["notify", ["Creator shares mod settings here: 2 options", "of Level Cap and Party Sheet are set for you."]], ["row", true]]
@@ -486,9 +491,9 @@ mods.take(MGQ_Multiplayer::Bridge.call("settings.step"))
 check("they apply at once, and the DLL hears which options were set", [$game_system.conf[:mod_level_cap], asked.call("settings.applied")], [1, { "keys" => ["mod_level_cap"] }])
 $settings_steps << [["unlock"]]
 mods.take(MGQ_Multiplayer::Bridge.call("settings.step"))
-check("once the world no longer shares them, the locks are lifted and the values stay", [Mod_Framework::Options.world_keys, $game_system.conf[:mod_level_cap]], [[], 1])
+check("once the world no longer shares them, the locks are lifted and the values stay", [greyed.call, $game_system.conf[:mod_level_cap]], [[], 1])
 Scene_Title.new.start
-check("the title screen hides the row and lets every option be changed again", [row.call, Mod_Framework::Options.world_keys, asked.call("settings.forget")], [nil, [], nil])
+check("the title screen hides the row and lets every option be changed again", [row.call, greyed.call, asked.call("settings.forget")], [nil, [], nil])
 
 # The creator's own world.
 $settings_world = entered.call("w1", "Modded", "me", "!Level Cap; Party Sheet", [["mod_level_cap", 1]], true).merge("own" => true)
@@ -497,10 +502,10 @@ check("the creator may change the row, whose help says what it does to the other
       [Mod_Framework::Options.enabled?(row.call), row.call[:help].call.start_with?("Whether every player in this world plays with your options")], [true, true])
 $game_system.conf = { :mod_level_cap => 0, :mod_level_cap_limits => 1, :mod_party_sheet_theme => :dark }
 DataManager.load_game(1)
-check("loading in their own world applies its settings and hands the DLL their options of the world's mods, no key bindings, buttons or personal ones, and every option this game has",
+check("loading in their own world applies its settings and hands the DLL their options of the world's mods, no key bindings, buttons or ones their mod keeps itself, and every option this game has",
       [asked.call("settings.loaded")["options"], asked.call("settings.loaded")["known"].size],
       [[["mod_level_cap", 1], ["mod_level_cap_limits", 1], ["mod_party_sheet_theme", { "symbol" => "dark" }]], NWConst::Config::MOD_CONTENTS.size])
-check("and leaves their options unlocked", Mod_Framework::Options.world_keys, [])
+check("and leaves their options unlocked", greyed.call, [])
 $settings_calls.clear
 $scene = Scene_Config.new
 Scene_Base.new.update
@@ -537,11 +542,11 @@ $reported_mods = [["levelcap", "Level Cap", "1.4.0"]]
 mods.report_options(false)
 check("a game that is no admin's sends none", $sent_options, [])
 mods.report_options(true)
-check("an admin's game sends the options of each mod the DLL names, with the version its copy is, without key bindings, buttons or personal ones", $sent_options,
+check("an admin's game sends the options of each mod the DLL names, with the version its copy is, without key bindings, buttons or ones their mod keeps itself", $sent_options,
       [{ "key" => "levelcap", "version" => "1.4.0", "options" => [{ "key" => "mod_level_cap", "name" => "Level Cap", "default" => 1, "choices" => [[1, "On"], [0, "Off"]] },
                                                                   { "key" => "mod_level_cap_limits", "name" => "Job and Race Limits", "default" => 1, "choices" => [] }] }])
 $reported_mods = []
-check("an option's values come from its :values too, as Mod Config Remake reads them", mods.option_of(NWConst::Config::MOD_CONTENTS.find { |entry| entry[:key] == :mod_party_sheet_size }),
+check("an option's values come from its :values too", mods.option_of(NWConst::Config::MOD_CONTENTS.find { |entry| entry[:key] == :mod_party_sheet_size }),
       { "key" => "mod_party_sheet_size", "name" => "Size", "default" => 2, "choices" => [[2, "2"], [4, "4"]] })
 
 # The world's mods the player's game runs, which the battle server runs too for a battle it hosts.
@@ -554,8 +559,3 @@ check("and the player's options of them", mods.served_settings.map(&:first).incl
 mods.forget_world
 check("outside a world it gets none", [mods.served_mods, mods.served_settings], [[], []])
 check("nothing failed but the broken dumps", ($log || []).grep(/FAILED|failed/).reject { |line| line.include?("broken entry") || line.include?("is not loaded") || line.include?("Too many requests") }, [])
-
-# The Mod Framework's options lock the options a world sets.
-Mod_Framework::Options.world_keys = nil
-mods.lock([:mod_level_cap])
-check("the Mod Framework's options lock the options a world sets", Mod_Framework::Options.world_keys, [:mod_level_cap])

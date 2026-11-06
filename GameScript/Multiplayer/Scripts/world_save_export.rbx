@@ -2,6 +2,7 @@
 #  world_save_export.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-07: Greyed Copy to my game through disabled: until the world has a save
 #      Paulinchen  2026-11-06: Added Copy to my game to the game's menu through a patch of the UI layer, its message the layer's
 #      Paulinchen  2026-11-01: Added Copy to my game to the game's menu through the Mod Framework, showing how it went in its message
 #      Paulinchen  2026-10-12: Read the menu's commands through MGQ_MpGame and left them alone when the menu has none
@@ -94,7 +95,7 @@ module MGQ_MpSaveExport
   def self.add_to_menu
     Mod_Framework::UI.patch "Window_MenuCommand" do |menu|
       menu.before "#save" do
-        command MGQ_MpSaveExport::MENU_COMMAND, id: MGQ_MpSaveExport::MENU_ID, if: -> { MGQ_MpWorld.open? }, enabled: -> { MGQ_MpSaveExport.saved? },
+        command MGQ_MpSaveExport::MENU_COMMAND, id: MGQ_MpSaveExport::MENU_ID, if: -> { MGQ_MpWorld.open? }, disabled: -> { !MGQ_MpSaveExport.saved? },
                                                 on_click: -> { Mod_Framework::UI.message(MGQ_MpSaveExport.export_open_world, title: MGQ_MpSaveExport::MENU_COMMAND) }
       end
     end

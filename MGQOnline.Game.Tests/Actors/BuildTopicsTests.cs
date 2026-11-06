@@ -2,6 +2,7 @@
 //  BuildTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-07: Dropped the hero of a replaced Luka
 //      Paulinchen  2026-11-05: Created
 //
 //----------------------------------------------------------------
@@ -22,7 +23,7 @@ namespace MGQOnline.Game.Tests.Actors;
 public sealed class BuildTopicsTests
 {
     /// <summary>
-    /// Asserts that a player's builds, a replaced Luka with every kind of equipment among them,
+    /// Asserts that a player's builds, with every kind of equipment among them,
     /// written into the join a guest sends the host, reach the host's scripts as the same facts.
     /// </summary>
     [Fact]
@@ -30,7 +31,7 @@ public sealed class BuildTopicsTests
     {
         TopicContext guest = Game();
         TopicContext host = Game();
-        var actors = new RubyArray { Actor(1, "sample_hero"), Actor(2, string.Empty) };
+        var actors = new RubyArray { Actor(1), Actor(2) };
 
         RubyValue builds = guest.Value(BuildTopics.Write, new RubyHash { { "actors", actors } });
         RubyValue body = guest.Value(WireTopics.Write, new RubyArray { builds, new RubyArray { new RubyArray { 300, 40 } }, 8 });
@@ -50,7 +51,7 @@ public sealed class BuildTopicsTests
     {
         TopicContext challenger = Game();
         TopicContext other = Game();
-        var actors = new RubyArray { Actor(3, string.Empty) };
+        var actors = new RubyArray { Actor(3) };
         RubyValue fingerprint = challenger.Value(BuildTopics.Game, new RubyArray { 3, 201, 101 });
 
         RubyValue team = challenger.Value(BuildTopics.Write, new RubyHash { { "actors", actors }, { "backline", true } });
@@ -65,15 +66,15 @@ public sealed class BuildTopicsTests
 
     /// <summary>
     /// Asserts that a text another game sent reads only within the rules: levels and counters held
-    /// in range, slots and characters cut at their most, a hero that is no key, an item and a line
-    /// that do not read left out and logged.
+    /// in range, slots and characters cut at their most, an item and a line that do not read left
+    /// out and logged.
     /// </summary>
     [Fact]
     public void ForeignText_ReadsOnlyWithinTheRules()
     {
         TopicContext game = Game();
         string text = "backline=0\n"
-            + "member=4;0;7;;7:5000,x:3;1;9,9,8;2:5.x;;w1,a2,ew3.bad,,,,,,w9,w9;100;950;-5,2;0,6;../hero\n"
+            + "member=4;0;7;;7:5000,x:3;1;9,9,8;2:5.x;;w1,a2,ew3.bad,,,,,,w9,w9;100;950;-5,2;0,6\n"
             + "nobody\n"
             + "member=5;1" + new string(';', BuildText.FieldCount - 2) + "\n"
             + "member=6;1" + new string(';', BuildText.FieldCount - 2);
@@ -88,7 +89,6 @@ public sealed class BuildTopicsTests
         Assert.True(first["equips"].AsArray()[2].IsNil);
         Assert.Equal(new RubyArray { 0, 2, 0, 0, 0, 0, 0 }, first["counters"]);
         Assert.Equal(new RubyArray { 6 }, first["switches"]);
-        Assert.Equal(string.Empty, first["hero"].AsText());
         Assert.Equal(new[] { 4, 5 }, read.Select(member => member.AsHash()["actor"].AsInt()));
         Assert.Contains(game.Log.Lines, line => line.Contains("left out equipment ew3.bad: unreadable", System.StringComparison.Ordinal));
         Assert.Contains(game.Log.Lines, line => line.Contains("left out an unreadable member: nobody", System.StringComparison.Ordinal));
@@ -110,9 +110,8 @@ public sealed class BuildTopicsTests
     /// weapon of the database, a socket armor and an enchanted weapon equipped, its rates as Floats.
     /// </summary>
     /// <param name="actorId">The actor's id.</param>
-    /// <param name="hero">The hero of a replaced Luka, empty for none.</param>
     /// <returns>The facts.</returns>
-    private static RubyHash Actor(int actorId, string hero) => new()
+    private static RubyHash Actor(int actorId) => new()
     {
         { "actor", actorId },
         { "level", 30 },
@@ -148,7 +147,6 @@ public sealed class BuildTopicsTests
         { "rates", new RubyArray { Kind("float", "0.95"), Kind("float", "0.05"), Kind("float", "0.04"), Kind("float", "0.0"), Kind("float", "0.125") } },
         { "counters", new RubyArray { 4, 0, 1, 0, 0, 0, 7 } },
         { "switches", new RubyArray { 31 } },
-        { "hero", hero },
     };
 
     /// <summary>

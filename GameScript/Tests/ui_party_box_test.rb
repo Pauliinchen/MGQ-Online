@@ -2,6 +2,7 @@
 #  ui_party_box_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-07: Typed through a text box of the Mod Framework instead of the old typing flag
 #      Paulinchen  2026-11-06: Read the rows the box lists, leaving what it shows to the in-game suite
 #                            - Named M as the size hotkey in its checks
 #      Paulinchen  2026-11-05: Expected the box's switch kept as true or false
@@ -171,10 +172,8 @@ check("the log names each listed player's color and whether they lead or are awa
 # The size hotkey and the click on the size hint.
 small_before = MGQ_MpPartyBox.small?
 MGQ_MpChat.start_typing
-$mgq_text_input = true
 $pressed = MGQ_MpHotkeys.code(:party_box)
-typed = logged_lines { MGQ_MpPartyBox.on_map }
-$mgq_text_input = nil
+typed = while_typing { logged_lines { MGQ_MpPartyBox.on_map } }
 MGQ_MpChat.stop_typing
 check("M typed into the chat box changes nothing and stays out of the log", [MGQ_MpPartyBox.small?, typed.grep(/ignored/)], [small_before, []])
 $pressed = MGQ_MpHotkeys.code(:party_box)

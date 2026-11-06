@@ -2,6 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-07: Greyed the title's Multiplayer command while the mod cannot run, through the Mod Framework's disabled:
+#                            - Dropped the hand-over of the 0.6.9 settings to the Mod Framework, which players pick again once
 #      Paulinchen  2026-11-06: Told the player in the game's message box where to get the Mod Framework when it is not installed
 #                            - Kept the mod off for the game session once any of its scripts did not load, telling the player once
 #                            - Took the release the relay's refusal of this version names, and the version the DLL runs
@@ -555,11 +557,6 @@ module MGQ_Multiplayer
     NO_FRAMEWORK_MESSAGE = "Monster Girl Quest! Online needs the Mod Framework, which is not installed. " \
                            "Get it from https://mgqonline.org/mods, then start the game again."
 
-    # The settings of Player.ini the Mod Framework keeps since the look, the places and the Accept
-    # and Decline hotkeys became its own, under the same names: the look, the window color, every
-    # place (ui_<id>) and the two keys.
-    HANDED_OVER = /\A(ui_\w+|window_color|key_accept|key_decline)\z/
-
     # The blocks that wait for every script to load, each [tag, block].
     @waiting = []
 
@@ -584,7 +581,7 @@ module MGQ_Multiplayer
 
       @staged = true
       Log.write("loading as a Title mod of the Mod Framework: the title part as the game starts, the rest as the player enters the game")
-      ::Mod_Framework::Mods.title_command(COMMAND, :after => :continue, :enabled => lambda { |_window| MGQ_Multiplayer.available? }) { |_window| MGQ_Multiplayer::Stages.open_worlds }
+      ::Mod_Framework::Mods.title_command(COMMAND, :after => :continue, :disabled => lambda { |_window| !MGQ_Multiplayer.available? }) { |_window| MGQ_Multiplayer::Stages.open_worlds }
       ::Mod_Framework::Mods.on_enter(TAG) { MGQ_Multiplayer::Stages.load_rest }
       ::Mod_Framework::Run.on_close(TAG) { MGQ_Multiplayer.closing($!) }
       ::Mod_Framework::Mods.after_restart(REJOIN_ACTION, TAG) { |world| MGQ_Multiplayer::Stages.rejoin(world) }
@@ -603,54 +600,17 @@ module MGQ_Multiplayer
     end
 
     # Loads the first stage as the game starts running, before its first scene: starts the DLL,
-    # logs why the mod stays off when the Mod Framework cannot carry it, hands the settings the Mod
-    # Framework took over to it, keeps the game running behind other windows and loads
-    # BOOT_SCRIPTS. Every hook then sleeps while the player is in a game entered without the mod,
-    # such as one turned off at the title, or once a script did not load.
+    # logs why the mod stays off when the Mod Framework cannot carry it, keeps the game running
+    # behind other windows and loads BOOT_SCRIPTS. Every hook then sleeps while the player is in a
+    # game entered without the mod, such as one turned off at the title, or once a script did not
+    # load.
     def self.load_title
       MGQ_Multiplayer.start
       MGQ_Multiplayer.log_framework_gap
-      hand_over_settings
       ::Mod_Framework.keep_running = true if MGQ_Multiplayer.available?
       loaded = MGQ_Multiplayer.load_scripts(BOOT_SCRIPTS, true)
       MGQ_MpHooks.sleep_while { MGQ_Multiplayer::Stages.asleep? } if defined?(MGQ_MpHooks)
       MGQ_Multiplayer.install_hooks if loaded
-    end
-
-    # Hands the settings of Player.ini the Mod Framework keeps now (HANDED_OVER) over to its
-    # settings, once, before its own start reads them; Player.ini forgets them only once the
-    # framework kept them, else the next start tries again. Once handed over, a later start forgets
-    # any of them Player.ini still holds, the framework keeping its own.
-    def self.hand_over_settings
-      settings = ::Mod_Framework::Settings
-      return unless Player.readable? && settings.respond_to?(:take_over)
-
-      handed = {}
-      Player.keys_under("").each { |key| handed[key] = Player.setting(key) if key =~ HANDED_OVER }
-      return if handed.empty?
-
-      names = handed.keys.join(', ')
-      if settings.migrated?(TAG)
-        Log.write("Player.ini #{forget_handed(handed) ? 'forgot' : 'could not forget'} #{names}, which the Mod Framework keeps")
-        return
-      end
-
-      unless settings.take_over(TAG, handed)
-        Log.write("the Mod Framework did not take #{names} over, Player.ini keeps them for the next start")
-        return
-      end
-
-      Log.write("handed #{names} over to the Mod Framework#{forget_handed(handed) ? '' : ', but Player.ini could not forget them'}")
-    rescue => e
-      Log.write("handing the settings over to the Mod Framework FAILED: #{e.class}: #{e.message}")
-    end
-
-    # Forgets the handed settings in Player.ini, in one write.
-    #
-    # @param handed [Hash] The values by setting.
-    # @return [Boolean] Whether Player.ini forgot them.
-    def self.forget_handed(handed)
-      Player.change(Hash[handed.keys.map { |key| [key, nil] }])
     end
 
     # Loads the rest of SCRIPTS as the player enters the game with the mod, none once the mod is

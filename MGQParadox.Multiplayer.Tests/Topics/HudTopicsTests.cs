@@ -2,6 +2,7 @@
 //  HudTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-07: Checked for no arrows with Assert.Empty
 //      Paulinchen  2026-11-01: Asked for the arrows without the strip at the top and the player's sprite
 //      Paulinchen  2026-10-31: Created
 //
@@ -64,7 +65,7 @@ public sealed class HudTopicsTests
             { "ghosts", new RubyHash() },
         })!.AsArray();
 
-        Assert.Equal(0, arrows.Count);
+        Assert.Empty(arrows);
     }
 
     /// <summary>

@@ -2,6 +2,7 @@
 #  hotkeys_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-07: Typed through a text box of the Mod Framework instead of the old typing flag
 #      Paulinchen  2026-11-06: Held the keys in $down down too, as the Mod Framework reads a hotkey's key
 #                            - Reached the Mod Framework's engine under its own name
 #                            - Expected M as the party box size hotkey
@@ -28,7 +29,7 @@
 # their rows and keys, kept in Player.ini, read and named by their short names, and quiet while any
 # mod types.
 
-require_relative "support"
+require_relative "bridge_support"
 
 $player_ini = {}
 $down = []
@@ -47,7 +48,10 @@ module SceneManager; def self.scene; nil; end; end
 module Mod_Framework::UI::Engine::Key; def self.pressed?(code); $down.include?(code); end; def self.down?(code); $down.include?(code); end; end
 
 load_script "core_hotkeys"
-Mod_Framework.available = true
+# The Mod Framework's DLL, with the text box another mod types into.
+framework_fake = FakeBridge.new
+FakeEdit.new(framework_fake, FakeUi.new(framework_fake)) { ["", 0] }
+open_framework(framework_fake)
 
 keys = MGQ_MpHotkeys
 defined = Mod_Framework::Hotkeys.instance_variable_get(:@hotkeys)
@@ -65,14 +69,14 @@ check("which MGQ Online asks by name without defining them", [keys::HOTKEYS.key?
 # Reading a hotkey.
 $down = [0x54]
 check("a hotkey answers the framework's press of its key", [keys.pressed?(:chat), keys.pressed?(:wheel)], [true, false])
-# Another mod that types, such as a text field of a library mod, sets $mgq_text_input.
-$mgq_text_input = true
-$log.clear
-lines = $framework_log.size
-check("a hotkey pressed while another mod types is dropped, its letter left out of every log",
-      [keys.pressed?(:chat), $log, $framework_log[lines..-1]], [false, [], []])
-check("as is the refusal a script logs", [keys.log_refusal(:emotes, "the chat box is open"), $log], [nil, []])
-$mgq_text_input = nil
+# Another mod types into a text field of the Mod Framework.
+while_typing do
+  $log.clear
+  lines = $framework_log.size
+  check("a hotkey pressed while another mod types is dropped, its letter left out of every log",
+        [keys.pressed?(:chat), $log, $framework_log[lines..-1]], [false, [], []])
+  check("as is the refusal a script logs", [keys.log_refusal(:emotes, "the chat box is open"), $log], [nil, []])
+end
 $down = []
 
 # Binding.

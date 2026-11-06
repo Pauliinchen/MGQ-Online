@@ -2,6 +2,7 @@
 #  bug_report_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-07: Dropped the check of a Mod Framework older than the one the mod needs
 #      Paulinchen  2026-11-06: Reached the Mod Framework's engine under its own name
 #                            - Kept a member's levels per kind in one Hash, as the game does
 #                            - Left the form to the in-game suite, since the UI layer draws it, and read the typing from the framework
@@ -299,12 +300,6 @@ places = [Scene_Battle, Scene_Menu, Scene_ModScreen, Scene_Title, Scene_Load].ma
 end
 check("a battle, a menu, a mod's menu scene such as the story's choices, the title and any other scene each have their place", places,
       ["battle", "menu", "waiting_menu", "title", "other"])
-ui = Mod_Framework::UI
-known = ui.respond_to?(:menu_screen?) ? ui.method(:menu_screen?) : nil
-ui.singleton_class.send(:remove_method, :menu_screen?) if known
-check("an older Mod Framework without UI.menu_screen? still waits in a mod's menu scene and opens over the game's menu",
-      [report.place_of(Scene_ModScreen.new), report.place_of(Scene_Menu.new)], ["waiting_menu", "menu"])
-ui.define_singleton_method(:menu_screen?, known) if known
 SceneManager.scene = Scene_Map.new
 $map_free = false
 $typing = true

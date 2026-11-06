@@ -2,6 +2,7 @@
 #  coop_squad.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-07: Greyed the Party Followers row for members through disabled:
 #      Paulinchen  2026-11-06: Read the color of the line past a squad in the player's look each time it draws
 #      Paulinchen  2026-11-05: Told the followers shown and read a ghost's as values, the DLL writing them
 #      Paulinchen  2026-11-01: Named the Mod Framework's interface by its own name
@@ -658,7 +659,7 @@ module MGQ_MpCoopSquad
   def self.register
     added = Mod_Framework::Options.add(FOLLOWERS, "#{MGQ_Multiplayer::OPTION_PREFIX}Party Followers",
                                        "Who walks behind the players of a party. The party's leader decides for everyone.\r\n←/→ Toggle",
-                                       FOLLOWER_VALUES, ACTIVE_FRONTLINE, :enabled => lambda { !MGQ_MpCoop.in_party? || MGQ_MpCoop.party_leader == :me })
+                                       FOLLOWER_VALUES, ACTIVE_FRONTLINE, :disabled => lambda { MGQ_MpCoop.in_party? && MGQ_MpCoop.party_leader != :me })
     log(added ? "added the Party Followers to Options > Mods" : "no Party Followers in Options > Mods, see the Mod Framework's log")
   end
 

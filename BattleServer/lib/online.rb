@@ -2,6 +2,8 @@
 #  online.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-07: Checked for MGQ Online after entering the game, whatever tag the Mod Framework gives it
+#                            - Took MGQ Online's log before it loads
 #      Paulinchen  2026-11-05: Stood in for the battle channel's and the world room's ports of the scripts in place of the DLL's exports, the core writing and reading the messages
 #                            - Handed the core's ledger the pools' word as the core read it from the relay's lines, and the reports to the relay as their texts
 #      Paulinchen  2026-10-31: Started the game first, where the Mod Framework loads MGQ Online's title part, then entered it, which loads the rest
@@ -31,28 +33,51 @@ module Online
   # The core's topic that reads a message into its fields and body.
   READ_TOPIC = "message.read"
 
+  # Takes MGQ Online's log lines into the server's log in place of its own file.
+  #
+  # Prepended before MGQ Online loads, since its log writes from the first script on and its own
+  # definitions replace any method put on its log earlier.
+  module LogStandIn
+    # Writes a line into the server's log.
+    #
+    # @param line [String] The line.
+    def write(line)
+      Online.write_log(line)
+    end
+
+    # Does nothing, since the server's log takes each line at once.
+    def flush
+      nil
+    end
+  end
+
   class << self
     # The battle channel's other end: the relay, or a test's stand-in.
     attr_reader :bridge
 
-    # Starts the game, where the Mod Framework loads MGQ Online's title part, enters the game
-    # through the framework, which loads the rest of MGQ Online and runs the hooks its scripts
-    # install as the game starts (a server never enters a game otherwise), and puts the server's
-    # stand-ins in place.
+    # Starts the game and enters it through the Mod Framework, which loads MGQ Online at the stage
+    # of the tag it gives it and runs the hooks its scripts install as the game starts (a server
+    # never enters a game otherwise), and puts the server's stand-ins in place.
     #
     # @param log [IO] Where MGQ Online's log goes.
     def install(log = $stderr)
       @log = log
+      take_log
       start_game
+      ::Mod_Framework::Mods.enter("the battle server") if defined?(::Mod_Framework::Mods)
       raise "MGQ Online did not load: the game folder's Patch folder has no Multiplayer.rb or no Mod Framework" unless defined?(MGQ_Multiplayer::Bridge)
-
-      MGQ_Multiplayer::Log.define_singleton_method(:write) { |line| Online.write_log(line) }
-      MGQ_Multiplayer::Log.define_singleton_method(:flush) { nil }
-      MGQ_Multiplayer.define_singleton_method(:available?) { true }
-      ::Mod_Framework::Mods.enter("the battle server")
       raise "MGQ Online did not load its battle scripts: the game folder's Patch folder holds an older MGQ Online" unless defined?(MGQ_MpBattlesServed::Port)
 
+      MGQ_Multiplayer.define_singleton_method(:available?) { true }
       stand_in_ports
+    end
+
+    # Puts LogStandIn before MGQ Online's log, making the log's module first while MGQ Online has
+    # not loaded yet; Multiplayer.rb then fills that module in.
+    def take_log
+      Object.const_set(:MGQ_Multiplayer, Module.new) unless Object.const_defined?(:MGQ_Multiplayer)
+      MGQ_Multiplayer.const_set(:Log, Module.new) unless MGQ_Multiplayer.const_defined?(:Log, false)
+      MGQ_Multiplayer::Log.singleton_class.prepend(LogStandIn)
     end
 
     # Hands the battle channel to a bridge: what the server sends goes there, what it takes comes

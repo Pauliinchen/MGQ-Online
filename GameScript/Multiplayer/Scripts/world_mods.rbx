@@ -2,6 +2,10 @@
 #  world_mods.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-07: Greyed the options a world sets through a UI.patch of Options > Mods, naming no other mod
+#                            - Told the rows a world may set without the personal mark the Mod Framework dropped
+#      Paulinchen  2026-11-07: Greyed the row of Shared Mod Settings for anyone but the world's creator through disabled:
+#                            - Dropped the checks for Mod Framework calls older versions lacked
 #      Paulinchen  2026-11-06: Renamed add_row to offer_row, which the Mod Framework's scan no longer takes for a call of the old UI
 #                            - Left installing a world's mods to the Mod Framework's dialog of the mods a world needs
 #      Paulinchen  2026-11-05: Took the relay's mods rule as the flag the DLL reads
@@ -82,13 +86,12 @@
 # through the Mod Framework and enter the world, the mod loading as the player enters; a required
 # mod outside the catalog is checked against the hash of the creator's copy.
 # A world that turns other mods off loads only the mods it names and the personal ones as the
-# player enters it, through the Mod Framework's session. A world shares its creator's Mod Config
-# Remake options as its settings, or leaves every player
-# their own. An admin's game sends every catalog mod's options, and a game the World Admin tool
-# starts writes them into a file and quits.
+# player enters it, through the Mod Framework's session. A world shares its creator's options of
+# its mods as its settings, or leaves every player their own. An admin's game sends every catalog
+# mod's options, and a game the World Admin tool starts writes them into a file and quits.
 #
-# Mod Config Remake keeps the options in each save, and a world has saves of its own, so the
-# player's own saves keep their own settings.
+# The game keeps the options in each save, and a world has saves of its own, so the player's own
+# saves keep their own settings.
 module MGQ_MpWorldMods
   extend MGQ_MpLog
 
@@ -128,7 +131,7 @@ module MGQ_MpWorldMods
   # What the row says while Off.
   ROW_OFF_HELP = "Each player here sets their own mod options."
 
-  # An option's name that opens its mod's group, "[Mod Name] Option", as Mod Config Remake reads it.
+  # An option's name that opens its mod's group: "[Mod Name] Option".
   MOD_NAME = /\A\s*\[([^\]]+)\]\s*/
 
   # An option's name that joins the group above: indented, or behind an arrow.
@@ -205,6 +208,9 @@ module MGQ_MpWorldMods
   # @!attribute target [String, nil] Where a link mod's script goes, relative to the game's folder.
   # @!attribute text [String] The difference for the player, such as "Level Cap: yours 1.0.0, the world's 1.1.0".
   Row = Struct.new(:name, :yours, :worlds, :key, :target, :text)
+
+  # The keys of the options the world sets, which Options > Mods greys.
+  @locked = []
 
   # Takes part in the open world's messages: the relay's word on the world's settings and on its
   # mods rule.
@@ -286,7 +292,7 @@ module MGQ_MpWorldMods
     @entering = nil
     return unless entering
 
-    @from_start = Mod_Framework::Mods.stays_on if defined?(Mod_Framework::Mods) && Mod_Framework::Mods.respond_to?(:stays_on)
+    @from_start = Mod_Framework::Mods.stays_on if defined?(Mod_Framework::Mods)
     session = entering[:session]
     entered = MGQ_Multiplayer::Stages.enter("the world #{entering[:name]}", session && session["only"])
     MGQ_MpNotices.message(OFF_NOTICE_KEY, session["text"], KICK_FRAMES) if session && session["text"] && defined?(MGQ_MpNotices)
@@ -338,7 +344,7 @@ module MGQ_MpWorldMods
     mods = message["mods"].to_s
     take_mods(mods)
     world = MGQ_MpWorld.world
-    return unless world && defined?(Mod_Framework::Mods) && Mod_Framework::Mods.respond_to?(:stays_on)
+    return unless world && defined?(Mod_Framework::Mods)
 
     running = Mod_Framework::Mods.loaded - Array(@from_start)
     told = MGQ_Multiplayer::Bridge.call(NOW_OFF_TOPIC, "world" => world.name.to_s, "off" => message[MGQ_MpOverworldSync::MODS_RULE_FIELD] == true, "mods" => mods, "running" => running)
@@ -385,7 +391,7 @@ module MGQ_MpWorldMods
   # @return [Symbol, nil] :restarting or :closing, see Mod_Framework::Mods.restart; nil without the
   #   framework.
   def self.restart_for(world, name)
-    return nil unless defined?(Mod_Framework::Mods) && Mod_Framework::Mods.respond_to?(:restart)
+    return nil unless defined?(Mod_Framework::Mods)
 
     log("starting the game again to enter #{name} with its mods loaded anew")
     Mod_Framework::Mods.restart("#{name} needs a mod that runs already loaded anew", MGQ_Multiplayer::Stages::REJOIN_ACTION, world)
@@ -430,7 +436,7 @@ module MGQ_MpWorldMods
 
   # Mod Config's options.
 
-  # Lists Mod Config Remake's groups as it sorts them: an entry named "[Name] ..." opens group
+  # Lists Mod Config's groups in their order: an entry named "[Name] ..." opens group
   # Name, an indented one joins the group above, any other one is Global and left out. A name met
   # again adds to its group.
   #
@@ -475,8 +481,7 @@ module MGQ_MpWorldMods
     name_of(entry).sub(MOD_NAME, "").sub(/\A[\s\->]+/, "").strip
   end
 
-  # Lists the options of some mods that a world may set: those with values, not key bindings,
-  # and not marked personal.
+  # Lists the options of some mods that a world may set, see world_option?.
   #
   # @param keys [Array<String>] The mods' keys.
   # @return [Array<Symbol>] The options' keys.
@@ -496,20 +501,10 @@ module MGQ_MpWorldMods
   # Tells whether a world may set an option.
   #
   # @param entry [Hash] The option's entry in MOD_CONTENTS.
-  # @return [Boolean] Whether it has values, binds no key and is not marked personal.
+  # @return [Boolean] Whether it has values the save keeps, binds no key and is not the row of
+  #   Shared Mod Settings.
   def self.world_option?(entry)
-    entry[:sub] && !entry[:keybind] && !entry[:personal] && entry[:key] ? true : false
-  end
-
-  # Tells why a world cannot set an option, see world_option?.
-  #
-  # @param entry [Hash] The option's entry in MOD_CONTENTS.
-  # @return [String, nil] "keybind", "personal" or "button", nil for an option a world may set.
-  def self.skip_reason(entry)
-    return "keybind" if entry[:keybind]
-    return "personal" if entry[:personal]
-
-    entry[:sub] ? nil : "button"
+    entry[:sub] && !entry[:keybind] && !entry[:mod_stored] && entry[:key] && entry[:key] != SHARED_OPTION ? true : false
   end
 
   # Sends the Mod Config options of each catalog mod this game has installed that the DLL names,
@@ -545,8 +540,7 @@ module MGQ_MpWorldMods
     { "key" => key.to_s, "name" => short_name(entry).to_s, "default" => plain_option(default), "choices" => choices }
   end
 
-  # Reads the values an option can take as Mod Config Remake does: from its :values, an array or a
-  # proc, or else from DATA.
+  # Reads the values an option can take: from its :values, an array or a proc, or else from DATA.
   #
   # @param entry [Hash] The option's entry in MOD_CONTENTS.
   # @return [Array] The values in order, none when it has none or its proc fails.
@@ -560,8 +554,7 @@ module MGQ_MpWorldMods
     []
   end
 
-  # Tells whether two values of an option are the same, decimals within a margin, as Mod Config
-  # Remake finds a value among an option's values.
+  # Tells whether two values of an option are the same, decimals within a margin.
   #
   # @param one [Object] A value.
   # @param other [Object] The other value.
@@ -604,8 +597,8 @@ module MGQ_MpWorldMods
 
   # Settings.
 
-  # Lists some mods' options as the creator's game has them, leaving out key bindings, buttons,
-  # options marked personal and values of a type a world does not keep; the DLL writes them as the
+  # Lists some mods' options as the creator's game has them, leaving out the options a world may
+  # not set (world_option?) and values of a type a world does not keep; the DLL writes them as the
   # world's settings (SharedSettings.PairsOf).
   #
   # @param keys [Array<String>] The mods' keys.
@@ -750,9 +743,9 @@ module MGQ_MpWorldMods
     MGQ_MpWorld.open? && @world && @world["own"] ? true : false
   end
 
-  # Writes the world's settings into the game's options and has Mod Config Remake show them as
-  # set by the world; a world that shares none sets and locks nothing. Called once a save is loaded
-  # or a new game started in a world.
+  # Writes the world's settings into the game's options and greys them in Options > Mods; a world
+  # that shares none sets and locks nothing. Called once a save is loaded or a new game started in
+  # a world.
   def self.apply
     return unless MGQ_MpWorld.open? && @world && $game_system
 
@@ -792,7 +785,7 @@ module MGQ_MpWorldMods
   # group of this game's Mod Config, and of those only values this game's copy of an option offers.
   #
   # A world's settings come from another game, so a key of the game's own options, of a key binding
-  # or of an option marked personal must never reach the player's options.
+  # or of an option its mod keeps itself must never reach the player's options.
   #
   # @param settings [Hash] The values by the options' keys.
   # @return [Array<Symbol>] The options written.
@@ -822,16 +815,28 @@ module MGQ_MpWorldMods
     applied
   end
 
-  # Tells the Mod Config which options the world sets: the Mod Framework's options, else Mod Config
-  # Remake, if it can show that.
+  # Greys the options the world sets in Options > Mods, drawing them anew should the player be
+  # there.
   #
   # @param keys [Array<Symbol>] The options, none outside a world.
   def self.lock(keys)
-    if defined?(Mod_Framework::Options) && Mod_Framework::Options.respond_to?(:world_keys=)
-      Mod_Framework::Options.world_keys = keys
-    elsif defined?(ModConfigRemake) && ModConfigRemake.respond_to?(:world_keys=)
-      ModConfigRemake.world_keys = keys
-    end
+    changed = keys != @locked
+    @locked = keys
+    refresh_menu if changed
+  end
+
+  # Has Options > Mods grey the rows of the options the world sets (lock), through the rows of
+  # its list, once as the script loads.
+  def self.patch_options
+    Mod_Framework::UI.patch("#mf_mod_options") { |t| t.rows("#mf_mod_options_list") { |rows| MGQ_MpWorldMods.greyed(rows) } }
+  end
+
+  # Greys the rows of the options the world sets.
+  #
+  # @param rows [Array<Hash>] The rows Options > Mods shows.
+  # @return [Array<Hash>] The rows, each of an option the world sets merged with :disabled.
+  def self.greyed(rows)
+    rows.map { |row| @locked.include?(row[:key]) ? row.merge(:disabled => true) : row }
   end
 
   # Lets the options be changed again once the game went back to the title screen, unless the world
@@ -847,8 +852,7 @@ module MGQ_MpWorldMods
   # sets it.
   def self.offer_row
     added = Mod_Framework::Options.add(SHARED_OPTION, ROW_NAME, lambda { MGQ_MpWorldMods.row_help }, { 1 => ["On", ROW_ON_HELP], 0 => ["Off", ROW_OFF_HELP] }, 0,
-                                       :if => lambda { MGQ_MpWorldMods.in_world? }, :enabled => lambda { MGQ_MpWorldMods.own_world? },
-                                       :personal => true) { |value| MGQ_MpWorldMods.switch(value) }
+                                       :if => lambda { MGQ_MpWorldMods.in_world? }, :disabled => lambda { !MGQ_MpWorldMods.own_world? }) { |value| MGQ_MpWorldMods.switch(value) }
     log(added ? "added the Shared Mod Settings to Options > Mods" : "no Shared Mod Settings in Options > Mods, see the Mod Framework's log")
   end
 
@@ -987,7 +991,7 @@ end
 # Game hooks shared with other scripts, through core_hooks.rbx.
 
 begin
-  # As the title screen starts, Mod Config Remake stops showing a world's settings.
+  # As the title screen starts, Options > Mods stops greying a world's settings.
   MGQ_MpHooks.before(Scene_Title, :start, "world_mods") { MGQ_MpWorldMods.on_title_start }
 
   # The title screen opens the world screen to enter a world again after a restart for its mods.
@@ -1033,4 +1037,10 @@ begin
   MGQ_MpWorldMods.offer_row
 rescue => e
   MGQ_MpWorldMods.log("Shared Mod Settings row FAILED: #{e.class}: #{e.message}")
+end
+
+begin
+  MGQ_MpWorldMods.patch_options
+rescue => e
+  MGQ_MpWorldMods.log("greying the options a world sets FAILED: #{e.class}: #{e.message}")
 end

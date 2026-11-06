@@ -2,6 +2,7 @@
 #  world.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-07: Dropped the check for a Mod Framework call older versions lacked
 #      Paulinchen  2026-11-06: Kept a refusal of this version on the world screen whose question could not open, asking again once none of the screen's questions is open
 #                            - Kept the form's fields alone of the base form, which no screen builds
 #                            - Asked the Mod Framework for the update wherever the relay turns this version away, naming the version the DLL runs
@@ -997,7 +998,6 @@ module MGQ_MpWorld
     # @return [Boolean] Whether the restart carries it.
     def self.carry_through_restart(code)
       return false unless defined?(MGQ_Multiplayer::Stages) && MGQ_Multiplayer::Stages.restart_needed?
-      return false unless Mod_Framework::Mods.respond_to?(:carry_after_restart)
 
       Mod_Framework::Mods.carry_after_restart(MGQ_Multiplayer::Stages::INVITE_ACTION, code.to_s)
       MGQ_MpWorld.log("the restart on the way back to the title carries the invite into world #{MGQ_MpWorld.short(@waiting)}")

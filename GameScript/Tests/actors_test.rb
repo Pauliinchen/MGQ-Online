@@ -2,6 +2,7 @@
 #  actors_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-07: Dropped the checks of the hero of a replaced Luka
 #      Paulinchen  2026-11-05: Checked the facts handed to C# and the members made of those it reads instead of the text's fields
 #      Paulinchen  2026-10-31: Checked that a rebuild measured in battle compares as its owner's game measured it
 #      Paulinchen  2026-10-13: Used a placeholder hero key
@@ -13,9 +14,9 @@
 #----------------------------------------------------------------
 
 # Covers what core_actors.rbx hands C# of a character's build and makes of what C# reads: the
-# facts of a character and its enchanted equipment, the members this game's data knows, the hero of
-# a replaced Luka, the fingerprint of the databases builds name, what a rebuilt character leaves of
-# the player's save alone, and how a rebuild compares with its owner's game outside of battle.
+# facts of a character and its enchanted equipment, the members this game's data knows, the
+# fingerprint of the databases builds name, what a rebuilt character leaves of the player's save
+# alone, and how a rebuild compares with its owner's game outside of battle.
 
 require_relative "support"
 
@@ -89,14 +90,14 @@ check("a character's facts go to C# as the game keeps them, its Floats tagged", 
       { "actors" => [{ "actor" => 2, "level" => 30, "class" => 92, "tribe" => 151, "levels" => [[92, 5], [151, 3]], "param_plus" => [1, 0],
                        "skills" => [10, 11], "abilities" => [[1, [12, nil]]], "equip_abilities" => [], "equips" => [sword_facts, nil],
                        "params" => (100..107).to_a, "rates" => [0.0, 0.25, 0.5, 1.25, 1.5].map { |rate| { "float" => rate.to_s } },
-                       "counters" => [4, 0, 0, 0, 0, 0, 7], "switches" => [], "hero" => "" }] })
+                       "counters" => [4, 0, 0, 0, 0, 0, 7], "switches" => [] }] })
 
 # What C# read of another game's builds: a character this game knows, with a skill, a race and a
 # weapon it lacks, and one of an actor it lacks.
 member_facts = { "actor" => 1, "level" => 99_999, "class" => 92, "tribe" => 999, "levels" => [[92, 5], [999, 2]], "param_plus" => [0] * 8,
                  "skills" => [10, 500], "abilities" => [[1, [12, 500]]], "equip_abilities" => [],
                  "equips" => [{ "base" => { "weapon" => 1 } }, { "base" => { "weapon" => 9 } }, nil],
-                 "params" => [100, 10, 20, 20, 20, 20, 20, 20], "rates" => [{ "float" => "0.95" }, { "float" => "0.05" }], "counters" => [0] * 7, "switches" => [], "hero" => "" }
+                 "params" => [100, 10, 20, 20, 20, 20, 20, 20], "rates" => [{ "float" => "0.95" }, { "float" => "0.05" }], "counters" => [0] * 7, "switches" => [] }
 $read = [member_facts, member_facts.merge("actor" => 50)]
 $requests.clear
 members = builds.parse("builds", 4)
@@ -110,14 +111,6 @@ $requests.clear
 first = builds.game
 check("the fingerprint is written by C# once while the databases' sizes stay, as the map asks it every frame",
       [first, builds.game, $requests], ["3:3,201,101,1,2,1,1,1", first, [[3, 201, 101, 1, 2, 1, 1, 1]]])
-
-# Stands in for Luka Replacer, which names the hero of a replaced Luka.
-module MGQ_LukaReplacer; def self.hero_key(actor); actor == :luka ? "sample_hero" : ""; end; end
-check("Luka Replacer names the replaced Luka's hero", [builds.hero_of(:luka), builds.hero_of(:alice)], ["sample_hero", ""])
-$log.clear
-MGQ_LukaReplacer.define_singleton_method(:hero_key) { |_actor| raise "broken" }
-check("a hero that cannot be read is written as none, logged once", [builds.hero_of(:luka), builds.hero_of(:luka), $log],
-      ["", "", ["actors: could not read a character's hero, writing none: RuntimeError: broken"]])
 
 # A rebuilt character: enchanted equipment past the player's switch, and the player's affection.
 # The game's switch that turns enchanted equipment off.
@@ -137,7 +130,7 @@ class Game_Actor
 end
 $game_switches = Game_Switches.new
 $game_switches[NWConst::Sw::ENCHANT_OFF] = true
-sent = builds::Member.new(1, 5, 92, 151, {}, [0] * 8, [], {}, {}, [], [100, 10, 20, 20, 20, 20, 20, 20], [0.95, 0.05, 0.04, 0.0, 0.0], [0] * 7, [], "")
+sent = builds::Member.new(1, 5, 92, 151, {}, [0] * 8, [], {}, {}, [], [100, 10, 20, 20, 20, 20, 20, 20], [0.95, 0.05, 0.04, 0.0, 0.0], [0] * 7, [])
 rebuilt = Game_MpActor.allocate
 rebuilt.instance_variable_set(:@member, sent)
 enchanted = RPG::Weapon.new

@@ -2,6 +2,7 @@
 #  world_overview_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-07: Read a greyed menu choice from disabled:
 #      Paulinchen  2026-11-06: Dropped the check of the picture behind the Quests page
 #                            - Expected the DLL to hear that the player chose to leave the party
 #                            - Reached the Mod Framework's engine under its own name
@@ -315,7 +316,7 @@ end
 $menu = nil
 Mod_Framework::UI.define_singleton_method(:menu) { |choices, params = {}, &block| $menu = [choices, params, block]; true }
 # Tells the menu open, each choice with whether it can be taken; nil while none is open.
-menu = lambda { $menu && $menu[0].map { |choice| [choice[:text], choice[:enabled]] } }
+menu = lambda { $menu && $menu[0].map { |choice| [choice[:text], !choice[:disabled]] } }
 # Takes a choice of the menu open, or with "refuse" tries a greyed one, which the menu refuses.
 pick = lambda do |index, event|
   choices, params, block = $menu

@@ -2,6 +2,7 @@
 //  BuildText.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-07: Dropped the hero of a replaced Luka
 //      Paulinchen  2026-11-05: Created
 //
 //----------------------------------------------------------------
@@ -38,7 +39,7 @@ public static partial class BuildText
     public const int Format = 3;
 
     /// <summary>
-    /// The fields every member line has; the hero follows as one more only for a replaced Luka.
+    /// The fields every member line has.
     /// </summary>
     public const int FieldCount = 14;
 
@@ -182,14 +183,14 @@ public static partial class BuildText
     /// id, 1 personal level, 2 job, 3 race, 4 every job and race level as id:level, 5 the stat
     /// growths from items, 6 the skills learned, 7 the abilities learned and 8 set as skill
     /// type:id.id, 9 the equipment per slot (see <see cref="ItemText"/>), 10 the stats, 11 the
-    /// rates, 12 the counters, 13 the switches on and 14 the hero, only when there is one.
+    /// rates, 12 the counters and 13 the switches on.
     /// </summary>
     /// <param name="build">The character's build.</param>
     /// <returns>The member line.</returns>
     private static string Line(ActorBuild build)
     {
-        var fields = new List<string>
-        {
+        string[] fields =
+        [
             Text(build.ActorId),
             Text(build.BaseLevel),
             build.ClassId is { } classId ? Text(classId) : string.Empty,
@@ -204,12 +205,7 @@ public static partial class BuildText
             Joined(build.Rates),
             Joined(build.Counters),
             Joined(build.SwitchesOn),
-        };
-        if (build.Hero.Length > 0 && HeroPattern().IsMatch(build.Hero))
-        {
-            fields.Add(build.Hero);
-        }
-
+        ];
         return MemberPrefix + string.Join(";", fields);
     }
 
@@ -228,7 +224,7 @@ public static partial class BuildText
         }
 
         string[] fields = line[MemberPrefix.Length..].Split(';');
-        long? actorId = fields.Length is FieldCount or FieldCount + 1 ? Number(fields[0]) : null;
+        long? actorId = fields.Length == FieldCount ? Number(fields[0]) : null;
         if (actorId is not > 0)
         {
             return null;
@@ -248,8 +244,7 @@ public static partial class BuildText
             Numbers(fields[10]),
             Numbers(fields[11]),
             [.. Numbers(fields[12]).Concat(Enumerable.Repeat(0L, CounterCount)).Take(CounterCount).Select(counter => Math.Max(counter, 0))],
-            [.. Numbers(fields[13]).Where(id => id > 0)],
-            fields.Length > FieldCount && HeroPattern().IsMatch(fields[FieldCount]) ? fields[FieldCount] : string.Empty);
+            [.. Numbers(fields[13]).Where(id => id > 0)]);
     }
 
     /// <summary>
@@ -359,13 +354,6 @@ public static partial class BuildText
     /// <returns>The pattern.</returns>
     [GeneratedRegex("\\A-?[0-9]{1,15}\\z", RegexOptions.CultureInvariant)]
     private static partial Regex NumberPattern();
-
-    /// <summary>
-    /// The key of a hero Luka Replacer plays in Luka's place, empty for Luka.
-    /// </summary>
-    /// <returns>The pattern.</returns>
-    [GeneratedRegex("\\A[a-z0-9_]{0,32}\\z", RegexOptions.CultureInvariant)]
-    private static partial Regex HeroPattern();
 
     /// <summary>
     /// A PvP team's first line, see <see cref="RulePrefix"/>.

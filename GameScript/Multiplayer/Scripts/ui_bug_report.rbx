@@ -2,6 +2,7 @@
 #  ui_bug_report.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-07: Asked the Mod Framework alone whether a scene is a mod's menu scene, dropping the way of older versions
 #      Paulinchen  2026-11-06: Named each member's base level, as the game keeps every kind of level in one Hash
 #                            - Drew the form through the UI layer, its refusals on its help line and the focus on the field they name
 #                            - Told the DLL whether any mod types through the framework
@@ -251,21 +252,9 @@ module MGQ_MpBugReport
     return "title" if scene.nil? || scene.class.name.to_s =~ REFUSED_SCENES
     return "map" if scene.is_a?(Scene_Map)
     return "battle" if scene.is_a?(Scene_Battle)
-    return "waiting_menu" if menu_screen?(scene)
+    return "waiting_menu" if UI.menu_screen?(scene)
 
     scene.is_a?(Scene_MenuBase) ? "menu" : "other"
-  end
-
-  # Tells whether a scene is the Mod Framework's menu scene of a mod's screen, such as the story's
-  # choices, which cannot be left for the form and come back, so a report waits there until the
-  # player is back on the map.
-  #
-  # An older framework without UI.menu_screen? still marks that scene by its menu root.
-  #
-  # @param scene [Scene_Base] The scene.
-  # @return [Boolean] Whether it is.
-  def self.menu_screen?(scene)
-    UI.respond_to?(:menu_screen?) ? UI.menu_screen?(scene) : scene.respond_to?(:menu_root)
   end
 
   # Tells whether the player is free on the map and no screen of any mod holds the game.

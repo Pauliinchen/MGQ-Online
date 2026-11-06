@@ -2,6 +2,7 @@
 #  ui_actions.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-07: Greyed a wheel choice that cannot be taken through disabled:
 #      Paulinchen  2026-11-06: Named the line's color by its name in the player's look
 #                            - Built the action wheel as a wheel of the Mod Framework's UI layer, its hotkey declared on its class
 #                            - Told the other scripts whether the action wheel is open through wheel_open?, and took the bug report's screenshot once it is gone
@@ -439,7 +440,7 @@ module MGQ_MpActions
   # @param data [Integer, Symbol] Its registration index, or CENTER.
   # @return [Hash] The wheel's choice.
   def self.wheel_choice_of(option, data)
-    { :text => option.text.to_s, :icon => option.icon, :enabled => !option.run.nil?, :tooltip => option.refusal, :data => data }
+    { :text => option.text.to_s, :icon => option.icon, :disabled => option.run.nil?, :tooltip => option.refusal, :data => data }
   end
 
   # Tells the player why a choice of the wheel cannot be taken; the wheel buzzed and stays open.

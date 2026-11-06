@@ -2,6 +2,7 @@
 //  LocalWorldTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Named no other mod among the scripts every player has
 //      Paulinchen  2026-11-05: Covered a world found, changed and played, its latest save, and the picker's scripts in subfolders
 //      Paulinchen  2026-10-30: Listed the scripts of the Patch folder without the parking
 //                            - Left the Mod Framework's loader out of the picker
@@ -167,7 +168,6 @@ public sealed class LocalWorldTopicsTests : IDisposable
     {
         Directory.CreateDirectory(Path.Combine(_game.Path, "Patch"));
         File.WriteAllText(Path.Combine(_game.Path, "Patch", "Level_Cap.rb"), "");
-        File.WriteAllText(Path.Combine(_game.Path, "Patch", "0_ModConfigRemake.rb"), "");
         File.WriteAllText(Path.Combine(_game.Path, "Patch", "!Mod_Framework.rb"), "");
 
         RubyHash opened = _topics.Call(ModPickTopics.Open, new RubyHash { { "text", "!Level Cap" } })!.AsHash();

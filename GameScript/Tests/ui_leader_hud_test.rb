@@ -2,6 +2,8 @@
 #  ui_leader_hud_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-07: Typed through a text box of the Mod Framework instead of the old typing flag
+#                            - Dropped the stand-in for Mod Config Remake, which nothing reads
 #      Paulinchen  2026-11-06: Left what the HUD shows to the in-game suite, checking what its bars read
 #      Paulinchen  2026-11-05: Expected the HUD's switches kept as true or false
 #      Paulinchen  2026-11-01: Read the HUD from the Mod Framework's components it builds
@@ -36,8 +38,6 @@ class Window_Stand
 end
 # Gives the message stand-in whether it shows and where.
 class Game_Message; attr_accessor :visible, :position; end
-# Stands in for a Mod Config Remake that reads the rows the mod keeps from the mod.
-module ModConfigRemake; def self.mod_stored?(_key); true; end; end
 # The Mod Config's rows, the last of them the Return row, which the mod's rows go before.
 NWConst::Config::MOD_CONTENTS = [{ :key => :return }] unless NWConst::Config.const_defined?(:MOD_CONTENTS)
 
@@ -122,10 +122,8 @@ MGQ_MpChat.singleton_class.send(:alias_method, :leader_hud_test_typing?, :typing
 MGQ_MpChat.define_singleton_method(:typing?) { true }
 logged = []
 MGQ_Multiplayer::Log.define_singleton_method(:write) { |line| logged << line }
-$mgq_text_input = true
 $pressed = 0x48
-hud.on_map
-$mgq_text_input = nil
+while_typing { hud.on_map }
 MGQ_Multiplayer::Log.define_singleton_method(:write) { |line| puts "  log: #{line}" }
 check("while the chat box is open the key changes nothing and the letter typed stays out of the log", [hud.size, logged], ["Large", []])
 MGQ_MpChat.singleton_class.send(:alias_method, :typing?, :leader_hud_test_typing?)

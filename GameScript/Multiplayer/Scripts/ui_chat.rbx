@@ -2,6 +2,7 @@
 #  ui_chat.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-07: Greyed a player menu choice that cannot be taken through disabled:
 #      Paulinchen  2026-11-06: Asked the UI layer whether the player arranges the parts
 #                            - Drew the chat's log, box, player menu and bubbles through the UI layer
 #                            - Named the chats' colors once
@@ -627,7 +628,7 @@ module MGQ_MpChat
     name = MGQ_MpOverworldSync::Peers.label_of(peer) || peer.state["name"].to_s
     whisper = MGQ_MpActions::Option.new("Whisper", lambda { MGQ_MpChat.take_view(MGQ_MpChat.call(WHISPER_TOPIC, peer.seat)) }, nil)
     options = SceneManager.scene.is_a?(Scene_Map) ? MGQ_MpActions.peer_options(peer) + [whisper] : [whisper]
-    choices = options.map { |option| { :text => option.text.to_s, :enabled => !option.run.nil?, :tooltip => option.refusal } }
+    choices = options.map { |option| { :text => option.text.to_s, :disabled => option.run.nil?, :tooltip => option.refusal } }
     menu = UI.menu(choices, :title => name, :at => :pointer) { |_choice, index| MGQ_MpChat.menu_taken(name, options, index) }
     return log("the menu of #{name} did not open: another menu is open") unless menu
 

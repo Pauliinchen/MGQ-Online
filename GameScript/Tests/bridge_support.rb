@@ -2,6 +2,7 @@
 #  bridge_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-07: Typed into a text box of the Mod Framework while a block runs
 #      Paulinchen  2026-11-06: Reached the Mod Framework's engine under its own name
 #                            - Dropped the reader of the bridge's recorded dumps
 #                            - Dropped the stand-in of the component tree, which no test read
@@ -587,6 +588,21 @@ def open_fake_ui(&typed)
   reregister_boxes
   Mod_Framework::UI::Engine::Tick.collect("Mod Framework wheels") { Mod_Framework::UI::Engine::Wheel.collect } unless Mod_Framework::Run.started?
   [fake, ui, edit]
+end
+
+# Types into a text box of the Mod Framework while a block runs, as the chat box or another mod's
+# text field does, so Mod_Framework::UI.typing? tells so; the framework's bridge must be open on a
+# FakeBridge with a FakeEdit.
+#
+# @yield Runs while the box is open.
+# @return [Object] What the block returns.
+def while_typing
+  box = Mod_Framework::UI::Engine::TextEdit.new
+  raise "no text box opened: the Mod Framework's bridge has no FakeEdit" unless Mod_Framework::UI.typing?
+
+  yield
+ensure
+  box.close if box
 end
 
 # Answers the Mod Framework's settings file on a FakeBridge from $framework_ini, as the DLL reads

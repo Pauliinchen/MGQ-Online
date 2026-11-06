@@ -2,6 +2,8 @@
 #  single_player_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-07: Expected the rows without personal:, which the Mod Framework no longer takes
+#                            - Dropped the stand-in for Mod Config Remake, which nothing reads
 #      Paulinchen  2026-11-06: Expected the restart offered through UI.confirm with Later lit first
 #      Paulinchen  2026-11-05: Expected the slot kept as a number and the switches as true or false
 #      Paulinchen  2026-11-01: Named the Mod Framework's interface by its own name, and took the framework away only for the restart's answer
@@ -34,8 +36,6 @@ $load_successes = []
 $restart_result = 1
 $open = false
 
-# Stands in for a Mod Config Remake that reads the rows the mod keeps from the mod.
-module ModConfigRemake; def self.mod_stored?(_key); true; end; end
 # The Mod Config's rows, the last of them the Return row, which the mod's rows go before.
 NWConst::Config::MOD_CONTENTS = [{ :key => :return }] unless NWConst::Config.const_defined?(:MOD_CONTENTS)
 
@@ -252,8 +252,8 @@ check("the group's rows in their order, each with the SP prefix and before the R
       [sp_rows.map { |each| [each[:key], each[:name]] }, NWConst::Config::MOD_CONTENTS.last[:key]],
       [[[:mp_sp_leader_hud, "[MGQ Online SP] Leader HUD"], [:mp_sp_raid_bar_map, "[MGQ Online SP] Raid Bar on Map"],
         [:mp_sp_raid_bar_battle, "[MGQ Online SP] Raid Bar in Battle"], [:mp_sp_raid_bosses, "[MGQ Online SP] Raid Bosses"]], :return])
-check("each kept by the mod as the player's own, On or Off",
-      sp_rows.map { |each| [each[:mod_stored], each[:personal], each[:sub], each[:values].call] }.uniq, [[true, true, true, ["On", "Off"]]])
+check("each kept by the mod, On or Off",
+      sp_rows.map { |each| [each[:mod_stored], each[:sub], each[:values].call] }.uniq, [[true, true, ["On", "Off"]]])
 check("each with its own script's help",
       sp_rows.map { |each| each[:help] }, [hud::SP_SHOWN_OPTION_HELP, bar::OPTION_HELPS[:map], bar::OPTION_HELPS[:battle], tiers::OPTION_HELP])
 check("an empty Player.ini shows the HUD and both bars and leaves the raid bosses off", sp_rows.map { |each| each[:value].call }, ["On", "On", "On", "Off"])

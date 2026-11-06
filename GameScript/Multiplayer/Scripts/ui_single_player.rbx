@@ -2,6 +2,7 @@
 #  ui_single_player.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-07: Dropped the check for a Mod Framework call older versions lacked
 #      Paulinchen  2026-11-06: Renamed add_options to offer_rows, which the Mod Framework's scan no longer takes for a call of the old UI
 #                            - Offered the restart through UI.confirm, Later lit first
 #      Paulinchen  2026-11-05: Took the slot to resume as the number or name the DLL reads
@@ -200,7 +201,7 @@ module MGQ_MpSinglePlayer
   def self.restart
     return notice(SAVE_FAILED_TEXT) unless save_resume
 
-    unless defined?(Mod_Framework::Mods) && Mod_Framework::Mods.respond_to?(:restart)
+    unless defined?(Mod_Framework::Mods)
       forget_resume
       log("the game cannot start itself again without the Mod Framework, so it plays on")
       return notice(FAILED_TEXT)

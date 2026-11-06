@@ -2,6 +2,7 @@
 #  world_overview.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-07: Greyed a player menu choice that cannot be taken through disabled:
 #      Paulinchen  2026-11-06: Dropped the opacity of the picture behind the Quests page
 #                            - Marked the Players tab from the players listed last, only while another page shows
 #                            - Rebuilt the overview as a window of the UI layer with its pages as tabs that wrap
@@ -761,7 +762,7 @@ module MGQ_MpWorldOverview
     options = menu_options(player)
     log("menu of #{who(player)}: #{options.map { |option| option.run ? option.text : "#{option.text} (refused: #{option.refusal})" }.join(', ')}")
     choices = options.map do |option|
-      choice = { :text => option.text.to_s, :enabled => option.run ? true : false }
+      choice = { :text => option.text.to_s, :disabled => option.run.nil? }
       choice[:tooltip] = option.refusal if option.refusal && !option.run
       choice
     end
