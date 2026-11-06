@@ -2,6 +2,7 @@
 #  flow_guard_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-07: Checked that a loaded world save's picture goes at once while no event runs
 #      Paulinchen  2026-11-05: Answered the guard's topics with fixed plans and checked what the guard hands the DLL and how it puts a plan back
 #                            - Created
 #
@@ -90,6 +91,8 @@ class Scene_Map; end
 module SceneManager; def self.scene; Scene_Map.new; end; end
 # Stands in for the game's saves, whose loading the guard hooks.
 module DataManager; def self.extract_save_contents(_contents); end; def self.setup_new_game; end; end
+# Stands in for the open world, open while $world_open is set.
+module MGQ_MpWorld; def self.open?; $world_open ? true : false; end; end
 # Stands in for the story's state, its escape spell's ban by its switch.
 module MGQ_MpStoryState; ESCAPE_BAN = 94; end
 # Stands in for coop_scene.rbx: the map's main event makes a change while $map_turn is, and the
@@ -212,6 +215,29 @@ guard.leave("the player went to the story", false, true)
 check("a loaded save's CG that no event erased is no part of the state the scene it stopped began from as the player teleports away",
       [asked.call["before"] && asked.call["before"]["pictures"], asked.call["now"]["pictures"], pictures[5].done.last], [[], [5], :erase])
 $tells.set("flow.stands", nil)
+
+# In a world the same CG goes at once as the game runs on from the load, while no event runs; a
+# parallel event that runs keeps it, since it may show it.
+$world_open = true
+pictures[5].show("80_chaos_st01")
+plan.call("erase" => [5])
+$tells.clear
+DataManager.extract_save_contents({})
+idle.call
+check("in a world a loaded save's CG with no event running goes as the game runs on from the load",
+      [asked.call["cut"], asked.call["before"]["pictures"], asked.call["now"]["pictures"], pictures[5].done.last], ["leave", [], [5], :erase])
+pictures[5].show("80_chaos_st01")
+display = Game_Event.new
+display.instance_variable_get(:@interpreter).running = true
+$game_map.events[2] = display
+$tells.clear
+DataManager.extract_save_contents({})
+idle.call
+check("but stays while a parallel event runs", [$tells.asked("flow.plan").size, pictures[5].done.last], [0, :show])
+$game_map.events.delete(2)
+plan.call("erase" => [5])
+guard.leave("the player went to the story", false, true)
+$world_open = false
 
 # The same CG goes once the player touches that event while another player's game runs the story
 # there, so it is kept from starting; the DLL names the common event it calls (issue #68).

@@ -2,6 +2,7 @@
 //  CatchupLook.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-07: Gave a Classic member following a leader past the Great Decision the rows of the leader's side
 //      Paulinchen  2026-11-05: Named the chest a replay plays as [kind, key], and the site of a join, a setting and a replay as plain values
 //                            - Ran the catch-up of a Classic party's member as one look in the engine's Classic settings
 //                            - Kept every choice's outcome a Classic member's own, so a row behind a choice waits for their answer
@@ -731,7 +732,14 @@ internal sealed class CatchupLook
     /// <param name="story">The story.</param>
     /// <param name="own">The player's story.</param>
     /// <returns>Whether it is.</returns>
-    private bool Passed(StoryPlace place, StoryValues story, StoryValues own) => StoryRows.Passed(place, story, own, NotedSide(), ChoiceKey);
+    private bool Passed(StoryPlace place, StoryValues story, StoryValues own) => StoryRows.Passed(place, story, own, RowSide(), ChoiceKey);
+
+    /// <summary>
+    /// Reads the side whose rows count: the side the save notes, but in a Classic party whose
+    /// leader's story is past the Great Decision the side its switches show, the leader's route's.
+    /// </summary>
+    /// <returns>The side, <see langword="null"/> for none.</returns>
+    private string? RowSide() => !_settings.RaidWorld && _told is { } leader && !SidePick.SidesDiffer(leader) ? leader.Side : NotedSide();
 
     /// <summary>
     /// Reports whether the player's story is past a row.
@@ -1595,7 +1603,7 @@ internal sealed class CatchupLook
     /// <param name="told">The story.</param>
     /// <param name="story">The player's story.</param>
     /// <returns>Whether it did.</returns>
-    private bool TakenSince(CatchupKeyItem row, StoryValues told, StoryValues story) => StoryRows.TakenSince(_tables, row, told, story, NotedSide(), ChoiceKey);
+    private bool TakenSince(CatchupKeyItem row, StoryValues told, StoryValues story) => StoryRows.TakenSince(_tables, row, told, story, RowSide(), ChoiceKey);
 
     /// <summary>
     /// Hands out every item unlocking a job or race a reward row gives behind its own self switch.

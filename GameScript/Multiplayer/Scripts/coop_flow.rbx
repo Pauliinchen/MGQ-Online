@@ -2,6 +2,7 @@
 #  coop_flow.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-07: Erased the pictures a loaded world save shows at once while no event runs
 #      Paulinchen  2026-11-05: Created
 #
 #----------------------------------------------------------------
@@ -139,8 +140,8 @@ module MGQ_MpFlowGuard
 
   # Takes the player's own scene a loaded save stopped, once the game runs on from it: the state at
   # the load is where it began, without the pictures the save shows, which a scene the save
-  # stopped left and which go once the mod moves the player away. None is taken while the save
-  # shows no picture.
+  # stopped left. In a world they go at once while nothing of the game's flow runs, else once the
+  # mod moves the player away. None is taken while the save shows no picture.
   def self.settle_load
     return unless @loaded
 
@@ -150,6 +151,8 @@ module MGQ_MpFlowGuard
 
     start = now.merge("pictures" => [])
     @scene = { :start => start, :run => start, :owned => [] }
+    return leave("the loaded world save shows picture(s) #{now['pictures'].join(', ')} on map #{now['map']} with no event running") if world_open? && free?
+
     log("the loaded save shows picture(s) #{now['pictures'].join(', ')} on map #{now['map']} with no scene the guard saw begin: " \
         "they go once the mod moves the player away, unless the game erases them first")
   end
@@ -186,6 +189,13 @@ module MGQ_MpFlowGuard
       interpreter = MGQ_MpGame.get(holder, :interpreter)
       interpreter && interpreter.running?
     end
+  end
+
+  # Reports whether a world is open, whose saves the player loads.
+  #
+  # @return [Boolean] Whether one is.
+  def self.world_open?
+    defined?(MGQ_MpWorld) && MGQ_MpWorld.open? ? true : false
   end
 
   # Reports whether the player's own scene is under way.

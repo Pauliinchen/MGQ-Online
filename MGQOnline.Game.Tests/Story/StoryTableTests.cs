@@ -2,6 +2,7 @@
 //  StoryTableTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-07: Checked that a Classic party keeps the camp's place each player's own
 //      Paulinchen  2026-11-06: Wrote the mapping out and dropped the recorded kinds and table
 //      Paulinchen  2026-10-23: Created
 //
@@ -66,8 +67,8 @@ public sealed class StoryTableTests
     }
 
     /// <summary>
-    /// Asserts that a Classic party shares everything but the lists each player keeps, the side
-    /// switches marked as theirs while the sides differ, and every self switch.
+    /// Asserts that a Classic party shares everything but the lists each player keeps and the camp's
+    /// place, the side switches marked as theirs while the sides differ, and every self switch.
     /// </summary>
     [Fact]
     public void Build_SharesAClassicStoryButEachPlayersOwn()
@@ -78,7 +79,7 @@ public sealed class StoryTableTests
             new[] { StoryClass.Kept, StoryClass.Personal, StoryClass.Personal, StoryClass.Personal, StoryClass.Chest, StoryClass.Kept | StoryClass.Side, StoryClass.Kept },
             new[] { table.ClassOf(StoryKey.Switch(7096)), table.ClassOf(StoryKey.Switch(100)), table.ClassOf(StoryKey.Switch(1500)), table.ClassOf(StoryKey.Switch(6500)), table.ClassOf(StoryKey.Switch(7102)), table.ClassOf(StoryKey.Switch(4)), table.ClassOf(StoryKey.Switch(7000)) });
         Assert.Equal(
-            new[] { StoryClass.Kept, StoryClass.Personal, StoryClass.Personal, StoryClass.Kept, StoryClass.Personal, StoryClass.Kept },
-            new[] { table.ClassOf(StoryKey.Variable(1001)), table.ClassOf(StoryKey.Variable(1002)), table.ClassOf(StoryKey.Variable(3599)), table.ClassOf(StoryKey.Variable(3600)), table.ClassOf(StoryKey.Variable(2500)), table.ClassOf(StoryKey.SelfSwitch(7, 39, "A")) });
+            new[] { StoryClass.Kept, StoryClass.Personal, StoryClass.Personal, StoryClass.Kept, StoryClass.Personal, StoryClass.Personal, StoryClass.Kept },
+            new[] { table.ClassOf(StoryKey.Variable(1001)), table.ClassOf(StoryKey.Variable(1002)), table.ClassOf(StoryKey.Variable(3599)), table.ClassOf(StoryKey.Variable(3600)), table.ClassOf(StoryKey.Variable(2500)), table.ClassOf(StoryKey.Variable(53)), table.ClassOf(StoryKey.SelfSwitch(7, 39, "A")) });
     }
 }

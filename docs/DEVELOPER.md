@@ -381,7 +381,7 @@ Every event page is sorted as it starts, since the answer depends on the game's 
 - **The scene** (pictures, screen effects, move routes, camera, sounds, map look, zoom) goes to viewers too, but only changes made inside the map's main interpreter count; parallel events stay the teller's own. The interpreter is told apart rather than the command, since a command may wait frames before it runs. A viewer checks every change before it applies it (`SceneChecks`): the game keeps the arguments, and a wrong one raises or hangs in its update each frame. A move route the viewer takes always skips a blocked step, since their characters stand elsewhere.
 - In a Raid World the scene also sends the story's values, since the world's story reaches viewers only once the telling ended and the scene's characters would otherwise stand on no page.
 - Several changes go as one batch message below the DLL's 256 KB frame; a lone change still goes as a single message, which earlier builds take.
-- **The flow guard** (`coop_flow.rbx`, rules in `FlowGuard`): wherever the mod cuts, skips, moves or ends a game event, the game's own flow cannot put back what it set (a dark screen, a hidden character, a temporary party, a ban), so the guard does, for every such place. It only lifts, never starts what the rest of an event would. The one rule without an interrupt point: a screen left dark while the player stands free and nothing runs fades in.
+- **The flow guard** (`coop_flow.rbx`, rules in `FlowGuard`): wherever the mod cuts, skips, moves or ends a game event, the game's own flow cannot put back what it set (a dark screen, a hidden character, a temporary party, a ban), so the guard does, for every such place. It only lifts, never starts what the rest of an event would. The rules without an interrupt point: a screen left dark while the player stands free and nothing runs fades in, and the pictures a loaded world save shows go as the game runs on from the load while nothing runs.
 
 ### The party's story (Classic worlds)
 
@@ -390,7 +390,7 @@ Every event page is sorted as it starts, since the answer depends on the game's 
 - How a member keeps the story depends on how far along they were: behind keeps what they played together, as far records and lays it over their own, ahead gets their own back unchanged.
 - Every save made while borrowing holds the member's own story with their own values.
 - Both sides wait for the relay's reward tables before any story moves, since a member would otherwise catch up with nothing or with both sides' rewards.
-- **Named exceptions:** the leader lends key items to a member ahead (a loan, never saved, so a crash or load borrows again), and the side the player took along in Iliasville is asked of a player who lacks one.
+- **Named exceptions:** the leader lends key items to a member ahead (a loan, never saved, so a crash or load borrows again), and the side the player took along in Iliasville is asked of a player who lacks one. A member who follows a leader past the Great Decision catches up with the side rows of the leader's side, the one the switches show, whichever side they answer.
 - The Pocket Castle's way-out variables (21-23) are each player's own and set on arrival, since the leader's sent a member to an old save's place.
 - Under the reviewed list and replay, only world keys follow the leader by value; chest keys are each member's own copy, and runs reach members by replay. A derived entry's answers are never asked, so a player caught up past a trade gets its item silently and pays nothing.
 
@@ -406,7 +406,7 @@ A Raid World's story is the relay's, key by key, on its story tracks (protocol i
 
 - **The story mapping** (one for every Raid World) says which keys a track keeps; a key without a row is each player's own. It is filled by hand after review, never imported. Its index of shared map events (those that read or write a shared key, through the common events they call but not the player's own) is derived by the battle server's core from the shipped events database. The game keeps a mirror (`story.db`) so a start fetches nothing but `same`, and an unreachable relay still leaves the table.
 - **The mapping check** (`MappingCheckTests`) holds every reviewed row to the shipped events database. The transfer variable v57 is named by hand, since the database holds no game scripts.
-- A variable the story table names as a place stays each player's own whatever its row says.
+- A variable the story table names as a place stays each player's own whatever its row says, in a Classic party too.
 - Until the mapping comes, a Raid World's events sort by a Classic party's table and its writes wait unsorted.
 - **What comes back** is written only once the player is free (no event, battle, transfer) and no lost raid boss fight's defeat is being undone. A value for a key the player's own unanswered request wrote is dropped, since the relay applied the batch that carried it before the player's.
 - **Values the player keeps:** affection the relay hands lower than the player's own stays and goes to the relay again, which keeps the highest, so the world converges on each companion's highest. An unlock the player holds that the track hands off (the second accessory slot, 445) stays on and goes to the relay too, since an earlier build kept it each player's own.

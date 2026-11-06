@@ -2,6 +2,7 @@
 //  ClassicStoryTable.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-07: Kept the variables the game uses as a place each player's own, as in a Raid World
 //      Paulinchen  2026-11-05: Read the story's ids from StoryIds
 //      Paulinchen  2026-10-23: Created
 //
@@ -9,12 +10,14 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace MGQOnline.Game.Story;
 
 /// <summary>
 /// The Classic story's fixed ranges: every switch, variable and self switch shared, but those each
-/// player keeps of their own (the lists story_state.rbx kept before they moved here). The
+/// player keeps of their own (the lists story_state.rbx kept before they moved here) and the
+/// variables the game uses as a place (<see cref="StoryIds.PlaceVariables"/>). The
 /// generator derives the frozen rows of the history before the log with them; who keeps each key
 /// in a Classic party is the reviewed list's, see <see cref="KeyScopes.Classic"/>.
 /// </summary>
@@ -71,6 +74,7 @@ public static class ClassicStoryTable
         Clear(switchClasses, PersonalSwitches);
         Clear(variableClasses, PersonalVariables);
         Clear(variableClasses, [(AffectionBase, AffectionBase + Math.Max(companions, 1) - 1)]);
+        Clear(variableClasses, StoryIds.PlaceVariables.Select(place => (place, place)));
         foreach (int flag in chestFlags)
         {
             if (flag >= 0 && flag < switchClasses.Length)
