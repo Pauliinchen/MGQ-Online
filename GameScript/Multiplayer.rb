@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-06: Took the release the relay's refusal of this version names, and the version the DLL runs
+#                            - Dropped world_overview_mods.rbx, since other mods add their overview pages through UI.patch
 #      Paulinchen  2026-11-05: Kept true or false and whole numbers in Player.ini as the DLL writes them, the rest as text
 #                            - Held the events of a topic no script takes yet until its handler comes
 #                            - Logged a DLL that does not load by what happened, calling it older only where an export is missing
@@ -214,7 +215,7 @@ module MGQ_Multiplayer
     battles_sync battles_sync_wire battles_sync_recorder battles_sync_playback battles_sync_live battles_served
     battles_balance_pvp battles_pvp battles_pvp_backline battles_duel battles_team
     trade ui_trade
-    world_overview world_overview_pages world_overview_mods ui_party_box ui_edge_arrows ui_raid_bar ui_raid_freeze ui_leader_hud ui_single_player ui_notices ui_bug_report
+    world_overview world_overview_pages ui_party_box ui_edge_arrows ui_raid_bar ui_raid_freeze ui_leader_hud ui_single_player ui_notices ui_bug_report
   ]
 
   # The scripts that load under the Mod Framework as the game starts: the log, the hooks, the

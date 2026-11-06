@@ -3,6 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-06: Read the small party box's rows, leaving how it looks to the in-game suite
+#                            - Read the overview's rows, menus, gate and pages from the script, leaving its window of the UI layer to the in-game suite
+#                            - Dropped the pages of other mods, which come through UI.patch now
 #      Paulinchen  2026-11-05: Answered the teleports' view with a fixed offer instead of from the party's stand-in
 #                            - Answered the title with fixed values per world
 #                            - Answered the lists, the told state and the pages with the values each check sets and checked what goes to the DLL, instead of what its stand-ins built
@@ -70,13 +72,13 @@
 #
 #----------------------------------------------------------------
 
-# Covers the World overview, world_overview.rbx, world_overview_pages.rbx and
-# world_overview_mods.rbx, built of the Mod Framework's window, list, page views and menus and
-# played through its tree: what the player tells the others, the Players page with its menus, the
-# party box and the map box it feeds, the World, Quests and Unlocks pages, the pages of other mods,
-# the window the player moves and resizes, and the question box before leaving the party or
-# removing a member. The DLL's models answer with the values each check sets (overview_support.rb):
-# the script tests check what goes to them and what the overview draws of their answers.
+# Covers the World overview, world_overview.rbx and world_overview_pages.rbx: what the player tells
+# the others, the Players page's rows with their menus, the gate that keeps the window open, the
+# party box and the map box it feeds, the World, Quests and Unlocks pages' rows, heads and panes,
+# and the question box before leaving the party or removing a member. The DLL's models answer with
+# the values each check sets (overview_support.rb): the script tests check what goes to them and
+# what the overview makes of their answers; how the UI layer draws the window, its tabs and its
+# keys is the in-game suite's (33_step9_overview_*.rb).
 require_relative "hud_support"
 require_relative "rules_support"
 # The open world: its name and seats.
@@ -208,7 +210,6 @@ MGQ_MpActions.offer(MGQ_MpBattlesDuel)
 load_script "world_catchup_exp"
 load_script "world_overview"
 load_script "world_overview_pages"
-load_script "world_overview_mods"
 # Stands in for the emote wheel, shut until a test opens it with $emotes_open.
 module MGQ_MpEmotes; def self.wheel; StandInWheel.new(lambda { $emotes_open }); end; end
 load_script "ui_party_box"
@@ -286,67 +287,77 @@ check("a player's row", [friend_row.level, friend_row.story, friend_row.ping[0],
 check("the script asks again with the serial of the lists it holds, which the DLL answers with nothing while they stay",
       [overview.rows.size, $overviews.asked("overview.rows").last["serial"].nil?, overview.rows.size], [3, false, 3])
 
-# F11 opens the overview, a framework window, on the Players page; confirm on a player opens their
-# menu beside the row, and cancel steps back.
-# Tells the overview's window.
-window = lambda { overview.window }
-# Tells the Players page's list.
-players = lambda { overview.instance_variable_get(:@players) }
-# Tells the tabs of the pages.
-tabs = lambda { overview.instance_variable_get(:@tabs) }
-# Tells the page view of a page.
-view_of = lambda { |page| overview.instance_variable_get(:@views)[page] }
-# Tells the key help as it reads.
-help_line = lambda { overview.instance_variable_get(:@help).line }
-# Tells events of C#'s tree, then runs a frame.
-tell = lambda { |*events| $fake_tree.post(events); tree_frame }
-# Tells the headings and the names of the Players page's list.
-shown = lambda { players.call.rows.map { |row| row[:heading] || row[:cells][1][:text] } }
+# The UI layer's window and menu, as far as the overview's checks need them: UI.open of the overview
+# opens it as the window's setup and on_open do once its gate lets it, its close tells why as
+# on_close does, and UI.menu keeps its choices, its params and its block in $menu. How the layer
+# draws the overview is the in-game suite's (33_step9_overview_*.rb).
+class StandInOverview
+  # Closes the window, telling the overview why.
+  #
+  # @param why [Symbol, String] Why.
+  def close(why = :script)
+    MGQ_MpWorldOverview.closed(why)
+  end
+end
+Mod_Framework::UI.define_singleton_method(:open) do |klass, _params = {}, &_block|
+  next nil unless klass == MGQ_MpWorldOverview::WorldOverview && MGQ_MpWorldOverview.open_reason.nil?
+
+  view = StandInOverview.new
+  MGQ_MpWorldOverview.start_page
+  MGQ_MpWorldOverview.opened(view)
+  view
+end
+$menu = nil
+Mod_Framework::UI.define_singleton_method(:menu) { |choices, params = {}, &block| $menu = [choices, params, block]; true }
 # Tells the menu open, each choice with whether it can be taken; nil while none is open.
-menu = lambda { (open = Mod_Framework::UI::Menu.current) ? open.instance_variable_get(:@choices).map { |choice| [choice[:text], choice[:enabled]] } : nil }
-# Takes a choice of the menu open, or with "refuse" picks a greyed one.
-pick = lambda { |index, event| tell.call([Mod_Framework::UI::Menu.current.instance_variable_get(:@list).node, event || "submit", index]) }
-# Opens the overview with its hotkey and lets the tree lay it out.
-open_overview = lambda { $pressed = 0x7A; overview.on_map; 2.times { tree_frame } }
+menu = lambda { $menu && $menu[0].map { |choice| [choice[:text], choice[:enabled]] } }
+# Takes a choice of the menu open, or with "refuse" tries a greyed one, which the menu refuses.
+pick = lambda do |index, event|
+  choices, params, block = $menu
+  next params[:on_refuse].call(choices[index], index) if event == "refuse"
+
+  $menu = nil
+  block.call(choices[index], index)
+end
+# Closes the menu open without a choice.
+cancel_menu = lambda { block = $menu[2]; $menu = nil; block.call(nil, nil) }
+# Opens the overview as its hotkey has the framework do.
+open_overview = lambda { Mod_Framework::UI.open(MGQ_MpWorldOverview::WorldOverview) }
+# Closes the open overview as its window does, telling why.
+close_overview = lambda { |why| overview.instance_variable_get(:@view).close(why) }
+# Tells the headings and the names of the Players page's list.
+shown = lambda { overview.player_rows.map { |row| row[:heading] || row[:cells][1][:text] } }
 # Tells the place of a player's row in the list.
-row_named = lambda { |name| players.call.rows.index { |row| row[:cells] && row[:cells][1][:text] == name } }
-open_overview.call
-check("F11 opens the overview, a window that holds the game's buttons", [overview.open?, window.call.open?, Mod_Framework::UI::Capture.on?], [true, true, true])
-check("on the Players page, a heading per place and its players, the player's own row picked",
-      [overview.page, shown.call, players.call.index], [:players, ["Ilias Village", "Me (you)", "member", "Forest", "Friend"], 1])
-friend_cells = players.call.rows[4][:cells]
+row_named = lambda { |name| overview.player_rows.index { |row| row[:cells] && row[:cells][1][:text] == name } }
+# Opens the menu of a row of the Players page, as confirm on it does.
+submit = lambda { |index| overview.open_menu(overview.player_rows[index], index) }
+opening = logged_lines { open_overview.call }
+check("the hotkey opens the overview on the Players page in a world, which the log says with the players online",
+      [overview.open?, overview.page, opening.grep(/overview: opened/)], [true, :players, ["overview: opened through its hotkey, 3 player(s) online"]])
+check("on the Players page, a heading per place and its players, the player's own row first", shown.call, ["Ilias Village", "Me (you)", "member", "Forest", "Friend"])
+friend_cells = overview.player_rows[4][:cells]
 check("a player's row: what they do, their name, their party, their level, their story and their ping in its color",
-      [friend_cells.map { |cell| cell[:icons] || cell[:text] }, friend_cells[5][:color].equal?(Mod_Framework::UI::Style::BAD), friend_cells[5][:align]],
-      [[[451], "Friend", "", "Lv 30", "Part 2: Ilias side", "250 ms"], true, :end])
-check("the window keeps its place under the overview's id, named World overview while the player arranges it, never smaller than 560 by 232",
-      [registered_box(:overview), window.call.at, window.call.size, window.call.movable, window.call.resizable, window.call.close_outside],
-      [["World overview", 560, 232, :both], [40, 32], [560, 404], true, true, true])
-check("the key help names the page's keys, and closes with the bound cancel keys and the hotkey", help_line.call,
-      "Left or right: page  Z: invite, duel or trade  X, Numpad 0 or F11: close")
-tell.call([players.call.node, "submit", 4])
-check("confirm on a player opens their menu, greying what cannot be taken now", menu.call, [["Invite to party", true], ["Duel", false]])
-pick.call(1, "refuse")
-check("a greyed choice says why, the menu staying open", [MGQ_MpOverworldSync::Status.lines.last.inspect.include?("Duels are not available right now."), menu.call.size], [true, 2])
+      [friend_cells.map { |cell| cell[:icons] || cell[:text] }, friend_cells[5].values_at(:color, :align)],
+      [[[451], "Friend", "", "Lv 30", "Part 2: Ilias side", "250 ms"], [:error, :end]])
+submit.call(4)
+check("confirm on a player opens their menu beside the row, greying what cannot be taken now with why as its tooltip",
+      [menu.call, $menu[0][1][:tooltip], $menu[1].values_at(:beside, :row)],
+      [[["Invite to party", true], ["Duel", false]], "Duels are not available right now.", ["#overview_players", 4]])
+refusing = logged_lines { pick.call(1, "refuse") }
+check("a greyed choice the player tries is logged with why", refusing.grep(/refused/), ["overview: Duel for Friend (seat 2) refused: Duels are not available right now."])
 $party_answer = party_view("me-p", [], -1, "inviting" => true, "invite_ends" => 900, "targets" => ["friend"])
 pick.call(0, nil)
 $party_answer = nil
-check("a choice taken runs and closes the menu", [$party_calls.last, MGQ_MpCoop::Party.targets, menu.call], [["invite", "friend"], ["friend"], nil])
-tell.call([players.call.node, "submit", 4])
+check("a choice taken runs", [$party_calls.last, MGQ_MpCoop::Party.targets], [["invite", "friend"], ["friend"]])
+submit.call(4)
 check("the menu then says the invite stands", menu.call.first[0], "Invited to party")
-tell.call([Mod_Framework::UI::Menu.current.node, "close"])
-check("cancel closes the menu, the overview staying open", [menu.call, overview.open?], [nil, true])
-tell.call([players.call.node, "submit", 1])
+cancel_menu.call
+check("closing the menu leaves the overview open", [$menu, overview.open?], [nil, true])
+submit.call(1)
 check("the player's own menu stops the invite", menu.call.map(&:first), ["Stop inviting"])
-tell.call([Mod_Framework::UI::Menu.current.node, "close"])
-reads = 0
-rows = overview.method(:rows)
-overview.define_singleton_method(:rows) { reads += 1; rows.call }
-overview.on_map
-overview.define_singleton_method(:rows, rows)
-check("a frame reads the players once", reads, 1)
-closing = logged_lines { tell.call([window.call.node, "close"]) }
-check("cancel closes the overview and gives the buttons back, which the log says",
-      [overview.open?, Mod_Framework::UI::Capture.on?, closing.grep(/overview: closed/)], [false, false, ["overview: closed: cancel"]])
+cancel_menu.call
+closing = logged_lines { close_overview.call(:cancel) }
+check("cancel closes the overview, which the log says", [overview.open?, closing.grep(/overview: closed/)], [false, ["overview: closed: cancel"]])
 open_overview.call
 $pressed = MGQ_MpHotkeys.code(:wheel)
 closing = logged_lines { overview.on_map }
@@ -357,16 +368,7 @@ check("the action wheel's hotkey closes the overview, which the log says",
 # The emote wheel keeps the overview shut, and a player nothing is offered with gets a menu that
 # says so.
 $emotes_open = true
-$pressed = 0x7A
-refused = logged_lines { overview.on_map }
-check("the overview stays shut while the emote wheel is open", overview.open?, false)
-check("which the log says under the hotkeys", refused.grep(/ignored/),
-      ["keys: hotkey F11 (World Overview) ignored: not on a quiet map, or the chat or a wheel is open"])
-$mgq_text_input = true
-$pressed = 0x7A
-typed = logged_lines { overview.on_map }
-$mgq_text_input = nil
-check("but not while the player types, where a hotkey bound to a letter is what they typed", [overview.open?, typed.grep(/ignored/)], [false, []])
+check("the overview stays shut while the emote wheel is open, its gate telling why", [open_overview.call, overview.open?, overview.open_reason], [nil, false, "a wheel is open"])
 $emotes_open = false
 registered = MGQ_MpActions.offers.dup
 MGQ_MpActions.offers.clear
@@ -384,19 +386,17 @@ check("and shows on the inviter's row in place of the story", row_at.call(2).cal
 check("but not on another player's", row_at.call(3).call, nil)
 check("outside a party the player's own row is white", [overview.rows.first.member, overview.party_rows], [false, []])
 
-# The Players tab marks the invite in gold while another page shows; the inviter's menu takes it.
+# The Players tab marks the invite while another page shows; the inviter's menu takes it.
 open_overview.call
-overview.turn_to(:world, "the test")
-tree_frame
-check("while the World page shows, the Players tab carries a gold mark for the invite waiting there", [overview.page, tabs.call.tab(0).badge], [:world, true])
-overview.turn_to(:players, "the test")
-check("which goes once the Players page shows", tabs.call.tab(0).badge, false)
-tell.call([players.call.node, "submit", row_named.call("Friend")])
-check("a click on the inviter's row opens their menu with the invite to accept", menu.call.map(&:first), ["Accept party invite", "Duel"])
+overview.turned(:world)
+check("a call waits for the player, which marks the Players tab while the World page shows", [overview.page, overview.call_waiting?], [:world, true])
+overview.turned(:players)
+submit.call(row_named.call("Friend"))
+check("confirm on the inviter's row opens their menu with the invite to accept", menu.call.map(&:first), ["Accept party invite", "Duel"])
 $party_answer = party_view("friend-p", [MGQ_MpOverworldSync::Peers.at(2)], 2, "admitted_me" => false)
 pick.call(0, nil)
 $party_answer = nil
-check("a click on a choice takes it", [$party_calls.last, MGQ_MpCoop::Party.id], [["join", 2], "friend-p"])
+check("taking a choice runs it", [$party_calls.last, MGQ_MpCoop::Party.id], [["join", 2], "friend-p"])
 set_lists.call("Ilias Village", true)
 check("in a party the player's own row is green, as the DLL marks it", overview.rows.first.member, true)
 check("the party box lists the party the DLL lists, with levels and the leader's crown", overview.party_rows.map { |row| [row.name, row.level, row.badge[1]] },
@@ -404,7 +404,7 @@ check("the party box lists the party the DLL lists, with levels and the leader's
 check("and where each one is", overview.party_rows.map(&:place), overview.party_rows.map { |row| overview.rows.find { |r| r.name.start_with?(row.name) }.place })
 
 # The party box's size hotkey, whose choice Player.ini keeps.
-overview.close
+overview.close("the test")
 check("the party box starts full", MGQ_MpPartyBox.small?, false)
 $pressed = MGQ_MpHotkeys.code(:party_box)
 MGQ_MpPartyBox.on_map
@@ -440,83 +440,33 @@ check("the Pocket Castle takes its short name", fit.call("Pocket Monster Lord's 
 check("then the part in brackets goes", fit.call("Tartarus (Western Hellgondo Continent)"), "Tartarus")
 check("then the name is cut before its floor", fit.call("Alliance of Wisdom Laboratory B2F"), "Alliance of Wisdom Labo... B2F")
 check("and a name without a floor is cut at its end", fit.call("A Very Long Place Name Without Any Floor"), "A Very Long Place Name With...")
-open_overview.call
-closing = logged_lines { tell.call([window.call.node, "close", "outside"]) }
-check("a click outside the window closes it", [overview.open?, closing.grep(/overview: closed/)], [false, ["overview: closed: a click outside the box"]])
-
-# The pick stays on its player while the rows change, and goes round at both ends.
-open_overview.call
-before_move = shown.call
-tell.call([players.call.node, "change", row_named.call("member")])
-$inbox << entry("message", 3, told(other.merge("map" => 7, "place" => "Forest")))
-MGQ_MpOverworldSync.tick
-set_lists.call("Forest", true)
-overview.on_map
-check("the rows set again with the players in a new order keep the cursor on the same player",
-      [before_move, shown.call, players.call.index == row_named.call("member")],
-      [["Ilias Village", "Me (you)", "member", "Forest", "Friend"], ["Ilias Village", "Me (you)", "Forest", "Friend", "member"], true])
-$inbox << entry("message", 3, told(other))
-MGQ_MpOverworldSync.tick
-set_lists.call("Ilias Village", true)
-overview.on_map
-last_row = players.call.rows.size - 1
-tell.call([players.call.node, "change", last_row])
-tell.call([players.call.node, "change", 1])
-round_trip = [players.call.index]
-tell.call([players.call.node, "change", last_row])
-check("the Players list goes round at both ends: Down on the last player picks the first and Up goes back to the last",
-      [$fake_tree.node_of(players.call)[:props]["round"], round_trip << players.call.index, menu.call], [true, [1, last_row], nil])
-
-# Numpad 0, which C# takes as cancel on every root, closes a player's menu and then the overview.
-tell.call([players.call.node, "submit", row_named.call("Friend")])
-opened_menu = menu.call ? true : false
-tell.call([Mod_Framework::UI::Menu.current.node, "close", "cancel"])
-menu_closed = [menu.call, overview.open?]
-closing = logged_lines { tell.call([window.call.node, "close", "cancel"]) }
-check("Numpad 0 closes the menu first, the overview staying, then the overview",
-      [opened_menu, menu_closed, overview.open?, closing.grep(/overview: closed/)], [true, [nil, true], false, ["overview: closed: cancel"]])
-
-# The hotkey closes the open overview.
-open_overview.call
-closing = logged_lines { $pressed = 0x7A; overview.on_map; tree_frame }
-check("the hotkey closes the open overview", [overview.open?, closing.grep(/overview: closed/)], [false, ["overview: closed: its hotkey"]])
-
-# The press of the action wheel's middle opens the overview without opening a player's menu.
-$buttons << :C
+# The action wheel's middle opens the overview, and a choice that leaves closes it.
 MGQ_MpActions.wheel_options[:CENTER].run.call
-2.times { tree_frame }
-$buttons.clear
-check("opening from the action wheel leaves no menu open", [overview.open?, overview.page, menu.call], [true, :players, nil])
-
-# A choice that leaves, such as a teleport, closes the overview.
+check("the action wheel's middle opens the overview on the Players page, no menu open", [overview.open?, overview.page, $menu], [true, :players, nil])
 taken = []
 leaving = MGQ_MpActions::Option.new("Teleport to Friend", lambda { taken << :teleport }, nil, nil, true)
 friend_now = overview.rows.find { |row| row.name == "Friend" }
-closing = logged_lines { overview.choose(leaving, friend_now); tree_frame }
+closing = logged_lines { overview.choose(leaving, friend_now) }
 check("a choice that leaves runs and closes the overview", [taken, overview.open?, closing.grep(/overview: closed/)],
       [[:teleport], false, ["overview: closed: the choice leaves it"]])
 
-# An event or a message starting closes the overview, and so does leaving the map.
+# An event, a message or the chat box starting, or leaving the map, has the window's gate close the
+# overview, the log naming why.
 open_overview.call
 $game_message.busy = true
-closing = logged_lines { tree_frame }
+message_reason = overview.open_reason
 $game_message.busy = false
-check("a message starting closes it", [overview.open?, closing.grep(/overview: closed/)], [false, ["overview: closed: an event, a message or the chat box took over"]])
-open_overview.call
 map_scene = SceneManager.scene
 SceneManager.scene = Scene_Battle.new
-closing = logged_lines { overview.tick(true); tree_frame }
+scene_reason = overview.open_reason
 SceneManager.scene = map_scene
-check("leaving the map closes it", [overview.open?, closing.grep(/overview: closed/)], [false, ["overview: closed: the map was left"]])
-
-# The chat box closes the overview.
-open_overview.call
 $pressed = 0x54
 map_frame
-overview.on_map
-closing = logged_lines { tree_frame }
-check("the chat box closes it", [MGQ_MpChat.typing?, overview.open?, closing.grep(/overview: closed/)],
-      [true, false, ["overview: closed: an event, a message or the chat box took over"]])
+check("a message, leaving the map and the chat box each have the gate answer why",
+      [message_reason, scene_reason, MGQ_MpChat.typing?, overview.open_reason],
+      ["an event, a message or the chat box took over", "the map was left", true, "an event, a message or the chat box took over"])
+closing = logged_lines { close_overview.call(overview.open_reason) }
+check("the log names the gate's answer", [overview.open?, closing.grep(/overview: closed/)], [false, ["overview: closed: an event, a message or the chat box took over"]])
 
 # Only the party's leader invites and removes.
 friend_peer = MGQ_MpOverworldSync::Peers.at(2)
@@ -652,25 +602,16 @@ $overviews.lists = { "players" => [[-1, "Me (you)", "Ilias Village", "Lv 55", "P
 page_of = lambda { |lines, rows, picks = [], head = {}| { "head" => { "title" => nil, "note" => nil, "lines" => lines, "entry" => nil }.merge(head), "rows" => rows, "picks" => picks } }
 $overviews.set("overview.world", page_of.call(["Players online: 3 / 8", "Each party plays its leader's story."], [["none", "Raid bosses fight in Raid Worlds."]]))
 
-# Left and Right turn the pages, round at either end.
-$buttons.clear
+# Turning to the World page reads it.
+MGQ_MpChat.stop_typing
 open_overview.call
-check("the overview opens on the Players page", overview.page, :players)
-tell.call([tabs.call.node, "step", 1])
+overview.turned(:world)
 world = overview.model(:world)
-check("Right turns to the World page, headed by the world's name with its type and difficulty, the DLL laying out the rest from the seats and the story the script hands",
+check("turning to the World page reads it, headed by the world's name with its type and difficulty, the DLL laying out the rest from the seats and the story the script hands",
       [overview.page, world.head.title, world.head.note, $overviews.asked("overview.world").last.values_at("seats", "story", "main"), world.head.lines, world.rows],
       [:world, "Test World", "Classic | Per player", [8, nil, nil], ["Players online: 3 / 8", "Each party plays its leader's story."], [[:none, "Raid bosses fight in Raid Worlds."]]])
-world_view = view_of.call(:world)
-check("its view shows the globe in the head and a dim line in place of raid bosses",
-      [world_view.instance_variable_get(:@head_value).values_at(:icon, :title, :note), world_view.list.rows], [[3988, "Test World", "Classic | Per player"], [{ :heading => "Raid bosses fight in Raid Worlds.", :color => :dim }]])
-check("a page view's key help names picking and reading on", help_line.call, "Left or right: page  Up or down: pick  Q or W: read on  X, Numpad 0 or F11: close")
-tell.call([tabs.call.node, "step", 1])
-check("Right turns on to the Quests page, in a Classic world too", overview.page, :quests)
-tell.call([tabs.call.node, "step", 1])
-check("past the last page it comes round to the first", overview.page, :players)
-2.times { tell.call([tabs.call.node, "step", -1]) }
-check("and Left turns back", overview.page, :world)
+check("its head shows the globe, its list a dim line in place of raid bosses", [world.head.icon, world.rows.map { |item| overview.entry_row(item) }],
+      [3988, [{ :none => "Raid bosses fight in Raid Worlds." }]])
 
 # The world turns into a Raid World with a difficulty and a story.
 $raid = true
@@ -697,9 +638,9 @@ level_40 = ["entry", ["Level 40", "Super Vibro Blade", nil, false, nil], ["level
 unlocks_head = { "title" => "Catch-up EXP", "note" => "Your level 30" }
 unlocks_folded = page_of.call(["Starts once the world's story raises the level cap."], [passed_fold, coming_fold, level_25, level_40], [0, 1, 2, 3], unlocks_head)
 $overviews.set("overview.unlocks", unlocks_folded)
-2.times { tell.call([tabs.call.node, "step", 1]) }
+overview.turned(:unlocks)
 unlocks = overview.model(:unlocks)
-check("in a Raid World Right turns on past the Quests page to the Unlocks page, the DLL laying it out from the levels the script hands",
+check("in a Raid World the Unlocks page, the DLL laying it out from the levels the script hands",
       [overview.page, $overviews.asked("overview.unlocks").last, unlocks.head.title, unlocks.head.note, unlocks.head.lines, unlocks.head.grid],
       [:unlocks, { "target" => nil, "level" => 30, "unlocks" => [[10, "Part 1", true, false], [25, "Part 2", false, true], [25, "Lime", false, true], [40, "Super Vibro Blade", false, false]] },
        "Catch-up EXP", "Your level 30", ["Starts once the world's story raises the level cap."], nil])
@@ -709,62 +650,46 @@ check("its pane lists key items and unlocks first, then moving on, the companion
       ["Level 25 · Due", [["Informant Papers", 230, nil], :gap, ["Moving on from Part 2", nil, nil], :gap, ["Lime", nil, nil], :gap, ["Hero Slash", 40, nil], :gap, ["Herb x3", 20, nil]]])
 mixed = overview.level_pane(overview::Level.new(25, [$unlocks[1].dup.tap { |part| part.got = true; part.due = false }, $unlocks[2]], false, true))
 check("a level whose unlocks differ keeps each one's note", [mixed.title, mixed.lines.map { |_, item| item && item.note }.compact.uniq], ["Level 25", ["Done", "Due"]])
-unlocks_view = view_of.call(:unlocks)
-check("its view lists the groups with their marks and the levels under them, each due one saying so",
-      unlocks_view.list.rows.map { |row| row.values_at(:label, :text, :right, :indent) },
-      [[nil, "▸ Passed (1)", nil, nil], [nil, "▾ Coming up (2)", nil, nil], ["Level 25", "Part 2, Lime", "Due", 8], ["Level 40", "Super Vibro Blade", nil, 8]])
-tell.call([unlocks_view.list.node, "change", 2])
-shown_pane = unlocks_view.instance_variable_get(:@pane_value)
-check("a level picked shows its pane, the things it brings in runs a gap apart",
-      [shown_pane[:title], shown_pane[:lines].map { |line| line.is_a?(Hash) ? line[:items].map { |item| [item[:text], item[:icon]] } : line }],
-      ["Level 25 · Due", [[["Informant Papers", 230]], :gap, [["Moving on from Part 2", nil]], :gap, [["Lime", nil]], :gap, [["Hero Slash", 40]], :gap, [["Herb x3", 20]]]])
+check("its list holds the groups, whether each is open, and the levels under them, each due one saying so",
+      unlocks.rows.map { |item| overview.entry_row(item).values_at(:group, :open, :label, :text, :right) },
+      [["passed", false, nil, "Passed (1)", nil], ["coming", true, nil, "Coming up (2)", nil], [nil, nil, "Level 25", "Part 2, Lime", "Due"], [nil, nil, "Level 40", "Super Vibro Blade", nil]])
+check("a level picked shows its pane, a group or the head without an entry none",
+      [overview.pick_pane(unlocks, unlocks.rows[2]).title, overview.pick_pane(unlocks, unlocks.rows[0]), overview.pick_pane(unlocks, :head)], ["Level 25 · Due", nil, nil])
 $overviews.set("overview.unlocks", page_of.call(unlocks_folded["head"]["lines"], [passed_open, level_10, coming_fold, level_25, level_40], [0, 1, 2, 3, 4], unlocks_head))
-tell.call([unlocks_view.list.node, "submit", 0])
+overview.fold(:unlocks, "passed", true)
 unlocks = overview.model(:unlocks)
-check("confirm on Passed has the DLL open it, and the page shows as the DLL lays it out anew",
-      [$overviews.asked("overview.fold").last, unlocks_view.list.rows.first(2).map { |row| row[:text] }], [{ "page" => "unlocks", "key" => "passed", "open" => true }, ["▾ Passed (1)", "Part 1"]])
+check("opening Passed has the DLL open it, and the page reads its model anew",
+      [$overviews.asked("overview.fold").last, unlocks.rows.first(2).map { |item| overview.entry_row(item)[:text] }], [{ "page" => "unlocks", "key" => "passed", "open" => true }, ["Passed (1)", "Part 1"]])
 check("a passed level's pane says so, its unlocks dimmed",
       [overview.pane_of(unlocks.rows[1][1]).title, overview.pane_of(unlocks.rows[1][1]).lines.map { |kind, item| item ? [item.name, item.note, item.dim] : kind }],
       ["Level 10, passed", [["Moving on from Part 1", nil, true], :gap, ["Herb", nil, true]]])
 $overviews.set("overview.unlocks", unlocks_folded)
-tell.call([unlocks_view.list.node, "submit", 0])
+overview.fold(:unlocks, "passed", false)
 $overviews.set("overview.unlocks", page_of.call(unlocks_folded["head"]["lines"], [passed_fold, coming_shut], [0, 1], unlocks_head))
-tell.call([unlocks_view.list.node, "submit", 1])
-check("confirm folds it again, and Coming up the same way", [$overviews.asked("overview.fold").last(2), unlocks_view.list.rows.map { |row| row[:text] }],
-      [[{ "page" => "unlocks", "key" => "passed", "open" => false }, { "page" => "unlocks", "key" => "coming", "open" => false }], ["▸ Passed (1)", "▸ Coming up (2)"]])
-$overviews.set("overview.unlocks", unlocks_folded)
-tell.call([unlocks_view.list.node, "submit", 1])
+overview.fold(:unlocks, "coming", false)
+check("folding it again, and Coming up the same way, goes through the DLL",
+      [$overviews.asked("overview.fold").last(2), overview.model(:unlocks).rows.map { |item| overview.entry_row(item).values_at(:text, :open) }],
+      [[{ "page" => "unlocks", "key" => "passed", "open" => false }, { "page" => "unlocks", "key" => "coming", "open" => false }], [["Passed (1)", false], ["Coming up (2)", false]]])
 $unlocks = []
 $overviews.set("overview.unlocks", page_of.call(unlocks_folded["head"]["lines"], [["none", "Nothing to catch up with yet."]], [], unlocks_head))
 overview.forget_model(:unlocks)
-overview.on_map
-check("with nothing unlocked yet it shows the DLL's line, dim", [$overviews.asked("overview.unlocks").last["unlocks"], unlocks_view.list.rows],
-      [[], [{ :heading => "Nothing to catch up with yet.", :color => :dim }]])
+check("with nothing unlocked yet it shows the DLL's line", [overview.model(:unlocks).rows.map { |item| overview.entry_row(item) }, $overviews.asked("overview.unlocks").last["unlocks"]],
+      [[{ :none => "Nothing to catch up with yet." }], []])
 members = $game_party.all_members
 $game_party.all_members = [Actor.new(30, true), Actor.new(20, false), Actor.new(99, false)]
 $world_story = $world_story.merge("caps" => [10, 40, 65])
 overview.forget_model(:unlocks)
-overview.on_map
+overview.model(:unlocks)
 check("once the world's story raised the level cap, the DLL hears the level characters catch up to, and the head lists each formation member's level and catch-up experience",
       [$overviews.asked("overview.unlocks").last["target"], overview.model(:unlocks).head.grid], [40, [["Luka", "Lv 30", "x4"], ["Lv20", "Lv 20", "x7"]]])
-check("its view shows them in a grid, the factor in the title color", unlocks_view.instance_variable_get(:@head_value)[:grid],
-      [["Luka", "Lv 30", { :text => "x4", :color => :title }], ["Lv20", "Lv 20", { :text => "x7", :color => :title }]])
 $uncounted = ["Lv20"]
 overview.forget_model(:unlocks)
-overview.on_map
 check("a character the catch-up does not count, such as a story's temporary party or a companion on a visit, is left out", overview.model(:unlocks).head.grid, [["Luka", "Lv 30", "x4"]])
 $uncounted = nil
 $game_party.all_members = members
 $world_story = $world_story.reject { |key, _| key == "caps" }
-$raid = false
-overview.on_map
-check("a Classic world has no Unlocks page, which turns back to the Players page",
-      [overview.page, overview.pages.map(&:first), tabs.call.tab(3).visible?], [:players, [:players, :world, :quests], false])
 
 # The World page of a Raid World: its head, and its raid bosses under the story's sections.
-$raid = true
-overview.on_map
-check("the Unlocks page coming back leaves the page shown", overview.page, :players)
 # A raid boss's row as the DLL lays it out: its share left over a gauge, and its pane's lines.
 boss_row = lambda do |section, name, share, parts, defeated, by, tier|
   pane = [["text", section, 0]] + (tier ? [["text", tier, 0]] : []) + [["gauge", share, parts]] + (by ? [["text", "Last hurt by #{by}.", 0]] : [])
@@ -772,7 +697,7 @@ boss_row = lambda do |section, name, share, parts, defeated, by, tier|
 end
 bandits = boss_row.call("Part 1", "Four bandits", "100%", 1_000_000, false, nil, "Tier 9: enemies have HP x5.")
 $overviews.set("overview.world", page_of.call(["Players online: 3 / 8", "Story: Part 2"], [["fold", [nil, "▾ Part 1 (1)", nil, false, nil], ["fold", "Part 1", "Part 1 (1)", true]], bandits], [0, 1]))
-overview.turn_to(:world, "the test")
+overview.turned(:world)
 world = overview.model(:world)
 sections = MGQ_MpRaidBosses.sections
 asked_world = $overviews.asked("overview.world").last
@@ -970,27 +895,22 @@ $raid = true
 $data_actors[540] = LooksActor.new(540, "Amira", "Civlian01_cip", 0, "amira_fc1", 0)
 $data_actors[56] = LooksActor.new(56, "Rami", "Evil01_cip", 5, "rami_fc", 1)
 overview.instance_variable_set(:@looks_by_name, nil)
-overview.turn_to(:quests, "the test")
-tree_frame
-quests = view_of.call(:quests)
-head = quests.instance_variable_get(:@head_value)
-check("the Quests page heads Amira by her map sprite with the main quest's first sentence, picked first with the whole quest in the pane",
-      [overview.page, head[:title], head[:lines], head[:figure].to_a, head[:pick], quests.instance_variable_get(:@pane_value)[:lines]],
-      [:quests, "Main quest", ["Cross the mountains."], ["Civlian01_cip", 0, "amira_fc1", 0], :head, ["Cross the mountains.", :gap, "Buy golden equipment."]])
+overview.turned(:quests)
+quests = overview.model(:quests)
+check("the Quests page heads Amira by her map sprite with the main quest's first sentence, the whole quest in the pane of the head",
+      [overview.page, quests.head.title, quests.head.lines, overview.picture_of(quests.head.looks).keys, quests.head.looks.to_a, overview.pick_pane(quests, :head).lines],
+      [:quests, "Main quest", ["Cross the mountains."], [:figure], ["Civlian01_cip", 0, "amira_fc1", 0], [[:text, "Cross the mountains."], [:gap], [:text, "Buy golden equipment."]]])
 check("its list holds the groups and under them the quests, numbered or by who asks",
-      quests.list.rows.map { |row| row.values_at(:label, :text) },
-      [[nil, "▾ Side quests (2)"], ["1.", "Strange crying near Iliasville."], ["2.", "A troublesome job."],
-       [nil, "▾ Companion quests (3)"], ["Rami", "Take me to Harpy Village♪"], ["Kamuro", "Homework."], ["ポチ", "犬に会いたい"]])
-tell.call([quests.list.node, "change", 4])
-pane = quests.instance_variable_get(:@pane_value)
+      quests.rows.map { |item| overview.entry_row(item).values_at(:label, :text) },
+      [[nil, "Side quests (2)"], ["1.", "Strange crying near Iliasville."], ["2.", "A troublesome job."],
+       [nil, "Companion quests (3)"], ["Rami", "Take me to Harpy Village♪"], ["Kamuro", "Homework."], ["ポチ", "犬に会いたい"]])
+pane = overview.pick_pane(quests, quests.rows[4])
 check("a companion's request picked shows in the pane by its title, beside the companion's sprite",
-      [pane[:title], pane[:figure].to_a, pane[:lines]], ["Request · Rami", ["Evil01_cip", 5, "rami_fc", 1], ["Take me to Harpy Village♪"]])
+      [pane.title, pane.looks.to_a, pane.lines], ["Request · Rami", ["Evil01_cip", 5, "rami_fc", 1], [[:text, "Take me to Harpy Village♪"]]])
 overview.choose_portraits("Faces")
-overview.on_map
-check("with faces picked they show by their faces", [quests.instance_variable_get(:@head_value)[:face].to_a, quests.instance_variable_get(:@pane_value)[:face].to_a],
-      [["Civlian01_cip", 0, "amira_fc1", 0], ["Evil01_cip", 5, "rami_fc", 1]])
+check("with faces picked they show by their faces", [overview.picture_of(quests.head.looks).keys, overview.picture_of(pane.looks).keys], [[:face], [:face]])
 overview.choose_portraits("Sprites")
-check("Amira's Library picture lies faintly behind the page at its bottom right", quests.backdrop,
+check("Amira's Library picture lies faintly behind the page at its bottom right", overview.backdrop(:quests),
       { :portrait => overview::AMIRA, :opacity => overview::BACKDROP_OPACITY, :anchor => :bottom_right })
 $frame = $frame.to_i + overview::READ_FRAMES
 kept = overview.model(:quests)
@@ -1009,16 +929,14 @@ data = overview.model(:quests)
 check("with nothing to tell the DLL hears no quest, and the page has no main quest to pick",
       [$overviews.asked("overview.quests").last, data.head.entry, data.picks.map { |pick| pick.value[2] }],
       [{ "main" => nil, "side" => [], "companion" => [] }, nil, ["Side quests (0)", "Companion quests (0)"]])
-overview.on_map
-check("its view: no pick on the head, a dim line under each group", [quests.instance_variable_get(:@head_value).key?(:pick), quests.list.rows.map { |row| row[:heading] || row[:text] }],
-      [false, ["▾ Side quests (0)", "None right now.", "▾ Companion quests (0)", "None right now."]])
+check("its list: a line under each group", data.rows.map { |item| row = overview.entry_row(item); row[:none] || row[:text] },
+      ["Side quests (0)", "None right now.", "Companion quests (0)", "None right now."])
 $overviews.set("overview.quests", page_of.call(["None right now."], [["fold", [nil, "▸ Side quests (0)", nil, false, nil], ["fold", "side", "Side quests (0)", false]], companion_none,
                                                                      ["none", "None right now."]], [0, 1], "title" => "Main quest"))
-tell.call([quests.list.node, "submit", 0])
-check("the quest groups fold too, through the DLL", [$overviews.asked("overview.fold").last, quests.list.rows.first[:text]],
-      [{ "page" => "quests", "key" => "side", "open" => false }, "▸ Side quests (0)"])
-tell.call([quests.list.node, "submit", 0])
-overview.turn_to(:world, "the test")
+overview.fold(:quests, "side", false)
+check("the quest groups fold too, through the DLL", [$overviews.asked("overview.fold").last, overview.entry_row(overview.model(:quests).rows.first)[:open]],
+      [{ "page" => "quests", "key" => "side", "open" => false }, false])
+overview.turned(:world)
 $frame = $frame.to_i + overview::READ_FRAMES
 $data_common_events = nil
 objective.call(5)
@@ -1045,28 +963,24 @@ check("the tables hand the DLL each pooled boss's section and tier, also of a fi
       [["Chaos route", 2], ["Angelic Dominion", 4], [nil, nil]])
 
 # The World page in its view: the raid bosses under their sections, each with a thin gauge, a
-# boss's pane, the title and the gold mark of a call waiting on the Players page.
+# boss's pane, the title and the mark of a call waiting on the Players page.
 overview.forget_model(:world)
-overview.on_map
-world_view = view_of.call(:world)
-harpy_row = world_view.list.rows.find { |row| row[:text] == "Queen Harpy" }
-bandits_row = world_view.list.rows.find { |row| row[:text] == "Four bandits" }
+world = overview.model(:world)
+row_of = lambda { |name| world.rows.find { |kind, entry| kind == :entry && entry.row.text == name } }
+harpy_row = overview.entry_row(row_of.call("Queen Harpy"))
+bandits_row = overview.entry_row(row_of.call("Four bandits"))
 check("a raid boss's row: its name, at the right its share over a thin gauge; a defeated one says so, dim, without a gauge",
-      [harpy_row.values_at(:right, :right_color, :gauge, :faint, :indent), bandits_row.values_at(:right, :gauge, :faint)],
-      [["40%", :dim, 0.4, false, 8], ["Defeated", nil, true]])
-tell.call([world_view.list.node, "change", world_view.list.rows.index(harpy_row)])
-check("its pane: its section, its tier, a gauge with its share and who last hurt it", world_view.instance_variable_get(:@pane_value),
-      { :title => "Queen Harpy", :lines => ["Part 1", "Tier 9: enemies have HP x5.", { :gauge => 0.4, :text => "40%" }, "Last hurt by Player A."] })
-labels = [:@name_label, :@tail_label, :@party_label].map { |name| overview.instance_variable_get(name) }
-check("the title says the world's name, its type and difficulty after it, and the party at the right; a long name gives way first",
-      [labels.map { |label| label.text }, labels[2].visible?, labels.map { |label| label.shrink ? true : false }],
-      [["Test World", " | Raid | Hard", "Party 2 / 4"], true, [true, false, false]])
-check("the invite from afar still waits on the Players page, which marks its tab in gold while the World page shows", tabs.call.tab(0).badge, true)
+      [harpy_row.values_at(:right, :right_color, :gauge, :faint), bandits_row.values_at(:right, :gauge, :faint)],
+      [["40%", :dim, 0.4, false], ["Defeated", nil, true]])
+check("its pane: its section, its tier, a gauge with its share and who last hurt it", overview.pick_pane(world, row_of.call("Queen Harpy")).to_a,
+      ["Queen Harpy", nil, [[:text, "Part 1"], [:text, "Tier 9: enemies have HP x5."], [:gauge, 0.4, "40%"], [:text, "Last hurt by Player A."]]])
+check("the title says the world's name, its type and difficulty after it, and the party", [overview.world_name, overview.title_tail, overview.party_text],
+      ["Test World", " | Raid | Hard", "Party 2 / 4"])
+check("the invite from afar still waits on the Players page, which marks its tab while the World page shows", overview.call_waiting?, true)
 $inbox << entry("message", 2, told(friend.merge("party" => "friend-p", "invite" => 0)))
 take_party("me-p2", [member_peer])
 MGQ_MpOverworldSync.tick
-overview.on_map
-check("without a call the tab has no mark", tabs.call.tab(0).badge, false)
+check("without a call the tab has no mark", overview.call_waiting?, false)
 $pools = {}
 $raid = false
 
@@ -1086,132 +1000,33 @@ MGQ_MpCoop::Offers.peer_option(member_peer).run.call
 answer_confirm(true)
 check("yes removes them", removed, [3])
 MGQ_MpCoop::Party.define_singleton_method(:remove, remove)
-overview.turn_to(:players, "the test")
-overview.close
+overview.close("the test")
 open_overview.call
-tell.call([players.call.node, "submit", players.call.index])
+submit.call(row_named.call("Me (you)"))
 check("the player's own menu offers to leave", menu.call.first[0], "Leave the party")
 pick.call(0, nil)
 check("leaving asks first, closing the menu, and the overview stays", [confirm.open?, confirm.instance_variable_get(:@question), menu.call, overview.open?], [true, "Leave the party?", nil, true])
 answer_confirm(false)
 check("no keeps the party", [confirm.open?, MGQ_MpCoop::Party.id.nil?], [false, false])
 leave_option = MGQ_MpCoop::Offers.party_options(true).first
-tell.call([players.call.node, "submit", players.call.index])
+submit.call(row_named.call("Me (you)"))
 pick.call(0, nil)
 $party_answer = party_view(nil)
 answer_confirm(true)
 $party_answer = nil
 check("yes leaves it through the DLL", [confirm.open?, $party_calls.last, MGQ_MpCoop::Party.id], [false, ["leave", nil], nil])
-overview.close
+overview.close("the test")
 leave_option.run.call
 notices = MGQ_MpOverworldSync::Status.lines.size
 answer_confirm(true)
 check("yes once the party dissolved under the box leaves nothing, so nothing says so", [confirm.open?, MGQ_MpOverworldSync::Status.lines.size], [false, notices])
 
-# Pages of other mods: a mod adds one to ModPages, which shows as a tab while it has something to
-# show, laid out like the World page; confirm moves the cursor into the pane, onto its controls and
-# the buttons beside its title.
-
-# Stands in for another mod's page: two characters, two controls, a Reset button with a menu of
-# one step; the steps and paths taken kept in $mod_adjusted and $mod_chosen.
-class TestModPage
-  # Whether the page has something to show.
-  attr_accessor :shown
-
-  # Its tab's title.
-  def title; "Points"; end
-  # Whether it shows, as the test sets it.
-  def shown?; @shown; end
-  # Its head: title, note, lines and portrait.
-  def head; ["Job points", "9 points", ["Slots cost points."], ["Granberia_cip", 0, "granberia_fc", 1]]; end
-  # One group with both characters.
-  def groups; [["Party", [1, 2]]]; end
-  # A character's row.
-  def row(key); [key == 1 ? "Luka" : "Alice", "Hero / Human", "#{key} free", key == 2]; end
-  # A character's pane: looks, a text, two controls, a gap and the points under the name.
-  def pane(_key)
-    ["Luka", ["Hero_cip", 1, "luka_fc", 2],
-     [[:text, "Points per tier."], [:control, :jobs, "Basic jobs", "1/2", :good, false, true], [:control, :races, "Basic races", "1/1", :warn, true, true], [:gap]], "3 of 9 points free"]
-  end
-  # Records the step; raising the races is refused.
-  def adjust(key, id, step); $mod_adjusted << [key, id, step]; id == :races && step > 0 ? "No room." : nil; end
-  # The Reset button, then which job to keep, of which one cannot be taken.
-  def menu(_key, path)
-    case path
-    when [] then [["Reset", true]]
-    when [0] then [["Keep Hero", true], ["Keep Fighter", false]]
-    else []
-    end
-  end
-  # Records the path taken and tells what happened.
-  def choose(key, path); $mod_chosen << [key, path]; "Reset Luka."; end
-end
-
-$mod_adjusted = []
-$mod_chosen = []
-mod_page = TestModPage.new
-ModPages.add(mod_page)
-overview.open("the test")
-tree_frame
-check("a mod's page with nothing to show has no tab", overview.pages.assoc(:mod_0), nil)
-mod_page.shown = true
-$frame += 1
-check("one with something to show follows the own pages", overview.pages.last, [:mod_0, "Points"])
-overview.turn_to(:mod_0, "the test")
-tree_frame
-points = view_of.call(:mod_0)
-mod_tab = tabs.call.tab(overview.instance_variable_get(:@tab_keys).index(:mod_0))
-mod_head = points.instance_variable_get(:@head_value)
-check("its tab shows, and its page view reads the page: its head with its portrait, its group and each entry's row",
-      [[mod_tab.text, mod_tab.visible?], mod_head.values_at(:title, :note, :lines), mod_head[:face].to_a, points.list.rows.map { |row| row.values_at(:label, :text, :right, :faint) }],
-      [["Points", true], ["Job points", "9 points", ["Slots cost points."]], ["Granberia_cip", 0, "granberia_fc", 1],
-       [[nil, "▾ Party (2)", nil, nil], ["Luka", "Hero / Human", "1 free", false], ["Alice", "Hero / Human", "2 free", true]]])
-tell.call([points.list.node, "change", 1])
-pane = points.instance_variable_get(:@pane_value)
-check("an entry's pane: its title, the line under it, its text, its controls, its gap and its button",
-      [pane[:title], pane[:subtitle], pane[:lines], pane[:buttons]],
-      ["Luka", "3 of 9 points free", ["Points per tier.", { :control => :jobs, :text => "Basic jobs", :value => "1/2", :color => :good, :less => false, :more => true },
-                                      { :control => :races, :text => "Basic races", :value => "1/1", :color => :warn, :less => true, :more => true }, :gap],
-       [{ :text => "Reset", :enabled => true }]])
-controls = points.instance_variable_get(:@controls)[0]
-tell.call([controls.node, "side", 0, 1])
-check("Right changes a control through the page", $mod_adjusted.last, [1, :jobs, 1])
-tell.call([controls.node, "side", 1, 1])
-check("a change the page refuses tells why", [$mod_adjusted.last, MGQ_MpOverworldSync::Status.lines.last.inspect.include?("No room.")], [[1, :races, 1], true])
-tell.call([points.instance_variable_get(:@buttons)[0].node, "click"])
-check("the button beside the title opens the page's menu, a choice that cannot be taken greyed", menu.call, [["Keep Hero", true], ["Keep Fighter", false]])
-pick.call(0, nil)
-check("the last choice runs through the page with the whole path, and what the page answers is told",
-      [$mod_chosen, menu.call, MGQ_MpOverworldSync::Status.lines.last.inspect.include?("Reset Luka.")], [[[1, [0, 0]]], nil, true])
-$fake_tree.post_states({ controls.node => Mod_Framework::UI::Tree::FOCUSED })
-tree_frame
-overview.on_map
-check("in the pane the key help names the keys that go back, the bound cancel keys first", help_line.call,
-      "Up or down: pick  Left or right: change  Z: press  X, Numpad 0 or Ctrl: back")
-$sounds.clear
-$buttons << :CTRL
-Mod_Framework::UI::Tree.send(:press_buttons)
-check("Ctrl takes the focus back to the list", [$sounds, Mod_Framework::UI::Tree.instance_variable_get(:@focus)], [["cancel"], points.list.node])
-tree_frame
-mod_page.shown = false
-$frame += 1
-overview.on_map
-check("once it has nothing to show its tab goes and the overview turns back to the Players page", [overview.pages.assoc(:mod_0), overview.page, mod_tab.visible?], [nil, :players, false])
-overview.close
-
-# Outside a world the hotkey opens the overview too, as Single player, with the Quests page and
-# the pages of other mods.
+# Outside a world the hotkey opens the overview too, as Single player, on the Quests page.
 $open = false
-mod_page.shown = true
-$frame += 1
-$pressed = 0x7A
-overview.on_map
-check("outside a world the hotkey opens the overview on the Quests page, titled Single player, with the pages of other mods",
-      [overview.open?, overview.page, overview.pages, overview.world_name, overview.title_tail],
-      [true, :quests, [[:quests, "Quests"], [:mod_0, "Points"]], "Single player", ""])
-$pressed = nil
-overview.tick(true)
-check("a world opening under it closes it", overview.open?, false)
+open_overview.call
+check("outside a world the hotkey opens the overview on the Quests page, titled Single player",
+      [overview.open?, overview.page, overview.world_name, overview.title_tail], [true, :quests, "Single player", ""])
 $open = true
-mod_page.shown = false
+check("a world opening under it has the gate close it", overview.open_reason, "a world opened")
+close_overview.call(overview.open_reason)
 MGQ_MpCoopSquad.define_singleton_method(:own_order, own_order)

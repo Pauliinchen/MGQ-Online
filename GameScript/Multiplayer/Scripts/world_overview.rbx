@@ -2,6 +2,9 @@
 #  world_overview.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Rebuilt the overview as a window of the UI layer with its pages as tabs that wrap
+#                            - Took other mods' pages as tabs they append through UI.patch, without a cap
+#                            - Showed why a greyed choice of a player's menu cannot be taken as its tooltip
 #      Paulinchen  2026-11-05: Read the story's ids from story_ids.rbx
 #      Paulinchen  2026-11-01: Named the Mod Framework's interface by its own name
 #                            - Built the overview on the Mod Framework's window, tabs, list, page views and menus
@@ -74,16 +77,17 @@
 #      Paulinchen  2026-10-01: Created
 #
 #----------------------------------------------------------------
-# The World overview: a framework Window over the map, opened with its hotkey (F11 unless the player
-# binds another, see core_hotkeys.rbx) or the action wheel's middle, moved and resized with the
-# left Alt held, its place kept under LAYOUT_ID, with its pages on tabs turned with Left and Right
-# or a click. The Players page lists every player of the world online, grouped by where they are,
-# with their formation's highest level, their place in the story and their ping; a player picked
-# opens a menu of what the scripts offer, such as party invites, duels and trades. The other pages
-# are page views, see world_overview_pages.rbx and world_overview_mods.rbx. It also lists the
-# player's party for the party box of ui_party_box.rbx and, in a Raid World, everyone on the
-# player's map for the map box, and tells the others where the player is, their levels and their
-# place in the story in the state overworld_sync.rbx sends.
+# The World overview: a window of the Mod Framework's UI layer over the map (WorldOverview), opened
+# with its hotkey (F11 unless the player binds another, see core_hotkeys.rbx) or the action wheel's
+# middle, moved and resized with the left Alt held, its place kept under the id ID, with its pages
+# on tabs that Left, Right, Tab or a click turn. The Players page lists every player of the world
+# online, grouped by where they are, with their formation's highest level, their place in the story
+# and their ping; a player picked opens a menu of what the scripts offer, such as party invites,
+# duels and trades. The other pages are page views, see world_overview_pages.rbx; other mods append
+# their own tabs to "#overview_tabs" through UI.patch "#overview". It also lists the player's party
+# for the party box of ui_party_box.rbx and, in a Raid World, everyone on the player's map for the
+# map box, and tells the others where the player is, their levels and their place in the story in
+# the state overworld_sync.rbx sends.
 module MGQ_MpWorldOverview
   # The framework's components, short.
   UI = Mod_Framework::UI
@@ -122,23 +126,13 @@ module MGQ_MpWorldOverview
   # Texts the story's and the title's caches keep before they forget them all.
   TEXTS_KEPT = 256
 
-  # The overview's pages in the order Left and Right pass through them, each with its tab's title:
-  # the players online, the world itself, the quests under way, and in a Raid World what the
-  # catch-up hands out by level.
+  # The overview's own pages in the order Left and Right pass through them, each with its tab's
+  # title: the players online, the world itself, the quests under way, and in a Raid World what
+  # the catch-up hands out by level. Other mods' tabs follow them.
   PAGES = [[:players, "Players"], [:world, "World"], [:quests, "Quests"], [:unlocks, "Unlocks"]]
-
-  # The pages only a Raid World shows.
-  RAID_PAGES = [:unlocks]
-
-  # The pages the overview shows outside a world, the only ones that work there, with the pages of
-  # other mods after them.
-  SOLO_PAGES = [:quests]
 
   # What the title says outside a world.
   SOLO_TITLE = "Single player"
-
-  # The most pages of other mods the overview shows, see world_overview_mods.rbx.
-  MOD_TABS = 2
 
   # How the Unlocks page heads what comes at a level.
   LEVEL_HEADING = "Level %d"
@@ -254,11 +248,18 @@ module MGQ_MpWorldOverview
   #   and color, shown in place of their place in the story.
   Row = Struct.new(:player, :name, :place, :level, :story, :ping, :icon, :member, :badge, :call)
 
-  # The window's id among those the player moves and resizes, which keeps the place stored before.
-  LAYOUT_ID = :overview
+  # The window's id, under which the place the player stored before stays theirs, and which other
+  # mods' UI.patch names.
+  ID = :overview
 
-  # The window's name while the player arranges the boxes.
-  LAYOUT_NAME = "World overview"
+  # The id of the row of tabs, which other mods append their tabs to.
+  TABS_ID = :overview_tabs
+
+  # The id of the Players page's list.
+  PLAYERS_ID = :overview_players
+
+  # The window's name while the player arranges the windows.
+  PLACE_NAME = "World overview"
 
   # Where the window starts.
   DEFAULT_AT = [40, 32]
@@ -269,12 +270,6 @@ module MGQ_MpWorldOverview
   # The least size: the Players page's columns, and a page's head over three rows of its list.
   MIN_SIZE = [560, 232]
 
-  # Room between the window's edge and what it holds.
-  MARGIN = 8
-
-  # Room between the world's name and the party in the title.
-  TITLE_GAP = 12
-
   # The widths of the Players page's columns: the icons, the name, the party, the level, the place
   # in the story (the rest) and the ping.
   PLAYER_CELLS = [52, 172, 52, 56, nil, 64]
@@ -282,11 +277,21 @@ module MGQ_MpWorldOverview
   # Width of a player's menu.
   MENU_WIDTH = 210
 
-  # Why the overview closes while it may no longer stay open, see stay_reason.
+  # Frames between two looks at what the window shows, such as the players' lists.
+  WATCH_FRAMES = 10
+
+  # Why the overview closes while it may no longer stay open, see open_reason.
   TAKEN_OVER = "an event, a message or the chat box took over"
 
   # Why the overview closed, by the framework's reason, for the log.
-  CLOSE_REASONS = { :cancel => "cancel", :outside => "a click outside the box", :scene => "the map was left", :script => "closed from outside" }
+  CLOSE_REASONS = { :cancel => "cancel", :outside => "a click outside the box", :hotkey => "its hotkey", :scene => "the map was left",
+                    :script => "closed from outside" }
+
+  # The key help's entry that turns the pages.
+  TURN_ENTRY = { :key => "Left or right", :text => "page" }
+
+  # The key help's entry that closes; the framework names the overview's hotkey beside it.
+  CLOSE_ENTRY = { :button => :B, :text => "close" }
 
   # The page shown, see PAGES.
   @page = :players
@@ -303,7 +308,7 @@ module MGQ_MpWorldOverview
   #
   # @return [Boolean] Whether it is.
   def self.open?
-    @window ? @window.open? : false
+    @open == true
   end
 
   # The action wheel's middle choice, which opens the overview.
@@ -313,107 +318,111 @@ module MGQ_MpWorldOverview
     MGQ_MpActions::Option.new("World (#{MGQ_MpHotkeys.label(:overview)})", lambda { open("the action wheel") }, nil, WORLD_ICON)
   end
 
-  # Opens the overview on the Players page, on the player's own row; outside a world on its first
-  # page.
+  # Opens the overview on the Players page, on the player's own row; outside a world on the Quests
+  # page. Its hotkey opens it through the framework too.
   #
   # @param via [String] What opened it, for the log.
-  def self.open(via = "the action wheel")
+  def self.open(via)
     return if open?
 
-    @in_world = MGQ_MpOverworldSync.in_world?
-    window
-    sync_tabs
-    show_page(pages.assoc(:players) ? :players : pages.first[0])
-    refresh
-    @window.open
-    return log("did not open through #{via}, see the Mod Framework's log") unless open?
-
-    own = @players.rows.index { |row| row.is_a?(Hash) && row[:key] == :me }
-    @players.index = own if own
-    focus_page
-    players = @players.rows.count { |row| row.is_a?(Hash) && row.key?(:cells) }
-    log("opened through #{via}, #{@in_world ? "#{players} player(s) online" : 'outside a world'}")
+    @via = via
+    UI.open(WorldOverview) || log("did not open through #{via}, see the Mod Framework's log")
+    nil
   end
 
-  # Closes the overview, if it is open, and gives the buttons back.
+  # Closes the overview, if it is open.
   #
   # @param reason [String] Why, for the log.
   def self.close(reason = "closed from outside")
-    return unless open?
+    return unless open? && @view
 
     @close_reason = reason
-    @window.close
+    @view.close
   end
 
-  # Reports whether the overview may open: on the map, in a world or outside one, with no event,
-  # message, chat box, action wheel or emote wheel open.
+  # Tells why the overview may not open or stay open now: off the map, a world opened or closed
+  # under it, an event, a message or the chat box taking over, or a wheel open as it would open.
   #
-  # @return [Boolean] Whether it may.
-  def self.openable?
-    SceneManager.scene.is_a?(Scene_Map) && MGQ_MpOverworldSync.map_quiet? &&
-      !MGQ_MpChat.typing? && !MGQ_MpActions.wheel.open? && !MGQ_MpEmotes.wheel.open?
+  # @return [String, nil] Why, nil while it may.
+  def self.open_reason
+    return "the map was left" unless SceneManager.scene.is_a?(Scene_Map)
+    return (in_world? ? "a world opened" : "the world closed") if open? && in_world? != @in_world
+    return TAKEN_OVER unless MGQ_MpOverworldSync.map_quiet? && !MGQ_MpChat.typing?
+    return "a wheel is open" if !open? && (MGQ_MpActions.wheel_open? || MGQ_MpEmotes.wheel.open?)
+
+    nil
   end
 
-  # Opens or closes the overview with its hotkey, closes it with the action wheel's, and keeps it
-  # up to date while it is open. Called by the map every frame.
+  # Notes the overview open, as its window shows.
+  #
+  # @param view [WorldOverview] The window's component.
+  def self.opened(view)
+    @open = true
+    @view = view
+    @in_world = in_world?
+    players = player_rows.count { |row| row.key?(:cells) }
+    log("opened through #{@via || 'its hotkey'}, #{@in_world ? "#{players} player(s) online" : 'outside a world'}")
+    @via = nil
+  end
+
+  # Follows the window closing, and logs why.
+  #
+  # @param why [Symbol, String] The framework's reason, or the gate's text, see open_reason.
+  def self.closed(why)
+    reason = @close_reason || CLOSE_REASONS.fetch(why, why.to_s)
+    @open = false
+    @view = nil
+    @close_reason = nil
+    log("closed: #{reason}")
+  end
+
+  # Closes the overview with the action wheel's hotkey, which the window does not hear while it
+  # holds the game's buttons. Called by the map every frame.
   def self.on_map
-    return close("the action wheel's hotkey") if open? && MGQ_MpHotkeys.pressed?(:wheel)
-
-    if MGQ_MpHotkeys.pressed?(:overview)
-      return close("its hotkey") if open?
-      return MGQ_MpHotkeys.log_refusal(:overview, "not on a quiet map, or the chat or a wheel is open") unless openable?
-
-      Sound.play_ok
-      open("its hotkey")
-    end
-    return unless open?
-
-    refresh
+    close("the action wheel's hotkey") if open? && MGQ_MpHotkeys.pressed?(:wheel)
   rescue => e
     log("overview failed: #{e.class}: #{e.message}")
     close("it failed")
   end
 
-  # Tells whether the open overview may stay: still in a world, or still outside one, as it opened,
-  # with no event or message, nor the chat box, which its hotkey opens over it.
+  # Tells whether a world is open.
   #
-  # @return [Boolean, String] true while it may, else why not.
-  def self.stay_reason
-    stays = MGQ_MpOverworldSync.in_world? == @in_world && MGQ_MpOverworldSync.map_quiet? && !MGQ_MpChat.typing?
-    stays ? true : TAKEN_OVER
+  # @return [Boolean] Whether it is.
+  def self.in_world?
+    MGQ_MpOverworldSync.in_world? ? true : false
+  end
+
+  # Tells whether the open world is a Raid World, which shows the Unlocks page.
+  #
+  # @return [Boolean] Whether it is.
+  def self.raid?
+    in_world? && MGQ_MpCoop::Scope.raid? ? true : false
   end
 
   # The page shown.
   #
-  # @return [Symbol] :players, :world, :quests, :unlocks or a mod's page, see pages.
+  # @return [Symbol] :players, :world, :quests, :unlocks or the id of a tab another mod appended.
   def self.page
     @page
   end
 
-  # Lists the pages the overview shows: outside a world those of SOLO_PAGES; in a world every page in
-  # a Raid World, else those of RAID_PAGES left out; after them the pages of other mods, see
-  # mod_tabs.
+  # The page the overview opens on: the Players page in a world, the Quests page outside one.
   #
-  # @return [Array<Array>] The pages with their tabs' titles, see PAGES.
-  def self.pages
-    own = if !MGQ_MpOverworldSync.in_world? then PAGES.select { |key, _| SOLO_PAGES.include?(key) }
-          elsif MGQ_MpCoop::Scope.raid? then PAGES
-          else PAGES.reject { |key, _| RAID_PAGES.include?(key) }
-          end
-    own + mod_tabs
+  # @return [Symbol] The page.
+  def self.start_page
+    @page = in_world? ? :players : :quests
   end
 
-  # Turns to a page, as a click on its tab does. Nothing for the page shown already or one the
-  # world does not show.
+  # Follows the tabs to the page they show now: an own page reads its model afresh.
   #
-  # @param page [Symbol] The page, see pages.
-  # @param via [String] What turned it, for the log.
-  def self.turn_to(page, via)
-    return unless open? && pages.assoc(page) && page != @page
+  # @param page [Symbol] The page, see page.
+  def self.turned(page)
+    return if page == @page
 
-    sync_tabs
-    @tabs.index = @tab_keys.index(page)
-    turned(via)
+    @page = page
+    forget_model(page) if SPLIT_PAGES.include?(page)
+    title = PAGES.assoc(page)
+    log("turned to the #{title ? title[1] : page} page")
   end
 
   # The open world's name, for the title and the World page.
@@ -468,18 +477,6 @@ module MGQ_MpWorldOverview
 
     kept.clear if kept.size >= TEXTS_KEPT
     kept[key] = answer
-  end
-
-  # Closes the overview once the map is left, or a world opens or closes under it. Called by
-  # overworld_sync.rbx every frame in every scene.
-  #
-  # @param in_world [Boolean] Whether a world is open.
-  def self.tick(in_world)
-    if !SceneManager.scene.is_a?(Scene_Map)
-      close("the map was left")
-    elsif in_world != @in_world
-      close(in_world ? "a world opened" : "the world closed")
-    end
   end
 
   # Reads the formation's highest level, in a Raid World the Frontline's too, and the place in the
@@ -702,133 +699,34 @@ module MGQ_MpWorldOverview
     options.empty? ? [MGQ_MpActions::Option.new("Nothing to do", nil, refusal)] : options
   end
 
-  # Builds the overview's window once, closed: the title row, the tabs with the Players page's list
-  # and the other pages' views, and the key help.
+  # Writes the player's party for the title row.
   #
-  # @return [Mod_Framework::UI::Window] The window.
-  def self.window
-    return @window if @window
-
-    @window = UI::Window.new(:id => LAYOUT_ID, :place_name => LAYOUT_NAME, :movable => true, :resizable => true, :close_outside => true,
-                             :if => lambda { stay_reason }, :at => DEFAULT_AT, :size => [Graphics.width - DEFAULT_ROOM[0], Graphics.height - DEFAULT_ROOM[1]],
-                             :min_size => MIN_SIZE, :padding => MARGIN, :log => self)
-    @window.on(:close) { |why| closed(why) }
-    title = @window.add_row(:gap => TITLE_GAP)
-    @name_label = title.add_label("", :font_size => :large, :color => :title, :shrink => true)
-    @tail_label = title.add_label("", :font_size => :large, :color => :title)
-    title.add_column(:grow => 1)
-    @party_label = title.add_label("", :font_size => :large, :color => UI::Style::MEMBER, :visible => false)
-    @tabs = @window.add_tabs(:arrows => true, :grow => 1)
-    @tabs.on(:change) { |_index| turned("its tab or the arrows") }
-    @tab_keys = []
-    @views = {}
-    @players = add_page_tab(:players, PAGES.assoc(:players)[1]).add_list(:cells => PLAYER_CELLS, :round => true, :rows_shown => :fill, :grow => 1)
-    @players.on(:submit) { |row, index| open_menu(row, index) }
-    SPLIT_PAGES.each { |key| @views[key] = own_view(key, add_page_tab(key, PAGES.assoc(key)[1])) }
-    @help = @window.add_key_help([], :font_size => :small)
-    @window
-  end
-
-  # Adds a tab with its page.
-  #
-  # @param key [Symbol] The page, see pages.
-  # @param title [String] The tab's title.
-  # @return [Mod_Framework::UI::Stack] The tab's page.
-  def self.add_page_tab(key, title)
-    page = @tabs.add_tab(title, :grow => 1)
-    @tab_keys << key
-    page
-  end
-
-  # Shows the tabs of the pages shown now, adding the tab of a mod's page the first time it shows,
-  # and follows the tabs to the page they show once the page shown left, which stays the page shown
-  # when the one that left comes back.
-  def self.sync_tabs
-    shown = pages
-    shown.each { |key, title| @views[key] ||= mod_view(key, add_page_tab(key, title)) if mod_page?(key) }
-    @tab_keys.each_with_index do |key, index|
-      tab = @tabs.tab(index)
-      title = shown.assoc(key)
-      tab.visible = title ? true : false unless tab.visible? == (title ? true : false)
-      tab.text = title[1] if title && tab.text != title[1]
-    end
-    return if @tab_keys[@tabs.index.to_i] == @page
-
-    @tabs.index = @tabs.index
-    turned("its page leaving") if open?
-  end
-
-  # Picks a page without telling anyone, such as the first page as the overview opens.
-  #
-  # @param page [Symbol] The page, see pages.
-  def self.show_page(page)
-    @tabs.index = @tab_keys.index(page)
-    @page = page
-  end
-
-  # Follows the tabs to the page they show now: the menu closes, an own page reads its model
-  # afresh, and the focus goes onto the page.
-  #
-  # @param via [String] What turned it, for the log.
-  def self.turned(via)
-    page = @tab_keys[@tabs.index.to_i]
-    return if page == @page
-
-    @page = page
-    close_menu
-    forget_model(page) if SPLIT_PAGES.include?(page)
-    refresh
-    focus_page
-    title = pages.assoc(page)
-    log("turned to the #{title ? title[1] : page} page through #{via}")
-  end
-
-  # Gives the focus to the page shown: the Players page's list, or a page view's head or list.
-  def self.focus_page
-    @page == :players ? @players.focus : @views[@page] && @views[@page].focus
-  end
-
-  # Brings what the overview shows up to date: the tabs, the title, the players, the gold mark of a
-  # call waiting on the Players page, the page shown and the key help. Each part is set only once
-  # it changed.
-  def self.refresh
-    sync_tabs
-    all = rows
-    show_title
-    show_players(all)
-    calls = all.any? { |row| row.call } && @page != :players
-    @tabs.tab(0).badge = calls unless @tabs.tab(0).badge == calls
-    show_split(@page) if SPLIT_PAGES.include?(@page)
-    show_help
-  end
-
-  # Shows the world's name, its type and difficulty, and the player's party in the title row.
-  def self.show_title
-    show_text(@name_label, world_name)
-    show_text(@tail_label, title_tail)
+  # @return [String, nil] Such as "Party 2 / 4"; nil outside a party.
+  def self.party_text
     badge = MGQ_MpOverworld.party_badge(:me)
-    show_text(@party_label, badge ? MGQ_MpOverworld.party_title(badge) : "")
-    @party_label.visible = badge ? true : false unless @party_label.visible? == (badge ? true : false)
+    badge ? MGQ_MpOverworld.party_title(badge) : nil
   end
 
-  # Sets a label's text once it changed.
+  # Tells whether another player's call waits for the player, which marks the Players tab.
   #
-  # @param label [Mod_Framework::UI::Label] The label.
-  # @param text [String] The text.
-  def self.show_text(label, text)
-    label.text = text unless label.text == text
+  # @return [Boolean] Whether one does.
+  def self.call_waiting?
+    rows.any? { |row| row.call } ? true : false
   end
 
-  # Shows the players in the Players page's list, once they changed: a heading per place and a row
-  # per player, the cursor kept on the same player.
+  # Tells what the window shows that the framework cannot see change: the players' lists, the calls
+  # that wait, the title and the world's type.
   #
-  # @param all [Array<Row>] The players, see rows.
-  def self.show_players(all)
-    shown = lines(all).map { |kind, value| kind == :place ? { :heading => value } : player_row(value) }
-    return if shown == @shown_players
+  # @return [Array] The signature.
+  def self.signature
+    [rows.map { |row| [key_of(row), row.call] }, @serial, title_tail, party_text, in_world?, raid?]
+  end
 
-    @shown_players = shown
-    @players.rows = shown
+  # Writes the Players page's rows: a heading per place and a row per player, see player_row.
+  #
+  # @return [Array<Hash>] The list's rows.
+  def self.player_rows
+    lines(rows).map { |kind, value| kind == :place ? { :heading => value } : player_row(value) }
   end
 
   # Makes a player's row of the list: the icon of what they do and a party leader's crown, their
@@ -838,42 +736,40 @@ module MGQ_MpWorldOverview
   # @param row [Row] The player.
   # @return [Hash] The row, keyed by the player, see key_of.
   def self.player_row(row)
-    color = MGQ_MpPlayerColor.of(row.player, row.member)
+    color = MGQ_MpPlayerColor.role(row.player, row.member)
     icons = [row.icon, row.badge && row.badge[1] ? MGQ_MpOverworld::CROWN_ICON : nil].compact
     text, text_color = row.call || [row.story, :text]
     ping, ping_color = row.ping
-    cells = [{ :icons => icons }, { :text => row.name, :color => color }, { :text => row.badge ? row.badge[0] : "", :font_size => :small, :color => color },
-             { :text => row.level, :font_size => :small }, { :text => text.to_s, :font_size => :small, :color => text_color },
-             { :text => ping.to_s, :font_size => :small, :color => ping_color, :align => :end }]
+    cells = [{ :icons => icons }, { :text => row.name, :color => color }, { :text => row.badge ? row.badge[0] : "", :typo => :caption, :color => color },
+             { :text => row.level, :typo => :caption }, { :text => text.to_s, :typo => :caption, :color => text_color },
+             { :text => ping.to_s, :typo => :caption, :color => ping_color || :text, :align => :end }]
     { :key => key_of(row), :data => row, :cells => cells }
   end
 
-  # Opens the menu of the player in a row of the list beside it, its choices from what the scripts
-  # offer, those that cannot be taken now greyed.
+  # Opens the menu of the player in a row of the Players page beside it, its choices from what the
+  # scripts offer, those that cannot be taken now greyed with why as their tooltip.
   #
-  # @param row [Hash, String] The list's row.
-  # @param index [Integer] Its place in the list.
-  def self.open_menu(row, index)
+  # @param row [Hash] The list's row.
+  # @param place [Integer, nil] Its place in the list.
+  def self.open_menu(row, place)
     player = row.is_a?(Hash) ? row[:data] : nil
     return unless player.is_a?(Row)
 
     options = menu_options(player)
     log("menu of #{who(player)}: #{options.map { |option| option.run ? option.text : "#{option.text} (refused: #{option.refusal})" }.join(', ')}")
-    choices = options.map { |option| { :text => option.text.to_s, :enabled => option.run ? true : false } }
-    @menu = UI::Menu.open(choices, :beside => @players, :row => index, :width => MENU_WIDTH) do |picked, _choice|
-      @menu = nil
-      picked ? choose(options[picked], player) : log("menu closed")
-    end || nil
-    @menu.on(:refuse) { |choice| refused(options[choices.index { |each| each.equal?(choice) }], player) } if @menu
+    choices = options.map do |option|
+      choice = { :text => option.text.to_s, :enabled => option.run ? true : false }
+      choice[:tooltip] = option.refusal if option.refusal && !option.run
+      choice
+    end
+    refuse = lambda { |_choice, index| refused(options[index], player) }
+    UI.menu(choices, :beside => "##{PLAYERS_ID}", :row => place, :width => MENU_WIDTH, :on_refuse => refuse) do |_choice, index|
+      index ? choose(options[index], player) : log("menu closed")
+    end
   end
 
-  # Closes the menu of a player, if it is open.
-  def self.close_menu
-    @menu.close if @menu && @menu.open?
-    @menu = nil
-  end
-
-  # Tells why a greyed choice of a player's menu cannot be taken; the menu buzzed already.
+  # Logs why a greyed choice of a player's menu cannot be taken; the menu buzzed already and shows
+  # why as the choice's tooltip.
   #
   # @param option [MGQ_MpActions::Option, nil] The choice.
   # @param row [Row] The player whose menu it is.
@@ -881,7 +777,6 @@ module MGQ_MpWorldOverview
     return unless option
 
     log("#{option.text} for #{who(row)} refused: #{option.refusal || 'no reason given'}")
-    MGQ_MpOverworldSync.notice(option.refusal) if option.refusal
   end
 
   # Names a player of the list for the log.
@@ -904,44 +799,76 @@ module MGQ_MpWorldOverview
     MGQ_MpActions.choose(option) { close("the choice leaves it") if option.leaves }
   end
 
-  # Follows the window closing: its menu closes too, and the log says why.
+  # Lists the key help's entries of a page: the Players page's, an own page's or another mod's; the
+  # framework adds the cancel keys and the overview's hotkey to the close entry.
   #
-  # @param why [Symbol, String] The framework's reason, or the gate's text, see stay_reason.
-  def self.closed(why)
-    reason = @close_reason || CLOSE_REASONS.fetch(why, why.to_s)
-    @close_reason = nil
-    close_menu
-    log("closed: #{reason}")
-  end
+  # @param page [Symbol] The page, see page.
+  # @return [Array<Hash>] The entries.
+  def self.key_entries(page)
+    return [TURN_ENTRY, { :button => :C, :text => "invite, duel or trade" }, CLOSE_ENTRY] if page == :players
 
-
-  # Shows the key help of what the keys do now, once it changed.
-  def self.show_help
-    entries = help_entries
-    @help.entries = entries unless entries == @help.entries
-  end
-
-  # Lists the key help's entries: the Players page's, an own page's, a mod's page's in its list or in
-  # its pane; the keys that close name the cancel keys as the player bound them and the overview's
-  # hotkey.
-  #
-  # @return [Array<Hash>] The entries, see Mod_Framework::UI::KeyHelp.
-  def self.help_entries
-    turn = { :key => "Left or right", :text => "page" }
     pick = { :key => "Up or down", :text => "pick" }
-    close = { :button => :B, :key => MGQ_MpHotkeys.label(:overview), :text => "close" }
-    return [turn, { :button => :C, :text => "invite, duel or trade" }, close] if @page == :players
-    return [turn, pick, { :button => [:L, :R], :text => "read on" }, close] unless mod_page?(@page)
-    return [turn, pick, { :button => :C, :text => "select" }, close] unless @views[@page] && @views[@page].in_pane?
+    return [TURN_ENTRY, pick, { :key => "Page Up or Down", :text => "read on" }, CLOSE_ENTRY] if SPLIT_PAGES.include?(page)
 
-    [pick, { :key => "Left or right", :text => "change" }, { :button => :C, :text => "press" }, { :button => :B, :key => "Ctrl", :text => "back" }]
+    [TURN_ENTRY, pick, { :button => :C, :text => "select" }, CLOSE_ENTRY]
+  end
+
+  # The World overview's window: the world's title row, its pages as tabs, and the key help. Other
+  # mods append their pages to the tabs through UI.patch "#overview"; t.read(:in_world) and
+  # t.read(:raid) tell them whether a world is open and whether it is a Raid World.
+  class WorldOverview < UI::Component
+    hotkey MGQ_MpHotkeys.action(:overview)
+
+    # The page shown: :players, :world, :quests, :unlocks or the id of a tab another mod appended.
+    state :page, nil
+
+    watch(:every => WATCH_FRAMES) { MGQ_MpWorldOverview.signature }
+
+    expose(:in_world) { MGQ_MpWorldOverview.in_world? }
+    expose(:raid) { MGQ_MpWorldOverview.raid? }
+
+    # Opens on the Players page in a world, else on the Quests page.
+    def setup
+      self.page = MGQ_MpWorldOverview.start_page
+    end
+
+    # Describes the window.
+    def render
+      overview = MGQ_MpWorldOverview
+      window nil, id: ID, place_name: PLACE_NAME, close_outside: true, resizable: true, at: DEFAULT_AT,
+                  width: Graphics.width - DEFAULT_ROOM[0], height: Graphics.height - DEFAULT_ROOM[1], min_size: MIN_SIZE,
+                  if: -> { overview.open_reason || true }, on_open: -> { overview.opened(self) }, on_close: ->(why) { overview.closed(why) } do
+        stack row: true do
+          text overview.world_name, color: :title, most_lines: 1, grow: 1
+          text overview.title_tail, color: :title
+          party = overview.party_text
+          text(party, color: :mgq_online_member) if party
+        end
+        tabs bind: :page, wrap: true, arrows: true, id: TABS_ID, height: :fill, on_change: ->(id) { overview.turned(id) } do
+          if overview.in_world?
+            tab(PAGES.assoc(:players)[1], id: :players, badge: -> { overview.call_waiting? && page != :players }) { players_page }
+            tab(PAGES.assoc(:world)[1], id: :world) { component(OverviewPage, kind: :world, key: :world) }
+          end
+          tab(PAGES.assoc(:quests)[1], id: :quests) { component(OverviewPage, kind: :quests, key: :quests) }
+          tab(PAGES.assoc(:unlocks)[1], id: :unlocks) { component(OverviewPage, kind: :unlocks, key: :unlocks) } if overview.raid?
+        end
+        key_help entries: overview.key_entries(page)
+      end
+    end
+
+    # Describes the Players page: the players by place, a heading per place and a row per player.
+    def players_page
+      overview = MGQ_MpWorldOverview
+      shown = overview.player_rows
+      list shown, id: PLAYERS_ID, rows_shown: :fill, height: :fill, autofocus: true, cells: PLAYER_CELLS,
+                  on_submit: ->(row) { overview.open_menu(row, shown.index(row)) }
+    end
   end
 end
 
 # What the overview takes part in of the world's messages, through overworld_sync.rbx.
 
 begin
-  MGQ_MpOverworldSync.on_tick { |in_world| MGQ_MpWorldOverview.tick(in_world) }
   MGQ_MpOverworldSync.state_fields { MGQ_MpWorldOverview.state_fields }
   MGQ_Multiplayer::Bridge.on(MGQ_MpWorldOverview::READ_EVENT) { |_read| MGQ_MpWorldOverview.tell }
 rescue => e
@@ -956,18 +883,10 @@ rescue => e
   MGQ_MpWorldOverview.log("action wheel FAILED: #{e.class}: #{e.message}")
 end
 
-# The overview's window among those the player moves and resizes, listed before it first opens.
-
-begin
-  Mod_Framework::UI::Layout.register(MGQ_MpWorldOverview::LAYOUT_ID, MGQ_MpWorldOverview::LAYOUT_NAME, :min_size => MGQ_MpWorldOverview::MIN_SIZE)
-rescue => e
-  MGQ_MpWorldOverview.log("layout FAILED: #{e.class}: #{e.message}")
-end
-
 # Game hooks, through core_hooks.rbx.
 
 begin
-  # After the map's update, the overview's hotkey and what it shows.
+  # After the map's update, the action wheel's hotkey that closes the overview.
   MGQ_MpHooks.after(Scene_Map, :update_scene, "world_overview") { MGQ_MpWorldOverview.on_map unless scene_changing? }
 rescue => e
   MGQ_MpWorldOverview.log("hooks FAILED: #{e.class}: #{e.message}")

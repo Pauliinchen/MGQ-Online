@@ -2,6 +2,7 @@
 #  world_overview_pages.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Showed the pages in page views of the UI layer, their heads and panes as markup
 #      Paulinchen  2026-11-05: Read the raid bosses' tiers and the troop of a pool's boss from the DLL's table
 #                            - Read the Chaos route's variable from story_ids.rbx
 #                            - Counted the pages' reads by the bridge's frame
@@ -20,10 +21,10 @@
 #----------------------------------------------------------------
 
 # The World overview's pages laid out with a head, a list and a reading pane: the World page, the
-# Quests page and a Raid World's Unlocks page, each in a page view of the Mod Framework. The DLL lays
-# each page out (OverviewPages in MGQOnline.Game) from what the script reads of the game; the script
-# adds the pictures and the panes that name the game's things, and the view shows it and tells the
-# picks and the folds.
+# Quests page and a Raid World's Unlocks page, each a page view of the Mod Framework's UI layer
+# (OverviewPage). The DLL lays each page out (OverviewPages in MGQOnline.Game) from what the script
+# reads of the game; the script adds the pictures and the panes that name the game's things, and the
+# view shows it and tells the folds.
 #
 # The Quests page reads the main quest and the side quests as Amira tells them and the companions'
 # requests on the Pocket Castle's board from the game's events, without running them.
@@ -580,74 +581,20 @@ module MGQ_MpWorldOverview
     MGQ_MpRaidBosses.key_tier(name) || MGQ_MpRaidBosses.tier(MGQ_MpRaidBosses.troop_of_key(name))
   end
 
-  # Makes the page view of an own page, Amira's Library picture faintly behind the Quests page.
-  #
-  # @param page [Symbol] One of SPLIT_PAGES.
-  # @param tab [Mod_Framework::UI::Stack] The page of its tab.
-  # @return [Mod_Framework::UI::PageView] The view.
-  def self.own_view(page, tab)
-    options = { :id => :"overview_#{page}" }
-    options[:backdrop] = { :portrait => AMIRA, :opacity => BACKDROP_OPACITY, :anchor => :bottom_right } if page == :quests
-    view = tab.add_page_view(options)
-    view.on(:change) { |data| picked(page, data) }
-    view.on(:fold) { |key, open| fold(page, key, open) }
-    view
-  end
-
-  # Shows an own page's model in its view once the model changed: its head, its rows and the pane
-  # of the entry picked, found again by its key in the new model.
-  #
-  # @param page [Symbol] One of SPLIT_PAGES.
-  def self.show_split(page)
-    data = model(page)
-    shown = [data.object_id, portraits]
-    @shown_models ||= {}
-    return if shown == @shown_models[page]
-
-    @shown_models[page] = shown
-    view = @views[page]
-    view.head = head_value(data.head)
-    view.rows = data.rows.map { |kind, value| row_value(kind, value) }
-    @picks ||= {}
-    @picks[page] = pick_in(data, @picks[page])
-    view.pane = pane_value(pick_pane(data, @picks[page]))
-  end
-
-  # Finds an entry picked before in a page's new model: the head's, or the entry of the same key.
-  #
-  # @param data [Model] The model.
-  # @param was [Object, nil] The entry picked, :head for the head's; nil for none yet.
-  # @return [Object, nil] The entry in the model, :head, or nil.
-  def self.pick_in(data, was)
-    head = data.head && data.head.entry ? :head : nil
-    return head if was.nil? || was == :head
-
-    key = entry_key(was)
-    data.picks.find { |entry| entry.kind != "fold" && entry_key(entry) == key }
-  end
-
-  # Shows the pane of what the player picked on an own page.
-  #
-  # @param page [Symbol] One of SPLIT_PAGES.
-  # @param data [Object] The entry picked, or :head for the head's.
-  def self.picked(page, data)
-    @picks ||= {}
-    @picks[page] = data
-    @views[page].pane = pane_value(pick_pane(model(page), data))
-  end
-
   # Tells the pane of a pick.
   #
   # @param data [Model] The page's model.
-  # @param entry [Object, nil] The entry, :head for the head's, nil for none.
+  # @param pick [Object, nil] The item picked, a model's row [:entry, Entry], or :head for the
+  #   head's entry; nil for none.
   # @return [Pane, nil] The pane.
-  def self.pick_pane(data, entry)
-    return pane_of(entry) unless entry == :head
+  def self.pick_pane(data, pick)
+    return data.head && data.head.entry ? pane_of(data.head.entry) : nil if pick == :head
 
-    data.head && data.head.entry ? pane_of(data.head.entry) : nil
+    pick.is_a?(Array) && pick[0] == :entry ? pane_of(pick[1]) : nil
   end
 
-  # Opens or folds a group of an own page, which the DLL keeps while the game runs.
+  # Opens or folds a group of an own page, which the DLL keeps while the game runs; the page reads
+  # its model anew.
   #
   # @param page [Symbol] One of SPLIT_PAGES.
   # @param key [String] The group.
@@ -656,100 +603,162 @@ module MGQ_MpWorldOverview
     MGQ_Multiplayer::Bridge.call(FOLD_TOPIC, "page" => page.to_s, "key" => key.to_s, "open" => open ? true : false)
     forget_model(page)
     log("#{open ? 'opened' : 'folded'} #{key} on the #{page} page")
-    show_split(page)
   end
 
-  # Tells an entry's key, the same in each model read: what keeps its row and its pane picked.
+  # Makes the list row of a model's row: a line of text, a group with whether it is open, or an
+  # entry with its label, its text, its note at the right, dimmed, and a thin gauge.
   #
-  # @param entry [Entry] The entry.
-  # @return [Array] The key.
-  def self.entry_key(entry)
-    value = entry.value
-    case entry.kind
-    when "quest" then ["quest", value[1], value[4] || value[2], Array(value[3]).first]
-    when "boss" then ["boss", value[1], value[2]]
-    else value.first(2)
-    end
-  end
-
-  # Makes a page view's head of a model's head.
-  #
-  # @param head [Head, nil] The head.
-  # @return [Hash, nil] The view's head, see Mod_Framework::UI::PageView.
-  def self.head_value(head)
-    return nil unless head
-
-    value = { :title => head.title.to_s, :note => head.note, :lines => head.lines || [] }
-    value[:grid] = head.grid.map { |name, level, factor| [name, level, { :text => factor, :color => :title }] } if head.grid
-    value[:icon] = head.icon if head.icon
-    value.update(looks_picture(head.looks))
-    value[:pick] = :head if head.entry
-    value
-  end
-
-  # Makes a list row of a model's row.
-  #
-  # @param kind [Symbol] :none, :fold or :entry.
-  # @param value [String, Entry] What the row holds.
-  # @return [Hash] The view's row.
-  def self.row_value(kind, value)
-    return { :none => value } if kind == :none
+  # @param item [Array] The model's row: [:none, text], [:fold, Entry] or [:entry, Entry].
+  # @return [Hash] The row.
+  def self.entry_row(item)
+    kind, value = item
+    return { :none => value.to_s } if kind == :none
 
     _kind, key, title, open = value.value
-    return { :group => key, :text => title, :open => open ? true : false } if kind == :fold
+    return { :group => key, :text => title.to_s, :open => open ? true : false } if kind == :fold
 
     view = value.row
-    row = { :key => entry_key(value), :text => view.text.to_s, :right_color => :dim, :faint => view.dim ? true : false, :data => value }
+    row = { :text => view.text.to_s, :right_color => :dim, :faint => view.dim ? true : false }
     row[:label] = view.label if view.label
     row[:right] = view.note if view.note
     row[:gauge] = view.gauge if view.gauge
     row
   end
 
-  # Makes a page view's pane of a model's pane.
+  # Tells the picture behind an own page: Amira's Library picture faintly behind the Quests page.
   #
-  # @param pane [Pane, nil] The pane.
-  # @return [Hash, nil] The view's pane.
-  def self.pane_value(pane)
-    return nil unless pane
-
-    { :title => pane.title.to_s, :lines => pane_lines(pane.lines) }.update(looks_picture(pane.looks))
-  end
-
-  # Makes a page view's pane lines, the things named next to each other in one run.
-  #
-  # @param lines [Array<Array>] The pane's lines, see Pane.
-  # @return [Array] The view's lines.
-  def self.pane_lines(lines)
-    lines.each_with_object([]) do |(kind, value, text), out|
-      case kind
-      when :text then out << value.to_s
-      when :gap then out << :gap
-      when :gauge then out << { :gauge => value.to_f, :text => text }
-      when :item
-        out << { :items => [] } unless out.last.is_a?(Hash) && out.last.key?(:items)
-        out.last[:items] << item_value(value)
-      end
-    end
-  end
-
-  # Makes a thing named of a pane item: its icon, or how the one it names looks.
-  #
-  # @param item [PaneItem] The item.
-  # @return [Hash] The thing named.
-  def self.item_value(item)
-    { :text => item.name.to_s, :note => item.note, :faint => item.dim ? true : false }.update(item.icon ? { :icon => item.icon } : looks_picture(item.looks))
+  # @param page [Symbol] One of SPLIT_PAGES.
+  # @return [Hash, nil] The view's backdrop, nil for none.
+  def self.backdrop(page)
+    page == :quests ? { :portrait => AMIRA, :opacity => BACKDROP_OPACITY, :anchor => :bottom_right } : nil
   end
 
   # Tells how a character's picture shows, as the Quest Portraits row picks: by their face, else
   # by their map sprite.
   #
-  # @param looks [Looks, nil] How they look.
-  # @return [Hash] { :face } or { :figure }, empty for none.
-  def self.looks_picture(looks)
-    return {} unless looks
-
+  # @param looks [Looks] How they look.
+  # @return [Hash] { :face } or { :figure }, as image takes them.
+  def self.picture_of(looks)
     portraits == FACES && !looks.face_name.to_s.empty? ? { :face => looks } : { :figure => looks }
+  end
+
+  # An own page of the overview, World, Quests or Unlocks: a page view of a head, the model's rows
+  # in their groups, and a reading pane of the entry or the head picked.
+  class OverviewPage < UI::Component
+    # Side of a portrait or an icon in the head.
+    HEAD_PICTURE = 64
+
+    # Side of a portrait in the pane's title.
+    PANE_PICTURE = 48
+
+    # Side of a portrait beside a thing named in the pane.
+    ITEM_PICTURE = 24
+
+    # Room a gap between two groups of the pane's lines takes.
+    GAP = 8
+
+    # The page: :world, :quests or :unlocks.
+    param :kind
+
+    # The item picked: a model's row, or :head for the head's entry.
+    state :picked, nil
+
+    # The model is read only while its page shows, since each read asks the DLL and walks events.
+    watch(:every => WATCH_FRAMES) { MGQ_MpWorldOverview.page == kind ? [MGQ_MpWorldOverview.model(kind).object_id, MGQ_MpWorldOverview.portraits] : nil }
+
+    # Picks the head's entry first, such as the main quest.
+    def setup
+      head = MGQ_MpWorldOverview.model(kind).head
+      self.picked = :head if head && head.entry
+    end
+
+    # Describes the page.
+    def render
+      overview = MGQ_MpWorldOverview
+      data = overview.model(kind)
+      head = data.head
+      view = { id: :"overview_#{kind}", row: ->(item) { overview.entry_row(item) }, bind: :picked, height: :fill,
+               on_fold: ->(group, open) { overview.fold(kind, group, open) } }
+      backdrop = overview.backdrop(kind)
+      view[:backdrop] = backdrop if backdrop
+      page_view data.rows, view do
+        page_head(head && head.entry ? { pick: :head } : {}) { head_of(head) } if head
+        page_pane { pane_of(overview.pick_pane(data, picked)) }
+      end
+    end
+
+    private
+
+    # Describes the head: a portrait or an icon, the title with its note, and its lines or a grid.
+    #
+    # @param head [Head] The head.
+    def head_of(head)
+      stack row: true do
+        if head.looks
+          image(MGQ_MpWorldOverview.picture_of(head.looks).merge(width: HEAD_PICTURE, height: HEAD_PICTURE))
+        elsif head.icon
+          text "\\I[#{head.icon}]", escapes: true
+        end
+        stack grow: 1 do
+          stack row: true do
+            text head.title.to_s, typo: :subtitle1, most_lines: 1, grow: 1
+            text(head.note.to_s, color: :dim) if head.note
+          end
+          Array(head.lines).each { |line| text line.to_s, typo: :body2, wrap: true }
+          Array(head.grid).each do |name, level, factor|
+            stack(row: true) { [[name, nil], [level, nil], [factor, :title]].each { |cell, color| grid_cell(cell, color) } }
+          end
+        end
+      end
+    end
+
+    # Describes a cell of the head's grid.
+    #
+    # @param cell [String] Its text.
+    # @param color [Symbol, nil] Its color, nil for the plain one.
+    def grid_cell(cell, color)
+      params = { typo: :body2, grow: 1 }
+      params[:color] = color if color
+      text cell.to_s, params
+    end
+
+    # Describes the pane: its title beside a portrait, then its lines.
+    #
+    # @param pane [Pane, nil] The pane, nil for nothing picked.
+    def pane_of(pane)
+      return unless pane
+
+      stack row: true do
+        image(MGQ_MpWorldOverview.picture_of(pane.looks).merge(width: PANE_PICTURE, height: PANE_PICTURE)) if pane.looks
+        text pane.title.to_s, typo: :subtitle2, wrap: true, grow: 1
+      end
+      pane.lines.each do |kind, value, extra|
+        case kind
+        when :text then text value.to_s, wrap: true
+        when :gap then stack(height: GAP) {}
+        when :gauge then progress value: value.to_f, max: 1, size: :small, text: extra.to_s
+        when :item then item_of(value)
+        end
+      end
+    end
+
+    # Describes a thing the pane names: its icon or portrait, its name, dimmed once had, and its
+    # note at the right.
+    #
+    # @param item [PaneItem] The thing.
+    def item_of(item)
+      stack row: true do
+        if item.icon
+          text "\\I[#{item.icon}]", escapes: true
+        elsif item.looks
+          image(MGQ_MpWorldOverview.picture_of(item.looks).merge(width: ITEM_PICTURE, height: ITEM_PICTURE))
+        end
+        name = { grow: 1 }
+        name[:color] = :dim if item.dim
+        text item.name.to_s, name
+        text(item.note.to_s, typo: :caption, color: :dim) if item.note
+      end
+    end
   end
 end
 
