@@ -2,6 +2,7 @@
 #  story_choices_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Checked that the help line shows the hint of the choice under the cursor
 #      Paulinchen  2026-11-06: Read the screen of choices from its component of the UI layer
 #      Paulinchen  2026-11-05: Answered the outcomes offered and their notes with fixed values instead of the stand-in's rules
 #      Paulinchen  2026-11-01: Created
@@ -60,6 +61,20 @@ check("the window lists the choices under a heading, each with its outcome, the 
 check("the cursor's choice has its hint from the DLL's table and the note of its outcome",
       [screen.row, screen.send(:hint_of, screen.send(:current)), screen.send(:note_of, screen.send(:current))],
       [1, TellingAnswers::TABLE["branches"][1][3], "magistea 0 for Ana on route 1"])
+
+# The help line tells the cursor's hint once C# reports the focus on the list, which it does only
+# after the window's menu scene started, and follows the cursor.
+engine = Mod_Framework::UI::Engine
+parts_of = lambda { |component, type| (component.is_a?(type) ? [component] : []) + Array(component.children).map { |child| parts_of.call(child, type) }.flatten }
+help_line = parts_of.call(window, engine::HelpLine).first
+engine::Layer.frame
+engine::Tree.instance_variable_set(:@focused, parts_of.call(window, engine::List).first)
+shown = [help_line.send(:current)]
+screen.send(:row=, 2)
+engine::Layer.frame
+check("the help line shows the hint of the choice under the cursor once the list has the focus, and of the next one after a move",
+      shown << help_line.send(:current), [TellingAnswers::TABLE["branches"][1][3], choices.branch(:decision)[3]])
+screen.send(:row=, 1)
 
 # Turning: Left and Right step an outcome round, Enter steps it on; the note follows.
 $sounds = []

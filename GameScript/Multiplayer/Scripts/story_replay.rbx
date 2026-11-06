@@ -2,7 +2,8 @@
 #  story_replay.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Handed the DLL each companion's base level, as the game keeps every kind of level in one Hash
+#      Paulinchen  2026-11-06: Answered a number, a key item and a present the record lacks as the game's window starts, asking only choices
+#                            - Handed the DLL each companion's base level, as the game keeps every kind of level in one Hash
 #      Paulinchen  2026-11-05: Handed the DLL the keys and the player's own things as [kind, key] with their values, sites and commands' places as plain values, and what the player holds whole for the DLL to sum up
 #                            - Read the story markers from story_ids.rbx
 #                            - Took a found item a replay uses up from the receiver, but none a story reset takes, and dropped the copy got as found, which the story replay replaces
@@ -38,9 +39,9 @@
 # a check of what the party holds or of the event's own self switch) is answered from the opener's
 # record by the place of the command that asked for it, so the receiver gets what the opener got. A
 # replay costs the receiver nothing: it takes back only what it gave. An input the
-# record lacks is the receiver's own: a choice, a number, an item or a present is asked of them on
-# the choices' screen, and while that screen asks only choices, any other of them stops the replay,
-# which waits like a check that fails; a battle counts as won; any other input reads their own game.
+# record lacks is the receiver's own: a choice is asked of them on the choices' screen; a number, an
+# item or a present takes what the game's window starts with (user decision 2026-11-06); a battle
+# counts as won; any other input reads their own game.
 #
 # The record names each input by the place of its command, see input_at, which the opener's game
 # records by, and by what it read; values are whole numbers, a yes or no 1 or 0.
@@ -539,31 +540,18 @@ module MGQ_MpStoryReplay
     MGQ_MpOverworldSync.notice(text, first_icon(had)) if text && defined?(MGQ_MpOverworldSync)
   end
 
-  # Shows the player the question a replay waits on, on the choices' screen, with the message's
-  # last lines and a choice's labels or what an input offers; their stream waits meanwhile.
+  # Shows the player the choice a replay waits on, on the choices' screen, with the message's last
+  # lines and the choice's labels; their stream waits meanwhile.
   #
   # @param state [Hash] The replay that asks, see finish.
   def self.ask_player(state)
     @asking = state
     question = state[:replay].question
     entry = state[:entry]
-    unless question["kind"] == "choice"
-      log("entry #{entry['id']} of #{entry['site']} asks the player for a #{question['kind']}")
-      return MGQ_MpCoopChoices.ask_input(entry["opener"], question["lines"], question["kind"], question["spec"], lambda { |value| answered(value.to_i) })
-    end
-
     log("entry #{entry['id']} of #{entry['site']} asks the player: #{question['labels'].join(' / ')}")
     return answered(question["values"].empty? ? 0 : question["values"].first) unless defined?(MGQ_MpCoopChoices) && !question["labels"].empty?
 
     MGQ_MpCoopChoices.ask(entry["opener"], question["lines"], question["labels"], lambda { |place| answered(question["values"][place.to_i]) }, question["cancel"])
-  end
-
-  # Reports whether the choices' screen asks a number, an item or a present, which a replay
-  # otherwise stops at.
-  #
-  # @return [Boolean] Whether it does.
-  def self.asks_inputs?
-    defined?(MGQ_MpCoopChoices) && MGQ_MpCoopChoices.respond_to?(:ask_input) ? true : false
   end
 
   # Takes the player's answer to the question a replay waits on, and runs it on.
@@ -1627,8 +1615,8 @@ module MGQ_MpStoryReplay
     # :running, :asking, :done or :failed.
     attr_reader :state
 
-    # What the receiver is asked while :asking: "at", "kind", "labels", "values", "lines" and
-    # "spec", see spec_of.
+    # The choice the receiver is asked while :asking: "at", "labels", "values", "cancel" and
+    # "lines", see ask.
     attr_reader :question
 
     # Every write the replay made, each [kind, key, value, viewed]: viewed for a world or work key,
@@ -1720,9 +1708,9 @@ module MGQ_MpStoryReplay
     def answer(value)
       return self unless @state == :asking
 
-      opener = @opener.take(@question["at"], @question["kind"])
+      opener = @opener.take(@question["at"], "choice")
       @own_way ||= opener.nil? || opener.to_s != value.to_s
-      @record.add(@question["at"], @question["kind"], value)
+      @record.add(@question["at"], "choice", value)
       @question = nil
       step
     end
@@ -2046,11 +2034,10 @@ module MGQ_MpStoryReplay
     end
 
     # Answers the message as the message window does: text is shown and closed; a choice, a number,
-    # an item, an extended choice or a present is answered from the record; an input the record
-    # lacks is asked, or stops the replay while the choices' screen asks only choices.
+    # an item, an extended choice or a present is answered from the record; a choice the record
+    # lacks is asked, any other input the record lacks takes what the game's window starts with.
     #
-    # @return [Boolean] Whether the message was answered; false while the receiver is asked or once
-    #   the replay stopped.
+    # @return [Boolean] Whether the message was answered; false while the receiver is asked.
     def answer_message
       message = $game_message
       kind = input_kind(message)
@@ -2062,58 +2049,28 @@ module MGQ_MpStoryReplay
 
       at = kind == "choice" ? choice_now : at_now
       value = @record.take(at, kind)
-      return kind == "choice" || MGQ_MpStoryReplay.asks_inputs? ? ask(at, kind, message, lines) : stop(at, kind) if value.nil?
+      value = window_start(at, kind, message) if value.nil? && kind != "choice"
+      return ask(at, message, lines) if value.nil?
 
       apply(kind, message, value)
       message.clear
       true
     end
 
-    # Stops the replay at a message input the record lacks that the choices' screen cannot show:
-    # it ends as a check that fails, so its run waits.
+    # Answers an input other than a choice the record lacks as the game's window starts: a number
+    # at the variable's value within its digits, no key item and no present.
     #
     # @param at [String] The command that asks.
-    # @param kind [String] What it asks.
-    # @return [Boolean] False: not answered.
-    def stop(at, kind)
-      MGQ_MpStoryReplay.log("the replay of #{@site} stops at #{at}: the record holds no #{kind}, and the player is asked only choices")
-      @state = :failed
-      false
-    end
-
-    # Describes what the screen shows for an input other than a choice: a number's digits and the
-    # variable's value, or the items the game's item or present window lists, each [id, name, count].
-    #
     # @param kind [String] The input's kind.
     # @param message [Game_Message] The message.
-    # @return [Hash, nil] The description, nil for a choice.
-    def spec_of(kind, message)
-      case kind
-      when "number" then { "digits" => message.num_input_digits_max, "value" => $game_variables[message.num_input_variable_id] }
-      when "item" then { "items" => item_choices(message) }
-      when "present" then { "actor" => message.present_actor_id, "items" => presents(message.present_actor_id) }
+    # @return [Integer] The answer.
+    def window_start(at, kind, message)
+      value = 0
+      if kind == "number"
+        value = [[$game_variables[message.num_input_variable_id].to_i, 0].max, 10**message.num_input_digits_max - 1].min
       end
-    end
-
-    # Lists the items the item window offers: the key items held (script 084), or those the event's
-    # condition picks, by their base item (script 267).
-    #
-    # @param message [Game_Message] The message.
-    # @return [Array<Array>] Each [id, name, count].
-    def item_choices(message)
-      condition = message.respond_to?(:item_choice_condition) ? message.item_choice_condition : nil
-      items = $game_party.all_items.select { |item| condition ? condition.call(item) : item.is_a?(RPG::Item) && item.key_item? }
-      items.map { |item| [condition ? item.base_data.id : item.id, item.name.to_s, $game_party.item_number(item)] }
-    end
-
-    # Lists the presents the present window offers a companion (script 164).
-    #
-    # @param actor_id [Integer] The companion.
-    # @return [Array<Array>] Each [id, name, count].
-    def presents(actor_id)
-      actor = $game_actors[actor_id]
-      items = $game_party.all_items.select { |item| item.is_a?(RPG::Item) && item.is_present? && actor.exist_present?(item.id) }
-      items.map { |item| [item.id, item.name.to_s, $game_party.item_number(item)] }
+      MGQ_MpStoryReplay.log("the replay of #{@site} answers the #{kind} at #{at} with #{value}, as the game's window starts: the record holds none")
+      value
     end
 
     # Tells which input a message waits for.
@@ -2129,32 +2086,28 @@ module MGQ_MpStoryReplay
       nil
     end
 
-    # Waits for the receiver's answer to a message's input.
+    # Waits for the receiver's answer to a message's choice.
     #
     # @param at [String] The command that asks.
-    # @param kind [String] What it asks.
     # @param message [Game_Message] The message.
     # @param lines [Array<String>] The message's lines.
     # @return [Boolean] False: not answered.
-    def ask(at, kind, message, lines)
-      labels, values, cancel = choices_of(kind, message)
-      @question = { "at" => at, "kind" => kind, "labels" => labels, "values" => values, "cancel" => cancel, "lines" => lines, "spec" => spec_of(kind, message) }
+    def ask(at, message, lines)
+      labels, values, cancel = choices_of(message)
+      @question = { "at" => at, "labels" => labels, "values" => values, "cancel" => cancel, "lines" => lines }
       @state = :asking
       false
     end
 
-    # Lists the choices of a message's input, the answer each gives and the place cancel answers,
+    # Lists the choices of a message's choice, the answer each gives and the place cancel answers,
     # as the game's choice window cancels: a label's place, or the place after the labels for the
     # choice's own branch, whose answer goes last. Of an extended choice, it lists those its window
     # lets the player pick.
     #
-    # @param kind [String] The input's kind.
     # @param message [Game_Message] The message.
     # @return [Array] The labels, the answers and the cancel's place (nil where the choice has no
     #   cancel).
-    def choices_of(kind, message)
-      return [[], [], nil] unless kind == "choice"
-
+    def choices_of(message)
       if message.respond_to?(:ex_choice?) && message.ex_choice?
         items = (message.ex_choice_item || []).select { |item| MGQ_MpStoryReplay.ex_choice_enabled?(item[2], $game_switches, $game_variables) }
         setting = message.ex_choice_setting

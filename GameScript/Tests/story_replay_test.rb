@@ -2,7 +2,8 @@
 #  story_replay_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Checked that a join in a replay reads the receiver's own story
+#      Paulinchen  2026-11-06: Checked that a number takes the opener's answer, and one the record lacks the game's start, without asking
+#                            - Checked that a join in a replay reads the receiver's own story
 #                            - Gave the party a member whose levels the game keeps per kind in one Hash
 #                            - Dropped the checks of the replayer's lists against recorded ones
 #      Paulinchen  2026-11-05: Handed and expected sites as plain values
@@ -147,15 +148,13 @@ class Game_Party
   def gain_item(item, amount); @items[item.respond_to?(:id) ? item.id : item] += amount; end
   def lose_item(item, amount); gain_item(item.id, -amount); end
   def gain_gold(amount); @gold += amount; end
-  def all_items; @items.keys.sort.select { |id| @items[id] > 0 }.map { |id| $data_items[id] }.compact; end
   def item_number(id); @items[id]; end
   def in_battle; false; end
 end
-# Stands in for a companion: their affection and the presents they take.
+# Stands in for a companion: their affection and what a present raises it by.
 class Game_Actor
   attr_accessor :love
   def initialize(id); @id = id; @love = 0; end
-  def exist_present?(item_id); item_id == 700; end
   def present_loveup(_item_id); 5; end
 end
 # Stands in for the actors, each made when first asked for (script 029).
@@ -517,12 +516,12 @@ module MGQ_MpCoopEvents; def self.hand_entry(entry); $handed << entry; end; end
 module MGQ_MpCoopChoices; def self.ask(opener, lines, labels, done, cancel = nil); $asked = [opener, lines, labels, done, cancel]; end; end
 # The currency's name.
 module Vocab; def self.currency_unit; "G"; end; end
-# An item of the database, a key item or a present as its flags say.
-module RPG; class Item < Struct.new(:id, :name, :icon_index, :key, :present); def key_item?; key == true; end; def is_present?; present == true; end; end; end
+# An item of the database, a key item as its flag says.
+module RPG; class Item < Struct.new(:id, :name, :icon_index, :key); def key_item?; key == true; end; end; end
 Item = RPG::Item
 $data_items = Array.new(800)
 $data_items[511] = Item.new(511, "Silver Key", 3, true)
-$data_items[700] = Item.new(700, "Flower", 4, false, true)
+$data_items[700] = Item.new(700, "Flower", 4)
 $data_items[606] = Item.new(606, "Makina", 5)
 $data_weapons = []
 $data_armors = []
@@ -616,7 +615,7 @@ check("the receiver's own answer plays on", [$game_self_switches[[215, 23, "A"]]
 replay = MGQ_MpStoryReplay::Replay.allocate
 choice = Struct.new(:choices, :choice_cancel_type)
 check("a choice hands no cancel, or its own branch after the labels",
-      [replay.send(:choices_of, "choice", choice.new(["Yes", "No"], 0)), replay.send(:choices_of, "choice", choice.new(["Sword", "Shield"], 3))],
+      [replay.send(:choices_of, choice.new(["Yes", "No"], 0)), replay.send(:choices_of, choice.new(["Sword", "Shield"], 3))],
       [[["Yes", "No"], [0, 1], nil], [["Sword", "Shield"], [0, 1, 2], 2]])
 
 # A run that waits, as for a lock, is taken again once the DLL names it due.
@@ -783,53 +782,27 @@ opener.update while opener.running?
 check("the opener's checks of its self switch and of what the party holds and a count it read are noted by their commands",
       $ran.last["inputs"], [[[["map", 215, 23, 1], 0], 0, "branch", 1], [[["map", 215, 23, 1], 1], 0, "branch", 1], [[["map", 215, 23, 1], 4], 0, "holding", 5]])
 
-# Without the choices' screen asking inputs, a number the record lacks stops the replay, which
-# writes nothing of what it did before; one the record holds is used.
+# A number takes the opener's answer, such as the coins they put in, and the receiver is asked
+# nothing (user decision 2026-11-06).
 new_game
-page(215, 30, [c(126, 606, 0, 0, 1), c(101, "", 0, 0, 2), c(401, "How many?"), c(103, 300, 2), c(123, "A", 0)])
-stopped = replay(["map", 215, 30, 1])
-check("without asking, a number the record lacks stops the replay, which writes and gives nothing",
-      [stopped.state, $game_party.item_number(606), $game_self_switches[[215, 30, "A"]]], [:failed, 0, false])
-replay(["map", 215, 30, 1], "inputs" => [[[["map", 215, 30, 1], 1], 0, "number", 3]])
-check("a recorded number is used", [$game_variables[300], $game_party.item_number(606)], [3, 1])
-
-# With the choices' screen asking inputs, a number, an item or a present the record lacks is asked
-# of the receiver, and the run waits for the answer.
-def MGQ_MpCoopChoices.ask_input(opener, lines, kind, spec, done); $asked_input = [opener, lines, kind, spec, done]; end
-$chest_entry = entry
-# Takes a run of a page of map 215, whose step is the page's A.
-#
-# @param event [Integer] The page's event.
-def take_page(event)
-  MGQ_MpStoryReplay.receive($chest_entry.merge("site" => ["map", 215, event, 1], "keys" => [[2, [215, event, "A"], false]], "inputs" => []))
-  MGQ_MpStoryReplay.update
-end
-
-new_game
+page(215, 30, [c(126, 606, 0, 0, 1), c(101, "", 0, 0, 2), c(401, "How many coins do you put in?"), c(103, 300, 2), c(123, "A", 0)])
 $game_variables[300] = 4
-take_page(30)
-asked = $asked_input
-check("a number the record lacks asks the receiver with its digits and the variable's value, and nothing is given yet",
-      [asked[0..3], $game_party.item_number(606)], [["Ana", ["How many?"], "number", { "digits" => 2, "value" => 4 }], 0])
-asked[4].call(7)
-check("the variable takes their answer, and the page goes on", [$game_variables[300], $game_party.item_number(606), $game_self_switches[[215, 30, "A"]]], [7, 1, true])
+coins = replay(["map", 215, 30, 1], "inputs" => [[[["map", 215, 30, 1], 1], 0, "number", 50]])
+check("a recorded number takes the opener's answer without asking, and the page goes on",
+      [coins.state, coins.question, $game_variables[300], $game_party.item_number(606)], [:done, nil, 50, 1])
 
-page(215, 31, [c(101, "", 0, 0, 2), c(401, "Which one?"), c(104, 300), c(123, "A", 0)])
+# A number or a present the record lacks takes what the game's window starts with: the variable's
+# value within the number's digits, no present.
 new_game
-$game_party.gain_item(511, 1)
-$game_party.gain_item(606, 2)
-take_page(31)
-check("an item the record lacks asks the receiver with the key items they hold", $asked_input[2..3], ["item", { "items" => [[511, "Silver Key", 1]] }])
-$asked_input[4].call(511)
-check("the variable takes the item they picked", [$game_variables[300], $game_self_switches[[215, 31, "A"]]], [511, true])
-
+$game_variables[300] = 123
+lacking = replay(["map", 215, 30, 1])
+check("a number the record lacks keeps the variable's value within its digits without asking",
+      [lacking.state, lacking.question, $game_variables[300], $game_party.item_number(606)], [:done, nil, 99, 1])
 page(215, 32, [c(355, "present_start(5)"), c(123, "A", 0)])
 new_game
 $game_party.gain_item(700, 1)
-take_page(32)
-check("a present the record lacks asks the receiver with the presents the companion takes", $asked_input[2..3], ["present", { "actor" => 5, "items" => [[700, "Flower", 1]] }])
-$asked_input[4].call(0)
-check("a cancelled present gives nothing", [$game_party.item_number(700), $game_actors[5].love, $game_self_switches[[215, 32, "A"]]], [1, 0, true])
+replay(["map", 215, 32, 1])
+check("a present the record lacks gives nothing", [$game_party.item_number(700), $game_actors[5].love, $game_self_switches[[215, 32, "A"]]], [1, 0, true])
 
 # A parallel event's run whose event the map made anew on a transfer closes with it, while the run
 # of the map's own interpreter, which goes on across the transfer, stays open.

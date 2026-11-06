@@ -2,6 +2,8 @@
 //  ChoiceTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Opened only choices, as a replay answers numbers, key items and presents the opener's way
+//                            - Titled a present's question with its opener in place of the companion
 //      Paulinchen  2026-11-05: Read the story's ids from StoryIds
 //                            - Answered a choice's own keys without the Navy's self switches, which the reviewed key list keeps
 //      Paulinchen  2026-11-01: Dropped the steps on a question, which the framework's list and number field take
@@ -116,15 +118,11 @@ public static class ChoiceTopics
     public const string Table = "choices.table";
 
     /// <summary>
-    /// Opens a question a replay asks, see <see cref="ChoiceInputs"/>: <c>kind</c> ("choice",
-    /// "number", "item" or "present"), <c>opener</c> (nil for the player's own history),
-    /// <c>companion</c> (a present's) and <c>spec</c> in. The spec holds per kind <c>labels</c> and
-    /// <c>cancel</c> (a choice's), <c>digits</c> and <c>value</c> (a number's), <c>items</c> ([id,
-    /// name, count, description] each, an item's and a present's), <c>result</c> (a present's, empty
-    /// for the first) and <c>index</c> (the row a list starts on). The question out: <c>kind</c>,
-    /// <c>title</c>, <c>keys</c> ([key, text] each, the key "cancel" for the game's cancel button),
-    /// <c>hint</c>, <c>rows</c> ([answer, name, count or nil, hint, cancel] each), <c>digits</c>,
-    /// <c>value</c>, <c>index</c> and <c>cancel</c> (what cancel answers, nil to answer later).
+    /// Opens a choice a replay asks, see <see cref="ChoiceInputs"/>: <c>opener</c> (nil for the
+    /// player's own history) and <c>spec</c> (<c>labels</c>, <c>cancel</c> and <c>index</c>, the row
+    /// the list starts on) in. The question out: <c>title</c>, <c>keys</c> ([key, text] each, the key
+    /// "cancel" for the game's cancel button), <c>hint</c>, <c>rows</c> ([answer, name, cancel] each),
+    /// <c>index</c> and <c>cancel</c> (what cancel answers, nil to answer later).
     /// </summary>
     public const string InputOpen = "choices.input_open";
 
@@ -155,29 +153,12 @@ public static class ChoiceTopics
     /// </summary>
     /// <param name="request">The request.</param>
     /// <returns>The question.</returns>
-    /// <exception cref="BridgeRequestException">The kind names no input.</exception>
     private static ChoiceInput InputOf(RubyHash request)
     {
         RubyHash spec = request["spec"].AsHash();
         string? opener = request["opener"].IsNil ? null : request["opener"].AsText();
-        int index = spec["index"].AsInt();
-        return request["kind"].AsText() switch
-        {
-            "choice" => ChoiceInputs.Choice(opener, TextsOf(spec["labels"]), spec["cancel"].IsNil ? null : spec["cancel"].AsInt(), index),
-            "number" => ChoiceInputs.Number(opener, spec["digits"].AsInt(), spec["value"].AsLong()),
-            "item" => ChoiceInputs.Item(opener, ItemsOf(spec["items"]), index),
-            "present" => ChoiceInputs.Present(request["companion"].AsText(), ItemsOf(spec["items"]), spec["result"].AsText(), index),
-            string kind => throw new BridgeRequestException($"{kind} is no input a replay asks."),
-        };
+        return ChoiceInputs.Choice(opener, TextsOf(spec["labels"]), spec["cancel"].IsNil ? null : spec["cancel"].AsInt(), spec["index"].AsInt());
     }
-
-    /// <summary>
-    /// Reads the items of a question.
-    /// </summary>
-    /// <param name="list">[id, name, count, description] each.</param>
-    /// <returns>The items.</returns>
-    private static List<ChoiceInputItem> ItemsOf(RubyValue list) =>
-        [.. list.AsArray().Select(item => item.AsArray()).Select(item => new ChoiceInputItem(item[0].AsInt(), item[1].AsText(), item[2].AsInt(), item[3].AsText()))];
 
     /// <summary>
     /// Writes a question as the scripts hold it.
@@ -186,17 +167,12 @@ public static class ChoiceTopics
     /// <returns>The question.</returns>
     private static RubyHash InputText(ChoiceInput input)
     {
-        var rows = new RubyArray(input.Rows.Select(row =>
-            (RubyValue)new RubyArray { row.Answer, row.Name, row.Count is { } count ? count : RubyNil.Value, row.Hint, row.Cancel }));
         return new RubyHash
         {
-            { "kind", input.Kind.ToString().ToLowerInvariant() },
             { "title", input.Title },
             { "keys", new RubyArray(input.Keys.Select(key => (RubyValue)new RubyArray { key.Key, key.Text })) },
-            { "hint", input.Hint },
-            { "rows", rows },
-            { "digits", input.Digits },
-            { "value", input.Value },
+            { "hint", ChoiceInputs.PickHint },
+            { "rows", new RubyArray(input.Rows.Select(row => (RubyValue)new RubyArray { row.Answer, row.Name, row.Cancel })) },
             { "index", input.Index },
             { "cancel", input.CancelAnswer is { } cancel ? cancel : RubyNil.Value },
         };

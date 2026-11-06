@@ -2,7 +2,8 @@
 //  StoryReplayTopicsTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-06: Covered another member's trade that gave a found item replayed the opener's way
+//      Paulinchen  2026-11-06: Covered a number replayed with the opener's answer beside a choice the receiver is asked
+//                            - Covered another member's trade that gave a found item replayed the opener's way
 //      Paulinchen  2026-11-05: Covered which of the leader's changes a member takes, over the topic
 //                            - Handed and expected the keys, values, sites and things a replay reads as plain values, and read the entries of an earlier release's save
 //                            - Covered a talk that gave a key item handed over in both world types, a Makina never, and the Medal King's run never
@@ -189,13 +190,15 @@ public sealed class StoryReplayTopicsTests
     /// <summary>
     /// Asserts that the replay of a run leaves out the opener's answer of a choice whose answers do
     /// different things to the receiver's own keys, so the receiver is asked it, and keeps the
-    /// answer of one whose answers differ only in the world's keys, and every other input.
+    /// answer of one whose answers differ only in the world's keys, and every other input, a number
+    /// too, which the receiver is never asked (user decision 2026-11-06).
     /// </summary>
     [Fact]
     public void Take_AsksTheReceiverAChoiceWhoseAnswersDifferInTheirOwnKeys()
     {
         RubyArray asked = [new RubyArray { new RubyArray { Page(1, 10, 1), 0 }, 0, "choice", 1 }];
-        RubyArray kept = [new RubyArray { new RubyArray { Page(1, 10, 1), 6 }, 0, "choice", 0 }, new RubyArray { new RubyArray { Page(1, 10, 1), 14 }, 0, "rand", 3 }];
+        RubyArray kept = [new RubyArray { new RubyArray { Page(1, 10, 1), 6 }, 0, "choice", 0 }, new RubyArray { new RubyArray { Page(1, 10, 1), 10 }, 0, "number", 50 },
+            new RubyArray { new RubyArray { Page(1, 10, 1), 14 }, 0, "rand", 3 }];
         RubyHash entry = Entry();
         entry["site"] = Page(1, 10, 1);
         entry["stream"] = "story:lead";

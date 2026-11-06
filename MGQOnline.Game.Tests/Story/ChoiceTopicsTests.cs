@@ -2,7 +2,9 @@
 //  ChoiceTopicsTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-06: Dropped the checks that replayed recorded cases
+//      Paulinchen  2026-11-06: Opened a choice through the topic, the one question a replay asks
+//                            - Dropped the checks that replayed recorded cases
+//                            - Opened a question without the companion, which the topic no longer reads
 //      Paulinchen  2026-11-01: Checked a question of a replay opened through the topic
 //      Paulinchen  2026-10-31: Checked a question of a replay through the topics
 //      Paulinchen  2026-10-28: Created
@@ -55,19 +57,19 @@ public sealed class ChoiceTopicsTests
     }
 
     /// <summary>
-    /// Asserts that a question opened through the topic hands its rows, start row, cancel answer and
+    /// Asserts that a choice opened through the topic hands its rows, start row, cancel answer and
     /// key entries as the scripts read them.
     /// </summary>
     [Fact]
-    public void Input_HandsTheQuestionThroughTheTopic()
+    public void Input_HandsTheChoiceThroughTheTopic()
     {
-        var spec = new RubyHash { { "items", new RubyArray { new RubyArray { 12, "Silver Ring", 1, "A ring." } } }, { "index", 0 } };
+        var spec = new RubyHash { { "labels", new RubyArray { "Sword", "Shield" } }, { "cancel", 2 }, { "index", 0 } };
 
-        RubyHash input = Call(ChoiceTopics.InputOpen, new RubyHash { { "kind", "item" }, { "opener", "Ana" }, { "companion", RubyNil.Value }, { "spec", spec } }).AsHash();
+        RubyHash input = Call(ChoiceTopics.InputOpen, new RubyHash { { "opener", "Ana" }, { "spec", spec } }).AsHash();
 
-        RubyArray rows = input["rows"].AsArray();
-        Assert.Equal((12, "A ring.", 0, 0), (rows[0].AsArray()[0].AsInt(), rows[0].AsArray()[3].AsText(), input["index"].AsInt(), input["cancel"].AsInt()));
-        Assert.Equal(["cancel", "none"], input["keys"].AsArray()[^1].AsArray().Select(part => part.AsText()));
+        RubyArray last = input["rows"].AsArray()[^1].AsArray();
+        Assert.Equal((2, "Cancel", true, 0, 2), (last[0].AsInt(), last[1].AsText(), last[2].AsBool(), input["index"].AsInt(), input["cancel"].AsInt()));
+        Assert.Equal(["cancel", "Cancel"], input["keys"].AsArray()[^1].AsArray().Select(part => part.AsText()));
     }
 
     /// <summary>
