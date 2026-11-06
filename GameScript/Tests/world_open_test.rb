@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-06: Checked that a refusal of this version asks for the update at the title at once and after a game at the next title
+#                            - Acted on the world screen as its window of the UI layer hands over what the player does
 #      Paulinchen  2026-11-05: Answered the squad rules' text with fixed values and checked what goes to the DLL instead of the rule
 #                            - Answered the worlds on this PC, the list's rows, the forms and the invite with the values each check sets, and checked what goes to the DLL instead of what its stand-ins decided
 #                            - Read the directory's list, the world room and the player's id through the DLL's topics
@@ -280,13 +281,13 @@ scene.instance_variable_set(:@entry, entries[2])
 $called = nil
 $screen_steps = [["password", "Plain"]]
 scene.on_enter
-check("the password step asks for it in a form typed in place", [$called, $forms.asked("form.open").last.values_at("kind", "name"), $focused.id, $mgq_text_input],
-      [nil, ["password", "Plain"], "form:password", true])
+check("the password step asks for it in a form typed in place", [$called, $forms.asked("form.open").last.values_at("kind", "name"), focused(scene)],
+      [nil, ["password", "Plain"], :password])
 type_in("secret\r")
 check("Enter hands the password to the DLL", screen_requests("screen.answer").last, { "answer" => "password", "text" => "secret" })
 $screen_steps = [["password", "Plain"]]
 scene.on_enter
-cancel_in($focused)
+cancel_form(scene)
 check("backing out of the password tells the DLL, which may end an entry after a restart", [screen_requests("screen.answer").last, scene.form], [{ "answer" => "password_back" }, nil])
 
 # Raid Worlds: the type and companion sharing the list reads, their place and colour, the details,
@@ -313,9 +314,7 @@ raid_rows = [listed_row(listed_value("r2", "Raid Gold", "type" => "raid"), "colo
              listed_row(listed_value("w3", "Old"), "color" => "favourite"), listed_row(listed_value("w1", "Plain"))]
 colors = raid_rows.map { |row| scene.world_row(screen_entry(row))[:color] }
 check("a row takes the colour the DLL names: a Raid World red, a featured world gold, a favourite the crisis colour, another the text's own",
-      [colors[0].equal?(MGQ_MpWorld::RAID_COLOR), colors[1].equal?(MGQ_MpWorld::FEATURED_COLOR), colors[2, 2]], [true, true, [:warn, nil]])
-$screens.details["r2"] = screen_details("Raid Gold", [], [], nil).merge("title_color" => "raid")
-check("and so does a world's name above its details", scene.title_color(MGQ_MpWorldScreen.details(screen_entry(raid_rows[0]))["title_color"]).equal?(MGQ_MpWorld::RAID_COLOR), true)
+      colors, [MGQ_MpWorld::RAID_COLOR, MGQ_MpWorld::FEATURED_COLOR, :warning, nil])
 
 # A world entered while the directory listed it hands its type, sharing, difficulty and squad rules
 # to the DLL, which keeps them in world.ini (LocalWorldsTests).
@@ -416,11 +415,11 @@ scene = new_scene
 scene.enter_form(:new_world)
 $forms.set("form.open")
 $forms.set("form.turn", FormAnswers.view("create of a Raid World with its choices"))
-form_part(scene, :share).receive("step", -1)
+scene.turned(scene.form, form_field(scene, :share), 2)
 $forms.set("form.turn")
-check("a switch turned back round to its last outcome goes to the DLL as the steps to it, the form taking the outcome it answers",
+check("a switch turned to another outcome goes to the DLL as the steps to it, the form taking the outcome it answers",
       [$forms.asked("form.turn").last.values_at("key", "step"), scene.form.share], [["share", 2], "all"])
-cancel_in($focused || form_part(scene, :share))
+cancel_form(scene)
 
 # An outdated game.
 $outdated = true
@@ -695,14 +694,6 @@ check("so does an outdated game started again to enter a world, which it then no
 $required.last[3].call(:declined)
 $outdated = false
 
-# What the lines at the top say.
-#
-# @param scene [Scene_MpWorlds] The screen.
-# @return [String] The message.
-def said(scene)
-  scene.instance_variable_get(:@message)
-end
-
 # The world just created gets the cursor, and the screen says to confirm to enter it, as the DLL's
 # steps after the request tell it (WorldEnteringTests).
 made = local_world("abcdef012345", "code" => "code", "name" => "Free")
@@ -731,14 +722,14 @@ scene.enter_form(:join_hidden)
 $calls.clear
 $screen_steps = [["busy", "find"]]
 type_in("#{'ab' * 16}\r")
-check("Enter in the world id has the DLL look the world up, holding the screen", [scene.form.sends_on_enter?, screen_requests("screen.do").last["do"], scene.busy, scene.root.inert?],
-      [true, "find", "find", true])
+check("Enter in the world id has the DLL look the world up, holding the screen", [scene.form.sends_on_enter?, screen_requests("screen.do").last["do"], scene.busy, scene.idle?],
+      [true, "find", "find", false])
 scene.play("steps" => [["idle"], ["close_form"]])
 scene.enter_form(:new_world)
 $calls.clear
 type_in("x\r")
-check("a form with more text boxes keeps the text with Enter and moves down, sent from its button", [scene.form.sends_on_enter?, scene.form[:name], $focused.id, $calls, scene.busy],
-      [false, "x", "form:password", [], nil])
+check("a form with more text boxes keeps the text with Enter and moves down, sent from its button", [scene.form.sends_on_enter?, scene.form[:name], focused(scene), $calls, scene.busy],
+      [false, "x", :password, [], nil])
 # The details say Known once this PC's folder holds the world code, which entering reads.
 plain = entries[2]
 held = local_world("abcdef012345", "code" => "x", "name" => "Plain")

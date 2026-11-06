@@ -2,6 +2,7 @@
 #  start_choice_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Handed the DLL a choice through the screen's answer, as its menu does
 #      Paulinchen  2026-11-05: Left the new world's form to the DLL's tests and took the world on this PC from the DLL's answers
 #                            - Read the directory's list and the player's id through the DLL's topics
 #      Paulinchen  2026-11-01: Dropped the checks that read the old screen prototype instead of the scripts
@@ -180,7 +181,7 @@ Dir.mktmpdir do |root|
     $screen_steps = where
     scene.on_enter
     pick_menu(scene, 0)
-    scene.dll_pick("take_start")
+    scene.answer("take_start")
     check("the creator's save and Take go back too", screen_requests("screen.answer").last(2).map { |request| request["answer"] }, ["from_creator", "take_start"])
     $screen_steps = where
     scene.on_enter
@@ -204,7 +205,7 @@ Dir.mktmpdir do |root|
     scene = new_scene
     scene.instance_variable_set(:@entry, MGQ_MpWorld::Entry.new("w", "Free", nil, world, false, false))
     $screen_steps = [["save_screen"]]
-    scene.dll_pick("from_own")
+    scene.answer("from_own")
     check("From one of my saves opens the save screen", $called, Scene_MpStartSave)
     check("which says what the save is for", Scene_MpStartSave.allocate.help_window_text, MGQ_MpSaveDistribution::HELP_TEXTS[:own])
     check("every text of the save screen fits its line of help, 48 characters at most", MGQ_MpSaveDistribution::HELP_TEXTS.values.select { |text| text.size > 48 }, [])

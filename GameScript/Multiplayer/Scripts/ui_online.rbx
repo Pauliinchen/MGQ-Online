@@ -5,6 +5,7 @@
 #      Paulinchen  2026-11-06: Named MGQ Online's colors for the Mod Framework's UI layer and kept its HUD parts shown
 #                            - Named a player's color by MGQ Online's color names
 #                            - Rebuilt the list box as a window of the UI layer, the mod picker's Remove in its rows' context menu
+#                            - Dropped the lines across the top of a screen, which the world screen holds itself now
 #      Paulinchen  2026-11-01: Dropped the name the old screens reached the Mod Framework's interface by
 #                            - Named a player's color as the Mod Framework's components take it, and left the room at the top to its docks
 #                            - Built the list box and the lines across the top of a screen on the Mod Framework's components
@@ -15,7 +16,7 @@
 # What MGQ Online's screens keep of their own now that their input, look, places, text boxes,
 # question box and wheels are the Mod Framework's: the groups of the mod's rows in Options > Mods,
 # the colors it names, its HUD parts kept shown, the color a player is named in, the list box on
-# the framework's UI layer, and the lines across the top of a screen on its components.
+# the framework's UI layer.
 
 module MGQ_Multiplayer
   # What the names of the mod's settings rows in Options > Mods start with.
@@ -210,9 +211,9 @@ end
 
 # The large window over a screen that lists rows under a title, a window of the Mod Framework's UI
 # layer: the title, a note, a list of rows or a scrolling text, and a key line. The world screen
-# shows a world's players, mods or description in it, and its forms the mod picker, whose rows have
-# toggles, a Name field to add a mod by name and a Remove for the mods added so. The player moves
-# and resizes it with Alt; cancel, Numpad 0 and a click outside close it.
+# shows a world's players, mods or description in it, and its forms the mod picker (picker: true),
+# whose rows have toggles, a Name field to add a mod by name and a Remove for the mods added so. The
+# player moves and resizes it with Alt; cancel, Numpad 0 and a click outside close it.
 #
 #   UI.open(MGQ_MpListBox, title: "Iliasburg", source: MGQ_MpListBox::Source.new(rows, "Players")) { |_value, why| ... }
 class MGQ_MpListBox < Mod_Framework::UI::Component
@@ -254,8 +255,9 @@ class MGQ_MpListBox < Mod_Framework::UI::Component
   # rows and its note of a refused change; the window reads it anew every few frames.
   #
   # @!attribute rows [Array, nil] The list's rows: { heading: "Online (2)" } over the rows under
-  #   it, and { text:, color:, right:, toggles: } items; an item with name_field: true opens the
-  #   Name field, one with removable: true is removed by Remove; nil shows the description.
+  #   it, and { text:, color:, right:, toggles: } items; in the picker an item with name_field:
+  #   true opens the Name field and one with removable: true is removed by Remove; nil shows the
+  #   description.
   # @!attribute note [String, nil] The note beside the title, such as "Players", nil for none.
   Source = Struct.new(:rows, :note)
 
@@ -271,11 +273,17 @@ class MGQ_MpListBox < Mod_Framework::UI::Component
   # The description shown instead of rows, scrolling without a cursor.
   param :description, nil
 
+  # Whether it is the mod picker: its rows' toggles, the Name field and Remove.
+  param :picker, false
+
   # The key line's entries, KEYS unless given.
   param :keys, nil
 
   # The most characters the Name field takes.
   param :max_length, nil
+
+  # The help line's text while the Name field types.
+  param :typing_help, nil
 
   # A row was picked: the row.
   event :submit
@@ -315,18 +323,25 @@ class MGQ_MpListBox < Mod_Framework::UI::Component
       else
         list source.rows || [], id: LIST, rows_shown: :fill, height: :fill, autofocus: true, bind_index: :cursor, empty: "No entries",
                               on_submit: ->(row) { picked(row) }, on_toggle: ->(row, index) { emit :toggle, row, index },
+                              on_focus: -> { self.naming = false if naming },
                               context_menu: -> { removable?(cursor_row) ? [{ text: REMOVE_TEXT, on_click: -> { remove(cursor_row) } }] : [] }
-        popover target: "##{LIST}", side: :bottom, bind: :naming do
-          field = { id: FIELD, on_submit: ->(name) { add(name) } }
-          field[:max_length] = max_length if max_length
-          text_field "Name", field
-        end
       end
+      component(MGQ_MpListBoxName, box: self, max_length: max_length, typing_help: typing_help) if picker && naming
       stack row: true do
         key_help entries: keys || KEYS, grow: 1
-        button REMOVE_TEXT, id: REMOVE, variant: :text, visible: removable?(cursor_row), on_click: -> { remove(cursor_row) }
+        button(REMOVE_TEXT, id: REMOVE, variant: :text, visible: removable?(cursor_row), on_click: -> { remove(cursor_row) }) if picker
       end
     end
+  end
+
+  # Takes the name typed: the Name field closes unless the opener refused the name, which it says
+  # in the note.
+  #
+  # @param name [String] The name.
+  def add(name)
+    source.note = nil
+    emit :add, name
+    self.naming = false unless source.note
   end
 
   private
@@ -338,29 +353,22 @@ class MGQ_MpListBox < Mod_Framework::UI::Component
     (source.rows || [])[cursor]
   end
 
-  # Tells whether a row is one added by name, which Remove takes away.
+  # Tells whether a row is one of the picker added by name, which Remove takes away.
   #
   # @param row [Object] The row.
   # @return [Boolean] Whether it is.
   def removable?(row)
-    row.is_a?(Hash) && row[:removable] ? true : false
+    picker && row.is_a?(Hash) && row[:removable] ? true : false
   end
 
-  # Takes a picked row: the row that adds a mod by name opens the Name field, any other is told.
+  # Takes a picked row: the picker's row that adds a mod by name opens the Name field, any other is
+  # told.
   #
   # @param row [Object] The row.
   def picked(row)
-    return self.naming = true if row.is_a?(Hash) && row[:name_field]
+    return self.naming = true if picker && row.is_a?(Hash) && row[:name_field]
 
     emit :submit, row
-  end
-
-  # Takes the name typed and closes the Name field.
-  #
-  # @param name [String] The name.
-  def add(name)
-    self.naming = false
-    emit :add, name
   end
 
   # Tells that a row added by name is to go.
@@ -371,47 +379,29 @@ class MGQ_MpListBox < Mod_Framework::UI::Component
   end
 end
 
-# The lines across the top of a screen of the mod, such as the world screen's, as a framework Window
-# that takes neither keys nor the pointer: long lines wrap, and lines past its rows are left out.
-class MGQ_MpInfoStrip
-  # Lines it has room for unless told otherwise.
-  ROWS = 3
+# The mod picker's Name field under the list box's rows, typing as it shows; the first cancel stops
+# typing, the next goes back to the rows.
+class MGQ_MpListBoxName < Mod_Framework::UI::Component
+  # The list box, which takes the name.
+  param :box
 
-  # Height of a line, the game's.
-  LINE_HEIGHT = 24
+  # The most characters it takes, nil for the field's own most.
+  param :max_length, nil
 
-  # Opens the strip across the top of the screen, empty.
-  #
-  # @param rows [Integer] The lines it has room for.
-  def initialize(rows = ROWS)
-    @rows = rows
-    @window = Mod_Framework::UI::Window.new(:at => [0, 0], :size => [Graphics.width, height], :closable => false, :captures => false,
-                                            :inert => true, :mouse => false)
-    @label = @window.add_label("", :wrap => true, :most_lines => rows)
-    @window.open
+  # The help line's text while it types.
+  param :typing_help, nil
+
+  # Describes the field.
+  def render
+    field = { id: MGQ_MpListBox::FIELD, cancel_to: MGQ_MpListBox::LIST, on_submit: ->(name) { box.add(name) } }
+    field[:max_length] = max_length if max_length
+    field[:typing_help] = typing_help if typing_help
+    text_field "Name", field
   end
 
-  # Tells the strip's height, the game's fitting height of its rows, so the windows under it can be
-  # placed before it shows.
-  #
-  # @return [Integer] The pixels.
-  def height
-    @rows * LINE_HEIGHT + 2 * Mod_Framework::UI::Window::PADDING
-  end
-
-  # Shows the lines, if they changed.
-  #
-  # @param lines [Array<String, nil>] The lines, nil ones left out.
-  def show(lines)
-    return if lines == @given
-
-    @given = lines.dup
-    @label.text = lines.compact.join("\n")
-  end
-
-  # Closes the strip.
-  def dispose
-    @window.close
+  # Types into the field as it shows.
+  def mounted
+    part(MGQ_MpListBox::FIELD).focus
   end
 end
 

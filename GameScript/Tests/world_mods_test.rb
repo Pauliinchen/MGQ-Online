@@ -2,6 +2,7 @@
 #  world_mods_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Left installing a world's mods to the Mod Framework's dialog, which the world screen's test hands over
 #      Paulinchen  2026-11-05: Answered the mods texts, the mod keys and the world entered with fixed values instead of from their stand-ins
 #                            - Pushed the mods rule as the flag the DLL reads
 #                            - Handed and expected the creator's options and the world's settings as values, and dropped the checks of the pairs the script no longer writes or reads
@@ -93,13 +94,13 @@ class Sprite; def initialize(*); end; end
 module Graphics; def self.update; end; end
 # The game's rectangle.
 Rect = Struct.new(:x, :y, :width, :height)
-# The game's pictures, which the framework's list box measures its key line on: half the font's
-# size a character.
+# The game's pictures, which the framework's windows measure their texts on: half the font's size a
+# character.
 class Bitmap
   # The picture's font.
   attr_reader :font
   # Creates a picture in a font of 24.
-  def initialize(*); @font = Struct.new(:size, :color, :bold, :outline, :out_color).new(24); end
+  def initialize(*); @font = Struct.new(:size, :color, :bold, :outline, :out_color, :name, :italic).new(24); end
   # Measures a text.
   def text_size(text); Rect.new(0, 0, text.to_s.size * @font.size / 2, @font.size); end
   # Tells whether the picture was freed, never.
@@ -317,69 +318,17 @@ end
 mods = MGQ_MpWorldMods
 listed = MGQ_MpWorld::Directory::ListedWorld.new("w1", 4, 0, "creator", 0, "Creator", "Modded", "none", [], false, false, true, false, false, "", "", "", "", "")
 
-# The world screen: the offer to download. The DLL checks the mods (ModCheck, covered by its own
-# tests) and answers with the rows it found.
-checked = []
-level_cap = { "name" => "Level Cap", "yours" => "1.3.5", "worlds" => "1.4.0", "key" => "levelcap", "target" => "Patch/Mods/Level Cap.rb",
-              "text" => "Level Cap: yours 1.3.5, the world's 1.4.0", "downloadable" => true }
-other_mod = { "name" => "Other Mod", "yours" => "differs", "worlds" => nil, "key" => nil, "target" => nil,
-              "text" => "Other Mod: yours differs from the world creator's copy", "downloadable" => false }
-listed.mods = "!Level Cap"
-listed.mod_hashes = "Other Mod=#{'e' * 64}"
-$mod_check = lambda do |request|
-  checked << request
-  { "known" => true, "rows" => [level_cap], "summary" => "Modded needs mods that are missing or in another version here: Level Cap. Download them?" }
-end
-offer = "Modded needs mods that are missing or in another version here: Level Cap. Download them?"
-scene = new_scene
-scene.instance_variable_set(:@entry, MGQ_MpWorld::Entry.new("w1", "Modded", listed, nil, false, false))
-$screen_steps = [["say", offer], ["confirm", "mods", [["Download", "yes"], ["See the mods", "show_mods"], ["Back", "cancel"]]]]
-scene.on_enter
-check("the DLL's steps offer to download the mods, to see them, or to go back", [said(scene), menu_texts], [offer, ["Download", "See the mods", "Back"]])
-
-# The Mod Framework installs the mods: one of the game's mods is installed already, the world's
-# is one it finds on the website.
+# The Mod Framework, which starts the game again into a world: each start in restarted. The dialog of
+# the mods a world needs, which installs them, is the framework's; the screen hands it over
+# (world_screen_test.rb).
 module Mod_Framework
   module Mods
     class << self
-      attr_accessor :installing, :restarted
-      def state; { "mods" => [{ "name" => "Party_Sheet", "title" => "Party Sheet", "id" => "site:party-sheet" }] }; end
-      def check(saved); [{ "kind" => "install", "name" => saved[0][0], "target" => "site:level-cap" }]; end
-      def install(ids, &done); @installing = [ids, done]; true; end
-      def loaded; ["Level_Cap"]; end
+      attr_accessor :restarted
       def restart(_reason, action, value); @restarted = [action, value]; :restarting; end
     end
   end
 end
-$installed_forgotten = 0
-MGQ_MpWorldMods.singleton_class.send(:alias_method, :tested_forget_installed, :forget_installed)
-MGQ_MpWorldMods.define_singleton_method(:forget_installed) { $installed_forgotten += 1; tested_forget_installed }
-$screen_steps = [["install", [["Level Cap", "levelcap"]]]]
-pick_menu(scene, 0)
-ids, done = Mod_Framework::Mods.installing
-check("download hands the framework the mod by the id it finds for it, holding the screen meanwhile",
-      [screen_requests("screen.answer").last, ids, scene.instance_variable_get(:@busy)], [{ "answer" => "yes" }, ["site:level-cap"], "mods"])
-check("an installed mod goes by the framework's id of it", MGQ_MpWorldMods.framework_id("Party Sheet", "partysheet"), "site:party-sheet")
-$screen_steps = [["forget_installed"], ["restart", "w1"]]
-done.call(["Level_Cap"], nil)
-check("once installed the DLL hears it, a mod installed running already, and the scripts forget what Patch held",
-      [screen_requests("screen.answer").last, $installed_forgotten], [{ "answer" => "installed", "ok" => true, "text" => nil, "restart" => true }, 1])
-check("the framework then starts the game again to enter the world", Mod_Framework::Mods.restarted, ["multiplayer.rejoin", "w1"])
-
-# A mod only its author has.
-listed.mods = "!Other Mod"
-$mod_check = lambda { |_request| { "known" => true, "rows" => [other_mod], "summary" => "Modded needs mods that are missing or in another version here: Other Mod (get it from its author)." } }
-scene = new_scene
-scene.instance_variable_set(:@entry, MGQ_MpWorld::Entry.new("w1", "Modded", listed, nil, false, false))
-$sounds.clear
-$screen_steps = [["buzz"], ["say", "Modded needs mods that are missing or in another version here: Other Mod (get it from its author)."], ["confirm", "mods", [["See the mods", "show_mods"], ["Back", "cancel"]]]]
-scene.on_enter
-check("a mod the relay cannot give is named, with no download", [said(scene), $asked.last[1], $sounds],
-      ["Modded needs mods that are missing or in another version here: Other Mod (get it from its author).", ["See the mods", "Back"], ["buzzer"]])
-answer_question(scene, true)
-check("seeing the mods tells the DLL, which ends an entry after a restart, and opens the list box", [screen_requests("screen.answer").last, scene.box_open?], [{ "answer" => "show_mods" }, true])
-$mod_check = nil
-listed.mod_hashes = ""
 
 # Entering again after the restart the Mod Framework made for a world's mods.
 mods.restarted_for("w1")

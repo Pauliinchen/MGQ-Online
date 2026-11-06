@@ -2,6 +2,7 @@
 #  world_mods.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Left installing a world's mods to the Mod Framework's dialog of the mods a world needs
 #      Paulinchen  2026-11-05: Took the relay's mods rule as the flag the DLL reads
 #                            - Handed the DLL the options of a world's mods as values and took its settings as values, building and splitting no pairs
 #                            - Handed the DLL an option for the catalog as values
@@ -131,9 +132,6 @@ module MGQ_MpWorldMods
 
   # An option's name that joins the group above: indented, or behind an arrow.
   INDENTED = /\A(\s|->)/
-
-  # What the world screen says when no Mod Framework installs mods.
-  NO_FRAMEWORK_TEXT = "Mods cannot be installed without the Mod Framework. Install MGQ Online again."
 
   # The topic that names the mods of a world's session.
   SESSION_TOPIC = "mods.session"
@@ -378,45 +376,8 @@ module MGQ_MpWorldMods
     log("the game started again to enter world #{MGQ_MpWorld.short(@restarted_for)}")
   end
 
-  # Installs a world's mods through the Mod Framework, while the game goes on.
-  #
-  # @param rows [Array<Array(String, String)>] Each mod's name, as the world writes it, and its key
-  #   in the relay's catalog.
-  # @yield [ok, text, restart] Runs once the install ended, or at once when it could not start.
-  # @yieldparam ok [Boolean] Whether every mod was installed.
-  # @yieldparam text [String, nil] Why not, for the player.
-  # @yieldparam restart [Boolean] Whether a mod installed runs already, which loads anew only after
-  #   the game starts again.
-  def self.install(rows, &done)
-    return done.call(false, NO_FRAMEWORK_TEXT, false) unless defined?(Mod_Framework::Mods) && Mod_Framework::Mods.respond_to?(:install)
-
-    ids = rows.map { |name, key| framework_id(name, key) }
-    log("installing #{rows.map { |name, _key| name }.join(', ')} through the Mod Framework as #{ids.join(', ')}")
-    Mod_Framework::Mods.install(ids) do |installed, error|
-      running = error ? [] : installed.select { |name| Mod_Framework::Mods.loaded.any? { |loaded| loaded.casecmp(name) == 0 } }
-      log(error ? "installing the world's mods failed: #{error}" : "installed #{installed.join(', ')}#{running.empty? ? '' : ", of which #{running.join(', ')} runs already"}")
-      done.call(error.nil?, error, !running.empty?)
-    end
-  end
-
-  # Names a world's mod as the Mod Framework installs it: the id of the installed mod of that key,
-  # else of the website's or the relay's mod the framework finds for its name, else the relay's.
-  #
-  # @param name [String] The mod's name, as the world writes it.
-  # @param key [String] Its key in the relay's catalog.
-  # @return [String] The id, such as "relay:levelcap".
-  def self.framework_id(name, key)
-    state = Mod_Framework::Mods.state
-    mods = state.is_a?(Hash) ? Array(state["mods"]) : []
-    installed = mods.find { |mod| mod["id"] && [mod["name"], mod["title"]].any? { |each| MGQ_MpWorld.mod_key(each) == key } }
-    return installed["id"] if installed
-
-    found = Array(Mod_Framework::Mods.check([[name, "", ""]])).find { |row| row["kind"] == "install" && !row["target"].to_s.empty? }
-    found ? found["target"] : "relay:#{key}"
-  end
-
-  # Starts the game again to enter a world, once a mod installed for it runs already, which the
-  # Mod Framework loads anew only in a new game session.
+  # Starts the game again to enter a world with the mods it plays with now, such as one that now
+  # turns off mods this session runs, which the Mod Framework leaves out only in a new game session.
   #
   # @param world [String] The world's id.
   # @param name [String] Its name, for the log.

@@ -2,7 +2,9 @@
 #  world_screen.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Opened a world's players, mods and description and the mod picker in the list box of the Mod Framework's UI layer, a mod added by name removed through its context menu
+#      Paulinchen  2026-11-06: Drew the world screen, its details, forms and formation limits through the UI layer
+#                            - Opened a world's players, mods and description and the mod picker in MGQ Online's list box, a mod added by name removed through its context menu
+#                            - Asked for the mods a world needs in the Mod Framework's dialog, in place of the download and the list box
 #      Paulinchen  2026-11-05: Made a world of the directory through the directory's own reader
 #      Paulinchen  2026-11-01: Dropped the form window no screen draws with any more
 #                            - Named the Mod Framework's interface by its own name
@@ -147,8 +149,8 @@
 #
 #----------------------------------------------------------------
 
-# The world screen. It builds on world.rbx, which knows the worlds, and on the Mod Framework's
-# components, which lay it out, route the keys, the mouse and a gamepad, and type.
+# The world screen. It builds on world.rbx, which knows the worlds, and on the Mod Framework's UI
+# layer, which lays it out, routes the keys, the mouse and a gamepad, and types.
 
 # The world screen's model in the DLL (WorldScreen and WorldScreenModel): the worlds it lists, a
 # world's details, its choices and the list box's rows, and the screen's texts. The scripts draw
@@ -293,19 +295,18 @@ module MGQ_MpWorldScreen
   end
 end
 
-# The world screen, opened from the title screen: the info strip across the top, the worlds at the
-# left above the commands, and at the right the chosen world's details or a form. It is one floating
-# framework Box: the worlds and the commands are boxes the keys stop on as a whole first, a world's
-# details open the list box, its choices and the questions are the framework's menu and question
-# box, and the forms type in place, a gamepad through the game's letters. What the screen decides is
-# the DLL's (WorldScreen, WorldEntering, WorldForms, ModPick); the scene draws what it answers and
-# hands over what the player does.
+# The world screen, opened from the title screen: the lines across the top, the worlds at the left
+# above the commands, and at the right the chosen world's details or a form. Its window is the UI
+# layer's (WorldScreen); this scene keeps what the screen shows, plays the DLL's steps and opens the
+# menus, the questions, the list box, the mod picker, the formation limits and the dialog of the
+# mods a world needs. What the screen decides is the DLL's (WorldScreen, WorldEntering, WorldForms,
+# ModPick); the scene draws what it answers and hands over what the player does.
 class Scene_MpWorlds < Scene_MenuBase
-  # What the screen says while a text box is typed into, the keys that go back filled in.
-  TYPING_HINT = "Type on the keyboard. Arrows, Home, End move the cursor. Enter keeps it, %s goes back."
+  # The Mod Framework's UI.
+  UI = Mod_Framework::UI
 
-  # The kinds of fields typed into.
-  TYPED_KINDS = [:text, :password, :number, :id, :area]
+  # What the lines at the top say while a field types, the keys that go back filled in.
+  TYPING_HINT = "Type on the keyboard. Arrows, Home, End move the cursor. Enter keeps it, %s goes back."
 
   # The topic that enters a world through the DLL's steps.
   ENTER_TOPIC = "screen.enter"
@@ -331,41 +332,14 @@ class Scene_MpWorlds < Scene_MenuBase
   # Seconds between two log lines of slow frames.
   SLOW_FRAME_PAUSE = 2.0
 
-  # The screen root's place for no one: it is not movable.
+  # The screen's window, not movable.
   ROOT_ID = :mgq_online_world_screen
 
   # Width of the worlds and the commands.
   LEFT_WIDTH = 230
 
-  # Height of the commands' box, four rows.
-  COMMANDS_HEIGHT = 120
-
-  # Room inside the right box's edge.
-  PADDING = 6
-
-  # Room between the panels, the rows and the cells of the right box.
-  GAP = 3
-
-  # Height of the line of a world's name or a form's title.
-  TITLE_HEIGHT = 24
-
   # Width of the captions of the details' values.
   CAPTION_WIDTH = 68
-
-  # Width of the captions of a form's fields, unless a field says its own.
-  FORM_CAPTION_WIDTH = 84
-
-  # Font size of a caption, the line of when a world was played and a description.
-  SMALL_SIZE = 15
-
-  # Font size of a value.
-  VALUE_SIZE = 18
-
-  # Font size of a panel's heading.
-  HEADING_SIZE = 13
-
-  # Height of a form's buttons.
-  BUTTON_HEIGHT = 20
 
   # What the description says while a world has none.
   NO_DESCRIPTION = "No description."
@@ -379,61 +353,72 @@ class Scene_MpWorlds < Scene_MenuBase
   # The title of the mod picker.
   MOD_PICK_TITLE = "Mods of the world"
 
-  # The titles of the mod picker's button columns.
-  MOD_PICK_COLUMNS = ["Required", "Essential"]
+  # The mod picker's key line.
+  MOD_PICK_KEYS = [{ :button => :C, :text => "list or unlist" }, { :key => "→", :text => "! required, ? essential" }, { :button => :B, :text => "done" }]
 
   # The colors of the mod picker's rows, by the names ModPick gives them; :plain takes none.
   MOD_PICK_COLORS = { :grey => :dim, :bad => :error, :gold => :gold }
 
   # The colors of the details' cells, by the names the DLL gives them; "normal" takes none.
-  CELL_COLORS = { "good" => :good, "warn" => :warn, "gold" => :gold, "bad" => :bad }
+  CELL_COLORS = { "good" => :success, "warn" => :warning, "gold" => :gold, "bad" => :error }
 
-  # The colors of the worlds' rows, by the names the DLL gives them; "normal" takes none.
-  ROW_COLORS = { "favourite" => :warn }
+  # The colors of the worlds' rows and names, by the names the DLL gives them; "normal" takes none.
+  ROW_COLORS = { "raid" => MGQ_MpWorld::RAID_COLOR, "featured" => MGQ_MpWorld::FEATURED_COLOR, "favourite" => :warning }
 
-  # Tells what the screen says while a text box is typed into, with the keys that go back, which
-  # leave out the numpad's 0 while a box of digits types it.
+  # The width of a menu of the screen.
+  MENU_WIDTH = 360
+
+  # The most rows a menu of the screen shows before it scrolls.
+  MENU_ROWS = 10
+
+  # Tells what the lines at the top say while a field types, naming the keys that go back while
+  # typing.
   #
   # @return [String] The hint.
   def self.typing_hint
-    format(TYPING_HINT, Mod_Framework::UI.cancel_keys)
+    format(TYPING_HINT, UI.cancel_keys(:text))
   end
-
-  # Tells the mod picker's key line, naming the cancel key as the player bound it.
-  #
-  # @return [Array<Hash>] The entries.
-  def self.mod_pick_keys
-    [{ :key => "Enter", :text => "list or unlist" }, { :key => "→", :text => "! required, ? essential" }, { :button => :B, :text => "done" }]
-  end
-
-  # @return [Mod_Framework::UI::Box, nil] The screen's root, nil before it started.
-  attr_reader :root
-
-  # @return [MGQ_MpInfoStrip, nil] The lines at the top.
-  attr_reader :strip
-
-  # @return [Mod_Framework::UI::List] The worlds.
-  attr_reader :worlds_list
-
-  # @return [Mod_Framework::UI::List] The commands below them.
-  attr_reader :commands_list
-
-  # @return [Mod_Framework::UI::Box] The right side: a world's details or a form.
-  attr_reader :right_box
-
-  # @return [Mod_Framework::UI::Dialog, nil] The formation limits over a form, nil while closed.
-  attr_reader :limits
-
-  # @return [Mod_Framework::UI::Box, nil] The list box or the mod picker, nil while neither is open.
-  attr_reader :list_box
 
   # @return [String, nil] What runs in the DLL, which holds the screen, nil while nothing does.
   attr_reader :busy
 
-  # Builds the screen, fetches the list, and takes what the save screen handed back.
+  # @return [Integer] Counts the changes the window shows, which it watches.
+  attr_reader :serial
+
+  # @return [Array<MGQ_MpWorld::Entry>] The worlds, in the list's order.
+  attr_reader :entries
+
+  # @return [Integer] The row of the worlds the cursor is on.
+  attr_reader :world_index
+
+  # @return [Integer] The row of the commands the cursor is on.
+  attr_reader :command_index
+
+  # @return [Array, nil] Where the focus should go: [target, serial], see request_focus.
+  attr_reader :focus_request
+
+  # @return [Array, nil] What the lines at the top should say: [text, serial], see say.
+  attr_reader :said
+
+  # @return [Symbol, nil] The form entered, nil while none is.
+  attr_reader :form_symbol
+
+  # @return [Hash{Symbol => MGQ_MpWorld::WorldForm}] The forms, by their symbol.
+  attr_reader :forms
+
+  # @return [Object, nil] The formation limits' handle, nil while closed.
+  attr_reader :limits
+
+  # @return [Object, nil] The list box's or the mod picker's handle, nil while neither is open.
+  attr_reader :list_box
+
+  # @return [MGQ_MpWorld::ModPick, nil] The mod picker's mods, nil while it is closed.
+  attr_reader :mod_pick
+
+  # Opens the window, fetches the list, and takes what the save screen handed back.
   #
   # The scene is the same object again when the save screen returns, so the forms keep what was
-  # filled in; the screen's components are built anew.
+  # filled in; the window opens anew.
   def start
     super
     returning = @forms ? true : false
@@ -441,58 +426,36 @@ class Scene_MpWorlds < Scene_MenuBase
     MGQ_MpWorldMods.forget_installed unless @forms
     @forms ||= { :new_world => MGQ_MpWorld::WorldForm.create(:new_world), :join_hidden => MGQ_MpWorld::WorldForm.join(:join_hidden) }
     @forms[:rename] = MGQ_MpWorld::WorldForm.rename(:rename, MGQ_Multiplayer::Player.setting("name").to_s)
-    @message ||= MGQ_MpWorldScreen.text("hint")
     @me = MGQ_MpWorld::Directory.my_id
     @later = []
-    @strip = MGQ_MpInfoStrip.new
-    build_screen
+    @serial = 0
+    @world_index ||= 0
+    @command_index ||= 0
+    @whole = :commands
+    @place = nil
+    @arrived = false
+    @entries = []
     @restore = @entry.id if @entry && (@form_symbol.nil? || WORLD_FORMS.include?(@form_symbol))
+    request_focus(:commands_box)
+    say(MGQ_MpWorldScreen.text("hint"))
     open_steps
     MGQ_MpWorldScreen.open
     look_at_list
     take_start_save
+    @screen = UI.open(WorldScreen, :scene => self) { |_result, why| screen_closed(why) }
+    return leave_screen("its window did not open") unless @screen
+
     return_to_form if @form_symbol
-    show_panel
-    show_info
     @ask_name = MGQ_Multiplayer::Player.name.nil? && !@name_asked
     name = MGQ_Multiplayer::Player.name
     log_screen(returning ? "back from the save screen" : "opened, #{name ? "playing as #{name} (#{MGQ_MpWorld.short(@me)})" : 'no name yet'}")
   rescue => e
-    MGQ_MpWorld.log("world screen could not start: #{e.class}: #{e.message}")
+    MGQ_MpWorld.log("world screen could not start: #{e.class}: #{e.message} at #{Array(e.backtrace).first}")
     return_scene
   end
 
-  # Builds the screen's root below the strip: the worlds and the commands at the left, each a box
-  # the keys stop on as a whole first, and the right box; the commands' box takes the focus as a
-  # whole until the first worlds arrive.
-  def build_screen
-    ui = Mod_Framework::UI
-    @root = ui::Box.new(:id => ROOT_ID, :frame => false, :at => [0, @strip.height], :size => [Graphics.width, Graphics.height - @strip.height],
-                        :layout => :row, :gap => 0, :closable => true)
-    @root.on(:cancel) { @busy ? false : (leave_screen; false) }
-    left = @root.add_column(:width => LEFT_WIDTH)
-    @worlds_box = left.add_box(:id => :worlds_box, :enter => true, :grow => 1, :padding => 0)
-    @worlds_list = @worlds_box.add_list(:id => :worlds, :rows => [], :rows_shown => :fill, :grow => 1)
-    @commands_box = left.add_box(:id => :commands_box, :enter => true, :height => COMMANDS_HEIGHT)
-    @commands_list = @commands_box.add_list(:id => :commands, :rows => COMMANDS.map { |text, symbol| { :text => text, :data => symbol } })
-    @right_box = @root.add_box(:id => :right_box, :grow => 1, :padding => PADDING)
-    @worlds_box.on(:focus) { side_focused(:worlds, false) }
-    @commands_box.on(:focus) { side_focused(:commands, false) }
-    @worlds_list.on(:focus) { side_focused(:worlds, true) }
-    @commands_list.on(:focus) { side_focused(:commands, true) }
-    @worlds_list.on(:submit) { |row, _index| on_world(row[:data]) if row }
-    @commands_list.on(:submit) { |row, _index| on_command(row[:data]) if row }
-    @place = nil
-    @whole = :commands
-    @arrived = false
-    @shown = nil
-    @form_parts = {}
-    @root.open
-    @commands_box.focus
-  end
-
   # Asks for the player's name the first time, runs what a menu or a question answered, follows a
-  # running action, and keeps the list and the right side fresh.
+  # running action, and keeps the list and the details fresh.
   def update
     started = Time.now
     @spent = {}
@@ -508,13 +471,8 @@ class Scene_MpWorlds < Scene_MenuBase
 
     return start_from_own if @own_start
 
-    timed(:input) { buzz_while_busy }
     timed(:action) { follow_steps } if @busy
-    timed(:panel) do
-      show_panel
-      show_typing_line
-    end
-
+    timed(:details) { follow_details }
     timed(:list) { look_at_list }
     log_slow_frame(Time.now - started)
   rescue => e
@@ -553,32 +511,37 @@ class Scene_MpWorlds < Scene_MenuBase
     @later << block
   end
 
-  # Plays the buzzer for cancel while an action of the DLL runs and holds the screen; the root's
-  # cancel block stays quiet then, so one buzzer plays and the screen stays.
-  def buzz_while_busy
-    return unless @busy && Mod_Framework::UI.cancel?
-
-    Sound.play_buzzer
-    log_screen("cancel while #{@busy} runs: the screen waits for it")
-  end
-
-  # Closes the screen's boxes and the open menu or question, and tells the DLL the screen closed.
+  # Closes the screen's window, its boxes and the open menu or question, and tells the DLL the
+  # screen closed.
   def terminate
     close_popups
     dll_do("close") if @busy
     MGQ_MpWorldScreen.close
     @closing = true
-    [@list_box, @limits, @root].each { |root| root.close if root && root.open? }
-    @strip.dispose if @strip
+    [@list_box, @limits, @screen].each { |root| root.close if root && root.open? }
+    @list_box = @limits = @screen = nil
     @closing = false
     log_screen("closed")
     super
   end
 
-  # Leaves the screen, as cancel on a box as a whole and the commands' Back do.
-  def leave_screen
-    log_screen("leaving for the title")
+  # Leaves the screen for the title, as cancel on a box as a whole and the commands' Back do.
+  #
+  # @param why [String] Why, for the log.
+  def leave_screen(why = "leaving for the title")
+    log_screen(why)
     return_scene
+  end
+
+  # Follows the window closing other than by the scene's end, such as a refused open: the screen
+  # leaves too.
+  #
+  # @param why [Symbol, String] Why it closed.
+  def screen_closed(why)
+    return if @closing || why == :script || why == :scene
+
+    @screen = nil
+    leave_screen("its window closed: #{why}")
   end
 
   # Writes a line of the world screen to the log.
@@ -595,62 +558,83 @@ class Scene_MpWorlds < Scene_MenuBase
     @entry ? "#{@entry.name} (#{MGQ_MpWorld.short(@entry.id)})" : "no world"
   end
 
+  # Tells the window to show what changed.
+  def changed
+    @serial += 1
+  end
+
+  # Asks the window to put the focus on a part once it shows: :worlds_box or :commands_box as a
+  # whole, the rows of :worlds or :commands, or [:field, key] of the form entered.
+  #
+  # @param target [Symbol, Array] Where.
+  def request_focus(target)
+    @focus_request = [target, (@focus_request ? @focus_request[1] : 0) + 1]
+    changed
+  end
+
+  # Says something in the lines at the top, until the focus moves.
+  #
+  # @param message [String, nil] What to say; nil says nothing.
+  def say(message)
+    return if message.nil?
+
+    @said = [message.to_s, (@said ? @said[1] : 0) + 1]
+    changed
+  end
+
+  # Tells what the lines at the top say besides the help: who plays and how the list stands.
+  #
+  # @return [Array<String>] The player's line and the list's line, empty for none.
+  def strip_lines
+    name = MGQ_Multiplayer::Player.name
+    [name ? "You play as #{name}." : "You have no name yet.", @list_info.to_s]
+  end
+
   # Shows the list the DLL holds once it changed, then enters a world waiting for the list: the one
   # the game started again for, or a Discord invite's.
   def look_at_list
     changed = MGQ_MpWorld::Changes.take?(MGQ_MpWorld::Changes::LIST)
     if changed || @list_state.nil?
-      @list_state, @list_error, @admin, @list_info, @entries = MGQ_MpWorldScreen.list
-      show_entries(@entries)
-      @details_stale = true
-      show_info
+      @list_state, @list_error, @admin, @list_info, entries = MGQ_MpWorldScreen.list
+      show_entries(entries)
       MGQ_MpWorldMods.report_options(@admin) if @list_state == "ready"
     end
-    look_for_entry(@entries || [], @list_state) if @waiting
+    look_for_entry(@entries, @list_state) if @waiting
   end
 
-  # Shows other worlds. The first worlds to arrive take the focus onto the worlds' box as a whole if
-  # it still rests on the commands' box as a whole where it started, or the cursor goes onto the
-  # world chosen before the save screen; the commands' box takes it as a whole when the last world
-  # went; the cursor moves onto a world asked for once the list shows it.
+  # Shows other worlds. The first worlds to arrive pick the worlds' box as a whole if the commands'
+  # box is still picked as a whole where it started, or the cursor goes onto the world chosen before
+  # the save screen; the commands' box is picked as a whole when the last world went; the cursor
+  # moves onto a world asked for once the list shows it.
   #
   # @param entries [Array<MGQ_MpWorld::Entry>] The worlds.
   def show_entries(entries)
-    @worlds_list.rows = entries.map { |entry| world_row(entry) }
-
+    @entries = entries
+    @world_index = [[@world_index, entries.size - 1].min, 0].max
+    changed
     if !@arrived && !entries.empty?
       @arrived = true
-      @worlds_box.focus if !restore_world(entries) && @place.nil? && @whole == :commands
-    elsif entries.empty? && (@place == :worlds || (@place.nil? && @whole == :worlds))
-      @commands_box.focus
-      @place = nil
+      request_focus(:worlds_box) if !restore_world(entries) && @place.nil? && @whole == :commands && !@form_symbol
+    elsif entries.empty? && @whole == :worlds && !@form_symbol
+      request_focus(:commands_box)
       @whole = :commands
     end
     select_asked(entries)
   end
 
-  # Makes a world's row as the DLL wrote it: its players online and seats at the right, a Raid
+  # Writes a world's row as the DLL wrote it: its players online and seats at the right, a Raid
   # World in red, a featured one in gold, a favourite in the crisis color, one that left the list
   # pale.
   #
   # @param entry [MGQ_MpWorld::Entry] The world.
-  # @return [Hash] The List row.
+  # @return [Hash] The row.
   def world_row(entry)
     row = entry.row || {}
-    { :text => row["text"].to_s, :right => row["count"], :color => row_color(row["color"]), :faint => row["dim"] ? true : false,
-      :data => entry, :key => entry.key || entry.id }
-  end
-
-  # Finds the color a world's row asks for.
-  #
-  # @param name [String, nil] "raid", "featured", "favourite" or "normal".
-  # @return [Color, Symbol, nil] The color, nil for the text's own.
-  def row_color(name)
-    case name
-    when "raid" then MGQ_MpWorld::RAID_COLOR
-    when "featured" then MGQ_MpWorld::FEATURED_COLOR
-    else ROW_COLORS[name]
-    end
+    color = ROW_COLORS[row["color"]]
+    shown = { :text => row["text"].to_s, :faint => row["dim"] ? true : false }
+    shown[:right] = row["count"].to_s if row["count"]
+    shown[:color] = color if color
+    shown
   end
 
   # Puts the cursor on a world once the first worlds arrive, the world chosen before the save
@@ -664,8 +648,8 @@ class Scene_MpWorlds < Scene_MenuBase
     at = id ? entries.index { |entry| entry.id == id } : nil
     return false unless at
 
-    @worlds_list.index = at
-    @worlds_list.focus unless @form_symbol
+    @world_index = at
+    request_focus(:worlds) unless @form_symbol
     true
   end
 
@@ -680,9 +664,8 @@ class Scene_MpWorlds < Scene_MenuBase
   end
 
   # Moves the cursor into the worlds, onto the world asked for with select_world, once the list
-  # shows it; the ask is over then. The cursor stays where it is when the focus left the worlds and
-  # the commands meanwhile, since the player moved on to a form or a menu and the cursor would jump
-  # under them.
+  # shows it; the ask is over then. The cursor stays where it is when the player moved on to a form
+  # or a menu meanwhile, since it would jump under them.
   #
   # @param entries [Array<MGQ_MpWorld::Entry>] The worlds, in the list's order.
   # @return [Boolean] Whether the cursor moved onto it.
@@ -697,34 +680,105 @@ class Scene_MpWorlds < Scene_MenuBase
       return false
     end
 
-    @worlds_list.index = at
-    @worlds_list.focus
+    @world_index = at
+    @whole = :worlds
+    request_focus(:worlds)
     log_screen("the cursor is on world #{MGQ_MpWorld.short(id)} now, row #{at + 1} of the list")
     true
   end
 
-  # Tells whether the focus is in the worlds or the commands, a row or a box as a whole, with no
-  # form, menu, question or box over them.
+  # Tells whether the focus is in the worlds or the commands, with no form, menu, question or box
+  # over them.
   #
   # @return [Boolean] Whether it is.
   def on_left_side?
-    [nil, :worlds, :commands].include?(@place) && !@form_symbol && !popup_open? && !box_open? && !@busy
+    !@form_symbol && !popup_open? && !box_open? && !@busy
   end
 
-  # Notes that the worlds or the commands took the focus, a row or the box as a whole. Coming
-  # straight from a field of the form entered, as cancel, a click or a sideways key there does, the
-  # form is left and the focus stays where it went.
+  # Notes that the keys went into the worlds' or the commands' box. Coming straight from a field of
+  # the form entered, as cancel, a click or a key there does, the form is left and the focus stays
+  # where it went.
   #
   # @param side [Symbol] :worlds or :commands.
-  # @param row [Boolean] Whether a row took it, rather than the box as a whole.
-  def side_focused(side, row)
-    from_form = @place == :form
-    @place = row ? side : nil
+  def entered(side)
+    from_form = @form_symbol && @place == :form
+    @place = side
     @whole = side
-    return unless @form_symbol && from_form
+    changed
+    return unless from_form
     return keep_name_form("moved off it") if name_missing?
 
     on_form_cancel(false)
+  end
+
+  # Notes that the keys left the worlds' or the commands' box: into the form entered, or back out
+  # onto the box as a whole or the details.
+  #
+  # @param _side [Symbol] :worlds or :commands.
+  def left(_side)
+    @place = @form_symbol ? :form : nil
+    changed
+  end
+
+  # Notes the world the cursor moved to.
+  #
+  # @param entry [MGQ_MpWorld::Entry] The world.
+  def pointed_world(entry)
+    at = @entries.index(entry)
+    return unless at
+
+    @world_index = at
+    changed
+  end
+
+  # Notes the command the cursor moved to.
+  #
+  # @param command [Array] Its text and symbol.
+  def pointed_command(command)
+    at = COMMANDS.index(command)
+    return unless at
+
+    @command_index = at
+    changed
+  end
+
+  # Finds the world the worlds' cursor is on.
+  #
+  # @return [MGQ_MpWorld::Entry, nil] The world, nil for none.
+  def current_entry
+    @entries[@world_index]
+  end
+
+  # Finds the command the commands' cursor is on.
+  #
+  # @return [Symbol] Its symbol.
+  def current_command
+    COMMANDS[@command_index][1]
+  end
+
+  # Tells what the right side shows: the form entered, a command's form as a preview while the
+  # commands' box is picked, or the world the worlds' cursor is on while the worlds' box is.
+  #
+  # @return [Array, nil] [:form, symbol], [:preview, symbol] or [:world, entry]; nil for nothing.
+  def right_view
+    return [:form, @form_symbol] if @form_symbol && @forms[@form_symbol]
+
+    if @whole == :worlds
+      entry = current_entry
+      entry ? [:world, entry] : nil
+    else
+      symbol = current_command
+      @forms[symbol] ? [:preview, symbol] : nil
+    end
+  end
+
+  # Opens the world the cursor is on while the screen waits for the player, so the list carries
+  # its mods, and shows its details anew once they read something new.
+  def follow_details
+    view = right_view
+    world = view && view[0] == :world ? view[1] : nil
+    MGQ_MpWorld::Directory.open(world && world.listed ? world.id : nil) if idle? && !scene_changing?
+    changed if MGQ_MpWorld::Changes.take?(MGQ_MpWorld::Changes::DETAILS | MGQ_MpWorld::Changes::MODS)
   end
 
   # Tells whether the name form is open while the player has no name, which only cancel leaves,
@@ -741,6 +795,27 @@ class Scene_MpWorlds < Scene_MenuBase
   def keep_name_form(what)
     log_screen("the name form stays: the player #{what} without a name")
     resume_form
+  end
+
+  # Takes cancel on the screen, which reaches it on a box as a whole: leaves for the title, or buzzes
+  # while an action of the DLL runs, which the screen waits for.
+  def cancelled
+    return leave_screen unless @busy
+
+    Sound.play_buzzer
+    log_screen("cancel while #{@busy} runs: the screen waits for it")
+  end
+
+  # Buzzes at what the player does while an action of the DLL runs.
+  #
+  # @param what [String] What the player did, for the log.
+  # @return [Boolean] Whether an action runs.
+  def held?(what)
+    return false unless @busy
+
+    Sound.play_buzzer
+    log_screen("#{what} while #{@busy} runs: the screen waits for it")
+    true
   end
 
   # Tells the DLL the screen opened (topic screen.do, open), with the world the game started again
@@ -817,8 +892,7 @@ class Scene_MpWorlds < Scene_MenuBase
     when "edit" then on_edit_world
     when "forget_installed" then MGQ_MpWorldMods.forget_installed
     when "exit" then SceneManager.exit
-    when "install" then install_mods(first)
-    when "restart" then MGQ_MpWorldMods.restart_for(first, @entry ? @entry.name.to_s : first)
+    when "needed_mods" then ask_mods(first, second)
     when "save_screen" then MGQ_MpSaveDistribution.choose(:own)
     when "copy_own" then own_start(MGQ_MpWorld::World.new(first), second)
     when "start" then start_world(MGQ_MpWorld::World.new(first), second, third, fourth)
@@ -828,7 +902,7 @@ class Scene_MpWorlds < Scene_MenuBase
     when "fresh_form" then @forms[first.to_sym] = fresh_form(first)
     when "close_form" then leave_form
     when "select" then select_world(first)
-    when "resume_form" then resume_form(true)
+    when "resume_form" then resume_form
     else log_screen("the DLL named a step this script does not know: #{kind}")
     end
   end
@@ -841,22 +915,12 @@ class Scene_MpWorlds < Scene_MenuBase
   def ask_dll(what, offered)
     close_popups
     choices = offered.map { |label, symbol| [label.to_s, symbol.to_s] }
+    question = @said && @said[0]
     log_screen("asking #{what || 'where to start'}: #{choices.map { |_label, symbol| symbol }.join(', ')}")
     if what && choices.size == 2 && choices[1][1] == "cancel"
-      ask_confirm(@message, choices[0][0], choices[1][0]) { |yes| yes ? dll_pick(choices[0][1]) : on_back(true) }
+      ask_confirm(question, choices[0][0], choices[1][0]) { |yes| yes ? answer(choices[0][1]) : on_back(true) }
     else
-      ask_menu(@message, choices.map { |label, symbol| [label, symbol, true] }) { |symbol| dll_pick(symbol.to_s) }
-    end
-  end
-
-  # Hands the DLL the command picked of its question.
-  #
-  # @param symbol [String] The command's answer, such as "yes", "show_mods" or "from_own".
-  def dll_pick(symbol)
-    case symbol
-    when "show_mods" then on_show_mods
-    when "cancel" then on_back(true)
-    else answer(symbol)
+      ask_menu(question, choices.map { |label, symbol| [label, symbol, true] }) { |symbol| symbol.to_s == "cancel" ? on_back(true) : answer(symbol.to_s) }
     end
   end
 
@@ -866,16 +930,18 @@ class Scene_MpWorlds < Scene_MenuBase
   #
   # @param question [String, nil] What it asks, nil for none.
   # @param choices [Array<Array>] Each choice's label, symbol and whether it can be chosen.
-  # @yieldparam symbol [Symbol, String] The symbol picked, :cancel without a pick.
+  # @yieldparam symbol [Object] The symbol picked, :cancel without a pick.
   # @return [Boolean] Whether the menu opened.
   def ask_menu(question, choices, &answered)
     serial = (@asked = @asked.to_i + 1)
-    rows = choices.map { |label, _symbol, enabled| { :text => label.to_s, :enabled => enabled != false } }
-    options = question.to_s.empty? ? {} : { :title => question.to_s }
-    menu = Mod_Framework::UI::Menu.open(rows, options) do |index, _choice|
+    items = choices.map { |label, _symbol, enabled| { :text => label.to_s, :enabled => enabled != false } }
+    params = { :width => MENU_WIDTH, :most_rows => MENU_ROWS }
+    params[:title] = question.to_s unless question.to_s.empty?
+    menu = UI.menu(items, params) do |_item, index|
       symbol = index ? choices[index][1] : :cancel
       later { answered.call(symbol) } if serial == @asked
     end
+    @popup = menu ? [:menu, menu] : nil
     log_screen("a menu could not open: another one is open") unless menu
     menu ? true : false
   end
@@ -890,35 +956,61 @@ class Scene_MpWorlds < Scene_MenuBase
   # @return [Boolean] Whether the question opened.
   def ask_confirm(question, yes, back = "Back", &answered)
     serial = (@asked = @asked.to_i + 1)
-    asked = Mod_Framework::UI::Confirm.ask(question.to_s, [yes, back]) { |picked| later { answered.call(picked ? true : false) } if serial == @asked }
+    asked = UI.confirm(question.to_s, :yes => yes, :no => back) { |picked| later { answered.call(picked ? true : false) } if serial == @asked }
+    @popup = asked ? [:confirm, asked] : nil
     log_screen("a question could not open: another one is open") unless asked
     asked ? true : false
   end
 
-  # Tells whether the screen's menu or a question is open.
+  # Tells whether the screen's menu or question is open.
   #
   # @return [Boolean] Whether one is.
   def popup_open?
-    !Mod_Framework::UI::Menu.current.nil? || Mod_Framework::UI::Confirm.open?
+    @popup && @popup[1].open? ? true : false
   end
 
   # Closes the screen's menu and question, whose answers then do nothing.
   def close_popups
     @asked = @asked.to_i + 1
-    menu = Mod_Framework::UI::Menu.current
-    menu.close if menu
-    Mod_Framework::UI::Confirm.close("the world screen moved on") if Mod_Framework::UI::Confirm.open?
+    kind, handle = @popup
+    @popup = nil
+    return unless handle && handle.open?
+
+    kind == :confirm ? handle.close("the world screen moved on") : handle.close
   end
 
-  # Installs the world's mods the DLL's steps name through the Mod Framework, holding the screen
-  # meanwhile, and hands the DLL how it went.
+  # Asks the Mod Framework to make ready the mods a world needs in its dialog "Mods for <world>":
+  # each to install, update, change or turn on, each only its author has; its first button does
+  # what can be done and enters, which starts the game again into the world where a mod that runs
+  # already changes. The DLL hears whether the mods are ready, or the player went back.
   #
-  # @param rows [Array<Array(String, String)>] Each mod's name and its key in the relay's catalog.
-  def install_mods(rows)
-    hold_for("mods")
-    MGQ_MpWorldMods.install(rows) do |ok, text, restart|
-      free_screen
-      answer("installed", "ok" => ok, "text" => text, "restart" => restart)
+  # @param name [String] The world's name.
+  # @param mods [Array<Hash>] Each mod "name", "version" (the world's, nil for any) and "differs".
+  def ask_mods(name, mods)
+    close_popups
+    needed = Array(mods).map { |mod| { :name => mod["name"].to_s, :version => mod["version"], :differs => mod["differs"] == true } }
+    log_screen("asking the Mod Framework for the mods #{name} needs: #{needed.map { |mod| "#{mod[:name]} #{mod[:version] || 'any'}#{mod[:differs] ? ', this copy differs' : ''}" }.join('; ')}")
+    restart = [MGQ_Multiplayer::Stages::REJOIN_ACTION, @entry ? @entry.id.to_s : ""]
+    @mods_asked = true
+    return if Mod_Framework::Mods.ask_needed(name, needed, :restart => restart) { |result| later { mods_answered(result) } }
+
+    @mods_asked = nil
+
+    log_screen("the mods #{name} needs could not be compared")
+    refuse("The mods #{name} needs could not be checked. Try again in a moment.")
+    answer("back")
+  end
+
+  # Hands the DLL how the dialog of the mods a world needs ended.
+  #
+  # @param result [Symbol] :ready, :restarting or :back.
+  def mods_answered(result)
+    @mods_asked = nil
+    log_screen("the mods of #{entry_text}: #{result}")
+    case result
+    when :ready then answer("mods_ready")
+    when :restarting then answer("mods_restarting")
+    else answer("back")
     end
   end
 
@@ -926,6 +1018,7 @@ class Scene_MpWorlds < Scene_MenuBase
   def take_read_world
     listed = MGQ_MpWorldScreen.world(@entry.id)
     @entry.listed = listed if listed
+    changed
   end
 
   # Waits for the DLL's running action, which tells through MGQ_MpWorld::Changes once it ended.
@@ -933,13 +1026,12 @@ class Scene_MpWorlds < Scene_MenuBase
     play(MGQ_Multiplayer::Bridge.call(STEP_TOPIC)) if MGQ_MpWorld::Changes.take?(MGQ_MpWorld::Changes::SCREEN)
   end
 
-  # Tells whether the screen waits for the player, with no action, form, menu, question, list box
-  # or mod picker open and the focus in the worlds or the commands, so an entry of its own may
-  # begin.
+  # Tells whether the screen waits for the player, with no action, form, menu, question, list box,
+  # mod picker, dialog of mods or formation limits open, so an entry of its own may begin.
   #
   # @return [Boolean] Whether it does.
   def idle?
-    !@busy && !@form_symbol && !popup_open? && !box_open? && !@limits && @place != :details && !@own_start
+    !@busy && !@form_symbol && !popup_open? && !box_open? && !@limits && !@own_start && !@mods_asked
   end
 
   # Tells whether the list box or the mod picker is open.
@@ -949,164 +1041,12 @@ class Scene_MpWorlds < Scene_MenuBase
     @list_box && @list_box.open? ? true : false
   end
 
-  # Tells what the right side shows now: the form entered, a command's form as a preview while the
-  # commands' cursor is on it, or the world the worlds' cursor is on while the worlds or the
-  # details have the focus.
-  #
-  # @return [Array, nil] [:form, symbol], [:preview, symbol] or [:world, entry]; nil for nothing.
-  def pointed
-    return [:form, @form_symbol] if @form_symbol && @forms[@form_symbol]
-
-    case @place
-    when :worlds, :details
-      entry = current_entry
-      entry ? [:world, entry] : nil
-    when :commands
-      symbol = current_command
-      @forms[symbol] ? [:preview, symbol] : nil
-    end
-  end
-
-  # Finds the world the worlds' cursor is on.
-  #
-  # @return [MGQ_MpWorld::Entry, nil] The world, nil for none.
-  def current_entry
-    row = @worlds_list.row_at(@worlds_list.index)
-    row ? row[:data] : nil
-  end
-
-  # Finds the command the commands' cursor is on.
-  #
-  # @return [Symbol, nil] Its symbol, nil for none.
-  def current_command
-    row = @commands_list.row_at(@commands_list.index)
-    row ? row[:data] : nil
-  end
-
-  # Shows at the right what the screen points at, built anew only once that changed or a world's
-  # details read something new. While the screen waits for the player, the world the cursor is on
-  # is opened, so the list carries its mods.
-  def show_panel
-    target = pointed
-    world = target && target[0] == :world ? target[1] : nil
-    MGQ_MpWorld::Directory.open(world && world.listed ? world.id : nil) if idle? && !scene_changing?
-    @details_stale = true if MGQ_MpWorld::Changes.take?(MGQ_MpWorld::Changes::DETAILS | MGQ_MpWorld::Changes::MODS)
-    key = target && (world ? [:world, world.key] : [target[0], target[1], @forms[target[1]].object_id])
-    return if key == @shown && !(world && @details_stale)
-
-    @shown = key
-    @details_stale = false if world
-    @right_box.clear
-    @form_parts = {}
-    @typing_line = nil
-    return unless target
-
-    target[0] == :world ? show_details(world) : fill_form(@right_box, @forms[target[1]], target[0] == :preview)
-  end
-
-  # Builds the right side anew at once, such as after a switch turned.
-  def rebuild_panel
-    @shown = nil
-    show_panel
-  end
-
-  # Builds a world's details at the right as the DLL tells them: its name with when the player
-  # played it last, the panels of plated values, then the description in the rest of the room. A
-  # cell or a panel with a target opens the list box with it.
-  #
-  # @param entry [MGQ_MpWorld::Entry] The world.
-  def show_details(entry)
-    details = MGQ_MpWorldScreen.details(entry)
-    return unless details
-
-    column = @right_box.add_column(:gap => GAP, :grow => 1)
-    title = column.add_row(:height => TITLE_HEIGHT)
-    title.add_label(details["title"].to_s, :grow => 1, :shrink => true, :color => title_color(details["title_color"]))
-    title.add_label(details["played"].to_s, :font_size => SMALL_SIZE, :faint => true)
-    Array(details["panels"]).each { |panel| add_panel(column, panel) }
-    add_description(column, details["description"].to_s) if details["description"]
-  end
-
-  # Finds the color of a world's name in its details.
-  #
-  # @param name [String, nil] "raid", "featured" or nil.
-  # @return [Color, Symbol] The color.
-  def title_color(name)
-    { "raid" => MGQ_MpWorld::RAID_COLOR, "featured" => MGQ_MpWorld::FEATURED_COLOR }[name] || :system
-  end
-
-  # Adds a panel of a world's details: its heading with its note, and its rows of one or two
-  # cells. A panel with a target is one part the player clicks.
-  #
-  # @param column [Mod_Framework::UI::Component] The details.
-  # @param panel [Hash] The panel, as screen.details tells it.
-  def add_panel(column, panel)
-    options = { :title_size => HEADING_SIZE }
-    options[:note] = panel["note"].to_s if panel["note"]
-    group = column.add_group(panel["title"].to_s, options.merge(target_options(panel["target"])))
-    open_on_click(group, panel["target"])
-    Array(panel["rows"]).each do |cells|
-      row = group.add_row(:gap => GAP)
-      cells.each { |cell| add_cell(row, cell) }
-    end
-  end
-
-  # Adds a cell of a world's details: its caption and its value on a plate, or its values as tags.
-  #
-  # @param row [Mod_Framework::UI::Component] The row.
-  # @param cell [Hash, nil] The cell, as screen.details tells it; nil keeps its half empty.
-  def add_cell(row, cell)
-    return row.add_column(:grow => 1) unless cell
-
-    options = { :grow => 1 }.merge(target_options(cell["target"]))
-    holder = if cell["label"]
-               row.add_field(cell["label"].to_s, options.merge(:caption_width => CAPTION_WIDTH, :caption_size => SMALL_SIZE))
-             else
-               row.add_column(options)
-             end
-    open_on_click(holder, cell["target"])
-    return holder.add_label(cell["text"].to_s, :plate => true, :font_size => VALUE_SIZE, :color => CELL_COLORS[cell["color"]]) unless cell["chips"]
-
-    colors = Hash[Array(cell["chip_colors"]).to_a]
-    tags = Array(cell["chips"]).map { |text| { :text => text.to_s, :color => CELL_COLORS[colors[text] || cell["color"]] } }
-    holder.add_tags(tags, :font_size => VALUE_SIZE)
-  end
-
-  # Adds the description, which takes the rest of the room, its last line cut when it does not all
-  # fit; the player opens it whole in the list box.
-  #
-  # @param column [Mod_Framework::UI::Component] The details.
-  # @param text [String] The description, empty for none.
-  def add_description(column, text)
-    group = column.add_group(DESCRIPTION_TITLE, { :title_size => HEADING_SIZE, :grow => 1 }.merge(target_options(text.empty? ? nil : "description")))
-    open_on_click(group, text.empty? ? nil : "description")
-    group.add_label(text.empty? ? NO_DESCRIPTION : text, :wrap => true, :most_lines => :fill, :font_size => SMALL_SIZE, :faint => text.empty?, :grow => 1)
-  end
-
-  # Tells the options of a part of the details the player clicks as one, nothing for one without a
-  # target.
-  #
-  # @param target [String, nil] What it opens: "mods", "players" or "description".
-  # @return [Hash] Its options.
-  def target_options(target)
-    target ? { :clickable => true, :id => :"details_#{target}", :cancel_to => @worlds_list } : {}
-  end
-
-  # Has a part of the details open the list box on a click, and note the focus on it.
-  #
-  # @param part [Mod_Framework::UI::Component] The part.
-  # @param target [String, nil] What it opens, nil for nothing.
-  def open_on_click(part, target)
-    return unless target
-
-    part.on(:click) { open_target(target.to_sym) }
-    part.on(:focus) { @place = :details }
-  end
-
   # Opens the list box for what the details point at.
   #
   # @param target [Symbol] :mods, :players or :description.
   def open_target(target)
+    return if held?("opening the #{target}")
+
     entry = current_entry
     return unless entry
 
@@ -1121,20 +1061,22 @@ class Scene_MpWorlds < Scene_MenuBase
     log_screen("showing the #{kind} of #{entry_text}")
     close_popups
     @list_box.close if box_open?
-    @list_box = if kind == :description
-                  Mod_Framework::UI.open(MGQ_MpListBox, :title => @entry.name, :source => MGQ_MpListBox::Source.new(nil, DESCRIPTION_TITLE),
-                                                        :description => @entry.listed ? @entry.listed.description.to_s : "")
-                else
-                  Mod_Framework::UI.open(MGQ_MpListBox, :title => @entry.name,
-                                                        :source => MGQ_MpListBox::Source.new(MGQ_MpWorldScreen.box(@entry, kind), kind == :players ? "Players" : "Mods"))
-                end
+    params = if kind == :description
+               { :source => MGQ_MpListBox::Source.new(nil, DESCRIPTION_TITLE), :description => @entry.listed ? @entry.listed.description.to_s : "" }
+             else
+               { :source => MGQ_MpListBox::Source.new(MGQ_MpWorldScreen.box(@entry, kind), kind == :players ? "Players" : "Mods") }
+             end
+    @list_box = UI.open(MGQ_MpListBox, params.merge(:title => @entry.name.to_s))
+  rescue => e
+    log_screen("the list box could not open: #{e.class}: #{e.message}")
+    @list_box = nil
   end
 
   # Opens what can be done with the chosen world.
   #
   # @param entry [MGQ_MpWorld::Entry] The world.
   def on_world(entry)
-    return unless entry
+    return if entry.nil? || held?("picking a world")
     return keep_name_form("picked a world") if name_missing?
 
     @entry = entry
@@ -1167,8 +1109,10 @@ class Scene_MpWorlds < Scene_MenuBase
 
   # Acts on a command below the worlds: moves into its form, or leaves the screen.
   #
-  # @param symbol [Symbol] The command.
-  def on_command(symbol)
+  # @param command [Array] Its text and symbol.
+  def on_command(command)
+    symbol = command[1]
+    return if held?("picking #{symbol}")
     return leave_screen if symbol == :back
     return keep_name_form("picked a command") if name_missing?
 
@@ -1177,8 +1121,7 @@ class Scene_MpWorlds < Scene_MenuBase
 
   # Enters the chosen world through the DLL's steps (topic screen.enter), which ask, in order,
   # whether the world takes players now, whether its required mods match, whether the catalog its
-  # other mods turned off need is known, whether the game data matches, and then for its password or
-  # where to start.
+  # other mods turned off need is known, and then for its password or where to start.
   def on_enter
     play(MGQ_Multiplayer::Bridge.call(ENTER_TOPIC, entry_request))
   end
@@ -1190,13 +1133,6 @@ class Scene_MpWorlds < Scene_MenuBase
     close_popups
     @forms[:password] = MGQ_MpWorld::WorldForm.password(:password, name)
     enter_form(:password)
-  end
-
-  # Shows each required mod with the player's and the world's version, which ends the entry the game
-  # started again for: the player enters again from the list.
-  def on_show_mods
-    answer("show_mods")
-    open_box(:mods)
   end
 
   # Lists the chosen world's other players to remove one, then asks.
@@ -1265,8 +1201,7 @@ class Scene_MpWorlds < Scene_MenuBase
   # which the framework gave the focus back already.
   def back_to_list
     close_popups
-    show_info
-    resume_form(true) if form && !@busy
+    resume_form if form && !@busy
   end
 
   # Opens the form of the player's name, typing into it at once, as when the screen opens and the
@@ -1274,7 +1209,7 @@ class Scene_MpWorlds < Scene_MenuBase
   def ask_name
     log_screen("asking for the player's name, which they have none of yet")
     @name_asked = true
-    @commands_list.index = COMMANDS.index { |_text, symbol| symbol == :rename }
+    @command_index = COMMANDS.index { |_text, symbol| symbol == :rename }
     enter_form(:rename)
   end
 
@@ -1310,28 +1245,25 @@ class Scene_MpWorlds < Scene_MenuBase
   def enter_form(symbol, key = nil)
     @form_symbol = symbol
     @field_key = key
+    @place = :form
     log_screen("opened the form #{symbol}")
-    show_panel
     resume_form
   end
 
-  # Moves into the form shown as a preview at the right, as confirm on its command does.
+  # Moves into the form shown as a preview at the right, as confirm or a click on it does.
   def enter_preview
+    return if held?("entering a form")
+
     symbol = current_command
-    enter_form(symbol) if symbol && @forms[symbol] && !@busy
+    enter_form(symbol) if @forms[symbol]
   end
 
   # Puts the focus back on the form's field it was left at, or its first.
-  #
-  # @param keep [Boolean] Whether what the lines at the top say stays, rather than the field's hint.
-  def resume_form(keep = false)
+  def resume_form
     return unless form
 
-    show_panel
     key = @field_key || (form.fields.first && form.fields.first.key)
-    @held_hint = key if keep
-    part = @form_parts[key] || @form_parts.values.first
-    part.focus if part
+    request_focus([:field, key])
   end
 
   # Moves from the form back to the list, keeping what was filled in, unless it changed a world.
@@ -1352,13 +1284,13 @@ class Scene_MpWorlds < Scene_MenuBase
     WORLD_FORMS.each { |symbol| @forms.delete(symbol) }
     @form_symbol = nil
     @field_key = nil
-    @typing_field = nil
+    @place = nil
     say(MGQ_MpWorldScreen.text("hint"))
     if focus
-      (world_form ? @worlds_list : @commands_list).focus
-      @place = world_form ? :worlds : :commands
+      @whole = world_form ? :worlds : :commands
+      request_focus(@whole)
     end
-    show_panel
+    changed
   end
 
   # Leaves the form the player backed out of; backing out of the password of the world the game
@@ -1375,171 +1307,38 @@ class Scene_MpWorlds < Scene_MenuBase
   # Puts the cursor back on the form after the save screen, at the field it left from.
   def return_to_form
     at = COMMANDS.index { |_text, symbol| symbol == @form_symbol }
-    @commands_list.index = at if at
+    @command_index = at if at
     enter_form(@form_symbol, @field_key) unless @busy
   end
 
-  # Builds a form's fields into a container from the form's view: its title, its fields in titled
-  # panels, one or two to a row, and the line that says how to type while a text box has the focus.
-  #
-  # @param container [Mod_Framework::UI::Component] The right box, or the formation limits.
-  # @param page [MGQ_MpWorld::WorldForm] The form, or its page of the limits.
-  # @param preview [Boolean] Whether it only shows, as while the commands' cursor is on its command;
-  #   a click on it then moves into it.
-  def fill_form(container, page, preview)
-    column = container.add_column({ :gap => GAP, :grow => 1 }.merge(preview ? { :clickable => true, :pointer_only => true } : {}))
-    column.on(:click) { enter_preview } if preview
-    column.add_label(page.title, :color => :system, :height => TITLE_HEIGHT) unless container.equal?(@limits)
-    fields = page.fields
-    fields.map { |field| field.group }.uniq.each do |group|
-      holder = group ? column.add_group(group, :title_size => HEADING_SIZE) : column
-      grouped = fields.select { |field| field.group == group }
-      grouped.map { |field| field.row }.uniq.each do |row|
-        on_row = grouped.select { |field| field.row == row }
-        line = holder.add_row(:gap => GAP)
-        line.add_column(:grow => 1) if on_row.size == 1 && on_row[0].side == :right
-        on_row.each { |field| add_form_field(line, container, page, field) }
-        line.add_column(:grow => 1) if on_row.size == 1 && on_row[0].side == :left
-      end
-    end
-    @typing_line = column.add_label("", :font_size => SMALL_SIZE, :faint => true, :visible => false) unless container.equal?(@limits)
-  end
-
-  # Adds a field of a form: a text box, a password shown as stars, a number box, a checkbox, a switch
-  # with the line under it, the save to start from, the mods, a box of several lines, or a button.
-  #
-  # @param line [Mod_Framework::UI::Component] The row it lies on.
-  # @param container [Mod_Framework::UI::Component] The right box, or the formation limits.
-  # @param page [MGQ_MpWorld::WorldForm] The form, or its page of the limits.
-  # @param field [MGQ_MpWorld::Form::Field] The field.
-  def add_form_field(line, container, page, field)
-    enabled = page.enabled?(field)
-    id = "form:#{field.key}"
-    caption = { :caption_width => field.label_width || FORM_CAPTION_WIDTH, :caption_size => SMALL_SIZE, :grow => 1, :enabled => enabled }
-    part = case field.kind
-           when :check
-             line.add_checkbox(field.label, :id => id, :checked => page[field.key] ? true : false, :grow => 1, :enabled => enabled)
-           when :switch
-             holder = line.add_column(:grow => 1, :enabled => enabled)
-             select = holder.add_field(field.label, caption).add_select(field.choices, :id => id, :value => field.choices[page[field.key].to_i])
-             note = field.note_of(page)
-             holder.add_label(note, :font_size => SMALL_SIZE) unless note.empty?
-             select
-           when :save, :mods
-             line.add_field(field.label, caption).add_button(value_text(page, field), :id => id, :flat => false)
-           when :button
-             line.add_button(field.label, :id => id, :height => BUTTON_HEIGHT, :grow => 1, :enabled => enabled)
-           when :area
-             line.add_text_field(:id => id, :text => page[field.key].to_s, :lines => field.lines, :placeholder => field.label, :max_length => field.max_chars,
-                                 :allowed => field.allowed, :grow => 1, :enabled => enabled)
-           else
-             line.add_field(field.label, caption).add_text_field(:id => id, :text => page[field.key].to_s, :max_length => field.max_chars, :allowed => field.allowed,
-                                                                 :mask => field.kind == :password ? "*" : nil, :leave_sides => true)
-           end
-    back = back_target
-    part.cancel_to = back if back && !container.equal?(@limits)
-    @form_parts[field.key] = part unless container.equal?(@limits)
-    wire_field(part, container, page, field)
-  end
-
-  # Tells where cancel in the form entered goes: the command of a command's form, the worlds for a
+  # Tells where cancel in the form entered goes: the commands for a command's form, the worlds for a
   # world's form, nowhere for the name form the player has to fill in first, whose cancel reaches
-  # the root and closes the screen.
+  # the window and closes the screen.
   #
-  # @return [Mod_Framework::UI::List, nil] The list, nil for none.
+  # @return [Symbol, nil] The id of the list, nil for none.
   def back_target
     return nil if name_missing?
 
-    WORLD_FORMS.include?(@form_symbol) ? @worlds_list : @commands_list
+    WORLD_FORMS.include?(@form_symbol) ? :worlds : :commands
   end
 
-  # Hands a field's events to the form: a checkbox ticked and a switch turned ask the DLL for the
-  # form anew, a button presses, a text typed goes over and Enter checks it; the focus and the
-  # pointer on a field say its hint.
-  #
-  # @param part [Mod_Framework::UI::Component] The field's component.
-  # @param container [Mod_Framework::UI::Component] The right box, or the formation limits.
-  # @param page [MGQ_MpWorld::WorldForm] The form, or its page of the limits.
-  # @param field [MGQ_MpWorld::Form::Field] The field.
-  def wire_field(part, container, page, field)
-    case field.kind
-    when :check then part.on(:change) { |_checked| tick(container, page, field) }
-    when :switch then part.on(:change) { |value| turn(container, page, field, value) }
-    when :save then part.on(:click) { choose_save }
-    when :mods then part.on(:click) { open_mod_pick }
-    when :button then part.on(:click) { press(field) }
-    else
-      part.on(:change) { |text| page[field.key] = text }
-      part.on(:submit) { |text| submit_field(page, field, part, text) }
-      part.on(:blur) { @typing_field = nil if @typing_field.equal?(field) }
-    end
-    part.on(:focus) { field_focused(page, field, container) }
-    part.on(:hover) { |inside| say(field.hint) if inside && @form_symbol && !@busy }
-  end
-
-  # Notes the field that took the focus, which the form goes back to, and says its hint, unless the
-  # reason it was refused for stands there.
+  # Notes the field that took the focus, which the form goes back to.
   #
   # @param page [MGQ_MpWorld::WorldForm] The form, or its page of the limits.
   # @param field [MGQ_MpWorld::Form::Field] The field.
-  # @param container [Mod_Framework::UI::Component] The right box, or the formation limits.
-  def field_focused(page, field, container)
+  def field_focused(page, field)
     @place = :form
-    @field_key = field.key unless container.equal?(@limits)
-    @typing_field = TYPED_KINDS.include?(field.kind) ? field : nil
-    held = @held_hint
-    @held_hint = nil
-    return if held == field.key
-
-    say(field.hint) unless @busy
+    @field_key = field.key if page.equal?(form)
   end
 
-  # Shows the line that says how to type while a text box of the form has the focus.
-  def show_typing_line
-    return unless @typing_line
-
-    @typing_line.visible = !@typing_field.nil?
-    text = @typing_field ? Scene_MpWorlds.typing_hint : ""
-    @typing_line.text = text if @typing_line.text != text
-  end
-
-  # Ticks a checkbox, or unticks it, and builds the form anew from the DLL's view, the focus kept
-  # on the checkbox.
+  # Takes a text typed into a field, which goes over to the DLL.
   #
-  # @param container [Mod_Framework::UI::Component] The right box, or the formation limits.
   # @param page [MGQ_MpWorld::WorldForm] The form, or its page of the limits.
-  # @param field [MGQ_MpWorld::Form::Field] The checkbox.
-  def tick(container, page, field)
-    page.tick(field.key)
-    log_screen("#{page[field.key] ? 'ticked' : 'unticked'} #{field.label} in the form #{@form_symbol}")
-    refill(container)
-  end
-
-  # Turns a switch to the value picked, and builds the form anew from the DLL's view, the focus kept
-  # on the switch.
-  #
-  # @param container [Mod_Framework::UI::Component] The right box, or the formation limits.
-  # @param page [MGQ_MpWorld::WorldForm] The form, or its page of the limits.
-  # @param field [MGQ_MpWorld::Form::Field] The switch.
-  # @param value [String] The outcome picked.
-  def turn(container, page, field, value)
-    before = page[field.key].to_i
-    step = field.choices.index(value).to_i - before
-    return if step == 0
-
-    page.turn(field, step)
-    log_screen("#{field.label}: \"#{field.choices[before]}\" -> \"#{field.choices[page[field.key].to_i]}\" in the form #{@form_symbol}")
-    refill(container)
-  end
-
-  # Builds a form anew in its container.
-  #
-  # @param container [Mod_Framework::UI::Component] The right box, or the formation limits.
-  def refill(container)
-    return rebuild_panel unless container.equal?(@limits)
-
-    @limits.clear
-    fill_form(@limits, form.limits, false)
+  # @param field [MGQ_MpWorld::Form::Field] The field.
+  # @param text [String] What it holds.
+  def typed(page, field, text)
+    field_focused(page, field)
+    page[field.key] = text.to_s
   end
 
   # Checks the text Enter gave: a refusal buzzes and says why, the focus staying; a text taken sends
@@ -1547,32 +1346,66 @@ class Scene_MpWorlds < Scene_MenuBase
   #
   # @param page [MGQ_MpWorld::WorldForm] The form, or its page of the limits.
   # @param field [MGQ_MpWorld::Form::Field] The text box.
-  # @param part [Mod_Framework::UI::TextField] Its component.
   # @param text [String] The text.
-  def submit_field(page, field, part, text)
-    checked, error = page.check(field, text)
+  def submitted(page, field, text)
+    return if held?("Enter in #{field.label}")
+
+    field_focused(page, field)
+    checked, error = page.check(field, text.to_s)
     if error
       log_screen("#{field.label} refused: #{error}")
       return refuse(error)
     end
 
     page[field.key] = checked
-    part.text = checked if checked != text
+    changed
     Sound.play_ok
     return send_form if page.equal?(form) && page.sends_on_enter?
 
     below = page.fields.find { |candidate| candidate.row > field.row }
-    target = below && @form_parts[below.key]
-    target.focus if target
+    request_focus([:field, below.key]) if below
+  end
+
+  # Ticks a checkbox, or unticks it, and shows the form anew from the DLL's view.
+  #
+  # @param page [MGQ_MpWorld::WorldForm] The form, or its page of the limits.
+  # @param field [MGQ_MpWorld::Form::Field] The checkbox.
+  def ticked(page, field)
+    return if held?("ticking #{field.label}")
+
+    field_focused(page, field)
+    page.tick(field.key)
+    log_screen("#{page[field.key] ? 'ticked' : 'unticked'} #{field.label} in the form #{@form_symbol}")
+    changed
+  end
+
+  # Turns a switch to the outcome picked, and shows the form anew from the DLL's view.
+  #
+  # @param page [MGQ_MpWorld::WorldForm] The form, or its page of the limits.
+  # @param field [MGQ_MpWorld::Form::Field] The switch.
+  # @param index [Integer] The outcome picked.
+  def turned(page, field, index)
+    return if held?("turning #{field.label}")
+
+    field_focused(page, field)
+    before = page[field.key].to_i
+    step = index.to_i - before
+    return if step == 0
+
+    page.turn(field, step)
+    log_screen("#{field.label}: \"#{field.choices[before]}\" -> \"#{field.choices[page[field.key].to_i]}\" in the form #{@form_symbol}")
+    changed
   end
 
   # Acts on a form's button: opens or closes the formation limits, or sends the form.
   #
   # @param field [MGQ_MpWorld::Form::Field] The button.
-  def press(field)
+  def pressed(field)
+    return if held?("pressing #{field.label}")
+
     case field.key
     when :limits then open_limits
-    when :done then @limits.close(:button) if @limits
+    when :done then @limits.close if @limits
     else send_form
     end
   end
@@ -1580,13 +1413,7 @@ class Scene_MpWorlds < Scene_MenuBase
   # Opens the formation limits of a Raid World over the form, which keeps whatever they change.
   def open_limits
     log_screen("opened the formation limits of the form #{@form_symbol}")
-    rect = @right_box.rect
-    options = { :title => LIMITS_TITLE, :closable => true, :id => :mgq_online_world_limits }
-    options.merge!(rect ? { :at => [rect.x, rect.y], :size => [rect.width, rect.height] } : { :center => true })
-    @limits = Mod_Framework::UI::Dialog.new(options)
-    fill_form(@limits, form.limits, false)
-    @limits.on(:close) { |_why| limits_closed }
-    @limits.open
+    @limits = UI.open(LimitsDialog, :scene => self, :page => form.limits) { |_result, _why| limits_closed }
   end
 
   # Goes back from the formation limits to the form, at their button, keeping the limits picked.
@@ -1596,11 +1423,13 @@ class Scene_MpWorlds < Scene_MenuBase
 
     log_screen("closed the formation limits: #{MGQ_MpWorld.squad_summary(form.squad)}")
     @field_key = :limits
-    rebuild_panel
+    resume_form
   end
 
   # Opens the game's save screen for the new world's starting save.
   def choose_save
+    return if held?("choosing a save")
+
     log_screen("opening the save screen for the new world's starting save")
     MGQ_MpSaveDistribution.choose(:world)
   end
@@ -1620,10 +1449,8 @@ class Scene_MpWorlds < Scene_MenuBase
     if error
       field = form.fields[index]
       log_screen("the form #{@form_symbol} was not sent: #{error} (#{field.label})")
-      refuse(error)
-      @held_hint = field.key
-      part = @form_parts[field.key]
-      return part ? part.focus : nil
+      request_focus([:field, field.key])
+      return refuse(error)
     end
 
     log_screen("sending the form #{@form_symbol}")
@@ -1659,102 +1486,139 @@ class Scene_MpWorlds < Scene_MenuBase
     played ? "Save #{index + 1}  (#{played})" : "Save #{index + 1}"
   end
 
-  # Opens the mod picker over the form in the list box: the installed mods and those added by name,
-  # as the form names them.
+  # Opens the mod picker over the form: the installed mods and those added by name, as the form
+  # names them.
   def open_mod_pick
+    return if held?("opening the mod picker")
+
     @mod_pick = MGQ_MpWorld::ModPick.new(form[:mods])
     @pick_source = MGQ_MpListBox::Source.new(mod_pick_rows, nil)
     log_screen("opened the mod picker on \"#{form[:mods]}\": #{@mod_pick.entries.size} mod(s)")
-    @list_box = Mod_Framework::UI.open(MGQ_MpListBox, :title => MOD_PICK_TITLE, :source => @pick_source, :note_color => :error, :keys => Scene_MpWorlds.mod_pick_keys,
-                                       :max_length => MGQ_MpWorld::MAX_MODS_CHARS, :on_submit => lambda { |row| act_on_mod(row[:data], 0) },
-                                       :on_toggle => lambda { |row, toggle| act_on_mod(row[:data], toggle + 1) },
-                                       :on_add => lambda { |name| add_mod(name) }, :on_remove => lambda { |row| remove_added_mod(row) }) { |_value, _why| close_mod_pick }
+    @list_box = UI.open(MGQ_MpListBox, :title => MOD_PICK_TITLE, :source => @pick_source, :picker => true, :note_color => :error, :keys => MOD_PICK_KEYS,
+                                       :max_length => MGQ_MpWorld::MAX_MODS_CHARS, :typing_help => Scene_MpWorlds.typing_hint,
+                                       :on_submit => lambda { |row| act_on_mod(row[:data], 0) }, :on_toggle => lambda { |row, toggle| act_on_mod(row[:data], toggle + 1) },
+                                       :on_add => lambda { |name| add_mod(name) }, :on_remove => lambda { |row| remove_added_mod(row[:data]) }) { |_result, _why| close_mod_pick }
   end
 
-  # Writes the mod picker's rows: the row that lists or unlists every installed mod, the installed
-  # mods, the added ones, then the row that opens the Name field. Each mod has a red ! toggle for
-  # required and an orange ? toggle for essential, below their columns' titles; a mod added by name
-  # is removable.
+  # Tells why the mod picker refused the last change.
   #
-  # @return [Array<Hash>] The list's rows, each with what it stands for as its :data: a mod's index
-  #   in the picker's entries, :all or :add.
+  # @return [String, nil] Why, nil while it took the last change or is closed.
+  def mod_pick_note
+    @pick_source && @mod_pick ? @pick_source.note : nil
+  end
+
+  # Writes the mod picker's rows, each item's row with the item as its :data.
+  #
+  # @return [Array<Hash>] The rows.
   def mod_pick_rows
-    entries = @mod_pick.entries
-    rows = [{ :text => @mod_pick.all_listed? ? "Unlist all your mods" : "List all your mods", :data => :all }]
+    mod_pick_items.map { |item| item.is_a?(String) ? mod_pick_row(item) : mod_pick_row(item).merge(:data => item) }
+  end
+
+  # Lists what the mod picker shows: the item that lists or unlists every installed mod, the
+  # installed mods, the added ones, each under its heading, then the item that adds one.
+  #
+  # @return [Array] The items: :all, a heading's text, a mod's index in the picker's entries, :add.
+  def mod_pick_items
+    entries = @mod_pick ? @mod_pick.entries : []
+    items = [:all]
     [["Your mods", true], ["Added by name", false]].each do |heading, installed|
       group = (0...entries.size).select { |index| entries[index].installed == installed }
       next if group.empty? && !installed
 
-      rows << { :heading => "#{heading} (#{group.size})", :toggle_titles => MOD_PICK_COLUMNS }
-      group.each do |index|
-        entry = entries[index]
-        rows << { :text => entry.name, :color => MOD_PICK_COLORS[entry.color], :right => entry.label, :data => index, :key => "mod:#{entry.name}",
-                  :removable => !installed,
-                  :toggles => [{ :text => "!", :color => :error, :on => entry.state == :required }, { :text => "?", :color => :warning, :on => entry.state == :essential }] }
-      end
+      items << "#{heading} (#{group.size})"
+      items.concat(group)
     end
-    rows << { :text => "Add a mod by name . . .", :data => :add, :name_field => true }
+    items << :add
+  end
+
+  # Writes a row of the mod picker: a mod with its red ! toggle for required and its orange ? toggle
+  # for essential, removable when added by name, a heading, or the rows that list every mod and
+  # open the Name field.
+  #
+  # @param item [Object] See mod_pick_items.
+  # @return [Hash] The row.
+  def mod_pick_row(item)
+    return { :heading => item } if item.is_a?(String)
+    return { :text => @mod_pick.all_listed? ? "Unlist all your mods" : "List all your mods" } if item == :all
+    return { :text => "Add a mod by name . . .", :name_field => true } if item == :add
+
+    entry = @mod_pick.entries[item]
+    row = { :text => entry.name, :right => entry.label, :removable => !entry.installed,
+            :toggles => [{ :text => "!", :color => :error, :on => entry.state == :required, :tooltip => "Required" },
+                         { :text => "?", :color => :warning, :on => entry.state == :essential, :tooltip => "Essential" }] }
+    color = MOD_PICK_COLORS[entry.color]
+    row[:color] = color if color
+    row
+  end
+
+  # Tells whether an item of the mod picker is a mod added by name, which Remove takes out.
+  #
+  # @param item [Object] See mod_pick_items.
+  # @return [Boolean] Whether it is.
+  def added_mod?(item)
+    item.is_a?(Integer) && @mod_pick && @mod_pick.entries[item] && !@mod_pick.entries[item].installed ? true : false
   end
 
   # Acts on what the mod picker points at: lists or unlists a mod, makes it required or essential
   # with its toggles, or lists or unlists every installed mod.
   #
-  # @param target [Integer, Symbol] The mod's index in the picker's entries, or :all.
+  # @param item [Object] See mod_pick_items.
   # @param column [Integer] 0 for the mod's name, 1 for its required toggle, 2 for its essential one.
-  def act_on_mod(target, column)
-    entry = target.is_a?(Integer) ? @mod_pick.entries[target] : nil
+  def act_on_mod(item, column)
+    return unless @mod_pick && (item == :all || item.is_a?(Integer))
+
+    entry = item.is_a?(Integer) ? @mod_pick.entries[item] : nil
     before = entry && entry.state
-    error = if target == :all
+    error = if item == :all
               @mod_pick.all_listed? ? @mod_pick.unlist_all : @mod_pick.list_all
             elsif column == 0
-              @mod_pick.toggle(target)
+              @mod_pick.toggle(item)
             else
-              @mod_pick.mark(target, column == 1 ? :required : :essential)
+              @mod_pick.mark(item, column == 1 ? :required : :essential)
             end
     change = entry ? "#{entry.name} #{before} -> #{entry.state}" : "every installed mod #{@mod_pick.all_listed? ? 'listed' : 'unlisted'}"
     log_screen("mod picker: #{change}#{error ? ", refused: #{error}" : ''}")
-    show_mod_pick
-    error ? refuse_in_pick(error) : Sound.play_ok
+    picked(error)
   end
 
   # Adds a mod by the name typed, or says why it cannot be.
   #
   # @param name [String] The name.
+  # @return [Boolean] Whether it was added.
   def add_mod(name)
-    return unless @mod_pick
+    return false unless @mod_pick
 
     error = @mod_pick.add(name)
     log_screen(error ? "mod picker: #{name} not added: #{error}" : "mod picker: added #{name} by name")
-    show_mod_pick
-    error ? refuse_in_pick(error) : Sound.play_ok
+    picked(error)
+    error.nil?
   end
 
   # Takes a mod added by name out of the picker and the form.
   #
-  # @param row [Hash] The mod's row.
-  def remove_added_mod(row)
-    index = row[:data]
-    entry = index.is_a?(Integer) && @mod_pick ? @mod_pick.entries[index] : nil
-    return unless entry && !entry.installed && @mod_pick.remove(index)
+  # @param item [Object] See mod_pick_items.
+  def remove_added_mod(item)
+    return Sound.play_buzzer unless added_mod?(item)
 
-    log_screen("mod picker: removed #{entry.name}, added by name")
+    name = @mod_pick.entries[item].name
+    return unless @mod_pick.remove(item)
+
+    log_screen("mod picker: removed #{name}, added by name")
+    picked(nil, false)
     Sound.play_cancel
-    show_mod_pick
   end
 
-  # Lists the mod picker anew, and the form's mods with it.
-  def show_mod_pick
-    @pick_source.rows = mod_pick_rows
-    form[:mods] = @mod_pick.text
-  end
-
-  # Says beside the mod picker's title why a change was refused, since the list box covers the lines
-  # at the top.
+  # Shows the mod picker anew and the form's mods with it, with the OK sound for a change it took or
+  # the buzzer and why for one it refused.
   #
-  # @param error [String] Why.
-  def refuse_in_pick(error)
-    Sound.play_buzzer
+  # @param error [String, nil] Why the change was refused, nil when it was taken.
+  # @param sound [Boolean] Whether it plays the sound of a change taken.
+  def picked(error, sound = true)
+    form[:mods] = @mod_pick.text if form
+    @pick_source.rows = mod_pick_rows
     @pick_source.note = error
+    changed
+    error ? Sound.play_buzzer : (Sound.play_ok if sound)
   end
 
   # Closes the mod picker, back to the form, which shows the mods picked.
@@ -1766,7 +1630,7 @@ class Scene_MpWorlds < Scene_MenuBase
     @mod_pick = nil
     @list_box = nil
     @field_key = :mods
-    rebuild_panel unless @closing
+    resume_form unless @closing
   end
 
   # Opens the form that changes the chosen world, filled in as the world is, once its mods were read.
@@ -1816,31 +1680,23 @@ class Scene_MpWorlds < Scene_MenuBase
   def hold_for(kind)
     close_popups
     @busy = kind
-    @root.inert = true if @root
     say(MGQ_MpWorldScreen.busy_text(kind))
+    changed
   end
 
   # Frees the screen once the DLL's action ended, and gives the focus back to where it was.
   def free_screen
     @busy = nil
-    return unless @root
-
-    @root.inert = false
-    refocus if @root.open?
+    changed
+    refocus
   end
 
   # Puts the focus back where the player left it: the form entered, else the worlds' or the
-  # commands' row, or their box as a whole.
-  #
-  # C#'s tree drops the focus of an inert root, so the screen keeps where it was itself.
+  # commands' rows, or their box as a whole.
   def refocus
-    return resume_form(true) if form
+    return resume_form if form
 
-    case @place
-    when :worlds, :details then @worlds_list.focus
-    when :commands then @commands_list.focus
-    else (@whole == :worlds ? @worlds_box : @commands_box).focus
-    end
+    request_focus(@place == @whole ? @whole : :"#{@whole}_box")
   end
 
   # Notes the player's save to copy into the world they are entering, which update copies once the
@@ -1882,19 +1738,354 @@ class Scene_MpWorlds < Scene_MenuBase
     answer("start_failed", "text" => error.to_s, "placed" => placed ? true : false) if error
   end
 
-  # Says something in the lines at the top.
-  #
-  # @param message [String] What to say.
-  def say(message)
-    @message = message
-    show_info
+  # The world screen's window: the lines at the top, the worlds' and the commands' boxes the keys
+  # stop on as a whole first, and at the right a world's details or a form.
+  class WorldScreen < UI::Component
+    # The scene, which keeps what the screen shows.
+    param :scene
+
+    # The row the worlds' cursor is on.
+    state(:world_index) { scene.world_index }
+
+    # The row the commands' cursor is on.
+    state(:command_index) { scene.command_index }
+
+    watch { scene.serial }
+    watch { follow_scene }
+
+    # Describes the screen.
+    def render
+      window nil, id: ROOT_ID, width: :screen, height: :screen, frame: false, movable: false, on_cancel: -> { scene.cancelled; false } do
+        paper id: :mgq_online_world_screen_strip do
+          lines = scene.strip_lines
+          text lines[0], typo: :body2, most_lines: 1
+          help_line id: :mgq_online_world_screen_help, lines: 1
+          text(lines[1], typo: :body2, most_lines: 1, color: :dim) unless lines[1].empty?
+        end
+        stack row: true, height: :fill do
+          stack width: LEFT_WIDTH, height: :fill do
+            paper enter: true, id: :worlds_box, height: :fill, help: MGQ_MpWorldScreen.text("enter_hint"),
+                  on_enter: -> { scene.entered(:worlds) }, on_leave: -> { scene.left(:worlds) } do
+              list scene.entries, id: :worlds, bind_index: :world_index, rows_shown: :fill, height: :fill, row: ->(entry) { scene.world_row(entry) },
+                                  on_change: ->(entry) { scene.pointed_world(entry) }, on_submit: ->(entry) { scene.on_world(entry) }
+            end
+            paper enter: true, id: :commands_box, help: MGQ_MpWorldScreen.text("hint"),
+                  on_enter: -> { scene.entered(:commands) }, on_leave: -> { scene.left(:commands) } do
+              list COMMANDS, id: :commands, bind_index: :command_index, text: ->(command) { command[0] },
+                             on_change: ->(command) { scene.pointed_command(command) }, on_submit: ->(command) { scene.on_command(command) }
+            end
+          end
+          paper id: :right_box, grow: 1, height: :fill do
+            kind, target = scene.right_view
+            case kind
+            when :world then details(target)
+            when :form then component(WorldFormView, scene: scene, page: scene.forms[target], key: [:form, target, scene.forms[target].object_id])
+            when :preview then component(WorldFormView, scene: scene, page: scene.forms[target], preview: true, key: [:preview, target, scene.forms[target].object_id])
+            end
+          end
+        end
+      end
+    end
+
+    private
+
+    # Describes a world's details as the DLL tells them: its name with when the player played it
+    # last, the panels of plated values, then the description in the rest of the room. A panel with
+    # a target is one part the player presses to open the list box with it.
+    #
+    # @param entry [MGQ_MpWorld::Entry] The world.
+    def details(entry)
+      about = MGQ_MpWorldScreen.details(entry)
+      return unless about
+
+      stack row: true do
+        text about["title"].to_s, color: ROW_COLORS[about["title_color"]] || :system, grow: 1, most_lines: 1
+        text about["played"].to_s, typo: :caption, color: :dim
+      end
+      Array(about["panels"]).each_with_index { |panel, index| panel_of(panel, index) }
+      description_of(about["description"].to_s) if about["description"]
+    end
+
+    # Describes a panel of a world's details: its title with its note, and its rows of one or two
+    # cells, pressed as one part where it opens something.
+    #
+    # @param panel [Hash] The panel, as screen.details tells it.
+    # @param index [Integer] Its place among the panels.
+    def panel_of(panel, index)
+      target = panel["target"]
+      group panel["title"].to_s, { size: :tiny, key: index }.merge(panel["note"] ? { note: panel["note"].to_s } : {}) do
+        paper({ clickable: !target.nil?, on_click: target ? -> { scene.open_target(target.to_sym) } : nil }.merge(target ? { id: :"details_#{target}" } : {})) do
+          Array(panel["rows"]).each_with_index do |cells, row|
+            stack(row: true, key: row) { cells.each_with_index { |cell, column| cell_of(cell, column) } }
+          end
+        end
+      end
+    end
+
+    # Describes a cell of a world's details: its caption and its value on a plate, or its values as
+    # chips; an empty cell keeps its half.
+    #
+    # @param cell [Hash, nil] The cell, as screen.details tells it.
+    # @param column [Integer] Its place in its row.
+    def cell_of(cell, column)
+      return stack(grow: 1, key: column) {} unless cell
+
+      color = CELL_COLORS[cell["color"]]
+      if cell["chips"]
+        colors = Hash[Array(cell["chip_colors"]).to_a]
+        stack row: true, wrap: true, grow: 1, key: column do
+          Array(cell["chips"]).each do |chip|
+            chip_color = CELL_COLORS[colors[chip] || cell["color"]]
+            text chip.to_s, { plate: true, key: chip }.merge(chip_color ? { color: chip_color } : {})
+          end
+        end
+      else
+        field cell["label"].to_s, caption_width: CAPTION_WIDTH, plate: true, grow: 1, key: column do
+          text cell["text"].to_s, color ? { color: color } : {}
+        end
+      end
+    end
+
+    # Describes the description, which takes the rest of the room, its last line cut when it does not
+    # all fit; the player presses it to read it whole in the list box.
+    #
+    # @param description [String] The description, empty for none.
+    def description_of(description)
+      group DESCRIPTION_TITLE, size: :tiny, height: :fill do
+        paper clickable: !description.empty?, id: :details_description, height: :fill,
+              on_click: description.empty? ? nil : -> { scene.open_target(:description) } do
+          text description.empty? ? NO_DESCRIPTION : description, { wrap: true, most_lines: :fill, typo: :body2 }.merge(description.empty? ? { color: :dim } : {})
+        end
+      end
+    end
+
+    # Follows what the scene asks of the window: the cursors it moved, the focus it wants and what
+    # the lines at the top say, the focus first, as a text said keeps until the focus moves.
+    #
+    # @return [Array] What it followed.
+    def follow_scene
+      self.world_index = scene.world_index unless world_index == scene.world_index
+      self.command_index = scene.command_index unless command_index == scene.command_index
+      request = scene.focus_request
+      if request && request[1] != @focused && request[0].is_a?(Symbol) && focus_on(request[0])
+        @focused = request[1]
+      end
+      said = scene.said
+      if said && said[1] != @told && say_in_strip(said[0])
+        @told = said[1]
+      end
+      [request, said]
+    end
+
+    # Puts the focus on a part of the window, once it shows.
+    #
+    # @param id [Symbol] The part's id.
+    # @return [Boolean] Whether it did.
+    def focus_on(id)
+      part(id).focus
+      true
+    rescue UI::Engine::MarkupError
+      false
+    end
+
+    # Says a text in the lines at the top, once they show.
+    #
+    # @param said [String] The text.
+    # @return [Boolean] Whether it did.
+    def say_in_strip(said)
+      part(:mgq_online_world_screen_help).say(said)
+      true
+    rescue UI::Engine::MarkupError
+      false
+    end
   end
 
-  # Shows who plays, what happened last, and how the list stands.
-  def show_info
-    return unless @strip
+  # A form at the right from the DLL's view, or its page of the formation limits: its title, its
+  # fields in titled groups, one or two to a row. As a preview it takes no keys, and a click or
+  # confirm on it moves into it.
+  class WorldFormView < UI::Component
+    # The scene, which keeps the forms.
+    param :scene
 
-    name = MGQ_Multiplayer::Player.name
-    @strip.show([name ? "You play as #{name}." : "You have no name yet.", @message, @list_info])
+    # The form, or its page of the limits.
+    param :page
+
+    # Whether it only shows, as while the commands' cursor is on its command.
+    param :preview, false
+
+    # Whether it shows its title, which the limits' dialog shows instead.
+    param :titled, true
+
+    watch { scene.serial }
+
+    # Describes the form.
+    def render
+      if preview
+        paper clickable: true, id: :mgq_online_form_preview, grow: 1, on_click: -> { scene.enter_preview } do
+          fields_of
+        end
+      else
+        stack grow: 1 do
+          fields_of
+        end
+      end
+    end
+
+    private
+
+    # Describes the title and the fields.
+    def fields_of
+      text(page.title, color: :system) if titled
+      fields = page.fields
+      fields.map { |field| field.group }.uniq.each do |name|
+        grouped = fields.select { |field| field.group == name }
+        if name
+          group(name, size: :tiny, key: name) { rows_of(grouped) }
+        else
+          rows_of(grouped)
+        end
+      end
+    end
+
+    # Describes the rows of a group's fields, one or two to a row, a lone field on its side.
+    #
+    # @param fields [Array<MGQ_MpWorld::Form::Field>] The fields.
+    def rows_of(fields)
+      fields.map { |field| field.row }.uniq.each do |row|
+        on_row = fields.select { |field| field.row == row }
+        stack row: true, key: row do
+          stack(grow: 1) {} if on_row.size == 1 && on_row[0].side == :right
+          on_row.each { |field| component(FormField, scene: scene, page: page, input_field: field, key: [field.key, field.kind], grow: 1) }
+          stack(grow: 1) {} if on_row.size == 1 && on_row[0].side == :left
+        end
+      end
+    end
+  end
+
+  # A field of a form: a text box, a password shown as stars, a number, a box of several lines, a
+  # checkbox, a switch, the save to start from, the mods, or a button. It takes the focus as the
+  # scene asks.
+  class FormField < UI::Component
+    # The scene, which hands the field's changes to the form.
+    param :scene
+
+    # The form, or its page of the limits.
+    param :page
+
+    # The field.
+    param :input_field
+
+    # What the field holds: its text, number, tick or outcome.
+    state(:value) { FormField.value_of(page, input_field) }
+
+    watch { follow_page }
+    watch { follow_focus }
+
+    # Reads what a field holds as its part takes it.
+    #
+    # @param page [MGQ_MpWorld::WorldForm] The form.
+    # @param input_field [MGQ_MpWorld::Form::Field] The field.
+    # @return [Object] A text, a number, true or false, or an outcome's index.
+    def self.value_of(page, input_field)
+      value = page[input_field.key]
+      case input_field.kind
+      when :number then value.to_s =~ /\A\d+\z/ ? value.to_i : input_field.min.to_i
+      when :check then value ? true : false
+      when :switch then input_field.choices.size == 2 ? value.to_i == 1 : value.to_i
+      else value.to_s
+      end
+    end
+
+    # Describes the field.
+    def render
+      common = { id: field_id, help: input_field.hint, disabled: !page.enabled?(input_field) }
+      back = scene.back_target if page.equal?(scene.form)
+      common[:cancel_to] = back if back
+      case input_field.kind
+      when :text, :password, :id
+        text_field input_field.label, common.merge(bind: :value, password: input_field.kind == :password, max_length: input_field.max_chars, allowed: input_field.allowed,
+                                             leave_sides: true, typing_help: Scene_MpWorlds.typing_hint, on_change: ->(text) { scene.typed(page, input_field, text) },
+                                             on_submit: ->(text) { scene.submitted(page, input_field, text) })
+      when :number
+        numeric_field input_field.label, common.merge(bind: :value, min: input_field.min, max: input_field.max, on_change: ->(number) { scene.typed(page, input_field, number.to_s) },
+                                                on_submit: ->(number) { scene.submitted(page, input_field, number.to_s) })
+      when :area
+        text_field input_field.label, common.merge(bind: :value, lines: input_field.lines, max_length: input_field.max_chars, typing_help: Scene_MpWorlds.typing_hint,
+                                             on_change: ->(text) { scene.typed(page, input_field, text) }, on_submit: ->(text) { scene.submitted(page, input_field, text) })
+      when :check
+        checkbox input_field.label, common.merge(bind: :value, on_change: ->(_on) { scene.ticked(page, input_field) })
+      when :switch
+        switch_of(common)
+      when :save, :mods
+        stack spacing: 0 do
+          text input_field.label, typo: :caption, color: :system
+          button scene.value_text(page, input_field), common.merge(variant: :outlined, on_click: -> { input_field.kind == :save ? scene.choose_save : scene.open_mod_pick })
+        end
+      when :button
+        button input_field.label, common.merge(variant: :filled, on_click: -> { scene.pressed(input_field) })
+      end
+    end
+
+    private
+
+    # Names the field's part.
+    #
+    # @return [Symbol] Its id.
+    def field_id
+      :"mgq_online_form_#{page.equal?(scene.form) ? 'main' : 'limits'}_#{input_field.key}"
+    end
+
+    # Describes a switch: of two outcomes a switch that Left and Right turn, of more a select of them.
+    #
+    # @param common [Hash] The params every field takes.
+    def switch_of(common)
+      choices = input_field.choices
+      if choices.size == 2
+        switch input_field.label, common.merge(bind: :value, values: choices, on_change: ->(on) { scene.turned(page, input_field, on ? 1 : 0) })
+      else
+        select input_field.label, common.merge(bind: :value, on_change: ->(index) { scene.turned(page, input_field, index) if index }) do
+          choices.each_with_index { |choice, index| select_item choice, value: index, key: index }
+        end
+      end
+    end
+
+    # Keeps what the field holds on the form's value, which the DLL may change, such as a text it
+    # tidied or a switch another field follows.
+    #
+    # @return [Object] The form's value.
+    def follow_page
+      wanted = FormField.value_of(page, input_field)
+      self.value = wanted unless value == wanted
+      wanted
+    end
+
+    # Takes the focus once the scene asks for this field.
+    #
+    # @return [Array, nil] The scene's ask.
+    def follow_focus
+      request = scene.focus_request
+      if request && request[1] != @focused && request[0] == [:field, input_field.key] && page.equal?(scene.form)
+        part(field_id).focus
+        @focused = request[1]
+      end
+      request
+    end
+  end
+
+  # The formation limits of a Raid World, in a dialog over the screen: its page of the form, which
+  # keeps whatever they change; Done and cancel close it.
+  class LimitsDialog < UI::Component
+    # The scene, which keeps the form.
+    param :scene
+
+    # The form's page of the limits.
+    param :page
+
+    # Describes the dialog.
+    def render
+      dialog LIMITS_TITLE, id: :mgq_online_world_limits, width: 420 do
+        component(WorldFormView, scene: scene, page: page, titled: false)
+      end
+    end
   end
 end

@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-11-06: Named the line's color by its name in the player's look
 #                            - Built the action wheel as a wheel of the Mod Framework's UI layer, its hotkey declared on its class
+#                            - Told the other scripts whether the action wheel is open through wheel_open?, and took the bug report's screenshot once it is gone
 #      Paulinchen  2026-11-01: Dropped the lapse after a frame count, which nothing calls
 #                            - Named the Mod Framework's interface by its own name
 #                            - Left the line above the player's head to overworld.rbx
@@ -330,13 +331,11 @@ module MGQ_MpActions
     options
   end
 
-  # Whether a wheel is open, which other scripts ask, and what runs once nothing of it shows any
-  # more, such as the bug report's screenshot waiting for the wheel to fade.
+  # Whether a wheel is open, which other scripts ask.
   class OpenState
     # Makes the state of a closed wheel.
     def initialize
       @open = false
-      @gone = []
     end
 
     # Tells whether the wheel is open.
@@ -352,26 +351,6 @@ module MGQ_MpActions
     def open=(open)
       @open = open ? true : false
     end
-
-    # Adds a block to run once nothing of the wheel shows any more after it closed.
-    #
-    # @param event [Symbol] :gone, the one event it tells.
-    # @return [OpenState] Itself.
-    def on(event, &block)
-      @gone << block if event == :gone && block
-      self
-    end
-
-    # Runs the blocks added for :gone, each rescued.
-    def gone
-      @gone.each do |block|
-        begin
-          block.call
-        rescue => e
-          MGQ_MpActions.log_once(block, "a block run as the wheel faded out failed: #{e.class}: #{e.message}")
-        end
-      end
-    end
   end
 
   # The action wheel: its hotkey opens it on a free map in a world, wide boxes around the player
@@ -386,15 +365,27 @@ module MGQ_MpActions
       actions = MGQ_MpActions
       wheel id: WHEEL_ID, look: :boxes, follow: :player, if: -> { actions.free_reason || true }, choices: -> { actions.wheel_choices },
             center: -> { actions.wheel_middle }, on_open: -> { actions.opened }, on_submit: ->(choice) { actions.taken(choice) },
-            on_refuse: ->(choice) { actions.refused(choice) }, on_close: ->(why) { actions.closed(why) }, on_gone: -> { actions.wheel.gone }
+            on_refuse: ->(choice) { actions.refused(choice) }, on_close: ->(why) { actions.closed(why) }, on_gone: -> { actions.gone }
     end
   end
 
-  # Tells whether the action wheel is open, and runs what waits for it to fade out.
+  # Tells whether the action wheel is open.
   #
   # @return [OpenState] The wheel's state.
   def self.wheel
     @wheel ||= OpenState.new
+  end
+
+  # Tells whether the action wheel is open, as the other scripts ask.
+  #
+  # @return [Boolean] Whether it is.
+  def self.wheel_open?
+    wheel.open?
+  end
+
+  # Takes the screenshot the bug report's choice asked for once nothing of the wheel shows any more.
+  def self.gone
+    MGQ_MpBugReport.wheel_gone if defined?(MGQ_MpBugReport)
   end
 
   # Notes that the action wheel opened, with its choices for the log.

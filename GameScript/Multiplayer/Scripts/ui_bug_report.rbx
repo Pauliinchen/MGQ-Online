@@ -5,6 +5,7 @@
 #      Paulinchen  2026-11-06: Named each member's base level, as the game keeps every kind of level in one Hash
 #                            - Drew the form through the UI layer, its refusals on its help line and the focus on the field they name
 #                            - Told the DLL whether any mod types through the framework
+#                            - Left calling for the wheel's screenshot to the action wheel once it is gone
 #      Paulinchen  2026-11-05: Read the player's id through a topic
 #                            - Told an untranslated game in the report by its own name of the story's progress variable
 #      Paulinchen  2026-11-01: Built the form on the Mod Framework's components
@@ -585,7 +586,6 @@ end
 begin
   MGQ_MpOverworldSync.on_tick { |in_world| MGQ_MpBugReport.tick(in_world) }
   MGQ_MpActions.wheel_choice(MGQ_MpBugReport::WHEEL_ORDER) { MGQ_MpBugReport.wheel_option }
-  MGQ_MpActions.wheel.on(:gone) { MGQ_MpBugReport.wheel_gone }
   MGQ_Multiplayer::Bridge.on(MGQ_MpBugReport::SOUND_EVENT) { |name| MGQ_MpBugReport.play(name) }
   MGQ_Multiplayer::Bridge.on(MGQ_MpBugReport::NOTICE_EVENT) { |notice| MGQ_MpBugReport.notice(notice) }
   MGQ_Multiplayer::Bridge.on(MGQ_MpBugReport::CHAT_LINE_EVENT) { |text| MGQ_MpBugReport.chat_line(text) }

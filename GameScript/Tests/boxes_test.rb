@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-06: Left the list box to the world screen's tests and the in-game suite, checking a player's color names
+#                            - Dropped the info strip's checks with the strip
 #      Paulinchen  2026-11-05: Read the scripts' clock from $frame
 #      Paulinchen  2026-11-01: Dropped the checks of the list windows' mouse wheel and scrollbar, which no screen uses any more
 #                            - Renamed from ui_boxes_test.rb and covered the list box and the info strip on the Mod Framework's components
@@ -10,10 +11,9 @@
 #
 #----------------------------------------------------------------
 
-# Covers what MGQ Online's screens keep of their own in ui_online.rbx: the color of a player, and
-# the info strip on the Mod Framework's components over a stand-in for C#'s tree. The list box is
-# checked through the world screen that opens it and in the in-game suite; the framework's
-# components, question box and message are its own tests'.
+# Covers what MGQ Online's screens keep of their own in ui_online.rbx: the color of a player. The
+# list box is checked through the world screen that opens it and in the in-game suite; the
+# framework's components, question box and message are its own tests'.
 
 require_relative "bridge_support"
 
@@ -158,28 +158,3 @@ check("anyone else is plain text, whatever their id", [colors.of(peer), colors.o
 check("nobody reads as plain text, without raising", [colors.of(""), colors.of(Object.new), colors.of(nil), colors.label("")], [style::TEXT, style::TEXT, style::TEXT, "plain"])
 
 check("the UI layer takes a player's color by MGQ Online's names", [colors.role(:me), colors.role(mate), colors.role(peer)], [:mgq_online_own, :mgq_online_member, :text])
-
-# The lines across the top of a screen, on the framework's components over a stand-in for C#'s
-# tree.
-open_fake_ui { ["", 0] }
-tree = $fake_tree
-# The props C#'s tree holds of a component.
-props = lambda { |component| tree.nodes[component.node][:props] }
-strip = MGQ_MpInfoStrip.new
-two = MGQ_MpInfoStrip.new(2)
-ui_frame
-window = strip.instance_variable_get(:@window)
-label = window.children.first
-check("the info strip is as high as the game's window of its lines, across the top of the screen",
-      [strip.height, two.height, props.call(window)["at"], props.call(window)["size"]], [3 * 24 + 24, 2 * 24 + 24, [0, 0], [640, 96]])
-check("it takes neither the keys nor the pointer, and no cancel closes it",
-      [window.inert?, window.mouse, props.call(window)["closable"], window.captures], [true, false, false, false])
-sets = 0
-label.define_singleton_method(:text=) { |value| sets += 1; super(value) }
-strip.show(["Playing as Mia", nil, "3 worlds"])
-strip.show(["Playing as Mia", nil, "3 worlds"])
-check("it wraps the lines it is given, nil ones left out, at most its rows, and the same lines twice draw once",
-      [label.text, label.wrap, label.most_lines, sets], ["Playing as Mia\n3 worlds", true, 3, 1])
-strip.dispose
-two.dispose
-check("dispose closes it", window.open?, false)

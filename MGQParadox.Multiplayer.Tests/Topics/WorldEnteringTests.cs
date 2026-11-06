@@ -2,6 +2,7 @@
 //  WorldEnteringTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Checked the mods a world needs handed to the Mod Framework's dialog, in place of the download, the install and the restart
 //      Paulinchen  2026-11-01: Checked that a starting save another player made is noted as theirs, and the creator's own not
 //      Paulinchen  2026-10-30: Checked the game data once the world's mods loaded, warned of or taken as the creator's, in place of the question and the refusal on entering
 //                            - Checked that a world that turns other mods off waits for the catalog, without the parking
@@ -261,79 +262,39 @@ public sealed class WorldEnteringTests : IDisposable
     }
 
     /// <summary>
-    /// Asserts that required mods the catalog has are offered for download, handed to the scripts to
-    /// install on yes, and that entering goes on once they are installed, with what Patch held forgotten.
+    /// Asserts that a world whose required mods differ here hands the scripts the mods it needs, each
+    /// with the world's version and whether this game's copy differs from the creator's, for the Mod
+    /// Framework's dialog; that entering goes on once the dialog made them ready, with what Patch held
+    /// forgotten; and that going back from it gives up the entry.
     /// </summary>
     [Fact]
-    public void Enter_OffersTheDownloadAndGoesOnOnceTheScriptsInstalledTheMods()
+    public void Enter_AsksForTheModsTheWorldNeedsAndGoesOnOnceTheyAreReady()
     {
-        bool installed = false;
+        bool ready = false;
         Area("mods.check", _ => new RubyHash
         {
             { "known", true },
-            { "rows", installed ? new RubyArray() : new RubyArray([new RubyHash { { "name", "Level Cap" }, { "key", "levelcap" }, { "yours", "1.3.5" }, { "downloadable", true } }]) },
-            { "summary", "Plain needs Level Cap. Download them?" },
+            {
+                "rows", ready ? new RubyArray() : new RubyArray([
+                    new RubyHash { { "name", "Level Cap" }, { "key", "levelcap" }, { "yours", "1.3.5" }, { "worlds", "1.4.0" }, { "text", "Level Cap: yours 1.3.5, the world's 1.4.0" }, { "downloadable", true } },
+                    new RubyHash { { "name", "Mod C" }, { "yours", "differs" }, { "worlds", RubyNil.Value }, { "text", "Mod C: yours differs from the world creator's copy" }, { "downloadable", false } }])
+            },
+            { "summary", "Plain needs mods." },
         });
-        _directory.List(World("w1", open: true, mods: "!Level Cap"));
+        _directory.List(World("w1", open: true, mods: "!Level Cap; !Mod C"));
 
-        Assert.Equal(["say Plain needs Level Cap. Download them?", "confirm mods yes,show_mods,cancel"], Enter("w1"));
-        RubyValue? install = _topics.Call(WorldEntering.AnswerTopic, new RubyHash { { "answer", "yes" } });
-        Assert.Equal(new RubyArray([new RubyArray(["install", new RubyArray([new RubyArray(["Level Cap", "levelcap"])])])]), install!.AsHash()["steps"]);
+        RubyValue? asked = _topics.Call(WorldEntering.EnterTopic, new RubyHash { { "id", "w1" }, { "folder", RubyNil.Value }, { "name", "Plain" }, { "gone", false }, { "me", Me } });
+        RubyArray step = asked!.AsHash()["steps"].AsArray()[0].AsArray();
+        Assert.Equal(["needed_mods", "Plain"], [step[0].AsText(), step[1].AsText()]);
+        Assert.Equal([("Level Cap", "1.4.0", false), ("Mod C", (string?)null, true)],
+                     step[2].AsArray().Select(mod => mod.AsHash()).Select(mod => (mod["name"].AsText(), mod["version"].IsNil ? null : mod["version"].AsText(), mod["differs"].AsBool())));
 
-        installed = true;
-        Assert.Equal(["forget_installed", "busy unlock"], Answer("installed", new RubyHash { { "ok", true }, { "text", RubyNil.Value }, { "restart", false } }));
+        Assert.Equal(["back"], Answer("back"));
+
+        Enter("w1");
+        ready = true;
+        Assert.Equal(["forget_installed", "busy unlock"], Answer("mods_ready"));
         Assert.Contains(_asked, asked => asked.Topic == "mods.forget");
-    }
-
-    /// <summary>
-    /// Asserts that a mod installed that runs already starts the game again for the world, only once
-    /// its lock is open and its folder keeps the world code, so the password is not asked again after
-    /// the restart, and that an install that failed keeps the game out with its reason.
-    /// </summary>
-    [Fact]
-    public void Enter_RestartsForAModThatRunsOnceTheLockIsOpenAndRefusesAFailedInstall()
-    {
-        bool installed = false;
-        Area("mods.check", _ => new RubyHash
-        {
-            { "known", true },
-            { "rows", installed ? new RubyArray() : new RubyArray([new RubyHash { { "name", "Level Cap" }, { "key", "levelcap" }, { "yours", "1.3.5" }, { "downloadable", true } }]) },
-            { "summary", "Plain needs Level Cap. Download them?" },
-        });
-        _directory.List(World("w1", mods: "!Level Cap"));
-
-        Enter("w1");
-        Answer("yes");
-        installed = true;
-        Assert.Equal(["forget_installed", "password Plain"], Answer("installed", new RubyHash { { "ok", true }, { "restart", true } }));
-        Assert.Equal(["busy unlock"], Answer("password", new RubyHash { { "text", "secret" } }));
-        _directory.Finish(Code, "none");
-        Assert.Equal(["idle", "leave_form", "restart"], Step());
-        Assert.Single(_worlds.All());
-
-        Assert.Equal(["restart"], Enter("w1", _worlds.All()[0].Id));
-
-        installed = false;
-        Enter("w1");
-        Answer("yes");
-        Assert.Equal(["buzz", "say Level Cap could not be installed.", "back"], Answer("installed", new RubyHash { { "ok", false }, { "text", "Level Cap could not be installed." } }));
-    }
-
-    /// <summary>
-    /// Asserts that a required mod nobody can download keeps the game out, naming it.
-    /// </summary>
-    [Fact]
-    public void Enter_KeepsOutAGameThatLacksARequiredModNoneCanDownload()
-    {
-        Area("mods.check", _ => new RubyHash
-        {
-            { "known", true },
-            { "rows", new RubyArray([new RubyHash { { "name", "Mod C" }, { "yours", "not installed" }, { "downloadable", false } }]) },
-            { "summary", "needs" },
-        });
-        _directory.List(World("w1", mods: "!Mod C"));
-
-        Assert.Equal(["buzz", "say Plain needs mods you do not have: Mod C.", "back"], Enter("w1"));
     }
 
     /// <summary>

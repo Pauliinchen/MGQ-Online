@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-06: Asked the Mod Framework for the update wherever the relay turns this version away, naming the version the DLL runs
+#                            - Named the colors of featured and Raid Worlds by MGQ Online's own color names, and read the bounds of a number's field
 #      Paulinchen  2026-11-05: Took a difficulty the relay pushed as the number the DLL reads
 #                            - Told no world type or sharing of a form other than the new world's, which alone sets them
 #                            - Had C# write the game data's fingerprint of the ids the scripts read, keeping none that came back empty
@@ -180,11 +181,11 @@ module MGQ_MpWorld
   # Mods texts mods_text keeps read before it forgets them all.
   MODS_TEXTS_KEPT = 256
 
-  # Colour of the featured worlds, which the relay's admins make, the style's gold.
-  FEATURED_COLOR = Mod_Framework::UI::Style::GOLD
+  # Colour of the featured worlds, which the relay's admins make: MGQ Online's featured gold.
+  FEATURED_COLOR = :mgq_online_featured
 
-  # Colour of the Raid Worlds, the style's bad color, which wins over the featured worlds' gold.
-  RAID_COLOR = Mod_Framework::UI::Style::BAD
+  # Colour of the Raid Worlds, MGQ Online's raid red, which wins over the featured worlds' gold.
+  RAID_COLOR = :mgq_online_raid
 
   # The type of a Classic world, where each party plays its own story, as the directory and
   # world.ini name it.
@@ -1737,6 +1738,12 @@ module MGQ_MpWorld
       # Width of a switch's or a save's label, nil for the width its window gives every label.
       attr_reader :label_width
 
+      # The least number a number's box takes, nil for a field of another kind.
+      attr_reader :min
+
+      # The largest number a number's box takes, nil for a field of another kind.
+      attr_reader :max
+
       # A block called with the form that tells whether the field is part of it now, nil for always.
       attr_reader :shows
 
@@ -1748,7 +1755,7 @@ module MGQ_MpWorld
       # @param row [Integer] The row it is on.
       # @param hint [String] What the lines at the top say while the cursor is on it.
       # @param options [Hash] Whichever of :side, :max_chars, :allowed, :needs (a key or a proc), :optional (also for a save), :group, :lines,
-      #   :empty_ok (a proc), :empty_text, :choices, :note (a proc), :label_width and :shows (a proc) apply.
+      #   :empty_ok (a proc), :empty_text, :choices, :note (a proc), :label_width, :shows (a proc), :min and :max apply.
       def initialize(key, kind, label, row, hint, options = {})
         @key = key
         @kind = kind
@@ -1768,6 +1775,8 @@ module MGQ_MpWorld
         @note = options[:note]
         @label_width = options[:label_width]
         @shows = options[:shows]
+        @min = options[:min]
+        @max = options[:max]
       end
 
       # Tells the line below a switch's outcome.
@@ -2269,7 +2278,7 @@ module MGQ_MpWorld
       Field.new(about["key"].to_sym, about["kind"].to_sym, about["label"].to_s, about["row"].to_i, about["hint"].to_s,
                 :side => about["side"] && about["side"].to_sym, :max_chars => about["max_chars"], :allowed => ALLOWED[about["allowed"]],
                 :optional => about["optional"] == true, :group => about["group"], :lines => about["lines"], :choices => Array(about["choices"]),
-                :label_width => about["label_width"])
+                :label_width => about["label_width"], :min => about["min"], :max => about["max"])
     end
   end
 

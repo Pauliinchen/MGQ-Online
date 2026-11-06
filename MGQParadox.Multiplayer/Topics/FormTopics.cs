@@ -2,6 +2,7 @@
 //  FormTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Wrote the bounds of a number's field into its view, which the field steps within
 //      Paulinchen  2026-11-05: Wrote the world type, sharing, shared save and player's choice into the new world's view alone
 //      Paulinchen  2026-10-23: Handed out the open forms for the world screen's requests
 //                            - Created
@@ -312,6 +313,8 @@ internal sealed class FormTopics
         { "hint", field.Hint },
         { "choices", new RubyArray(field.Choices.Select(choice => (RubyValue)choice)) },
         { "label_width", field.LabelWidth is { } width ? width : RubyNil.Value },
+        { "min", field.Kind == FieldKind.Number ? field.Min : RubyNil.Value },
+        { "max", field.Kind == FieldKind.Number ? field.Max : RubyNil.Value },
         { "enabled", form.IsEnabled(field) },
     };
 

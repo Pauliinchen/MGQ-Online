@@ -2,6 +2,7 @@
 //  WorldEntering.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Asked for a world's differing mods through the Mod Framework's dialog of the mods it needs, which installs them and starts the game again where it must
 //      Paulinchen  2026-11-01: Had the scripts note a world started from another player's starting save, whose side is not the player's
 //      Paulinchen  2026-10-30: Compared this game's data with a world's once the world's mods loaded, warning of a difference instead of asking or keeping the game out
 //                            - Entered a world that turns other mods off without parking them, which the Mod Framework's session leaves out
@@ -172,9 +173,9 @@ internal interface IEnteringDirectory
 
 /// <summary>
 /// The world screen's way into a world as steps the scripts play: whether the world takes players
-/// now, its required mods, the catalog its other mods turned off need, its password, where a new
-/// player starts, the starting save, the install of its mods, a Discord invite and the entry after a
-/// restart; and the check of this game's data once the world's mods loaded. The scripts hand over
+/// now, its required mods, which the Mod Framework's dialog makes ready, the catalog its other mods
+/// turned off need, its password, where a new player starts, the starting save, a Discord invite
+/// and the entry after a restart; and the check of this game's data once the world's mods loaded. The scripts hand over
 /// the player's choices and what their effects did, and keep the windows, the forms, the saves and
 /// the scenes.
 /// </summary>
@@ -336,12 +337,6 @@ internal sealed partial class WorldEntering
     /// Whether the list had arrived as the world began to open, which its settings take.
     /// </summary>
     private bool _fresh;
-
-    /// <summary>
-    /// Whether a mod installed for a world runs already, which loads anew only after the game starts
-    /// again, so every world entered from now on starts the game again first.
-    /// </summary>
-    private bool _restartFirst;
 
     /// <summary>
     /// Creates the steps.
@@ -597,10 +592,6 @@ internal sealed partial class WorldEntering
             Refuse(entry.Gone ? $"{entry.Name} is no longer in the list: it was deleted, or you were removed." : $"{entry.Name} is not in the list right now. Try again once the list has loaded.");
             Back();
         }
-        else if (entry.Folder != null && listed != null && _restartFirst)
-        {
-            Restart();
-        }
         else if (entry.Folder != null)
         {
             Log($"entering {EntryText} from its folder {entry.Folder}{(listed == null ? " (deleted from the list, saves kept)" : "")}");
@@ -666,8 +657,10 @@ internal sealed partial class WorldEntering
     }
 
     /// <summary>
-    /// Decides whether this game may enter as far as the world's required mods go, and offers the
-    /// download of what the catalog has.
+    /// Decides whether this game may enter as far as the world's required mods go: while any differs,
+    /// the scripts open the Mod Framework's dialog of the mods the world needs, which installs, updates
+    /// or turns them on, names those only their authors have, and answers <c>mods_ready</c> or
+    /// <c>back</c>, or starts the game again into the world.
     /// </summary>
     /// <param name="listed">The world.</param>
     /// <returns>Whether entering goes on now.</returns>
@@ -680,30 +673,14 @@ internal sealed partial class WorldEntering
             return true;
         }
 
-        List<RubyHash> unavailable = [.. rows.Select(row => row.AsHash()).Where(row => !row["downloadable"].AsBool())];
-        string summary = Text(check["summary"]);
-        string names = string.Join(", ", rows.Select(row => row.AsHash()["name"].AsText()));
-        _confirming = "mods";
-        if (unavailable.Count == rows.Count && rows.All(row => row.AsHash()["yours"].AsText() == "not installed"))
+        RubyArray needed = new(rows.Select(row => row.AsHash()).Select(row => (RubyValue)new RubyHash
         {
-            Log($"kept out of {EntryText}: required mods missing, none in the catalog");
-            Refuse($"{_entry.Name} needs mods you do not have: {names}.");
-            Back();
-        }
-        else if (unavailable.Count == 0)
-        {
-            Log($"offered to download {names} for {EntryText}");
-            Say(summary);
-            Confirm("mods", ("Download", "yes"), ("See the mods", "show_mods"), ("Back", EnterRules.Cancel));
-        }
-        else
-        {
-            Log($"kept out of {EntryText}: {string.Join(", ", unavailable.Select(row => row["name"].AsText()))} only from the author, no download offered");
-            Buzz();
-            Say(summary);
-            Confirm("mods", ("See the mods", "show_mods"), ("Back", EnterRules.Cancel));
-        }
-
+            { "name", row["name"] },
+            { "version", row["worlds"] },
+            { "differs", row["yours"].AsText() == ModCheck.Differs },
+        }));
+        Log($"{EntryText} needs mods that differ here: {string.Join(", ", rows.Select(row => row.AsHash()["text"].AsText()))}; asking through the Mod Framework");
+        _steps.Add(new RubyArray { "needed_mods", _entry.Name, needed });
         return false;
     }
 
@@ -827,8 +804,6 @@ internal sealed partial class WorldEntering
             case "yes":
                 Confirmed();
                 break;
-            case "show_mods":
-                break;
             case EnterRules.Cancel:
             case "back":
                 Log($"backed out for {EntryText}");
@@ -874,8 +849,11 @@ internal sealed partial class WorldEntering
             case "start_failed":
                 StartFailed(Text(request["text"]), request["placed"].AsBool());
                 break;
-            case "installed":
-                Installed(request["ok"].AsBool(), Text(request["text"]), !request["restart"].IsNil && request["restart"].AsBool());
+            case "mods_ready":
+                ModsReady();
+                break;
+            case "mods_restarting":
+                Log($"the game starts again to enter {EntryText} with its mods loaded anew");
                 break;
             default:
                 if (!RequestAnswered(answer, request))
@@ -897,71 +875,21 @@ internal sealed partial class WorldEntering
         Log($"confirmed {what} for {EntryText}");
         switch (what)
         {
-            case "mods":
-                Install();
-                break;
             default:
                 throw new BridgeRequestException($"Nothing waits for a confirmation of {what}.");
         }
     }
 
     /// <summary>
-    /// Has the scripts install the world's differing mods that the catalog has, through the Mod
-    /// Framework, which they answer with <c>installed</c>.
+    /// Goes on once the Mod Framework made the world's mods ready, which load as the player enters
+    /// it, with what Patch held forgotten.
     /// </summary>
-    private void Install()
+    private void ModsReady()
     {
-        ListedWorld listed = _directory.Listed(_entry!.Id).World!;
-        RubyHash check = _context.Ask("mods.check", new RubyHash { { "mods", listed.About.Mods }, { "hashes", listed.About.ModHashes }, { "world", RubyNil.Value } })!.AsHash();
-        RubyArray rows = new(check["rows"].AsArray().Select(row => row.AsHash()).Where(row => row["downloadable"].AsBool()).Select(row => (RubyValue)new RubyArray { row["name"], row["key"] }));
-        Log($"installing {rows.Count} mod(s) of {EntryText} through the Mod Framework");
-        _steps.Add(new RubyArray { "install", rows });
-    }
-
-    /// <summary>
-    /// Goes on once the scripts installed the world's mods: enters the world, whose mods then load
-    /// as the player enters the game, or starts the game again when a mod installed runs already,
-    /// which only a restart loads anew.
-    /// </summary>
-    /// <remarks>
-    /// The restart waits for the world's lock to open, since the world code its folder keeps lets
-    /// the game that starts again enter without the password or the invite, which no file holds.
-    /// </remarks>
-    /// <param name="ok">Whether every mod was installed.</param>
-    /// <param name="error">Why not, for the player.</param>
-    /// <param name="restart">Whether a mod installed runs already.</param>
-    private void Installed(bool ok, string error, bool restart)
-    {
-        if (!ok)
-        {
-            Log($"the mods of {EntryText} were not installed: {error}");
-            Refuse(error);
-            Back();
-            return;
-        }
-
+        Log($"the mods of {EntryText} are ready, entering it");
         _context.Ask(ModCheckTopics.ForgetTopic);
         _steps.Add(new RubyArray { "forget_installed" });
-        if (restart)
-        {
-            _restartFirst = true;
-            Log($"installed the mods of {EntryText}, one of which runs already: the game starts again to enter it{(_entry!.Folder == null ? " once its lock is open" : "")}");
-        }
-        else
-        {
-            Log($"installed the mods of {EntryText}, which load as the player enters it");
-        }
-
         Chain();
-    }
-
-    /// <summary>
-    /// Has the scripts start the game again to enter the world, which this PC has a folder of.
-    /// </summary>
-    private void Restart()
-    {
-        Log($"starting the game again to enter {EntryText}: a mod installed for a world runs already");
-        _steps.Add(new RubyArray { "restart", _entry!.Id });
     }
 
     /// <summary>
@@ -1181,15 +1109,7 @@ internal sealed partial class WorldEntering
         }
 
         _changes.Mark(WorldChanges.List);
-        if (_restartFirst)
-        {
-            Restart();
-        }
-        else
-        {
-            EnterFolder(world.Id, listed?.Start, listed?.Choose);
-        }
-
+        EnterFolder(world.Id, listed?.Start, listed?.Choose);
         return true;
     }
 

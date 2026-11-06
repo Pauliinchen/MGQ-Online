@@ -2,18 +2,19 @@
 #  world_screen_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Read the list box and the mod picker from the list box's component
+#      Paulinchen  2026-11-06: Checked the screen as its window of the UI layer hands over what the player does, the mods a world needs going to the Mod Framework's dialog
 #      Paulinchen  2026-11-05: Answered the list, the details, the choices, the list box, the forms and the mod picker with the values each check sets instead of their stand-ins
 #                            - Read the directory's list and the player's id through the DLL's topics
 #      Paulinchen  2026-11-01: Created
 #
 #----------------------------------------------------------------
 
-# Checks the world screen on the Mod Framework's components (world_screen.rbx): the worlds and the
-# commands as boxes the keys stop on as a whole first, a world's details and what they open, a
-# world's choices and the DLL's questions in the framework's menu and question box, the forms built
-# from the DLL's view and typed in place, the formation limits, the mod picker, the cursor on a world
-# just made, and the screen held while the DLL's action runs. The rules behind it are the DLL's.
+# Checks the world screen (world_screen.rbx) as its window of the UI layer hands over what the player
+# does: the boxes the focus goes to, what the right side shows, a world's choices and the DLL's
+# questions in the framework's menu and question box, the mods a world needs in the Mod Framework's
+# dialog, the forms from the DLL's view, the formation limits, the mod picker, the cursor on a world
+# just made, and the screen held while the DLL's action runs. How the layer draws it is the in-game
+# suite's (32_step9_b_worlds.rb); the rules behind it are the DLL's.
 
 require_relative "support"
 require_relative "rules_support"
@@ -146,6 +147,9 @@ module MGQ_Multiplayer
   module Player; def self.id; "me"; end; end
 end
 
+# The action after the framework's restart that enters a world again.
+module MGQ_Multiplayer; module Stages; REJOIN_ACTION = "multiplayer.rejoin" unless const_defined?(:REJOIN_ACTION); end; end
+
 require_relative "world_screen_support"
 load_script "world_save_distribution"
 load_script "ui_online"
@@ -166,73 +170,44 @@ ROWS = [listed_row(LISTED[1]), listed_row(LISTED[0])]
 $screens.details["w1"] = screen_details("Sunset", ["Level Cap", "Party Sheet"], ["Cara", "Ana", "Me (you)"], "A slow run.")
 $screens.actions["w1"] = [["Enter the world", "enter", true], ["Mark as a favourite", "favourite", true], ["Back", "cancel", true]]
 $screens.actions["w2"] = [["Enter the world", "enter", true], ["Remove a player", "ban", false], ["Back", "cancel", true]]
-$screens.boxes[["w1", "players"]] = [["head", "Online (1)"], ["item", "Cara", "good", "online"], ["head", "Offline (2)"], ["item", "Ana", "grey", "offline"],
-                                     ["item", "Me (you)", "grey", "offline"]]
-$screens.boxes[["w1", "mods"]] = [["head", "Mods (2)"], ["item", "Level Cap", "plain", nil], ["item", "Party Sheet", "plain", nil]]
 
 # Opening: the commands' box as a whole until the worlds arrive, then the worlds' box.
 screen_list([], "loading", "info" => "The list is being fetched . . .")
 scene = world_scene
-commands_box = scene.instance_variable_get(:@commands_box)
-worlds_box = scene.instance_variable_get(:@worlds_box)
-check("the screen opens with the commands' box picked as a whole, the strip naming the player and how the list stands",
-      [$focused.equal?(commands_box), strip_text(scene).split("\n").values_at(0, 2)], [true, ["You play as Me.", "The list is being fetched . . ."]])
+check("the screen opens with the commands' box picked as a whole, the lines at the top naming the player and how the list stands",
+      [focused(scene), scene.strip_lines], [:commands_box, ["You play as Me.", "The list is being fetched . . ."]])
 screen_list(ROWS)
 scene.look_at_list
-check("the first worlds to arrive take the pick onto the worlds' box as a whole, the rows as the DLL wrote them",
-      [$focused.equal?(worlds_box), scene.worlds_list.rows.map { |row| row[:text] }], [true, ["Iliasburg", "Sunset"]])
+check("the first worlds to arrive pick the worlds' box as a whole, the rows as the DLL wrote them",
+      [focused(scene), scene.entries.map { |entry| scene.world_row(entry)[:text] }], [:worlds_box, ["Iliasburg", "Sunset"]])
 
 # The boxes and the right side.
-scene.worlds_list.index = 1
-ui::Tree.focus(scene.worlds_list)
-scene.show_panel
-texts = lambda { |part| part.children.map { |child| texts.call(child) }.flatten + (part.respond_to?(:text) && part.text.is_a?(String) ? [part.text] : []) }
-shown = texts.call(scene.right_box)
-check("in the worlds the right side shows the world's details: its name, its panels and its description",
-      [shown.include?("Sunset"), shown.include?("A slow run."), %w(World Players Description).all? { |title| shown.include?(title) }], [true, true, true])
-plate = scene.right_box.find(:details_mods)
-check("a cell that opens something is one part the player clicks, its values as tags",
-      [plate.clickable, plate.body.children.first.class, plate.cancel_to.equal?(scene.worlds_list)], [true, ui::Tags, true])
-scene.right_box.find(:details_players).receive("click")
-box = scene.list_box
-check("clicking the players opens the list box with the DLL's rows of the world's players",
-      [$screens.asked("screen.box").last, box.open?, note_text, list_box_value(:rows)[3]],
-      [{ "key" => "w1", "kind" => "players" }, true, "Players", { :text => "Ana", :color => :dim, :right => "offline" }])
-box.close
-
-# The details by the keys, as C# moves the focus: Right on a world onto Mods, Down to Players, Left
-# back to the same world.
-ui::Tree.focus(scene.worlds_list)
-ui::Tree.focus(scene.right_box.find(:details_mods))
-scene.show_panel
-check("Right on a world puts the focus on its Mods, the details still shown", [scene.instance_variable_get(:@place), texts.call(scene.right_box).include?("Sunset")], [:details, true])
-ui::Tree.focus(scene.right_box.find(:details_players))
-ui::Tree.focus(scene.worlds_list)
-scene.show_panel
-check("Down then goes to Players, and Left back to the same world, its details still shown",
-      [scene.worlds_list.index, scene.instance_variable_get(:@place), texts.call(scene.right_box).include?("Sunset")], [1, :worlds, true])
-ui::Tree.focus(commands_box)
-check("on a box as a whole the right side shows nothing", (scene.show_panel; scene.right_box.children.size), 0)
+scene.entered(:worlds)
+scene.pointed_world(scene.entries[1])
+check("in the worlds the right side shows the world the cursor is on", [scene.right_view[0], scene.right_view[1].name], [:world, "Sunset"])
+scene.entered(:commands)
+scene.pointed_command(Scene_MpWorlds::COMMANDS[3])
+check("on Back of the commands the right side shows nothing", scene.right_view, nil)
 
 # A world's choices.
-scene.worlds_list.receive("submit", 1)
+scene.on_world(scene.entries[1])
 check("confirm on a world opens its choices in the framework's menu, Back last", [menu_texts.first, menu_texts.last], ["Enter the world", "Back"])
 cancel_menu(scene)
-check("cancel on the menu backs out of it", [ui::Menu.current, scene.idle?], [nil, true])
-scene.worlds_list.receive("submit", 1)
+check("cancel on the menu backs out of it", [menu_texts, scene.idle?], [nil, true])
+scene.on_world(scene.entries[1])
 pick_menu(scene, menu_texts.index("Mark as a favourite"))
 check("a choice picked goes to the DLL in the frame after", screen_requests("screen.do").last.values_at("do", "id"), ["favourite", "w1"])
 
 # The players to remove, and the question before.
-scene.worlds_list.receive("submit", 0)
+scene.on_world(scene.entries[0])
 check("a choice the DLL greys, such as Remove a player with one player, is greyed in the menu", menu_enabled[menu_texts.index("Remove a player")], false)
 cancel_menu(scene)
-entry = scene.worlds_list.rows[1][:data]
+entry = scene.entries[1]
 scene.instance_variable_set(:@entry, entry)
 scene.on_ban
 check("a world with others lists them", menu_texts, ["Cara", "Ana", "Back"])
 pick_menu(scene, 1)
-check("picking one asks first, in the question box, and says it in the strip", [$asked.last, said(scene)],
+check("picking one asks first, in the question box, and says it in the lines at the top", [$asked.last, said(scene)],
       [["Remove Ana from Sunset? They cannot enter it again.", ["Remove them", "Back"]], "Remove Ana from Sunset? They cannot enter it again."])
 answer_question(scene, true)
 check("Remove them hands the DLL the player", screen_requests("screen.do").last.values_at("do", "target", "target_name"), ["ban", "ana", "Ana"])
@@ -244,159 +219,136 @@ check("a question of one doing command and Back goes to the question box with wh
       $asked.last, ["Turn your other mods off to enter?", ["Turn them off", "Back"]])
 answer_question(scene, false)
 check("its Back answers back", screen_requests("screen.answer").last, { "answer" => "back" })
-scene.play("steps" => [["say", "Sunset needs a mod you lack."], ["confirm", "mods", [["Download", "yes"], ["See the mods", "show_mods"], ["Back", "cancel"]]]])
-check("a question of more commands goes to the menu", menu_texts, ["Download", "See the mods", "Back"])
-pick_menu(scene, 1)
-check("See the mods tells the DLL and opens the list box with the world's mods",
-      [screen_requests("screen.answer").last, note_text], [{ "answer" => "show_mods" }, "Mods"])
-scene.list_box.close
 scene.play("steps" => [["choices", [["At the beginning", "from_beginning"], ["From one of my saves", "from_own"], ["Back", "cancel"]]]])
+check("a question of more commands goes to the menu", menu_texts, ["At the beginning", "From one of my saves", "Back"])
 cancel_menu(scene)
 check("cancel on the choices of where to start answers back", screen_requests("screen.answer").last, { "answer" => "back" })
 
-# Busy, the focus dropped as C#'s tree drops it on an inert root.
+# The mods a world needs go to the Mod Framework's dialog.
+needed = nil
+Mod_Framework::Mods.define_singleton_method(:ask_needed) { |place, mods, options = {}, &block| needed = [place, mods, options, block]; :asking }
+scene.play("steps" => [["needed_mods", "Sunset", [{ "name" => "Level Cap", "version" => "1.4.0", "differs" => false }, { "name" => "Mod C", "version" => nil, "differs" => true }]]])
+check("a world whose mods differ asks the Mod Framework, which starts the game again into that world where it must",
+      [needed[0], needed[1], needed[2][:restart]],
+      ["Sunset", [{ :name => "Level Cap", :version => "1.4.0", :differs => false }, { :name => "Mod C", :version => nil, :differs => true }], ["multiplayer.rejoin", "w1"]])
+check("and the screen waits for it", scene.idle?, false)
+needed[3].call(:ready)
+run_later(scene)
+check("once the mods are ready the DLL goes on entering", screen_requests("screen.answer").last, { "answer" => "mods_ready" })
+scene.play("steps" => [["needed_mods", "Sunset", [{ "name" => "Mod C", "differs" => true }]]])
+needed[3].call(:back)
+run_later(scene)
+check("going back from the dialog gives the entry up", screen_requests("screen.answer").last, { "answer" => "back" })
+
+# Busy.
 $sounds = []
-ui::Tree.focus(scene.worlds_list)
+scene.entered(:worlds)
 scene.play("steps" => [["busy", "create"]])
-check("while the DLL's action runs the screen takes no input and the strip says what runs", [scene.root.inert?, said(scene)], [true, MGQ_MpWorldScreen.busy_text("create")])
-check("and it is not waiting for the player", scene.idle?, false)
-$focused = nil
+check("while the DLL's action runs the screen says what runs and does not wait for the player", [said(scene), scene.idle?], [MGQ_MpWorldScreen.busy_text("create"), false])
 $returned = false
-scene.root.receive("cancel")
-check("cancel on the screen while it runs leaves nothing", [$returned, scene.root.open?, scene.busy], [false, true, "create"])
+scene.cancelled
+scene.on_world(scene.entries[0])
+check("cancel and a pick while it runs only buzz", [$returned, $sounds, menu_texts], [false, ["buzzer", "buzzer"], nil])
 scene.play("steps" => [["idle"]])
-check("once it ended the screen takes input again, the worlds holding the focus as before",
-      [scene.root.inert?, scene.busy, $focused.equal?(scene.worlds_list)], [false, nil, true])
+check("once it ended the worlds take the focus as before", [scene.busy, focused(scene)], [nil, :worlds])
 
 # Forms: a command's form shows as a preview, confirm enters it typing.
-ui::Tree.focus(scene.commands_list)
-scene.commands_list.index = 0
-scene.show_panel
-name = form_part(scene, :name)
-preview = scene.right_box.children.first
-check("on Create new world its form shows, one part only the pointer clicks", [name.class, preview.clickable, preview.pointer_only], [ui::TextField, true, true])
-preview.receive("click")
-check("a click on it moves into it, onto Name", [scene.form.nil?, $focused.equal?(form_part(scene, :name))], [false, true])
-cancel_in($focused)
-scene.commands_list.receive("submit", 0)
-name = form_part(scene, :name)
-check("confirm moves into it, onto Name, typing, with its hint and the typing line",
-      [$focused.equal?(name), $mgq_text_input, said(scene), (scene.show_typing_line; scene.instance_variable_get(:@typing_line).visible)],
-      [true, true, scene.form.fields.first.hint, true])
+scene.entered(:commands)
+scene.pointed_command(Scene_MpWorlds::COMMANDS[0])
+check("on Create new world its form shows as a preview", scene.right_view, [:preview, :new_world])
+scene.enter_preview
+check("a click on it moves into it, onto Name", [scene.right_view, focused(scene)], [[:form, :new_world], :name])
+cancel_form(scene)
+scene.on_command(Scene_MpWorlds::COMMANDS[0])
+check("confirm moves into it, onto Name", [scene.form_symbol, focused(scene)], [:new_world, :name])
+scene.left(:commands)
 $forms.set("form.check", ["", "The world needs a name."])
 type_in("\r")
-check("Enter on an empty name has the DLL check it, buzzes, says why and keeps typing",
-      [$forms.asked("form.check").last.values_at("form", "key", "text"), $sounds.last, said(scene), $focused.equal?(name)], [["new_world", "name", ""], "buzzer", "The world needs a name.", true])
+check("Enter on an empty name has the DLL check it, buzzes and says why, the focus staying",
+      [$forms.asked("form.check").last.values_at("form", "key", "text"), $sounds.last, said(scene), focused(scene)], [["new_world", "name", ""], "buzzer", "The world needs a name.", :name])
 $forms.set("form.check")
 type_in("Sunrise\r")
-check("a name taken goes into the form and the focus moves down", [scene.form[:name], $focused.equal?(form_part(scene, :password))], ["Sunrise", true])
-scene.say("")
-form_part(scene, :seats).receive("hover", true)
-check("the pointer on a field says its hint", said(scene), scene.form.fields.find { |field| field.key == :seats }.hint)
-check_field = scene.form.fields.find { |field| field.kind == :check }
-ui::Tree.focus(form_part(scene, check_field.key))
-check("on a checkbox the typing line hides", (scene.show_typing_line; scene.instance_variable_get(:@typing_line).visible), false)
-seats = form_part(scene, :seats)
-check("Max Players takes digits only", seats.allowed =~ "a", nil)
+check("a name taken goes into the form and the focus moves down", [scene.form[:name], focused(scene)], ["Sunrise", :password])
+check("Max Players is a number the player types or steps", form_field(scene, :seats).kind, :number)
 
-# A switch turned asks the DLL for the form anew, the focus kept.
-type = form_part(scene, :type)
-ui::Tree.focus(type)
-check("a Classic world's form has no Difficulty", form_part(scene, :difficulty), nil)
+# A switch turned asks the DLL for the form anew.
+check("a Classic world's form has no Difficulty", form_field(scene, :difficulty), nil)
 $forms.set("form.turn", FormAnswers.view("create turned to a Raid World"))
-type.receive("step", 1)
+scene.turned(scene.form, form_field(scene, :type), 1)
 $forms.set("form.turn")
-check("turning World type has the DLL turn it and builds the form anew from its answer, with Difficulty, the focus on World type",
-      [$forms.asked("form.turn").last.values_at("key", "step"), scene.form.type, form_part(scene, :difficulty).nil?, $focused.equal?(type) || form_part(scene, :type).id == type.id],
-      [["type", 1], "raid", false, true])
+check("turning World type has the DLL turn it and shows the form anew from its answer, with Difficulty",
+      [$forms.asked("form.turn").last.values_at("key", "step"), scene.form.type, form_field(scene, :difficulty).nil?], [["type", 1], "raid", false])
 
 # The formation limits.
-form_part(scene, :limits).receive("click")
-check("Set formation limits opens them over the form", [scene.limits.open?, scene.limits.title], [true, "Formation limits"])
-scene.limits.close(:cancel)
-check("closing them goes back to the form at their button", [scene.limits, scene.instance_variable_get(:@field_key)], [nil, :limits])
-form_part(scene, :limits).receive("click")
-ui::Tree.focus(scene.limits.find("form:done"))
-scene.limits.find("form:done").receive("click")
-check("Done closes them the same way", [scene.limits, scene.instance_variable_get(:@field_key)], [nil, :limits])
+scene.pressed(form_field(scene, :limits))
+check("Set formation limits opens them over the form", scene.limits && scene.limits.open?, true)
+scene.limits.close
+check("closing them goes back to the form at their button", [scene.limits, focused(scene)], [nil, :limits])
 
 # Sending with a problem focuses the field that keeps it.
-scene.form[:name] = ""
-form_part(scene, :name).text = ""
 $forms.set("form.send", "problem" => ["name", "The world needs a name."])
-form_part(scene, :confirm).receive("click")
+scene.pressed(form_field(scene, :confirm))
 $forms.set("form.send")
-check("sending a form with a problem the DLL names buzzes, says why and puts the focus on the field", [said(scene), $focused.id], ["The world needs a name.", "form:name"])
+check("sending a form with a problem the DLL names buzzes, says why and puts the focus on the field", [said(scene), focused(scene)], ["The world needs a name.", :name])
 
 # Cancel in a command's form keeps it, in the edit form drops it.
 type_in("Kept")
-cancel_in($focused)
-check("cancel in the create form goes back to its command, keeping what was typed", [scene.form, scene.instance_variable_get(:@forms)[:new_world][:name], $focused.equal?(scene.commands_list)],
-      [nil, "Kept", true])
-scene.instance_variable_set(:@entry, scene.worlds_list.rows[0][:data])
+cancel_form(scene)
+check("cancel in the create form goes back to its command, keeping what was typed", [scene.form, scene.forms[:new_world][:name], scene.right_view], [nil, "Kept", [:preview, :new_world]])
+scene.instance_variable_set(:@entry, scene.entries[0])
 scene.on_edit_world
 check("Edit the world opens its form on the world as it is listed, titled as the DLL answers",
       [$forms.asked("form.open").last.values_at("form", "kind") + $forms.asked("form.open").last["world"].values_at("name", "seats"), scene.form.title],
       [["edit_world", "edit", "Iliasburg", 4], FormAnswers.view("edit of a Classic world, by an admin")["title"]])
-cancel_in($focused)
-check("cancel in the edit form drops it and goes back to the worlds", [scene.instance_variable_get(:@forms).key?(:edit_world), $focused.equal?(scene.worlds_list)], [false, true])
-
-# Leaving a form sideways, onto a box as a whole, leaves it as cancel does.
-scene.commands_list.receive("submit", 0)
-ui::Tree.focus(commands_box)
-check("moving from the create form onto the commands' box leaves the form, keeping it, the focus where it went",
-      [scene.form, scene.instance_variable_get(:@forms).key?(:new_world), $focused.equal?(commands_box), scene.idle?], [nil, true, true, true])
-scene.on_edit_world
-ui::Tree.focus(worlds_box)
-check("moving from the edit form onto the worlds' box drops it", [scene.form, scene.instance_variable_get(:@forms).key?(:edit_world)], [nil, false])
+cancel_form(scene)
+check("cancel in the edit form drops it and goes back to the worlds", [scene.forms.key?(:edit_world), scene.right_view[0]], [false, :world])
 
 # The password step.
-scene.instance_variable_set(:@entry, scene.worlds_list.rows[1][:data])
+scene.instance_variable_set(:@entry, scene.entries[1])
 scene.play("steps" => [["password", "Sunset"]])
-check("the password step opens its form typing, the password shown as stars",
-      [$forms.asked("form.open").last.values_at("kind", "name"), form_part(scene, :password).mask, $mgq_text_input], [["password", "Sunset"], "*", true])
+check("the password step opens its form, the focus on the password", [$forms.asked("form.open").last.values_at("kind", "name"), form_field(scene, :password).kind, focused(scene)],
+      [["password", "Sunset"], :password, :password])
 type_in("secret\r")
 check("Enter hands the password to the DLL", screen_requests("screen.answer").last, { "answer" => "password", "text" => "secret" })
-cancel_in($focused)
+cancel_form(scene)
 check("cancel in it leaves it and tells the DLL", [scene.form, screen_requests("screen.answer").last], [nil, { "answer" => "password_back" }])
 
 # The mod picker.
-scene.commands_list.receive("submit", 0)
+scene.on_command(Scene_MpWorlds::COMMANDS[0])
 $locals.set("modpick.open", "entries" => [["Level_Cap", "unlisted", true, "unlisted", "grey"]], "text" => "", "all_listed" => false)
 $locals.set("modpick.act", "answer" => nil,
             "pick" => { "entries" => [["Level_Cap", "unlisted", true, "unlisted", "grey"], ["Old Mod", "listed", false, "listed", "plain"]], "text" => "Old Mod", "all_listed" => false })
-form_part(scene, :mods).receive("click")
-pick = scene.list_box
-check("Mods opens the mod picker over the form, the row of every installed mod first", [pick.open?, list_box_value(:rows).first[:data]], [true, :all])
-add = list_box_value(:rows).find { |row| row[:data] == :add }
-list_box_part.send(:picked, add)
-check("Add a mod by name opens the Name field", list_box_part.naming, true)
-list_box_part.send(:add, "Old Mod")
-added = list_box_value(:rows).find { |row| row[:text] == "Old Mod" }
-check("a name typed goes to the DLL and closes the field, the mod it added removable",
-      [$locals.asked("modpick.act").last, list_box_part.naming, added && added[:removable]], [{ "do" => "add", "name" => "Old Mod" }, false, true])
-pick.close
-check("closing the picker shows the mods in the form", [scene.list_box, form_part(scene, :mods).text], [nil, "Old Mod"])
+scene.open_mod_pick
+check("Mods opens the mod picker over the form: the row of every installed mod, the installed ones, then the row that adds one",
+      [scene.list_box && scene.list_box.open?, scene.mod_pick_items, scene.mod_pick_row(0)[:toggles].map { |toggle| toggle[:text] }],
+      [true, [:all, "Your mods (1)", 0, :add], ["!", "?"]])
+check("a name added goes to the DLL, which lists it under its own heading, Remove taking it out", [scene.add_mod("Old Mod"), $locals.asked("modpick.act").last, scene.mod_pick_items, scene.added_mod?(1)],
+      [true, { "do" => "add", "name" => "Old Mod" }, [:all, "Your mods (1)", 0, "Added by name (1)", 1, :add], true])
+$locals.set("modpick.act", "answer" => "Level_Cap is in the list already.", "pick" => { "entries" => [["Level_Cap", "unlisted", true, "unlisted", "grey"]], "text" => "", "all_listed" => false })
+$sounds = []
+scene.act_on_mod(0, 1)
+check("a change the DLL refuses buzzes and names why beside the title", [$sounds, scene.mod_pick_note], [["buzzer"], "Level_Cap is in the list already."])
+scene.list_box.close
+check("closing the picker shows the mods in the form, back at their field", [scene.list_box, scene.form[:mods], focused(scene)], [nil, "", :mods])
+cancel_form(scene)
 
 # A world just made gets the cursor once listed, but not after the player moved on.
-cancel_in(form_part(scene, :mods))
 scene.play("steps" => [["select", "w3"]])
 NEW_DAWN = listed_row(listed_value("w3", "New Dawn", "creator_id" => "me", "creator_name" => "Me"))
 screen_list(ROWS + [NEW_DAWN])
 scene.look_at_list
-check("a world just made gets the cursor in the worlds once the list shows it",
-      [$focused.equal?(scene.worlds_list), scene.current_entry.name], [true, "New Dawn"])
+check("a world just made gets the cursor in the worlds once the list shows it", [focused(scene), scene.current_entry.name], [:worlds, "New Dawn"])
 scene.play("steps" => [["select", "w4"]])
-scene.commands_list.receive("submit", 2)
+scene.on_command(Scene_MpWorlds::COMMANDS[2])
 screen_list(ROWS + [NEW_DAWN, listed_row(listed_value("w4", "Later", "creator_id" => "me", "creator_name" => "Me"))])
 scene.look_at_list
 check("but not once the player moved into a form", [scene.form.nil?, scene.current_entry.name == "Later"], [false, false])
-cancel_in($focused)
+cancel_form(scene)
 
 # A world waiting to be entered, such as a Discord invite's, waits for the player.
 $screen_waiting = true
 scene.instance_variable_set(:@waiting, true)
-scene.worlds_list.receive("submit", 0)
+scene.on_world(scene.entries[0])
 scene.look_at_list
 check("the DLL hears that the screen does not wait for the player while a menu is open", screen_requests("screen.do").last.values_at("do", "idle"), ["look", false])
 cancel_menu(scene)
@@ -406,45 +358,33 @@ $screen_waiting = nil
 scene.instance_variable_set(:@waiting, nil)
 
 # Back from the save screen, which returns to the same scene, the cursor is on the world chosen before.
-ui::Tree.focus(scene.worlds_list)
-scene.instance_variable_set(:@entry, scene.worlds_list.rows.find { |row| row[:data].name == "Sunset" }[:data])
-scene.worlds_list.index = 0
+scene.instance_variable_set(:@entry, scene.entries.find { |each| each.name == "Sunset" })
+scene.pointed_world(scene.entries[0])
 scene.terminate
 scene.start
 screen_changed
 scene.look_at_list
-check("back from the save screen the cursor is on the world chosen before", [scene.current_entry.name, $focused.equal?(scene.worlds_list)], ["Sunset", true])
-worlds_box = scene.instance_variable_get(:@worlds_box)
-commands_box = scene.instance_variable_get(:@commands_box)
+check("back from the save screen the cursor is on the world chosen before", [scene.current_entry.name, focused(scene)], ["Sunset", :worlds])
 
 # The last world gone moves the pick to the commands.
-ui::Tree.focus(scene.worlds_list)
+scene.entered(:worlds)
 screen_list([])
 scene.look_at_list
-check("the last world gone picks the commands' box as a whole", $focused.equal?(commands_box), true)
-
-# Cancel while the DLL's action runs.
-$sounds = []
-scene.play("steps" => [["busy", "delete"]])
-Mod_Framework::UI.define_singleton_method(:cancel?) { |*_| true }
-scene.buzz_while_busy
-check("cancel while an action runs only buzzes", [$sounds, scene.busy], [["buzzer"], "delete"])
+check("the last world gone picks the commands' box as a whole", focused(scene), :commands_box)
 
 # The first start without a name.
 $returned = false
 MGQ_Multiplayer::Player.define_singleton_method(:name) { nil }
 scene = world_scene
 scene.update
-check("without a name the name form opens typing", [scene.form.title.empty?, $mgq_text_input], [false, true])
-name = form_part(scene, :name)
-ui::Tree.focus(scene.commands_list)
-check("Left out of the empty name onto the commands keeps the screen and the form, the focus back on the name",
-      [$returned, scene.instance_variable_get(:@form_symbol), $focused.equal?(name)], [false, :rename, true])
+check("without a name the name form opens on its field", [scene.form_symbol, focused(scene)], [:rename, :name])
+scene.left(:commands)
+scene.entered(:commands)
+check("moving onto the commands keeps the screen and the form, the focus back on the name", [$returned, scene.form_symbol, focused(scene)], [false, :rename, :name])
 screen_list(ROWS)
 scene.look_at_list
-scene.commands_list.receive("submit", 0)
-scene.worlds_list.receive("submit", 0)
-check("and so does a click on a command or a world", [$returned, scene.instance_variable_get(:@form_symbol), ui::Menu.current, $focused.equal?(name)],
-      [false, :rename, nil, true])
-cancel_in($focused)
+scene.on_command(Scene_MpWorlds::COMMANDS[0])
+scene.on_world(scene.entries[0])
+check("and so does a pick of a command or a world", [$returned, scene.form_symbol, menu_texts, focused(scene)], [false, :rename, nil, :name])
+cancel_form(scene)
 check("leaving it without a name closes the screen", $returned, true)

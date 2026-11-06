@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-11-06: Kept a member's levels per kind in one Hash, as the game does
 #                            - Left the form to the in-game suite, since the UI layer draws it, and read the typing from the framework
+#                            - Called the wheel's screenshot as the action wheel does once it is gone
 #      Paulinchen  2026-11-05: Asked whether the DLL is a development build and the player's id through its topics
 #                            - Dropped the stand-in of the World overview, which hid the untranslated game's name
 #      Paulinchen  2026-11-01: Drew the form through the Mod Framework's window and answered the request from the DLL's topics
@@ -163,17 +164,11 @@ module MGQ_MpOverworldSync
   def self.map_free?; $map_free; end
   def self.in_world?; $in_world; end
 end
-# Stands in for the action wheel, keeping each choice in $wheel and what runs as it is gone in
-# $wheel_gone.
+# Stands in for the action wheel, keeping each choice in $wheel.
 module MGQ_MpActions
   # A choice of the action wheel.
   Option = Struct.new(:text, :run, :refusal, :icon, :leaves)
-  # The wheel, which only takes blocks for its events.
-  WHEEL = Object.new
-  # Keeps a block of the wheel's gone.
-  def WHEEL.on(event, &block); ($wheel_gone ||= []) << block if event == :gone; self; end
   def self.wheel_choice(order, &option); $wheel << [order, option]; end
-  def self.wheel; WHEEL; end
 end
 # Stands in for the notification box, keeping each message in $notices; shown while $shown.
 module MGQ_MpNotices
@@ -212,8 +207,7 @@ $listing = ["ready", "", [Listed.new("dir0123", "Test World", false)]]
 module MGQ_MpWorld::Directory; def self.list; $listing; end; end
 
 # The registrations.
-check("the report follows every frame, adds its choice after the wheel's others and hears the wheel gone",
-      [$ticks.size, $wheel.map(&:first), $wheel_gone.size], [1, [60], 1])
+check("the report follows every frame and adds its choice after the wheel's others", [$ticks.size, $wheel.map(&:first)], [1, [60]])
 
 # The facts and details.
 SceneManager.scene = Scene_Map.new
@@ -377,10 +371,10 @@ check("taken, it hands the DLL the scene, where and the facts", [taken["scene"][
       ["map", "Scene_Map, map 154", ["Game", "v3.06.00, translated"]])
 check("the screenshot waits while the wheel still shows", [$bitmaps.size, asked("report.wheel_gone")], [0, []])
 $answers["report.wheel_gone"] = true
-$wheel_gone.each(&:call)
+report.wheel_gone
 check("once the wheel is gone, it is taken when the DLL says so", [$bitmaps.size, asked("report.snapped").size], [1, 1])
 $answers["report.wheel_gone"] = false
-$wheel_gone.each(&:call)
+report.wheel_gone
 check("a wheel gone later takes none", [$bitmaps.size, asked("report.snapped").size], [1, 1])
 $bitmaps.clear
 reset

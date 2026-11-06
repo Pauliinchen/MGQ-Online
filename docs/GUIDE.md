@@ -182,7 +182,7 @@ The details show each mod in a box of its own, as many as fit the row, and count
 
 **Same version for everyone.** MGQ Online keeps a list of mods, with each one's current version.
 
-- When you enter a world, each required mod is compared with that list. If one is missing or another version, the world screen says which and offers *Download*: the Mod Framework fetches the world's version, checks every file and puts it into your `Patch` folder, and you enter the world, the mod loading as you do. Only a mod that runs already, such as one that changes the title screen, needs the game to start again first, which happens by itself and enters the world. *See the mods* lists your version and the world's.
+- When you enter a world, each required mod is compared with that list. If one is missing, off or another version, the Mod Framework's dialog *Mods for <world>* names what happens to each (install, update, change or turn on) and its first button, such as *Install and enter*, fetches the world's version, checks every file, puts it into your `Patch` folder and enters the world, the mod loading as you do. Only a mod that runs already, such as one that changes the title screen, needs the game to start again first, which happens by itself and enters the world; a world you never entered asks for its password again then. A mod only its author has is named in the dialog: put it into your `Patch` folder yourself and enter again. *Back* keeps you on the world screen.
 - A required mod the list doesn't know is compared with the creator's copy. If yours differs, get the creator's version from the mod's author; nothing downloads it for you.
 - A new version only reaches players the next time they enter.
 

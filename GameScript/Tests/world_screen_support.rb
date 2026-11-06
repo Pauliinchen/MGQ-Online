@@ -2,16 +2,16 @@
 #  world_screen_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Read the list box from its component of the Mod Framework's UI layer
+#      Paulinchen  2026-11-06: Stood in for the UI layer's menu, and acted on the screen as its window of the layer hands over what the player does
 #      Paulinchen  2026-11-01: Created
 #
 #----------------------------------------------------------------
 
-# The world screen on the Mod Framework's components for the script tests: the screen built
-# without the game's scene, C#'s focus played at once, and helpers that act as the player does on
-# the framework's parts, its menu and its question box. Require it before the scripts load, since
-# world.rbx wraps the game's pictures; build the screen once the bridges are open
-# (open_rules_bridge, open_fake_ui).
+# The world screen for the script tests: the screen built without the game's scene, stand-ins for
+# the UI layer's question and menu, and helpers that act as the player does, handing the screen
+# what its window of the layer hands over. How the layer draws the screen is the in-game suite's.
+# Require it before the scripts load, since world.rbx wraps the game's pictures; build the screen
+# once the bridges are open (open_rules_bridge, open_fake_ui).
 
 # The game's font, as far as the framework's measuring sets it.
 class Font
@@ -67,43 +67,89 @@ class Bitmap
   end
 end unless defined?(Bitmap)
 
-# The component holding the focus as the stand-in of C#'s tree gave it, nil for none.
-$focused = nil
+# The layer's menu, standing in for the dialog the framework draws: what it asked is kept for the
+# checks, which answer it as the player does. The question is the bridge's StandInConfirm.
+module StandInDialogs
+  # An open menu: open until answered or closed.
+  class Handle
+    # @return [Array] What it asked: the menu's choices and params.
+    attr_reader :asked
 
-# Plays C#'s focus at once: a component given the focus takes it now, the one that had it hears its
-# blur first, as the tree reports both.
-def play_focus_at_once
-  Mod_Framework::UI::Tree.define_singleton_method(:focus) do |component|
-    was = $focused
-    unless was.equal?(component)
-      $focused = component
-      was.receive("blur") if was
-      component.receive("focus")
+    # Makes an open one.
+    #
+    # @param asked [Array] What it asks.
+    # @param closed [Object] What closing it answers.
+    # @param block [Proc] Takes the answer.
+    def initialize(asked, closed, block)
+      @asked = asked
+      @closed = closed
+      @block = block
+    end
+
+    # Tells whether it waits for an answer.
+    #
+    # @return [Boolean] Whether it does.
+    def open?
+      !@block.nil?
+    end
+
+    # Answers it.
+    #
+    # @param values [Array] The answer.
+    def answer(*values)
+      block = @block
+      @block = nil
+      block.call(*values) if block
+    end
+
+    # Closes it from outside, answering what closing answers.
+    def close(*_reason)
+      answer(*@closed)
+    end
+  end
+
+  class << self
+    # @return [Handle, nil] The menu opened last.
+    attr_accessor :menu
+  end
+
+  # Stands in for UI.menu from now on.
+  def self.install
+    ui = Mod_Framework::UI
+    ui.define_singleton_method(:menu) do |choices, options = {}, &block|
+      next false if StandInDialogs.menu && StandInDialogs.menu.open?
+
+      StandInDialogs.menu = Handle.new([choices, options], [nil, nil], block)
     end
   end
 end
 
-play_focus_at_once
+StandInDialogs.install
 
 # Opens the world screen as the game starts it, the list read as the DLL's answers hold it; the
-# scenes' base of the test takes the start.
+# scenes' base of the test takes the start. The screen is kept in $screen, which type_in types into.
 #
 # @return [Scene_MpWorlds] The screen.
 def world_scene
-  $focused = nil
-  close_open_roots
   # The framework's roots note the scene they open in; a test's scene manager may know none.
   SceneManager.define_singleton_method(:scene) { nil } unless SceneManager.respond_to?(:scene)
+  close_screen($screen) if $screen
   scene = Scene_MpWorlds.new
   lines = logged_lines { scene.start }
   failed = lines.find { |line| line.include?("could not start") }
   raise failed if failed
-  scene
+
+  $screen = scene
 end
 
-# Closes every root a screen of an earlier check left open, as the scene's end does.
-def close_open_roots
-  Mod_Framework::UI::Tree.roots.reverse.each { |root| root.close }
+# Closes the windows a screen of an earlier check left open, as the scene's end does.
+#
+# @param scene [Scene_MpWorlds] The screen.
+def close_screen(scene)
+  [:@list_box, :@limits, :@screen].each do |name|
+    root = scene.instance_variable_get(name)
+    root.close if root && root.open?
+  end
 end
 
 # Runs what a menu or a question of the screen answered, as the next frame's update does.
@@ -115,68 +161,46 @@ def run_later(scene)
   due.each { |block| block.call }
 end
 
-# Tells the lines the info strip shows.
-#
-# @param scene [Scene_MpWorlds] The screen.
-# @return [String] The lines joined by line breaks.
-def strip_text(scene)
-  scene.strip.instance_variable_get(:@label).text.to_s
-end
-
-# Finds the list box's component while it is open.
-#
-# @return [MGQ_MpListBox, nil] The component, nil while it is closed.
-def list_box_part
-  top = Mod_Framework::UI::Engine::Layer.tops.find { |each| each.id == MGQ_MpListBox::ID.to_s && !each.closed }
-  top && top.mount.component
-end
-
-# Reads what the open list box shows now.
-#
-# @param name [Symbol] :rows, :note, :title or :description.
-# @return [Object] Its value.
-def list_box_value(name)
-  part = list_box_part
-  [:rows, :note].include?(name) ? part.source.send(name) : part.send(name)
-end
-
-# Tells the note beside the list box's title.
-#
-# @return [String] The note.
-def note_text
-  list_box_value(:note).to_s
-end
-
 # Tells what the lines at the top said last.
 #
 # @param scene [Scene_MpWorlds] The screen.
 # @return [String, nil] The message.
 def said(scene)
-  scene.instance_variable_get(:@message)
+  scene.said && scene.said[0]
 end
 
-# Finds a form's field on the right side.
+# Tells where the screen asked the focus to go last: :worlds, :commands, :worlds_box,
+# :commands_box, or the key of a form's field.
+#
+# @param scene [Scene_MpWorlds] The screen.
+# @return [Symbol, nil] Where.
+def focused(scene)
+  target = scene.focus_request && scene.focus_request[0]
+  target.is_a?(Array) ? target[1] : target
+end
+
+# Finds a field of the form entered.
 #
 # @param scene [Scene_MpWorlds] The screen.
 # @param key [Symbol] The field's key.
-# @return [Mod_Framework::UI::Component, nil] Its component.
-def form_part(scene, key)
-  scene.right_box.find("form:#{key}")
+# @return [MGQ_MpWorld::Form::Field, nil] The field, nil while the form shows none.
+def form_field(scene, key)
+  scene.form && scene.form.fields.find { |field| field.key == key }
 end
 
 # Tells the texts of the open menu's choices.
 #
 # @return [Array<String>, nil] The texts, nil while no menu is open.
 def menu_texts
-  menu = Mod_Framework::UI::Menu.current
-  menu && menu.instance_variable_get(:@list).rows.map { |row| row[:text] }
+  menu = StandInDialogs.menu
+  menu && menu.open? ? menu.asked[0].map { |choice| choice[:text] } : nil
 end
 
 # Tells which choices of the open menu can be picked.
 #
 # @return [Array<Boolean>] Whether each can.
 def menu_enabled
-  Mod_Framework::UI::Menu.current.instance_variable_get(:@list).rows.map { |row| row[:enabled] }
+  StandInDialogs.menu.asked[0].map { |choice| choice[:enabled] }
 end
 
 # Picks a choice of the open menu, as confirm on it does, and runs what the screen does with it.
@@ -184,7 +208,8 @@ end
 # @param scene [Scene_MpWorlds] The screen.
 # @param index [Integer] The choice.
 def pick_menu(scene, index)
-  Mod_Framework::UI::Menu.current.instance_variable_get(:@list).receive("submit", index)
+  menu = StandInDialogs.menu
+  menu.answer(menu.asked[0][index], index)
   run_later(scene)
 end
 
@@ -192,7 +217,7 @@ end
 #
 # @param scene [Scene_MpWorlds] The screen.
 def cancel_menu(scene)
-  Mod_Framework::UI::Menu.current.receive("close", "cancel")
+  StandInDialogs.menu.answer(nil, nil)
   run_later(scene)
 end
 
@@ -205,26 +230,26 @@ def answer_question(scene, yes)
   run_later(scene)
 end
 
-# Cancels in a part as C# does: the focus goes to the part its :cancel_to names, its own or that of
-# what holds it, else its root hears cancel.
+# Types into the field the screen put the focus on last, as the player does: the text goes over as
+# typed, and "\r" at its end is Enter.
 #
-# @param part [Mod_Framework::UI::Component] The part.
-def cancel_in(part)
-  holder = part
-  holder = holder.parent until holder.nil? || holder.cancel_to
-  return Mod_Framework::UI::Tree.focus(holder.cancel_to) if holder
-
-  part.root.receive("cancel")
+# @param text [String] What is typed.
+def type_in(text)
+  scene = $screen
+  key = focused(scene)
+  page = scene.limits && scene.form ? scene.form.limits : scene.form
+  field = page.fields.find { |each| each.key == key }
+  typed = text.chomp("\r")
+  scene.typed(page, field, typed)
+  scene.submitted(page, field, typed) if text.end_with?("\r")
 end
 
-# Types into the field that has the focus over two frames, the field handing the tick its box as the
-# game's tick has it do; a text box that took Enter takes the next text a frame later.
+# Cancels in the form entered once its field stopped typing, as the framework does: the focus goes
+# back to the list the form's fields name, whose box tells the screen it took the keys; the name
+# form the player has to fill in first names none, so cancel reaches the screen.
 #
-# @param text [String] What is typed; "\r" is Enter.
-def type_in(text)
-  $typed = text
-  2.times do
-    Mod_Framework::UI::TextField.follow
-    ui_frame
-  end
+# @param scene [Scene_MpWorlds] The screen.
+def cancel_form(scene)
+  back = scene.back_target
+  back ? scene.entered(back) : scene.cancelled
 end
