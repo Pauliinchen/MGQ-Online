@@ -2,6 +2,7 @@
 #  battles_sync_live.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Kept the target windows on the battlers left and closed one that lists nobody
 #      Paulinchen  2026-11-05: Started a guest's party and troop as the game starts them, through MGQ_MpBattlers
 #      Paulinchen  2026-10-30: Kept the host's waits for its guests and the battle's endings in the DLL
 #      Paulinchen  2026-10-23: Deleted the action and turn end events only the recording on file kept
@@ -105,7 +106,7 @@ module MGQ_MpBattlesSync
       return if @installed
       @installed = true
 
-      installed = [:battle_log, :messages, :pictures, :audio, :battlers, :course, :ending, :live, :calls].select do |group|
+      installed = [:battle_log, :messages, :pictures, :audio, :battlers, :course, :ending, :live, :calls, :targets].select do |group|
         begin
           send(group)
           true
@@ -338,6 +339,12 @@ module MGQ_MpBattlesSync
       end
     end
 
+    # Keeps the target windows on the battlers that are left, each frame before the windows read the
+    # buttons, see Targets.
+    def self.targets
+      MGQ_MpHooks.before(Scene_Battle, :update_basic, "battles_sync_live targets") { Targets.keep(self) }
+    end
+
     # Records an event before the original runs.
     #
     # @param owner [Module] The class that has the method.
@@ -353,6 +360,59 @@ module MGQ_MpBattlesSync
         end
         original.call
       end
+    end
+  end
+
+  # Keeps the battle's target windows on the battlers that are left. In a co-op battle another
+  # player's action or the host's stream takes an enemy, or ends the battle, while the player picks a
+  # target; the game's window would then answer confirm with a battler that is gone and stop the
+  # game.
+  module Targets
+    # The target windows by the scene's field, each with the battlers it lists.
+    WINDOWS = { :enemy_window => lambda { $game_troop.alive_members }, :actor_window => lambda { $game_party.battle_members } }
+
+    # What each open target window was last seen to list, by the scene's field.
+    @shown = {}
+
+    # Draws an open target window anew once the battlers it lists changed, its cursor kept on the
+    # battler it pointed at or moved onto the nearest one left, and closes one that lists nobody.
+    #
+    # @param scene [Scene_Battle] The battle.
+    def self.keep(scene)
+      WINDOWS.each do |field, members|
+        window = MGQ_MpGame.get(scene, field)
+        next @shown.delete(field) unless window && window.active
+
+        now = members.call
+        before = @shown[field]
+        @shown[field] = now.dup
+        next if before.nil? || (before.size == now.size && before.zip(now).all? { |one, other| one.equal?(other) })
+
+        follow(window, field, before[window.index], now)
+      end
+    rescue => e
+      MGQ_MpBattlesSync.log_once([:targets, e.class.name], "keeping the target windows on the battlers left failed: #{e.class}: #{e.message}")
+    end
+
+    # Puts a target window on the battlers that are left.
+    #
+    # @param window [Window_Selectable] The target window.
+    # @param field [Symbol] The scene's field, see WINDOWS.
+    # @param pointed [Game_Battler, nil] The battler its cursor pointed at.
+    # @param now [Array<Game_Battler>] The battlers it lists now.
+    def self.follow(window, field, pointed, now)
+      kind = field == :enemy_window ? "enemy" : "ally"
+      if now.empty?
+        window.deactivate
+        window.hide
+        @shown.delete(field)
+        return MGQ_MpBattlesSync.log("closed the #{kind} target window: no #{kind} is left to pick")
+      end
+
+      index = now.index { |battler| battler.equal?(pointed) } || [window.index, now.size - 1].min
+      window.refresh
+      window.select(index)
+      MGQ_MpBattlesSync.log("drew the #{kind} target window anew: #{now.size} left, the cursor on #{index + 1}#{now.include?(pointed) ? '' : ', as the one it pointed at is gone'}")
     end
   end
 

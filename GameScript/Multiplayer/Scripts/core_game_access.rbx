@@ -2,6 +2,7 @@
 #  core_game_access.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Named the battle's target windows
 #      Paulinchen  2026-11-05: Dropped the counters of a state, which the game's own reset and erase give
 #                            - Named the frames left of the screen's fade in
 #      Paulinchen  2026-10-31: Named the interpreter a map event or common event holds and the map's parallel common events
@@ -97,6 +98,8 @@ module MGQ_MpGame
     :status_window => :@status_window,
     :party_command_window => :@party_command_window,
     :actor_command_window => :@actor_command_window,
+    :enemy_window => :@enemy_window,
+    :actor_window => :@actor_window,
     :info_viewport => :@info_viewport,
     :battle_actor_status_windows => :@battle_actor_status_windows,
     :battle_actor_status_windows_show => :@battle_actor_status_windows_show,

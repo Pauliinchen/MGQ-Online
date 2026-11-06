@@ -2,6 +2,7 @@
 #  battles_sync_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Checked that a target window follows the enemies another player's action takes and closes once none is left
 #      Paulinchen  2026-11-05: Expected the messages sent as the scripts hand them
 #                            - Answered the live battle's topics with the values each case sets and checked what the scripts ask instead of a copy of the C# rules
 #                            - Numbered the messages and asked again with the number in its field
@@ -819,4 +820,35 @@ check("one this game lacks erases the picture's place instead", $game_troop.scre
 played.call(["screen.start_flash", Color.new(255, 255, 255, 170), 20], ["screen.start_shake", 5, 5, 10])
 check("the screen takes a flash of a color and a shake", $game_troop.screen.done.map(&:first), [:flash, :shake])
 check("and nothing raised", $log.grep(/could not play/).size, 0)
+
+# Another player's action takes the enemy the player's target window points at, then one before it,
+# then the last: the window draws anew with its cursor on an enemy left each time, then closes, so
+# confirm never picks a battler that is gone.
+class TargetWindow
+  attr_reader :index, :refreshed, :visible
+  attr_accessor :active
+  def initialize; @index = 0; @active = true; @visible = true; @refreshed = 0; end
+  def select(index); @index = index; end
+  def refresh; @refreshed += 1; end
+  def deactivate; @active = false; end
+  def hide; @visible = false; end
+end
+$alive = %w[slime bat imp].map { |name| Struct.new(:name).new(name) }
+slime, _bat, imp = $alive
+$game_troop.define_singleton_method(:alive_members) { $alive }
+target = TargetWindow.new
+target.select(1)
+picking = Scene_Battle.new
+picking.instance_variable_set(:@enemy_window, target)
+picking.instance_variable_set(:@actor_window, nil)
+MGQ_MpBattlesSync::Targets.keep(picking)
+$alive = [slime, imp]
+MGQ_MpBattlesSync::Targets.keep(picking)
+check("an enemy the cursor points at falls: the list is drawn anew, the cursor on the nearest one left", [target.index, target.refreshed, target.active], [1, 1, true])
+$alive = [imp]
+MGQ_MpBattlesSync::Targets.keep(picking)
+check("one before it falls: the cursor stays on the enemy it pointed at", [target.index, target.refreshed], [0, 2])
+$alive = []
+MGQ_MpBattlesSync::Targets.keep(picking)
+check("the last one falls: the window closes", [target.active, target.visible, $log.grep(/closed the enemy target window/).size], [false, false, 1])
 sync.finish
