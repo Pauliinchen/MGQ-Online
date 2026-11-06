@@ -2,6 +2,7 @@
 #  overworld_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Checked that a message's lists and Hashes reach the DLL whole
 #      Paulinchen  2026-11-05: Answered the teleports' view with fixed offers per case instead of from the party's stand-in
 #                            - Handed the other players' states and messages as the DLL reads them and expected the messages sent as the scripts hand them
 #                            - Told a member's followers as values
@@ -632,6 +633,11 @@ check("a message the gate passed reaches its script", $gate, [[4, "mine"]])
 $sent.clear
 MGQ_MpCoop.tell(4, "gtest", "hello", "extra" => 1)
 check("tell adds the party id", $sent.last, [4, { "gtest" => "hello", "party" => mine, "extra" => 1, :payload => "" }])
+# A leader's whole story carries its lists and key items as pairs inside a Hash, which a member
+# reads as nothing once they arrive as text.
+lists = { "s" => [3, 5], "v" => [[1001, 12], [57, { "float" => "1.5" }]], "ss" => [[4, 9, "A"]], "sf" => [], "ssf" => [] }
+MGQ_MpCoop.tell(4, "story", "full", "z" => lists, "k" => [[32, 6]], "side" => :alice)
+check("a message's lists and Hashes go whole, a Symbol as its text", $sent.last[1].values_at("z", "k", "side"), [lists, [[32, 6]], "alice"])
 
 # Two players of the same name, found apart by the name the DLL numbers, and nobody by none.
 peers = MGQ_MpOverworldSync::Peers

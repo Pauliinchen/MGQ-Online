@@ -2,6 +2,7 @@
 #  story_replay_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Gave the party a member whose levels the game keeps per kind in one Hash
 #      Paulinchen  2026-11-05: Handed and expected sites as plain values
 #                            - Handed and expected the keys, values and things a replay reads as [kind, key] with values
 #                            - Checked that a replay takes a key item it uses up, and dropped the copy got as found
@@ -523,10 +524,12 @@ $data_items[700] = Item.new(700, "Flower", 4, false, true)
 $data_items[606] = Item.new(606, "Makina", 5)
 $data_weapons = []
 $data_armors = []
+# A member of the party, whose level the game keeps per kind in one Hash.
+Member = Struct.new(:id, :name, :base_level, :skills, :equips) { def level; { :base => base_level, :class => 1, :tribe => 1 }; end }
 # The party's gold and members, and its items read by the item as the game reads them.
 class Game_Party
-  def members; []; end
-  def all_members; []; end
+  def members; [Member.new(1, "Luka", 12, [], [nil])]; end
+  def all_members; members; end
   def has_item?(item); item_number(item) > 0; end
   alias_method :item_number_by_id, :item_number
   def item_number(item); item_number_by_id(item.respond_to?(:id) ? item.id : item); end

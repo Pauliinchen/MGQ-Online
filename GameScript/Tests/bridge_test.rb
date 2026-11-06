@@ -2,6 +2,7 @@
 #  bridge_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Cleared the request it refuses on purpose, which would fail the file at its end
 #      Paulinchen  2026-11-05: Checked that the events of a topic no script takes yet are held until one does
 #                            - Checked that a DLL that does not load is logged by what happened, never as older
 #                            - Started the mod with the bridge alone, the DLL starting as it shakes hands
@@ -140,6 +141,7 @@ length = fake.call(bridge.instance_variable_get(:@context), "no.such.topic\0", f
 check("the stand-in answers in the bytes the core does", reply[0, length], bridge_fixture("envelope/unknown_topic", "reply"))
 lines = logged_lines { check("a request the game would refuse gives nil", bridge.call("test.echo", { :seat => 2 }), nil) }
 check("and the log names what cannot cross", lines, ["bridge: test.echo failed with bad_request: The Symbol :seat cannot cross the bridge."])
+FakeBridge.refused.clear
 raised = begin
   bridge.call!("no.such.topic")
 rescue MGQ_Multiplayer::Bridge::Error => e

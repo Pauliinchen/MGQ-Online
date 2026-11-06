@@ -2,6 +2,7 @@
 #  bug_report_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Kept a member's levels per kind in one Hash, as the game does
 #      Paulinchen  2026-11-05: Asked whether the DLL is a development build and the player's id through its topics
 #                            - Dropped the stand-in of the World overview, which hid the untranslated game's name
 #      Paulinchen  2026-11-01: Drew the form through the Mod Framework's window and answered the request from the DLL's topics
@@ -191,8 +192,8 @@ load_script "ui_bug_report"
 
 report = MGQ_MpBugReport
 
-# A party member, by name and level.
-Actor = Struct.new(:name, :level)
+# A party member, by name and base level, whose level the game keeps per kind in one Hash.
+Actor = Struct.new(:name, :base_level) { def level; { :base => base_level, :class => 1, :tribe => 1 }; end }
 # The game as the report reads it: a player on map 154 of an open Raid World.
 $game_map = Struct.new(:map_id, :display_name).new(154, "Test Village")
 $game_player = Struct.new(:x, :y).new(3, 4)

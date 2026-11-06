@@ -2,6 +2,7 @@
 #  overworld_sync.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Sent the lists and Hashes inside a message's fields whole, such as a whole story's lists
 #      Paulinchen  2026-11-05: Sent the fields and the body of a message to the DLL, which writes the message, and read the player's id through a topic
 #                            - Kept the battle server's players away for the grace the DLL's Sessions counts
 #      Paulinchen  2026-10-31: Told the game behind other windows by the Mod Framework
@@ -423,23 +424,28 @@ module MGQ_MpOverworldSync
       MGQ_Multiplayer::Bridge.call(SEND_TOPIC, "seat" => target, "fields" => fields, "body" => body) == true
     end
 
-    # Turns a message's fields into values the bridge carries: a key as text, a value as itself
-    # when it is a text, a number, true, false, nil or an Array of these, else as its text, so no
-    # script's Float or Symbol stops the message.
+    # Turns a message's fields into values the bridge carries, see carried, each key as text.
     #
     # @param fields [Hash] The fields.
     # @return [Hash{String => Object}] The fields.
     def self.plain(fields)
-      Hash[fields.map { |key, value| [key.to_s, value.is_a?(Array) ? value.map { |item| scalar(item) } : scalar(value)] }]
+      Hash[fields.map { |key, value| [key.to_s, carried(value)] }]
     end
 
-    # Turns a single value into one the bridge carries.
+    # Turns a value into one the bridge carries: a text, a number, true, false or nil as itself, a
+    # list or a Hash whole with each item turned the same way and a Hash's keys as text, anything
+    # else as its text, so no script's Float or Symbol stops the message.
+    #
+    # A whole story's lists and its key items are lists of pairs inside a Hash, which a member reads
+    # as nothing once they arrive as text.
     #
     # @param value [Object] The value.
-    # @return [String, Integer, Boolean, nil] The value, or its text.
-    def self.scalar(value)
+    # @return [Object] The value the bridge carries.
+    def self.carried(value)
       case value
       when nil, true, false, Integer, String then value
+      when Array then value.map { |item| carried(item) }
+      when Hash then Hash[value.map { |key, item| [key.to_s, carried(item)] }]
       else value.to_s
       end
     end

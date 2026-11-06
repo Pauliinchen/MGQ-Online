@@ -2,6 +2,7 @@
 #  bridge_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Failed a test file whose scripts handed a topic a value that cannot cross the bridge
 #      Paulinchen  2026-11-05: Kept the requests the fixed answers of a test took, for every test to share
 #      Paulinchen  2026-11-01: Stood in for every wheel the Mod Framework defines and handed the framework's wheels their frames
 #                            - Stood in for the Mod Framework's component tree
@@ -41,6 +42,10 @@ def bridge_fixture(name, part)
   File.binread(File.join(BRIDGE_FIXTURES, "#{name}.#{part}.marshal"))
 end
 
+# A script that hands a topic a value the core refuses only logs it in the game, so the file fails
+# here instead; this runs before support.rb's summary, as at_exit blocks run last first.
+at_exit { check("every request a script handed a topic could cross the bridge", FakeBridge.refused, []) }
+
 # Keeps the requests a stand-in of the DLL's answers took.
 module NotedRequests
   # Lists the requests of a topic since the answers were last cleared.
@@ -78,6 +83,16 @@ class FakeBridge
 
   # The deepest nesting the core reads.
   MAX_DEPTH = 256
+
+  # Every request a script handed a topic that the core refused as no plain value, each as
+  # "topic: refusal", which fails the test file at its end.
+  @refused = []
+
+  class << self
+    # @return [Array<String>] The refused requests, see @refused; a test that hands one on purpose
+    #   clears it.
+    attr_reader :refused
+  end
 
   # @return [Array<Array>] Each mp_call as [topic, request bytes].
   attr_reader :calls
@@ -276,7 +291,10 @@ class FakeBridge
         return error("bad_request", "#{e.message} cannot cross the bridge.")
       end
     refused = FakeBridge.refusal(request)
-    return error("bad_request", refused) if refused
+    if refused
+      FakeBridge.refused << "#{topic}: #{refused}"
+      return error("bad_request", refused)
+    end
 
     run(topic, request)
   end

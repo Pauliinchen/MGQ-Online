@@ -2,6 +2,7 @@
 #  story_state_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Checked that a Classic member joining the leader's story asks about no key at place 0
 #      Paulinchen  2026-11-05: Dropped the checks of unpacking a story, which the DLL does
 #                            - Answered the side the player took along with fixed values and checked what goes to the DLL and what the scripts note
 #                            - Answered what a Classic member takes of a joined story by the DLL's rule
@@ -101,13 +102,18 @@ world_keys = { [1, 1001] => true, [2, [3, 1, "A"]] => true }
 $follow_asks = []
 fake.answer("story.classic_follow") do |request|
   $follow_asks << request["keys"]
+  # The DLL refuses the whole question for a key no switch or variable has, as for place 0.
+  zero = request["keys"].find { |kind, key| kind < 2 && key == 0 }
+  raise FakeBridge::BadRequest, "#{zero.join(' ')} is no story key the tracks name." if zero
+
   request["keys"].map { |kind, key| world_keys[[kind, key]] ? true : false }
 end
 $classic = true
 leaders = [[], [nil, nil], { [3, 1, "A"] => true, [3, 2, "B"] => true }]
 leaders[1][1001] = 30
 leaders[1][1050] = 7
-members = [[], [nil, nil], { [3, 3, "C"] => true }]
+# The game's lists may hold a value at place 0, which names no switch.
+members = [[false], [nil, nil], { [3, 3, "C"] => true }]
 members[1][1001] = 20
 members[1][1050] = 2
 joined = state.mix(leaders, members, [])

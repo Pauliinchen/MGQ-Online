@@ -2,6 +2,7 @@
 #  ui_bug_report.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Named each member's base level, as the game keeps every kind of level in one Hash
 #      Paulinchen  2026-11-05: Read the player's id through a topic
 #                            - Told an untranslated game in the report by its own name of the story's progress variable
 #      Paulinchen  2026-11-01: Built the form on the Mod Framework's components
@@ -445,7 +446,7 @@ module MGQ_MpBugReport
   #
   # @return [String] Such as "Luka Lv 12, Alice Lv 99".
   def self.party_text
-    $game_party.members.map { |actor| "#{actor.name} Lv #{actor.level}" }.join(", ")
+    $game_party.members.map { |actor| "#{actor.name} Lv #{actor.base_level}" }.join(", ")
   end
 
   # The screenshot: the screen as RGSS3 keeps a Bitmap, whose pixels the DLL walks to in the game's

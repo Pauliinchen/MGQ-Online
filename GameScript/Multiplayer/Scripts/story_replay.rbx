@@ -2,6 +2,7 @@
 #  story_replay.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Handed the DLL each companion's base level, as the game keeps every kind of level in one Hash
 #      Paulinchen  2026-11-05: Handed the DLL the keys and the player's own things as [kind, key] with their values, sites and commands' places as plain values, and what the player holds whole for the DLL to sum up
 #                            - Read the story markers from story_ids.rbx
 #                            - Took a found item a replay uses up from the receiver, but none a story reset takes, and dropped the copy got as found, which the story replay replaces
@@ -665,7 +666,7 @@ module MGQ_MpStoryReplay
   #
   # @return [Array] Each thing's key and amount, then each companion's id, level and equipment.
   def self.holdings_read
-    party = $game_party.members.map { |actor| [actor.id, actor.level, actor.equips.map { |equip| equip ? equip.id : 0 }] }
+    party = $game_party.members.map { |actor| [actor.id, actor.base_level, actor.equips.map { |equip| equip ? equip.id : 0 }] }
     holdings.map { |key, amount| [key, amount] } + [party]
   end
 

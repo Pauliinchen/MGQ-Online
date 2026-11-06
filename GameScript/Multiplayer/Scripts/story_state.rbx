@@ -2,6 +2,7 @@
 #  story_state.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Left the lists' place 0 out of the keys a Classic party member asks about, which the DLL refuses
 #      Paulinchen  2026-11-05: Left writing and reading the tracks' texts of a variable's value to the DLL
 #                            - Handed the whole story and what of it changed to the DLL as values, which writes and reads them
 #                            - Asked the DLL's one rule which side the player took along in Iliasville
@@ -288,6 +289,9 @@ module MGQ_MpStoryState
   # mapping, see personal_switch?; in a Classic party every key the DLL's rule of what a member takes
   # of the leader's story leaves out (classic_follows), asked once for every key either story holds.
   #
+  # The game's lists may hold a value at 0, which names no switch or variable and makes the DLL
+  # refuse the whole question.
+  #
   # @param story [Array] The switches, variables and self switches of the story.
   # @param personal [Array] Those of the player.
   # @return [Proc] Takes a kind (0 switch, 1 variable, 2 self switch) and a key; answers whether it
@@ -297,7 +301,7 @@ module MGQ_MpStoryState
 
     keys = []
     2.times do |kind|
-      [story[kind].size, personal[kind].size].max.times { |id| keys << [kind, id] unless story[kind][id].nil? && personal[kind][id].nil? }
+      (1...[story[kind].size, personal[kind].size].max).each { |id| keys << [kind, id] unless story[kind][id].nil? && personal[kind][id].nil? }
     end
     (story[2].keys | personal[2].keys).each { |key| keys << [2, key] }
     taken = {}

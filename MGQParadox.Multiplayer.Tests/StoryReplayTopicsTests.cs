@@ -2,6 +2,7 @@
 //  StoryReplayTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Covered another member's trade that gave a found item replayed the opener's way
 //      Paulinchen  2026-11-05: Covered which of the leader's changes a member takes, over the topic
 //                            - Handed and expected the keys, values, sites and things a replay reads as plain values, and read the entries of an earlier release's save
 //                            - Covered a talk that gave a key item handed over in both world types, a Makina never, and the Medal King's run never
@@ -419,6 +420,24 @@ public sealed class StoryReplayTopicsTests
         RubyHash taken = Take(derived, [Row(Self(1, 13, "B"), false)]);
 
         Assert.Equal(traded, derived["inputs"]);
+        Assert.Equal(("replay", traded), (taken["do"].AsText(), taken["inputs"]));
+    }
+
+    /// <summary>
+    /// Asserts that another member's trade like the Fortune Teller's, whose run gave the permit, is
+    /// replayed with the opener's answer instead of asking the receiver, since a found item reaches
+    /// every player (user decision 2026-11-05).
+    /// </summary>
+    [Fact]
+    public void Take_AnswersTheTradeOfARunThatGaveAFoundItemTheOpenersWay()
+    {
+        RubyArray traded = [new RubyArray { new RubyArray { Page(1, 13, 1), 0 }, 0, "choice", 0 }];
+        Call(StoryTopics.ReplayScopesTopic, new RubyHash { { "party", true } });
+        RubyHash entry = OtherMembers(Ran([Change(Self(1, 13, "B"), false, true)], site: Page(1, 13, 1), found: [new RubyArray { 610, 1 }]).AsHash());
+        entry["inputs"] = traded;
+
+        RubyHash taken = Take(entry, [Row(Self(1, 13, "B"), false)]);
+
         Assert.Equal(("replay", traded), (taken["do"].AsText(), taken["inputs"]));
     }
 

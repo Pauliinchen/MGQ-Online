@@ -2,6 +2,7 @@
 //  StoryTopics.Replay.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Never asked the player the answers of a run that gave or used up a found item, which reaches every player
 //      Paulinchen  2026-11-05: Took and handed the keys, values, sites and things a replay reads as plain values, see StoryPlain
 //                            - Digested what the player holds from the things the scripts hand over
 //                            - Never handed over the Medal King's run, whose gift is its one path
@@ -694,11 +695,13 @@ internal sealed partial class StoryTopics
     /// <summary>
     /// Finds the inputs a replay takes from the opener's record: all but the answers of the choices
     /// that are the receiver's (rule 4, answer 11), whose answers do different things to the
-    /// receiver's own things by the scopes read last; a derived entry's answers all.
+    /// receiver's own things by the scopes read last; all answers of a derived entry and of a run
+    /// that gave or used up a found item.
     /// </summary>
     /// <remarks>
-    /// A derived entry's answers are the branch the player's history or the world's took, so a
-    /// player caught up past a trade gets its item without being asked (user decision 2026-11-05).
+    /// A found item reaches every player, so the receiver gets what the opener got the way the opener
+    /// answered, as a player caught up past a trade gets its item without being asked (user decision
+    /// 2026-11-05).
     /// </remarks>
     /// <param name="entry">The run's entry.</param>
     /// <param name="match">The events database's pages.</param>
@@ -707,7 +710,7 @@ internal sealed partial class StoryTopics
     private IReadOnlyList<ReplayInput>? OpenersInputs(ReplayEntry entry, PageMatch match, IReadOnlyDictionary<string, int> shapes)
     {
         string[] choices = [.. entry.Inputs.Where(input => input.Kind == ChoiceInput).Select(input => input.At).Distinct(StringComparer.Ordinal)];
-        if (choices.Length == 0 || entry.Derived)
+        if (choices.Length == 0 || entry.Derived || entry.Found)
         {
             return entry.Inputs;
         }
