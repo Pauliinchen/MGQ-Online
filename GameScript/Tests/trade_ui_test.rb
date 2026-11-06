@@ -2,6 +2,7 @@
 #  trade_ui_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Left the screen's parts and keys to the in-game suite, since the UI layer draws them, and kept the scene's flows
 #      Paulinchen  2026-11-05: Stood in for an offer's key in place of its text
 #      Paulinchen  2026-11-01: Checked the trade screen built of the Mod Framework's components
 #      Paulinchen  2026-10-31: Dressed the help window through the Mod Framework's theme, as its hook of Window_Base#update does
@@ -17,10 +18,9 @@
 #
 #----------------------------------------------------------------
 
-# Covers the trade screen, ui_trade.rbx, on the Mod Framework's components: the window's parts, an
-# offer's head and rows, the status line, the bag's steps, the gold box, confirming, the parts
-# greyed while the relay decides, the question before cancelling, the steps back by cancel, the
-# scene that hosts the window and returns once the trade ended, and the chat box over the window.
+# Covers the scene of the trade screen, ui_trade.rbx: it opens the screen's window of the UI layer,
+# returns once the trade ended, cancels a trade whose window closed or never opened, and has the
+# chat follow it. The screen's parts and keys are the in-game suite's (32_step9_b_trade.rb).
 
 require_relative "bridge_support"
 
@@ -159,7 +159,8 @@ module MGQ_MpTrade
 end
 
 load_script "ui_trade"
-StandInConfirm.install
+open_fake_ui { ["", 0] }
+$world_bridge.answer("ui.tree.layout") { |_changes| {} }
 
 herb = RPG::Item.new(1, "Medical Herb")
 potion = RPG::Item.new(2, "Potion")
@@ -193,211 +194,21 @@ def open_scene
   scene
 end
 
-# Counts how often a list's rows are handed anew and its rows set one by one.
-#
-# @param list [Mod_Framework::UI::List] The list.
-# @return [Hash] :rows and :row, counting on.
-def count_sets(list)
-  counts = { :rows => 0, :row => 0 }
-  list.define_singleton_method(:rows=) { |value| counts[:rows] += 1; super(value) }
-  list.define_singleton_method(:set_row) { |place, row| counts[:row] += 1; super(place, row) }
-  counts
-end
-
-# Has a component tell that it holds the focus.
-#
-# @param part [Mod_Framework::UI::Component] The component.
-def focus_on(part)
-  part.define_singleton_method(:focused?) { true }
-end
-
-# The window's parts.
-session = new_trade
-scene = open_scene
-screen = scene.screen
-check("the screen opens as one framework window titled with the other player",
-      [screen.window.open?, screen.window.title, $trade_log.last], [true, "Trading with Tester A", "trade screen opened for trade 012345 with Tester A"])
-check("it has the four tabs and the gold, confirm and cancel buttons",
-      [(0..3).map { |index| screen.tabs.tab(index).text }, [screen.gold_button, screen.confirm_button, screen.cancel_button].map { |button| button.text }],
-      [["Items", "Weapons", "Armor", "Stones"], ["Gold", "Confirm", "Cancel"]])
-mine, theirs = screen.sides[:mine], screen.sides[:theirs]
-check("both heads name whose offer it is and that it is not confirmed",
-      [mine[:name].text, theirs[:name].text, mine[:mark].text, mine[:mark].color], ["You", "Tester A", "Not confirmed", :dim])
-check("a long name gives way before its count and the mark at the right, which stay whole",
-      [theirs[:name].shrink, theirs[:name].parent.shrink, theirs[:count].shrink, theirs[:mark].shrink, theirs[:mark].grow], [true, true, false, false, 0])
-check("an empty offer shows no count and only its gold", [mine[:count].text, mine[:list].rows], ["", [{ :text => "Gold", :right => "0 G" }]])
-check("the bag shows the items of the first tab, none offered", screen.bags[0].rows.map { |row| [row[:item].name, row[:value]] },
-      [["Medical Herb", "0 / 15"], ["Potion", "0 / 120"]])
-
-# The status line.
-MGQ_MpTrade.note = "You cannot carry more Potion."
-scene.update
-check("the status line shows a message about the trade while it lasts", screen.status.text, "You cannot carry more Potion.")
-MGQ_MpTrade.note = nil
-scene.update
-check("then how the trade stands", screen.status.text, "Confirm once both offers are right. Any change takes both confirmations back.")
-
-# An offer's rows, set only when something they show changed.
-their_rows = count_sets(theirs[:list])
-pulses = 0
-theirs[:box].define_singleton_method(:pulse) { |*_| pulses += 1 }
-session.theirs = MGQ_MpTrade::Offer.new(500, [MGQ_MpTrade::Entry.new("w1", sword, 3), MGQ_MpTrade::Entry.new("u9", nil, 1)])
-scene.update
-check("their offer shows its gold, an item with its amount and an unknown item faint",
-      theirs[:list].rows, [{ :text => "Gold", :right => "500 G" }, { :item => sword, :right => "x3" }, { :text => "Unknown item", :faint => true, :right => "x1" }])
-check("their head counts the items", theirs[:count].text, " (2)")
-check("their change pulses their box once", [their_rows[:rows], pulses], [1, 1])
-scene.update
-check("an update with nothing changed sets no rows and pulses nothing", [their_rows[:rows], pulses], [1, 1])
-session.their_confirmed = true
-scene.update
-check("their confirmation sets their rows and mark anew without a pulse", [their_rows[:rows], pulses, theirs[:mark].text, theirs[:mark].color], [2, 1, "Confirmed", :good])
-
-# The bag's steps.
-bag = screen.bags[0]
-bag_sets = count_sets(bag)
-bag.receive("side", 0, 1)
-check("Right offers one more: the cursor sound, and only that row drawn anew in the good color",
-      [$calls.last, $sounds, bag.row_at(0)[:value], bag.row_at(0)[:right_color], bag_sets], [[:amount, "Medical Herb", 1], [:cursor], "1 / 15", :good, { :rows => 0, :row => 1 }])
-scene.update
-check("the own offer follows, and the bag is not filled anew", [mine[:count].text, mine[:list].rows[1], bag_sets[:rows]], [" (1)", { :item => herb, :right => "x1" }, 0])
-focus_on(bag)
-screen.window.emit(:page, 1, false)
-check("R offers ten more", bag.row_at(0)[:value], "11 / 15")
-screen.window.emit(:page, -1, false)
-check("L offers ten fewer", bag.row_at(0)[:value], "1 / 15")
-bag.receive("submit", 0)
-check("confirm offers all", bag.row_at(0)[:value], "15 / 15")
-bag.receive("submit", 0)
-check("and again none", [bag.row_at(0)[:value], bag.row_at(0).key?(:right_color)], ["0 / 15", false])
-$sounds = []
-bag.receive("side", 0, -1)
-check("Left at none buzzes and logs why", [$sounds, $trade_log.last], [[:buzzer], "not offering fewer of Medical Herb: none offered"])
-bag.receive("submit", 1)
-bag.receive("side", 1, 1)
-check("an item goes at most 99 times", [bag.row_at(1)[:value], $trade_log.last], ["99 / 120", "not offering more of Potion: a trade moves at most 99"])
-screen.tabs.picked(2)
-armor = screen.bags[2]
-check("picking a tab shows its category and logs it", [armor.rows.map { |row| row[:item].name }, $trade_log.last], [["Ring"], "showing the bag's Armor"])
-armor.receive("side", 0, 1)
-armor.receive("side", 0, 1)
-check("a unique copy goes once", [armor.row_at(0)[:value], $trade_log.last], ["1 / 1", "not offering more of Ring: a unique copy goes once"])
-check("an empty tab says so", screen.bags[3].empty_text, "Nothing to trade")
-
-# A bag of 1000 items.
-many = (1..1000).map { |id| RPG::Item.new(100 + id, "Herb #{id}") }
-kept = $held
-$held = Hash[many.map { |item| [item, 5] }]
+# The screen opens over the trade and returns once the trade ended.
 new_trade
 scene = open_scene
+check("the screen opens as one window of the layer", [scene.screen && scene.screen.open?, $trade_log.last],
+      [true, "trade screen opened for trade 012345 with Tester A"])
 screen = scene.screen
-bag = screen.bags[0]
-sets = count_sets(bag)
-bag.receive("side", 500, 1)
-scene.update
-check("a step in a bag of 1000 items sets one row and hands no rows anew", [sets, bag.row_at(500)[:value]], [{ :rows => 0, :row => 1 }, "1 / 5"])
-$held = kept
-
-# Gold.
-session = new_trade
-session.mine.gold = 40
-scene = open_scene
-screen = scene.screen
-screen.gold_button.receive("click")
-box = screen.instance_variable_get(:@gold_box)
-field = box.children.find { |part| part.is_a?(Mod_Framework::UI::NumberField) }
-note = box.children.find { |part| part.is_a?(Mod_Framework::UI::Label) }
-check("the gold box opens at the gold offered, nine digits, the party's gold under them",
-      [box.open?, field.value, field.digits, field.max, note.text], [true, 40, 9, 12345, "You have 12345 G"])
-field.emit(:submit, 500)
-check("its answer offers the gold and logs it", [$calls.last, $trade_log.last, box.open?], [[:gold, 500], "typed 500 gold to offer", false])
-screen.gold_button.receive("click")
-screen.instance_variable_get(:@gold_box).close(:cancel)
-check("closed without an answer it keeps the gold and logs it", [$calls.size, $trade_log.last], [1, "the gold box closed without an offer"])
-
-# Confirming.
-screen.confirm_button.receive("click")
-check("Confirm confirms with the confirm sound", [$calls.last, $sounds.last], [[:confirm], :ok])
-session.confirmed = true
-scene.update
-check("once confirmed the button reads Unconfirm", screen.confirm_button.text, "Unconfirm")
-session.confirmed = false
-scene.update
-MGQ_MpTrade.refusal = "You cannot carry more Potion."
-screen.confirm_button.receive("click")
-check("a refused confirm still goes to the trade, buzzes and logs why",
-      [$calls.last, $sounds.last, $trade_log.last], [[:confirm], :buzzer, "not confirmed: You cannot carry more Potion."])
-MGQ_MpTrade.refusal = nil
-
-# While the relay decides.
-moved = []
-screen.cancel_button.define_singleton_method(:focus) { moved << :cancel; self }
-focus_on(screen.gold_button)
-session.stage = :committing
-scene.update
-greyed = (0..3).map { |index| screen.tabs.tab(index) } + [screen.gold_button, screen.confirm_button] + screen.bags
-check("while the relay decides the tabs, gold, confirm and the bag take no input, the offers still do",
-      [greyed.map { |part| part.enabled? }.uniq, screen.sides.values.map { |side| side[:list].enabled? }], [[false], [true, true]])
-check("and the focus moves from what greyed out to Cancel", moved, [:cancel])
-session.stage = :open
-scene.update
-
-# The key help follows the focus and names cancel first, so cancel shows when the entries that do
-# not fit the window are left out from the last.
-room = Struct.new(:width) { def text_width(text, _size); Bitmap.new.text_size(text).width; end }.new(Graphics.width - screen.window.send(:padding_sides).values_at(1, 3).inject(:+))
-fitting = lambda { screen.key_help.send(:fitting, room, 0).map { |name, text| name + text } }
-check("on the bar the key help names cancel for cancelling the trade, then Up for the offers, all of it in the window",
-      [screen.key_help.line, fitting.call.size], ["X or Numpad 0: Cancel the trade  Up: Offers", 2])
-focus_on(screen.bags[0])
-scene.update
-check("in the bag it names cancel to go back, then the steps and all or none, and cancel still shows in the window",
-      [screen.key_help.line, fitting.call.first], ["X or Numpad 0: Back  Left/Right: 1 more or less  Q or W: 10 less or more  Z: All or none", "X or Numpad 0: Back"])
-
-# Cancel steps back, then asks.
-check("cancel steps back from a bag list to its tab and from an offer to Confirm",
-      [screen.bags.each_with_index.map { |list, index| list.cancel_to.equal?(screen.tabs.tab(index)) }.uniq, screen.sides.values.map { |side| side[:list].cancel_to.equal?(screen.confirm_button) }],
-      [[true], [true, true]])
-$asked = []
-screen.window.receive("cancel")
-check("cancel on the bar asks first, naming the other player and what is lost, and keeps the window open",
-      [$asked.last, screen.window.open?], [["Cancel the trade with Tester A? Both offers are lost.", ["Cancel trade", "Keep trading"]], true])
-answer_confirm(false)
-check("no keeps trading", [$calls.include?([:cancel]), $trade_log.last], [false, "chose to keep trading"])
-screen.cancel_button.receive("click")
-check("the Cancel button asks the same", $asked.size, 2)
-screen.cancel_button.receive("click")
-check("a question that could not open changes nothing and is logged", [$asked.size, $trade_log.last], [2, "the question did not open, so trading goes on"])
-answer_confirm(true)
-check("yes cancels the trade", $calls.last, [:cancel])
-
-# The trade ends.
-new_trade
-scene = open_scene
-screen = scene.screen
-screen.gold_button.receive("click")
-box = screen.instance_variable_get(:@gold_box)
 MGQ_MpTrade.session = nil
 scene.update
-check("the trade ending under the gold box closes the box, then the window, and returns",
-      [box.open?, screen.window.open?, $returned, $calls, $trade_log.last(2)],
-      [false, false, 1, [], ["the gold box closed without an offer", "trade screen closed, the trade ended"]])
-new_trade
-scene = open_scene
-screen = scene.screen
-screen.cancel_button.receive("click")
-MGQ_MpTrade.session = nil
-scene.update
-check("the trade ending under the question closes it without an answer of the player's",
-      [Mod_Framework::UI::Confirm.open?, screen.window.open?, $calls, $trade_log.include?("chose to keep trading")], [false, false, [], false])
+check("the trade ending closes the window and returns", [screen.open?, $returned, $calls, $trade_log.last], [false, 1, [], "trade screen closed, the trade ended"])
 
-# Failures and a window that does not open.
+# A window that closed while the trade goes on, or never opened, cancels the trade.
 new_trade
 scene = open_scene
-$bag_breaks = true
-scene.screen.bags[0].receive("side", 0, 1)
-scene.update
-check("a failing step logs where, closes the window, and the scene cancels the trade and returns",
-      [$trade_log.any? { |line| line.start_with?("trade screen failed in the bag: RuntimeError: the bag broke") }, $calls.last, $returned], [true, [:cancel], 1])
+scene.screen.close
+check("a window closed while the trade goes on cancels the trade and returns", [$calls, $returned], [[[:cancel]], 1])
 new_trade
 Mod_Framework.available = false
 scene = Scene_MpTrade.new
@@ -406,24 +217,3 @@ check("a window the framework refuses is logged, the trade cancelled and the sce
       [$trade_log.last, $calls, $returned], ["the trade screen's window did not open, so the trade is cancelled", [[:cancel]], 1])
 
 check("the chat follows the trade screen", $followed, [Scene_MpTrade])
-
-# The chat over the trade screen, which waits while a box holds the game's buttons over the scene
-# (ui_chat_test.rb opens it over such a window) and, typing, holds them as :chat with the typing
-# flag set. The tree's changes are read last, since reading them uses them up.
-new_trade
-scene = open_scene
-screen = scene.screen
-capture = Mod_Framework::UI::Capture
-tree = Mod_Framework::UI::Tree
-hosted = [screen.window.hosts_scene?, capture.on?, capture.over_scene?]
-screen.gold_button.receive("click")
-check("the trade window hosts its scene: it holds the buttons but none over the scene, so the chat box opens over it, and the gold box holds them over it",
-      [hosted, capture.over_scene?], [[true, true, false], true])
-screen.instance_variable_get(:@gold_box).close(:cancel)
-$mgq_text_input = true
-capture.start(:chat)
-typing = [tree.typing_outside?, tree.changes["keys_off"]]
-$mgq_text_input = false
-capture.stop(:chat)
-check("while the chat box types, the trade window takes none of the keys typed, and takes them again once it closed",
-      [typing, tree.changes["keys_off"], screen.window.open?], [[true, true], false, true])
