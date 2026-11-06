@@ -2,6 +2,7 @@
 #  ui_notices.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Showed the messages as toasts and the invites as offers of the Mod Framework's notice stack through its UI layer
 #      Paulinchen  2026-11-01: Built the box on the Mod Framework's notification box, keeping the invites, the world's messages and the World overview here
 #                            - Left the notice that the Mod Framework's settings cannot be read to the Mod Framework
 #      Paulinchen  2026-10-31: Showed the notice that the Mod Framework's settings cannot be read
@@ -32,25 +33,27 @@
 #                            - Logged through MGQ_MpLog
 #                            - Created
 #
+#----------------------------------------------------------------
 
-# MGQ Online's part of the notification box, which is the Mod Framework's (Mod_Framework::UI::Notices):
-# the invites that reach the player in a world from wherever they were sent, listed by their
-# sender's name through MGQ_MpActions.offers, the messages the other scripts post under the names
-# they know, and the rules of a world: what was posted in a world goes when it closes, and the box
-# hides while the World overview is open.
+# MGQ Online's part of the notice stack every mod shares, the Mod Framework's: the invites that
+# reach the player in a world from wherever they were sent, offers listed by their sender's name
+# through MGQ_MpActions.offers; the messages the other scripts post under the names they know,
+# toasts at the corner the player picks; and the rules of a world: what was posted in a world goes
+# when it closes, and the stack hides while the World overview is open. MGQ Online draws nothing
+# of it.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpNotices
-  # The Mod Framework's notification box.
-  BOX = Mod_Framework::UI::Notices
+  # The Mod Framework's interface.
+  UI = Mod_Framework::UI
 
-  # The name the invites are listed under in the box.
+  # The name the invites are listed under in the stack.
   SOURCE = :mgq_online_invites
 
   # The group of what was posted in a world, which goes when the world closes.
   WORLD_GROUP = :mgq_online_world
 
-  # The name the World overview hides the box under.
+  # The name the World overview hides the stack under.
   OVERVIEW = :mgq_online_overview
 
   # Frames in a second, which the callers count a message's time in.
@@ -76,28 +79,28 @@ module MGQ_MpNotices
   # What starts this script's lines in the log.
   LOG_TAG = "notices"
 
-  # Shows a message for a while, in place of one with the same key. One posted in a world goes when
-  # the world closes.
+  # Shows a message as a toast for a while, in place of one with the same key. One posted in a
+  # world goes when the world closes.
   #
   # @param key [Object] What it is about.
   # @param text [String] What it says.
-  # @param frames [Integer, nil] How long it shows while the box shows, the box's own time unless
-  #   given.
+  # @param frames [Integer, nil] How long it shows while the stack shows, the toasts' own time
+  #   unless given.
   def self.message(key, text, frames = nil)
     options = { :key => key }
     options[:seconds] = frames.to_f / FRAMES_PER_SECOND if frames
     options[:group] = WORLD_GROUP if MGQ_MpOverworldSync.in_world?
-    BOX.show(text, options)
+    Mod_Framework.toast(text.to_s, options)
   rescue => e
     log_once(:message, "posting a message failed: #{e.class}: #{e.message}")
   end
 
-  # Shows a line the relay announces to every world, such as an admin's or a new release's, whole,
-  # in place of the one before.
+  # Shows a line the relay announces to every world, such as an admin's or a new release's, in
+  # place of the one before.
   #
   # @param text [String] The line.
   def self.announce(text)
-    BOX.show(text, :key => ANNOUNCEMENT_KEY, :seconds => ANNOUNCEMENT_SECONDS, :wrap => true)
+    Mod_Framework.toast(text.to_s, :key => ANNOUNCEMENT_KEY, :seconds => ANNOUNCEMENT_SECONDS)
   rescue => e
     log_once(:announce, "announcement failed: #{e.class}: #{e.message}")
   end
@@ -108,7 +111,7 @@ module MGQ_MpNotices
   # @param reason [String, nil] Why, for the log.
   def self.drop(key, reason = nil)
     log("dropping message #{key.inspect}: #{reason}") if reason
-    BOX.drop(key)
+    UI.drop_toast(key)
   rescue => e
     log_once(:drop, "dropping a message failed: #{e.class}: #{e.message}")
   end
@@ -118,17 +121,29 @@ module MGQ_MpNotices
   #
   # @param key [Object] The invite's key, see MGQ_MpActions::Notice.
   def self.release(key)
-    BOX.release(key)
+    UI.release_offer(key)
+  rescue => e
+    log_once(:release, "showing an invite again failed: #{e.class}: #{e.message}")
   end
 
-  # Tells whether the box may show in the scene running.
+  # Tells whether the stack shows in the scene running: not on the title, the game over or a novel
+  # scene, nor while the World overview is open.
   #
-  # @return [Boolean] Whether it may.
+  # @return [Boolean] Whether it does.
   def self.shown?
-    BOX.shown?
+    scene = SceneManager.scene
+    hidden = [:Scene_Title, :Scene_Gameover, :Scene_Novel].any? { |name| Object.const_defined?(name) && scene.is_a?(Object.const_get(name)) }
+    !hidden && !overview_open?
   end
 
-  # Lists the invites that stand in the world open, by their sender's name, as offers of the box.
+  # Tells whether the World overview is open over the map, which hides the stack.
+  #
+  # @return [Boolean] Whether it is.
+  def self.overview_open?
+    SceneManager.scene.is_a?(Scene_Map) && MGQ_MpWorldOverview.open? ? true : false
+  end
+
+  # Lists the invites that stand in the world open, by their sender's name, as offers of the stack.
   #
   # @return [Array<Hash>] The offers, none outside a world.
   def self.invites
@@ -139,13 +154,16 @@ module MGQ_MpNotices
     notices.map { |notice| offer_of(notice) }
   end
 
-  # Makes an offer of the box of an invite.
+  # Makes an offer of the stack of an invite.
   #
   # @param notice [MGQ_MpActions::Notice] The invite.
   # @return [Hash] The offer, without an accept for an invite that cannot be accepted here.
   def self.offer_of(notice)
-    { :key => notice.key, :text => notice.text, :color => notice.color, :accept_text => notice.action, :accept => notice.take,
-      :decline => notice.decline, :mark => notice.mark, :group => WORLD_GROUP }
+    offer = { :key => notice.key, :text => notice.text, :decline => notice.decline, :mark => notice.mark, :group => WORLD_GROUP }
+    offer[:color] = notice.color if notice.color
+    offer[:accept] = notice.take if notice.take
+    offer[:accept_text] = notice.action if notice.take && notice.action
+    offer
   end
 
   # Posts the notice that Player.ini cannot be read, and takes away what was posted in a world once
@@ -156,26 +174,26 @@ module MGQ_MpNotices
     post_player_ini_notice
     if @in_world && !in_world
       log("the world closed: its invites and messages go")
-      BOX.drop_group(WORLD_GROUP)
+      UI.drop_group(WORLD_GROUP)
     end
     @in_world = in_world
   rescue => e
     log_once(:tick, "tick failed: #{e.class}: #{e.message}")
   end
 
-  # Posts the notice that Player.ini cannot be read, once; the box counts its time only while it
-  # shows, so it never runs out unseen on the title screen.
+  # Posts the notice that Player.ini cannot be read, once; the toasts count their time only while
+  # the stack shows, so it never runs out unseen on the title screen.
   def self.post_player_ini_notice
     text = MGQ_Multiplayer::Player.take_notice
-    BOX.show(text, :key => PLAYER_INI_KEY, :seconds => PLAYER_INI_SECONDS) if text
+    Mod_Framework.toast(text, :key => PLAYER_INI_KEY, :seconds => PLAYER_INI_SECONDS) if text
   end
 end
 
-# What the box takes of the world, through overworld_sync.rbx.
+# What the stack takes of the world, through overworld_sync.rbx.
 
 begin
-  MGQ_MpNotices::BOX.offers(MGQ_MpNotices::SOURCE, :log => MGQ_MpNotices) { MGQ_MpNotices.invites }
-  MGQ_MpNotices::BOX.hide_while(MGQ_MpNotices::OVERVIEW) { SceneManager.scene.is_a?(Scene_Map) && MGQ_MpWorldOverview.open? }
+  Mod_Framework::UI.offers(MGQ_MpNotices::SOURCE, :log => MGQ_MpNotices) { MGQ_MpNotices.invites }
+  Mod_Framework::UI.notices_hidden_while(MGQ_MpNotices::OVERVIEW) { MGQ_MpNotices.overview_open? }
   MGQ_MpOverworldSync.on_tick { |in_world| MGQ_MpNotices.tick(in_world) }
 rescue => e
   MGQ_MpNotices.log("overworld sync FAILED: #{e.class}: #{e.message}")
