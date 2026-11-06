@@ -2,6 +2,8 @@
 #  ui_raid_freeze.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Asked the freeze whether a page runs nothing, as the DLL tells it
+#                            - Logged each kept start once, without the frame in its key, and compared the sources by their hash instead of a deep copy
 #      Paulinchen  2026-11-05: Read whether the teller tells the story as true or false
 #                            - Handed a frozen fight's event kept from starting to the one guard of the game's flow
 #                            - Counted its scans and refusals by the bridge's frame
@@ -35,9 +37,6 @@ module MGQ_MpRaidFreezeUi
 
   # The directions a stand-in may face; another faces down.
   DIRECTIONS = [2, 4, 6, 8]
-
-  # The event commands a page holds when it runs nothing: its end and comments.
-  QUIET_CODES = [0, 108, 408]
 
   # The trigger of an event that runs by itself.
   AUTORUN_TRIGGER = 3
@@ -74,8 +73,8 @@ module MGQ_MpRaidFreezeUi
   #   switches), each a Hash of keys to true, whose writers cannot start while it shows.
   Tableau = Struct.new(:troop, :name, :own, :standins, :boss, :hidden, :blocked, :writes)
 
-  # The frozen fights of the map as last built: its map id, the sources they were built from and
-  # the tableaux, nil until built.
+  # The frozen fights of the map as last built: its map id, the hash of the sources they were built
+  # from and the tableaux, nil until built.
   @built = nil
 
   # The SCAN_FRAMES step of the last look at the sources.
@@ -219,26 +218,13 @@ module MGQ_MpRaidFreezeUi
 
     @checked = step
     found = sources
-    return @built[2] if same_map && @built[1] == found
+    # The hash of the sources' contents, so a record changed in place reads as a change.
+    return @built[2] if same_map && @built[1] == found.hash
 
     tableaux = found.map { |troop, own, data, held| data[0].to_i == map_id ? tableau_of(troop, own, data, held) : nil }.compact
     note_built(map_id, tableaux)
-    # A copy, so a record changed in place still reads as a change at the next look.
-    @built = [map_id, copy_of(found), tableaux]
+    @built = [map_id, found.hash, tableaux]
     tableaux
-  end
-
-  # Copies the arrays, hashes and texts of a value, all the way down.
-  #
-  # @param value [Object] The value.
-  # @return [Object] The copy.
-  def self.copy_of(value)
-    case value
-    when Array then value.map { |each| copy_of(each) }
-    when Hash then value.each_with_object({}) { |(key, each), copy| copy[copy_of(key)] = copy_of(each) }
-    when String then value.dup
-    else value
-    end
   end
 
   # Lists the frozen fights the player's game knows: the player's own records, then the world's
@@ -507,18 +493,10 @@ module MGQ_MpRaidFreezeUi
     rows = tableaux.map { |tableau| tableau.hidden[id] }.compact
     return false if rows.empty?
 
-    rows.any? { |row| row.boss == 1 } || runs_nothing?(character)
+    rows.any? { |row| row.boss == 1 } || MGQ_MpRaidFreeze.runs_nothing?(character)
   rescue => e
     log_once(:hidden, "hiding the events of a frozen fight failed: #{e.class}: #{e.message}")
     false
-  end
-
-  # Reports whether a live event's page runs nothing when started, such as a figure only shown.
-  #
-  # @param event [Game_Event] The event.
-  # @return [Boolean] Whether it does.
-  def self.runs_nothing?(event)
-    Array(event.list).all? { |command| QUIET_CODES.include?(command.code) }
   end
 
   # Keeps an event from starting while a frozen fight of the map holds (see blocker_of), so the
@@ -576,7 +554,7 @@ module MGQ_MpRaidFreezeUi
     held = last && now - last <= 1
     @contact[key] = [held ? first : now, now]
     if held
-      log_once([:contact, map_id, event.id, first], "kept event #{event.id} on map #{map_id} from starting: the player keeps touching it")
+      log_once([:contact, map_id, event.id], "kept event #{event.id} on map #{map_id} from starting: the player keeps touching it")
       return true
     end
 
@@ -593,7 +571,7 @@ module MGQ_MpRaidFreezeUi
   # @return [Boolean] true.
   def self.after_resume(event)
     map_id = $game_map.map_id
-    log_once([:after_resume, map_id, event.id, @resumed_at], "kept event #{event.id} on map #{map_id} from starting: a frozen fight resumed this frame")
+    log_once([:after_resume, map_id, event.id], "kept event #{event.id} on map #{map_id} from starting: a frozen fight resumed this frame")
     true
   end
 

@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-06: Dropped the stand-ins of the mouse and the held buttons, which no check reads
+#                            - Dropped the check of the base form, which no screen builds
 #                            - Checked that a refusal of this version on the world screen waits for its question to close instead of leaving
 #                            - Reached the Mod Framework's engine under its own name
 #                            - Checked that a refusal of this version asks for the update at the title at once and after a game at the next title
@@ -218,11 +219,6 @@ open_fake_ui { typed = $typed.to_s; $typed = nil; [typed, typed.size] }
 def new_scene
   world_scene
 end
-
-# The forms' fields are the DLL's (WorldFormsTests); the scripts' own form still turns a switch.
-switch = MGQ_MpWorld::Form::Field.new(:way, :switch, "Way", 0, "Which way.", :choices => %w(Left Middle Right), :note => lambda { |_, index| "Picked #{index}" })
-ways = MGQ_MpWorld::Form.new("Ways", [switch], :way => 0)
-check("a switch turns round between its outcomes, with the line of the one picked", [ways.turn(switch, -1), switch.note_of(ways), ways.turn(switch, 1)], [2, "Picked 2", 0])
 
 # The directory.
 DIRECTORY = [listed_value("w1", "Plain"), listed_value("w2", "Golden", "creator_name" => "Global", "open" => true, "featured" => true), listed_value("w3", "Old")]

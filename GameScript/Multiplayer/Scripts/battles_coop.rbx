@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-06: Read the player's own color in the status window through the Mod Framework's UI.color_now
+#                            - Dropped RAID_PLAYERS, which the DLL's CoopMatchmaking keeps
 #      Paulinchen  2026-11-05: Handed the enemy rates, the invite's fields and whether the player is busy as values, and read the invites' flags as true or false
 #                            - Had C# write and read the joins and the troop's changes
 #                            - Built other players' characters and the host's troop through MGQ_MpBattlers
@@ -157,7 +158,7 @@
 # rewards or its own defeat.
 #
 # In a Raid World a battle takes the free players on the map, party or not: the party members
-# first, then those nearest the party's leader, up to RAID_PLAYERS (see raid_candidates). The
+# first, then those nearest the party's leader, up to the DLL's CoopMatchmaking.RaidPlayers (see raid_candidates). The
 # player who starts it hosts it; of a random encounter and another player's battle started at the
 # same moment, an event's battle or else the player who entered the map first hosts, and the other
 # joins as a guest with the players who joined them (CoopMatchmaking in the DLL). Every player's
@@ -176,10 +177,6 @@ module MGQ_MpBattlesCoop
 
   # Frames a guest waits for the host's party beyond the host's wait for the players to join.
   ROSTER_MARGIN_FRAMES = 240
-
-  # Players of a battle in a Raid World at most, the host included: as many as the Frontline has
-  # places, each player's first character on it.
-  RAID_PLAYERS = 4
 
   # What starts the waiting box's names line of a player who joins a running battle at its next
   # turn, which names no player: how long the wait may last.

@@ -2,6 +2,7 @@
 #  coop_scope.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Logged a silent telling once per player, without the frame in its key
 #      Paulinchen  2026-11-05: Read whether another player tells the story as true or false
 #                            - Handed the ids a map message names to the DLL as a list, which it writes
 #                            - Counted the scope's times by the bridge's frame
@@ -140,7 +141,7 @@ module MGQ_MpCoop
       heard[:asked] = now
       return false if now - heard[:frame] < SILENT_FRAMES
 
-      log_once([:silent, id, heard[:frame]], "#{MGQ_MpOverworldSync.who(peer)}'s telling holds the player no longer: nothing of it reached the player for #{SILENT_FRAMES / 60} s")
+      log_once([:silent, id], "#{MGQ_MpOverworldSync.who(peer)}'s telling holds the player no longer: nothing of it reached the player for #{SILENT_FRAMES / 60} s")
       true
     end
 

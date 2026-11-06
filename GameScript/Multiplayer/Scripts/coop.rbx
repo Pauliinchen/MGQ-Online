@@ -61,8 +61,8 @@ module MGQ_MpCoop
   # Tiles another player may be away, on the same map, to be invited or to accept.
   NEAR_TILES = 2
 
-  # Frames an invite of a duel or a trade stands, fifteen seconds at 60 frames per second, as long
-  # as the DLL lets a party invite stand.
+  # Frames a trade offer stands, fifteen seconds at 60 frames per second, as long as the DLL lets a
+  # party invite stand.
   INVITE_FRAMES = 900
 
   # Frames an invite to a player named from afar stands, a minute: they first have to notice it in
@@ -229,7 +229,7 @@ module MGQ_MpCoop
   end
 
   # A standing invite of the player: to the players nearby, and to players anywhere named by their
-  # id, for INVITE_FRAMES. Duels and trades each keep one; the party's is the DLL's.
+  # id, for INVITE_FRAMES. A trade offer keeps one; the party's and the duel's are the DLL's.
   class Invite
     # Starts with no invite standing.
     def initialize

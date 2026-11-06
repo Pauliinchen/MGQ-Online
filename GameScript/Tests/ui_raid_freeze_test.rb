@@ -2,6 +2,7 @@
 #  ui_raid_freeze_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Told whether a page runs nothing through the engine's stand-in, as the DLL tells it
 #      Paulinchen  2026-11-05: Told the telling of the story as true or false
 #                            - Read the scripts' clock from $frame
 #      Paulinchen  2026-10-28: Stood in for the DLL's command index and the freeze's tables
@@ -141,7 +142,8 @@ module MGQ_MpRaidPool
   def self.troop_label(troop); ($names || {})[troop] || "troop #{troop}"; end
 end
 # The engine: the player's frozen records in $records, any state in $any_records, the resumes
-# running in $resuming, each resume asked for noted in $resumed and starting while $resume_ok.
+# running in $resuming, each resume asked for noted in $resumed and starting while $resume_ok; the
+# events whose page the DLL tells runs nothing in $quiet.
 module MGQ_MpRaidFreeze
   # The player's frozen records.
   def self.records; $records; end
@@ -153,6 +155,8 @@ module MGQ_MpRaidFreeze
   def self.resume(troop); ($resumed ||= []) << troop; $resume_ok; end
   # The freeze's data: what the post-defeat processing writes itself.
   def self.data(name, default); name == :DEFEAT_WRITES ? { :switches => [22, 31..37], :variables => [11] } : default; end
+  # Whether an event's page runs nothing.
+  def self.runs_nothing?(event); ($quiet || []).include?(event.id); end
 end
 # The world's frozen fights, its active entries in $entries.
 module MGQ_MpWorldFreeze
@@ -317,17 +321,13 @@ sonya = Game_Event.new(13, 30, 8)
 alice = Game_Event.new(14, 28, 9)
 guard = Game_Event.new(15, 31, 12)
 $game_map.events = { 13 => sonya, 14 => alice, 15 => guard }
-check("a live event a row with hide 1 stands for hides, others and the stand-ins do not",
+$quiet = [13, 14, 15]
+check("a live event a row with hide 1 stands for hides while the DLL tells its page runs nothing, others and the stand-ins do not",
       [ui.hidden?(sonya), ui.hidden?(alice), ui.hidden?(guard), ui.hidden?(ui.tableaux.first.boss), ui.hidden?(nil)], [true, true, false, false, false])
-talk = [RPG::EventCommand.new(101, 0, []), RPG::EventCommand.new(0, 0, [])]
-alice.list = [RPG::EventCommand.new(108, 0, ["a note"]), RPG::EventCommand.new(0, 0, [])]
-check("a live event whose page runs nothing but comments hides", ui.hidden?(alice), true)
-alice.list = talk
-sonya.list = talk
+$quiet = []
 check("one whose page has something to run, such as a talk, shows and serves on; the boss's hides all the same",
       [ui.hidden?(alice), ui.hidden?(sonya)], [false, true])
-alice.list = nil
-sonya.list = nil
+$quiet = [13, 14, 15]
 sonya.trigger = 3
 sonya.update
 guard.start

@@ -2,6 +2,7 @@
 #  battles_raid_freeze.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Read the preamble's start and whether a page runs nothing from the DLL, and left the Hades halls to its sites
 #      Paulinchen  2026-11-05: Asked the DLL whether a frozen fight is over, the one decision every caller asks, and dropped the player's own record once it is
 #                            - Asked the DLL whether a lost battle's defeat goes back and which value each key it changed goes back to
 #                            - Put nothing back of an event's lost battle whose fight froze no record
@@ -58,12 +59,6 @@ module MGQ_MpRaidFreeze
   # The event command that starts a battle.
   BATTLE_CODE = 301
 
-  # The event command that turns switches on or off.
-  SWITCH_CODE = 121
-
-  # The switch the game's events turn on right before a story boss battle, part of the preamble.
-  BOSS_SWITCH = 22
-
   # The triggers of a page that starts when touched: by the player, by the event.
   TOUCH_TRIGGERS = [1, 2]
 
@@ -72,9 +67,6 @@ module MGQ_MpRaidFreeze
 
   # The directions of a tile's neighbours.
   NEIGHBOUR_DIRECTIONS = [2, 4, 6, 8]
-
-  # The event commands a page holds when it runs nothing: its end and comments.
-  QUIET_CODES = [0, 108, 408]
 
   # The topic the journal's writes go to the DLL by, see JournalTopics in the DLL.
   JOURNAL_TOPIC = "freeze.journal"
@@ -495,7 +487,7 @@ module MGQ_MpRaidFreeze
   #
   # @param at [Array] The battle command: interpreter, index, indent, branches and frame.
   # @return [Hash, String] :frames (site key, index and branches, outermost first; a common
-  #   event's frame also with its interpreter's map and event), :outer_list, :inner_list,
+  #   event's frame also with its interpreter's map and event), :outer_list,
   #   :event_id, :event (nil on another map), :map (the event's) and :moved; or why there is no chain.
   def self.chain_of(at)
     interpreter, index, _indent, branch = at
@@ -526,7 +518,7 @@ module MGQ_MpRaidFreeze
     frames = stack.each_with_index.map { |frame, depth| [keys[depth], frame[2], frame[3].dup] }
     frames << [keys.last, index, branch.dup]
     callees.each_with_index { |callee, depth| frames[depth + 1] << callee }
-    { :frames => frames, :outer_list => outer_list, :inner_list => MGQ_MpGame.get(interpreter, :list), :event_id => event_id, :event => event,
+    { :frames => frames, :outer_list => outer_list, :event_id => event_id, :event => event,
       :map => map, :moved => moved }
   end
 
@@ -561,10 +553,9 @@ module MGQ_MpRaidFreeze
 
     site = chain[:frames].last[0]
     rows = data(:SITES, {})[troop] || []
-    return "its site #{site} is not in the data" unless rows.any? { |row| row[0] == site }
+    return "its site #{site} is not in the data" unless rows.any? { |row| row[0] == site && row[1] == at[1] }
 
     map = $game_map.map_id
-    return "map #{map} is a Hades hall" if data(:EXCLUDED_MAPS, []).include?(map)
     return "its event moved the player away from the cutscene map #{chain[:map]}, where no stand-in can wait" if chain[:moved] && scene_map?(chain[:map])
     return "no stand-in site for the cutscene #{chain[:frames][0][0]}" if !chain[:moved] && scene_map?(map) && !data(:SCENES, {})[chain[:frames][0][0]]
 
@@ -622,7 +613,7 @@ module MGQ_MpRaidFreeze
       "troop" => troop, "site" => frames.last[0], "outer" => outer, "scene" => scene, "tableau" => tableau,
       "spot" => [map, $game_player.x, $game_player.y, $game_player.direction],
       "state" => "battle", "boss" => MGQ_MpRaidPool.key_of(troop).to_s, "frames" => frames,
-      "resume" => preamble_start(chain[:inner_list], at[1], at[2]), "indent" => at[2], "event_id" => chain[:event_id], "map" => map,
+      "resume" => preamble_start(troop, frames.last[0], at[1]), "indent" => at[2], "event_id" => chain[:event_id], "map" => map,
       "player" => player_row, "followers" => followers_row, "camera" => [$game_map.display_x, $game_map.display_y],
       "screen" => dumped($game_map.screen, "the screen"), "look" => look_row, "audio" => audio_row, "events" => event_rows,
       "party" => party_dump, "vehicles" => vehicles_row,
@@ -634,25 +625,14 @@ module MGQ_MpRaidFreeze
         "#{scene || moved ? "#{scene ? 'a cutscene' : "its event moved the player here from map #{chain[:map]}"}, its boss waits on map #{tableau[0]}" : 'its boss waits here'}")
   end
 
-  # Finds where a battle command's preamble starts: the commands of the same indent right before it
-  # that ready the battle (the freeze's PREAMBLE_CODES, or turning BOSS_SWITCH on).
+  # Finds where a battle command's preamble starts, as its row of the freeze's SITES tells it.
   #
-  # @param list [Array<RPG::EventCommand>] The commands.
+  # @param troop [Integer] The troop.
+  # @param site [Array] The site key of the list that holds the battle command.
   # @param index [Integer] The battle command's index.
-  # @param indent [Integer] Its indent.
   # @return [Integer] The preamble's first index, the battle command's when there is none.
-  def self.preamble_start(list, index, indent)
-    codes = data(:PREAMBLE_CODES, [132, 133, 283])
-    start = index
-    while start > 0
-      command = list[start - 1]
-      params = command.parameters
-      boss_on = command.code == SWITCH_CODE && params[0].to_i <= BOSS_SWITCH && BOSS_SWITCH <= params[1].to_i && params[2] == 0
-      break unless command.indent == indent && (codes.include?(command.code) || boss_on)
-
-      start -= 1
-    end
-    start
+  def self.preamble_start(troop, site, index)
+    data(:SITES, {})[troop].find { |row| row[0] == site && row[1] == index }[3]
   end
 
   # Builds the stand-ins of a fight on a field map: its boss and the events only its scene shows,
@@ -824,17 +804,15 @@ module MGQ_MpRaidFreeze
     end
   end
 
-  # Reports whether an event's page runs nothing when started, such as a figure only shown. The
+  # Reports whether an event's page runs nothing when started, such as a figure only shown, as the
   # DLL's events database tells it for a page it holds as the game does (see page_flags).
   #
   # @param event [Game_Event] The event.
-  # @return [Boolean] Whether it does.
+  # @return [Boolean] Whether it does; false for a page the database does not tell of.
   def self.runs_nothing?(event)
     place = event.mgq_mp_page
     flags = place >= 0 ? page_flags(event, place) : nil
-    return flags["runs_nothing"] == true if flags
-
-    Array(event.list).all? { |command| QUIET_CODES.include?(command.code) }
+    flags ? flags["runs_nothing"] == true : false
   end
 
   # Reads what the DLL's events database found in a page of the map, see
@@ -2301,7 +2279,7 @@ module MGQ_MpRaidFreeze
   # Reads a table of the freeze's data, see tables.
   #
   # @param name [Symbol] The table: :SITES, :CALLERS, :ALTERNATIVES, :SCENES, :SCENE_MAPS,
-  #   :DEFEAT_EVENTS, :DEFEAT_WRITES, :EXCLUDED_MAPS or :PREAMBLE_CODES.
+  #   :DEFEAT_EVENTS or :DEFEAT_WRITES.
   # @param default [Object] What stands in while the data is missing.
   # @return [Object] The table.
   def self.data(name, default)
@@ -2314,9 +2292,8 @@ module MGQ_MpRaidFreeze
   # where its preamble starts, whether its map is a cutscene map, and its battle number), the map
   # pages that reach each common event of them (CALLERS), the fights each side plays in the other's
   # stead (ALTERNATIVES), how the story enters the fights on cutscene maps (SCENES), the cutscene
-  # maps (SCENE_MAPS), what the game's post-defeat processing writes itself (DEFEAT_EVENTS,
-  # DEFEAT_WRITES), and the rules: the Hades halls (EXCLUDED_MAPS) and the preamble's commands
-  # (PREAMBLE_CODES). A table the database does not tell is left out; while the DLL gives no answer,
+  # maps (SCENE_MAPS), and what the game's post-defeat processing writes itself (DEFEAT_EVENTS,
+  # DEFEAT_WRITES). A table the database does not tell is left out; while the DLL gives no answer,
   # it is asked again every TABLES_FRAMES.
   #
   # @return [Hash{Symbol => Object}] The tables.
@@ -2355,8 +2332,7 @@ module MGQ_MpRaidFreeze
     found = {
       :SITES => answer["sites"], :CALLERS => answer["callers"], :ALTERNATIVES => answer["alternatives"],
       :SCENES => answer["scenes"].is_a?(Array) ? Hash[answer["scenes"]] : nil,
-      :SCENE_MAPS => answer["scene_maps"], :DEFEAT_EVENTS => defeat["events"], :EXCLUDED_MAPS => answer["excluded_maps"],
-      :PREAMBLE_CODES => answer["preamble_codes"],
+      :SCENE_MAPS => answer["scene_maps"], :DEFEAT_EVENTS => defeat["events"],
     }
     found[:DEFEAT_WRITES] = { :switches => Array(defeat["switches"]), :variables => Array(defeat["variables"]) } unless Array(defeat["events"]).empty?
     found.reject { |_name, table| !(table.is_a?(Hash) || table.is_a?(Array)) || table.empty? }

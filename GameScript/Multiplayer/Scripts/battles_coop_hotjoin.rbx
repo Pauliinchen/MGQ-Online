@@ -54,7 +54,7 @@
 # Hotjoining in a Raid World: a random encounter that starts on a map where a co-op battle already
 # runs joins that battle instead of starting its own. The player who met the enemies asks the
 # running battle's host (ask, await, which the DLL's CoopAsking decides); the host takes them in while the players stay at most
-# MGQ_MpBattlesCoop::RAID_PLAYERS, neither battle is a boss battle (battles_raid_bosses.rbx) and its
+# CoopMatchmaking.RaidPlayers, neither battle is a boss battle (battles_raid_bosses.rbx) and its
 # troop has room for the new enemies (take_request), as the rules in C# decide (topics coop.*, which
 # the DLL and the battle server's core answer). At the host's next command phase the new
 # enemies join its troop and the new players its party, its guests hear of both, and the new

@@ -2,6 +2,7 @@
 #  catchup_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Dropped the stand-in of the base form, which no screen builds
 #      Paulinchen  2026-11-05: Answered the DLL's catch-up topics with the fixed values each test sets instead of from the catch-up engine of engine.rb, and dropped the tables of rows
 #                            - Gave the items and skills an icon, which the Unlocks page reads
 #                            - Answered the rewards tables with fixed fields instead of a stand-in of their constants
@@ -133,19 +134,6 @@ module MGQ_MpWorld
   def self.raid?; $raid; end
   # Answers the companion sharing $sharing names, off outside a Raid World.
   def self.companion_sharing; $raid ? $sharing : :off; end
-  # The world screen's form, which the screen of choices draws with, stood in by its fields alone.
-  class Form
-    # Stands in for a field of the form.
-    Field = Struct.new(:key, :kind, :label, :row, :hint, :options) do
-      # Answers the field's choices, none when it names none.
-      def choices; options[:choices] || []; end
-    end
-    attr_reader :title, :fields
-    # Takes the form's title, fields and values.
-    def initialize(title, fields, values); @title = title; @fields = fields; @values = values; end
-    # Answers a field's value.
-    def [](key); @values[key]; end
-  end
 end
 MGQ_MpWorld.world = MGQ_MpWorld::World.new("w1")
 # Stands in for the base of menu screens.

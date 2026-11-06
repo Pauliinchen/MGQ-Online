@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-06: Kept a refusal of this version on the world screen whose question could not open, asking again once none of the screen's questions is open
+#                            - Kept the form's fields alone of the base form, which no screen builds
 #                            - Asked the Mod Framework for the update wherever the relay turns this version away, naming the version the DLL runs
 #                            - Named the colors of featured and Raid Worlds by MGQ Online's own color names, and read the bounds of a number's field
 #      Paulinchen  2026-11-05: Took a difficulty the relay pushed as the number the DLL reads
@@ -1719,9 +1720,7 @@ module MGQ_MpWorld
     end
   end
 
-  # A form filled in on this game alone: its fields, laid out in rows, and what is filled in, which
-  # the story's choices and the bug report keep themselves. The world screen's forms are WorldForms,
-  # which the DLL holds.
+  # The fields of the world screen's forms, laid out in rows, which a WorldForm reads from the DLL.
   class Form
     # A field of a form: a text box (:text, :password, :number or :id), a box of several lines (:area), a checkbox (:check), a save
     # to choose (:save), the mods picked in the mod picker (:mods), a switch between several outcomes (:switch) or a button
@@ -1862,114 +1861,12 @@ module MGQ_MpWorld
         [@key, @kind, @row, @side].hash
       end
     end
-
-    # What the form is called.
-    attr_reader :title
-
-    # Lists the fields that are part of the form now, in the order the cursor visits them.
-    #
-    # @return [Array<Field>] The fields.
-    def fields
-      @fields.select { |field| field.shows.nil? || field.shows.call(self) }
-    end
-
-    # Creates a form.
-    #
-    # @param title [String] What the form is called.
-    # @param fields [Array<Field>] The fields.
-    # @param values [Hash] What each field holds at first, by key.
-    def initialize(title, fields, values)
-      @title = title
-      @fields = fields
-      @values = values
-    end
-
-    # Reads what a field holds.
-    #
-    # @param key [Symbol] The field's key.
-    # @return [Object] The value.
-    def [](key)
-      @values[key]
-    end
-
-    # Sets what a field holds.
-    #
-    # @param key [Symbol] The field's key.
-    # @param value [Object] The value.
-    def []=(key, value)
-      @values[key] = value
-    end
-
-    # Tells whether a field can be used, which one whose checkbox is not ticked, or whose block says
-    # no, cannot.
-    #
-    # @param field [Field] The field.
-    # @return [Boolean] Whether it can.
-    def enabled?(field)
-      return true if field.needs.nil?
-      return field.needs.call(self) ? true : false if field.needs.respond_to?(:call)
-
-      @values[field.needs] == true
-    end
-
-    # Moves a switch to its next or its previous outcome, round.
-    #
-    # @param field [Field] The switch.
-    # @param step [Integer] 1 for the next outcome, -1 for the previous.
-    # @return [Integer] The outcome's index now.
-    def turn(field, step)
-      count = [field.choices.size, 1].max
-      @values[field.key] = (@values[field.key].to_i + step) % count
-    end
-
-    # Ticks a checkbox, or unticks it.
-    #
-    # @param key [Symbol] The checkbox's key.
-    # @return [Boolean] Whether it is ticked now.
-    def tick(key)
-      @values[key] = !@values[key]
-    end
-
-    # Checks what a text box holds, and tidies it.
-    #
-    # @param field [Field] The text box.
-    # @param text [String] What it holds.
-    # @return [Array] The tidied text, and why it is not accepted, nil when it is.
-    def check(field, text)
-      # A password keeps its spaces, since the others type it exactly, and may be empty.
-      return [text, nil] if field.kind == :password
-
-      tidy = text.strip
-      tidy.empty? && !field.may_be_empty? ? [text, field.empty_text] : [tidy, nil]
-    end
-
-    # Tells whether Enter in the form's text box sends it, which a form of this game alone leaves to
-    # its button.
-    #
-    # @return [Boolean] false.
-    def sends_on_enter?
-      false
-    end
-
-    # Finds the first field that keeps the form from being sent.
-    #
-    # @return [Array, nil] The field's index and why, nil when the form can be sent.
-    def problem
-      fields.each_with_index do |field, index|
-        next unless enabled?(field)
-
-        error = field.typed? ? check(field, @values[field.key])[1] : nil
-        return [index, error] if error
-      end
-      nil
-    end
   end
 
   # A form of the world screen whose fields, rules and values the DLL holds (topics form.*,
-  # WorldForms in MGQOnline.Game): it draws as a Form does, keeps a copy of what the DLL showed last,
-  # and hands over each change the player makes. Its page of the squad rules (limits) shares its
-  # values.
-  class WorldForm < Form
+  # WorldForms in MGQOnline.Game): it keeps a copy of what the DLL showed last and hands over each
+  # change the player makes. Its page of the squad rules (limits) shares its values.
+  class WorldForm
     # The topic that opens a form in a slot.
     OPEN_TOPIC = "form.open"
 
@@ -2109,7 +2006,7 @@ module MGQ_MpWorld
 
     # Lists the fields that are part of the page now, in the order the cursor visits them.
     #
-    # @return [Array<Field>] The fields.
+    # @return [Array<Form::Field>] The fields.
     def fields
       fresh
       @fields
@@ -2140,7 +2037,7 @@ module MGQ_MpWorld
 
     # Tells whether a field can be used.
     #
-    # @param field [Field] The field.
+    # @param field [Form::Field] The field.
     # @return [Boolean] Whether it can.
     def enabled?(field)
       fresh
@@ -2149,7 +2046,7 @@ module MGQ_MpWorld
 
     # Moves a switch to its next or its previous outcome, round, which other fields may follow.
     #
-    # @param field [Field] The switch.
+    # @param field [Form::Field] The switch.
     # @param step [Integer] 1 for the next outcome, -1 for the previous.
     # @return [Integer] The outcome's index now.
     def turn(field, step)
@@ -2168,7 +2065,7 @@ module MGQ_MpWorld
 
     # Checks what a text box holds, and tidies it.
     #
-    # @param field [Field] The text box.
+    # @param field [Form::Field] The text box.
     # @param text [String] What it holds.
     # @return [Array] The tidied text, and why it is not accepted, nil when it is.
     def check(field, text)
@@ -2315,9 +2212,9 @@ module MGQ_MpWorld
     # Makes the field a view describes.
     #
     # @param about [Hash] The field, as the view tells it.
-    # @return [Field] The field.
+    # @return [Form::Field] The field.
     def field_of(about)
-      Field.new(about["key"].to_sym, about["kind"].to_sym, about["label"].to_s, about["row"].to_i, about["hint"].to_s,
+      Form::Field.new(about["key"].to_sym, about["kind"].to_sym, about["label"].to_s, about["row"].to_i, about["hint"].to_s,
                 :side => about["side"] && about["side"].to_sym, :max_chars => about["max_chars"], :allowed => ALLOWED[about["allowed"]],
                 :optional => about["optional"] == true, :group => about["group"], :lines => about["lines"], :choices => Array(about["choices"]),
                 :label_width => about["label_width"], :min => about["min"], :max => about["max"])

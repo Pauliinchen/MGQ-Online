@@ -2,6 +2,7 @@
 #  world_story_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Dropped the stand-in of the base form, which no screen builds
 #      Paulinchen  2026-11-05: Answered the runs handed to the replay with fixed values per case
 #                            - Answered the rewards tables with fixed fields instead of a stand-in of their constants
 #                            - Took the recorded Classic party's table for the world's story mapping
@@ -167,23 +168,6 @@ module MGQ_MpWorld
   # Answers whether the open world is a Raid World, from $raid.
   def self.raid?; $raid; end
 
-  # The world screen's form, which the screen of choices draws with, stood in by its fields alone.
-  class Form
-    # A field of the form.
-    Field = Struct.new(:key, :kind, :label, :row, :hint, :options) do
-      # The outcomes of a switch, none for other fields.
-      def choices; options[:choices] || []; end
-    end
-
-    # The form's title and fields.
-    attr_reader :title, :fields
-
-    # Makes a form with its title, fields and values.
-    def initialize(title, fields, values); @title = title; @fields = fields; @values = values; end
-
-    # Gives a field's value.
-    def [](key); @values[key]; end
-  end
 end
 MGQ_MpWorld.world = MGQ_MpWorld::World.new("w1")
 

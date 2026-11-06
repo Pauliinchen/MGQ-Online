@@ -2,6 +2,7 @@
 #  raid_freeze_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Answered whether a page runs nothing as the DLL's events database and dropped the check of a Hades hall, which the DLL leaves out of the sites
 #      Paulinchen  2026-11-05: Answered the sites of an earlier release's save with fixed values and checked the texts handed
 #                            - Dropped the checks of the write journal against its golden cases, which StoryJournalTests walks
 #                            - Answered why the world's list calls a fight over with fixed values per case
@@ -586,13 +587,8 @@ end
 # Stands in for the DLL's events database: the freeze's tables of a few fights, which the checks
 # change and then have the engine read anew (reread_tables).
 module FreezeTables
-  # The Hades halls.
-  EXCLUDED_MAPS = [154, 576]
-  # A preamble's commands.
-  PREAMBLE_CODES = [132, 133, 283]
   # The fights' sites: key, index, indent, preamble's start and whether on a cutscene map.
   SITES = {
-    71 => [[["map", 576, 1, 1], 0, 0, 0, false]],
     607 => [[["map", 138, 16, 1], 1, 0, 1, false]],
     807 => [[["ce", 347], 11, 2, 9, false]],
     868 => [[["map", 138, 13, 1], 7, 1, 4, false]],
@@ -659,6 +655,8 @@ end
 module MGQ_MpCoopEvents
   # Runs a block as story, counting it.
   def self.as_story; $as_story += 1; yield; end
+  # Answers what the DLL's events database finds in a page: it runs nothing when it holds only its end.
+  def self.page_flags(event, place); { "runs_nothing" => event.mgq_mp_pages[place].list.all? { |command| command.code == 0 } }; end
 end
 # Stands in for the co-op scope, the story's teller being $teller.
 module MGQ_MpCoop; module Scope; def self.teller; $teller; end; end; end
@@ -681,7 +679,7 @@ freeze = MGQ_MpRaidFreeze
 $world_bridge.answer("raid.sites") do |request|
   $sites_asked = request["troops"]
   { "sites" => FreezeTables::SITES, "callers" => FreezeTables::CALLERS, "alternatives" => {}, "scenes" => FreezeTables::SCENES.to_a,
-    "scene_maps" => FreezeTables::SCENE_MAPS, "excluded_maps" => FreezeTables::EXCLUDED_MAPS, "preamble_codes" => FreezeTables::PREAMBLE_CODES,
+    "scene_maps" => FreezeTables::SCENE_MAPS,
     "defeat" => { "events" => FreezeTables::DEFEAT_EVENTS, "switches" => FreezeTables::DEFEAT_SWITCHES, "variables" => FreezeTables::DEFEAT_VARIABLES } }
 end
 
@@ -713,8 +711,6 @@ SONYA_PAGE = RPG::EventPage.new([
 SONYA_LATER = RPG::EventPage.new([c(900, 0, :page2), c(0, 0)], lambda { $game_variables[1075] >= 16 })
 # An earlier phase's page.
 PHASE_PAGE = RPG::EventPage.new([c(122, 0, 1020, 1020, 0, 0, 5), c(301, 0, 0, 607, false, false), c(0, 0)], nil)
-# The Hades hall's rematch page.
-HADES_PAGE = RPG::EventPage.new([c(301, 0, 0, 71, false, false), c(0, 0)], nil)
 # The page of a fight inside a choice that calls a common event, which calls another.
 SPIDER_PAGE = RPG::EventPage.new([
   c(102, 0, ["A", "B"], 1), c(402, 0, 0, "A"), c(117, 1, 340), c(900, 1, :after_ce), c(0, 1),
@@ -725,13 +721,12 @@ CHAOS_PAGE = RPG::EventPage.new([c(132, 0), c(121, 0, 22, 22, 0), c(301, 0, 0, 8
 # The same on the other side's cutscene map.
 CHAOS_ILIAS_PAGE = RPG::EventPage.new([c(132, 0), c(121, 0, 22, 22, 0), c(301, 0, 0, 870, false, false), c(0, 0)], nil)
 # The maps' events by map: Sonya Mazda's field with a villager, an invisible event and an earlier
-# phase; Hades; the Spider Princess; the Hades rematch hall; Sonya Chaos's two cutscene maps.
+# phase; Hades; the Spider Princess; Sonya Chaos's two cutscene maps.
 $maps = {
   138 => [RPG::Event.new(13, 32, 8, "$sonya", [SONYA_PAGE, SONYA_LATER]), RPG::Event.new(14, 28, 9, "villager", [RPG::EventPage.new([c(0, 0)], nil)]),
           RPG::Event.new(15, 20, 20, "", [RPG::EventPage.new([c(0, 0)], nil)]), RPG::Event.new(16, 10, 10, "alma", [PHASE_PAGE])],
   154 => [],
   214 => [RPG::Event.new(42, 5, 5, "$spider", [SPIDER_PAGE])],
-  576 => [RPG::Event.new(1, 3, 3, "harpy", [HADES_PAGE])],
   728 => [RPG::Event.new(12, 0, 0, "$sonya_chaos", [CHAOS_PAGE])],
   749 => [RPG::Event.new(13, 1, 0, "$sonya_chaos", [CHAOS_ILIAS_PAGE])],
 }
@@ -1065,10 +1060,6 @@ fight_event(13)
 FreezeTables::SITES[868] = kept
 reread_tables
 check("nor one whose site the data lacks", [freeze.record_for(868), $log.grep(/its site \["map", 138, 13, 1\] is not in the data/).size], [nil, 1])
-reset
-$game_map.setup(576)
-fight_event(1)
-check("nor one on a Hades hall", [freeze.record_for(71), $log.grep(/map 576 is a Hades hall/).size], [nil, 1])
 reset
 $game_variables[1075] = 14
 $game_switches[4] = true

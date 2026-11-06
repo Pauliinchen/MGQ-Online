@@ -2,6 +2,7 @@
 #  battles_raid_pool.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Dropped hp_of, a copy of the DLL's rule, and rounded a scaled enemy's HP up in place
 #      Paulinchen  2026-11-05: Left the Hades rematch's check to the DLL's rules, which a lost battle's defeat asks too
 #                            - Left the share a pool gained back to the DLL's ledger, which alone counts it
 #                            - Asked the DLL which battles fight a pool and why not, whether a story beat a boss, which pools a troop has and whether they are empty, in place of deciding here
@@ -213,7 +214,7 @@ module MGQ_MpRaidPool
       shares = fresh.map { |enemy| enemy.mhp.to_i > 0 ? enemy.hp.to_f / enemy.mhp : 1.0 }
       @enemies = {}
       enemies.each { |enemy| @enemies[enemy.__id__] = enemy }
-      fresh.each_with_index { |enemy, index| enemy.hp = MGQ_MpRaidPool.hp_of(shares[index], enemy.mhp) unless enemy.dead? }
+      fresh.each_with_index { |enemy, index| enemy.hp = (shares[index] * enemy.mhp).ceil unless enemy.dead? }
     end
 
     # Keeps the factors of a tier for the battle.
@@ -312,17 +313,6 @@ module MGQ_MpRaidPool
   # @return [Hash{String => Pool}] The pools by their key, see Pool.
   def self.pools
     @pools.dup
-  end
-
-  # Finds an enemy's HP for a share of its max HP: at least 1 while any is left.
-  #
-  # @param left [Float] The share.
-  # @param max [Integer] Its max HP.
-  # @return [Integer] The HP.
-  def self.hp_of(left, max)
-    return 0 unless left > 0
-
-    [(left * max).ceil, 1].max
   end
 
   # Runs the map's interpreter, noting that its commands run, which are the story's.

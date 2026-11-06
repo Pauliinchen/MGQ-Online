@@ -2,6 +2,7 @@
 //  EventTableTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Dropped the excluded maps and the preamble's commands, which the scripts no longer read
 //      Paulinchen  2026-11-05: Named the frozen fights' sites as plain values, the cutscenes' as rows
 //      Paulinchen  2026-11-01: Dropped the topics of troops' members and whether a file exists, which no script calls
 //      Paulinchen  2026-10-28: Handed the frozen fights the excluded maps and the preamble's commands with the sites
@@ -53,9 +54,7 @@ internal static class EventTableTopics
     /// field event that leads into it], the side switch the first one needs or nil, [map, x, y,
     /// direction] of the transfer into it]] of each cutscene map's site), <c>scene_maps</c> (every cutscene map) and <c>defeat</c> (the post-defeat processing's
     /// <c>events</c>, <c>switches</c> and <c>variables</c>); every table empty while the database may not be
-    /// read for the maps, common events or troops. The rules come with it, read or not:
-    /// <c>excluded_maps</c> (maps whose boss battles never freeze) and <c>preamble_codes</c> (the commands
-    /// of a battle's preamble), as <see cref="RaidRules"/> holds them.
+    /// read for the maps, common events or troops.
     /// </summary>
     public const string Sites = "raid.sites";
 
@@ -138,8 +137,6 @@ internal static class EventTableTopics
         {
             { "sites", sites }, { "callers", callers }, { "alternatives", alternatives }, { "scenes", scenes },
             { "scene_maps", new RubyArray() }, { "defeat", new RubyHash { { "events", new RubyArray() }, { "switches", new RubyArray() }, { "variables", new RubyArray() } } },
-            { "excluded_maps", new RubyArray(RaidRules.ExcludedMaps.Order().Select(map => (RubyValue)map)) },
-            { "preamble_codes", new RubyArray(RaidRules.PreambleCodes.Order().Select(code => (RubyValue)code)) },
         };
         if (!events.Reads(SiteParts))
         {

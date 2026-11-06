@@ -2,6 +2,7 @@
 #  coop_gather.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Logged a call during a PvP battle once, without the frame in its key
 #      Paulinchen  2026-11-05: Logged only what a forget dropped, never a false entry
 #                            - Told and read whether a telling moves the world's story on as true or false, which the DLL writes as 1 or 0
 #                            - Asked the DLL's one decision whether a telling moves the world's story on, which decides whom it takes along
@@ -489,7 +490,7 @@ module MGQ_MpCoopGather
     answer = MGQ_Multiplayer::Bridge.call(CALLED_TOPIC, "name" => peer.state["name"].to_s, "id" => peer.state["id"].to_s, "place" => place, "near" => near, "pvp" => pvp)
     wake
     return log("stays: the player stands near #{peer.state['name']} already") if near
-    return log_once([:duel_call, MGQ_Multiplayer::Bridge.frame_number / 1800], "a call came during a PvP battle, which keeps it out") if pvp
+    return log_once(:duel_call, "a call came during a PvP battle, which keeps it out") if pvp
 
     MGQ_MpOverworldSync.notice(answer["notice"]) if answer && answer["notice"]
     log("called by #{peer.state['name']} to map #{place[0]} #{place[1]},#{place[2]}")

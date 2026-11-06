@@ -2,6 +2,7 @@
 #  story_keys.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Logged a full batch once, without the frame in its key
 #      Paulinchen  2026-11-05: Handed the DLL every key as [kind, key], every value as itself and every site as [kind, ...], and looked self switches up in the rows of rules it hands, so only the DLL writes and reads the tracks' texts
 #                            - Read the story markers from story_ids.rbx
 #                            - Noted the found items a run gave or used up, but none a story reset takes, so a run that changed no shared key is handed over too
@@ -497,7 +498,7 @@ module MGQ_MpStoryKeys
   # @param site [Array] Where it came from, see site_of.
   def self.add(kind, key, value, site)
     if @batch.size >= MAX_BATCH
-      return log_once([:batch_full, MGQ_Multiplayer::Bridge.frame_number / 600], "dropped writes past #{MAX_BATCH} in one frame")
+      return log_once(:batch_full, "dropped writes past #{MAX_BATCH} in one frame")
     end
 
     plain = plain_of(kind, value)

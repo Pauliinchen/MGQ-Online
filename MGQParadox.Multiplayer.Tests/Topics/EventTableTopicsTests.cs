@@ -2,6 +2,7 @@
 //  EventTableTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Dropped the checks of the excluded maps and the preamble's commands, which the sites no longer come with
 //      Paulinchen  2026-11-05: Expected the frozen fights' sites as plain values
 //      Paulinchen  2026-11-01: Dropped the checks of troops' members and whether a file exists, whose topics are gone
 //      Paulinchen  2026-10-28: Checked the rules the sites come with
@@ -85,8 +86,6 @@ public sealed class EventTableTopicsTests
         Assert.Equal(new RubyArray { new RubyArray { new RubyArray { "map", 1, 1, 1 }, 0, 0, 0, false, 0 } }, answer["sites"].AsHash()[12]);
         Assert.Equal([new RubyArray { "ce", 40 }], answer["sites"].AsHash()[13].AsArray().Select(site => site.AsArray()[0]));
         Assert.Equal(new RubyHash { { 40, new RubyArray { new RubyArray { "map", 1, 3, 1 } } } }, answer["callers"]);
-        Assert.Equal(new RubyArray { 154, 576 }, answer["excluded_maps"]);
-        Assert.Equal(new RubyArray { 132, 133, 283 }, answer["preamble_codes"]);
     }
 
     /// <summary>
