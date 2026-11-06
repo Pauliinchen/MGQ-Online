@@ -2,7 +2,8 @@
 //  DllTopics.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-06: Posted the relay's refusals of this version as the event update.needed
+//      Paulinchen  2026-11-06: Told the largest free block of the address space and the DLL's heap
+//                            - Posted the relay's refusals of this version as the event update.needed
 //                            - Told the version this DLL runs with the release to play
 //      Paulinchen  2026-11-05: Created
 //
@@ -49,8 +50,8 @@ internal static class DllTopics
 
     /// <summary>
     /// Tells the memory and the handles the game uses now: nothing in; <c>line</c> (the description
-    /// for the scripts' log) and <c>free_mb</c> (the address space left, nil when Windows cannot
-    /// tell) out.
+    /// for the scripts' log), <c>free_mb</c> (the address space left), <c>largest_free_mb</c> (its
+    /// largest free block), both nil when Windows cannot tell, and <c>heap_mb</c> (this DLL's heap) out.
     /// </summary>
     public const string Memory = "dll.memory";
 
@@ -87,6 +88,8 @@ internal static class DllTopics
         {
             { "line", ProcessUsage.Describe() },
             { "free_mb", ProcessUsage.FreeAddressSpace() is { } free ? free : RubyNil.Value },
+            { "largest_free_mb", ProcessUsage.LargestFreeBlock() is { } largest ? largest : RubyNil.Value },
+            { "heap_mb", ProcessUsage.DllHeap() },
         });
     }
 }

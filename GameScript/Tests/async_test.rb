@@ -2,6 +2,10 @@
 #  async_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-09: Checked that the next menu shows the live map kept while the player was on the map, until a map is set up
+#                            - Checked that a live map is neither built nor kept while little address space is free
+#                            - Checked that the map frees the live map it keeps once free address space falls short
+#      Paulinchen  2026-11-06: Checked the live map against the largest free block of the address space
 #      Paulinchen  2026-11-05: Stood in for the DLL's topic of the memory the game uses
 #      Paulinchen  2026-10-24: Checked the live map handed from menu to menu and kept out while address space is short
 #      Paulinchen  2026-10-23: Checked that the live map shows none of the HUD the map shows
@@ -28,8 +32,8 @@ class Bitmap
   def fill_rect(*); end
   def dispose; @disposed = true; end
 end
-# Stands in for a viewport, of which only the depth is read.
-class Viewport; attr_accessor :z; def initialize; @z = 0; end; end
+# Stands in for a viewport, of which only the depth and whether it shows are read.
+class Viewport; attr_accessor :z, :visible; def initialize; @z = 0; @visible = true; end; end
 # Stands in for a sprite, telling whether it shows and when it is freed.
 class Sprite
   attr_accessor :bitmap, :z, :visible
@@ -104,8 +108,10 @@ end
 # Stands in for the map's sprites, counting their updates.
 class Spriteset_Map
   attr_reader :viewport1, :viewport2, :viewport3, :updates
-  def initialize; create_viewports; @updates = 0; end
+  def initialize; create_viewports; create_characters; @updates = 0; end
   def create_viewports; @viewport1, @viewport2, @viewport3 = Viewport.new, Viewport.new, Viewport.new; end
+  def create_characters; end
+  def refresh_characters; create_characters; end
   def update; @updates += 1; end
   def dispose; @disposed = true; end
   def disposed?; @disposed; end
@@ -113,8 +119,10 @@ end
 
 # Stands in for the map, keeping each update's main flag and running its parallel event.
 class Game_Map
-  attr_accessor :need_refresh, :need_refresh_autoplay_field, :map_id, :updates, :refreshed_with_music, :parallel
-  def initialize; @map_id = 5; @updates = []; @need_refresh = false; end
+  attr_accessor :need_refresh, :need_refresh_autoplay_field, :map_id, :updates, :refreshed_with_music, :parallel, :events
+  def initialize; @map_id = 5; @updates = []; @need_refresh = false; @events = {}; end
+  def setup(map_id); @map_id = map_id; end
+  def vehicles; []; end
   def update(main = false)
     @updates << main
     @refreshed_with_music = @need_refresh_autoplay_field if @need_refresh
@@ -173,6 +181,8 @@ $basic = 0
 $open = true
 $game_map = Game_Map.new
 $game_timer = Game_Timer.new
+# Stands in for the player, of whom only the followers are read.
+$game_player = Struct.new(:followers).new([])
 map_scene = Scene_Map.new
 SceneManager.instance_variable_set(:@stack, [])
 
@@ -239,7 +249,16 @@ menu.update_basic
 check("the live map moves every frame", live.updates, 1)
 SceneManager.scene = map_scene
 menu.dispose_background
-check("closing for the map frees the live map and the picture", [live.disposed?, menu.background_sprite.disposed?, menu.instance_variable_get(:@mgq_mp_live_map)], [true, true, nil])
+check("closing for the map hides the live map and frees the picture", [live.disposed?, live.viewport1.visible, menu.background_sprite.disposed?], [nil, false, true])
+map_scene.post_start
+SceneManager.scene = menu
+menu.create_background
+check("the next menu from the map shows the same live map again, at the map's state now",
+      [menu.instance_variable_get(:@mgq_mp_live_map).equal?(live), live.viewport1.visible, live.updates], [true, true, 2])
+SceneManager.scene = map_scene
+menu.dispose_background
+$game_map.setup(6)
+check("a map set up frees the live map kept for the next menu", live.disposed?, true)
 
 status = Scene_Menu.new
 SceneManager.scene = status
@@ -259,16 +278,49 @@ status.dispose_background
 SceneManager.scene.post_start
 check("a live map the next screen leaves is freed once it started", left.disposed?, true)
 
+# Tells the DLL's reading of the memory with this much address space free and this largest free block.
+#
+# @param free [Integer] The free megabytes.
+# @param largest [Integer] The largest free block's megabytes.
+# @return [Hash] The reading.
+def memory(free, largest)
+  { "line" => "address space #{2047 - free} of 2047 MB", "free_mb" => free, "largest_free_mb" => largest }
+end
 SceneManager.scene = menu
-$memory_usage = { "line" => "private 1022 MB, address space 1418 of 2047 MB, 204 GDI and 25 USER handles", "free_mb" => 629 }
-check("little free address space keeps the picture (issue 60)", logged_lines { menu.create_background },
-      ["async: kept the picture of the map behind Scene_Menu: 629 MB of address space free, a live map needs 768"])
+$memory_usage = memory(1200, 40)
+check("a small largest free block keeps the picture, however much space is free", logged_lines { menu.create_background },
+      ["async: kept the picture of the map behind Scene_Menu: the largest free block of the address space is 40 MB, a live map needs 64"])
+$memory_usage = memory(600, 140)
+check("little free address space keeps the picture, however large its largest block (issue 60)", logged_lines { menu.create_background },
+      ["async: kept the picture of the map behind Scene_Menu: 600 MB of address space is free, a live map needs 768"])
 check("and builds no live map", [menu.instance_variable_get(:@mgq_mp_live_map), menu.background_sprite.visible], [nil, true])
-$memory_usage = { "line" => "private 1022 MB, address space 1418 of 4095 MB, 204 GDI and 25 USER handles", "free_mb" => 2677 }
+$memory_usage = memory(1200, 140)
 menu.create_background
-check("a large address space builds it", menu.instance_variable_get(:@mgq_mp_live_map).is_a?(Spriteset_MpLiveMap), true)
-SceneManager.scene = map_scene
+shown = menu.instance_variable_get(:@mgq_mp_live_map)
+check("enough free address space builds it", shown.is_a?(Spriteset_MpLiveMap), true)
+next_menu = Scene_Menu.new
+SceneManager.scene = next_menu
 menu.dispose_background
+$memory_usage = memory(600, 140)
+next_menu.create_background
+check("once space is tight, the next menu frees the live map the menu before left and shows its picture",
+      [shown.disposed?, next_menu.instance_variable_get(:@mgq_mp_live_map), next_menu.background_sprite.visible], [true, nil, true])
+$memory_usage = memory(1200, 140)
+next_menu.create_background
+shown = next_menu.instance_variable_get(:@mgq_mp_live_map)
+SceneManager.scene = map_scene
+$memory_usage = memory(600, 140)
+check("closing for the map while space is tight frees the live map instead of keeping it", logged_lines { next_menu.dispose_background },
+      ["async: freed the live map instead of keeping it for the next menu: 600 MB of address space is free, a live map needs 768"])
+check("so nothing waits for the next menu", [shown.disposed?, MGQ_MpAsync.instance_variable_get(:@kept_live_map)], [true, nil])
+$memory_usage = memory(1200, 140)
+next_menu.create_background
+kept = next_menu.instance_variable_get(:@mgq_mp_live_map)
+next_menu.dispose_background
+$memory_usage = memory(600, 140)
+dropped = logged_lines { MGQ_MpAsync::KEPT_CHECK_FRAMES.times { map_scene.update_basic } }
+check("the map frees the live map it keeps once space falls short",
+      [dropped.last, kept.disposed?], ["async: freed the live map kept for the next menu: 600 MB of address space is free, a live map needs 768", true])
 $memory_usage = nil
 menu.create_background
 broken = menu.instance_variable_get(:@mgq_mp_live_map)

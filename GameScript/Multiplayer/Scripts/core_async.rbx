@@ -2,6 +2,10 @@
 #  core_async.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-09: Kept the live map hidden while the player is on the map, for the next menu to show again
+#                            - Weighed a live map by the free address space too, keeping none for the next menu while it is short
+#                            - Freed the live map kept for the next menu once the free address space falls short
+#      Paulinchen  2026-11-06: Weighed a live map by the largest free block of the address space, freeing the one the menu before left when it is tight
 #      Paulinchen  2026-11-05: Read the memory the game uses and the free address space through a topic
 #      Paulinchen  2026-10-24: Handed the live map from one menu to the next
 #                            - Kept the picture of the map while little address space is free
@@ -50,18 +54,32 @@ module MGQ_MpAsync
   # The topic that tells the memory and the handles the game uses.
   MEMORY_USAGE_TOPIC = "dll.memory"
 
-  # Megabytes of free address space below which a menu keeps its picture of the map instead of
-  # building a live map.
+  # Megabytes of the largest free block of the address space below which a menu keeps its picture
+  # of the map instead of a live map, and frees the live map the menu before left.
+  #
+  # The game makes pictures of up to 16 MB in one block, larger ones another way, so this keeps room
+  # for a few of them.
+  LIVE_MAP_BLOCK_MB = 64
+
+  # Megabytes of free address space below which a menu keeps its picture of the map instead of a
+  # live map, and the map frees the live map it keeps for the next menu.
   #
   # A game of 2 GB address space closed in the game's own code as a menu built a live map with
   # about 600 MB of it left (issue 60).
   LIVE_MAP_FREE_MB = 768
+
+  # Frames between two readings of the free address space while the map keeps a live map hidden.
+  KEPT_CHECK_FRAMES = 180
 
   # Whether tick runs the map now, the only time event commands are held.
   @ticking = false
 
   # The live map a menu left to the menu after it, nil while none waits.
   @spare_live_map = nil
+
+  # The live map a menu left hidden for the next menu while the player is back on the map, nil while
+  # none waits.
+  @kept_live_map = nil
 
   extend MGQ_MpLog
 
@@ -75,10 +93,17 @@ module MGQ_MpAsync
   # @return [Boolean] Whether it runs.
   def self.behind?(scene)
     return false if scene.is_a?(Scene_Map) || one_of?(scene, LEAVING_SCENES)
-    return false unless defined?(MGQ_MpWorld) && MGQ_MpWorld.open?
+    return false unless world_open?
     return false unless $game_map && $game_map.map_id > 0
 
     map_waiting?
+  end
+
+  # Reports whether a world is open.
+  #
+  # @return [Boolean] Whether one is.
+  def self.world_open?
+    defined?(MGQ_MpWorld) && MGQ_MpWorld.open? ? true : false
   end
 
   # Reports whether a screen is one of the named screens or of their subclasses. A game without one
@@ -106,6 +131,8 @@ module MGQ_MpAsync
   #
   # @param scene [Scene_Base] The screen in front.
   def self.tick(scene)
+    drop_kept_live_map("the world closed") if @kept_live_map && !world_open?
+    check_kept_live_map
     behind = behind?(scene)
     note_behind(behind ? scene.class.name : nil)
     return unless behind
@@ -183,7 +210,7 @@ module MGQ_MpAsync
   # @param to [Scene_Base, nil] The screen next, nil when the game ends.
   # @return [Boolean] Whether it switches at once.
   def self.instant_switch?(from, to)
-    return false unless defined?(MGQ_MpWorld) && MGQ_MpWorld.open?
+    return false unless world_open?
     return false unless [from, to].all? { |scene| scene.is_a?(Scene_Map) || scene.is_a?(Scene_MenuBase) }
 
     to.is_a?(Scene_Map) || map_waiting?
@@ -240,24 +267,27 @@ module MGQ_MpAsync
   end
 
   # Gives a menu the live map in place of its picture of the map, for menus whose background is that
-  # picture while the world runs: the live map the menu before left, or a new one while the game
-  # has the address space for it. Menus with a background of their own keep it, and so do the menus
-  # of PICTURE_SCENES.
+  # picture while the world runs: the live map the menu before left, the one kept while the player
+  # was back on the map, or a new one, while the address space has LIVE_MAP_FREE_MB free and a free
+  # block of LIVE_MAP_BLOCK_MB. Menus with a background of their own keep it, and so do the menus of
+  # PICTURE_SCENES.
   #
   # @param scene [Scene_MenuBase] The menu.
   # @param background [Sprite, nil] The menu's background.
   # @return [Spriteset_MpLiveMap, nil] The live map, nil where the menu keeps its background.
   def self.live_map_for(scene, background)
-    spare = @spare_live_map
-    @spare_live_map = nil
-    unless live_map_wanted?(scene, background) && (spare || room_for_live_map?(scene))
+    kept = @kept_live_map
+    spare = @spare_live_map || kept
+    @spare_live_map = @kept_live_map = nil
+    unless live_map_wanted?(scene, background) && room_for_live_map?(scene)
       dispose_live_map(spare)
       return nil
     end
 
     live_map = spare || Spriteset_MpLiveMap.new
+    live_map.come_back if kept
     background.visible = false
-    log("showed the live map behind #{scene.class.name} in place of its picture of the map#{spare ? ', the one the menu before showed' : ''}")
+    log("showed the live map behind #{scene.class.name} in place of its picture of the map#{kept ? ', the one kept while the player was on the map' : spare ? ', the one the menu before showed' : ''}")
     live_map
   rescue => e
     log("live map failed: #{e.class}: #{e.message}")
@@ -277,42 +307,102 @@ module MGQ_MpAsync
     behind?(scene)
   end
 
-  # Reports whether the game has the address space for a new live map, logging when it has not.
+  # Reports whether the game has the room for a live map, logging when it has not.
   #
   # @param scene [Scene_MenuBase] The menu the live map would show behind.
   # @return [Boolean] Whether it has, true when the DLL cannot tell.
   def self.room_for_live_map?(scene)
-    usage = MGQ_Multiplayer::Bridge.call(MEMORY_USAGE_TOPIC)
-    free = usage.is_a?(Hash) ? usage["free_mb"] : nil
-    return true if !free.is_a?(Integer) || free >= LIVE_MAP_FREE_MB
+    short = memory_short
+    return true unless short
 
-    log("kept the picture of the map behind #{scene.class.name}: #{free} MB of address space free, a live map needs #{LIVE_MAP_FREE_MB}")
+    log("kept the picture of the map behind #{scene.class.name}: #{short}")
     false
+  end
+
+  # Tells what memory a live map lacks now: LIVE_MAP_FREE_MB of free address space, or a free block
+  # of LIVE_MAP_BLOCK_MB.
+  #
+  # @return [String, nil] What is short, for the log; nil while nothing is or the DLL cannot tell.
+  def self.memory_short
+    usage = MGQ_Multiplayer::Bridge.call(MEMORY_USAGE_TOPIC)
+    return nil unless usage.is_a?(Hash)
+
+    free = usage["free_mb"]
+    largest = usage["largest_free_mb"]
+    return "#{free} MB of address space is free, a live map needs #{LIVE_MAP_FREE_MB}" if free.is_a?(Integer) && free < LIVE_MAP_FREE_MB
+    return "the largest free block of the address space is #{largest} MB, a live map needs #{LIVE_MAP_BLOCK_MB}" if largest.is_a?(Integer) && largest < LIVE_MAP_BLOCK_MB
+
+    nil
   rescue => e
-    log("asking the DLL for the free address space failed: #{e.class}: #{e.message}")
-    true
+    log_once(:memory_short, "asking the DLL for the free address space failed: #{e.class}: #{e.message}")
+    nil
   end
 
   # Takes a menu's live map off it as the menu closes: the next screen takes it over when it is a
-  # menu that may show it, and every other frees it.
+  # menu that may show it, the map of an open world keeps it hidden for the next menu while the game
+  # has the memory for it, and every other screen frees it.
   #
   # @param live_map [Spriteset_MpLiveMap, nil] The closing menu's live map.
   def self.leave_live_map(live_map)
     return unless live_map
 
     drop_spare_live_map
+    drop_kept_live_map
     following = SceneManager.scene
     if following.is_a?(Scene_MenuBase) && !one_of?(following, PICTURE_SCENES)
       @spare_live_map = live_map
+    elsif following.is_a?(Scene_Map) && world_open? && !(short = memory_short)
+      live_map.hide
+      @kept_live_map = live_map
+      @kept_check_wait = KEPT_CHECK_FRAMES
     else
+      log("freed the live map instead of keeping it for the next menu: #{short}") if short
       dispose_live_map(live_map)
     end
+  rescue => e
+    log("keeping the live map failed: #{e.class}: #{e.message}")
+    dispose_live_map(live_map)
   end
 
   # Frees the live map a menu left, once the screen after it started without taking it.
   def self.drop_spare_live_map
     dispose_live_map(@spare_live_map)
     @spare_live_map = nil
+  end
+
+  # Frees the live map kept while the player is on the map, once it would no longer show that map:
+  # a map was set up, the world closed or a screen other than the map or a menu started.
+  #
+  # @param why [String, nil] What happened, for the log; nil logs nothing.
+  def self.drop_kept_live_map(why = nil)
+    return unless @kept_live_map
+
+    log("freed the live map kept for the next menu: #{why}") if why
+    dispose_live_map(@kept_live_map)
+    @kept_live_map = nil
+  end
+
+  # Frees the live map kept for the next menu once the memory falls short, read every
+  # KEPT_CHECK_FRAMES frames while the map keeps one.
+  def self.check_kept_live_map
+    return unless @kept_live_map
+
+    @kept_check_wait -= 1
+    return if @kept_check_wait > 0
+
+    @kept_check_wait = KEPT_CHECK_FRAMES
+    short = memory_short
+    drop_kept_live_map(short) if short
+  end
+
+  # Lists the characters the map's sprites show, in the order the sprites are made: the map's
+  # events and vehicles, the player's followers and the player.
+  #
+  # @return [Array<Game_Character>] The characters.
+  def self.map_cast
+    cast = $game_map.events.values + $game_map.vehicles
+    $game_player.followers.reverse_each { |follower| cast.push(follower) }
+    cast.push($game_player)
   end
 
   # Updates the live map behind a menu, showing the menu's picture again when it fails.
@@ -367,6 +457,35 @@ class Spriteset_MpLiveMap < Spriteset_Map
     @mgq_mp_dim.bitmap = Bitmap.new(Graphics.width, Graphics.height)
     @mgq_mp_dim.bitmap.fill_rect(@mgq_mp_dim.bitmap.rect, DIM)
     @mgq_mp_dim.z = 10_000
+  end
+
+  # Creates the characters' sprites, noting the characters they show.
+  def create_characters
+    super
+    @mgq_mp_cast = MGQ_MpAsync.map_cast
+  end
+
+  # Hides it while the player is on the map, which shows sprites of its own.
+  def hide
+    each_viewport { |viewport| viewport.visible = false }
+  end
+
+  # Shows it again behind a menu after the map, at the map's state now: with new sprites for the
+  # characters where events came or went meanwhile.
+  def come_back
+    refresh_characters unless @mgq_mp_cast == MGQ_MpAsync.map_cast
+    each_viewport { |viewport| viewport.visible = true }
+    update
+  end
+
+  # Runs a block for each of the map's viewports.
+  #
+  # @yield [viewport] Runs for each viewport.
+  def each_viewport
+    [:viewport1, :viewport2, :viewport3].each do |field|
+      viewport = MGQ_MpGame.get(self, field)
+      yield viewport if viewport
+    end
   end
 
   # Creates the map's viewports, below the menu.
@@ -425,16 +544,28 @@ begin
     @mgq_mp_live_map = MGQ_MpAsync.live_map_for(self, @background_sprite)
   end
 
-  # Before the menu's picture of the map is freed, the live map, unless the next menu takes it over.
+  # Before the menu's picture of the map is freed, the live map, unless the next menu takes it over
+  # or the map keeps it for the next menu.
   MGQ_MpHooks.before(Scene_MenuBase, :dispose_background, "core_async") do
     MGQ_MpAsync.leave_live_map(@mgq_mp_live_map)
     @mgq_mp_live_map = nil
   end
 
-  # After a screen started, the live map the menu before left, when the screen did not take it.
-  MGQ_MpHooks.after(Scene_Base, :post_start, "core_async") { MGQ_MpAsync.drop_spare_live_map }
+  # After a screen started, the live map the menu before left, when the screen did not take it, and
+  # the one kept for the next menu, when the screen is not the map.
+  MGQ_MpHooks.after(Scene_Base, :post_start, "core_async") do
+    MGQ_MpAsync.drop_spare_live_map
+    MGQ_MpAsync.drop_kept_live_map("#{self.class.name} started") unless is_a?(Scene_Map)
+  end
 rescue => e
   MGQ_MpAsync.log("menu hooks FAILED: #{e.class}: #{e.message}")
+end
+
+begin
+  # A map set up shows other sprites than the live map kept for the next menu.
+  MGQ_MpHooks.after(Game_Map, :setup, "core_async") { |_map_id| MGQ_MpAsync.drop_kept_live_map("a map was set up") }
+rescue => e
+  MGQ_MpAsync.log("map hook FAILED: #{e.class}: #{e.message}")
 end
 
 begin
