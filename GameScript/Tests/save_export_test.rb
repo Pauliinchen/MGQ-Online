@@ -2,6 +2,7 @@
 #  save_export_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Left the game menu's command to the in-game suite, since the UI layer draws it
 #      Paulinchen  2026-11-05: Answered the world's latest save with the one each check names instead of a copy of the DLL's search
 #      Paulinchen  2026-11-01: Checked Copy to my game in the game's menu through the Mod Framework and its message
 #                            - Stopped loading the deleted ui_boxes.rbx
@@ -21,8 +22,8 @@
 #----------------------------------------------------------------
 
 # Covers world_save_export.rbx: copying a world's latest save into the first free slot of the
-# player's own game with its thumbnail, into the own Save folder also while a world is open, a full
-# Save folder, and the game menu's command and its message.
+# player's own game with its thumbnail, into the own Save folder also while a world is open, and a
+# full Save folder.
 
 require_relative "support"
 require_relative "rules_support"
@@ -41,59 +42,8 @@ class Window_Base; def initialize(*); end; end
 class Window_Selectable < Window_Base; end
 # Stands in for the game's command windows.
 class Window_Command < Window_Selectable; end
-# Stands in for the game menu's commands, which make their list as the game's do, keep their
-# handlers and take the keys or not.
-class Window_MenuCommand < Window_Command
-  # @return [Boolean] Whether it takes the keys.
-  attr_reader :active
-
-  # Makes the list of the game's commands, Library and Config among them, Save near its end.
-  def make_command_list
-    @list = [:item, :skill, :library, :config, :save, :game_end].map { |symbol| { :name => symbol.to_s, :symbol => symbol, :enabled => true, :ext => nil } }
-  end
-
-  # Lists the symbols of its commands.
-  #
-  # @return [Array<Symbol>] The symbols.
-  def symbols; @list.map { |entry| entry[:symbol] }; end
-
-  # Finds a command.
-  #
-  # @param symbol [Symbol] Its symbol.
-  # @return [Hash, nil] The command.
-  def entry(symbol); @list.find { |each| each[:symbol] == symbol }; end
-
-  # Keeps a handler.
-  #
-  # @param symbol [Symbol] Its command.
-  # @param handler [Proc] The handler.
-  def set_handler(symbol, handler); handlers[symbol] = handler; end
-
-  # Tells whether a command has a handler.
-  #
-  # @param symbol [Symbol] The command.
-  # @return [Boolean] Whether it has.
-  def handle?(symbol); handlers.key?(symbol); end
-
-  # Lists the handlers by symbol.
-  #
-  # @return [Hash{Symbol => Proc}] The handlers.
-  def handlers; @handlers ||= {}; end
-
-  # Takes the keys.
-  def activate; @active = true; end
-
-  # Takes no keys.
-  def deactivate; @active = false; end
-
-  # Goes, as at a scene change.
-  def dispose; @disposed = true; end
-
-  # Tells whether it went.
-  #
-  # @return [Boolean] Whether it did.
-  def disposed?; @disposed == true; end
-end
+# Stands in for the game menu's commands, which the script patches.
+class Window_MenuCommand < Window_Command; end
 # Stands in for the game's colors.
 class Color; def initialize(*); end; end
 # Stands in for the game's sprites.
@@ -180,35 +130,6 @@ Dir.mktmpdir do |root|
     check("a full Save folder says so", MGQ_MpSaveExport.export(world), "Your own game has no free save slot. Delete one of your saves first.")
     FileUtils.rm("Save/Save03.rvdata2")
 
-    # The game's menu, made as the game makes it, with the commands the Mod Framework adds once
-    # the game runs.
-    rule = Mod_Framework::UI::Adopt.rules.find { |each| each.target == Window_MenuCommand }
-    make_menu = lambda do
-      menu = Window_MenuCommand.new
-      menu.make_command_list
-      Mod_Framework::UI::Adopt.edit_commands(menu)
-      rule.install_handlers(menu)
-      menu
-    end
-    check("the menu has no Copy to my game outside a world", make_menu.call.symbols, [:item, :skill, :library, :config, :save, :game_end])
-
-    MGQ_MpWorld.instance_variable_set(:@world, world)
-    menu = make_menu.call
-    check("inside a world it comes after the game's own commands, before Save, and can be picked",
-          [menu.symbols, menu.entry(:mgq_mp_save_export).values_at(:name, :enabled)],
-          [[:item, :skill, :library, :config, :mgq_mp_save_export, :save, :game_end], ["Copy to my game", true]])
-
-    # Picking it shows how the copy went in the framework's message.
-    shown = []
-    Mod_Framework::UI::Message.define_singleton_method(:show) { |title, text| shown << [title, text]; nil }
-    menu.handlers[:mgq_mp_save_export].call
-    saved = File.mtime("#{world.save_folder}/AutoSave01.rvdata2").strftime("%Y-%m-%d %H:%M")
-    check("picking it copies the save and shows how it went", shown.last, ["Copy to my game", "Your save of Free from #{saved} is now save 3 of your own game."])
-
-    empty = local_world("0123456789ab", "code" => "code", "name" => "Empty")
-    MGQ_MpWorld.instance_variable_set(:@world, empty)
-    check("greyed out until the player saved in the world", make_menu.call.entry(:mgq_mp_save_export)[:enabled], false)
-    MGQ_MpWorld.instance_variable_set(:@world, nil)
     check("the menu reports no open world", MGQ_MpSaveExport.export_open_world, "No world is open.")
   end
 end

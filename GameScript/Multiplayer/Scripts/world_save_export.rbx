@@ -2,6 +2,7 @@
 #  world_save_export.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Added Copy to my game to the game's menu through a patch of the UI layer, its message the layer's
 #      Paulinchen  2026-11-01: Added Copy to my game to the game's menu through the Mod Framework, showing how it went in its message
 #      Paulinchen  2026-10-12: Read the menu's commands through MGQ_MpGame and left them alone when the menu has none
 #      Paulinchen  2026-10-08: Closed with the numpad's 0 through MGQ_MpUi.cancel?
@@ -25,8 +26,8 @@ module MGQ_MpSaveExport
   # The menu's command while a world is open, and the title of the message that shows how it went.
   MENU_COMMAND = "Copy to my game"
 
-  # The menu command's symbol.
-  MENU_SYMBOL = :mgq_mp_save_export
+  # The menu command's id, which other mods' patches name as #mgq_online_save_export.
+  MENU_ID = :mgq_online_save_export
 
   # What a save file's thumbnail is named after, its extension swapped.
   SAVE_EXTENSION = /\.rvdata2\z/i
@@ -88,11 +89,14 @@ module MGQ_MpSaveExport
   end
 
   # Adds Copy to my game to the game's menu, before Save: only while a world is open, and greyed
-  # out until the player saved in it. Picking it shows how the copy went in a message.
+  # out until the player saved in it. Picking it shows how the copy went in a message, and the
+  # framework gives the menu back once the message closed.
   def self.add_to_menu
-    Mod_Framework::UI.adopt(::Window_MenuCommand).add_command(MENU_COMMAND, MENU_SYMBOL, :before => :save, :if => lambda { |_window| MGQ_MpWorld.open? },
-                                                              :enabled => lambda { |_window| MGQ_MpSaveExport.saved? }) do
-      Mod_Framework::UI::Message.show(MENU_COMMAND, MGQ_MpSaveExport.export_open_world)
+    Mod_Framework::UI.patch "Window_MenuCommand" do |menu|
+      menu.before "#save" do
+        command MGQ_MpSaveExport::MENU_COMMAND, id: MGQ_MpSaveExport::MENU_ID, if: -> { MGQ_MpWorld.open? }, enabled: -> { MGQ_MpSaveExport.saved? },
+                                                on_click: -> { Mod_Framework::UI.message(MGQ_MpSaveExport.export_open_world, title: MGQ_MpSaveExport::MENU_COMMAND) }
+      end
     end
   end
 
