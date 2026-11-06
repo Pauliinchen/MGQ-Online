@@ -2,6 +2,7 @@
 #  emotes_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Took the emotes as the wheel of the UI layer tells them, leaving its keys to the in-game suite
 #      Paulinchen  2026-11-05: Handed the other players' messages as the DLL reads them and expected the emote sent as the scripts hand it
 #                            - Read the scripts' clock from $frame_count and dropped the check of a cooldown a loaded save ended, since the clock never goes back
 #      Paulinchen  2026-11-01: Checked the emote wheel as a Mod Framework wheel, its drawing left to the framework's tests
@@ -19,8 +20,9 @@
 #
 #----------------------------------------------------------------
 
-# Covers ui_emotes.rbx: the emote wheel's hotkey, pointing at an emote with the arrows held, playing
-# an emote on the player and telling the others, and another player's emote on their ghost.
+# Covers ui_emotes.rbx: the emotes its wheel offers, when the wheel may open, playing the emote it
+# took on the player and telling the others, the cooldown, and another player's emote on their
+# ghost. The wheel's keys are the framework's and the in-game suite's.
 
 require_relative "world_support"
 
@@ -45,75 +47,49 @@ $inbox << entry("message", 2, told(friend))
 MGQ_MpOverworldSync.tick
 MGQ_MpOverworld.update_ghosts
 
-# Opening, pointing and playing one: C# keeps the wheel's rules (WheelModel, its pointing checked
-# in MGQOnline.Game.Tests); the script holds the buttons while the wheel is open and plays the
-# emote confirm took, in the frame after.
+# The wheel: the framework's wheel of the UI layer keeps its keys (the in-game suite walks them);
+# the script names its emotes, plays the one taken in the frame after and tells the others.
 #
-# Runs one frame of the map with the wheel.
-# One frame on the map: the emote taken, the end of the frame with its tick, then the hotkeys.
-emote_frame = lambda do
+# Takes an emote as the wheel tells it, then runs the frame after on the map.
+take = lambda do |index|
+  emotes.opened
+  emotes.taken(emotes.choices[index])
+  emotes.closed(:submit)
   emotes.on_map
-  ui_frame
-  Mod_Framework::Hotkeys.fire
+  $frame_count += 1
+  emotes.on_map
 end
-wheel = emotes.wheel
-pointed = lambda { wheel.selected.is_a?(Hash) ? wheel.selected[:text] : wheel.selected }
-# Opens the wheel with its hotkey, which C# opens in the next frame's tick.
-open_wheel = lambda do
-  $pressed = MGQ_MpHotkeys.code(:emotes)
-  emote_frame.call
-  emote_frame.call
-end
-play_emote = lambda do |arrows|
-  open_wheel.call
-  $held = arrows
-  emote_frame.call
-  $held = []
-  $buttons << :C
-  emote_frame.call
-  emote_frame.call
-end
-open_wheel.call
-check("E opens the emote wheel on the map, which holds the buttons and points at none", [wheel.open?, Mod_Framework::UI::Capture.on?, pointed.call], [true, true, nil])
-check("its emotes are a jump by its name and the game's balloons, None while none is picked",
-      [wheel.none_text, emotes.choices.map { |choice| choice.key?(:bitmap) }, emotes.choices.map { |choice| choice[:text] }],
+check("its emotes are a jump by its name and the game's balloons, the wheel saying None while none is picked",
+      [emotes::NONE_TEXT, emotes.choices.map { |choice| choice.key?(:bitmap) }, emotes.choices.map { |choice| choice[:text] }],
       ["None", [false] + [true] * 7, emotes::EMOTES.map { |emote| emote.name }])
-$held = [:UP, :RIGHT]
-emote_frame.call
-check("the arrows held point at the emote of their direction", pointed.call, "Surprise")
-$held = []
-$buttons << :C
+emotes.opened
+check("the other scripts see it open", emotes.wheel.open?, true)
+emotes.taken(emotes.choices[1])
+emotes.closed(:submit)
 $sent.clear
-emote_frame.call
-check("confirm closes the wheel and gives the buttons back, the emote not played yet", [wheel.open?, Mod_Framework::UI::Capture.on?, $sent], [false, false, []])
-emote_frame.call
-check("the frame after plays the picked emote, a balloon above the player", $game_player.balloon_id, 1)
+emotes.on_map
+check("the emote taken waits for the frame after, the wheel closed", [emotes.wheel.open?, $sent], [false, []])
+$frame_count += 1
+emotes.on_map
+check("the frame after plays it, a balloon above the player", $game_player.balloon_id, 1)
 check("and tells the others", $sent.last[1].values_at("emote", "map"), [1, 5])
-open_wheel.call
-$buttons << :C
-$sounds.clear
-emote_frame.call
-emote_frame.call
-check("confirm on none closes the wheel without an emote, with the cancel sound", [wheel.open?, $sent.size, $sounds], [false, 1, ["cancel"]])
 $sent.clear
-play_emote.call([:LEFT])
+$sounds.clear
+take.call(6)
 check("a second emote right after buzzes and plays nothing", [$sent, $sounds.last], [[], "buzzer"])
 $frame_count += MGQ_MpEmotes::COOLDOWN_FRAMES
-play_emote.call([:UP])
+take.call(0)
 check("the jump plays once a moment passed", [$game_player.jumps, $sent.size], [1, 1])
-open_wheel.call
-$pressed = MGQ_MpHotkeys.code(:emotes)
-emote_frame.call
-check("its hotkey closes it again", wheel.open?, false)
+emotes.taken(emotes.choices[2])
+$frame_count += 3
+emotes.on_map
+check("an emote taken frames ago, the map not running meanwhile, plays nothing", $sent.size, 1)
+
+# When the wheel may open.
+check("on a free map in a world it may open", emotes.busy_reason, nil)
 $game_message.busy = true
-open_wheel.call
+check("a message keeps it shut", emotes.busy_reason.nil?, false)
 $game_message.busy = false
-check("a message keeps it shut", wheel.open?, false)
-open_wheel.call
-$game_message.busy = true
-emote_frame.call
-$game_message.busy = false
-check("a message that starts closes it", wheel.open?, false)
 
 ghost = MGQ_MpOverworldSync::Peers.at(2).ghost
 $inbox << entry("message", 2, { "emote" => 4, "map" => "5" })
@@ -129,18 +105,3 @@ check("but not one from another map", ghost.balloon_id, 0)
 $inbox << entry("message", 2, { "emote" => 99, "map" => "5" })
 MGQ_MpOverworldSync.tick
 check("nor one the wheel has not", ghost.balloon_id, 0)
-
-# Not while the chat box is open.
-MGQ_MpChat.start_typing
-$mgq_text_input = true
-$pressed = MGQ_MpHotkeys.code(:emotes)
-emote_frame.call
-emote_frame.call
-$mgq_text_input = nil
-check("the chat box keeps the wheel shut", wheel.open?, false)
-MGQ_MpChat.stop_typing
-
-Mod_Framework::UI::Capture.start(:overview)
-open_wheel.call
-check("the World overview, which holds the buttons, keeps the wheel shut", [wheel.open?, Mod_Framework::UI::Capture.on?], [false, true])
-Mod_Framework::UI::Capture.stop(:overview)

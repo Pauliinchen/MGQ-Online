@@ -2,7 +2,8 @@
 #  overworld_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Checked what the labels, the own ping, the own line and the world status show, leaving how they look to the in-game suite
+#      Paulinchen  2026-11-06: Took the action wheel's choices as the wheel of the UI layer tells them, leaving its keys to the in-game suite
+#                            - Checked what the labels, the own ping, the own line and the world status show, leaving how they look to the in-game suite
 #      Paulinchen  2026-11-06: Checked that a message's lists and Hashes reach the DLL whole
 #      Paulinchen  2026-11-05: Answered the teleports' view with fixed offers per case instead of from the party's stand-in
 #                            - Handed the other players' states and messages as the DLL reads them and expected the messages sent as the scripts hand them
@@ -263,34 +264,25 @@ check("every state but walking has an icon", (%w[battle event menu items equip s
 
 # The party, through the action wheel.
 
-# Opens the action wheel, holds the arrows and presses the buttons given for a frame, and lets the
-# world tick.
+# Takes the action wheel's choice at a direction, or its middle, as the framework's wheel tells it
+# (its keys are the framework's and the in-game suite's): a choice that can be taken closes the
+# wheel and runs in the frame after; one that cannot is refused and the wheel stays open.
 #
-# @param buttons [Array<Symbol>] The buttons, such as :DOWN and :C.
-def wheel(*buttons)
+# @param direction [Symbol] Where the choice sits, such as :UP, or :CENTER.
+def take_choice(direction)
   open_action_wheel
-  directions = buttons & Mod_Framework::UI::Wheel::DIRECTIONS
-  $held = directions.map { |direction| arrows(direction) }.flatten
-  $buttons.concat(buttons - directions)
+  choice = direction == :CENTER ? MGQ_MpActions.wheel_middle : MGQ_MpActions.wheel_choices[MGQ_MpActions.wheel_places.index(direction)]
+  return MGQ_MpActions.refused(choice) unless choice[:enabled]
+
+  MGQ_MpActions.taken(choice)
+  MGQ_MpActions.closed(:submit)
   map_frame
-  $held = []
-  # The choice confirm picked is taken in the frame after.
   map_frame
   MGQ_MpOverworldSync.tick
 end
-# Opens the action wheel with its hotkey: the hotkey opens it after one frame's tick, and C# in
-# the next.
+# Opens the action wheel, as the framework's wheel tells it once its hotkey opened it.
 def open_action_wheel
-  $pressed = true
-  map_frame
-  map_frame
-end
-# Tells where the action wheel's pick sits.
-#
-# @return [Symbol, nil] :CENTER, a direction, or nil for none.
-def picked
-  pick = MGQ_MpActions.wheel.selected
-  pick == :center ? :CENTER : pick && MGQ_MpActions.wheel_places[MGQ_MpActions.wheel_choices.index(pick)]
+  MGQ_MpActions.opened
 end
 # Reads a choice of the action wheel.
 #
@@ -299,7 +291,7 @@ end
 def option(direction); o = MGQ_MpActions.wheel_options[direction]; [o.text, !o.run.nil?]; end
 # Finds the arrows held to point at a direction.
 #
-# @param direction [Symbol] One of Mod_Framework::UI::Wheel::DIRECTIONS.
+# @param direction [Symbol] One of MGQ_MpActions::DIRECTIONS.
 # @return [Array<Symbol>] The arrows.
 def arrows(direction)
   { :UP => [:UP], :UP_RIGHT => [:UP, :RIGHT], :RIGHT => [:RIGHT], :DOWN_RIGHT => [:DOWN, :RIGHT], :DOWN => [:DOWN],
@@ -319,31 +311,20 @@ check("a Classic world has no story to teleport to", option(STORY), ["Teleport t
 check("chat offered, and a direction without a choice has none", [option(CHAT), MGQ_MpActions.wheel_options.key?(:DOWN_RIGHT)], [["Chat (T)", true], false])
 check("the wheel's choices are the registered ones in their order, those that cannot be taken dim",
       MGQ_MpActions.wheel_choices.map { |choice| [choice[:text], choice[:enabled]] }, [PARTY, LEAVE, STORY, CHAT].map { |direction| option(direction) })
+check("the wheel may open on the free map of a world", MGQ_MpActions.free_reason, nil)
 open_action_wheel
-check("B opens the wheel and holds the buttons", [MGQ_MpActions.wheel.open?, Mod_Framework::UI::Capture.on?], [true, true])
-check("the wheel opens on its middle", picked, :CENTER)
-$buttons << :C
-map_frame
+check("open, the other scripts see it open and the line above the player's head hides", [MGQ_MpActions.wheel.open?, MGQ_MpActions.own_lines], [true, nil])
+MGQ_MpActions.taken(MGQ_MpActions.wheel_middle)
+MGQ_MpActions.closed(:submit)
 taken_frame = [MGQ_MpActions.wheel.open?, $world_ran]
 map_frame
-check("confirm on the middle closes the wheel and runs its choice in the frame after, the wheel closed", [taken_frame, $world_ran], [[false, nil], false])
-open_action_wheel
-$held = [:UP]
-$buttons << :C
 map_frame
-check("a greyed choice buzzes, keeps the wheel open and says why in the status line",
-      [MGQ_MpActions.wheel.open?, MGQ_MpOverworldSync::Status.lines.last, $sounds.last], [true, "Nobody is near enough to invite.", "buzzer"])
-$held = arrows(CHAT)
-map_frame
-check("the arrows held pick the choice they point at", picked, CHAT)
-$held = []
-$pressed = true
-map_frame
-check("B closes the wheel and gives the buttons back", [MGQ_MpActions.wheel.open?, Mod_Framework::UI::Capture.on?], [false, false])
-open_action_wheel
-$buttons << :B
-map_frame
-check("cancel closes too", MGQ_MpActions.wheel.open?, false)
+check("the middle taken runs in the frame after, the wheel closed", [taken_frame, $world_ran], [[false, nil], false])
+take_choice(PARTY)
+check("a greyed choice is refused, the wheel open, saying why in the status line",
+      [MGQ_MpActions.wheel.open?, MGQ_MpOverworldSync::Status.lines.last], [true, "Nobody is near enough to invite."])
+MGQ_MpActions.closed(:cancel)
+check("closed, the other scripts see it shut", MGQ_MpActions.wheel.open?, false)
 MGQ_MpOverworld.update_ghosts
 ghost = MGQ_MpOverworld.ghosts.first.ghost
 check("a stranger is see-through", ghost.opacity, MGQ_MpOverworld::STRANGER_OPACITY)
@@ -361,7 +342,7 @@ check("someone near: invite first", option(PARTY), ["Invite to a party", true])
 my_party = "mep1"
 invite_ends = MGQ_Multiplayer::Bridge.frame_number + MGQ_MpCoop::INVITE_FRAMES
 $party_answer = party_view(my_party, [], -1, "inviting" => true, "invite_ends" => invite_ends)
-wheel(:UP, :C)
+take_choice(:UP)
 $party_answer = nil
 check("inviting asks the DLL and takes the view it answers", [$party_calls.last, MGQ_MpCoop::Party.inviting?, MGQ_MpActions.wheel.open?], [["invite", nil], true, false])
 check("the invite tells the frames it stands for still, by the frame the DLL says it ends at", MGQ_MpCoop::Party.invite_frames_left,
@@ -469,7 +450,7 @@ MGQ_MpOverworld.update_ghosts
 check("a jump gathers the followers, as many as told", ghost.followers.map { |f| [f.x, f.y] }, [[24, 40]])
 
 $party_answer = party_view(nil)
-wheel(LEAVE, :C)
+take_choice(LEAVE)
 $party_answer = nil
 MGQ_MpOverworld.update_ghosts
 check("a stranger's ghost has no followers", ghost.followers, [])
@@ -481,17 +462,15 @@ MGQ_MpOverworldSync.tick
 check("an inviter shows the invite line", MGQ_MpOverworldSync.label_line_of(MGQ_MpOverworldSync::Peers.at(2)).to_a[0], "Invites to a party (B)")
 check("an invite nearby is offered", option(PARTY), ["Accept Friend's invite", true])
 $party_answer = party_view("theirs", [MGQ_MpOverworldSync::Peers.at(2)], 2)
-wheel(:UP, :C)
+take_choice(:UP)
 $party_answer = nil
 check("accepting an invite asks the DLL to join the inviter and takes their party", [$party_calls.last, MGQ_MpCoop::Party.id], [["join", 2], "theirs"])
 $inbox << entry("message", 2, told(friend.merge("map" => "5", "x" => "20", "y" => "21", "party" => "", "invite" => false)))
 take_party("theirs")
 MGQ_MpOverworldSync.tick
 
-open_action_wheel
 SceneManager.scene = Scene_Battle.new
-map_frame
-check("leaving the map closes the wheel", [MGQ_MpActions.wheel.open?, Mod_Framework::UI::Capture.on?], [false, false])
+check("off the map the wheel may not show, which closes it", MGQ_MpActions.free_reason.nil?, false)
 SceneManager.scene = Scene_Map.new
 $open = false
 MGQ_MpOverworldSync.tick
@@ -631,31 +610,25 @@ check("a name the DLL numbers finds each player apart",
 check("nobody is found by a missing id or name", [peers.with_id(nil), peers.with_id(""), peers.named(nil)], [nil, nil, nil])
 peers.remove(8)
 
-# The wheel's middle, which it opens on, and the pick it keeps once the arrows are let go.
-open_action_wheel
-$held = [:UP]
-map_frame
-check("an arrow held picks its side", picked, :UP)
-$held = []
-map_frame
-check("letting go keeps the choice", picked, :UP)
-$held = [:UP, :RIGHT]
-map_frame
-check("a diagonal, which the wheel has no choice for, picks the middle too", picked, :CENTER)
-$held = []
-MGQ_MpActions.wheel.close
-
 # How the ring spreads and lays out its choices.
 mirror = { :UP_RIGHT => :UP_LEFT, :RIGHT => :LEFT, :DOWN_RIGHT => :DOWN_LEFT }
+# Spreads a count of choices over the ring as the wheel does, through choices registered for once.
+ring_places = lambda do |count|
+  kept = MGQ_MpActions.instance_variable_get(:@choices).dup
+  MGQ_MpActions.instance_variable_get(:@choices).replace(Array.new(count) { |index| [index, index, nil] })
+  places = MGQ_MpActions.wheel_places
+  MGQ_MpActions.instance_variable_get(:@choices).replace(kept)
+  places
+end
 mirror.merge!(mirror.invert)
 check("every count of choices comes out mirror-symmetric",
-      (1..8).all? { |count| places = Mod_Framework::UI::Wheel.places(count); places.map { |d| mirror[d] || d }.sort == places.sort }, true)
+      (1..8).all? { |count| places = ring_places.call(count); places.map { |d| mirror[d] || d }.sort == places.sort }, true)
 check("four take the sides, five the two lower diagonals for the bottom, six a hexagon",
-      [Mod_Framework::UI::Wheel.places(4), Mod_Framework::UI::Wheel.places(5), Mod_Framework::UI::Wheel.places(6)],
+      [ring_places.call(4), ring_places.call(5), ring_places.call(6)],
       [[:UP, :RIGHT, :DOWN, :LEFT], [:UP, :RIGHT, :DOWN_RIGHT, :DOWN_LEFT, :LEFT], [:UP, :UP_RIGHT, :DOWN_RIGHT, :DOWN, :DOWN_LEFT, :UP_LEFT]])
 before = MGQ_MpActions.wheel_places.size
-(Mod_Framework::UI::Wheel::DIRECTIONS.size - before + 1).times { |index| MGQ_MpActions.wheel_choice(100 + index) { MGQ_MpActions::NO_OPTION } }
-check("a ring holds eight choices at most", MGQ_MpActions.wheel_places.size, Mod_Framework::UI::Wheel::DIRECTIONS.size)
+(MGQ_MpActions::DIRECTIONS.size - before + 1).times { |index| MGQ_MpActions.wheel_choice(100 + index) { MGQ_MpActions::NO_OPTION } }
+check("a ring holds eight choices at most", MGQ_MpActions.wheel_places.size, MGQ_MpActions::DIRECTIONS.size)
 MGQ_MpActions.instance_variable_get(:@choices).reject! { |order, _, _| order >= 100 }
 
 # Invites the DLL finds reaching the player, and the player's own, which the DLL keeps.
