@@ -512,10 +512,6 @@ module QuestionStandIn
   def self.collect; return if @block.nil? || $confirm.nil?; block = @block; @block = nil; block.call($confirm); end
   def self.close; block = @block; @block = nil; block.call(false) if block; end
 end
-Mod_Framework::UI.define_singleton_method(:confirm) do |question, params = {}, &answer|
-  ($asked ||= []) << [question, [params[:yes], params[:no]]]
-  QuestionStandIn.ask(answer)
-end
 load_script "coop_scope"
 load_script "coop_squad"
 load_script "battles"
@@ -526,6 +522,11 @@ load_script "battles_coop_hotjoin"
 
 # The fake models of the interface on the same bridge, which place the boxes in the layout.
 open_fake_ui { ["", 0] }
+# UI.confirm asks the stand-in above, in place of the fake interface's.
+Mod_Framework::UI.define_singleton_method(:confirm) do |question, params = {}, &answer|
+  ($asked ||= []) << [question, [params[:yes], params[:no]]]
+  QuestionStandIn.ask(answer)
+end
 %w[battles_sync battles_sync_wire battles_sync_recorder battles_sync_playback battles_sync_live].each { |name| load_script name }
 SceneManager.run
 MGQ_MpBattlesCoop.install

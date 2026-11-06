@@ -2,6 +2,7 @@
 #  world_screen.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Opened a world's players, mods and description and the mod picker in the list box of the Mod Framework's UI layer, a mod added by name removed through its context menu
 #      Paulinchen  2026-11-05: Made a world of the directory through the directory's own reader
 #      Paulinchen  2026-11-01: Dropped the form window no screen draws with any more
 #                            - Named the Mod Framework's interface by its own name
@@ -181,7 +182,7 @@ module MGQ_MpWorldScreen
   NO_LIST = { "state" => "idle", "error" => nil, "admin" => false, "info" => nil, "rows" => [] }
 
   # The colors of the list box's rows, by the names the DLL gives them; "plain" takes none.
-  BOX_COLORS = { "good" => :good, "gold" => :gold, "bad" => :bad, "grey" => :dim }
+  BOX_COLORS = { "good" => :success, "gold" => :gold, "bad" => :error, "grey" => :dim }
 
   # Opens the screen.
   def self.open
@@ -382,7 +383,7 @@ class Scene_MpWorlds < Scene_MenuBase
   MOD_PICK_COLUMNS = ["Required", "Essential"]
 
   # The colors of the mod picker's rows, by the names ModPick gives them; :plain takes none.
-  MOD_PICK_COLORS = { :grey => :dim, :bad => :bad, :gold => :gold }
+  MOD_PICK_COLORS = { :grey => :dim, :bad => :error, :gold => :gold }
 
   # The colors of the details' cells, by the names the DLL gives them; "normal" takes none.
   CELL_COLORS = { "good" => :good, "warn" => :warn, "gold" => :gold, "bad" => :bad }
@@ -400,11 +401,9 @@ class Scene_MpWorlds < Scene_MenuBase
 
   # Tells the mod picker's key line, naming the cancel key as the player bound it.
   #
-  # @param added [Proc] Tells whether a mod added by name is picked, which Delete removes.
   # @return [Array<Hash>] The entries.
-  def self.mod_pick_keys(added)
-    [{ :key => "Enter", :text => "list or unlist" }, { :key => "→", :text => "! required, ? essential" },
-     { :key => "Del", :text => lambda { added.call ? "remove" : nil } }, { :button => :B, :text => "done" }]
+  def self.mod_pick_keys
+    [{ :key => "Enter", :text => "list or unlist" }, { :key => "→", :text => "! required, ? essential" }, { :button => :B, :text => "done" }]
   end
 
   # @return [Mod_Framework::UI::Box, nil] The screen's root, nil before it started.
@@ -1123,9 +1122,11 @@ class Scene_MpWorlds < Scene_MenuBase
     close_popups
     @list_box.close if box_open?
     @list_box = if kind == :description
-                  MGQ_MpListBox.open_text(@entry.name, DESCRIPTION_TITLE, @entry.listed ? @entry.listed.description.to_s : "")
+                  Mod_Framework::UI.open(MGQ_MpListBox, :title => @entry.name, :source => MGQ_MpListBox::Source.new(nil, DESCRIPTION_TITLE),
+                                                        :description => @entry.listed ? @entry.listed.description.to_s : "")
                 else
-                  MGQ_MpListBox.open(:title => @entry.name, :note => kind == :players ? "Players" : "Mods", :rows => MGQ_MpWorldScreen.box(@entry, kind))
+                  Mod_Framework::UI.open(MGQ_MpListBox, :title => @entry.name,
+                                                        :source => MGQ_MpListBox::Source.new(MGQ_MpWorldScreen.box(@entry, kind), kind == :players ? "Players" : "Mods"))
                 end
   end
 
@@ -1658,31 +1659,25 @@ class Scene_MpWorlds < Scene_MenuBase
     played ? "Save #{index + 1}  (#{played})" : "Save #{index + 1}"
   end
 
-  # Opens the mod picker over the form: the installed mods and those added by name, as the form
-  # names them.
+  # Opens the mod picker over the form in the list box: the installed mods and those added by name,
+  # as the form names them.
   def open_mod_pick
     @mod_pick = MGQ_MpWorld::ModPick.new(form[:mods])
+    @pick_source = MGQ_MpListBox::Source.new(mod_pick_rows, nil)
     log_screen("opened the mod picker on \"#{form[:mods]}\": #{@mod_pick.entries.size} mod(s)")
-    @list_box = MGQ_MpListBox.open(:title => MOD_PICK_TITLE, :rows => mod_pick_rows, :keys => Scene_MpWorlds.mod_pick_keys(lambda { added_mod_picked? }),
-                                   :field => "Name", :max_length => MGQ_MpWorld::MAX_MODS_CHARS, :remove => "Remove")
-    list = MGQ_MpListBox.list(@list_box)
-    list.on(:submit) { |row, _index| act_on_mod(row[:data], 0) if row }
-    list.on(:toggle) { |row, _index, toggle| act_on_mod(row[:data], toggle + 1) if row }
-    list.on(:change) { |_row, _index| show_remove }
-    list.on(:focus) { close_mod_name }
-    name = MGQ_MpListBox.field(@list_box)
-    name.on(:submit) { |text| add_mod(text) }
-    name.on(:focus) { MGQ_MpListBox.show_keys(@list_box) }
-    MGQ_MpListBox.remove_button(@list_box).on(:click) { remove_added_mod }
-    @list_box.on(:close) { |_why| close_mod_pick }
+    @list_box = Mod_Framework::UI.open(MGQ_MpListBox, :title => MOD_PICK_TITLE, :source => @pick_source, :note_color => :error, :keys => Scene_MpWorlds.mod_pick_keys,
+                                       :max_length => MGQ_MpWorld::MAX_MODS_CHARS, :on_submit => lambda { |row| act_on_mod(row[:data], 0) },
+                                       :on_toggle => lambda { |row, toggle| act_on_mod(row[:data], toggle + 1) },
+                                       :on_add => lambda { |name| add_mod(name) }, :on_remove => lambda { |row| remove_added_mod(row) }) { |_value, _why| close_mod_pick }
   end
 
   # Writes the mod picker's rows: the row that lists or unlists every installed mod, the installed
-  # mods, the added ones, then the row that adds one. Each mod has a red ! toggle for required and an
-  # orange ? toggle for essential, below their columns' titles.
+  # mods, the added ones, then the row that opens the Name field. Each mod has a red ! toggle for
+  # required and an orange ? toggle for essential, below their columns' titles; a mod added by name
+  # is removable.
   #
-  # @return [Array<Hash>] The List rows, each with what it stands for as its :data: a mod's index in
-  #   the picker's entries, :all or :add.
+  # @return [Array<Hash>] The list's rows, each with what it stands for as its :data: a mod's index
+  #   in the picker's entries, :all or :add.
   def mod_pick_rows
     entries = @mod_pick.entries
     rows = [{ :text => @mod_pick.all_listed? ? "Unlist all your mods" : "List all your mods", :data => :all }]
@@ -1694,42 +1689,19 @@ class Scene_MpWorlds < Scene_MenuBase
       group.each do |index|
         entry = entries[index]
         rows << { :text => entry.name, :color => MOD_PICK_COLORS[entry.color], :right => entry.label, :data => index, :key => "mod:#{entry.name}",
-                  :toggles => [{ :text => "!", :color => :bad, :on => entry.state == :required }, { :text => "?", :color => :warn, :on => entry.state == :essential }] }
+                  :removable => !installed,
+                  :toggles => [{ :text => "!", :color => :error, :on => entry.state == :required }, { :text => "?", :color => :warning, :on => entry.state == :essential }] }
       end
     end
-    rows << { :text => "Add a mod by name . . .", :data => :add }
-  end
-
-  # Tells whether the row picked is a mod added by name, which Delete removes.
-  #
-  # @return [Boolean] Whether it is.
-  def added_mod_picked?
-    list = @list_box && MGQ_MpListBox.list(@list_box)
-    row = list && list.row_at(list.index)
-    index = row && row[:data]
-    index.is_a?(Integer) && @mod_pick && @mod_pick.entries[index] && !@mod_pick.entries[index].installed ? true : false
-  end
-
-  # Shows the Remove button, and Delete in the key line, only while a mod added by name is picked.
-  def show_remove
-    MGQ_MpListBox.show_remove(@list_box, added_mod_picked?) if @list_box
-  end
-
-  # Lists the mod picker anew, the cursor kept on its row, and the form's mods with it.
-  def show_mod_pick
-    MGQ_MpListBox.list(@list_box).rows = mod_pick_rows
-    form[:mods] = @mod_pick.text
-    show_remove
+    rows << { :text => "Add a mod by name . . .", :data => :add, :name_field => true }
   end
 
   # Acts on what the mod picker points at: lists or unlists a mod, makes it required or essential
-  # with its toggles, lists or unlists every installed mod, or opens the Name field to add one.
+  # with its toggles, or lists or unlists every installed mod.
   #
-  # @param target [Integer, Symbol] The mod's index in the picker's entries, :all or :add.
+  # @param target [Integer, Symbol] The mod's index in the picker's entries, or :all.
   # @param column [Integer] 0 for the mod's name, 1 for its required toggle, 2 for its essential one.
   def act_on_mod(target, column)
-    return open_mod_name if target == :add
-
     entry = target.is_a?(Integer) ? @mod_pick.entries[target] : nil
     before = entry && entry.state
     error = if target == :all
@@ -1745,23 +1717,7 @@ class Scene_MpWorlds < Scene_MenuBase
     error ? refuse_in_pick(error) : Sound.play_ok
   end
 
-  # Shows the Name field under the picker's list and moves the focus into it, typing.
-  def open_mod_name
-    @mod_naming = true
-    MGQ_MpListBox.show_field(@list_box)
-  end
-
-  # Hides the Name field once the picker's list takes the keys again, as cancel in the field hands
-  # them over; a mere blur does not, since a gamepad's letters take the keys while it types.
-  def close_mod_name
-    return unless @mod_naming && @list_box && @list_box.open?
-
-    @mod_naming = false
-    MGQ_MpListBox.hide_field(@list_box)
-  end
-
-  # Adds a mod by the name typed, picked, or says why it cannot be; the Name field closes either way
-  # once the name was taken.
+  # Adds a mod by the name typed, or says why it cannot be.
   #
   # @param name [String] The name.
   def add_mod(name)
@@ -1770,36 +1726,35 @@ class Scene_MpWorlds < Scene_MenuBase
     error = @mod_pick.add(name)
     log_screen(error ? "mod picker: #{name} not added: #{error}" : "mod picker: added #{name} by name")
     show_mod_pick
-    return refuse_in_pick(error) if error
-
-    Sound.play_ok
-    list = MGQ_MpListBox.list(@list_box)
-    list.index = list.rows.index { |row| row[:data] == @mod_pick.entries.size - 1 } || list.index
-    close_mod_name
-    show_remove
+    error ? refuse_in_pick(error) : Sound.play_ok
   end
 
-  # Takes the mod added by name that is picked out of the picker and the form.
-  def remove_added_mod
-    return unless added_mod_picked?
+  # Takes a mod added by name out of the picker and the form.
+  #
+  # @param row [Hash] The mod's row.
+  def remove_added_mod(row)
+    index = row[:data]
+    entry = index.is_a?(Integer) && @mod_pick ? @mod_pick.entries[index] : nil
+    return unless entry && !entry.installed && @mod_pick.remove(index)
 
-    list = MGQ_MpListBox.list(@list_box)
-    index = list.row_at(list.index)[:data]
-    name = @mod_pick.entries[index].name
-    return unless @mod_pick.remove(index)
-
-    log_screen("mod picker: removed #{name}, added by name")
+    log_screen("mod picker: removed #{entry.name}, added by name")
     Sound.play_cancel
     show_mod_pick
   end
 
-  # Says in the mod picker's title row why a change was refused, since the box covers the lines
+  # Lists the mod picker anew, and the form's mods with it.
+  def show_mod_pick
+    @pick_source.rows = mod_pick_rows
+    form[:mods] = @mod_pick.text
+  end
+
+  # Says beside the mod picker's title why a change was refused, since the list box covers the lines
   # at the top.
   #
   # @param error [String] Why.
   def refuse_in_pick(error)
     Sound.play_buzzer
-    MGQ_MpListBox.note(@list_box, error, :bad)
+    @pick_source.note = error
   end
 
   # Closes the mod picker, back to the form, which shows the mods picked.
@@ -1810,7 +1765,6 @@ class Scene_MpWorlds < Scene_MenuBase
     @mod_pick.close
     @mod_pick = nil
     @list_box = nil
-    @mod_naming = false
     @field_key = :mods
     rebuild_panel unless @closing
   end

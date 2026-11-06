@@ -2,6 +2,7 @@
 #  bridge_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Stood in for UI.confirm as for the old question box
 #      Paulinchen  2026-11-06: Failed a test file whose scripts handed a topic a value that cannot cross the bridge
 #      Paulinchen  2026-11-05: Kept the requests the fixed answers of a test took, for every test to share
 #      Paulinchen  2026-11-01: Stood in for every wheel the Mod Framework defines and handed the framework's wheels their frames
@@ -909,8 +910,9 @@ class FakeWheels
   end
 end
 
-# The Mod Framework's question box, as far as its askers' tests need it: one question at a time,
-# kept in $asked, whose block answer_confirm calls; the box itself is the framework's tests'.
+# The Mod Framework's question box, as far as its askers' tests need it, asked by UI.confirm or the
+# old Confirm.ask: one question at a time, kept in $asked, whose block answer_confirm calls; the box
+# itself is the framework's tests'.
 module StandInConfirm
   # Stands in for the question box from now on.
   def self.install
@@ -925,6 +927,26 @@ module StandInConfirm
     end
     confirm.define_singleton_method(:open?) { !@block.nil? }
     confirm.define_singleton_method(:close) { |_reason = nil| StandInConfirm.answer(false) }
+    Mod_Framework::UI.define_singleton_method(:confirm) do |question, params = {}, &answer|
+      confirm.ask(question, [params[:yes] || "Yes", params[:no] || "No"], &answer) ? Handle.new : false
+    end
+  end
+
+  # What UI.confirm hands back: whether the question still waits, and its close from outside.
+  class Handle
+    # Tells whether the question still waits.
+    #
+    # @return [Boolean] Whether it does.
+    def open?
+      Mod_Framework::UI::Confirm.open?
+    end
+
+    # Answers it no from outside.
+    #
+    # @param _reason [String, nil] Why.
+    def close(_reason = nil)
+      StandInConfirm.answer(false)
+    end
   end
 
   # Answers the open question, if one is open, as the player does.

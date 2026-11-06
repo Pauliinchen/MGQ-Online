@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-11-06: Named MGQ Online's colors for the Mod Framework's UI layer and kept its HUD parts shown
 #                            - Named a player's color by MGQ Online's color names
+#                            - Rebuilt the list box as a window of the UI layer, the mod picker's Remove in its rows' context menu
 #      Paulinchen  2026-11-01: Dropped the name the old screens reached the Mod Framework's interface by
 #                            - Named a player's color as the Mod Framework's components take it, and left the room at the top to its docks
 #                            - Built the list box and the lines across the top of a screen on the Mod Framework's components
@@ -13,8 +14,8 @@
 
 # What MGQ Online's screens keep of their own now that their input, look, places, text boxes,
 # question box and wheels are the Mod Framework's: the groups of the mod's rows in Options > Mods,
-# the color a player is named in, and the list box and the lines across the top of a screen, built
-# of the framework's components.
+# the colors it names, its HUD parts kept shown, the color a player is named in, the list box on
+# the framework's UI layer, and the lines across the top of a screen on its components.
 
 module MGQ_Multiplayer
   # What the names of the mod's settings rows in Options > Mods start with.
@@ -44,8 +45,11 @@ module MGQ_MpColors
   # What starts this script's lines in the log.
   LOG_TAG = "ui"
 
-  # Names every color of COLORS, logging each the framework refuses.
+  # Names every color of COLORS, logging each the framework refuses; nothing without the Mod
+  # Framework's DLL, without which MGQ Online stays off.
   def self.name_all
+    return unless Mod_Framework.available?
+
     COLORS.each do |name, value|
       begin
         Mod_Framework::UI.color(name, value)
@@ -204,251 +208,167 @@ module MGQ_MpPlayerColor
   end
 end
 
-# The large box over a screen that lists rows under a title, built of the Mod Framework's parts: a
-# floating Box with the title and a note in its top row, a List or a scrolling text, and a key line.
-# The world screen shows a world's players, mods and description in it, and its forms the mod
-# picker. The player moves and resizes it with Alt; it closes on the game's cancel, Numpad 0 and a
-# click outside it.
-module MGQ_MpListBox
-  # The box's place id, bare as before the framework, so the places players stored stay theirs.
+# The large window over a screen that lists rows under a title, a window of the Mod Framework's UI
+# layer: the title, a note, a list of rows or a scrolling text, and a key line. The world screen
+# shows a world's players, mods or description in it, and its forms the mod picker, whose rows have
+# toggles, a Name field to add a mod by name and a Remove for the mods added so. The player moves
+# and resizes it with Alt; cancel, Numpad 0 and a click outside close it.
+#
+#   UI.open(MGQ_MpListBox, title: "Iliasburg", source: MGQ_MpListBox::Source.new(rows, "Players")) { |_value, why| ... }
+class MGQ_MpListBox < Mod_Framework::UI::Component
+  # The window's place id, bare as before the framework, so the places players stored stay theirs.
   ID = :list_box
 
-  # The box's name in the outlines.
+  # The window's name while the player arranges the windows.
   NAME = "List box"
 
-  # Room between the box and either side of the screen where it starts.
+  # Room between the window and either side of the screen where it starts.
   SIDE = 40
 
-  # Room between the box and the top of the screen where it starts.
+  # Room between the window and the top of the screen where it starts.
   TOP = 32
 
-  # Room between the box and the bottom of the screen where it starts.
+  # Room between the window and the bottom of the screen where it starts.
   BOTTOM = 44
 
-  # The least size: a mod's name with its right text and two toggle columns and three rows; wider
-  # while the key line needs more, see show_keys.
+  # The least size: a mod's name with its right text and two toggle columns and three rows.
   MIN_SIZE = [460, 132]
 
-  # The id of the List of rows, see list.
+  # The id of the list of rows.
   LIST = :list_box_list
 
-  # The id of the note at the top right.
-  NOTE = :list_box_note
-
-  # The id of the field row under the list, hidden until show_field.
-  FIELD_ROW = :list_box_field_row
-
-  # The id of the text field in the field row, see field.
+  # The id of the Name field the picker adds a mod by.
   FIELD = :list_box_field
 
-  # The id of the key line.
-  KEYS = :list_box_keys
-
-  # The id of the button beside the key line, see remove_button.
+  # The id of the button that removes a mod added by name.
   REMOVE = :list_box_remove
 
-  # Windows' code of the Delete key, the remove button's hotkey.
-  DELETE_KEY = 0x2E
+  # The text of the Remove button and of its choice in the row's context menu.
+  REMOVE_TEXT = "Remove"
 
-  # Tells the key line's entries unless a screen gives its own: moving, and closing by the cancel
-  # keys as the player bound them or a click outside.
+  # The key line unless the caller gives its own: moving, and closing by the cancel keys as the
+  # player bound them or a click outside.
+  KEYS = [{ :key => "Up and down", :text => "move" }, { :button => :B, :key => "a click outside", :text => "close" }]
+
+  # What the window shows, which its opener may change while it is open, such as the mod picker's
+  # rows and its note of a refused change; the window reads it anew every few frames.
   #
-  # @return [Array<Hash>] The entries, as KeyHelp takes them.
-  def self.keys
-    [{ :key => "Up and down", :text => "move" }, { :button => :B, :key => "a click outside", :text => "close" }]
+  # @!attribute rows [Array, nil] The list's rows: { heading: "Online (2)" } over the rows under
+  #   it, and { text:, color:, right:, toggles: } items; an item with name_field: true opens the
+  #   Name field, one with removable: true is removed by Remove; nil shows the description.
+  # @!attribute note [String, nil] The note beside the title, such as "Players", nil for none.
+  Source = Struct.new(:rows, :note)
+
+  # The window's title.
+  param :title
+
+  # The rows and the note it shows, see Source.
+  param :source
+
+  # The note's color.
+  param :note_color, :success
+
+  # The description shown instead of rows, scrolling without a cursor.
+  param :description, nil
+
+  # The key line's entries, KEYS unless given.
+  param :keys, nil
+
+  # The most characters the Name field takes.
+  param :max_length, nil
+
+  # A row was picked: the row.
+  event :submit
+
+  # A row's toggle was pressed: the row and the toggle's place, from 0.
+  event :toggle
+
+  # A name was typed into the Name field: the name.
+  event :add
+
+  # A row added by name is to go: the row.
+  event :remove
+
+  # Whether the Name field shows, to add a mod by name.
+  state :naming, false
+
+  # The place of the list's cursor row.
+  state :cursor, 0
+
+  # Renders it anew once its opener changed the rows or the note.
+  watch(:every => 5) { [source.rows, source.note] }
+
+  # Puts the cursor on the first row that is not a heading.
+  def setup
+    self.cursor = (source.rows || []).index { |row| !(row.is_a?(Hash) && row.key?(:heading)) } || 0
   end
 
-  # Opens the box with a List of rows, the cursor on the first row that is not a heading.
-  #
-  # @param options [Hash] :title, :note (nil for none), :rows (List rows), :keys (the key line's
-  #   entries, keys by default), :field (a caption: a text field under the list, hidden until
-  #   show_field), :max_length (the field's most characters), :remove (a text: a button beside the
-  #   key line that Delete clicks, hidden until shown).
-  # @return [Mod_Framework::UI::Box] The box, closed when the framework refused it.
-  def self.open(options)
-    rows = options[:rows] || []
-    box = make(options[:title], options[:note])
-    list = box.add_list(:id => LIST, :rows => rows, :rows_shown => :fill, :grow => 1, :index => first_item(rows))
-    add_field(box, list, options[:field], options[:max_length]) if options[:field]
-    add_foot(box, options[:keys] || keys, options[:remove])
-    fit_keys(box)
-    show(box, list)
-  end
-
-  # Opens the box with a text that wraps to its width and scrolls.
-  #
-  # @param title [String] The title.
-  # @param note [String, nil] The note at the top right.
-  # @param text [String] The text.
-  # @return [Mod_Framework::UI::Box] The box, closed when the framework refused it.
-  def self.open_text(title, note, text)
-    box = make(title, note)
-    pane = box.add_box(:frame => false, :scroll => true, :focusable => true, :grow => 1)
-    pane.add_label(text.to_s, :wrap => true)
-    add_foot(box, keys)
-    fit_keys(box)
-    show(box, pane)
-  end
-
-  # Finds the box's List.
-  #
-  # @param box [Mod_Framework::UI::Box] The box.
-  # @return [Mod_Framework::UI::List, nil] The List, nil for a box of text.
-  def self.list(box)
-    box.find(LIST)
-  end
-
-  # Finds the box's text field.
-  #
-  # @param box [Mod_Framework::UI::Box] The box.
-  # @return [Mod_Framework::UI::TextField, nil] The field, nil for a box without one.
-  def self.field(box)
-    box.find(FIELD)
-  end
-
-  # Finds the button beside the key line.
-  #
-  # @param box [Mod_Framework::UI::Box] The box.
-  # @return [Mod_Framework::UI::Button, nil] The button, nil for a box without one.
-  def self.remove_button(box)
-    box.find(REMOVE)
-  end
-
-  # Finds the key line.
-  #
-  # @param box [Mod_Framework::UI::Box] The box.
-  # @return [Mod_Framework::UI::KeyHelp] The key line.
-  def self.key_help(box)
-    box.find(KEYS)
-  end
-
-  # Shows other entries in the key line, or reads its entries anew, and keeps the box wide enough
-  # for the whole line and the button beside it.
-  #
-  # @param box [Mod_Framework::UI::Box] The box.
-  # @param entries [Array<Hash>, nil] The entries, as KeyHelp takes them; nil keeps those shown.
-  def self.show_keys(box, entries = nil)
-    help = key_help(box)
-    help.entries = entries if entries
-    help.refresh
-    fit_keys(box)
-  end
-
-  # Shows the button beside the key line, or hides it, and reads the key line anew.
-  #
-  # @param box [Mod_Framework::UI::Box] The box.
-  # @param shown [Boolean] Whether it shows.
-  def self.show_remove(box, shown)
-    remove_button(box).visible = shown
-    show_keys(box)
-  end
-
-  # Shows a note at the top right, or none.
-  #
-  # @param box [Mod_Framework::UI::Box] The box.
-  # @param text [String, nil] The note, nil for none.
-  # @param color [Symbol] Its color.
-  def self.note(box, text, color = :good)
-    label = box.find(NOTE)
-    label.text = text.to_s
-    label.color = color
-    label.visible = !text.nil?
-  end
-
-  # Shows the text field, empty, and gives it the focus.
-  #
-  # @param box [Mod_Framework::UI::Box] The box.
-  def self.show_field(box)
-    box.find(FIELD_ROW).visible = true
-    field(box).text = ""
-    field(box).focus
-  end
-
-  # Hides the text field and gives the List the focus back.
-  #
-  # @param box [Mod_Framework::UI::Box] The box.
-  def self.hide_field(box)
-    box.find(FIELD_ROW).visible = false
-    list(box).focus if box.open?
-  end
-
-  # Makes the box, closed, with its top row.
-  #
-  # @param title [String] The title, cut with "..." before the note.
-  # @param note [String, nil] The note, nil for none.
-  # @return [Mod_Framework::UI::Box] The box.
-  def self.make(title, note)
-    ui = Mod_Framework::UI
-    box = ui::Box.new(:id => ID, :place_name => NAME, :z => ui::Z[:boxes], :at => [SIDE, TOP],
-                      :size => [Graphics.width - 2 * SIDE, Graphics.height - TOP - BOTTOM], :min_size => MIN_SIZE, :movable => true,
-                      :resizable => true, :closable => true, :captures => true, :close_outside => true)
-    top = box.add_row(:gap => ui::Style::PAD)
-    top.add_label(title.to_s, :font_size => :large, :grow => 1, :shrink => true)
-    top.add_label(note.to_s, :id => NOTE, :font_size => :large, :color => :good, :visible => !note.nil?)
-    box
-  end
-  private_class_method :make
-
-  # Adds the hidden field row under the list, whose cancel goes back to the list.
-  #
-  # @param box [Mod_Framework::UI::Box] The box.
-  # @param list [Mod_Framework::UI::List] The list.
-  # @param caption [String] The field's caption.
-  # @param max_length [Integer, nil] Its most characters.
-  def self.add_field(box, list, caption, max_length)
-    row = box.add_field(caption.to_s, :id => FIELD_ROW, :visible => false)
-    row.add_text_field(:id => FIELD, :max_length => max_length, :cancel_to => list)
-  end
-  private_class_method :add_field
-
-  # Adds the key line, with the hidden button beside it.
-  #
-  # @param box [Mod_Framework::UI::Box] The box.
-  # @param entries [Array<Hash>] The key line's entries.
-  # @param remove [String, nil] The button's text, nil for none.
-  def self.add_foot(box, entries, remove = nil)
-    foot = box.add_row(:align => :stretch)
-    foot.add_key_help(entries, :id => KEYS, :text_align => :center, :grow => 1)
-    foot.add_button(remove, :id => REMOVE, :hotkey => DELETE_KEY, :flat => true, :visible => false) if remove
-  end
-  private_class_method :add_foot
-
-  # Keeps the box at least as wide as its key line with the button beside it while it shows, so
-  # the line leaves out none of its entries where the screen has room.
-  #
-  # @param box [Mod_Framework::UI::Box] The box.
-  def self.fit_keys(box)
-    ui = Mod_Framework::UI
-    width = key_help(box).measure[0]
-    button = remove_button(box)
-    if button && button.visible?
-      text = ui.font_bitmap(ui.font_px(button.font_size)).text_size(button.text.to_s).width
-      width += ui::Style::GAP + text + 2 * ui::Button::PAD_X
+  # Describes the window.
+  def render
+    window title.to_s, id: ID, place_name: NAME, close_outside: true, resizable: true, at: [SIDE, TOP],
+                       width: Graphics.width - 2 * SIDE, height: Graphics.height - TOP - BOTTOM, min_size: MIN_SIZE do
+      text(source.note.to_s, color: note_color, typo: :subtitle1, id: :list_box_note) if source.note
+      if description
+        paper scroll: :vertical, focusable: true, height: :fill, autofocus: true do
+          text description.to_s, wrap: true
+        end
+      else
+        list source.rows || [], id: LIST, rows_shown: :fill, height: :fill, autofocus: true, bind_index: :cursor, empty: "No entries",
+                              on_submit: ->(row) { picked(row) }, on_toggle: ->(row, index) { emit :toggle, row, index },
+                              context_menu: -> { removable?(cursor_row) ? [{ text: REMOVE_TEXT, on_click: -> { remove(cursor_row) } }] : [] }
+        popover target: "##{LIST}", side: :bottom, bind: :naming do
+          field = { id: FIELD, on_submit: ->(name) { add(name) } }
+          field[:max_length] = max_length if max_length
+          text_field "Name", field
+        end
+      end
+      stack row: true do
+        key_help entries: keys || KEYS, grow: 1
+        button REMOVE_TEXT, id: REMOVE, variant: :text, visible: removable?(cursor_row), on_click: -> { remove(cursor_row) }
+      end
     end
-    box.min_size = [[MIN_SIZE[0], width + 2 * ui::Box::ROOM].max, MIN_SIZE[1]]
   end
-  private_class_method :fit_keys
 
-  # Opens the box and gives a part the focus.
-  #
-  # @param box [Mod_Framework::UI::Box] The box.
-  # @param part [Mod_Framework::UI::Component] What takes the keys.
-  # @return [Mod_Framework::UI::Box] The box.
-  def self.show(box, part)
-    box.open
-    part.focus if box.open?
-    box
-  end
-  private_class_method :show
+  private
 
-  # Finds the first row that is not a heading.
+  # Tells the row the list's cursor is on.
   #
-  # @param rows [Array] The rows.
-  # @return [Integer] Its index, 0 without one.
-  def self.first_item(rows)
-    rows.index { |row| !(row.is_a?(Hash) && row.key?(:heading)) } || 0
+  # @return [Hash, String, nil] The row, nil without rows.
+  def cursor_row
+    (source.rows || [])[cursor]
   end
-  private_class_method :first_item
+
+  # Tells whether a row is one added by name, which Remove takes away.
+  #
+  # @param row [Object] The row.
+  # @return [Boolean] Whether it is.
+  def removable?(row)
+    row.is_a?(Hash) && row[:removable] ? true : false
+  end
+
+  # Takes a picked row: the row that adds a mod by name opens the Name field, any other is told.
+  #
+  # @param row [Object] The row.
+  def picked(row)
+    return self.naming = true if row.is_a?(Hash) && row[:name_field]
+
+    emit :submit, row
+  end
+
+  # Takes the name typed and closes the Name field.
+  #
+  # @param name [String] The name.
+  def add(name)
+    self.naming = false
+    emit :add, name
+  end
+
+  # Tells that a row added by name is to go.
+  #
+  # @param row [Hash] The row.
+  def remove(row)
+    emit :remove, row if removable?(row)
+  end
 end
 
 # The lines across the top of a screen of the mod, such as the world screen's, as a framework Window

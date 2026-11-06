@@ -2,6 +2,7 @@
 #  coop.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Asked before removing a member or leaving the party through UI.confirm
 #      Paulinchen  2026-11-05: Read the invites and the players they name as values
 #      Paulinchen  2026-11-01: Named the Mod Framework's interface by its own name
 #                            - Dropped register_option, the rows going into the Mod Framework's options
@@ -588,6 +589,15 @@ module MGQ_MpCoop
     # The choices of LEAVE_QUESTION.
     LEAVE_CHOICES = ["Leave", "Stay"]
 
+    # Asks a question in the Mod Framework's question box, its no lit first.
+    #
+    # @param question [String] The question.
+    # @param choices [Array(String, String)] The yes and the no.
+    # @yieldparam yes [Boolean] Whether the player said yes.
+    def self.ask(question, choices, &answer)
+      Mod_Framework::UI.confirm(question, :yes => choices[0], :no => choices[1], &answer)
+    end
+
     # Tells why the player may not invite now.
     #
     # @param full [String] What to say of a full party.
@@ -612,7 +622,7 @@ module MGQ_MpCoop
       if Party.member?(peer.state)
         return nil unless Party.leader == :me
 
-        return option.new("Remove from party", lambda { Mod_Framework::UI::Confirm.ask(REMOVE_QUESTION % peer.state["name"], REMOVE_CHOICES) { |yes| Party.remove(peer) if yes } }, nil)
+        return option.new("Remove from party", lambda { ask(REMOVE_QUESTION % peer.state["name"], REMOVE_CHOICES) { |yes| Party.remove(peer) if yes } }, nil)
       end
       refusal = invite_refusal("Your party is full.")
       return option.new("Invite to party", nil, refusal) if refusal
@@ -637,7 +647,7 @@ module MGQ_MpCoop
       choices = []
       unless Party.members.empty?
         # The party may have dissolved while the box asked, and leaving none would still say so.
-        leave = asking ? lambda { Mod_Framework::UI::Confirm.ask(LEAVE_QUESTION, LEAVE_CHOICES) { |yes| Party.leave if yes && !Party.members.empty? } } : lambda { Party.leave }
+        leave = asking ? lambda { ask(LEAVE_QUESTION, LEAVE_CHOICES) { |yes| Party.leave if yes && !Party.members.empty? } } : lambda { Party.leave }
         choices << MGQ_MpActions::Option.new("Leave the party", leave, nil)
       end
       choices << MGQ_MpActions::Option.new("Stop inviting", lambda { Party.stop_inviting }, nil) if Party.inviting?

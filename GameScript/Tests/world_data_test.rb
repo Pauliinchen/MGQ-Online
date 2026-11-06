@@ -2,6 +2,7 @@
 #  world_data_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Read the list box and the mod picker from the list box's component, leaving its keys and typing to the in-game suite
 #      Paulinchen  2026-11-05: Answered the mods text, the mod keys and the scripts in Patch with fixed values and checked what goes to the DLL instead of the rules
 #                            - Checked the ids the fingerprint is made of and what goes to the DLL to compare, instead of what its stand-ins compared
 #                            - Answered the forms, the list's rows, the choices, the list box and the mod picker with the values each check sets, leaving their rules to the DLL's tests
@@ -518,14 +519,13 @@ scene = new_scene
 scene.instance_variable_set(:@me, "me")
 scene.instance_variable_set(:@entry, modded_entry)
 scene.open_box(:players)
-box = scene.list_box
-check("the players open in the list box, under the world's name", [box.children.first.children.map { |label| label.text }], [["Loose", "Players"]])
-check("the DLL's lines, its headings as headings and its items in their colours", MGQ_MpListBox.list(box).rows,
-      [{ :heading => "Online (1)" }, { :text => "Me (you)", :color => :good, :right => "online" }, { :heading => "Offline (1)" }, { :text => "Ann", :color => :dim, :right => "offline" }])
-check("the first player is picked", MGQ_MpListBox.list(box).index, 1)
+check("the players open in the list box, under the world's name", [list_box_value(:title), note_text], ["Loose", "Players"])
+check("the DLL's lines, its headings as headings and its items in their colours", list_box_value(:rows),
+      [{ :heading => "Online (1)" }, { :text => "Me (you)", :color => :success, :right => "online" }, { :heading => "Offline (1)" }, { :text => "Ann", :color => :dim, :right => "offline" }])
+check("the first player is picked", list_box_part.cursor, 1)
 scene.open_box(:mods)
 box = scene.list_box
-check("the mods the same way", [note_text(box), MGQ_MpListBox.list(box).rows],
+check("the mods the same way", [note_text, list_box_value(:rows)],
       ["Mods", [{ :heading => "Mods (2)" }, { :text => "Mod A", :color => nil, :right => nil }, { :text => "Mod B", :color => nil, :right => nil }]])
 box.close
 
@@ -534,8 +534,8 @@ scene = new_scene
 scene.instance_variable_set(:@entry, entries[1])
 scene.open_box(:description)
 box = scene.list_box
-check("the whole description opens in the list box, wrapped", [note_text(box), box.find(MGQ_MpListBox::LIST), box.children[1].children.first.text, box.children[1].children.first.wrap],
-      ["Description", nil, "A slow run through part one of the story with friends.", true])
+check("the whole description opens in the list box, without rows", [note_text, list_box_value(:rows), list_box_value(:description)],
+      ["Description", nil, "A slow run through part one of the story with friends."])
 box.close
 
 # The edit form of a world's creator.
@@ -601,76 +601,54 @@ scene.enter_form(:new_world)
 form = scene.form
 form[:mods] = "?Data Pack"
 form_part(scene, :mods).receive("click")
-list = MGQ_MpListBox.list(scene.list_box)
-row = lambda { |name| list.rows.find { |each| each[:text] == name } }
+rows = lambda { list_box_value(:rows) }
+row = lambda { |name| rows.call.find { |each| each[:text] == name } }
+off = [{ :text => "!", :color => :error, :on => false }, { :text => "?", :color => :warning, :on => false }]
 check("the picker opens on the form's mods and lists the row that lists every mod, the installed mods with their two toggles, the added ones and the row that adds one",
-      [$locals.asked("modpick.open").last, list.rows.map { |each| each[:text] || each[:heading] }, row.call("Zeta").values_at(:color, :right, :toggles), list.index],
+      [$locals.asked("modpick.open").last, rows.call.map { |each| each[:text] || each[:heading] }, row.call("Zeta").values_at(:color, :right, :toggles), list_box_part.cursor],
       [{ "text" => "?Data Pack" }, ["List all your mods", "Your mods (4)", "battle_dialogue", "Level_Cap", "Party Sheet", "Zeta", "Added by name (1)", "Data Pack", "Add a mod by name . . ."],
        [:dim, "unlisted", off], 0])
-at = lambda { |name| list.rows.index(row.call(name)) }
+picker = lambda { list_box_part }
 replies << { "answer" => nil, "pick" => screen_pick.call(%w[unlisted listed unlisted unlisted], "Level_Cap; ?Data Pack") }
-list.receive("submit", at.call("Level_Cap"))
+picker.call.send(:emit, :submit, row.call("Level_Cap"))
 check("confirm on a mod lists it through the DLL and in the form at once", [$locals.asked("modpick.act").last, form[:mods], row.call("Level_Cap")[:right]],
       [{ "do" => "toggle", "index" => 1 }, "Level_Cap; ?Data Pack", "listed"])
 replies << { "answer" => nil, "pick" => screen_pick.call(%w[unlisted required unlisted unlisted], "!Level_Cap; ?Data Pack") }
-list.receive("toggle", at.call("Level_Cap"), 0)
+picker.call.send(:emit, :toggle, row.call("Level_Cap"), 0)
 check("its ! toggle makes it required, the toggle on", [$locals.asked("modpick.act").last, form[:mods], row.call("Level_Cap")[:toggles][0][:on]],
       [{ "do" => "mark", "index" => 1, "state" => "required" }, "!Level_Cap; ?Data Pack", true])
 replies << { "answer" => nil, "pick" => screen_pick.call(%w[unlisted essential unlisted unlisted], "?Level_Cap; ?Data Pack") }
-list.receive("toggle", at.call("Level_Cap"), 1)
+picker.call.send(:emit, :toggle, row.call("Level_Cap"), 1)
 check("its ? toggle makes it essential", [$locals.asked("modpick.act").last["state"], form[:mods], row.call("Level_Cap")[:toggles].map { |toggle| toggle[:on] }],
       ["essential", "?Level_Cap; ?Data Pack", [false, true]])
 replies << { "answer" => nil, "pick" => screen_pick.call(%w[listed] * 4, "battle_dialogue; Level_Cap; Party Sheet; Zeta; ?Data Pack", [["Data Pack", "essential", false]], true) }
-list.receive("submit", 0)
-check("the first row lists every installed mod, then offers to unlist them", [$locals.asked("modpick.act").last, form[:mods], list.rows[0][:text]],
+picker.call.send(:emit, :submit, rows.call[0])
+check("the first row lists every installed mod, then offers to unlist them", [$locals.asked("modpick.act").last, form[:mods], rows.call[0][:text]],
       [{ "do" => "list_all" }, "battle_dialogue; Level_Cap; Party Sheet; Zeta; ?Data Pack", "Unlist all your mods"])
 replies << { "answer" => nil, "pick" => screen_pick.call(unlisted, "?Data Pack") }
-list.receive("submit", 0)
-check("and unlists them", [$locals.asked("modpick.act").last, form[:mods], list.rows[0][:text]], [{ "do" => "unlist_all" }, "?Data Pack", "List all your mods"])
-list.index = at.call("Data Pack")
-scene.show_remove
-check("while a mod added by name is picked, the Remove button shows", MGQ_MpListBox.remove_button(scene.list_box).visible, true)
+picker.call.send(:emit, :submit, rows.call[0])
+check("and unlists them", [$locals.asked("modpick.act").last, form[:mods], rows.call[0][:text]], [{ "do" => "unlist_all" }, "?Data Pack", "List all your mods"])
+check("a mod added by name is removable, an installed one not", [row.call("Data Pack")[:removable], row.call("Zeta")[:removable]], [true, false])
 replies << { "answer" => true, "pick" => screen_pick.call(unlisted, "", []) }
-MGQ_MpListBox.remove_button(scene.list_box).receive("click")
+picker.call.send(:remove, row.call("Data Pack"))
 check("Remove takes it out through the DLL, out of the list and the form",
-      [$locals.asked("modpick.act").last, list.rows.map { |each| each[:text] || each[:heading] }.include?("Data Pack"), form[:mods]], [{ "do" => "remove", "index" => 4 }, false, ""])
-list.index = at.call("Zeta")
-scene.show_remove
-check("an installed mod has no Remove", MGQ_MpListBox.remove_button(scene.list_box).visible, false)
-$sounds.clear
-list.receive("submit", list.rows.index { |each| each[:data] == :add })
-field = MGQ_MpListBox.field(scene.list_box)
-help = MGQ_MpListBox.key_help(scene.list_box)
-check("the last row opens the Name field under the list, typing, the box at least as wide as its key line",
-      [field.parent.parent.visible?, $focused.equal?(field), $mgq_text_input, scene.list_box.min_size[0] >= help.measure[0] + 2 * Mod_Framework::UI::Box::ROOM],
-      [true, true, true, true])
-replies << { "answer" => nil, "pick" => screen_pick.call(unlisted, "New Mod", [["New Mod", "listed", false]]) }
-type_in("New Mod\r")
-check("Enter adds the mod through the DLL, picked, and hides the field",
-      [$locals.asked("modpick.act").last, form[:mods], list.rows[list.index][:text], field.parent.parent.visible?, $focused.equal?(list)],
-      [{ "do" => "add", "name" => "New Mod" }, "New Mod", "New Mod", false, true])
-list.receive("submit", list.rows.size - 1)
-type_in("Other")
+      [$locals.asked("modpick.act").last, rows.call.map { |each| each[:text] || each[:heading] }.include?("Data Pack"), form[:mods]], [{ "do" => "remove", "index" => 4 }, false, ""])
 asked = $locals.asked("modpick.act").size
-cancel_in(field)
-check("cancel in the field goes back to the list without adding", [$locals.asked("modpick.act").size, form[:mods], field.parent.parent.visible?, $mgq_text_input], [asked, "New Mod", false, false])
-list.receive("submit", list.rows.size - 1)
-field.receive("submit")
-pad = Mod_Framework::UI::Tree.roots.find { |root| root.is_a?(Mod_Framework::UI::LetterPad) }
-check("a gamepad's letters take the keys from the Name field, which stays open", [pad.nil?, field.parent.parent.visible?], [false, true])
-replies << { "answer" => nil, "pick" => screen_pick.call(unlisted, "New Mod; Pad Mod", [["New Mod", "listed", false], ["Pad Mod", "listed", false]]) }
-"Pad Mod".each_char { |letter| pad.type(letter) } if pad
-pad.finish if pad
-check("their OK adds the mod and hides the field", [$locals.asked("modpick.act").last, form[:mods], field.parent.parent.visible?],
-      [{ "do" => "add", "name" => "Pad Mod" }, "New Mod; Pad Mod", false])
-pad.close if pad
+picker.call.send(:remove, row.call("Zeta"))
+check("an installed mod is never removed", $locals.asked("modpick.act").size, asked)
+picker.call.send(:picked, rows.call.last)
+check("the last row opens the Name field", picker.call.naming, true)
+replies << { "answer" => nil, "pick" => screen_pick.call(unlisted, "New Mod", [["New Mod", "listed", false]]) }
+picker.call.send(:add, "New Mod")
+check("a name typed adds the mod through the DLL and closes the field", [$locals.asked("modpick.act").last, form[:mods], picker.call.naming],
+      [{ "do" => "add", "name" => "New Mod" }, "New Mod", false])
 $sounds.clear
-replies << { "answer" => "Level_Cap is in the list already.", "pick" => screen_pick.call(unlisted, "New Mod; Pad Mod", [["New Mod", "listed", false], ["Pad Mod", "listed", false]]) }
+replies << { "answer" => "Level_Cap is in the list already.", "pick" => screen_pick.call(unlisted, "New Mod", [["New Mod", "listed", false]]) }
 scene.add_mod("level cap")
-check("a name the DLL refuses is refused beside the title", [$sounds, note_text(scene.list_box)], [["buzzer"], "Level_Cap is in the list already."])
-scene.list_box.close(:cancel)
+check("a name the DLL refuses is refused beside the title", [$sounds, note_text], [["buzzer"], "Level_Cap is in the list already."])
+scene.list_box.close
 check("closing has the DLL close the picker and goes back to the form, which shows the mods picked",
-      [$locals.asked("modpick.close").size, scene.list_box, form_part(scene, :mods).text, scene.instance_variable_get(:@field_key)], [1, nil, "New Mod; Pad Mod", :mods])
+      [$locals.asked("modpick.close").size, scene.list_box, form_part(scene, :mods).text, scene.instance_variable_get(:@field_key)], [1, nil, "New Mod", :mods])
 $locals.set("modpick.act")
 $locals.set("modpick.open")
 

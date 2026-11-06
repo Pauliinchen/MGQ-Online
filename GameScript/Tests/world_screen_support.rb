@@ -2,6 +2,7 @@
 #  world_screen_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Read the list box from its component of the Mod Framework's UI layer
 #      Paulinchen  2026-11-01: Created
 #
 #----------------------------------------------------------------
@@ -122,12 +123,28 @@ def strip_text(scene)
   scene.strip.instance_variable_get(:@label).text.to_s
 end
 
+# Finds the list box's component while it is open.
+#
+# @return [MGQ_MpListBox, nil] The component, nil while it is closed.
+def list_box_part
+  top = Mod_Framework::UI::Engine::Layer.tops.find { |each| each.id == MGQ_MpListBox::ID.to_s && !each.closed }
+  top && top.mount.component
+end
+
+# Reads what the open list box shows now.
+#
+# @param name [Symbol] :rows, :note, :title or :description.
+# @return [Object] Its value.
+def list_box_value(name)
+  part = list_box_part
+  [:rows, :note].include?(name) ? part.source.send(name) : part.send(name)
+end
+
 # Tells the note beside the list box's title.
 #
-# @param box [Mod_Framework::UI::Box] The list box.
 # @return [String] The note.
-def note_text(box)
-  box.find(MGQ_MpListBox::NOTE).text.to_s
+def note_text
+  list_box_value(:note).to_s
 end
 
 # Tells what the lines at the top said last.

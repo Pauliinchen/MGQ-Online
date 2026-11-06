@@ -2,6 +2,7 @@
 #  boxes_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Left the list box to the world screen's tests and the in-game suite, checking a player's color names
 #      Paulinchen  2026-11-05: Read the scripts' clock from $frame
 #      Paulinchen  2026-11-01: Dropped the checks of the list windows' mouse wheel and scrollbar, which no screen uses any more
 #                            - Renamed from ui_boxes_test.rb and covered the list box and the info strip on the Mod Framework's components
@@ -10,8 +11,9 @@
 #----------------------------------------------------------------
 
 # Covers what MGQ Online's screens keep of their own in ui_online.rbx: the color of a player, and
-# the list box and the info strip on the Mod Framework's components over a stand-in for C#'s tree.
-# The framework's components, question box and message are its own tests'.
+# the info strip on the Mod Framework's components over a stand-in for C#'s tree. The list box is
+# checked through the world screen that opens it and in the in-game suite; the framework's
+# components, question box and message are its own tests'.
 
 require_relative "bridge_support"
 
@@ -155,85 +157,14 @@ check("anyone else is plain text, whatever their id", [colors.of(peer), colors.o
       [style::TEXT, style::TEXT, style::TEXT, "plain", false])
 check("nobody reads as plain text, without raising", [colors.of(""), colors.of(Object.new), colors.of(nil), colors.label("")], [style::TEXT, style::TEXT, style::TEXT, "plain"])
 
-# The list box, on the framework's components over a stand-in for C#'s tree.
+check("the UI layer takes a player's color by MGQ Online's names", [colors.role(:me), colors.role(mate), colors.role(peer)], [:mgq_online_own, :mgq_online_member, :text])
+
+# The lines across the top of a screen, on the framework's components over a stand-in for C#'s
+# tree.
 open_fake_ui { ["", 0] }
 tree = $fake_tree
-ui = Mod_Framework::UI
 # The props C#'s tree holds of a component.
 props = lambda { |component| tree.nodes[component.node][:props] }
-rows = [{ :heading => "Online (1)" }, { :text => "Mia (you)", :color => :good, :right => "online" }, { :heading => "Offline (1)" }, { :text => "Ana", :color => :dim, :right => "offline" }]
-box = MGQ_MpListBox.open(:title => "Iliasburg", :note => "Players", :rows => rows)
-list = MGQ_MpListBox.list(box)
-ui_frame
-labels = box.children.first.children
-check("the list box opens over the screen, 40 from the sides, 32 from the top and 44 from the bottom, in front of the screen's windows",
-      [box.open?, props.call(box)["at"], props.call(box)["size"], props.call(box)["z"]], [true, [40, 32], [560, 404], ui::Z[:boxes]])
-check("it is placed and kept under its old id, both ways resizable down to its least size, wide enough for its whole key line",
-      [registered_box(:list_box), props.call(box)["layout_id"]], [["List box", MGQ_MpListBox.key_help(box).measure[0] + 2 * ui::Box::ROOM, 132, :both], "list_box"])
-check("it closes on cancel and a click outside, and holds the game's buttons while open",
-      [props.call(box)["closable"], props.call(box)["close_outside"], ui::Capture.on?], [true, true, true])
-check("its title is the world's name, its note at the right in the good color",
-      labels.map { |label| [label.text, label.color] }, [["Iliasburg", nil], ["Players", :good]])
-check("the rows show with their headings, the cursor on the first player, the list taking the keys",
-      [list.rows, list.index, tree.focused], [rows, 1, list.node])
-check("the key line names moving and the cancel keys as bound, and a click outside",
-      MGQ_MpListBox.key_help(box).line, "Up and down: move  X, Numpad 0 or a click outside: close")
-closed = []
-box.on(:close) { |why| closed << why }
-tree.tell(box, "close", "outside")
-ui_frame
-check("a click outside closes it, telling why, and it leaves C#'s tree", [closed, box.open?, tree.holds?(list)], [[:outside], false, false])
-
-# The description: wrapped text in a box that scrolls.
-text = MGQ_MpListBox.open_text("Iliasburg", "Description", "A slow run through part one of the story with friends.")
-ui_frame
-pane = text.children[1]
-check("a description opens as one wrapped label in a box that scrolls and takes the keys",
-      [MGQ_MpListBox.list(text), props.call(pane)["scroll"], pane.children.map { |label| [label.text, label.wrap] }, tree.focused],
-      [nil, true, [["A slow run through part one of the story with friends.", true]], pane.node])
-text.close
-ui_frame
-
-# The parts of the mod picker: the note, the field under the list and the remove button.
-keys = [{ :key => "Enter", :text => "list or unlist" }]
-picker = MGQ_MpListBox.open(:title => "Mods of the world", :rows => [{ :text => "List all your mods" }, { :text => "Add a mod by name . . ." }], :keys => keys,
-                            :field => "Name", :max_length => 300, :remove => "Remove")
-field = MGQ_MpListBox.field(picker)
-remove = MGQ_MpListBox.remove_button(picker)
-ui_frame
-check("a picker without a note shows none, its own key line, and a hidden field and remove button",
-      [picker.find(MGQ_MpListBox::NOTE).visible?, MGQ_MpListBox.key_help(picker).line, field.parent.parent.visible?, remove.visible?, remove.hotkey],
-      [false, "Enter: list or unlist", false, false, MGQ_MpListBox::DELETE_KEY])
-MGQ_MpListBox.note(picker, "Level_Cap is in the list already.", :bad)
-check("a note shows in its color", [picker.find(MGQ_MpListBox::NOTE).text, picker.find(MGQ_MpListBox::NOTE).color, picker.find(MGQ_MpListBox::NOTE).visible?],
-      ["Level_Cap is in the list already.", :bad, true])
-MGQ_MpListBox.show_field(picker)
-ui_frame
-check("show_field shows the field empty and gives it the keys, its cancel going back to the list",
-      [field.parent.parent.visible?, field.text, tree.focused, props.call(field)["cancel_to"], props.call(field)["max_length"] || field.max_length],
-      [true, "", field.node, MGQ_MpListBox.list(picker).node, 300])
-MGQ_MpListBox.hide_field(picker)
-ui_frame
-check("hide_field hides it and gives the list the keys back", [field.parent.parent.visible?, tree.focused], [false, MGQ_MpListBox.list(picker).node])
-short = props.call(picker)["min"]
-MGQ_MpListBox.show_keys(picker, [{ :key => "Enter", :text => "list or unlist" }, { :key => "→", :text => "! required, ? essential" },
-                                 { :key => "Del", :text => "remove" }, { :button => :B, :text => "done" }])
-ui_frame
-whole = MGQ_MpListBox.key_help(picker).measure[0] + 2 * ui::Box::ROOM
-long = props.call(picker)["min"]
-MGQ_MpListBox.show_remove(picker, true)
-ui_frame
-check("the box keeps its least size for a short key line, and grows wider for a long one and the remove button beside it",
-      [short, long, props.call(picker)["min"][0] > whole, remove.visible?], [[460, 132], [whole, 132], true, true])
-picker.close
-ui_frame
-
-# Without the DLL the framework opens no box, and the box comes back closed.
-Mod_Framework.available = false
-check("a list box the framework refuses comes back closed", MGQ_MpListBox.open(:title => "T", :rows => []).open?, false)
-Mod_Framework.available = true
-
-# The lines across the top of a screen.
 strip = MGQ_MpInfoStrip.new
 two = MGQ_MpInfoStrip.new(2)
 ui_frame

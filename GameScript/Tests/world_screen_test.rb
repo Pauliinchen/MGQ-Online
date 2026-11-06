@@ -2,6 +2,7 @@
 #  world_screen_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Read the list box and the mod picker from the list box's component
 #      Paulinchen  2026-11-05: Answered the list, the details, the choices, the list box, the forms and the mod picker with the values each check sets instead of their stand-ins
 #                            - Read the directory's list and the player's id through the DLL's topics
 #      Paulinchen  2026-11-01: Created
@@ -195,7 +196,7 @@ check("a cell that opens something is one part the player clicks, its values as 
 scene.right_box.find(:details_players).receive("click")
 box = scene.list_box
 check("clicking the players opens the list box with the DLL's rows of the world's players",
-      [$screens.asked("screen.box").last, box.open?, note_text(box), MGQ_MpListBox.list(box).rows[3]],
+      [$screens.asked("screen.box").last, box.open?, note_text, list_box_value(:rows)[3]],
       [{ "key" => "w1", "kind" => "players" }, true, "Players", { :text => "Ana", :color => :dim, :right => "offline" }])
 box.close
 
@@ -247,7 +248,7 @@ scene.play("steps" => [["say", "Sunset needs a mod you lack."], ["confirm", "mod
 check("a question of more commands goes to the menu", menu_texts, ["Download", "See the mods", "Back"])
 pick_menu(scene, 1)
 check("See the mods tells the DLL and opens the list box with the world's mods",
-      [screen_requests("screen.answer").last, note_text(scene.list_box)], [{ "answer" => "show_mods" }, "Mods"])
+      [screen_requests("screen.answer").last, note_text], [{ "answer" => "show_mods" }, "Mods"])
 scene.list_box.close
 scene.play("steps" => [["choices", [["At the beginning", "from_beginning"], ["From one of my saves", "from_own"], ["Back", "cancel"]]]])
 cancel_menu(scene)
@@ -366,16 +367,15 @@ $locals.set("modpick.act", "answer" => nil,
             "pick" => { "entries" => [["Level_Cap", "unlisted", true, "unlisted", "grey"], ["Old Mod", "listed", false, "listed", "plain"]], "text" => "Old Mod", "all_listed" => false })
 form_part(scene, :mods).receive("click")
 pick = scene.list_box
-list = MGQ_MpListBox.list(pick)
-check("Mods opens the mod picker over the form, the row of every installed mod first", [pick.open?, list.rows.first[:data]], [true, :all])
-add = list.rows.index { |row| row[:data] == :add }
-list.receive("submit", add)
-check("Add a mod by name opens the Name field, typing", [pick.find(MGQ_MpListBox::FIELD_ROW).visible, $focused.equal?(MGQ_MpListBox.field(pick))], [true, true])
-type_in("Old Mod\r")
-added = list.rows.index { |row| row[:text] == "Old Mod" }
-check("a name typed goes to the DLL, and the mod it added is picked, the Remove button showing on it",
-      [$locals.asked("modpick.act").last, added.nil?, list.index == added, MGQ_MpListBox.remove_button(pick).visible], [{ "do" => "add", "name" => "Old Mod" }, false, true, true])
-pick.close(:cancel)
+check("Mods opens the mod picker over the form, the row of every installed mod first", [pick.open?, list_box_value(:rows).first[:data]], [true, :all])
+add = list_box_value(:rows).find { |row| row[:data] == :add }
+list_box_part.send(:picked, add)
+check("Add a mod by name opens the Name field", list_box_part.naming, true)
+list_box_part.send(:add, "Old Mod")
+added = list_box_value(:rows).find { |row| row[:text] == "Old Mod" }
+check("a name typed goes to the DLL and closes the field, the mod it added removable",
+      [$locals.asked("modpick.act").last, list_box_part.naming, added && added[:removable]], [{ "do" => "add", "name" => "Old Mod" }, false, true])
+pick.close
 check("closing the picker shows the mods in the form", [scene.list_box, form_part(scene, :mods).text], [nil, "Old Mod"])
 
 # A world just made gets the cursor once listed, but not after the player moved on.
