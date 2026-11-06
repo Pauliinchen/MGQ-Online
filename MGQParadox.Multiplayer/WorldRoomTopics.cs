@@ -2,6 +2,7 @@
 //  WorldRoomTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Took what made the player leave the party
 //      Paulinchen  2026-11-05: Opened, closed and sent to the world room and told the player's id through topics, writing the messages from the fields the scripts hand over
 //      Paulinchen  2026-10-31: Registered the topics of the raid bars with the raid pools
 //                            - Registered the topics of the edge arrows over the room
@@ -115,7 +116,9 @@ internal sealed class WorldRoomTopics : IWorldRoomHost
     /// <inheritdoc cref="InviteTopic"/>
     public const string DeclineTopic = "party.decline";
 
-    /// <inheritdoc cref="InviteTopic"/>
+    /// <summary>
+    /// The topic that leaves the party: what made the player leave in, the party's view out.
+    /// </summary>
     public const string LeaveTopic = "party.leave";
 
     /// <inheritdoc cref="InviteTopic"/>
@@ -289,7 +292,7 @@ internal sealed class WorldRoomTopics : IWorldRoomHost
         context.Register(StopInvitingTopic, (_, _) => topics.Act(topics._room.Party.StopInviting));
         context.Register(JoinTopic, (_, request) => topics.Act(() => topics._room.Party.Join(topics.PeerAt(request))));
         context.Register(DeclineTopic, (_, request) => topics.Act(() => topics._room.Party.Decline(topics.PeerAt(request))));
-        context.Register(LeaveTopic, (_, _) => topics.Act(topics._room.Party.Leave));
+        context.Register(LeaveTopic, (_, request) => topics.Act(() => topics._room.Party.Leave(request.AsText())));
         context.Register(RemoveTopic, (_, request) => topics.Act(() => topics._room.Party.Remove(topics.PeerAt(request))));
         context.EveryFrame(_ => topics.Step());
         DuelTopics.Register(context, topics._room);

@@ -2,7 +2,9 @@
 #  battles_coop_join.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Showed the prompt as a hud of the Mod Framework's UI layer under the player
+#      Paulinchen  2026-11-06: Turned the Join Battle hotkey off while the Mod Framework leaves it unbound
+#                            - Showed the prompt as a hud of the Mod Framework's UI layer under the player
+#                            - Told the DLL a side battle's enemy rates as the list of numbers they are
 #      Paulinchen  2026-11-05: Told the battle's players in rbn whether or not it takes players in
 #                            - Told whether the battle takes players in, is full, ends or is closed, as the rules in C# tell it
 #                            - Read the Join Battle hotkey in a Classic world too, for a party member's battle the player missed
@@ -202,7 +204,7 @@ module MGQ_MpBattlesJoin
       next unless side
 
       steps = defined?(MGQ_MpRaidBar) ? MGQ_MpRaidBar.distance_to_boss(side[0], x, y) : nil
-      [host.seat, side[0].to_i, side[1].to_s, steps, MGQ_MpRaidPool.troop_label(side[0]).to_s]
+      [host.seat, side[0].to_i, side[1], steps, MGQ_MpRaidPool.troop_label(side[0]).to_s]
     end.compact
   end
 
@@ -214,19 +216,15 @@ module MGQ_MpBattlesJoin
     defined?(MGQ_MpRaidFreezeUi) ? MGQ_MpRaidFreezeUi.join_target($game_player.x, $game_player.y, JOIN_DISTANCE) : nil
   end
 
-  # Reports whether the Join Battle hotkey is read: only in a world, and only while no other hotkey
-  # shares its key.
+  # Reports whether the Join Battle hotkey is read: only in a world, and only while it has a key.
   #
   # @return [Boolean] Whether it is.
   def self.reads_hotkey?
     return false unless MGQ_MpOverworldSync.in_world?
+    # The Mod Framework leaves the hotkey unbound while another hotkey holds its key, and logs which.
+    return true unless MGQ_MpHotkeys.code(:join_battle) == Mod_Framework::Hotkeys::UNBOUND
 
-    code = MGQ_MpHotkeys.code(:join_battle)
-    # A key's press goes to the first who reads it in a frame, which would take it from the other.
-    other = MGQ_MpHotkeys.names.find { |name| name != :join_battle && MGQ_MpHotkeys.code(name) == code }
-    return true unless other
-
-    log_once([:shared_key, other, code], "the Join Battle hotkey #{MGQ_MpHotkeys.label(:join_battle)} is off: #{MGQ_MpHotkeys.name_of(other)} has the same key")
+    log_once(:unbound, "the Join Battle hotkey is off: it has no key")
     false
   end
 

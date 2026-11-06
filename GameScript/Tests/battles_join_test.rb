@@ -2,9 +2,11 @@
 #  battles_join_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Reached the Mod Framework's engine under its own name
+#      Paulinchen  2026-11-06: Held the keys in $down down too, as the Mod Framework reads a hotkey's key
+#                            - Reached the Mod Framework's engine under its own name
 #                            - Named the action line's color as the scripts name it
 #                            - Left how the prompt looks to the in-game suite
+#                            - Expected a side battle's enemy rates as a list of numbers
 #      Paulinchen  2026-11-05: Answered the squad math with fixed values per case
 #                            - Read the messages sent as the scripts hand them and handed those of other games as the DLL reads them
 #                            - Answered the co-op topics with the values each case sets and checked what the scripts ask and do with the answers
@@ -118,7 +120,7 @@ $down = []
 # The player's settings from $settings and the hotkeys held in $down.
 module MGQ_Multiplayer
   module Player; def self.setting(key); ($settings || {})[key]; end; end
-  module Mod_Framework::UI::Engine::Key; def self.pressed?(code); $down.include?(code); end; end
+  module Mod_Framework::UI::Engine::Key; def self.pressed?(code); $down.include?(code); end; def self.down?(code); $down.include?(code); end; end
 end
 
 # Stand-ins for the map's sprites, which the prompt draws with.
@@ -470,7 +472,7 @@ MGQ_MpOverworldSync::Peers.all.clear
 # The raid boss pools, troop 71 being Queen Harpy.
 module MGQ_MpRaidPool
   # Reads the raid boss troop and enemy rates a host's rpb state tells.
-  def self.side_of(host); host.state["rpb"].to_s =~ /\A(\d+);(.*)\z/ ? [$1.to_i, $2] : nil; end
+  def self.side_of(host); host.state["rpb"]; end
   def self.troop_label(troop); troop == 71 ? "Queen Harpy" : "?"; end
   # Keeps the side battle started in $side_started and starts it while $side_ok is set.
   def self.start_side(troop, rates); $side_started = [troop, rates]; $side_ok; end
@@ -481,24 +483,24 @@ module MGQ_MpRaidPool
   def self.note_invite(_message); end
 end
 $scene_now = Scene_Map.new
-boss_host = player(5, { "scene" => "battle", "rb" => "b3", "rbh" => "5", "rbn" => "4", "rbs" => "full", "rpb" => "71;100,100,0", "x" => "2", "y" => "1" })
-MGQ_MpOverworldSync::Peers.all.replace([boss_host, player(6, { "rpb" => "71;100,100,0", "map" => "6" })])
-$coop.set("coop.join_frame", "side" => [71, "100,100,0", "Queen Harpy"])
+boss_host = player(5, { "scene" => "battle", "rb" => "b3", "rbh" => "5", "rbn" => "4", "rbs" => "full", "rpb" => [71, [100, 100, 0]], "x" => "2", "y" => "1" })
+MGQ_MpOverworldSync::Peers.all.replace([boss_host, player(6, { "rpb" => [71, [100, 100, 0]], "map" => "6" })])
+$coop.set("coop.join_frame", "side" => [71, [100, 100, 0], "Queen Harpy"])
 map_frame
 check("each frame tells the DLL the side battles the raid boss battles on the player's map offer, by their hosts' states",
-      join_frame["sides"], [[5, 71, "100,100,0", nil, "Queen Harpy"]])
+      join_frame["sides"], [[5, 71, [100, 100, 0], nil, "Queen Harpy"]])
 check("the side battle the DLL picks is offered in the prompt", [offered, join.prompt_text], [nil, "Press J to fight Queen Harpy alongside"])
 # The raid bar, whose boss of troop 71 stands one step from the player.
 module MGQ_MpRaidBar; def self.distance_to_boss(troop, _x, _y); troop == 71 ? 1 : 9999; end; end
 map_frame
-check("with the steps to each boss's event", join_frame["sides"], [[5, 71, "100,100,0", 1, "Queen Harpy"]])
+check("with the steps to each boss's event", join_frame["sides"], [[5, 71, [100, 100, 0], 1, "Queen Harpy"]])
 $settings = { "key_overview" => "74" }
 map_frame
 check("a hotkey that turns Join Battle off hides the side battle's prompt too", [join.prompt_text, join_frame["sides"]], [nil, nil])
 $settings = nil
 $side_ok = true
 press
-check("the hotkey starts the side battle with the host's troop and enemy rates", $side_started, [71, "100,100,0"])
+check("the hotkey starts the side battle with the host's troop and enemy rates", $side_started, [71, [100, 100, 0]])
 $side_ok = false
 press
 check("a side battle that cannot start tells the player", $messages.last, "Cannot fight Queen Harpy now.")

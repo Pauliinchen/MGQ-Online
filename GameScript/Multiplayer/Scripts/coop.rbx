@@ -2,7 +2,9 @@
 #  coop.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Asked before removing a member or leaving the party through UI.confirm
+#      Paulinchen  2026-11-06: Told the DLL what made the player leave the party, for its log
+#                            - Marked a party invite by its party and its number, so a new invite shows after a decline
+#                            - Asked before removing a member or leaving the party through UI.confirm
 #      Paulinchen  2026-11-05: Read the invites and the players they name as values
 #      Paulinchen  2026-11-01: Named the Mod Framework's interface by its own name
 #                            - Dropped register_option, the rows going into the Mod Framework's options
@@ -329,6 +331,12 @@ module MGQ_MpCoop
     # Where a party none of the players names stands: nobody in it, no leader.
     NO_PARTY = [0, nil]
 
+    # Why the player left the party when they picked it.
+    CHOSEN = "the player chose it"
+
+    # Why the player left the party when a script left it without naming why, such as a test.
+    SCRIPTED = "a script left it"
+
     # The view as the DLL posted it last.
     @view = NONE
 
@@ -481,8 +489,10 @@ module MGQ_MpCoop
     end
 
     # Leaves the party.
-    def self.leave
-      act("party.leave")
+    #
+    # @param why [String] What made the player leave, which the log names.
+    def self.leave(why = SCRIPTED)
+      act("party.leave", why.to_s)
     end
 
     # Removes a member from the party, as its leader: the member's game leaves it.
@@ -647,7 +657,7 @@ module MGQ_MpCoop
       choices = []
       unless Party.members.empty?
         # The party may have dissolved while the box asked, and leaving none would still say so.
-        leave = asking ? lambda { ask(LEAVE_QUESTION, LEAVE_CHOICES) { |yes| Party.leave if yes && !Party.members.empty? } } : lambda { Party.leave }
+        leave = asking ? lambda { ask(LEAVE_QUESTION, LEAVE_CHOICES) { |yes| Party.leave(Party::CHOSEN) if yes && !Party.members.empty? } } : lambda { Party.leave(Party::CHOSEN) }
         choices << MGQ_MpActions::Option.new("Leave the party", leave, nil)
       end
       choices << MGQ_MpActions::Option.new("Stop inviting", lambda { Party.stop_inviting }, nil) if Party.inviting?
@@ -671,7 +681,7 @@ module MGQ_MpCoop
       return nil unless Party.invited_by?(peer) && !Party.full?(peer.state["party"])
 
       MGQ_MpActions::Notice.new([:party, peer.seat], "#{peer.state['name']} invites you to a party", INVITE_COLOR, "Accept",
-                                lambda { Party.join(peer) }, lambda { Party.decline(peer) }, peer.state["party"])
+                                lambda { Party.join(peer) }, lambda { Party.decline(peer) }, [peer.state["party"], peer.state["invite_round"]])
     end
 
     # Names what the player is doing for the line above their own head, with when it lapses.

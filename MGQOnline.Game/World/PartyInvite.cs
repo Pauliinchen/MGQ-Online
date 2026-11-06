@@ -2,6 +2,7 @@
 //  PartyInvite.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Counted the invites the player makes
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -55,6 +56,12 @@ internal sealed class PartyInvite
     public IReadOnlyList<string> Targets => Inviting ? named : [];
 
     /// <summary>
+    /// Gets the number of the latest invite the player made, which tells another player's game a new
+    /// invite from the one they declined.
+    /// </summary>
+    public int Round { get; private set; }
+
+    /// <summary>
     /// Tells whether the invite reaches another player: standing near, or named.
     /// </summary>
     /// <param name="state">What the other player last told.</param>
@@ -69,6 +76,7 @@ internal sealed class PartyInvite
     /// <param name="targetId">The id of a player the invite reaches wherever they are.</param>
     public void Invite(string? targetId)
     {
+        Round++;
         if (!Inviting)
         {
             named.Clear();

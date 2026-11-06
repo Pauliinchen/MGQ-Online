@@ -2,6 +2,8 @@
 //  Party.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Logged what made the player leave the party
+//                            - Told the number of the player's latest invite
 //      Paulinchen  2026-11-01: Kept the invite standing for everyone it reached until it runs out or the party is full
 //      Paulinchen  2026-10-23: Created
 //
@@ -9,6 +11,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 
 namespace MGQOnline.Game.World;
@@ -173,6 +176,7 @@ public sealed class Party
         new("party_members", string.Join(',', Admitted)),
         new("invite", Inviting ? "1" : "0"),
         new("invite_to", string.Join(',', Targets)),
+        new("invite_round", invite.Round.ToString(CultureInfo.InvariantCulture)),
     ];
 
     /// <summary>
@@ -369,9 +373,10 @@ public sealed class Party
     /// <summary>
     /// Leaves the party.
     /// </summary>
-    public void Leave()
+    /// <param name="why">What made the player leave, such as "the player chose it", which the log names.</param>
+    public void Leave(string why)
     {
-        Log($"left party {Id} with {Members.Count()} other member(s)");
+        Log($"left party {Id} with {Members.Count()} other member(s): {why}");
         Reset();
         room.Notice("You left the party.");
         foreach (Peer peer in room.Peers)

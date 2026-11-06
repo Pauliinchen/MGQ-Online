@@ -2,7 +2,8 @@
 #  framework_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Reached the Mod Framework's engine under its own name
+#      Paulinchen  2026-11-06: Judged every key one a hotkey may take, as the Mod Framework asks the DLL
+#                            - Reached the Mod Framework's engine under its own name
 #      Paulinchen  2026-11-01: Ran a frame of the Mod Framework's components as the game does
 #      Paulinchen  2026-10-31: Created
 #
@@ -120,11 +121,12 @@ def record_layout_registrations
 end
 
 # Opens the framework's bridge with a FakeBridge, whose events of the interface (topics starting
-# "ui.") its drain hands to the framework and the rest to MGQ Online's bridge, and counts the DLL
-# as working.
+# "ui.") its drain hands to the framework and the rest to MGQ Online's bridge, judges every key one
+# a hotkey may take, and counts the DLL as working.
 #
 # @param fake [FakeBridge] The DLL's side.
 def open_framework(fake)
+  fake.answer(Mod_Framework::Options::Keys::JUDGE_TOPIC) { |_code| "bind" }
   Mod_Framework.bridge.open(fake)
   fake.ui_context = Mod_Framework.bridge.instance_variable_get(:@context)
   Mod_Framework.available = true

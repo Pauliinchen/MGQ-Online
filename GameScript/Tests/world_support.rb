@@ -2,7 +2,8 @@
 #  world_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Dropped the stand-ins of the mouse and the held buttons, which no check reads
+#      Paulinchen  2026-11-06: Held a key while it is pressed and triggered it the same all frame, as the Mod Framework's keys do
+#                            - Dropped the stand-ins of the mouse and the held buttons, which no check reads
 #                            - Reached the Mod Framework's engine under its own name
 #                            - Stood in for UI.in_front? of the Mod Framework
 #      Paulinchen  2026-11-05: Kept each message sent as the scripts hand it and took the fields of each message told as the test writes them
@@ -166,11 +167,13 @@ module Mod_Framework::UI; def self.in_front?; $in_front; end; end
 # held.
 module Mod_Framework::UI::Engine::Key
   # Answers whether a key is pressed, once: the code in $pressed, or B when $pressed is true.
-  def self.pressed?(code); p = $pressed == code || ($pressed == true && code == 0x42); $pressed = false if p; p; end
-  # Answers whether a key is held, as $down lists it.
-  def self.down?(code); ($down || []).include?(code); end
-  # Answers as pressed? does.
-  def self.triggered?(code); pressed?(code); end
+  def self.pressed?(code); p = named?(code); $pressed = false if p; p; end
+  # Answers whether a key is held: as $down lists it, or while it is pressed in this frame.
+  def self.down?(code); ($down || []).include?(code) || named?(code) || @went_down == [frame, code]; end
+  # Answers as pressed? does, the same however often it is asked in the frame.
+  def self.triggered?(code); @went_down = [frame, code] if pressed?(code); @went_down == [frame, code]; end
+  # Answers whether $pressed names a key: its code, or B when $pressed is true.
+  def self.named?(code); $pressed == code || ($pressed == true && code == 0x42); end
   # Counts the frames ui_frame ended.
   def self.frame; $ui_frames.to_i; end
 end

@@ -2,7 +2,8 @@
 #  overworld_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Drew the outline's frame in a color of its own
+#      Paulinchen  2026-11-06: Expected the DLL to hear that the player chose to leave the party
+#                            - Drew the outline's frame in a color of its own
 #                            - Took the action wheel's choices as the wheel of the UI layer tells them, leaving its keys to the in-game suite
 #                            - Checked what the labels, the own ping, the own line and the world status show, leaving how they look to the in-game suite
 #      Paulinchen  2026-11-06: Checked that a message's lists and Hashes reach the DLL whole
@@ -455,7 +456,7 @@ take_choice(LEAVE)
 $party_answer = nil
 MGQ_MpOverworld.update_ghosts
 check("a stranger's ghost has no followers", ghost.followers, [])
-check("leaving asks the DLL", [$party_calls.last, MGQ_MpCoop::Party.id], [["leave", nil], nil])
+check("leaving asks the DLL", [$party_calls.last, MGQ_MpCoop::Party.id], [["leave", "the player chose it"], nil])
 check("no party to leave", option(LEAVE), ["Leave the party", false])
 
 $inbox << entry("message", 2, told(friend.merge("map" => "5", "x" => "20", "y" => "21", "party" => "theirs", "invite" => true)))

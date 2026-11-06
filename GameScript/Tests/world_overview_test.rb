@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-06: Dropped the check of the picture behind the Quests page
+#                            - Expected the DLL to hear that the player chose to leave the party
 #                            - Reached the Mod Framework's engine under its own name
 #                            - Answered the catch-up's topics with fixed values instead of recorded cases
 #                            - Read the small party box's rows, leaving how it looks to the in-game suite
@@ -1020,7 +1021,7 @@ pick.call(0, nil)
 $party_answer = party_view(nil)
 answer_confirm(true)
 $party_answer = nil
-check("yes leaves it through the DLL", [confirm.open?, $party_calls.last, MGQ_MpCoop::Party.id], [false, ["leave", nil], nil])
+check("yes leaves it through the DLL", [confirm.open?, $party_calls.last, MGQ_MpCoop::Party.id], [false, ["leave", "the player chose it"], nil])
 overview.close("the test")
 leave_option.run.call
 notices = MGQ_MpOverworldSync::Status.lines.size

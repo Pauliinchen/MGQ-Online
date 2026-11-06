@@ -2,7 +2,8 @@
 #  hotkeys_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Reached the Mod Framework's engine under its own name
+#      Paulinchen  2026-11-06: Held the keys in $down down too, as the Mod Framework reads a hotkey's key
+#                            - Reached the Mod Framework's engine under its own name
 #                            - Expected M as the party box size hotkey
 #                            - Stood in for the game's scenes, which the Mod Framework's hotkeys read
 #      Paulinchen  2026-10-31: Checked the hotkeys defined through the Mod Framework, quiet while any mod types
@@ -43,7 +44,7 @@ end
 # Stands in for the game's scenes, on none of which a hotkey is kept quiet.
 module SceneManager; def self.scene; nil; end; end
 # Stands in for the keyboard: the keys in $down went down.
-module Mod_Framework::UI::Engine::Key; def self.pressed?(code); $down.include?(code); end; end
+module Mod_Framework::UI::Engine::Key; def self.pressed?(code); $down.include?(code); end; def self.down?(code); $down.include?(code); end; end
 
 load_script "core_hotkeys"
 Mod_Framework.available = true

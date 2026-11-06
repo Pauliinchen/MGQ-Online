@@ -2,6 +2,7 @@
 //  PartyInviteTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Checked that a new invite after a decline tells a new invite
 //      Paulinchen  2026-11-01: Created
 //
 //----------------------------------------------------------------
@@ -15,7 +16,7 @@ namespace MGQOnline.Game.Tests.World;
 /// <summary>
 /// Covers the party invite of the player, Mia, standing for every player it reached: a second
 /// player still joins after the first, the invite stops once the party is full and runs out after
-/// its time, and a decline drops only the player who declined.
+/// its time, and a decline drops only the player who declined until a new invite.
 /// </summary>
 public sealed class PartyInviteTests
 {
@@ -93,7 +94,8 @@ public sealed class PartyInviteTests
 
     /// <summary>
     /// Asserts that a player named from afar who declines is dropped from the invite while the
-    /// other named player keeps it.
+    /// other named player keeps it, and that a new invite names them again under a new number,
+    /// which their game shows although they declined the one before.
     /// </summary>
     [Fact]
     public void Decline_DropsOnlyThePlayerWhoDeclined()
@@ -111,6 +113,12 @@ public sealed class PartyInviteTests
 
         Assert.True(host.Party.Inviting);
         Assert.Equal(["lea00000"], host.Party.Targets);
+
+        string declined = host.InviteRound;
+        host.Party.Invite("ana00000");
+
+        Assert.Equal(["lea00000", "ana00000"], host.Party.Targets);
+        Assert.NotEqual(declined, host.InviteRound);
     }
 
     /// <summary>
@@ -151,6 +159,11 @@ public sealed class PartyInviteTests
         /// Gets the notices shown.
         /// </summary>
         public List<string> Notices { get; } = [];
+
+        /// <summary>
+        /// Gets the number of the player's latest invite, as the player's state tells it.
+        /// </summary>
+        public string InviteRound => Party.StateFields.Single(told => told.Key == "invite_round").Value;
 
         /// <summary>
         /// Lets another player tell their state on map 5.
