@@ -438,13 +438,14 @@ Your games meet at the mod's **server**, which passes their data on. Every game 
 | Message or problem | What to do |
 |---|---|
 | *Multiplayer* says a new version is out | Pick *Update and restart* in the Mod Framework's question: the game closes, the mod updates and the game starts again in the Multiplayer menu. Or close the game and run `Update.bat` in `Patch\Mod_Framework`. A Discord invite, or the return to a world after its mods were installed, asks the same while the mod is outdated; after updating, enter the world again yourself. |
+| "This version cannot play online. Update it at the title." | The server turned your version away while you played in a world. Go back to the title: it asks the Mod Framework's question about the update at once. |
 | "The server could not be reached" | Your internet connection is down, or something such as a firewall blocks the game from going online. |
 | "\<world> is not in the list right now" | The world list hasn't loaded yet or couldn't be fetched; the top of the world screen says which. Try again once it has loaded. |
 | "Your game differs from the creator's of \<world>" | Your mods add or remove entries the creator's don't, or the other way round. You play on; the world's details list the mods it needs. |
 | "\<world> needs mods you do not have" | The world requires a mod you don't have. Install it, then enter again. |
 | "The mod list has not loaded yet" | Wait until the world list has loaded and enter again. |
 | "Player.ini could not be read; close programs that hold it" | Another program, such as an antivirus, a cloud sync or an editor, holds `Patch\Multiplayer\Player.ini`. Your settings in it stay as they are, but no setting is saved and no world entered until the file can be read again. Close the program, or check that the file is not damaged. |
-| "Update MGQ Online to play online." | Your version of the mod is too old. Install the newest MGQ Online release. |
+| "Update MGQ Online to play online." | Your version of the mod is too old. On the title or in the Multiplayer menu the Mod Framework asks to update it at once; or install the newest MGQ Online release yourself. |
 | "Update MGQ Online to enter this world." | Your version of the mod is too old for this world. Install the newest MGQ Online release. |
 
 **Logs:** the log is in the `Logs` folder of your game folder, one per day you played, named after the day, such as `Multiplayer 2026-10-07.log`. It tells what the mod did inside the game and what the connection did. Starting the game deletes the logs of earlier days, so send it on the day something went wrong. The quickest way is **F3** (or *Report a Bug* in the action wheel): it sends today's log and a screenshot to the developer with your report. Otherwise please attach the log of the day it went wrong to a [bug report](https://github.com/Pauliinchen/MGQ-Online/issues/new?template=bug_report.yml).

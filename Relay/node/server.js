@@ -2,6 +2,7 @@
 //  server.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Named the lowest version the relay serves beside a refusal of a game too old for it
 //      Paulinchen  2026-11-05: Dropped the games' story writes, checkpoint reads and route locks over HTTP, which only games without story tracks used
 //                            - Played every Raid World on tracks and told every game the world's mod settings, as every game the relay serves does both
 //                            - Took the player's key and auth key from the headers only, the admin routes' too
@@ -106,7 +107,7 @@ import {
 } from "../core/designs.js";
 import { DIRECTORY_LIMITS, Directory, SETTINGS_BY, WORLD_TYPE, difficultyText, handleDirectoryRequest, modSettingsText, modsRuleText, parseAdmins, raidBossesText, squadText } from "../core/directory.js";
 import {
-  DEFAULT_MIN_VERSION, DESIGN_FORMAT_HEADER, DESIGNER_HEADER, DESIGNER_VERSION_HEADER, DRAIN_LIMITS, VERSION_HEADER, listsWorldMods, updateRefusal,
+  DEFAULT_MIN_VERSION, DESIGN_FORMAT_HEADER, DESIGNER_HEADER, DESIGNER_VERSION_HEADER, DRAIN_LIMITS, VERSION_HEADER, listsWorldMods, refusalHeaders, updateRefusal,
 } from "../core/gate.js";
 import { routeIs, withJson } from "../core/http.js";
 import { adminCheck, exportWorldData, handleMigrationRequest, migrationRouteOf } from "../core/migration.js";
@@ -122,7 +123,7 @@ import { seedStoryTables } from "./story_seed.js";
 import { TradeBook, handleTradeRequest } from "../core/trades.js";
 import { DesignCompiler, designCompilerSettingsOf } from "./design_compiler.js";
 import {
-  AUTH_HEADER, CHAT_SLOW, CLOSE, FEATURES_HEADER, IN, LIMITS, OUT, PING, PLAYER_HEADER, PONG, REFUSAL_HEADER, chatLineOf, chatText, newPeer, newWorldPeer,
+  AUTH_HEADER, CHAT_SLOW, CLOSE, FEATURES_HEADER, IN, LIMITS, OUT, PING, PLAYER_HEADER, PONG, chatLineOf, chatText, newPeer, newWorldPeer,
   parseRoute, presenceOf, replacedBy, routeWorldMessage, seatChangeText, seatText, takeChatLine, takeMessage, takeSeat, worldOverdue,
 } from "../core/relay.js";
 
@@ -784,8 +785,8 @@ export function createRelay({
     const path = pathOf(request);
     const address = addressOf(request);
     const logged = (status) => log.info(requestLine(new Date(), request.method, path, status, performance.now() - started, address));
-    const turnAway = (status, reason, code) => {
-      refuse(socket, status, reason, code);
+    const turnAway = (status, reason, code, minimum = null) => {
+      refuse(socket, status, reason, code, minimum);
       logged(status);
     };
     const accept = (seat, socketServer = sockets) => socketServer.handleUpgrade(request, socket, head, (webSocket) => {
@@ -795,7 +796,7 @@ export function createRelay({
     const outdated = updateRefusal(new URL(request.url, "http://relay"), headerOf(request, FEATURES_HEADER), headerOf(request, VERSION_HEADER), release.min, request.method);
 
     if (outdated) {
-      turnAway(outdated.status, outdated.reason, outdated.code);
+      turnAway(outdated.status, outdated.reason, outdated.code, outdated.minimum);
       return;
     }
 
@@ -1053,23 +1054,23 @@ export function createRelay({
 
   /**
    * Turns a game too old for the relay away: a room's or a world room's path as a refused WebSocket,
-   * with the reason as text and its code in REFUSAL_HEADER when it has one, any other request with
-   * JSON once its body is read and dropped, so the refusal reaches a game still sending it.
+   * with the reason as text, any other request with JSON once its body is read and dropped, so the
+   * refusal reaches a game still sending it; each with the headers of refusalHeaders.
    *
    * @param {http.IncomingMessage} request The request.
    * @param {http.ServerResponse} response The response.
-   * @param {{status: number, reason: string, socket: boolean, code: string | null}} refusal The refusal, see updateRefusal.
+   * @param {{status: number, reason: string, socket: boolean, code: string | null, minimum: string | null}} refusal The refusal, see updateRefusal.
    * @returns {Promise<void>} Completes once answered.
    */
   async function refuseOutdated(request, response, refusal) {
     if (refusal.socket) {
-      response.writeHead(refusal.status, { "Content-Type": "text/plain", ...(refusal.code ? { [REFUSAL_HEADER]: refusal.code } : {}) });
+      response.writeHead(refusal.status, { "Content-Type": "text/plain", ...refusalHeaders(refusal) });
       response.end(refusal.reason);
       return;
     }
 
     await drain(request, DRAIN_LIMITS.maxBytes, AbortSignal.timeout(DRAIN_LIMITS.readMs));
-    response.writeHead(refusal.status, { "Content-Type": "application/json" });
+    response.writeHead(refusal.status, { "Content-Type": "application/json", ...refusalHeaders(refusal) });
     response.end(JSON.stringify({ error: refusal.reason }));
   }
 
@@ -1965,9 +1966,10 @@ export function createRelay({
    * @param {number} status The HTTP status.
    * @param {string} reason Why.
    * @param {string} [code] The code that names why, sent in REFUSAL_HEADER.
+   * @param {string | null} [minimum] The lowest version the relay serves, sent in MIN_VERSION_HEADER beside a refusal of a game too old for it.
    */
-  function refuse(socket, status, reason, code) {
-    const named = code ? `${REFUSAL_HEADER}: ${code}\r\n` : "";
+  function refuse(socket, status, reason, code, minimum = null) {
+    const named = Object.entries(refusalHeaders({ code: code ?? null, minimum })).map(([name, value]) => `${name}: ${value}\r\n`).join("");
     socket.end(`HTTP/1.1 ${status} Refused\r\nContent-Type: text/plain\r\n${named}Connection: close\r\n\r\n${reason}`);
   }
 

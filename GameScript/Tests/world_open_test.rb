@@ -2,6 +2,7 @@
 #  world_open_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Checked that a refusal of this version asks for the update at the title at once and after a game at the next title
 #      Paulinchen  2026-11-05: Answered the squad rules' text with fixed values and checked what goes to the DLL instead of the rule
 #                            - Answered the worlds on this PC, the list's rows, the forms and the invite with the values each check sets, and checked what goes to the DLL instead of what its stand-ins decided
 #                            - Read the directory's list, the world room and the player's id through the DLL's topics
@@ -109,8 +110,8 @@ module SceneManager
   # Records the scene called in $called.
   def self.call(scene); $called = scene; end
 
-  # Gives a scene that takes any preparation.
-  def self.scene; Object.new.tap { |scene| def scene.prepare(*); end }; end
+  # Gives the scene a check put in $scene, else one that takes any preparation.
+  def self.scene; $scene || Object.new.tap { |scene| def scene.prepare(*); end }; end
 end
 
 # Stands in for saving the system data, which saves nothing.
@@ -140,6 +141,16 @@ module MGQ_Multiplayer
 
   # Answers whether the version to install is a step back, from $rollback.
   def self.rollback?; $rollback == true; end
+
+  # Stands in for the update check: the version the DLL runs, and a refusal of this version, which
+  # makes the game outdated.
+  module UpdateCheck
+    # Answers the version the DLL runs.
+    def self.have; "0.7.0"; end
+
+    # Takes the release a refusal names, making the game outdated.
+    def self.refused(_version, _have); $outdated = true; end
+  end
 
   # Gives the text as it is.
   def self.clean(text); text; end
@@ -451,7 +462,7 @@ MGQ_MpWorld.open_world_screen(title_scene)
 name, version, options, done = $required.last
 check("picking Multiplayer asks the Mod Framework for the release to play in place of the world screen, holding the title's commands",
       [$called, name, version, options, update.asking?, title_scene.instance_variable_get(:@command_window).active],
-      [nil, "mgq-online", "9.9.9", { :exact => false, :reason => MGQ_MpWorld::Update::REASON, :action => "multiplayer.open" }, true, false])
+      [nil, "mgq-online", "9.9.9", { :exact => false, :have => "0.7.0", :reason => MGQ_MpWorld::Update::REASON, :action => "multiplayer.open" }, true, false])
 done.call(:declined)
 check("declining gives the title's commands back", [update.asking?, title_scene.instance_variable_get(:@command_window).active], [false, true])
 MGQ_MpWorld.open_world_screen(title_scene)
@@ -477,6 +488,28 @@ check("a question still coming leaves the title's commands off, the framework to
 check("and opening the world screen again meanwhile asks no second time", [MGQ_MpWorld.open_world_screen(title_scene), $required.size], [:off, asked + 1])
 $required.last[3].call(:declined)
 check("its answer gives them back", [update.asking?, title_scene.instance_variable_get(:@command_window).active], [false, true])
+
+# The relay turning this version away while the player plays in a world: a toast says it once, and
+# the next title asks the framework at once; on the title the framework asks straight away.
+$outdated = false
+$required.clear
+toasts = []
+Mod_Framework.define_singleton_method(:toast) { |text, options = {}| toasts << [text, options[:key]]; nil }
+$scene = Object.new
+update.needed("version" => "9.9.9", "have" => "0.7.0")
+update.needed("version" => "9.9.9", "have" => "0.7.0")
+check("a refusal in a game tells the player once to update at the title and asks nothing there",
+      [toasts, $required.size, update.waiting?], [[[MGQ_MpWorld::Update::IN_GAME_TEXT, :mgq_online_update]], 0, true])
+$scene = title_scene
+MGQ_MpWorld.on_title_update(title_scene)
+check("the next title asks the framework for the release the refusal named",
+      [$required.size, $required.last && $required.last[1], update.waiting?, title_scene.instance_variable_get(:@command_window).active], [1, "9.9.9", false, false])
+$required.last[3].call(:declined)
+$required.clear
+update.needed("version" => "9.9.9", "have" => "0.7.0")
+check("a refusal at the title asks at once", [$required.size, update.asking?], [1, true])
+$required.last[3].call(:declined)
+$scene = nil
 $outdated = false
 
 # A world's new game that asks something first, such as a hero, and the player backing out of it.

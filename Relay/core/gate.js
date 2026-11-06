@@ -2,6 +2,7 @@
 //  gate.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Named the lowest version the relay serves in X-MGQ-Min-Version beside a refusal of a game too old for it
 //      Paulinchen  2026-11-05: Held the story mapping games read to the lowest version too
 //                            - Listed the worlds with their mods for the website and the World Admin tool only
 //                            - Answered every request to a PvP room with the update refusal
@@ -26,7 +27,7 @@
 import { bossRouteOf } from "./bosses.js";
 import { routeIs } from "./http.js";
 import { MOD_LIMITS } from "./mods.js";
-import { parseFeatures } from "./relay.js";
+import { REFUSAL_HEADER, parseFeatures } from "./relay.js";
 import { REPORT_LIMITS } from "./reports.js";
 import { storyRouteOf } from "./story.js";
 import { MAPPING_GAME_ROUTE } from "./story_mapping.js";
@@ -78,6 +79,12 @@ export const WORLD_ROOM_UPDATE_STATUS = 400;
  * Released games from 0.5.1 to 0.6.4 read a 400 with a code they do not know as their generic refusal.
  */
 export const WORLD_ROOM_UPDATE_CODE = "update";
+
+/**
+ * The response header that names the lowest version the relay serves beside a refusal of a game too
+ * old for it, so the game asks for that version; released games read no such header.
+ */
+export const MIN_VERSION_HEADER = "X-MGQ-Min-Version";
 
 /**
  * What the relay tells a game too old for it, in the body and, for a PvP room, in REFUSAL_HEADER.
@@ -314,6 +321,17 @@ export function minVersionOf(setting) {
 }
 
 /**
+ * Names the lowest version the relay serves from its MIN_VERSION setting, as a game reads it.
+ *
+ * @param {string | null | undefined} setting The setting, unset for DEFAULT_MIN_VERSION.
+ * @returns {string} The version; DEFAULT_MIN_VERSION when the setting is unset, no version or DEVELOPMENT_VERSION.
+ */
+export function minVersionText(setting) {
+  const version = parseVersion(setting);
+  return version && !version.development ? setting.trim() : DEFAULT_MIN_VERSION;
+}
+
+/**
  * Tells whether a header was sent with a value.
  *
  * @param {string | null | undefined} header The header.
@@ -371,18 +389,30 @@ export function listsWorldMods(featuresHeader) {
  * @param {string | null | undefined} versionHeader The request's VERSION_HEADER.
  * @param {string | null | undefined} [minVersion] The relay's MIN_VERSION setting.
  * @param {string} [method] The request's HTTP method, see gateOf.
- * @returns {{status: number, reason: string, socket: boolean, code: string | null} | null} The refusal, with whether the route is a PvP room's or a world room's, answered as a refused WebSocket, and the code to name in REFUSAL_HEADER, which only a PvP room's and a world room's carry; null when the game may go on.
+ * @returns {{status: number, reason: string, socket: boolean, code: string | null, minimum: string | null} | null} The refusal, with whether the route is a PvP room's or a world room's, answered as a refused WebSocket, the code to name in REFUSAL_HEADER, which only a PvP room's and a world room's carry, and the lowest version the relay serves to name in MIN_VERSION_HEADER, which a PvP room's lacks, since no version opens one; null when the game may go on.
  */
 export function updateRefusal(url, featuresHeader, versionHeader, minVersion, method = undefined) {
   if (routeIs(url, PVP_ROOM_ROUTE)) {
-    return { status: UPDATE_STATUS, reason: UPDATE_NEEDED, socket: true, code: UPDATE_NEEDED };
+    return { status: UPDATE_STATUS, reason: UPDATE_NEEDED, socket: true, code: UPDATE_NEEDED, minimum: null };
   }
 
   if (!tooOld(gateOf(url, method), featuresHeader, versionHeader, minVersion)) {
     return null;
   }
 
+  const minimum = minVersionText(minVersion);
   return routeIs(url, "world")
-    ? { status: WORLD_ROOM_UPDATE_STATUS, reason: UPDATE_NEEDED, socket: true, code: WORLD_ROOM_UPDATE_CODE }
-    : { status: UPDATE_STATUS, reason: UPDATE_NEEDED, socket: false, code: null };
+    ? { status: WORLD_ROOM_UPDATE_STATUS, reason: UPDATE_NEEDED, socket: true, code: WORLD_ROOM_UPDATE_CODE, minimum }
+    : { status: UPDATE_STATUS, reason: UPDATE_NEEDED, socket: false, code: null, minimum };
+}
+
+/**
+ * Names the headers a refusal of a game too old for the relay carries: its code in REFUSAL_HEADER
+ * and the lowest version the relay serves in MIN_VERSION_HEADER, each where it has one.
+ *
+ * @param {{code: string | null, minimum: string | null}} refusal The refusal, see updateRefusal.
+ * @returns {Object<string, string>} The headers.
+ */
+export function refusalHeaders(refusal) {
+  return { ...(refusal.code ? { [REFUSAL_HEADER]: refusal.code } : {}), ...(refusal.minimum ? { [MIN_VERSION_HEADER]: refusal.minimum } : {}) };
 }

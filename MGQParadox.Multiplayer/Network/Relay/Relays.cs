@@ -2,6 +2,7 @@
 //  Relays.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Told a refusal of this version apart and read the lowest version the relay names with it
 //      Paulinchen  2026-10-31: Dropped the PvP relay room
 //      Paulinchen  2026-10-15: Moved r1 to the relay on our own server
 //      Paulinchen  2026-10-12: Named the text for a game too old for the relay and read its refusal reason for both kinds of room
@@ -15,6 +16,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
+using System.Net.Http;
 using System.Net.WebSockets;
 using System.Security.Cryptography;
 using System.Text;
@@ -42,9 +45,19 @@ internal static class Relays
     public const string UpdateNeeded = "Update MGQ Online to play online.";
 
     /// <summary>
+    /// The code the relay names a world room's 400 with when it turns a game away as too old.
+    /// </summary>
+    public const string UpdateCode = "update";
+
+    /// <summary>
     /// The response header the relay names why it turned a game away in.
     /// </summary>
     private const string RefusalHeader = "X-MGQ-Refusal";
+
+    /// <summary>
+    /// The response header the relay names the lowest version it serves in, beside a refusal of a game too old.
+    /// </summary>
+    private const string MinVersionHeader = "X-MGQ-Min-Version";
 
     /// <summary>
     /// Separates the world room id from anything else ever derived from the same token.
@@ -101,6 +114,32 @@ internal static class Relays
     /// <returns>The code or text, <see langword="null"/> for none.</returns>
     public static string? RefusalOf(ClientWebSocket socket) =>
         socket.HttpResponseHeaders?.FirstOrDefault(header => string.Equals(header.Key, RefusalHeader, StringComparison.OrdinalIgnoreCase)).Value?.FirstOrDefault();
+
+    /// <summary>
+    /// Reads the lowest version the relay serves, as it names it beside a refused WebSocket.
+    /// </summary>
+    /// <param name="socket">The refused WebSocket, which collected the response's headers.</param>
+    /// <returns>The version, <see langword="null"/> for none.</returns>
+    public static string? MinVersionOf(ClientWebSocket socket) =>
+        socket.HttpResponseHeaders?.FirstOrDefault(header => string.Equals(header.Key, MinVersionHeader, StringComparison.OrdinalIgnoreCase)).Value?.FirstOrDefault();
+
+    /// <summary>
+    /// Reads the lowest version the relay serves, as it names it beside a refused request.
+    /// </summary>
+    /// <param name="response">The refused request's answer.</param>
+    /// <returns>The version, <see langword="null"/> for none.</returns>
+    public static string? MinVersionOf(HttpResponseMessage response) =>
+        response.Headers.TryGetValues(MinVersionHeader, out var values) ? values.FirstOrDefault() : null;
+
+    /// <summary>
+    /// Tells whether the relay turned the game away as too old: a 426 on any route, or a world room's
+    /// 400 with <see cref="UpdateCode"/>.
+    /// </summary>
+    /// <param name="status">The HTTP status the relay refused the game with, <see langword="null"/> for none.</param>
+    /// <param name="code">The code the relay named why with, <see langword="null"/> for none.</param>
+    /// <returns>Whether it did.</returns>
+    public static bool IsVersionRefusal(HttpStatusCode? status, string? code) =>
+        status == HttpStatusCode.UpgradeRequired || (status == HttpStatusCode.BadRequest && code == UpdateCode);
 
     /// <summary>
     /// Names the world room of a world's token.

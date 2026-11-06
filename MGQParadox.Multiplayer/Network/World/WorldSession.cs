@@ -2,6 +2,7 @@
 //  WorldSession.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Took the code of a refusal of this version from Relays
 //      Paulinchen  2026-11-05: Dropped the refusal of a Raid World to a game without its features, which the relay no longer sends
 //      Paulinchen  2026-10-31: Worded what the player reads plainly, leaving causes and internals to the log
 //                            - Handed the world's mod settings the relay tells to the game script as a mod_settings entry
@@ -331,11 +332,6 @@ internal sealed class WorldSession
     /// The refusal code of a world whose starting save is still on its way.
     /// </summary>
     private const string PendingCode = "pending";
-
-    /// <summary>
-    /// The refusal code of a world room turning a game away as too old for the relay.
-    /// </summary>
-    private const string UpdateCode = "update";
 
     /// <summary>
     /// The close code of a connection whose player the creator removed.
@@ -905,7 +901,7 @@ internal sealed class WorldSession
         HttpStatusCode.Forbidden when code == MembersCode => MembersFull,
         HttpStatusCode.Forbidden => Removed,
         HttpStatusCode.Unauthorized => TokenMismatch,
-        HttpStatusCode.BadRequest when code == UpdateCode => Relays.UpdateNeeded,
+        HttpStatusCode.BadRequest when code == Relays.UpdateCode => Relays.UpdateNeeded,
         HttpStatusCode.BadRequest => "Update MGQ Online to enter this world.",
         HttpStatusCode.UpgradeRequired => string.IsNullOrWhiteSpace(code) ? Relays.UpdateNeeded : code,
         _ => null,

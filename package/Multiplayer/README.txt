@@ -65,7 +65,9 @@ UPDATE
 The Mod Framework, which comes with the mod, counts the updates waiting
 on "Browser" in the title's Mods box and installs them, this mod's too.
 When the relay asks for another release, "Multiplayer" on the title
-screen offers it, since everyone needs the same version.
+screen offers it, since everyone needs the same version. The same
+question comes wherever the server turns your version away: at once on
+the title or in the Multiplayer menu, and in a world at the next title.
 
 The framework closes the game, installs the release, shows what's new
 and starts the game again in the Multiplayer menu. This works under Wine

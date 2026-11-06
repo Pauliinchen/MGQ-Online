@@ -2,6 +2,7 @@
 //  WorldTrades.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Told the player to update once the relay turned this version away
 //      Paulinchen  2026-10-31: Worded what the player reads plainly, leaving causes and internals to the log
 //      Paulinchen  2026-10-30: Answered the trade of the DLL with how the commit and the fetch stand
 //      Paulinchen  2026-10-07: Logged each commit, its replacement, refused starts, a lost relay once per commit and each trade fetched
@@ -650,6 +651,7 @@ internal sealed class WorldTrades : ITradeRelay
     private static string ReasonFor(Exception ex) => ex switch
     {
         DirectoryException { Status: null } => Unreachable,
+        DirectoryException { Code: Relays.UpdateCode } => Relays.UpdateNeeded,
         DirectoryException { Status: HttpStatusCode.Forbidden } => "Both players must be players of this world.",
         DirectoryException { Status: HttpStatusCode.NotFound } => "This trade no longer exists.",
         DirectoryException { Status: HttpStatusCode.TooManyRequests } => "You have too many open trades. Finish one first.",

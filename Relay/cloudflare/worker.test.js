@@ -2,6 +2,7 @@
 //  worker.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Expected the lowest version the relay serves beside a refusal of a game too old for it
 //      Paulinchen  2026-11-05: Tested that every game hears the world's mod settings, as every game the relay serves takes them
 //                            - Sent the player's key and auth key in the headers only
 //                            - Dropped the tests of the PvP rooms and tested their 426 instead
@@ -697,6 +698,7 @@ test("the Worker turns a game without X-MGQ-Features or below MIN_VERSION away b
 
   const world = await worker.fetch(new Request(`https://relay.test/v1/world/${WORLD}?name=Old`, { headers: { ...upgrade, [AUTH_HEADER]: AUTH, [PLAYER_HEADER]: playerKey(1) } }), env);
   assert.deepEqual([world.status, world.headers.get(REFUSAL_HEADER), await world.text()], [400, "update", UPDATE_NEEDED], "released games stop at a 400 with a code they do not know");
+  assert.equal(world.headers.get("X-MGQ-Min-Version"), "0.7.0", "newer games read the lowest version to update to");
   const named = await worker.fetch(new Request(`https://relay.test/v1/world/${WORLD}?name=Old`, { headers: { ...upgrade, [AUTH_HEADER]: AUTH, [PLAYER_HEADER]: playerKey(1), [FEATURES_HEADER]: "raid", [VERSION_HEADER]: "0.6.9" } }), env);
   assert.deepEqual([named.status, named.headers.get(REFUSAL_HEADER)], [400, "update"]);
 
@@ -708,7 +710,7 @@ test("the Worker turns a game without X-MGQ-Features or below MIN_VERSION away b
   const report = await worker.fetch(new Request("https://relay.test/v1/reports", { method: "POST", headers: { [FEATURES_HEADER]: "raid", [VERSION_HEADER]: "0.6.9" }, body: streamed, duplex: "half" }), env);
   assert.deepEqual([report.status, await report.json(), pulled], [426, { error: UPDATE_NEEDED }, 4], "the body is read to its end before the refusal");
   const listing = await worker.fetch(new Request("https://relay.test/v1/worlds"), env);
-  assert.deepEqual([listing.status, await listing.json()], [426, { error: UPDATE_NEEDED }], "a request without headers, as games before 0.6.0 and older World Admin tool builds send");
+  assert.deepEqual([listing.status, await listing.json(), listing.headers.get("X-MGQ-Min-Version")], [426, { error: UPDATE_NEEDED }, "0.7.0"], "a request without headers, as games before 0.6.0 and older World Admin tool builds send");
   const directoryVersion = await worker.fetch(new Request("https://relay.test/v1/worlds", { headers: { [VERSION_HEADER]: "0.7.0" } }), env);
   assert.deepEqual([directoryVersion.status, await directoryVersion.json()], [426, { error: UPDATE_NEEDED }], "the world directory needs X-MGQ-Features on top of a version new enough");
   const raid = await worker.fetch(new Request(`https://relay.test/v1/worlds/${WORLD}/raid`, { headers: { [PLAYER_HEADER]: playerKey(1), [FEATURES_HEADER]: "admin", [VERSION_HEADER]: "0.6.9" } }), env);

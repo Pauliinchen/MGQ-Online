@@ -2,6 +2,7 @@
 //  RelayWorldChannel.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Told the update check once the relay turned this version away
 //      Paulinchen  2026-10-31: Named the longest frame itself, since the PvP frame channel that named it is gone
 //      Paulinchen  2026-10-15: Connected to the channel of a battle the battle server hosts
 //      Paulinchen  2026-10-12: Gave up connecting at once when told to stop
@@ -163,6 +164,12 @@ internal sealed class RelayWorldChannel : IDisposable
         {
             refusal = socket.HttpStatusCode;
             refusalCode = Relays.RefusalOf(socket);
+
+            if (Relays.IsVersionRefusal(refusal, refusalCode))
+            {
+                UpdateCheck.Refused(Relays.MinVersionOf(socket));
+            }
+
             socket.Dispose();
             return null;
         }

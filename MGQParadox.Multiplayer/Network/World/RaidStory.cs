@@ -2,6 +2,7 @@
 //  RaidStory.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Told the player to update once the relay turned this version away
 //      Paulinchen  2026-11-05: Took the companions' ids as numbers and described the state as values, for the bridge's topics
 //      Paulinchen  2026-10-23: Kept only the world's shared companions, since the story itself plays on tracks
 //                            - Took the parts a checkpoint may be of from StoryParts of MGQOnline.Game
@@ -309,6 +310,7 @@ internal sealed class RaidStory
     private static string ReasonFor(Exception ex) => ex switch
     {
         DirectoryException { Status: null } => Unreachable,
+        DirectoryException { Code: Relays.UpdateCode } => Relays.UpdateNeeded,
         DirectoryException { Status: HttpStatusCode.NotFound } => "The relay keeps no story of this world.",
         DirectoryException { Status: HttpStatusCode.Forbidden or HttpStatusCode.Unauthorized } => "The relay does not take you as a player of this world.",
         DirectoryException directory => $"The relay refused: {directory.Message}",

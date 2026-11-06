@@ -2,6 +2,7 @@
 //  DirectoryClient.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Told the update check once the relay turned this version away, and named such a refusal by its update code
 //      Paulinchen  2026-11-05: Read every world of the list without its mods, mod hashes and settings
 //      Paulinchen  2026-10-31: Named the world's mod settings taken from the relay in the X-MGQ-Features header
 //      Paulinchen  2026-10-30: Dropped the download of an uploaded mod, which the Mod Framework installs
@@ -911,6 +912,12 @@ internal sealed partial class DirectoryClient
         if (response.IsSuccessStatusCode)
         {
             return;
+        }
+
+        if (response.StatusCode == HttpStatusCode.UpgradeRequired)
+        {
+            UpdateCheck.Refused(Relays.MinVersionOf(response));
+            throw new DirectoryException(response.StatusCode, Relays.UpdateNeeded, Relays.UpdateCode);
         }
 
         string? error = null;

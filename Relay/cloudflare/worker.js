@@ -2,6 +2,7 @@
 //  worker.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Named the lowest version the relay serves beside a refusal of a game too old for it
 //      Paulinchen  2026-11-05: Dropped the games' story writes, checkpoint reads and route locks over HTTP, which only games without story tracks used
 //                            - Let every game the version gate passes into a Raid World and told every game the world's mod settings
 //                            - Listed the worlds without their mods for games, as the Node relay does
@@ -73,7 +74,7 @@ import { DownloadGate, drainLimited, piecesStream, readLimited } from "../core/b
 import { BOSS_LIMITS, WorldBosses, bossRouteOf, bossText, handleBossRequest } from "../core/bosses.js";
 import { DIRECTORY_LIMITS, Directory as WorldDirectory, SETTINGS_BY, WORLD_TYPE, difficultyText, handleDirectoryRequest, modSettingsText, modsRuleText, parseAdmins, playerIdOf, raidBossesText, sha256Hex, squadText } from "../core/directory.js";
 import { DESIGN_LIMITS, noDesigns } from "../core/designs.js";
-import { DESIGN_ROUTE, DRAIN_LIMITS, GAME_DESIGN_ROUTE, VERSION_HEADER, listsWorldMods, updateRefusal } from "../core/gate.js";
+import { DESIGN_ROUTE, DRAIN_LIMITS, GAME_DESIGN_ROUTE, VERSION_HEADER, listsWorldMods, refusalHeaders, updateRefusal } from "../core/gate.js";
 import { badRequest, notFound, routeIs } from "../core/http.js";
 import { isHash, isId } from "../core/ids.js";
 import { MIGRATION_ROUTE, adminCheck, exportWorldData, handleMigrationRequest, migrationRouteOf } from "../core/migration.js";
@@ -230,21 +231,21 @@ export default {
 };
 
 /**
- * Turns a game too old for the relay away: a WebSocket with the reason as text and its code in
- * REFUSAL_HEADER when it has one, any other request with JSON once its body is read and dropped,
- * since Cloudflare breaks a request answered before its body was read.
+ * Turns a game too old for the relay away: a WebSocket with the reason as text, any other request
+ * with JSON once its body is read and dropped, since Cloudflare breaks a request answered before
+ * its body was read; each with the headers of refusalHeaders.
  *
  * @param {Request} request The request.
- * @param {{status: number, reason: string, socket: boolean, code: string | null}} refusal The refusal, see updateRefusal.
+ * @param {{status: number, reason: string, socket: boolean, code: string | null, minimum: string | null}} refusal The refusal, see updateRefusal.
  * @returns {Promise<Response>} The answer.
  */
 async function refuseOutdated(request, refusal) {
   if (refusal.socket) {
-    return new Response(refusal.reason, { status: refusal.status, headers: refusal.code ? { [REFUSAL_HEADER]: refusal.code } : {} });
+    return new Response(refusal.reason, { status: refusal.status, headers: refusalHeaders(refusal) });
   }
 
   await drainLimited(request.body, DRAIN_LIMITS.maxBytes, AbortSignal.timeout(DRAIN_LIMITS.readMs));
-  return json(refusal.status, { error: refusal.reason });
+  return json(refusal.status, { error: refusal.reason }, refusalHeaders(refusal));
 }
 
 /**

@@ -2,6 +2,7 @@
 //  server.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Expected the lowest version the relay serves beside a refusal of a game too old for it
 //      Paulinchen  2026-11-05: Read the story mapping as a current game and tested a 0.6.9.2 game sent to update there
 //                            - Tested the story read and the shared companions over HTTP alone, every Raid World game on tracks and every game hearing the world's mod settings
 //                            - Sent the player's key and auth key in the headers only, admins' too
@@ -1044,7 +1045,7 @@ test("a game without X-MGQ-Features, or naming a version below the lowest, is tu
 
   const trades = directoryBase.replace("/v1/worlds", "/v1/trades");
   const listing = await fetch(`${trades}?world=${room}`, { headers: { [PLAYER_HEADER]: playerKey(80) } });
-  assert.deepEqual([listing.status, await listing.json()], [426, { error: UPDATE_NEEDED }]);
+  assert.deepEqual([listing.status, await listing.json(), listing.headers.get("X-MGQ-Min-Version")], [426, { error: UPDATE_NEEDED }, "0.7.0"]);
   const posted = await fetch(`${trades}/${"9".repeat(32)}/commit`, { method: "POST", body: "x".repeat(300 * 1024) });
   assert.deepEqual([posted.status, await posted.json()], [426, { error: UPDATE_NEEDED }], "the refusal comes once the body is drained");
 

@@ -2,6 +2,7 @@
 //  UpdateCheck.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Took the lowest version a refusal of this version names as the release to play while the relay names none
 //      Paulinchen  2026-10-30: Asked only the relay, since the Mod Framework finds and installs updates
 //      Paulinchen  2026-10-23: Read release versions through ReleaseVersion
 //      Paulinchen  2026-10-22: Asked the relay for the release to play first, an older one too, and GitHub only without its answer
@@ -78,6 +79,16 @@ internal static class UpdateCheck
     public static ReleaseOffer? Offer => Volatile.Read(ref _offer);
 
     /// <summary>
+    /// Backs <see cref="Refusals"/>, counted up by the network threads and read by the game's.
+    /// </summary>
+    private static int _refusals;
+
+    /// <summary>
+    /// How often the relay turned this version away, which the game script asks for the update on.
+    /// </summary>
+    public static int Refusals => Volatile.Read(ref _refusals);
+
+    /// <summary>
     /// Whether this DLL is a development build, stamped <c>0.0.0-dev</c>, which no release stamps.
     /// </summary>
     public static bool DevelopmentBuild { get; } = IsDevelopmentVersion(InformationalVersion);
@@ -115,6 +126,31 @@ internal static class UpdateCheck
         }
 
         Threads.Start("MultiplayerUpdateCheck", () => Run(installed));
+    }
+
+    /// <summary>
+    /// Notes that the relay turned this version away: the release to play becomes the one the check
+    /// found, else the lowest version the relay named with the refusal.
+    /// </summary>
+    /// <remarks>
+    /// A development build never asks for an update, so its refusals only reach the log.
+    /// </remarks>
+    /// <param name="minVersion">The lowest version the relay serves, as it named it; <see langword="null"/> for none.</param>
+    public static void Refused(string? minVersion)
+    {
+        if (DevelopmentBuild)
+        {
+            Log.Write($"the relay turned this development build away{(minVersion != null ? $", naming {minVersion}" : string.Empty)}; it asks for no update");
+            return;
+        }
+
+        if (ReleaseVersion.Parse(minVersion) != null)
+        {
+            Interlocked.CompareExchange(ref _offer, new ReleaseOffer(minVersion!, false), null);
+        }
+
+        Interlocked.Increment(ref _refusals);
+        Log.Write($"the relay turned version {ModVersion} away{(minVersion != null ? $", naming {minVersion} its lowest" : ", naming no lowest version")}; the release to play is {Offer?.Version ?? "unknown"}");
     }
 
     /// <summary>
@@ -202,7 +238,11 @@ internal static class UpdateCheck
 
             var offer = Choose(installed, () => relay == null ? null : CurrentRelease(AskRelay(http, ReleaseAddress(relay))));
 
-            Volatile.Write(ref _offer, offer);
+            // The release the relay names wins over the lowest version a refusal named before it.
+            if (offer != null)
+            {
+                Volatile.Write(ref _offer, offer);
+            }
         }
         catch (Exception ex)
         {

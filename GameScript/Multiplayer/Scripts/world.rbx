@@ -2,6 +2,7 @@
 #  world.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Asked the Mod Framework for the update wherever the relay turns this version away, naming the version the DLL runs
 #      Paulinchen  2026-11-05: Took a difficulty the relay pushed as the number the DLL reads
 #                            - Told no world type or sharing of a form other than the new world's, which alone sets them
 #                            - Had C# write the game data's fingerprint of the ids the scripts read, keeping none that came back empty
@@ -598,6 +599,7 @@ module MGQ_MpWorld
   def self.on_title_update(scene)
     return watch_new_game(scene) if @pending == :starting
     return if Update.asking?
+    return Update.ask(scene) if Update.waiting?
     return Invite.on_title_update(scene) unless @pending == :new_game
 
     @pending = nil
@@ -728,9 +730,10 @@ module MGQ_MpWorld
     end
   end
 
-  # Has the Mod Framework offer the release to play once the player picks Multiplayer while another
-  # release is the one, a newer one or a step back the relay asks for: the framework asks, installs
-  # it once the game closed and starts the game again into the world screen
+  # Has the Mod Framework offer the release to play wherever the game meets a build the relay no
+  # longer takes: the player picking Multiplayer while another release is the one, a newer one or
+  # a step back the relay asks for, and the relay turning this version away anywhere. The framework
+  # asks, installs it once the game closed and starts the game again into the world screen
   # (MGQ_Multiplayer::Stages::OPEN_ACTION). The title's commands wait meanwhile.
   module Update
     # The mod's slug on the website, by which the Mod Framework finds it.
@@ -742,23 +745,55 @@ module MGQ_MpWorld
     # Why the player is asked to install a step back.
     ROLLBACK_REASON = "This version cannot play online right now."
 
+    # The DLL's event once the relay turned this version away.
+    NEEDED_EVENT = "update.needed"
+
+    # What a player in a game reads once the relay turned this version away.
+    IN_GAME_TEXT = "This version cannot play online. Update it at the title."
+
+    # The toast's key, so a second refusal replaces the first toast in place.
+    TOAST_KEY = :mgq_online_update
+
     # Asks the Mod Framework for the release to play, the title's commands waiting for the answer.
+    # On the world screen, going back leaves it for the title, where the player picked Multiplayer.
     #
-    # @param scene [Scene_Title] The title screen.
+    # @param scene [Scene_Title, Scene_MpWorlds] The scene that asks.
     # @return [Symbol] :off, so the framework leaves the title's commands to the answer.
     def self.ask(scene)
+      @waiting = false
       commands = MGQ_MpGame.get(scene, :command_window)
       commands.deactivate if commands && !commands.disposed?
       version = MGQ_Multiplayer.newer_version
       @asking = true
-      MGQ_MpWorld.log("asking the Mod Framework for release #{version}#{MGQ_Multiplayer.rollback? ? ', a step back' : ''}")
-      Mod_Framework::Mods.require(SLUG, version, :exact => MGQ_Multiplayer.rollback?, :reason => MGQ_Multiplayer.rollback? ? ROLLBACK_REASON : REASON,
+      MGQ_MpWorld.log("asking the Mod Framework for release #{version}#{MGQ_Multiplayer.rollback? ? ', a step back' : ''}, #{MGQ_Multiplayer::UpdateCheck.have || 'an unknown version'} runs")
+      Mod_Framework::Mods.require(SLUG, version, :exact => MGQ_Multiplayer.rollback?, :have => MGQ_Multiplayer::UpdateCheck.have,
+                                                 :reason => MGQ_Multiplayer.rollback? ? ROLLBACK_REASON : REASON,
                                                  :action => MGQ_Multiplayer::Stages::OPEN_ACTION) do |result|
         @asking = false
         MGQ_MpWorld.log("the Mod Framework's update to #{version}: #{result}")
-        give_back(commands) unless result == :restarting
+        answered(scene, commands) unless result == :restarting
       end
       :off
+    end
+
+    # Goes on once the player did not update: the title's commands take the input again, and the
+    # world screen gives way to the title.
+    #
+    # @param scene [Scene_Title, Scene_MpWorlds] The scene that asked.
+    # @param commands [Window_TitleCommand, nil] The title's commands.
+    def self.answered(scene, commands)
+      return give_back(commands) unless world_screen?(scene)
+
+      MGQ_MpWorld.log("leaving the world screen for the title: this version cannot play online")
+      scene.return_scene if SceneManager.scene.equal?(scene)
+    end
+
+    # Tells whether a scene is the world screen.
+    #
+    # @param scene [Scene_Base, nil] The scene.
+    # @return [Boolean] Whether it is.
+    def self.world_screen?(scene)
+      defined?(Scene_MpWorlds) && scene.is_a?(Scene_MpWorlds) ? true : false
     end
 
     # Tells whether the Mod Framework asks for the update now.
@@ -768,11 +803,38 @@ module MGQ_MpWorld
       @asking == true
     end
 
+    # Tells whether the relay turned this version away during a game, which the title asks about.
+    #
+    # @return [Boolean] Whether it did.
+    def self.waiting?
+      @waiting == true
+    end
+
     # Gives the input back to the title's commands.
     #
     # @param commands [Window_TitleCommand, nil] The title's commands.
     def self.give_back(commands)
       commands.activate if commands && !commands.disposed?
+    end
+
+    # Takes the relay's refusal of this version: the title and the world screen ask at once, a
+    # game shows a toast once and leaves the asking to the next title.
+    #
+    # @param payload [Hash, nil] The event: "version" (the release to play, nil for none known) and "have".
+    def self.needed(payload)
+      payload = {} unless payload.is_a?(Hash)
+      version = payload["version"]
+      MGQ_Multiplayer::UpdateCheck.refused(version, payload["have"]) if version
+      scene = SceneManager.scene
+      MGQ_MpWorld.log("the relay turned this version away#{version ? ", release #{version} is needed" : ', naming no release'}, in #{scene.class}")
+      return MGQ_MpWorld.log("not asking for an update: no release is known to ask for") unless MGQ_Multiplayer.outdated?
+      return if asking?
+      return ask(scene) if scene.is_a?(Scene_Title) || world_screen?(scene)
+      return if @waiting
+
+      @waiting = true
+      Mod_Framework.toast(IN_GAME_TEXT, :severity => :warning, :key => TOAST_KEY)
+      MGQ_MpWorld.log("told the player to update at the title")
     end
   end
 
@@ -2357,6 +2419,9 @@ module MGQ_MpWorld
     end
   end
 end
+
+# The relay's refusals of this version, which ask for the update wherever they come.
+MGQ_Multiplayer::Bridge.on(MGQ_MpWorld::Update::NEEDED_EVENT) { |payload| MGQ_MpWorld::Update.needed(payload) }
 
 # Game hooks shared with other scripts, through core_hooks.rbx.
 

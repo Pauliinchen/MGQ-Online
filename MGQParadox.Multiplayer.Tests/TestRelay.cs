@@ -2,6 +2,7 @@
 //  TestRelay.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Turned every request away with 426 and the lowest version once a test says so
 //      Paulinchen  2026-11-05: Let every game into a Raid World, as the relay no longer refuses one without its features
 //                            - Listed every world without its mods
 //      Paulinchen  2026-10-31: Dropped the PvP rooms, which no game connects to any more
@@ -206,6 +207,12 @@ internal sealed partial class TestRelay : IDisposable
     /// an older or self-hosted relay may otherwise.
     /// </summary>
     public (int Status, string? Code)? WorldRoomRefusal { get; set; }
+
+    /// <summary>
+    /// Turns every request but a WebSocket's away with 426, as the relay does a game too old for it,
+    /// naming this lowest version in X-MGQ-Min-Version; <see langword="null"/> serves them.
+    /// </summary>
+    public string? VersionRefusal { get; set; }
 
     /// <summary>
     /// How many world room requests the relay took in, refused or not.
@@ -439,6 +446,13 @@ internal sealed partial class TestRelay : IDisposable
         var parts = context.Request.Url!.AbsolutePath.Trim('/').Split('/');
         LastFeatures = context.Request.Headers[DirectoryClient.FeaturesHeader] ?? LastFeatures;
         Versions.Enqueue((context.Request.Url!.AbsolutePath, context.Request.Headers[DirectoryClient.VersionHeader]));
+
+        if (!context.Request.IsWebSocketRequest && VersionRefusal is { } lowest)
+        {
+            context.Response.Headers["X-MGQ-Min-Version"] = lowest;
+            Refuse(context, 426);
+            return;
+        }
 
         if (parts is ["v1", "worlds", _, "battles", ..])
         {

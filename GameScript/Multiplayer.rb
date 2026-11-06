@@ -2,6 +2,7 @@
 #  Multiplayer.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Took the release the relay's refusal of this version names, and the version the DLL runs
 #      Paulinchen  2026-11-05: Kept true or false and whole numbers in Player.ini as the DLL writes them, the rest as text
 #                            - Held the events of a topic no script takes yet until its handler comes
 #                            - Logged a DLL that does not load by what happened, calling it older only where an export is missing
@@ -1483,6 +1484,7 @@ module MGQ_Multiplayer
 
       @version = offer["version"].to_s
       @rollback = offer["rollback"] == true
+      @have = offer["have"]
       Log.write("update gate closed: release #{@version} is #{@rollback ? 'the one to play, a step back' : 'out'}, so worlds and PvP battles stay shut until it is installed")
     rescue => e
       Log.write("update check failed: #{e.class}: #{e.message}")
@@ -1501,6 +1503,27 @@ module MGQ_Multiplayer
     # @return [Boolean] Whether it is, false while none was found.
     def self.rollback?
       @rollback == true
+    end
+
+    # Reads the version the DLL runs, as it told it with the release to install.
+    #
+    # @return [String, nil] The version, nil while none was found.
+    def self.have
+      @have
+    end
+
+    # Takes the release the relay's refusal of this version names, unless the check found one
+    # already, which closes the update gate at once.
+    #
+    # @param version [String] The release to install.
+    # @param have [String, nil] The version the DLL runs.
+    def self.refused(version, have)
+      @have ||= have
+      return if @version
+
+      @version = version.to_s
+      @rollback = false
+      Log.write("update gate closed: the relay turned this version away and needs release #{@version}, so worlds stay shut until it is installed")
     end
   end
 

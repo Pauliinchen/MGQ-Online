@@ -48,7 +48,7 @@ You then have `!Mod_Framework.rb` and `Multiplayer.rb` in your `Patch` folder, a
 
 While the mod is installed, the game keeps running when its window is in the background. A gamepad does nothing meanwhile.
 
-**Update:** the Mod Framework counts the updates waiting on *Browser* in the title's Mods box and installs them, this mod's too. When a new release is needed, *Multiplayer* on the title screen offers it; until then PvP battles stay off too. The framework closes the game, installs the release, shows what's new and starts the game again in the Multiplayer menu; under Wine and Proton too. If the game cannot start, run `Update.bat` in `Patch\Mod_Framework`. Your name, hotkeys, favourites and worlds are kept.
+**Update:** the Mod Framework counts the updates waiting on *Browser* in the title's Mods box and installs them, this mod's too. When a new release is needed, *Multiplayer* on the title screen offers it, as does the title after the server turned your version away in a world; until then worlds stay off. The framework closes the game, installs the release, shows what's new and starts the game again in the Multiplayer menu; under Wine and Proton too. If the game cannot start, run `Update.bat` in `Patch\Mod_Framework`. Your name, hotkeys, favourites and worlds are kept.
 
 **Uninstall:** close the game and delete `Multiplayer.rb` and the `Multiplayer` folder in `Patch`. Keep `Patch\Multiplayer\Worlds` if you want to play your worlds again later.
 

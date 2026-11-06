@@ -2,6 +2,7 @@
 //  RaidBosses.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Told the player to update once the relay turned this version away
 //      Paulinchen  2026-10-30: Kept the pools in the ledger the game and the battle server share, which counts the game's own reports at once
 //                            - Took the reports of the fights in C# as the game's way to the pools
 //      Paulinchen  2026-10-10: Kept each boss pool as a share of its raid max HP, filled up by 3 % a minute, and took pools the world room tells
@@ -534,6 +535,7 @@ internal sealed class RaidBosses : IRaidRelay
     private static string ReasonFor(Exception ex) => ex switch
     {
         DirectoryException { Status: null } => Unreachable,
+        DirectoryException { Code: Relays.UpdateCode } => Relays.UpdateNeeded,
         DirectoryException { Status: HttpStatusCode.NotFound } => "The relay keeps no boss pools of this world.",
         DirectoryException { Status: HttpStatusCode.Forbidden or HttpStatusCode.Unauthorized } => "The relay does not take you as a player of this world.",
         DirectoryException { Status: HttpStatusCode.TooManyRequests } => "The bosses were reported too often. Wait a moment.",

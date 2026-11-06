@@ -2,6 +2,7 @@
 //  WorldDirectoryTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Covered a list the relay turns away for this version
 //      Paulinchen  2026-11-05: Read a world before checking its mods in the list
 //                            - Read the list as the directory's topic hands it to the scripts, in place of its text
 //      Paulinchen  2026-10-31: Expected the plainer texts the player reads
@@ -604,6 +605,20 @@ public sealed class WorldDirectoryTests
         Assert.Equal("done", Act(creator, directory => directory.Ban(made["world"], WorldKeys.PlayerIdOf(PlayerKey(2))))["state"]);
         var banned = Act(creator, directory => directory.Ban(made["world"], WorldKeys.PlayerIdOf(PlayerKey(3))));
         Assert.Equal(("failed", "The server turned this down. Try again later."), (banned["state"], banned["error"]));
+    }
+
+    /// <summary>
+    /// Asserts that a list the relay turns away for this version tells the player to update, where
+    /// it read as a refusal for now before.
+    /// </summary>
+    [Fact]
+    public void VersionRefusal_TellsThePlayerToUpdate()
+    {
+        using var relay = new TestRelay { VersionRefusal = "0.7.1" };
+        var player = NewDirectory(relay, CreatorKey, "Creator");
+
+        var failed = ListEnding(player);
+        Assert.Equal(("failed", "Update MGQ Online to play online."), (failed.State, failed.Error));
     }
 
     /// <summary>

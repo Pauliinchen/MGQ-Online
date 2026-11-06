@@ -2,6 +2,8 @@
 //  DllTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Posted the relay's refusals of this version as the event update.needed
+//                            - Told the version this DLL runs with the release to play
 //      Paulinchen  2026-11-05: Created
 //
 //----------------------------------------------------------------
@@ -14,8 +16,8 @@ using MGQParadox.Multiplayer.Windows;
 namespace MGQParadox.Multiplayer.Topics;
 
 /// <summary>
-/// The DLL's topics of itself: the check for the release to play, whether it is a development
-/// build, and the memory the game uses.
+/// The DLL's topics of itself: the check for the release to play and the relay's refusals of this
+/// version, whether it is a development build, and the memory the game uses.
 /// </summary>
 internal static class DllTopics
 {
@@ -27,7 +29,8 @@ internal static class DllTopics
 
     /// <summary>
     /// Hands out the release to play once the check found one: nothing in; nil while there is none,
-    /// else <c>version</c> and <c>rollback</c> (whether it is older than this DLL) out.
+    /// else <c>version</c>, <c>rollback</c> (whether it is older than this DLL) and <c>have</c> (the
+    /// version this DLL runs) out.
     /// </summary>
     public const string Offer = "update.offer";
 
@@ -36,6 +39,13 @@ internal static class DllTopics
     /// or false out.
     /// </summary>
     public const string DevBuild = "update.dev_build";
+
+    /// <summary>
+    /// The event of a refusal of this version by the relay, posted at the next drain after it:
+    /// <c>version</c> (the release to play, nil while none is known) and <c>have</c> (the version
+    /// this DLL runs) out.
+    /// </summary>
+    public const string NeededEvent = "update.needed";
 
     /// <summary>
     /// Tells the memory and the handles the game uses now: nothing in; <c>line</c> (the description
@@ -56,8 +66,23 @@ internal static class DllTopics
             UpdateCheck.Start();
             return null;
         });
-        context.Register(Offer, (_, _) => UpdateCheck.Offer is { } offer ? new RubyHash { { "version", offer.Version }, { "rollback", offer.Rollback } } : null);
+        context.Register(Offer, (_, _) => UpdateCheck.Offer is { } offer ? new RubyHash { { "version", offer.Version }, { "rollback", offer.Rollback }, { "have", UpdateCheck.ModVersion } } : null);
         context.Register(DevBuild, (_, _) => UpdateCheck.DevelopmentBuild);
+        var told = UpdateCheck.Refusals;
+        context.EveryFrame(drained =>
+        {
+            var refusals = UpdateCheck.Refusals;
+
+            if (refusals != told)
+            {
+                told = refusals;
+                drained.Events.Post(NeededEvent, new RubyHash
+                {
+                    { "version", UpdateCheck.Offer is { } offer ? offer.Version : RubyNil.Value },
+                    { "have", UpdateCheck.ModVersion },
+                });
+            }
+        });
         context.Register(Memory, (_, _) => new RubyHash
         {
             { "line", ProcessUsage.Describe() },

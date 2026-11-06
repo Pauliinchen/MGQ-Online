@@ -2,6 +2,7 @@
 //  WorldDirectory.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Told the player to update once the relay turned this version away
 //      Paulinchen  2026-11-05: Dropped the list's text for the scripts, which read it through the directory's topic
 //      Paulinchen  2026-10-31: Worded what the player reads plainly, leaving causes and internals to the log
 //                            - Used the join code, which moved beside the world code
@@ -1144,6 +1145,7 @@ internal sealed class WorldDirectory
     {
         ActionException action => action.Message,
         DirectoryException { Status: null } => Unreachable,
+        DirectoryException { Code: Relays.UpdateCode } => Relays.UpdateNeeded,
         DirectoryException { Status: HttpStatusCode.NotFound } => "The world no longer exists.",
         DirectoryException { Status: HttpStatusCode.Forbidden, Code: "removed" } => "The world's creator removed you from it.",
         DirectoryException { Status: HttpStatusCode.Forbidden, Code: "members" } => "The world has as many players as it may.",
