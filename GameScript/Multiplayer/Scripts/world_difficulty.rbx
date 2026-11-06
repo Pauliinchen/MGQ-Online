@@ -2,6 +2,7 @@
 #  world_difficulty.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-07: Asked the rules in C# whether a fight has values of its own and whether the game may be put on the world's difficulty
 #      Paulinchen  2026-10-23: Worked the enemies' rates out as the multiplayer's own writes, which never go to the relay as the player's
 #      Paulinchen  2026-10-09: Created
 #
@@ -12,7 +13,7 @@
 # admin changes it. The game's own choice of the difficulty sets the world's instead.
 #
 # Fights with values of their own keep the difficulty they replace to put it back afterwards, so
-# nothing here writes the difficulty while one runs.
+# nothing here writes the difficulty while one runs; the rules in C# (RaidDifficulty) tell when.
 module MGQ_MpWorldDifficulty
   # The game's difficulty, from -2 (VERY EASY) to 4 (PARADOX).
   VARIABLE = defined?(NWConst::Var::CURRENT_DIFFICULTY) ? NWConst::Var::CURRENT_DIFFICULTY : 902
@@ -24,16 +25,12 @@ module MGQ_MpWorldDifficulty
   # after a defeat and the Reaper's difficulty change in Hades (common event 146) call.
   CHOICE_EVENT = 110
 
-  # The switches the game turns on while it sets values of its own for a fight: a special boss's
-  # NORMAL on EASY and below (23), the Labyrinth of Chaos, whose rates come from its level (41), and
-  # the final battles' fixed NORMAL (507).
-  OWN_VALUE_SWITCHES = [23, 41, 507]
+  # The topic that names the switches the difficulty's rules read.
+  READS_TOPIC = "difficulty.reads"
 
-  # The switch the Colosseum turns on while it plays its fights on NORMAL.
-  COLOSSEUM = 28
-
-  # The switch of a Colosseum match under way, which ends with a win and with a defeat.
-  COLOSSEUM_MATCH = 87
+  # The topic that tells whether a fight has values of its own set and whether the game may be put
+  # on the world's difficulty now.
+  STATE_TOPIC = "difficulty.state"
 
   # Frames between two looks whether the game plays on the world's difficulty.
   CHECK_FRAMES = 30
@@ -56,26 +53,30 @@ module MGQ_MpWorldDifficulty
     MGQ_MpWorld.difficulty
   end
 
-  # Tells whether the game has values of its own set for a fight, which the world's difficulty
-  # never writes over: in the Labyrinth of Chaos, the Colosseum, a special boss's or the final
-  # battles' fixed NORMAL.
+  # Asks the rules in C# (topic difficulty.state) of the game as it stands, in a Raid World with a
+  # difficulty.
   #
-  # The Colosseum counts only during a match: a defeat there puts the difficulty back but leaves
-  # COLOSSEUM on, which the game turns off only at its next win or leave.
+  # @return [Hash] "own_values", whether a fight has values of its own set, which the world's
+  #   difficulty never writes over; "due", whether the game plays on another difficulty than the
+  #   world's and may be put on it now.
+  def self.state
+    @reads ||= MGQ_Multiplayer::Bridge.call!(READS_TOPIC)
+    MGQ_Multiplayer::Bridge.call!(STATE_TOPIC, "world" => value, "game" => $game_variables[VARIABLE].to_i, "s" => @reads.map { |id| $game_switches[id] ? true : false },
+                                               "battle" => $game_party.in_battle ? true : false, "quiet" => MGQ_MpOverworldSync.map_quiet? ? true : false)
+  end
+
+  # Tells whether the game has values of its own set for a fight, as the rules in C# tell.
   #
   # @return [Boolean] Whether it has.
   def self.own_values?
-    OWN_VALUE_SWITCHES.any? { |id| $game_switches[id] } || ($game_switches[COLOSSEUM] && $game_switches[COLOSSEUM_MATCH]) ? true : false
+    state["own_values"]
   end
 
-  # Tells whether the game plays on another difficulty than the world's and may be put on it now: a
-  # Raid World with a difficulty, no fight with values of its own, no battle, and no event or
-  # message running on the map, since an event may be one that sets those values.
+  # Tells whether the game may be put on the world's difficulty now, as the rules in C# tell.
   #
-  # @return [Boolean] Whether it may.
+  # @return [Boolean] Whether it may; never outside Raid Worlds and in one that sets none.
   def self.due?
-    world = value
-    !world.nil? && $game_variables[VARIABLE] != world && !own_values? && !$game_party.in_battle && MGQ_MpOverworldSync.map_quiet?
+    !value.nil? && state["due"]
   end
 
   # Puts the game on the world's difficulty, unless a fight has values of its own set, and works the

@@ -2,6 +2,7 @@
 #  level_sync_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Answered each character's sync with fixed values and checked what the script asks
 #      Paulinchen  2026-11-05: Answered the battle's level with fixed values and checked what the script asks
 #      Paulinchen  2026-10-30: Asked the battle's level of the rules in C# on the stand-in bridge
 #      Paulinchen  2026-10-08: Checked that a Raid World's battles have no level
@@ -11,9 +12,10 @@
 #
 #----------------------------------------------------------------
 
-# Covers battles_coop_level_sync.rbx: the battle's level from the leader's characters in it, the
-# stats of a character above it, its equipment lowered by less, its share of HP and MP kept, and
-# its own stats back once the battle ends.
+# Covers battles_coop_level_sync.rbx: the battle's level and each character's sync as the DLL
+# answers them, the stats of the battle's level and the equipment's shares applied, the share of
+# HP and MP kept, and the character's own stats back once the battle ends. CoopLevelTests own the
+# rules.
 
 require_relative "support"
 require_relative "bridge_support"
@@ -105,7 +107,16 @@ sync.level_for([member, leader])
 check("a Raid World's battle asks without its players", $coop.asked("coop.level").last, { "raid" => true, "players" => [] })
 $raid = false
 $coop.set("coop.level", nil)
-# Syncing.
+# Syncing, the DLL answering a character's sync by its personal level: the share of each stat its
+# equipment keeps, or why it is not synced.
+SHARES = { 50 => "0.6", 30 => "0.5", 40 => "0.75" }.freeze
+$shares = SHARES
+sync_asked = []
+level_bridge.answer("coop.sync") do |request|
+  sync_asked << request
+  share = $shares[request["own_level"]]
+  share ? { "equipment" => [share] * 8 } : { "why" => "not synced in this test" }
+end
 $kind = :coop
 sync.begin(10)
 high = Game_Actor.new(50)
@@ -116,19 +127,21 @@ fallen = Game_Actor.new(40)
 fallen.hp = 0
 ally = Game_MpActor.new(30)
 [high, low, fallen, ally].each { |actor| sync.sync(actor) }
-check("a character above the level fights with that level's stats and its equipment lowered by half as much",
+check("a character above the level fights with that level's stats and the share of its equipment the DLL tells",
       [high.param_base(0), high.param_plus(0), high.mhp], [100, 125, 225])
+check("asked with the battle's level and kind, and the character's level and stats at its own and the battle's level",
+      sync_asked.first, { "level" => 10, "kind" => "coop", "own_level" => 50, "own" => ["500"] * 8, "bases" => ["100"] * 8 })
 check("its personal level stays its own", high.base_level, 50)
 check("its share of HP and MP stays", [high.hp, high.mp], [150, 225])
 check("a character at or below the level keeps its stats", [low.mhp, sync.of(low)], [285, nil])
 check("a fallen character stays fallen", fallen.hp, 0)
-check("a rebuilt character of another player is synced too", ally.mhp, 238)
+check("a rebuilt character of another player is synced too", ally.mhp, 205)
 check("the player is told once, for their own characters", $chat, ["Level Sync: your characters fight at level 10, the party leader's."])
 sync.sync(high)
 check("syncing a character again changes nothing", [high.mhp, high.hp], [225, 150])
 check("the log tells each synced character's level and stats before and after, and why one stays",
       [$log.grep(/synced \? Actor from level 50 to 10: max HP 705, HP 470, MP 705\/705 -> max HP 225, HP 150, MP 225\/225/).size,
-       $log.grep(/\? Actor not synced: level 8 is at or below 10/).size], [1, 1])
+       $log.grep(/\? Actor not synced in this test/).size], [1, 1])
 
 # The end.
 sync.finish
@@ -140,9 +153,11 @@ check("and syncs nothing more", [high.mhp, sync.of(high)], [705, nil])
 
 # Other battles.
 $kind = :pvp
+$shares = {}
 sync.begin(10)
 sync.sync(high)
-check("a team duel syncs nobody", high.mhp, 705)
+check("a team duel asks with its kind, and syncs nobody the DLL leaves out", [sync_asked.last["kind"], high.mhp], ["pvp", 705])
+$shares = SHARES
 sync.finish
 $kind = :coop
 sync.begin(nil)

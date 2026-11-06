@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-06: Left the screen's parts and keys to the in-game suite, since the UI layer draws them, and kept the scene's flows
+#                            - Dropped the stand-in's copy of the clamp of an amount, which the rules in C# decide
 #      Paulinchen  2026-11-05: Stood in for an offer's key in place of its text
 #      Paulinchen  2026-11-01: Checked the trade screen built of the Mod Framework's components
 #      Paulinchen  2026-10-31: Dressed the help window through the Mod Framework's theme, as its hook of Window_Base#update does
@@ -92,11 +93,8 @@ end
 # The chat, which notes the scenes it follows.
 module MGQ_MpChat; def self.follow_scene(owner); ($followed ||= []) << owner; end; end
 
-# The trade, as trade.rbx keeps it: the actions note what they were handed in $calls, and an amount
-# is clamped as trade.rbx clamps it.
+# The trade, as trade.rbx keeps it: the actions note what they were handed in $calls.
 module MGQ_MpTrade
-  # Most of one item a trade moves.
-  MAX_AMOUNT = 99
   # One side's gold and items.
   Offer = Struct.new(:gold, :entries) do
     # Finds an item's entry.
@@ -117,14 +115,13 @@ module MGQ_MpTrade
   def self.short(id); id[0, 6]; end
   # Tells why the player cannot confirm.
   def self.confirm_refusal; @refusal; end
-  # Sets how many of an item the player offers, clamped as trade.rbx clamps it.
+  # Sets how many of an item the player offers, as many as asked.
   def self.set_amount(item, amount)
     $calls << [:amount, item.name, amount]
     raise "the bag broke" if $bag_breaks
     session = @session
     return unless session && session.stage == :open
 
-    amount = [[amount, 0].max, Items.held(item), Items.unique?(item) ? 1 : MAX_AMOUNT].min
     entry = session.mine.entry(Items.token(item))
     return if (entry ? entry.amount : 0) == amount
 
@@ -153,6 +150,8 @@ module MGQ_MpTrade
     def self.label(item); item.name; end
     # The tradeable items held.
     def self.bag; $held.keys.select { |item| $held[item] > 0 }; end
+    # As many of an item as asked.
+    def self.amount(_item, wanted); { "amount" => wanted, "why" => nil }; end
     # An offer by its gold and each item's token and amount.
     def self.key(offer); [offer.gold.to_i, offer.entries.map { |entry| [entry.token, entry.amount] }]; end
   end

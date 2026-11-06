@@ -2,6 +2,10 @@
 //  GameBridge.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-07: Registered the topics of a Raid World's difficulty
+//                            - Registered the topics of a Raid World's gated areas
+//      Paulinchen  2026-11-06: Registered the topics of the items a trade moves
+//                            - Registered the topics of the emotes
 //      Paulinchen  2026-11-05: Registered the topics of the frozen fights and of a lost raid boss battle's defeat, sharing the troops' sizes with the raid bosses' rules
 //                            - Started the DLL as the scripts first shake hands, in place of mp_start, a refused handshake too
 //                            - Registered the topics of the world directory, the update check, the memory, a Raid World's shared companions and its boss pools
@@ -158,6 +162,10 @@ internal static unsafe class GameBridge
         EventTableTopics.Register(context, () => GameEvents.Current);
         WorldTopics.Register(context);
         OverviewTopics.Register(context);
+        EmoteTopics.Register(context);
+        TradeLimitTopics.Register(context);
+        GateTopics.Register(context);
+        DifficultyTopics.Register(context);
         LocalWorldTopics.Kept local = LocalWorldTopics.Register(context, services);
         ModPickTopics.Register(context, services.Scripts);
         FormTopics forms = FormTopics.Register(context);

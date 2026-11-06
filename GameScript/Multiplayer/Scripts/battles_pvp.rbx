@@ -2,6 +2,7 @@
 #  battles_pvp.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Left the order of the automatic skills by speed to the rules in C#
 #      Paulinchen  2026-11-05: Left the team's rule of the Backline to C#, which writes and reads the builds
 #                            - Put back through the guard of the game's flow what the duel's snapshot leaves, such as a dark screen
 #      Paulinchen  2026-10-24: Removed the PvP battle screen's hotkey, its exchange and its Discord invites
@@ -66,6 +67,9 @@ module MGQ_MpBattlesPvp
 
   # What starts this script's lines in the log.
   LOG_TAG = "pvp battle"
+
+  # The topic that orders the automatic skills by their characters' speed.
+  BY_SPEED_TOPIC = "pvp.by_speed"
 
   # The fields the Discord mod publishes about PvP battles, through its bridge.
   #
@@ -794,21 +798,18 @@ module MGQ_MpBattlesPvp
       false
     end
 
-    # Orders queued automatic skills by their characters' speed, the fastest first, each character
-    # rolling the speed the game rolls for its turn.
-    #
-    # The game queues the party's before the troop's, so the host's team would always act first.
+    # Orders queued automatic skills by their characters' speed, as the rules in C# order them
+    # (topic pvp.by_speed).
     #
     # @param actions [Array<Game_Action>] The queued skills, each character's in its own order.
     # @return [Array<Game_Action>] The same skills, a faster character's before a slower one's.
     def self.by_speed(actions)
-      speeds = {}
-      place = 0
-      actions.sort_by do |action|
+      owners = actions.map do |action|
         owner = action.subject.master_observer
-        speeds[owner.object_id] ||= owner.agi + rand(5 + owner.agi / 4)
-        [-speeds[owner.object_id], place += 1]
+        [owner.object_id, owner.agi]
       end
+      places = MGQ_Multiplayer::Bridge.call!(BY_SPEED_TOPIC, owners)
+      places.map { |place| actions[place] }
     rescue => e
       MGQ_MpBattlesPvp.log_once(:by_speed, "ordering the automatic skills failed: #{e.class}: #{e.message}")
       actions

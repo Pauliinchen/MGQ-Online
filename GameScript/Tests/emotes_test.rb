@@ -2,6 +2,7 @@
 #  emotes_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Answered the emotes, a refused emote and an emote of another player that does not play with fixed values
 #      Paulinchen  2026-11-06: Took the emotes as the wheel of the UI layer tells them, leaving its keys to the in-game suite
 #      Paulinchen  2026-11-05: Handed the other players' messages as the DLL reads them and expected the emote sent as the scripts hand it
 #                            - Read the scripts' clock from $frame_count and dropped the check of a cooldown a loaded save ended, since the clock never goes back
@@ -21,8 +22,9 @@
 #----------------------------------------------------------------
 
 # Covers ui_emotes.rbx: the emotes its wheel offers, when the wheel may open, playing the emote it
-# took on the player and telling the others, the cooldown, and another player's emote on their
-# ghost. The wheel's keys are the framework's and the in-game suite's.
+# took on the player and telling the others, an emote the DLL refuses, and another player's emote
+# on their ghost unless the DLL tells why not. The wheel's keys are the framework's and the in-game
+# suite's; EmotesTests own the rules.
 
 require_relative "world_support"
 
@@ -39,6 +41,13 @@ clock_from { $frame_count }
 $frame_count = 0
 
 load_script "ui_emotes"
+# The DLL's answers: the emotes, why an emote of the player may not play ($refusal) and why
+# another player's may not ($ignored), each nil to play it.
+EMOTE_NAMES = %w(Jump Surprise Question Music Heart Anger Sweat Idea)
+$world_bridge.answer("emote.list") { EMOTE_NAMES.each_with_index.map { |name, index| [name, index == 0 ? nil : index] } }
+$world_bridge.answer("emote.play") { |_index| $refusal }
+$taken = []
+$world_bridge.answer("emote.take") { |request| $taken << request; $ignored }
 
 emotes = MGQ_MpEmotes
 friend = { "id" => "friend", "name" => "Friend", "map" => "5", "x" => "4", "y" => "4", "d" => "2", "sprite" => "Actor2", "index" => "0", "speed" => "4" }
@@ -61,7 +70,7 @@ take = lambda do |index|
 end
 check("its emotes are a jump by its name and the game's balloons, the wheel saying None while none is picked",
       [emotes::NONE_TEXT, emotes.choices.map { |choice| choice.key?(:bitmap) }, emotes.choices.map { |choice| choice[:text] }],
-      ["None", [false] + [true] * 7, emotes::EMOTES.map { |emote| emote.name }])
+      ["None", [false] + [true] * 7, EMOTE_NAMES])
 emotes.opened
 check("the other scripts see it open", emotes.wheel.open?, true)
 emotes.taken(emotes.choices[1])
@@ -75,11 +84,12 @@ check("the frame after plays it, a balloon above the player", $game_player.ballo
 check("and tells the others", $sent.last[1].values_at("emote", "map"), [1, 5])
 $sent.clear
 $sounds.clear
+$refusal = "Sweat: only 1 of 30 frames since the last emote"
 take.call(6)
-check("a second emote right after buzzes and plays nothing", [$sent, $sounds.last], [[], "buzzer"])
-$frame_count += MGQ_MpEmotes::COOLDOWN_FRAMES
+check("an emote the DLL refuses buzzes and plays nothing", [$sent, $sounds.last], [[], "buzzer"])
+$refusal = nil
 take.call(0)
-check("the jump plays once a moment passed", [$game_player.jumps, $sent.size], [1, 1])
+check("the jump plays once the DLL lets it", [$game_player.jumps, $sent.size], [1, 1])
 emotes.taken(emotes.choices[2])
 $frame_count += 3
 emotes.on_map
@@ -95,13 +105,13 @@ ghost = MGQ_MpOverworldSync::Peers.at(2).ghost
 $inbox << entry("message", 2, { "emote" => 4, "map" => "5" })
 MGQ_MpOverworldSync.tick
 check("another player's emote plays on their ghost", ghost.balloon_id, 4)
+check("asked with the emote, their map and the player's, and whether their ghost is here",
+      $taken.last, { "emote" => 4, "map" => 5, "own_map" => 5, "ghost" => true })
 $inbox << entry("message", 2, { "emote" => 0, "map" => "5" })
 MGQ_MpOverworldSync.tick
 check("their jump too", ghost.jumps, 1)
 $inbox << entry("message", 2, { "emote" => 4, "map" => "9" })
 ghost.balloon_id = 0
+$ignored = "Heart: played on map 9, the player is on 5"
 MGQ_MpOverworldSync.tick
-check("but not one from another map", ghost.balloon_id, 0)
-$inbox << entry("message", 2, { "emote" => 99, "map" => "5" })
-MGQ_MpOverworldSync.tick
-check("nor one the wheel has not", ghost.balloon_id, 0)
+check("but not one the DLL tells why not", ghost.balloon_id, 0)

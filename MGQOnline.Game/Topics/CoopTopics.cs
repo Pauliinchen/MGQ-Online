@@ -2,6 +2,7 @@
 //  CoopTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Answered whether a character fights at the battle's level and what its equipment keeps
 //      Paulinchen  2026-11-05: Took the seats an encounter brings along as numbers
 //                            - Took the widths every request to join a battle carries
 //                            - Told whether the running battle takes players in or why not, which Sessions reads in the other games
@@ -16,6 +17,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Numerics;
 using MGQOnline.Bridge;
@@ -91,6 +93,13 @@ public static class CoopTopics
     /// ([seat, leads, places, levels] each) in; <c>level</c> (nil for none) and <c>log</c> out.
     /// </summary>
     public const string Level = "coop.level";
+
+    /// <summary>
+    /// Works out a character's sync, see <see cref="CoopLevel.Sync"/>: <c>level</c>, <c>kind</c>,
+    /// <c>own_level</c>, and <c>own</c> and <c>bases</c> (each stat as decimal text) in;
+    /// <c>equipment</c> (each stat's share as decimal text) or <c>why</c> out.
+    /// </summary>
+    public const string Sync = "coop.sync";
 
     /// <summary>
     /// Writes a roster, see <see cref="CoopRoster.WriteRoster"/>: <c>enemies</c>, <c>players</c>
@@ -202,6 +211,7 @@ public static class CoopTopics
             return new RubyHash { { "rbn", rbn }, { "rbs", rbs } };
         });
         context.Register(Level, (_, request) => LevelOf(request.AsHash()));
+        context.Register(Sync, (_, request) => SyncOf(request.AsHash()));
         context.Register(WriteRoster, (_, request) =>
         {
             RubyHash fields = request.AsHash();
@@ -264,6 +274,20 @@ public static class CoopTopics
             [.. player[3].AsArray().Select(level => level.IsNil ? null : (long?)level.AsLong())]))];
         (long? level, string log) = CoopLevel.Of(IsTrue(request["raid"]), players);
         return new RubyHash { { "level", level is { } found ? found : RubyNil.Value }, { "log", log } };
+    }
+
+    /// <summary>
+    /// Answers <see cref="Sync"/>.
+    /// </summary>
+    /// <param name="request">The request.</param>
+    /// <returns>The equipment's shares, or why the character is not synced.</returns>
+    private static RubyHash SyncOf(RubyHash request)
+    {
+        static List<double> Stats(RubyValue stats) => [.. stats.AsArray().Select(stat => double.Parse(stat.AsText(), NumberStyles.Float, CultureInfo.InvariantCulture))];
+        (IReadOnlyList<double>? equipment, string? why) = CoopLevel.Sync(request["level"].AsLong(), request["kind"].AsText(), request["own_level"].AsLong(), Stats(request["own"]), Stats(request["bases"]));
+        return equipment is null
+            ? new RubyHash { { "why", why } }
+            : new RubyHash { { "equipment", new RubyArray(equipment.Select(share => (RubyValue)share.ToString("R", CultureInfo.InvariantCulture))) } };
     }
 
     /// <summary>

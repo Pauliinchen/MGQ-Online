@@ -2,6 +2,7 @@
 #  trade_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Answered which items may be traded, how many an offer holds and why an offer cannot be taken with fixed values and checked what the script asks
 #      Paulinchen  2026-11-05: Answered an offer with a fixed view in place of a copy of the DLL's revision count
 #                            - Handed and took the offers and items as values, the DLL's stand-in naming the tokens
 #                            - Expected the trade's invite told as true
@@ -211,6 +212,14 @@ $world_bridge.answer("trade.token") do |item|
 end
 # The relay hears through the DLL that a save holds a trade, recorded in $dll.
 $world_bridge.answer("trade.done") { |id| $dll << ["trade.done", id]; nil }
+# The DLL's rules of the items, standing in: the Royal Key may not be traded, every other item may;
+# how many an offer holds by how many the player wants ($amounts); and why the game cannot take an
+# offer ($refusal), each request kept in $limits_asked.
+$limits_asked = []
+$world_bridge.answer("trade.tradeable") { |items| items.map { |facts| facts != ["item", true, false, false] } }
+$amounts = { 9 => { "amount" => 5, "why" => "the bag holds 5" }, 3 => { "amount" => 3, "why" => nil }, 1 => { "amount" => 1, "why" => nil } }
+$world_bridge.answer("trade.amount") { |request| $limits_asked << request; $amounts[request["wanted"]] }
+$world_bridge.answer("trade.refusal") { |request| $limits_asked << request; $refusal }
 
 # Writes an offer as the DLL hands it to the scripts.
 #
@@ -328,7 +337,8 @@ $trade_view = open_view("my_rev" => 4)
 trade.set_amount(key, 1)
 check("key items stay out of an offer", [trade.session.mine.entries, $trade_calls], [[], []])
 trade.set_amount(potion, 9)
-check("an offer takes at most what the bag holds", trade.session.mine.entries.map(&:amount), [5])
+check("an offer takes what the DLL lets it hold, asked with what the bag holds",
+      [trade.session.mine.entries.map(&:amount), $limits_asked.last], [[5], { "wanted" => 9, "held" => 5, "unique" => false }])
 trade.set_amount(potion, 3)
 trade.set_gold(500)
 check("and at most the party's gold", trade.session.mine.gold, 100)
@@ -345,8 +355,9 @@ $trade_calls.clear
 trade.toggle_confirm
 check("confirming hands the DLL what the bag cannot take, here nothing", $trade_calls, [["confirm", nil]])
 from_dll("trade.their_offer", { "rev" => 2, "offer" => offer(0, listed("item", 2, 1)) })
+$refusal = "Friend's offer holds key items."
 trade.toggle_confirm
-check("or why it cannot", $trade_calls.last, ["confirm", "Friend's offer holds key items."])
+check("or why it cannot, as the DLL tells", $trade_calls.last, ["confirm", "Friend's offer holds key items."])
 check("which the confirm button tells too", trade.confirm_refusal, "Friend's offer holds key items.")
 from_dll("trade.view", open_view("my_rev" => 4, "their_rev" => 2, "refusal" => "The offers hold too many items for one trade. Take some out."))
 check("after the trade's own reasons", trade.confirm_refusal, "The offers hold too many items for one trade. Take some out.")
@@ -354,6 +365,7 @@ from_dll("trade.view", open_view("my_rev" => 4, "their_rev" => 2, "confirmed" =>
 $trade_calls.clear
 trade.toggle_confirm
 check("taking a confirmation back checks nothing", $trade_calls, [["confirm", nil]])
+$refusal = nil
 from_dll("trade.note", "Both offers are empty.")
 check("a message for the trade screen is kept", trade.note, "Both offers are empty.")
 ticks(MGQ_MpTrade::NOTE_FRAMES)
@@ -394,18 +406,16 @@ from_dll("trade.closed", nil)
 check("a trade that ended forgets its screen and its message", [trade.session, trade.note, trade.instance_variable_get(:@open_screen)], [nil, nil, false])
 trade.stop
 
-# What may not be taken.
-offer = MGQ_MpTrade::Items.read_offer(offer(0, listed("item", 2, 1)))
-check("an offer with key items cannot be confirmed", MGQ_MpTrade::Items.receive_refusal(offer, "Friend"), "Friend's offer holds key items.")
-offer = MGQ_MpTrade::Items.read_offer(offer(0, listed("item", 77, 1)))
-check("nor one with items this game lacks", MGQ_MpTrade::Items.receive_refusal(offer, "Friend"), "Friend's offer holds items your game does not know.")
-offer = MGQ_MpTrade::Items.read_offer(offer(0, listed("item", 1, 98)))
-check("nor more than the bag can carry", MGQ_MpTrade::Items.receive_refusal(offer, "Friend"), "You cannot carry more Potion.")
-check("counting what the own offer gives away", MGQ_MpTrade::Items.receive_refusal(offer, "Friend", MGQ_MpTrade::Items.read_offer(offer(0, listed("item", 1, 1)))), nil)
-offer = MGQ_MpTrade::Items.read_offer(offer(999_999_999))
-check("and the gold it gives away", [MGQ_MpTrade::Items.receive_refusal(offer, "Friend"), MGQ_MpTrade::Items.receive_refusal(offer, "Friend", MGQ_MpTrade::Items.read_offer(offer(160)))],
-      ["You cannot carry that much gold.", nil])
-check("enchant stones may be traded", MGQ_MpTrade::Items.tradeable?(ruby), true)
+# What may not be taken: the DLL judges what the game reads of both offers and the party.
+offer = MGQ_MpTrade::Items.read_offer(offer(50, listed("item", 1, 98), listed("item", 77, 1)))
+$refusal = "You cannot carry more Potion."
+check("an offer the DLL refuses cannot be taken", MGQ_MpTrade::Items.receive_refusal(offer, "Friend", MGQ_MpTrade::Items.read_offer(offer(10, listed("item", 1, 1)))), $refusal)
+check("asked with each item's facts, how many the bag holds and the own offer gives, an unknown item without facts, and the gold",
+      $limits_asked.last, { "name" => "Friend", "gold" => $game_party.gold, "max_gold" => $game_party.max_gold, "gold_given" => 10, "gold_taken" => 50,
+                            "entries" => [{ "facts" => ["item", false, false, false], "amount" => 98, "held" => 2, "given" => 1, "room" => 2, "copies_given" => 0, "name" => "Potion" },
+                                          { "facts" => nil, "amount" => 1, "held" => 0, "given" => 0, "room" => nil, "copies_given" => 0, "name" => "" }] })
+$refusal = nil
+check("enchant stones may be traded, asked with their facts", MGQ_MpTrade::Items.tradeable?(ruby), true)
 
 # Enchanted copies.
 sword = EnchantedSword.new(7)

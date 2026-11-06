@@ -2,6 +2,7 @@
 #  battles_balance_pvp.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Took the balance's values and what a hit and a defense wall leave from the rules in C#
 #      Paulinchen  2026-10-23: Deleted the switch that never turned the balance off
 #      Paulinchen  2026-10-07: Logged the balance's changes per character, its lowered hits and its end
 #      Paulinchen  2026-10-06: Added unbalanced and dropped active?
@@ -10,47 +11,26 @@
 #
 #----------------------------------------------------------------
 
-# The balance of a PvP battle: while it runs, skills deal what they deal in a monster's hands, every
-# character has more HP, one action takes only a part of a character's HP however strong it is, and
-# what kept a character from all harm keeps it from most of it.
+# The balance of a PvP battle, as the rules in C# work it out (PvpBalance): while it runs, skills
+# deal what they deal in a monster's hands, every character has more HP, one action takes only a
+# part of a character's HP however strong it is, and what kept a character from all harm keeps it
+# from most of it.
 #
-# The game balances a character against monsters, so between two players the first hit or an
-# untouchable team would decide the battle; the values are constants, not settings, because the
-# host's game works the battle out and the other game only shows it.
+# The host's game works the battle out and the other game only shows it.
 module MGQ_MpBalancePvp
   extend MGQ_MpLog
 
   # What starts this script's lines in the log.
   LOG_TAG = "pvp balance"
 
-  # Whether a skill deals what it deals in a monster's hands. Most skills carry a second formula
-  # for monsters, which the game balanced against a character's HP.
-  MONSTER_FORMULAS = true
+  # The topic of the balance's values, which the stat hooks apply many times a frame.
+  RULES_TOPIC = "pvp.rules"
 
-  # How many times its max HP a character has, a whole number.
-  HP_RATE = 4
+  # The topic that works out what a hit deals or heals.
+  HIT_TOPIC = "pvp.hit"
 
-  # The share of a character's max HP up to which one action's damage or healing counts in full.
-  DAMAGE_KNEE = 0.2
-
-  # The share of a character's max HP that one action's damage or healing stays below, however
-  # large it is. A late-game hit deals millions of times its target's HP, which no amount of added
-  # HP makes up for.
-  DAMAGE_LIMIT = 0.6
-
-  # The highest chance a character evades or reflects a hit with.
-  AVOID_CEILING = 0.75
-
-  # The lowest share of an attack's damage its elements leave, for a character that takes none of
-  # an element or absorbs it.
-  ELEMENT_FLOOR = 0.25
-
-  # The lowest share of a hit a character takes, for one whose states or abilities let it take no
-  # physical, magical or sure-hit damage at all.
-  DAMAGE_RATE_FLOOR = 0.25
-
-  # The share of its max HP a character's defense wall takes off one hit.
-  WALL_SHARE = 0.25
+  # The topic that works out what gets through a defense wall.
+  WALL_TOPIC = "pvp.wall"
 
   # The id of max HP among the game's stats.
   MAX_HP = 0
@@ -68,14 +48,21 @@ module MGQ_MpBalancePvp
     @active = was
   end
 
-  # Starts the balance for a PvP battle and fills the HP it adds.
+  # Starts the balance for a PvP battle with the values the rules in C# tell (topic pvp.rules) and
+  # fills the HP it adds.
   #
   # @param battlers [Array<Game_Battler>] The characters of both teams.
   def self.begin(battlers)
+    rules = MGQ_Multiplayer::Bridge.call!(RULES_TOPIC)
+    @hp_rate = rules["hp_rate"]
+    @monster_formulas = rules["monster_formulas"]
+    @avoid_ceiling = rules["avoid_ceiling"].to_f
+    @element_floor = rules["element_floor"].to_f
+    @taken_floor = rules["taken_floor"].to_f
     @active = true
     @taken = {}
     battlers.each { |battler| battler.hp = battler.mhp unless battler.dead? }
-    log("on for #{battlers.size} characters: HP x#{HP_RATE}#{', monster formulas' if MONSTER_FORMULAS}")
+    log("on for #{battlers.size} characters: HP x#{@hp_rate}#{', monster formulas' if @monster_formulas}")
     battlers.each { |battler| log_changes(battler) }
   rescue => e
     @active = false
@@ -90,8 +77,8 @@ module MGQ_MpBalancePvp
     own = unbalanced { rates_of(battler) }
     now = rates_of(battler)
     changes = own.keys.reject { |name| own[name] == now[name] }.map { |name| "#{name} #{own[name]} -> #{now[name]}" }
-    changes << "evasion #{own['evasion']} held to #{AVOID_CEILING}" if own["evasion"].to_f > AVOID_CEILING
-    changes << "magic reflection #{own['magic reflection']} held to #{AVOID_CEILING}" if own["magic reflection"].to_f > AVOID_CEILING
+    changes << "evasion #{own['evasion']} held to #{@avoid_ceiling}" if own["evasion"].to_f > @avoid_ceiling
+    changes << "magic reflection #{own['magic reflection']} held to #{@avoid_ceiling}" if own["magic reflection"].to_f > @avoid_ceiling
     log("#{battler.name rescue '?'}#{" (#{battler.id})" if battler.respond_to?(:id)}: #{changes.join(', ')}, #{battler.hp} HP")
   rescue => e
     log("#{battler.name rescue '?'}: changes unknown (#{e.class})")
@@ -122,9 +109,8 @@ module MGQ_MpBalancePvp
     @taken = {}
   end
 
-  # Lowers what a hit deals or heals while the balance applies. Up to DAMAGE_KNEE of the target's
-  # max HP counts in full, beyond that ever less, and an action's hits on one target count together,
-  # so a skill of many hits takes no more than one strong hit.
+  # Lowers what a hit deals or heals while the balance applies, as the rules in C# work it out
+  # (topic pvp.hit) from what the same action dealt or healed the target before.
   #
   # @param battler [Game_Battler] The target.
   # @param value [Numeric] The damage as the game works it out, negative for healing.
@@ -132,14 +118,16 @@ module MGQ_MpBalancePvp
   def self.damage(battler, value)
     return value unless @active && value != 0
 
-    mhp = battler.mhp.to_f
+    mhp = battler.mhp
     return value unless mhp > 0
 
     key = [battler.__id__, value < 0]
     before = @taken[key] || 0.0
-    after = before + value.abs
-    @taken[key] = after
-    left = mhp * (share(after / mhp) - share(before / mhp))
+    @taken[key] = before + value.abs
+    left = MGQ_Multiplayer::Bridge.call(HIT_TOPIC, "max_hp" => mhp, "before" => before.to_s, "value" => value.abs.to_s)
+    return value unless left
+
+    left = left.to_f
     note_hit(battler, value, left) if left.round < value.abs
     value < 0 ? -left : left
   end
@@ -154,24 +142,13 @@ module MGQ_MpBalancePvp
   rescue
   end
 
-  # Works out the share of max HP an action takes or gives for the share it would without the
-  # balance.
-  #
-  # @param raw [Float] The share without the balance, which may be many times the max HP.
-  # @return [Float] The share in the battle, below DAMAGE_LIMIT.
-  def self.share(raw)
-    return raw if raw <= DAMAGE_KNEE
-
-    DAMAGE_KNEE + (DAMAGE_LIMIT - DAMAGE_KNEE) * (1.0 - 1.0 / (1.0 + Math.log10(raw / DAMAGE_KNEE)))
-  end
-
   # Raises a stat of a character while the balance applies.
   #
   # @param param_id [Integer] The stat's id.
   # @param value [Integer] The stat as the game works it out.
   # @return [Integer] The stat in the battle.
   def self.stat(param_id, value)
-    @active && param_id == MAX_HP ? value * HP_RATE : value
+    @active && param_id == MAX_HP ? value * @hp_rate : value
   end
 
   # Lowers a stat a damage formula reads while the balance applies.
@@ -182,7 +159,7 @@ module MGQ_MpBalancePvp
   # @param value [Integer] The stat in the battle.
   # @return [Integer] The stat the formula works with.
   def self.formula_stat(param_id, value)
-    @active && param_id == MAX_HP ? value / HP_RATE : value
+    @active && param_id == MAX_HP ? value / @hp_rate : value
   end
 
   # Reports whether a character's skills use their formulas for monsters.
@@ -190,7 +167,7 @@ module MGQ_MpBalancePvp
   # @param monster [Boolean] Whether they do as the game works it out.
   # @return [Boolean] Whether they do in the battle.
   def self.monster_formulas?(monster)
-    monster || (@active && MONSTER_FORMULAS ? true : false)
+    monster || (@active && @monster_formulas ? true : false)
   end
 
   # Limits how little of a hit a character takes while the balance applies.
@@ -198,7 +175,7 @@ module MGQ_MpBalancePvp
   # @param rate [Float] The share of physical, magical or sure-hit damage it takes as the game works it out.
   # @return [Float] The share in the battle.
   def self.taken_rate(rate)
-    @active && rate < DAMAGE_RATE_FLOOR ? DAMAGE_RATE_FLOOR : rate
+    @active && rate < @taken_floor ? @taken_floor : rate
   end
 
   # Limits the chance a character evades or reflects a hit with while the balance applies.
@@ -206,7 +183,7 @@ module MGQ_MpBalancePvp
   # @param chance [Float] The chance as the game works it out.
   # @return [Float] The chance in the battle.
   def self.avoidance(chance)
-    @active && chance > AVOID_CEILING ? AVOID_CEILING : chance
+    @active && chance > @avoid_ceiling ? @avoid_ceiling : chance
   end
 
   # Limits how much of an attack's damage its elements take away while the balance applies.
@@ -215,10 +192,11 @@ module MGQ_MpBalancePvp
   # @param rate [Float] The rate as the game works it out, negative for an absorbed element.
   # @return [Float] The rate in the battle.
   def self.element_rate(item, rate)
-    @active && item.for_opponent? && rate < ELEMENT_FLOOR ? ELEMENT_FLOOR : rate
+    @active && item.for_opponent? && rate < @element_floor ? @element_floor : rate
   end
 
-  # Works out what a defense wall leaves of a hit while the balance applies.
+  # Works out what a defense wall leaves of a hit while the balance applies, as the rules in C#
+  # work it out (topic pvp.wall).
   #
   # @param battler [Game_Battler] The character behind the wall.
   # @param damage [Numeric] The hit before the wall.
@@ -227,7 +205,10 @@ module MGQ_MpBalancePvp
   def self.wall(battler, damage, left)
     return left unless @active && left == 0 && damage > 0
 
-    through = [damage - (battler.mhp * WALL_SHARE).to_i, 0].max
+    through = MGQ_Multiplayer::Bridge.call(WALL_TOPIC, "max_hp" => battler.mhp, "damage" => damage.to_s)
+    return left unless through
+
+    through = damage.is_a?(Integer) ? through.to_f.to_i : through.to_f
     note_wall(battler, damage, through)
     through
   end

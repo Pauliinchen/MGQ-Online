@@ -2,36 +2,29 @@
 #  world_gates.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-07: Asked the rules in C# which area a move enters and what the world's story still lacks
 #      Paulinchen  2026-11-05: Left what a move kept back leaves to the one guard of the game's flow
 #                            - Counted the notices' pause by the bridge's frame
 #      Paulinchen  2026-10-24: Created
 #
 #----------------------------------------------------------------
 
-# A Raid World's gated areas: places the game lets a player into at any time, whose end needs story
-# the world has not finished yet. Every move into one from outside waits until the world's story
-# meets the area's needs, and an event that would lead there leaves out the commands or the
-# choice's option that do, so nobody fights their way to its entrance first.
+# A Raid World's gated areas, as the rules in C# keep them (WorldGates): places the game lets a
+# player into at any time, whose end needs story the world has not finished yet. Every move into one
+# from outside waits until the world's story meets the area's needs, and an event that would lead
+# there leaves out the commands or the choice's option that do, so nobody fights their way to its
+# entrance first.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpWorldGates
-  # One need of an area: a variable of the world's story at a value or more, named as the player
-  # knows its story.
-  Need = Struct.new(:variable, :value, :name)
+  # A shut area a move would enter: its name and the names of the needs the world's story lacks.
+  Shut = Struct.new(:name, :missing)
 
-  # One gated area: its name, its maps and what the world's story needs before anyone enters it.
-  Area = Struct.new(:name, :maps, :needs)
+  # The topic that names the variables the gates read.
+  READS_TOPIC = "gates.reads"
 
-  # The gated areas. The Realm of Chaos behind the Central Tartarus ends in the Chaos route's bad end
-  # unless these ten chains are done, the same the game asks before it sets v1143 to 24 (map 1287,
-  # event 233); its maps are the entrance 1836 and every map below it.
-  AREAS = [
-    Area.new("Central Tartarus", [1836, 1751, 1936, 1937, 1938, 1939, 1941, 1942, 1943, 1944, 1945, 1946, 1947, 1948, 1949, 1950, 1842, 1951, 1843, 1752],
-             [Need.new(1311, 6, "Chaos Ilias Temple"), Need.new(1312, 7, "Chaos Dark God's Castle"), Need.new(1333, 3, "Kagetsumugi's Return"),
-              Need.new(1340, 3, "Administrator's Tower"), Need.new(1344, 3, "White Rabbit's Revival"), Need.new(1345, 5, "Koron"),
-              Need.new(1347, 3, "Ilias's Power-up"), Need.new(1353, 15, "Alice's Power-up"), Need.new(1362, 21, "Hero of the North"),
-              Need.new(1373, 13, "Granberia's Nightmare")]),
-  ]
+  # The topic that finds the shut area a move would enter.
+  SHUT_TOPIC = "gates.shut"
 
   # The event commands of a choice, one of its options, the end of the choice, a transfer, a
   # message and its text, and the empty command that ends every block of commands.
@@ -54,35 +47,17 @@ module MGQ_MpWorldGates
   # When the player last heard why an area is shut, by its name.
   @noticed = {}
 
-  # Finds the area a map lies in.
-  #
-  # @param map_id [Integer] The map.
-  # @return [Area, nil] The area, nil for a map in none.
-  def self.area_of(map_id)
-    AREAS.find { |area| area.maps.include?(map_id) }
-  end
-
-  # Lists what the world's story still lacks for an area, as the player's game holds the world's
-  # story.
-  #
-  # @param area [Area] The area.
-  # @return [Array<Need>] The needs not met.
-  def self.missing(area)
-    area.needs.reject { |need| $game_variables[need.variable].to_i >= need.value }
-  end
-
-  # Finds the shut area a move to a map would enter in a Raid World: one the player is not in yet
-  # whose needs the world's story does not meet.
+  # Finds the shut area a move to a map would enter in a Raid World, as the rules in C# find it
+  # (topic gates.shut) from the world's story the player's game holds.
   #
   # @param map_id [Integer] The map the move goes to.
-  # @return [Area, nil] The area, nil when the move may go.
+  # @return [Shut, nil] The area, nil when the move may go.
   def self.shut_area(map_id)
     return nil unless MGQ_MpCoop::Scope.raid?
 
-    area = area_of(map_id)
-    return nil unless area && !(area.maps.include?($game_map.map_id) || missing(area).empty?)
-
-    area
+    @reads ||= MGQ_Multiplayer::Bridge.call!(READS_TOPIC)
+    answer = MGQ_Multiplayer::Bridge.call!(SHUT_TOPIC, "to" => map_id, "at" => $game_map.map_id, "v" => @reads.map { |id| $game_variables[id].to_i })
+    answer ? Shut.new(answer["area"], answer["missing"]) : nil
   end
 
   # Lets a move go unless it enters a shut area, telling the player what the area still needs and
@@ -99,7 +74,7 @@ module MGQ_MpWorldGates
     area = shut_area(map_id)
     return yield unless area
 
-    log_once([:refused, area.name, $game_map.map_id], "kept the player out of map #{map_id} of #{area.name}: the world's story lacks #{needs_text(missing(area))}")
+    log_once([:refused, area.name, $game_map.map_id], "kept the player out of map #{map_id} of #{area.name}: the world's story lacks #{area.missing.join(', ')}")
     tell_shut(area)
     MGQ_MpFlowGuard.refused("#{area.name} is shut") if defined?(MGQ_MpFlowGuard)
   rescue => e
@@ -109,21 +84,13 @@ module MGQ_MpWorldGates
 
   # Tells the player what an area still needs, once in NOTICE_FRAMES.
   #
-  # @param area [Area] The area.
+  # @param area [Shut] The area.
   def self.tell_shut(area)
     last = @noticed[area.name]
     return if last && MGQ_Multiplayer::Bridge.frame_number - last < NOTICE_FRAMES
 
     @noticed[area.name] = MGQ_Multiplayer::Bridge.frame_number
-    MGQ_MpOverworldSync.notice("#{area.name} opens once the world finished: #{needs_text(missing(area))}.")
-  end
-
-  # Names needs for the player.
-  #
-  # @param needs [Array<Need>] The needs.
-  # @return [String] Their names, comma separated.
-  def self.needs_text(needs)
-    needs.map(&:name).join(", ")
+    MGQ_MpOverworldSync.notice("#{area.name} opens once the world finished: #{area.missing.join(', ')}.")
   end
 
   # Keeps an event from leading into a shut area before it does anything on the way: a block it

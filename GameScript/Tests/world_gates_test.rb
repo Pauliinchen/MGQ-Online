@@ -2,6 +2,7 @@
 #  world_gates_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-07: Answered the shut area of a move with fixed values and checked what the script asks
 #      Paulinchen  2026-11-05: Checked that a move kept back goes to the one guard of the game's flow
 #                            - Read the scripts' clock from $frame_count
 #      Paulinchen  2026-10-24: Created
@@ -9,9 +10,11 @@
 #----------------------------------------------------------------
 
 # Covers world_gates.rbx: a Raid World's gated areas, which nobody enters from outside before the
-# world's story meets their needs, by any move or by a choice that leads there.
+# world's story meets their needs, by any move or by a choice that leads there. WorldGatesTests own
+# which area is shut and what it lacks.
 
 require_relative "support"
+require_relative "bridge_support"
 
 # Stands in for the game's data.
 module RPG
@@ -38,45 +41,46 @@ module MGQ_MpOverworldSync; def self.notice(text, _icon = nil); ($notices ||= []
 # Stands in for the one guard of the game's flow (coop_flow.rbx), keeping why each move was kept back in $refused.
 module MGQ_MpFlowGuard; def self.refused(why); ($refused ||= []) << why; end; end
 load_script "world_gates"
+# The DLL's side of the bridge: the gates read variables 1311 and 1345, and the Central Tartarus is
+# shut while $missing names what the world's story lacks, each move asked kept in $asked.
+bridge = FakeBridge.new
+$asked = []
+bridge.answer("gates.reads") { [1311, 1345] }
+bridge.answer("gates.shut") do |request|
+  $asked << request
+  request["to"] == 1836 && !$missing.empty? ? { "area" => "Central Tartarus", "missing" => $missing } : nil
+end
+MGQ_Multiplayer::Bridge.open(bridge)
 
 gates = MGQ_MpWorldGates
-area = gates::AREAS.first
 $game_map = Game_Map.new
 $game_player = Game_Player.new
 $game_variables = Hash.new(0)
+$game_variables[1311] = 6
 $raid = true
 $map_id = 1287
-done = lambda { area.needs.each { |need| $game_variables[need.variable] = need.value } }
+$missing = ["Koron", "Granberia's Nightmare"]
 
 # Moves.
 $game_player.reserve_transfer(1836, 10, 10)
-check("a Raid World keeps everyone out of the Central Tartarus while the world's story lacks its chains", $moves.to_a, [])
-check("and says what the world still has to finish", $notices.last,
-      "Central Tartarus opens once the world finished: Chaos Ilias Temple, Chaos Dark God's Castle, Kagetsumugi's Return, Administrator's Tower, " \
-      "White Rabbit's Revival, Koron, Ilias's Power-up, Alice's Power-up, Hero of the North, Granberia's Nightmare.")
-$game_player.reserve_transfer(1752, 10, 10)
-check("its deepest map too, as a follow or teleport would reach it, telling it once in a while", [$moves.to_a, $notices.size], [[], 1])
-check("and hands each move kept back to the guard of the game's flow, which puts back the screen the scene faded out", $refused, ["Central Tartarus is shut"] * 2)
-done.call
-$game_variables[1345] = 4
+check("a Raid World keeps everyone out of an area the DLL tells is shut", $moves.to_a, [])
+check("asked with the map, the player's map and the world's story the gates read", $asked.last, { "to" => 1836, "at" => 1287, "v" => [6, 0] })
+check("and says what the world still has to finish", $notices.last, "Central Tartarus opens once the world finished: Koron, Granberia's Nightmare.")
 $game_player.reserve_transfer(1836, 10, 10)
-check("one chain short is still shut", $moves.to_a, [])
+check("telling it once in a while", [$moves.to_a, $notices.size], [[], 1])
+check("and hands each move kept back to the guard of the game's flow, which puts back the screen the scene faded out", $refused, ["Central Tartarus is shut"] * 2)
+$missing = ["Koron"]
 $frame_count += gates::NOTICE_FRAMES
 $game_player.reserve_transfer(1836, 10, 10)
 check("and names only what is missing", $notices.last, "Central Tartarus opens once the world finished: Koron.")
-done.call
+$missing = []
 $game_player.reserve_transfer(1836, 10, 10)
-check("all ten open it", $moves, [1836])
-$game_variables[1345] = 0
-$map_id = 1938
-$game_player.reserve_transfer(1951, 10, 10)
-check("a player inside moves on within it", $moves, [1836, 1951])
-$map_id = 1287
-$game_player.reserve_transfer(2, 10, 10)
-check("every other map stays open", $moves, [1836, 1951, 2])
+check("a move the DLL lets go goes", $moves, [1836])
+$missing = ["Koron"]
 $raid = false
+asked = $asked.size
 $game_player.reserve_transfer(1836, 10, 10)
-check("a Classic world gates nothing", $moves, [1836, 1951, 2, 1836])
+check("a Classic world gates nothing and asks nothing", [$moves, $asked.size], [[1836, 1836], asked])
 $raid = true
 
 # Choices.
@@ -107,7 +111,7 @@ interpreter.index = 1
 interpreter.execute_command
 check("a branch that moves the player there itself is left out from its start, before its fade and the airship's landing (review H2)",
       interpreter.list.map(&:code), [111, 0, 412, 0])
-done.call
+$missing = []
 interpreter = Game_Interpreter.new(list)
 interpreter.execute_command
 check("once the world's story opens it, the choice stays as it is", interpreter.list.equal?(list), true)

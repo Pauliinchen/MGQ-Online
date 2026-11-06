@@ -2,6 +2,7 @@
 #  trade.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Asked the rules in C# which items may be traded, how many of one an offer holds and whether the game can take an offer
 #      Paulinchen  2026-11-05: Handed the DLL the offers and items as values and took them back so, the DLL writing and reading the offers and the items' tokens
 #                            - Told whether the player invites to a trade as true or false
 #                            - Handed the players a trade invite names to the DLL as a list, which it writes into the state
@@ -64,9 +65,6 @@ module MGQ_MpTrade
   # Frames a message about the trade stays on the trade screen, four seconds.
   NOTE_FRAMES = 240
 
-  # Most of one item a trade moves, the game's own cap of a stack.
-  MAX_AMOUNT = 99
-
   # Trades the save remembers as applied, so a recovered trade is applied once.
   KEPT_TRADES = 50
 
@@ -82,6 +80,9 @@ module MGQ_MpTrade
   CANCEL_TOPIC = "trade.cancel"
   DONE_TOPIC = "trade.done"
   TOKEN_TOPIC = "trade.token"
+  TRADEABLE_TOPIC = "trade.tradeable"
+  AMOUNT_TOPIC = "trade.amount"
+  REFUSAL_TOPIC = "trade.refusal"
 
   # The bridge events of the trade, see the DLL's TradeTopics.
   VIEW_EVENT = "trade.view"
@@ -500,19 +501,31 @@ module MGQ_MpTrade
     nil
   end
 
-  # Changes how many of an item the player offers.
+  # Changes how many of an item the player offers, as many as the rules in C# let an offer hold
+  # (topic trade.amount).
   #
   # @param item [RPG::BaseItem] The item.
-  # @param amount [Integer] How many, 0 to take it out of the offer; at most what the bag holds.
+  # @param amount [Integer] How many, 0 to take it out of the offer.
+  # @return [String, nil] Why the offer holds fewer than wanted, nil when it holds as many.
   def self.set_amount(item, amount)
     session = @session
     return unless session && session.stage == :open
     return log("not offering #{Items.label(item)}: it may not be traded") unless Items.tradeable?(item)
 
     token = Items.token(item)
-    wanted = amount
-    amount = [[amount, 0].max, Items.held(item), Items.unique?(item) ? 1 : MAX_AMOUNT].min
-    log("offering #{amount}, not #{wanted}, of #{Items.label(item)}: the bag holds #{Items.held(item)}, a trade moves at most #{Items.unique?(item) ? 1 : MAX_AMOUNT}") if amount != wanted && wanted > 0
+    answer = Items.amount(item, amount)
+    log("offering #{answer['amount']}, not #{amount}, of #{Items.label(item)}: #{answer['why']}") if answer["why"]
+    change_amount(session, item, token, answer["amount"])
+    answer["why"]
+  end
+
+  # Puts an amount of an item into the player's offer.
+  #
+  # @param session [Session] The trade.
+  # @param item [RPG::BaseItem] The item.
+  # @param token [String] The item's token.
+  # @param amount [Integer] How many, 0 to take it out of the offer.
+  def self.change_amount(session, item, token, amount)
     entry = session.mine.entry(token)
     return if (entry ? entry.amount : 0) == amount
 
@@ -650,14 +663,33 @@ module MGQ_MpTrade
       item.is_a?(RPG::Item) && item.respond_to?(:enchant_stone?) && item.enchant_stone?
     end
 
-    # Reports whether an item may be traded: anything but the game's key items.
+    # Reads what the rules in C# ask of an item: [kind, key, stone, unique].
+    #
+    # @param item [RPG::BaseItem, nil] The item, nil for one the game does not know.
+    # @return [Array, nil] The facts, nil for no item.
+    def self.facts(item)
+      return nil unless item
+
+      kind = { RPG::Item => "item", RPG::Weapon => "weapon", RPG::Armor => "armor" }.find { |klass, _name| item.is_a?(klass) }
+      [kind ? kind[1] : nil, item.is_a?(RPG::Item) && item.key_item? ? true : false, stone?(item) ? true : false, unique?(item) ? true : false]
+    end
+
+    # Reports whether an item may be traded, as the rules in C# tell (topic trade.tradeable).
     #
     # @param item [RPG::BaseItem, nil] The item.
     # @return [Boolean] Whether it may.
     def self.tradeable?(item)
-      return false unless item.is_a?(RPG::Item) || item.is_a?(RPG::Weapon) || item.is_a?(RPG::Armor)
+      item ? MGQ_Multiplayer::Bridge.call!(MGQ_MpTrade::TRADEABLE_TOPIC, [facts(item)]).first : false
+    end
 
-      !(item.is_a?(RPG::Item) && item.key_item? && !stone?(item))
+    # Works out how many of an item an offer holds when the player wants a number of them, as the
+    # rules in C# tell (topic trade.amount).
+    #
+    # @param item [RPG::BaseItem] The item.
+    # @param wanted [Integer] How many the player wants to offer.
+    # @return [Hash] "amount", and "why" not as many as wanted, nil when as many.
+    def self.amount(item, wanted)
+      MGQ_Multiplayer::Bridge.call!(MGQ_MpTrade::AMOUNT_TOPIC, "wanted" => wanted, "held" => held(item), "unique" => unique?(item) ? true : false)
     end
 
     # Counts the item in the party's bag, not what is equipped or in the storehouse.
@@ -672,7 +704,9 @@ module MGQ_MpTrade
     #
     # @return [Array<RPG::BaseItem>] The items, weapons and armors held.
     def self.bag
-      ($game_party.items + $game_party.weapons + $game_party.armors).select { |item| tradeable?(item) && held(item) > 0 }
+      items = ($game_party.items + $game_party.weapons + $game_party.armors).select { |item| held(item) > 0 }
+      may = items.empty? ? [] : MGQ_Multiplayer::Bridge.call!(MGQ_MpTrade::TRADEABLE_TOPIC, items.map { |item| facts(item) })
+      items.select.with_index { |_item, index| may[index] }
     end
 
     # The lists of an enchantment a rolled name prefix comes from, by the letter that names them.
@@ -817,25 +851,22 @@ module MGQ_MpTrade
       Offer.new(read["gold"].to_i, Array(read["items"]).map { |token, plain, amount| Entry.new(token.to_s, item_from(plain), amount.to_i, plain) })
     end
 
-    # Tells why the player's game cannot take an offer, counting what the player gives away in the
-    # same trade, which leaves the bag first.
+    # Tells why the player's game cannot take an offer, as the rules in C# tell (topic
+    # trade.refusal), counting what the player gives away in the same trade, which leaves the bag
+    # first.
     #
     # @param offer [Offer] The other player's offer.
     # @param name [String] The other player's name.
     # @param mine [Offer] The player's own offer.
     # @return [String, nil] The reason, nil while it can.
     def self.receive_refusal(offer, name, mine = Offer.new(0, []))
-      return "#{name}'s offer holds items your game does not know." if offer.entries.any? { |entry| entry.item.nil? }
-      return "#{name}'s offer holds key items." if offer.entries.any? { |entry| !tradeable?(entry.item) }
-      return "#{name}'s offer is not valid." if offer.entries.any? { |entry| entry.amount < 1 || entry.amount > (unique?(entry.item) ? 1 : MAX_AMOUNT) }
-      return "You cannot carry that much gold." if $game_party.gold - mine.gold.to_i + offer.gold.to_i > $game_party.max_gold
-
-      full = offer.entries.find { |entry| !unique?(entry.item) && held(entry.item) - given(mine, entry.token) + entry.amount > MAX_AMOUNT }
-      return "You cannot carry more #{full.item.name}." if full
-
-      copies = offer.entries.select { |entry| unique?(entry.item) }.group_by { |entry| entry.item.class }
-      crowded = copies.find { |kind, entries| room_for_copies(entries.first.item) + copies_given(mine, kind) < entries.size }
-      crowded ? "You cannot carry more equipment like #{crowded[1].first.item.name}." : nil
+      entries = offer.entries.map do |entry|
+        item = entry.item
+        { "facts" => facts(item), "amount" => entry.amount, "held" => item ? held(item) : 0, "given" => given(mine, entry.token),
+          "room" => item ? room_for_copies(item) : nil, "copies_given" => item ? copies_given(mine, item.class) : 0, "name" => item ? item.name.to_s : "" }
+      end
+      MGQ_Multiplayer::Bridge.call!(MGQ_MpTrade::REFUSAL_TOPIC, "name" => name.to_s, "gold" => $game_party.gold, "max_gold" => $game_party.max_gold,
+                                                                "gold_given" => mine.gold.to_i, "gold_taken" => offer.gold.to_i, "entries" => entries)
     end
 
     # Counts how many of an item the player's offer gives away.
@@ -860,10 +891,10 @@ module MGQ_MpTrade
     # Counts the copies of a kind the party can still take.
     #
     # @param item [RPG::BaseItem] A copy of the kind.
-    # @return [Integer] How many.
+    # @return [Integer, nil] How many, nil when the game keeps no count of copies.
     def self.room_for_copies(item)
       party = $game_party
-      return MAX_AMOUNT unless party.respond_to?(:uniq_max_item_number) && party.respond_to?(:uniq_item_number)
+      return nil unless party.respond_to?(:uniq_max_item_number) && party.respond_to?(:uniq_item_number)
 
       party.uniq_max_item_number(item) - party.uniq_item_number(item)
     end

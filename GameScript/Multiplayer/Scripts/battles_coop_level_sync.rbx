@@ -2,6 +2,7 @@
 #  battles_coop_level_sync.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Asked the rules in C# whether a character fights at the battle's level and what its equipment keeps
 #      Paulinchen  2026-10-30: Worked the battle's level out through the rules in C#
 #      Paulinchen  2026-10-23: Deleted the switch that never turned the level sync off
 #      Paulinchen  2026-10-08: Synced no level in a Raid World
@@ -11,10 +12,10 @@
 #
 #----------------------------------------------------------------
 
-# The level sync of a co-op battle: a character above the battle's level, the highest of the party
-# leader's characters in it, fights with the stats of that level, and its equipment loses half as
-# much as the level takes. Its levels, experience and skills stay its own, and its stats come back
-# once the battle is won, before its rewards, or ends.
+# The level sync of a co-op battle, as the rules in C# work it out (CoopLevel): a character above
+# the battle's level, the highest of the party leader's characters in it, fights with the stats of
+# that level, and its equipment loses half as much as the level takes. Its levels, experience and
+# skills stay its own, and its stats come back once the battle is won, before its rewards, or ends.
 #
 # Every game of the battle syncs the same characters to the level the host sent, since the host's
 # game works the battle out and the others show it. It must never interrupt the game, so every
@@ -24,9 +25,6 @@ module MGQ_MpCoopLevelSync
 
   # What starts this script's lines in the log.
   LOG_TAG = "level sync"
-
-  # The share of what the level takes off a stat that the character's equipment loses too.
-  EQUIPMENT_SHARE = 0.5
 
   # Stats the game counts, max HP to luck.
   PARAM_COUNT = 8
@@ -46,6 +44,10 @@ module MGQ_MpCoopLevelSync
 
   # The topic that works the battle's level out.
   LEVEL_TOPIC = "coop.level"
+
+  # The topic that works out whether a character fights at the battle's level, and what its
+  # equipment keeps then.
+  SYNC_TOPIC = "coop.sync"
 
   # The characters whose reason for fighting with their own stats was logged this battle.
   @noted = {}
@@ -85,17 +87,21 @@ module MGQ_MpCoopLevelSync
     log("no level sync this battle: no level (#{level.inspect})")
   end
 
-  # Syncs a character of the co-op party when it is above the battle's level, keeping its share of
-  # HP and MP. A character synced already stays as it is.
+  # Syncs a character of the co-op party as the rules in C# tell (topic coop.sync), keeping its
+  # share of HP and MP. A character synced already stays as it is.
   #
   # @param actor [Game_Actor] The character, the player's own or a rebuilt one.
   def self.sync(actor)
     return unless @level && !@synced.key?(actor)
-    return note(actor, "not synced in a #{MGQ_MpBattles.kind.inspect} battle") unless MGQ_MpBattles.kind == :coop
-    return note(actor, "not synced: level #{actor.base_level} is at or below #{@level}") unless actor.base_level > @level
+
+    own = bases_of(actor)
+    bases = at_level(actor, @level) { bases_of(actor) }
+    answer = MGQ_Multiplayer::Bridge.call!(SYNC_TOPIC, "level" => @level, "kind" => MGQ_MpBattles.kind.to_s, "own_level" => actor.base_level,
+                                                       "own" => own.map(&:to_s), "bases" => bases.map(&:to_s))
+    return note(actor, answer["why"]) if answer["why"]
 
     before = vitals_text(actor)
-    keep_vitals(actor) { @synced[actor] = sync_of(actor) }
+    keep_vitals(actor) { @synced[actor] = Sync.new(bases, answer["equipment"].map(&:to_f)) }
     log("synced #{label(actor)} from level #{actor.base_level} to #{@level}: #{before} -> #{vitals_text(actor)}")
     tell unless actor.is_a?(Game_MpActor)
   rescue => e
@@ -190,18 +196,12 @@ module MGQ_MpCoopLevelSync
     @noted = {}
   end
 
-  # Works out a character's sync for the battle's level.
+  # Reads the personal level part of each of a character's stats.
   #
   # @param actor [Game_Actor] The character, not synced yet.
-  # @return [Sync] Its sync.
-  def self.sync_of(actor)
-    own = (0...PARAM_COUNT).map { |id| actor.param_base(id) }
-    bases = at_level(actor, @level) { (0...PARAM_COUNT).map { |id| actor.param_base(id) } }
-    equipment = own.zip(bases).map do |was, now|
-      kept = was > 0 ? [[now.to_f / was, 0.0].max, 1.0].min : 1.0
-      1.0 - EQUIPMENT_SHARE * (1.0 - kept)
-    end
-    Sync.new(bases, equipment)
+  # @return [Array<Numeric>] The stats, max HP to luck.
+  def self.bases_of(actor)
+    (0...PARAM_COUNT).map { |id| actor.param_base(id) }
   end
 
   # Lets the game work something out as if a character had another personal level, through its

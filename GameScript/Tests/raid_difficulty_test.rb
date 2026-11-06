@@ -2,6 +2,7 @@
 #  raid_difficulty_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-07: Answered whether a fight has values of its own and whether the difficulty is due with fixed values and checked what the script asks
 #      Paulinchen  2026-11-05: Left the forms' fields to the DLL's tests, checking what the edit form hands over and reads back
 #                            - Put the worlds on this PC as the DLL tells them
 #                            - Pushed the difficulty as the number the DLL reads
@@ -35,8 +36,8 @@
 # Covers a Raid World's difficulty, squad rules and start: what the edit form hands the DLL and
 # reads back, and its starting save but never a choice on entering (world.rbx,
 # world_save_distribution.rbx); the world's difficulty on load, new game and the relay's push, set
-# over the game's own choice and the Reaper's change, while the Labyrinth of Chaos, the Colosseum
-# and the special bosses keep their own values (world_difficulty.rbx); and these values each Raid
+# over the game's own choice and the Reaper's change, while a fight the DLL tells has values of its
+# own keeps them (world_difficulty.rbx; RaidDifficultyTests own when); and these values each Raid
 # World player's own in the story (story_state.rbx).
 
 require_relative "support"
@@ -215,6 +216,14 @@ $game_party = Struct.new(:in_battle).new(false)
 $game_map = Game_Map.new
 $game_map.instance_variable_set(:@interpreter, MapInterpreter.new)
 
+# The DLL tells whether a fight has values of its own set ($own_values) and whether the game is due
+# to be put on the world's difficulty ($due), asked with the switches it reads.
+$difficulty_asked = []
+$world_bridge.answer("difficulty.reads") { [23, 41, 507, 28, 87] }
+$world_bridge.answer("difficulty.state") { |request| $difficulty_asked << request; { "own_values" => $own_values, "due" => $due } }
+$own_values = false
+$due = false
+
 # Outside a Raid World nothing changes.
 $game_variables[902] = 3
 DataManager.setup_new_game
@@ -231,80 +240,42 @@ $game_variables[902] = -2
 DataManager.setup_new_game
 check("and so does a new game", [$game_variables[902], $rates], [1, [1, 1]])
 
-# The Colosseum: during a match it saved the difficulty in 908 and plays its fights on NORMAL.
-$game_switches[28] = true
-$game_switches[87] = true
-$game_variables[908] = 1
-$game_variables[902] = 0
-DataManager.load_game_without_rescue(0)
-30.times { $game_map.update }
-check("a save loaded at the Colosseum keeps its NORMAL and the difficulty it put aside", [$game_variables[902], $game_variables[908], $rates.size], [0, 1, 2])
-$game_switches[28] = false
-$game_switches[87] = false
-$game_variables[902] = $game_variables[908]
-30.times { $game_map.update }
-check("once it put the difficulty back, the world's stays without working the rates out again", [$game_variables[902], $rates.size], [1, 2])
-# A defeat there puts the difficulty back and ends the match, yet leaves switch 28 on (common event 3000).
+$own_values = true
 $game_switches[28] = true
 $game_switches[87] = true
 $game_variables[902] = 0
-30.times { $game_map.update }
-check("a Colosseum match keeps its NORMAL", [$game_variables[902], $rates.size], [0, 2])
-$game_switches[87] = false
-$game_variables[902] = $game_variables[908]
-raid_world.instance_variable_set(:@difficulty, 2)
-30.times { $game_map.update }
-check("after a defeat there, with switch 28 still on, the world's difficulty applies again", [$game_variables[902], $rates.last], [2, 2])
-$game_switches[28] = false
-raid_world.instance_variable_set(:@difficulty, 1)
-$game_variables[902] = 1
-
-# A special boss on EASY and below: it saved the difficulty in 908 and fights on NORMAL.
-raid_world.instance_variable_set(:@difficulty, -1)
-$game_switches[23] = true
-$game_variables[908] = -1
-$game_variables[902] = 0
-30.times { $game_map.update }
-check("a special boss keeps its NORMAL while it is on", [$game_variables[902], $game_variables[908], $rates.size], [0, -1, 3])
-$game_switches[23] = false
-$game_variables[902] = 4
-30.times { $game_map.update }
-check("and once it is over, the next look puts the game back on the world's", [$game_variables[902], $rates.last], [-1, -1])
-
-# The Labyrinth of Chaos: its rates come from its own level, not the difficulty.
-raid_world.instance_variable_set(:@difficulty, 2)
-$game_switches[41] = true
-$game_variables[149] = 70
 rates = $rates.size
 DataManager.load_game_without_rescue(0)
+check("a save loaded while a fight has values of its own keeps them, its rates too", [$game_variables[902], $rates.size], [0, rates])
+check("asked with the world's and the game's difficulty, the switches the DLL reads, the battle and the map",
+      $difficulty_asked.last, { "world" => 1, "game" => 0, "s" => [false, false, false, true, true], "battle" => false, "quiet" => true })
 30.times { $game_map.update }
-check("in the Labyrinth of Chaos the world's difficulty waits, its level and rates stay", [$game_variables[902], $game_variables[149], $rates.size], [-1, 70, rates])
-$game_switches[41] = false
-$game_switches[507] = true
-30.times { $game_map.update }
-check("as it does at the final battles' fixed NORMAL", [$game_variables[902], $rates.size], [-1, rates])
-$game_switches[507] = false
-
-# No look while an event runs on the map or a battle is on, since either may set its own values.
+check("the look every 30 frames writes nothing while the DLL says it is not due", [$game_variables[902], $rates.size], [0, rates])
 $quiet = false
-30.times { $game_map.update }
-check("no look while an event runs on the map", $game_variables[902], -1)
-$quiet = true
 $game_party.in_battle = true
 30.times { $game_map.update }
-check("nor during a battle", $game_variables[902], -1)
+check("and tells the DLL of an event on the map and a battle", $difficulty_asked.last.values_at("battle", "quiet"), [true, false])
+$quiet = true
 $game_party.in_battle = false
+$game_switches[28] = false
+$game_switches[87] = false
+$own_values = false
+$due = true
+raid_world.instance_variable_set(:@difficulty, 2)
 29.times { $game_map.update }
-check("the look comes every 30 frames", $game_variables[902], -1)
+check("the look comes every 30 frames", $game_variables[902], 0)
 $game_map.update
-check("and puts the game on the world's difficulty", [$game_variables[902], $rates.last], [2, 2])
+check("and puts the game on the world's difficulty once the DLL says it is due", [$game_variables[902], $rates.last], [2, 2])
+$due = false
 
 # The relay's push changes the world's difficulty.
 $routes[MGQ_MpOverworldSync::DIFFICULTY_FIELD].call(nil, MGQ_MpOverworldSync::DIFFICULTY_FIELD => 4)
 check("a push not from the relay is ignored", MGQ_MpWorld.difficulty, 2)
 $routes[MGQ_MpOverworldSync::DIFFICULTY_FIELD].call(nil, MGQ_MpOverworldSync::DIFFICULTY_FIELD => 4, :relay => true)
 check("the relay's push changes the world's difficulty and says so", [MGQ_MpWorld.difficulty, $notices.last], [4, "The world plays on PARADOX now."])
+$due = true
 $game_map.update
+$due = false
 check("which the next look plays on at once", [$game_variables[902], $rates.last], [4, 4])
 
 # The game's own difficulty choice and the Reaper's change set the world's.
@@ -323,15 +294,13 @@ reaper = [RPG::EventCommand.new(117, 0, [146])]
 interpreter.setup(reaper)
 interpreter.update
 check("the Reaper's difficulty change runs, its call of the choice setting the world's, and erases the Reaper's picture", [$game_variables[902], $erased, reaper.map { |command| command.parameters[0] }], [4, [5], [146]])
-$game_switches[28] = true
-$game_switches[87] = true
+$own_values = true
 $game_variables[902] = 0
 rates = $rates.size
 interpreter.setup([RPG::EventCommand.new(117, 0, [110])])
 interpreter.update
 check("but never while the game has its own values set", [$game_variables[902], $rates.size], [0, rates])
-$game_switches[28] = false
-$game_switches[87] = false
+$own_values = false
 raid_world.instance_variable_set(:@difficulty, nil)
 interpreter.setup([RPG::EventCommand.new(117, 0, [110])])
 interpreter.update

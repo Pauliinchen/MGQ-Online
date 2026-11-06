@@ -2,6 +2,7 @@
 //  SharedTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-06: Registered the topics of a PvP battle's balance and turn order
 //      Paulinchen  2026-11-05: Took a roster of the troops' sizes a host shares with its other topics
 //                            - Registered the topics of the raid bosses' rules
 //                            - Registered the topics that write and read characters' builds and equipped items
@@ -87,6 +88,7 @@ public static class SharedTopics
         SceneTopics.Register(context);
         FlowTopics.Register(context);
         BattlerTopics.Register(context);
+        PvpTopics.Register(context, random);
         PageTopics.Register(context, random);
         CoopTopics.Register(context, LiveTopics.Register(context));
         PoolTopics.Register(context, pools);

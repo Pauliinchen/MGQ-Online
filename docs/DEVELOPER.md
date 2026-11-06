@@ -572,7 +572,7 @@ A co-op battle of two or more players goes to the relay's battle server where th
 - **The framework owns it:** looks, places (arranged with the left Alt), text boxes, question box, wheels and menus. Settings an older release kept in `Player.ini` were handed to the framework once on the first start after the update.
 - **Hotkeys:** action wheel B, emote wheel E, chat T, World overview F11, party box size M, Leader HUD size H, join battle J, bug report F3; accept and decline invites are the framework's Y and N.
 - A wheel's choice runs in the next frame, so its confirm never reaches the screen it opens.
-- The mod's timers count frames; a countdown converts with `MGQ_MpActions.lapse_in`. The emote cooldown ends on a load or new game, which set the frame count back.
+- The mod's timers count frames; a countdown converts with `MGQ_MpActions.lapse_in`. The emote cooldown counts the bridge's frames in C# (`Emotes`), so a load or new game does not end it.
 - The DLL's `AltMenuGuard` swallows `SC_KEYMENU` for a lone Alt and while a text screen takes the keyboard, since letting Alt go would open the window's menu, in which the game waits.
 - The clipboard is owned by the game's window while the DLL writes it.
 - **Single player restart:** a changed *MGQ Online SP* row offers a restart only while the map is quiet, since a save in the middle of an event would skip its command. The restart saves to its own file through the game's own save, so no slot is touched, and the framework restarts and resumes from it.

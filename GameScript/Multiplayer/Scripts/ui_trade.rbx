@@ -2,6 +2,7 @@
 #  ui_trade.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Took how many of an item an offer holds and why a step changed nothing from the rules in C#
 #      Paulinchen  2026-11-06: Drew the trade screen through the UI layer: Q and W step the bag by ten, Page Up and Down page it, cancel in an offer asks
 #                            - Told the chat whether the gold box or the question is open
 #      Paulinchen  2026-11-05: Told a change of an offer by its gold, tokens and amounts instead of its text
@@ -259,13 +260,12 @@ module MGQ_MpTradeUi
       entry ? entry.amount : 0
     end
 
-    # Tells the most of an item an offer may hold: what the bag holds, at most a trade's most, one
-    # of a unique copy.
+    # Tells the most of an item an offer may hold, as the rules in C# tell for all the bag holds.
     #
     # @param item [RPG::BaseItem] The item.
     # @return [Integer] How many.
     def most(item)
-      [MGQ_MpTrade::Items.held(item), MGQ_MpTrade::Items.unique?(item) ? 1 : MGQ_MpTrade::MAX_AMOUNT].min
+      MGQ_MpTrade::Items.amount(item, MGQ_MpTrade::Items.held(item))["amount"]
     end
 
     # Changes how many of an item the offer holds: the cursor sound, or the buzzer and the reason in
@@ -277,8 +277,8 @@ module MGQ_MpTradeUi
       return unless MGQ_MpTrade.session && item
 
       before = offered(item)
-      MGQ_MpTrade.set_amount(item, before + step)
-      return refuse_step(item, before, step) if offered(item) == before
+      why = MGQ_MpTrade.set_amount(item, before + step)
+      return refuse_step(item, step, why) if offered(item) == before
 
       Sound.play_cursor
     end
@@ -294,14 +294,12 @@ module MGQ_MpTradeUi
     # Buzzes at a step of the bag that changed nothing, and logs why.
     #
     # @param item [RPG::BaseItem] The item.
-    # @param before [Integer] How many the offer held.
     # @param step [Integer] The step.
-    def refuse_step(item, before, step)
+    # @param limit [String, nil] Why the offer holds fewer than the step wanted, as the rules in C# tell.
+    def refuse_step(item, step, limit)
       why = if step == 0 then "nothing to change"
             elsif step < 0 then "none offered"
-            elsif MGQ_MpTrade::Items.unique?(item) then "a unique copy goes once"
-            elsif before >= MGQ_MpTrade::MAX_AMOUNT then "a trade moves at most #{MGQ_MpTrade::MAX_AMOUNT}"
-            else "the bag holds #{MGQ_MpTrade::Items.held(item)}"
+            else limit || "it may not be traded"
             end
       MGQ_MpTrade.log("not offering #{step < 0 ? 'fewer' : 'more'} of #{MGQ_MpTrade::Items.label(item)}: #{why}")
       Sound.play_buzzer

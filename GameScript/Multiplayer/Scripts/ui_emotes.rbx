@@ -2,6 +2,7 @@
 #  ui_emotes.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Took the wheel's emotes, the cooldown and which emotes of others play from the rules in C#
 #      Paulinchen  2026-11-06: Built the emote wheel as a wheel of the Mod Framework's UI layer, its hotkey declared on its class
 #      Paulinchen  2026-11-05: Read the emote's place as a number
 #                            - Counted the emote's cooldown by the bridge's frame
@@ -29,9 +30,10 @@
 
 # The emote wheel on the map: its hotkey (E unless the player binds another, see core_hotkeys.rbx)
 # opens a ring of emotes around the player, a jump and the game's balloons, such as a heart or a
-# light bulb, on a wheel of the Mod Framework's UI layer. The game's confirm button plays the emote pointed at on
-# the player's character, and every other game showing the player's map plays it on the player's
-# ghost.
+# light bulb, on a wheel of the Mod Framework's UI layer. The game's confirm button plays the emote
+# pointed at on the player's character, and every other game showing the player's map plays it on
+# the player's ghost. The rules in C# (Emotes) name the emotes, keep the cooldown and tell which
+# emotes of others play.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpEmotes
@@ -41,15 +43,14 @@ module MGQ_MpEmotes
   # @!attribute balloon [Integer, nil] The game's balloon it shows, nil for a jump.
   Emote = Struct.new(:name, :balloon)
 
-  # The wheel's emotes, clockwise from the top, one per direction: a jump, then the game's balloons
-  # in Balloon.png's rows.
-  EMOTES = [
-    Emote.new("Jump", nil), Emote.new("Surprise", 1), Emote.new("Question", 2), Emote.new("Music", 3),
-    Emote.new("Heart", 4), Emote.new("Anger", 5), Emote.new("Sweat", 6), Emote.new("Idea", 9),
-  ]
+  # The topic that lists the wheel's emotes.
+  LIST_TOPIC = "emote.list"
 
-  # Frames between two emotes of the player, so nobody floods the others with them.
-  COOLDOWN_FRAMES = 30
+  # The topic that plays an emote of the player unless the last was too soon.
+  PLAY_TOPIC = "emote.play"
+
+  # The topic that tells whether another player's ghost plays their emote.
+  TAKE_TOPIC = "emote.take"
 
   # The emote wheel's id among the roots of the Mod Framework.
   WHEEL_ID = :mgq_online_emote_wheel
@@ -72,8 +73,8 @@ module MGQ_MpEmotes
   # The emote the wheel took and the frame it did in, nil while none waits.
   @take = nil
 
-  # The bridge's frame of the player's last emote, nil before the first.
-  @last = nil
+  # The wheel's emotes, as the DLL lists them once the wheel first asks.
+  @emotes = nil
 
   extend MGQ_MpLog
 
@@ -117,16 +118,23 @@ module MGQ_MpEmotes
 
   # Takes the emote the wheel took, which plays in the frame after.
   #
-  # @param choice [Hash] The wheel's choice, its place in EMOTES as its data.
+  # @param choice [Hash] The wheel's choice, its place among the emotes as its data.
   def self.taken(choice)
     @take = [choice[:data], MGQ_Multiplayer::Bridge.frame_number]
   end
 
+  # Lists the wheel's emotes, clockwise from the top, as the DLL lists them (topic emote.list).
+  #
+  # @return [Array<Emote>] The emotes.
+  def self.emotes
+    @emotes ||= Array(MGQ_Multiplayer::Bridge.call!(LIST_TOPIC)).map { |name, balloon| Emote.new(name, balloon) }
+  end
+
   # Lists the emotes as the wheel's choices: a jump as its name, a balloon as its picture.
   #
-  # @return [Array<Hash>] Each emote's choice, its place in EMOTES as its data.
+  # @return [Array<Hash>] Each emote's choice, its place among the emotes as its data.
   def self.choices
-    @choices ||= EMOTES.each_with_index.map do |emote, index|
+    @choices ||= emotes.each_with_index.map do |emote, index|
       choice = { :text => emote.name, :data => index }
       choice[:bitmap] = balloon_of(emote) if emote.balloon
       choice
@@ -169,36 +177,36 @@ module MGQ_MpEmotes
     MGQ_MpHooks.player_held? ? "the player is held" : nil
   end
 
-  # Plays an emote on the player's character and tells the others, unless the last was too soon.
+  # Plays an emote on the player's character and tells the others, unless the DLL refuses it
+  # (topic emote.play), such as when the last was too soon.
   #
-  # @param index [Integer] The emote's place in EMOTES.
+  # @param index [Integer] The emote's place among the emotes.
   def self.play_own(index)
-    elapsed = @last && MGQ_Multiplayer::Bridge.frame_number - @last
-    if elapsed && elapsed < COOLDOWN_FRAMES
-      log("refused #{EMOTES[index].name}: only #{elapsed} of #{COOLDOWN_FRAMES} frames since the last emote")
+    refusal = MGQ_Multiplayer::Bridge.call!(PLAY_TOPIC, index)
+    if refusal
+      log("refused #{refusal}")
       return Sound.play_buzzer
     end
 
-    @last = MGQ_Multiplayer::Bridge.frame_number
-    play(EMOTES[index], $game_player)
+    play(emotes[index], $game_player)
     sent = MGQ_MpOverworldSync.tell(-1, "emote" => index, "map" => $game_map.map_id)
-    log("played #{EMOTES[index].name} on map #{$game_map.map_id}, #{sent ? 'told everyone' : 'could not tell the others'}")
+    log("played #{emotes[index].name} on map #{$game_map.map_id}, #{sent ? 'told everyone' : 'could not tell the others'}")
   end
 
-  # Takes another player's emote: their ghost plays it, while they are on the player's map.
+  # Takes another player's emote: their ghost plays it unless the DLL tells why not (topic
+  # emote.take), such as when they are on another map.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who played it.
   # @param message [Hash] The message, the emote's place under "emote".
   def self.take(peer, message)
     index = message["emote"]
-    emote = index.is_a?(Integer) && index >= 0 ? EMOTES[index] : nil
     who = peer ? MGQ_MpOverworldSync.who(peer) : "a game without a state yet"
-    return log("ignored emote #{message['emote'].inspect} from #{who}: no such emote") unless emote
-    return log("ignored #{emote.name} from #{who}: no ghost of theirs on this map") unless peer && peer.ghost
-    return log("ignored #{emote.name} from #{who}: played on map #{message['map']}, the player is on #{$game_map.map_id}") unless message["map"].to_i == $game_map.map_id
+    why = MGQ_Multiplayer::Bridge.call!(TAKE_TOPIC, "emote" => index.is_a?(Integer) ? index : nil, "map" => message["map"].to_i,
+                                                     "own_map" => $game_map.map_id, "ghost" => peer && peer.ghost ? true : false)
+    return log("ignored #{why} from #{who}") if why
 
-    play(emote, peer.ghost)
-    log("#{who} played #{emote.name}")
+    play(emotes[index], peer.ghost)
+    log("#{who} played #{emotes[index].name}")
   rescue => e
     log_once(:take, "playing an emote failed: #{e.class}: #{e.message}")
   end
