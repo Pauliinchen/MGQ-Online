@@ -2,7 +2,8 @@
 #  ui_online.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Read a player's color in the player's look through UI.color_now
+#      Paulinchen  2026-11-06: Asked again for a HUD part the UI layer refused, a while later or in a new scene
+#                            - Read a player's color in the player's look through UI.color_now
 #                            - Named MGQ Online's colors for the Mod Framework's UI layer and kept its HUD parts shown
 #                            - Named a player's color by MGQ Online's color names
 #                            - Rebuilt the list box as a window of the UI layer, the mod picker's Remove in its rows' context menu
@@ -65,11 +66,23 @@ end
 # MGQ Online's HUD parts on the Mod Framework's UI layer, each shown once and kept: a hud stays
 # across the scenes, and F12 takes every part of the layer away, so each is shown again then.
 module MGQ_MpShown
-  # The handle of each part shown, by its key; false for one the framework refused, which is not
-  # asked again until it is dropped.
+  # The keeps a part the framework refused waits before it is asked again; a part is kept once a frame.
+  RETRY_FRAMES = 300
+
+  # The handle of each part shown, by its key.
   @handles = {}
 
-  # Shows a component once, and again after F12 took it away.
+  # Each part the framework refused, by its key: [keeps left before it is asked again, the scene
+  # it was refused in], asked again at once in another scene.
+  @refused = {}
+
+  extend MGQ_MpLog
+
+  # What starts this script's lines in the log.
+  LOG_TAG = "ui"
+
+  # Shows a component once, and again after F12 took it away; a part the framework refused is
+  # asked again a while later, or at once in another scene.
   #
   # @param key [Object] What the part is, such as :leader_hud.
   # @param klass [Class] Its component class.
@@ -77,17 +90,46 @@ module MGQ_MpShown
   # @return [Object, nil] Its handle, nil while the framework refuses it.
   def self.keep(key, klass, params = {})
     handle = @handles[key]
-    return nil if handle == false
     return handle if handle && handle.shown?
+    return nil if waiting?(key)
 
-    @handles[key] = Mod_Framework::UI.show(klass, params) || false
-    @handles[key] || nil
+    handle = Mod_Framework::UI.show(klass, params)
+    return refused(key, klass) unless handle
+
+    @refused.delete(key)
+    @handles[key] = handle
+  end
+
+  # Counts a keep of a refused part, telling whether it still waits: until RETRY_FRAMES keeps
+  # passed, or the scene changed.
+  #
+  # @param key [Object] What the part is.
+  # @return [Boolean] Whether it waits.
+  def self.waiting?(key)
+    wait = @refused[key]
+    return false unless wait
+
+    wait[0] -= 1
+    wait[0] > 0 && wait[1].equal?(SceneManager.scene)
+  end
+
+  # Notes that the framework refused a part, logging it once until it is shown or dropped.
+  #
+  # @param key [Object] What the part is.
+  # @param klass [Class] Its component class.
+  # @return [nil] Always.
+  def self.refused(key, klass)
+    log("the UI layer refused to show #{klass} (#{key.is_a?(Array) ? key[0] : key}); asking again every #{RETRY_FRAMES} frames and in each new scene") unless @refused.key?(key)
+    @handles.delete(key)
+    @refused[key] = [RETRY_FRAMES, SceneManager.scene]
+    nil
   end
 
   # Takes a part off the screen for good, until it is kept again.
   #
   # @param key [Object] What the part is.
   def self.drop(key)
+    @refused.delete(key)
     handle = @handles.delete(key)
     handle.hide if handle && handle.shown?
   end
@@ -98,7 +140,7 @@ module MGQ_MpShown
   # @param kind [Symbol] The kind, such as :ghost_label.
   # @return [Array<Array>] Their keys.
   def self.keys_of(kind)
-    @handles.keys.select { |key| key.is_a?(Array) && key[0] == kind }
+    (@handles.keys | @refused.keys).select { |key| key.is_a?(Array) && key[0] == kind }
   end
 end
 

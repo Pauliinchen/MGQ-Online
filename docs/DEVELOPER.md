@@ -572,7 +572,7 @@ A co-op battle of two or more players goes to the relay's battle server where th
 ## Interface
 
 - **The framework owns it:** looks, places (arranged with the left Alt), text boxes, question box, wheels and menus. Settings an older release kept in `Player.ini` were handed to the framework once on the first start after the update.
-- **Hotkeys:** action wheel B, emote wheel E, chat T, World overview F11, party box size Tab, Leader HUD size H, join battle J, bug report F3; accept and decline invites are the framework's Y and N.
+- **Hotkeys:** action wheel B, emote wheel E, chat T, World overview F11, party box size M, Leader HUD size H, join battle J, bug report F3; accept and decline invites are the framework's Y and N.
 - A wheel's choice runs in the next frame, so its confirm never reaches the screen it opens.
 - The mod's timers count frames; a countdown converts with `MGQ_MpActions.lapse_in`. The emote cooldown ends on a load or new game, which set the frame count back.
 - The DLL's `AltMenuGuard` swallows `SC_KEYMENU` for a lone Alt and while a text screen takes the keyboard, since letting Alt go would open the window's menu, in which the game waits.

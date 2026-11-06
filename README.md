@@ -68,7 +68,7 @@ While the mod is installed, the game keeps running when its window is in the bac
 | **E** | Emote wheel |
 | **F11** | World overview, in a world and in single player |
 | **Y** / **N** | Accept / decline the first invite at the top left, or answer a question box |
-| **Tab** | Make the party box small or full; in a raid boss battle, shrink the boss's HP bar to the bars alone or back |
+| **M** | Make the party box small or full; in a raid boss battle, shrink the boss's HP bar to the bars alone or back |
 | **H** | Make the Leader HUD at the top left small or large |
 | **J** | Join the battle of a player next to you in a Raid World, fight a raid boss alongside a full boss battle, or fight a raid boss again where it beat you |
 | **F3** | Report a bug, with a screenshot and your logs, anywhere but the title and game over screens |

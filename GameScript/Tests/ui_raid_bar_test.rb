@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-06: Read the bars the strip and the bars over the bosses show, leaving how they look to the in-game suite
+#                            - Named M as the party box size hotkey
 #      Paulinchen  2026-11-05: Answered the troops of the map's pages with fixed values in place of a copy of the DLL's command index
 #                            - Answered the bars and the pools with fixed values per case in place of a copy of the DLL's bars
 #                            - Answered the raid bosses' rules with fixed values per case and asked which troops show a bar in one call
@@ -116,13 +117,13 @@ module MGQ_MpWorldStory
 end
 # The live battle, in which the player is a guest.
 module MGQ_MpBattlesSync; def self.role; :guest; end; end
-# The party box's hotkey, held for one update by $tab_pressed and named Tab, its refusals kept in
+# The party box's hotkey, held for one update by $size_pressed and named M, its refusals kept in
 # $refusals.
 module MGQ_MpHotkeys
   # Whether the party box's hotkey is pressed.
-  def self.pressed?(action); action == :party_box && $tab_pressed; end
+  def self.pressed?(action); action == :party_box && $size_pressed; end
   # The hotkey's name.
-  def self.label(_action); "Tab"; end
+  def self.label(_action); "M"; end
   # Records a refused hotkey in $refusals.
   def self.log_refusal(action, reason); ($refusals ||= []) << [action, reason]; nil; end
 end
@@ -368,20 +369,20 @@ check("numbers that changed wait a few frames", bar.gauge_texts(0)[1], "5250 / 7
 $frame += MGQ_MpRaidBar::REDRAW_FRAMES
 bar.update_battle
 check("then show", bar.gauge_texts(0)[1], "5134 / 7000")
-$tab_pressed = true
+$size_pressed = true
 bar.update_battle
-$tab_pressed = false
-check("Tab makes it small and keeps the choice", [$settings["raid_bar_small"], $cursor_sounds], [true, 1])
+$size_pressed = false
+check("M makes it small and keeps the choice", [$settings["raid_bar_small"], $cursor_sounds], [true, 1])
 bar.toggle_small
 check("a click on its hint shows it whole again", [$settings["raid_bar_small"], MGQ_MpRaidBar.small?], [false, false])
 # The chat, which the player types in while $chat_typing.
 module MGQ_MpChat; def self.typing?; $chat_typing; end; end
 $chat_typing = true
-$tab_pressed = true
+$size_pressed = true
 bar.update_battle
-$tab_pressed = false
+$size_pressed = false
 $chat_typing = false
-check("Tab typed into the chat box changes nothing, its refusal left to the hotkeys, which log none while the player types",
+check("M typed into the chat box changes nothing, its refusal left to the hotkeys, which log none while the player types",
       [$settings["raid_bar_small"], $refusals], [false, [[:party_box, "the chat box is open"]]])
 bar.end_battle
 check("the battle's sprites take the strip's bar away as they go", [bar.strip_shown?, bar.strip_bar], [false, nil])

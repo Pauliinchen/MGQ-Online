@@ -8,6 +8,7 @@
 #                            - Read the small party box's rows, leaving how it looks to the in-game suite
 #                            - Read the overview's rows, menus, gate and pages from the script, leaving its window of the UI layer to the in-game suite
 #                            - Dropped the pages of other mods, which come through UI.patch now
+#                            - Named M as the party box size hotkey in its check
 #      Paulinchen  2026-11-05: Answered the teleports' view with a fixed offer instead of from the party's stand-in
 #                            - Answered the title with fixed values per world
 #                            - Answered the lists, the told state and the pages with the values each check sets and checked what goes to the DLL, instead of what its stand-ins built
@@ -411,7 +412,7 @@ overview.close("the test")
 check("the party box starts full", MGQ_MpPartyBox.small?, false)
 $pressed = MGQ_MpHotkeys.code(:party_box)
 MGQ_MpPartyBox.on_map
-check("Tab makes it small, which Player.ini keeps", [MGQ_MpPartyBox.small?, $player_ini["party_box_small"]], [true, true])
+check("M makes it small, which Player.ini keeps", [MGQ_MpPartyBox.small?, $player_ini["party_box_small"]], [true, true])
 MGQ_MpPartyBox.instance_variable_set(:@small, nil)
 check("so it is small again after a restart", MGQ_MpPartyBox.small?, true)
 MGQ_MpPartyBox.read(false)

@@ -257,7 +257,7 @@ module MGQ_MpRaidBar
   end
 
   # Shows the battle's strip with or without the boss's title and the names on the party box's
-  # hotkey (Tab unless the player binds another), keeping the choice in Player.ini. Called by the
+  # hotkey (M unless the player binds another), keeping the choice in Player.ini. Called by the
   # battle every frame while its strip shows, so a press of the hotkey is seen once.
   def self.on_battle
     return unless defined?(MGQ_MpHotkeys) && MGQ_MpHotkeys.pressed?(:party_box)

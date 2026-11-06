@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-06: Reached the Mod Framework's engine under its own name
+#                            - Expected M as the party box size hotkey
 #                            - Stood in for the game's scenes, which the Mod Framework's hotkeys read
 #      Paulinchen  2026-10-31: Checked the hotkeys defined through the Mod Framework, quiet while any mod types
 #                            - Stood in for the Mod Framework's keys and question box
@@ -55,7 +56,7 @@ check("the eight hotkeys are defined with their rows' names, keys and settings i
       defined.values.select { |hotkey| hotkey.store.equal?(MGQ_Multiplayer::Player) }.map { |hotkey| [hotkey.action, hotkey.name, hotkey.default, hotkey.setting] },
       [[:mgq_online_wheel, "[MGQ Online Hotkeys] Action Wheel", 0x42, "key_wheel"], [:mgq_online_chat, "[MGQ Online Hotkeys] Chat", 0x54, "key_chat"],
        [:mgq_online_overview, "[MGQ Online Hotkeys] World Overview", 0x7A, "key_overview"], [:mgq_online_emotes, "[MGQ Online Hotkeys] Emote Wheel", 0x45, "key_emotes"],
-       [:mgq_online_party_box, "[MGQ Online Hotkeys] Party Box Size", 0x09, "key_party_box"], [:mgq_online_leader_hud, "[MGQ Online Hotkeys] Leader HUD Size", 0x48, "key_leader_hud"],
+       [:mgq_online_party_box, "[MGQ Online Hotkeys] Party Box Size", 0x4D, "key_party_box"], [:mgq_online_leader_hud, "[MGQ Online Hotkeys] Leader HUD Size", 0x48, "key_leader_hud"],
        [:mgq_online_join_battle, "[MGQ Online Hotkeys] Join Battle", 0x4A, "key_join_battle"], [:mgq_online_bug_report, "[MGQ Online Hotkeys] Report a Bug", 0x72, "key_bug_report"]])
 check("Accept and Decline are the framework's own, kept in its settings", [:accept, :decline].map { |action| defined[action].store }, [Mod_Framework::Settings] * 2)
 check("which MGQ Online asks by name without defining them", [keys::HOTKEYS.key?(:accept), keys.code(:accept), keys.label(:decline)], [false, 0x59, "N"])

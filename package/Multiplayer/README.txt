@@ -113,7 +113,7 @@ HOTKEYS
    E        emote wheel
    F11      World overview, in a world and in single player
    Y / N    accept / decline the first invite at the top left
-   Tab      make the party box small or full
+   M        make the party box small or full
    H        make the Leader HUD at the top left small or large
    J        join the battle of a player next to you in a Raid World
    F3       report a bug, with a screenshot and your logs

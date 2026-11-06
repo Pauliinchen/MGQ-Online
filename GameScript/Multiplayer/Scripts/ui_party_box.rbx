@@ -2,6 +2,8 @@
 #  ui_party_box.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Widened the crown's column to a whole icon so the leader's crown shows
+#                            - Kept the box at its own or the player's width, a long place or name cut to fit
 #      Paulinchen  2026-11-06: Drew the box as a hud of the Mod Framework's UI layer, its players as rows of a list in columns
 #      Paulinchen  2026-11-05: Kept and read its switch in Player.ini as true or false, which the DLL writes as 1 or 0
 #      Paulinchen  2026-11-01: Built the box on the Mod Framework's components, docked at the top right under the game's windows
@@ -32,7 +34,7 @@
 #
 #----------------------------------------------------------------
 
-# The party box's size: its hotkey (Tab unless the player binds another, see core_hotkeys.rbx) makes
+# The party box's size: its hotkey (M unless the player binds another, see core_hotkeys.rbx) makes
 # it small, with only each player's icon, name and ping, and full again. The choice holds in every
 # world, and for the map box that replaces the party box in a Raid World.
 #
@@ -340,7 +342,8 @@ module MGQ_MpPartyBox
   # The box at the top right of the map, until the player moves it, that lists the player's party
   # or, in a Raid World, everyone on the map (see rows): a hud of the Mod Framework's UI layer under
   # the game's windows. The full box's title names the hotkey that changes the size at its right,
-  # which a click on it does too; a wider box gives the names and the places more room.
+  # which a click on it does too. The box keeps its width, its own or the player's, and cuts a long
+  # name or place to fit; a wider box gives them more room.
   class PartyBox < UI::Component
     # The box's place id, which names its place in the Mod Framework's settings; the map box shares it.
     ID = :party_box
@@ -352,17 +355,18 @@ module MGQ_MpPartyBox
     ORDER = 10
 
     # Widths of a row's columns: the crown, the state icon, the name (what is left), the level and
-    # the ping, which "999+ ms" fits.
-    COLUMNS = [22, 24, nil, 52, 64]
+    # the ping, which "999+ ms" fits. An icon column needs a whole icon's 24 pixels, or the list
+    # leaves its icon out.
+    COLUMNS = [24, 24, nil, 52, 64]
 
     # Widths of a row's columns in the small box, which has no level.
-    SMALL_COLUMNS = [22, 24, nil, 64]
+    SMALL_COLUMNS = [24, 24, nil, 64]
 
     # Width of the box at its default, and the least.
-    WIDTH = 296
+    WIDTH = 304
 
-    # Width of the small box.
-    SMALL_WIDTH = 198
+    # Width of the small box at its default, and the least.
+    SMALL_WIDTH = 210
 
     # What the title says at its right, with the hotkey that changes the box's size.
     SIZE_HINT = "%s: size"
@@ -374,8 +378,9 @@ module MGQ_MpPartyBox
     def render
       small = MGQ_MpPartyBox.small?
       rows = MGQ_MpPartyBox.rows
+      width = small ? SMALL_WIDTH : WIDTH
       hud id: ID, place_name: PLACE_NAME, anchor: :top_right, order: ORDER, shown_in: [Scene_Map], resizable: :width,
-          min_size: [small ? SMALL_WIDTH : WIDTH, 0], hide_while: -> { MGQ_MpPartyBox.hidden? } do
+          width: width, min_size: [width, 0], hide_while: -> { MGQ_MpPartyBox.hidden? } do
         unless small
           stack row: true do
             text MGQ_MpPartyBox.title, typo: :caption, color: MGQ_MpPartyBox.title_color, grow: 1

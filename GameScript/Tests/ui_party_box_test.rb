@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-06: Read the rows the box lists, leaving what it shows to the in-game suite
+#                            - Named M as the size hotkey in its checks
 #      Paulinchen  2026-11-05: Expected the box's switch kept as true or false
 #      Paulinchen  2026-11-01: Read the box from the Mod Framework's components it builds, and checked a click on its size hint
 #                            - Stood in for the emote wheel of the Mod Framework
@@ -175,10 +176,10 @@ $pressed = MGQ_MpHotkeys.code(:party_box)
 typed = logged_lines { MGQ_MpPartyBox.on_map }
 $mgq_text_input = nil
 MGQ_MpChat.stop_typing
-check("Tab typed into the chat box changes nothing and stays out of the log", [MGQ_MpPartyBox.small?, typed.grep(/ignored/)], [small_before, []])
+check("M typed into the chat box changes nothing and stays out of the log", [MGQ_MpPartyBox.small?, typed.grep(/ignored/)], [small_before, []])
 $pressed = MGQ_MpHotkeys.code(:party_box)
 MGQ_MpPartyBox.on_map
-check("Tab makes it small, which Player.ini keeps", [MGQ_MpPartyBox.small?, $player_ini["party_box_small"]], [true, true])
+check("M makes it small, which Player.ini keeps", [MGQ_MpPartyBox.small?, $player_ini["party_box_small"]], [true, true])
 $pressed = MGQ_MpHotkeys.code(:party_box)
 MGQ_MpPartyBox.on_map
 MGQ_MpPartyBox.click_size

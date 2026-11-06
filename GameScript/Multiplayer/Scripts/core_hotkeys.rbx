@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-06: Read whether a mod types through the UI layer
+#                            - Moved the Party Box Size hotkey from Tab to M
 #      Paulinchen  2026-10-31: Defined the hotkeys through the Mod Framework, whose own Accept and Decline the notices read
 #                            - Read the keys and the question box through the Mod Framework
 #      Paulinchen  2026-10-24: Named the World overview in single player in the overview hotkey's help
@@ -54,7 +55,7 @@ module MGQ_MpHotkeys
                             "The hotkey that opens and closes the World overview, in a world and in single player."),
     :emotes => Hotkey.new(:mgq_online_emotes, 0x45, "key_emotes", "Emote Wheel",
                           "The hotkey that opens and closes the emote wheel on the map of a world: jump, or show a balloon above your character."),
-    :party_box => Hotkey.new(:mgq_online_party_box, 0x09, "key_party_box", "Party Box Size",
+    :party_box => Hotkey.new(:mgq_online_party_box, 0x4D, "key_party_box", "Party Box Size",
                              "The hotkey that makes the party box at the top right small, with only names and pings, and full again.\n" \
                              "In a raid boss battle, it shows the boss's HP bar with or without its title and name."),
     :leader_hud => Hotkey.new(:mgq_online_leader_hud, 0x48, "key_leader_hud", "Leader HUD Size",
