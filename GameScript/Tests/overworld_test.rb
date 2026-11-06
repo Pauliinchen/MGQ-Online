@@ -2,7 +2,8 @@
 #  overworld_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Took the action wheel's choices as the wheel of the UI layer tells them, leaving its keys to the in-game suite
+#      Paulinchen  2026-11-06: Drew the outline's frame in a color of its own
+#                            - Took the action wheel's choices as the wheel of the UI layer tells them, leaving its keys to the in-game suite
 #                            - Checked what the labels, the own ping, the own line and the world status show, leaving how they look to the in-game suite
 #      Paulinchen  2026-11-06: Checked that a message's lists and Hashes reach the DLL whole
 #      Paulinchen  2026-11-05: Answered the teleports' view with fixed offers per case instead of from the party's stand-in
@@ -207,7 +208,7 @@ sheet = Object.new
 sheet.define_singleton_method(:get_pixel) { |x, y| Pixel.new((1..4).include?(x) && (1..3).include?(y) ? 255 : 0) }
 marked = []
 outline = Object.new
-green = MGQ_MpOverworld::OUTLINE_COLORS[:member]
+green = Object.new
 outline.define_singleton_method(:set_pixel) { |x, y, color| marked << [x, y] if color.equal?(green) }
 MGQ_MpOverworld.outline_frame(sheet, outline, Rect.new(0, 0, 6, 5), green)
 check("the outline marks only the edge of what is visible", marked.sort, [[1, 1], [1, 2], [1, 3], [2, 1], [2, 3], [3, 1], [3, 3], [4, 1], [4, 2], [4, 3]])

@@ -2,7 +2,8 @@
 #  world_screen.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Drew the world screen, its details, forms and formation limits through the UI layer
+#      Paulinchen  2026-11-06: Moved the focus and said the lines at the top without rescuing an error of the UI layer
+#                            - Drew the world screen, its details, forms and formation limits through the UI layer
 #                            - Opened a world's players, mods and description and the mod picker in MGQ Online's list box, a mod added by name removed through its context menu
 #                            - Asked for the mods a world needs in the Mod Framework's dialog, in place of the download and the list box
 #      Paulinchen  2026-11-05: Made a world of the directory through the directory's own reader
@@ -1867,36 +1868,16 @@ class Scene_MpWorlds < Scene_MenuBase
       self.world_index = scene.world_index unless world_index == scene.world_index
       self.command_index = scene.command_index unless command_index == scene.command_index
       request = scene.focus_request
-      if request && request[1] != @focused && request[0].is_a?(Symbol) && focus_on(request[0])
+      if request && request[1] != @focused && request[0].is_a?(Symbol)
+        part(request[0]).focus
         @focused = request[1]
       end
       said = scene.said
-      if said && said[1] != @told && say_in_strip(said[0])
+      if said && said[1] != @told
+        part(:mgq_online_world_screen_help).say(said[0])
         @told = said[1]
       end
       [request, said]
-    end
-
-    # Puts the focus on a part of the window, once it shows.
-    #
-    # @param id [Symbol] The part's id.
-    # @return [Boolean] Whether it did.
-    def focus_on(id)
-      part(id).focus
-      true
-    rescue UI::Engine::MarkupError
-      false
-    end
-
-    # Says a text in the lines at the top, once they show.
-    #
-    # @param said [String] The text.
-    # @return [Boolean] Whether it did.
-    def say_in_strip(said)
-      part(:mgq_online_world_screen_help).say(said)
-      true
-    rescue UI::Engine::MarkupError
-      false
     end
   end
 

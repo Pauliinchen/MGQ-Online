@@ -2,7 +2,8 @@
 #  ui_chat_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Left how the UI layer draws the chat to the in-game suite and kept the gates, the model's calls and the bubbles' players
+#      Paulinchen  2026-11-06: Reached the Mod Framework's engine under its own name
+#                            - Left how the UI layer draws the chat to the in-game suite and kept the gates, the model's calls and the bubbles' players
 #      Paulinchen  2026-11-05: Handed the kept size as the width and lines the DLL reads
 #                            - Checked that a scene whose class has no name reaches the chat's model by the class it builds on
 #      Paulinchen  2026-11-01: Checked the chat on the Mod Framework's components against the chat's model
@@ -58,7 +59,7 @@ end
 
 require_relative "world_support"
 
-ui = Mod_Framework::UI
+engine = Mod_Framework::UI::Engine
 chat = MGQ_MpChat
 model = $fake_chat
 friend = { "id" => "friend", "name" => "Friend", "sprite" => "Actor2", "index" => 3, "map" => 5, "x" => 10, "y" => 10, "d" => 4, "speed" => 4, "hidden" => 0, "scene" => "map" }
@@ -182,11 +183,11 @@ class Scene_TestShop < Scene_Base; end
 chat.follow_scene(Scene_TestShop)
 shop = Scene_TestShop.new
 SceneManager.scene = shop
-ui::Capture.start(:confirm)
+engine::Capture.start(:confirm)
 $pressed = MGQ_MpHotkeys.code(:chat)
 shop.update_basic
 check("while a question of a mod holds the buttons in a shop, the chat key waits", chat.typing?, false)
-ui::Capture.stop(:confirm)
+engine::Capture.stop(:confirm)
 $pressed = MGQ_MpHotkeys.code(:chat)
 shop.update_basic
 check("without it the chat key opens the box in the shop's place", [chat.typing?, chat.place], [true, :menu_chat])

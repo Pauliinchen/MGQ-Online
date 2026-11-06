@@ -2,7 +2,8 @@
 #  bug_report_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Kept a member's levels per kind in one Hash, as the game does
+#      Paulinchen  2026-11-06: Reached the Mod Framework's engine under its own name
+#                            - Kept a member's levels per kind in one Hash, as the game does
 #                            - Left the form to the in-game suite, since the UI layer draws it, and read the typing from the framework
 #                            - Called the wheel's screenshot as the action wheel does once it is gone
 #      Paulinchen  2026-11-05: Asked whether the DLL is a development build and the player's id through its topics
@@ -55,7 +56,7 @@ class Scene_MenuBase < Scene_Base; end
 # Stands in for the game's main menu.
 class Scene_Menu < Scene_MenuBase; end
 # Stands in for the Mod Framework's menu scene of a mod's screen, such as the story's choices.
-class Scene_ModScreen < Scene_MenuBase; include Mod_Framework::UI::Scenes::MenuRoot; end
+class Scene_ModScreen < Scene_MenuBase; include Mod_Framework::UI::Engine::Scenes::MenuRoot; end
 # Stands in for the game's load screen.
 class Scene_Load < Scene_Base; end
 # Stands in for the game's title screen.
@@ -258,7 +259,7 @@ $asked = []
 (%w[tick snapped on_map wheel_refusal wheel wheel_gone take_opening send closed].map { |name| "report.#{name}" } + [report::Screenshot::TOPIC]).each do |topic|
   fake.answer(topic) { |request| $asked << [topic, request]; $answers.key?(topic) ? $answers[topic] : (topic == report::Screenshot::TOPIC || nil) }
 end
-tree = Mod_Framework::UI::Tree
+tree = Mod_Framework::UI::Engine::Tree
 # Whether any mod types, as the framework tells it, from $typing.
 Mod_Framework::UI.define_singleton_method(:typing?) { $typing == true }
 
@@ -311,7 +312,7 @@ frame
 check("a busy map is not ready, and typing is told", asked("report.tick").last["scene"].values_at("map_ready", "typing"), [false, true])
 $map_free = true
 $typing = false
-capture = Mod_Framework::UI::Capture
+capture = Mod_Framework::UI::Engine::Capture
 held = capture.method(:on?)
 capture.define_singleton_method(:on?) { true }
 frame

@@ -2,7 +2,8 @@
 #  world_open_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Checked that a refusal of this version asks for the update at the title at once and after a game at the next title
+#      Paulinchen  2026-11-06: Reached the Mod Framework's engine under its own name
+#                            - Checked that a refusal of this version asks for the update at the title at once and after a game at the next title
 #                            - Acted on the world screen as its window of the UI layer hands over what the player does
 #      Paulinchen  2026-11-05: Answered the squad rules' text with fixed values and checked what goes to the DLL instead of the rule
 #                            - Answered the worlds on this PC, the list's rows, the forms and the invite with the values each check sets, and checked what goes to the DLL instead of what its stand-ins decided
@@ -197,7 +198,7 @@ module MGQ_Multiplayer
 
   # Stands in for holding the buttons: the owner holding them is in $capture, the button pressed in
   # $pressed.
-  module Mod_Framework::UI::Capture
+  module Mod_Framework::UI::Engine::Capture
     # Holds the buttons for an owner.
     def self.start(owner); $capture = owner; end
 
@@ -212,7 +213,7 @@ module MGQ_Multiplayer
   end
 
   # Stands in for the mouse, never clicked.
-  module Mod_Framework::UI::Mouse; def self.clicked?; false; end; end
+  module Mod_Framework::UI::Engine::Mouse; def self.clicked?; false; end; end
 
   # Stands in for the player's id, as the DLL tells it.
   module Player; def self.id; "me"; end; end

@@ -2,7 +2,8 @@
 #  overworld.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Drew the ghosts' labels, the own ping, the own line and the world status as huds of the Mod Framework's UI layer
+#      Paulinchen  2026-11-06: Read the colors of a follower's outline in the player's look through UI.color_now
+#                            - Drew the ghosts' labels, the own ping, the own line and the world status as huds of the Mod Framework's UI layer
 #                            - Named a ping's color by its name in the player's look
 #      Paulinchen  2026-11-05: Read a ghost's followers as values
 #      Paulinchen  2026-11-01: Named the Mod Framework's interface by its own name
@@ -111,9 +112,9 @@ module MGQ_MpOverworld
   # longest unused forgotten first, so a game naming ever new files cannot grow the list.
   MOST_GRAPHICS_KEPT = 64
 
-  # Colors of the outline that stands in for a follower whose sprite this game lacks: the style's
-  # member color while its player is in the player's party, its plain text color otherwise.
-  OUTLINE_COLORS = { :member => Mod_Framework::UI::Style::MEMBER, :stranger => Mod_Framework::UI::Style::TEXT }
+  # Color names of the outline that stands in for a follower whose sprite this game lacks: the
+  # look's ally color while its player is in the player's party, its text color otherwise.
+  OUTLINE_COLORS = { :member => :ally, :stranger => :text }
 
   # Whether this game has each graphic another player's game named, by its folder and file, the
   # longest unused first.
@@ -277,14 +278,18 @@ module MGQ_MpOverworld
   # Draws the outline of Luka's sprite once per color: a sheet the size of Luka's, transparent but
   # for the visible pixels on the edge of each of Luka's frames.
   #
+  # The outline drawn in an earlier look stays kept, since a follower shown before the look changed
+  # still holds it as its bitmap.
+  #
   # @param kind [Symbol] The color's key of OUTLINE_COLORS, :member or :stranger.
   # @return [Bitmap, nil] The outline, nil when it cannot be drawn.
   def self.outline(kind)
     @outlines ||= {}
-    known = @outlines[kind]
+    color = Mod_Framework::UI.color_now(OUTLINE_COLORS.fetch(kind))
+    key = [kind, color.red, color.green, color.blue, color.alpha]
+    known = @outlines[key]
     return known if known && !known.disposed?
 
-    color = OUTLINE_COLORS.fetch(kind)
     name, index = stand_in
     sheet = Cache.character(name)
     single = name[/^[\!\$]./].to_s.include?("$")
@@ -294,7 +299,7 @@ module MGQ_MpOverworld
     top = index / 4 * 4 * height
     outline = Bitmap.new(sheet.width, sheet.height)
     12.times { |frame| outline_frame(sheet, outline, Rect.new(left + frame % 3 * width, top + frame / 3 * height, width, height), color) }
-    @outlines[kind] = outline
+    @outlines[key] = outline
   rescue => e
     log_once([:outline, kind], "drawing the #{kind} outline of Luka's sprite failed: #{e.class}: #{e.message}")
     nil

@@ -2,7 +2,8 @@
 #  ui_online.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Named MGQ Online's colors for the Mod Framework's UI layer and kept its HUD parts shown
+#      Paulinchen  2026-11-06: Read a player's color in the player's look through UI.color_now
+#                            - Named MGQ Online's colors for the Mod Framework's UI layer and kept its HUD parts shown
 #                            - Named a player's color by MGQ Online's color names
 #                            - Rebuilt the list box as a window of the UI layer, the mod picker's Remove in its rows' context menu
 #                            - Dropped the lines across the top of a screen, which the world screen holds itself now
@@ -101,8 +102,8 @@ module MGQ_MpShown
   end
 end
 
-# The color a player is named in everywhere: Style::OWN for the player themself, Style::MEMBER for
-# a party member and Style::TEXT for anyone else.
+# The color a player is named in everywhere: the look's own color for the player themself, its ally
+# color for a party member and its text color for anyone else.
 module MGQ_MpPlayerColor
   # What the player's own color is called in the log.
   OWN_NAME = "own"
@@ -134,8 +135,8 @@ module MGQ_MpPlayerColor
     ""
   end
 
-  # Picks a player's color: Style::OWN for the player themself, Style::MEMBER for a party member,
-  # else Style::TEXT, also for one it cannot read.
+  # Picks a player's color in the player's look now: :own for the player themself, :ally for a
+  # party member, else :text, also for one it cannot read.
   #
   # @param who [Peer, Hash, String, Symbol] See id_of.
   # @param member [Boolean, nil] Whether they are in the player's party; nil derives it from a peer's
@@ -144,8 +145,7 @@ module MGQ_MpPlayerColor
   #   to MGQ_MpOverworldSync::Me.id once overworld_sync loaded.
   # @return [Color] The color.
   def self.of(who, member = nil, own = nil)
-    style = Mod_Framework::UI::Style
-    { :own => style::OWN, :member => style::MEMBER }.fetch(pick(who, member, own), style::TEXT)
+    Mod_Framework::UI.color_now({ :own => :own, :member => :ally }.fetch(pick(who, member, own), :text))
   end
 
   # Names a player's color for the log: "own", "member" or "plain".

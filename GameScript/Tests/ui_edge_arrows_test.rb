@@ -2,7 +2,8 @@
 #  ui_edge_arrows_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Checked the arrows shown and what they say, leaving how they look to the in-game suite
+#      Paulinchen  2026-11-06: Reached the Mod Framework's engine under its own name
+#                            - Checked the arrows shown and what they say, leaving how they look to the in-game suite
 #      Paulinchen  2026-11-01: Checked the arrows as markers of the Mod Framework, the players picked by the DLL's stand-in
 #                            - Hid the arrows behind any mod's screen that holds the game, as the Mod Framework tells
 #      Paulinchen  2026-10-31: Took a player's color from MGQ_MpPlayerColor and the strip at the top from MGQ_MpHud
@@ -102,9 +103,9 @@ check("nothing hides the arrows on a quiet map in a world", Arrows.hidden_reason
 $open = false
 check("outside a world", Arrows.hidden_reason, "no world is open")
 $open = true
-Mod_Framework::UI::Capture.start(:a_wheel)
+Mod_Framework::UI::Engine::Capture.start(:a_wheel)
 check("a wheel or the World overview, which hold the game's buttons", Arrows.hidden_reason, covered)
-Mod_Framework::UI::Capture.stop(:a_wheel)
+Mod_Framework::UI::Engine::Capture.stop(:a_wheel)
 $mgq_text_input = true
 check("the chat box, which types", Arrows.hidden_reason, covered)
 $mgq_text_input = nil

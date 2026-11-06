@@ -2,7 +2,8 @@
 #  world_overview_pages.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Showed the pages in page views of the UI layer, their heads and panes as markup
+#      Paulinchen  2026-11-06: Renamed add_options to offer_row, which the Mod Framework's scan no longer takes for a call of the old UI
+#                            - Showed the pages in page views of the UI layer, their heads and panes as markup
 #      Paulinchen  2026-11-05: Read the raid bosses' tiers and the troop of a pool's boss from the DLL's table
 #                            - Read the Chaos route's variable from story_ids.rbx
 #                            - Counted the pages' reads by the bridge's frame
@@ -558,7 +559,7 @@ module MGQ_MpWorldOverview
   end
 
   # Offers the Quests page's portraits as a row of the Mod Config, kept in Player.ini.
-  def self.add_options
+  def self.offer_row
     added = Mod_Framework::Options.keep(PORTRAIT_OPTION, MGQ_Multiplayer::OPTION_PREFIX + PORTRAIT_OPTION_NAME, PORTRAIT_OPTION_HELP, lambda { PORTRAITS },
                                         lambda { portraits }, lambda { |choice| choose_portraits(choice) })
     log(added ? "added the Quest Portraits to Options > Mods" : "no Quest Portraits in Options > Mods, see the Mod Framework's log")
@@ -765,7 +766,7 @@ end
 # The Quest Portraits row of the Mod Config.
 
 begin
-  MGQ_MpWorldOverview.add_options
+  MGQ_MpWorldOverview.offer_row
 rescue => e
   MGQ_MpWorldOverview.log("options FAILED: #{e.class}: #{e.message}")
 end

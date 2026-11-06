@@ -2,7 +2,8 @@
 #  story_screens_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Found a screen's component of the UI layer
+#      Paulinchen  2026-11-06: Reached the Mod Framework's engine under its own name
+#                            - Found a screen's component of the UI layer
 #      Paulinchen  2026-11-05: Loaded the fixed answers of the story's telling instead of the stand-in of the choices' rules
 #      Paulinchen  2026-11-01: Created
 #
@@ -63,7 +64,7 @@ FAKE, _FAKE_UI, _FAKE_EDIT = open_fake_ui { ["", 0] }
 
 # Starts the menu scene the framework called last, which opens the window waiting for it.
 #
-# @return [Mod_Framework::UI::Window, nil] The window it opened, nil when it opened none.
+# @return [Mod_Framework::UI::Engine::Window, nil] The window it opened, nil when it opened none.
 def enter_menu
   $scene = $scenes.last.new
   $scene.start
@@ -72,7 +73,7 @@ end
 
 # Cancels a window as the player does with the game's cancel key, which C#'s tree takes.
 #
-# @param window [Mod_Framework::UI::Window] The window.
+# @param window [Mod_Framework::UI::Engine::Window] The window.
 def cancel(window)
   window.receive("close")
 end
@@ -91,6 +92,6 @@ end
 # @param component [Mod_Framework::UI::Component] The window or a part of it.
 # @return [Array<String>] The texts.
 def label_texts(component)
-  own = component.is_a?(Mod_Framework::UI::Label) ? [component.text.to_s] : []
+  own = component.is_a?(Mod_Framework::UI::Engine::Label) ? [component.text.to_s] : []
   own + Array(component.children).map { |child| label_texts(child) }.flatten
 end

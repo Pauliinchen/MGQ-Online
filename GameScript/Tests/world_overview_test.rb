@@ -2,7 +2,8 @@
 #  world_overview_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Read the small party box's rows, leaving how it looks to the in-game suite
+#      Paulinchen  2026-11-06: Reached the Mod Framework's engine under its own name
+#                            - Read the small party box's rows, leaving how it looks to the in-game suite
 #                            - Read the overview's rows, menus, gate and pages from the script, leaving its window of the UI layer to the in-game suite
 #                            - Dropped the pages of other mods, which come through UI.patch now
 #      Paulinchen  2026-11-05: Answered the teleports' view with a fixed offer instead of from the party's stand-in
@@ -985,7 +986,7 @@ $pools = {}
 $raid = false
 
 # The confirm box before removing a member and leaving the party, which the overview waits for.
-confirm = Mod_Framework::UI::Confirm
+confirm = Mod_Framework::UI::Engine::Confirm
 $frame = 1
 member_peer = MGQ_MpOverworldSync::Peers.at(3)
 removed = []

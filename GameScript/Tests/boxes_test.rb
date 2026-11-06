@@ -2,7 +2,9 @@
 #  boxes_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Left the list box to the world screen's tests and the in-game suite, checking a player's color names
+#      Paulinchen  2026-11-06: Reached the Mod Framework's engine under its own name
+#                            - Compared a player's color with the color the UI layer reads now
+#                            - Left the list box to the world screen's tests and the in-game suite, checking a player's color names
 #                            - Dropped the info strip's checks with the strip
 #      Paulinchen  2026-11-05: Read the scripts' clock from $frame
 #      Paulinchen  2026-11-01: Dropped the checks of the list windows' mouse wheel and scrollbar, which no screen uses any more
@@ -31,7 +33,7 @@ module MGQ_Multiplayer
   # The mod's log, kept in $log.
   module Log; def self.write(message); $log << message; end; end
   # Windows' keys: those watched go to $watched, those in $keys_down are held and triggered.
-  module Mod_Framework::UI::Key
+  module Mod_Framework::UI::Engine::Key
     # Records the keys watched in $watched.
     def self.watch(*codes); $watched.concat(codes); end
     # Whether a key in $keys_down was pressed.
@@ -42,9 +44,9 @@ module MGQ_Multiplayer
     def self.down?(code); $keys_down.include?(code); end
   end
   # The mouse, off the screen.
-  module Mod_Framework::UI::Mouse; def self.position; nil; end; end
+  module Mod_Framework::UI::Engine::Mouse; def self.position; nil; end; end
   # The capture: kept by its owners, its buttons taken from $buttons once each.
-  module Mod_Framework::UI::Capture
+  module Mod_Framework::UI::Engine::Capture
     @owners = []
     # Adds an owner of the capture.
     def self.start(owner); @owners.push(owner) unless @owners.include?(owner); end
@@ -103,7 +105,7 @@ class Bitmap
   # @param align [Integer] Its alignment.
   def draw_text(x, y, width, height, text, align = 0)
     @outlined_twice = true if @font.outline
-    if @font.color == Mod_Framework::UI::Style::OUTLINE
+    if @font.color == Mod_Framework::UI::Engine::Style::OUTLINE
       @outlines += 1
     else
       @texts << [x, y, text, @font.size, @font.color.dup, align]
@@ -143,7 +145,7 @@ $scene = Scene_Base.new
 load_script "core_hotkeys"
 load_script "ui_online"
 
-style = Mod_Framework::UI::Style
+own, ally, text = [:own, :ally, :text].map { |name| Mod_Framework::UI.color_now(name) }
 
 # The color of a player.
 colors = MGQ_MpPlayerColor
@@ -151,10 +153,10 @@ colors = MGQ_MpPlayerColor
 Peer = Struct.new(:seat, :state, :member)
 peer = Peer.new(2, { "id" => "p-other", "name" => "Player A" }, false)
 mate = Peer.new(3, { "id" => "p-mate" }, true)
-check("the player themself is OWN", [colors.of(:me), colors.of("me"), colors.of(peer, nil, true), colors.label(:me)], [style::OWN, style::OWN, style::OWN, "own"])
-check("a party member is MEMBER", [colors.of(mate), colors.of(peer, true), colors.of({ "id" => "x", "party" => "p1" }), colors.label(mate)], [style::MEMBER, style::MEMBER, style::MEMBER, "member"])
+check("the player themself is in the own color", [colors.of(:me), colors.of("me"), colors.of(peer, nil, true), colors.label(:me)], [own, own, own, "own"])
+check("a party member is in the ally color", [colors.of(mate), colors.of(peer, true), colors.of({ "id" => "x", "party" => "p1" }), colors.label(mate)], [ally, ally, ally, "member"])
 check("anyone else is plain text, whatever their id", [colors.of(peer), colors.of("p-other"), colors.of({ "id" => "p-other", "party" => "p2" }), colors.label(peer), colors.const_defined?(:PALETTE)],
-      [style::TEXT, style::TEXT, style::TEXT, "plain", false])
-check("nobody reads as plain text, without raising", [colors.of(""), colors.of(Object.new), colors.of(nil), colors.label("")], [style::TEXT, style::TEXT, style::TEXT, "plain"])
+      [text, text, text, "plain", false])
+check("nobody reads as plain text, without raising", [colors.of(""), colors.of(Object.new), colors.of(nil), colors.label("")], [text, text, text, "plain"])
 
 check("the UI layer takes a player's color by MGQ Online's names", [colors.role(:me), colors.role(mate), colors.role(peer)], [:mgq_online_own, :mgq_online_member, :text])

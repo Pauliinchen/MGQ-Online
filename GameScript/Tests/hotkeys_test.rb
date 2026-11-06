@@ -2,6 +2,8 @@
 #  hotkeys_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Reached the Mod Framework's engine under its own name
+#                            - Stood in for the game's scenes, which the Mod Framework's hotkeys read
 #      Paulinchen  2026-10-31: Checked the hotkeys defined through the Mod Framework, quiet while any mod types
 #                            - Stood in for the Mod Framework's keys and question box
 #      Paulinchen  2026-10-30: Dropped the table of default hotkeys
@@ -37,8 +39,10 @@ module MGQ_Multiplayer
     def self.store(key, value); $player_ini[key] = value.to_s; true; end
   end
 end
+# Stands in for the game's scenes, on none of which a hotkey is kept quiet.
+module SceneManager; def self.scene; nil; end; end
 # Stands in for the keyboard: the keys in $down went down.
-module Mod_Framework::UI::Key; def self.pressed?(code); $down.include?(code); end; end
+module Mod_Framework::UI::Engine::Key; def self.pressed?(code); $down.include?(code); end; end
 
 load_script "core_hotkeys"
 Mod_Framework.available = true

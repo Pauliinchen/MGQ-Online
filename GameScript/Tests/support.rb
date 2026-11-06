@@ -2,6 +2,7 @@
 #  support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Checked that every stand-in of the Mod Framework's engine patches the engine's own module
 #      Paulinchen  2026-11-05: Kept a message sent as the scripts hand it instead of writing and reading it as a copy of the DLL's codec
 #                            - Handed the Classic party's table recorded in fixtures/story/classic.json instead of building it as a copy of the C# one
 #                            - Handed the story tables' self switch rules as the DLL's rows
@@ -204,7 +205,19 @@ def story_table_hash(switches, variables, self_default = 0, rest = {})
     "gates" => {}, "self_default" => self_default }.merge(rest)
 end
 
-at_exit { Checks.finish($!) }
+# Checks that every stand-in of a part of the framework's engine patched the engine's own module.
+#
+# A stand-in written as `module Mod_Framework::UI::Key` makes a new empty module, since UI no longer
+# stands for the engine, and its methods would reach nothing without any other check failing.
+def check_stand_ins_reach_the_engine
+  strays = Mod_Framework::UI.constants(false) & Mod_Framework::UI::Engine.constants(false) - [:Component]
+  check("every stand-in of the framework's engine patches the engine's own module", strays, [])
+end
+
+at_exit do
+  check_stand_ins_reach_the_engine
+  Checks.finish($!)
+end
 
 # The switches the Raid personal lists of earlier builds kept each player's own, beside a Classic
 # party's: the refusal of recruits, a special boss's NORMAL, the Colosseum and its match, the

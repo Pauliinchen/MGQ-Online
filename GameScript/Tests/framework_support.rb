@@ -2,6 +2,7 @@
 #  framework_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Reached the Mod Framework's engine under its own name
 #      Paulinchen  2026-11-01: Ran a frame of the Mod Framework's components as the game does
 #      Paulinchen  2026-10-31: Created
 #
@@ -79,7 +80,7 @@ end
 # Loads the framework's scripts in its loader's order over a stand-in for the loader, its DLL
 # closed, once per test file; its log lines go to $framework_log.
 def load_framework
-  return if defined?(Mod_Framework::UI::Tick)
+  return if defined?(Mod_Framework::UI::Engine::Tick)
 
   abort(FRAMEWORK_MISSING) unless FRAMEWORK_DIR
   Object.class_eval <<-RUBY
@@ -101,7 +102,7 @@ def load_framework
   Mod_Framework::Log.define_singleton_method(:write) { |line| $framework_log << line.to_s; nil }
   record_layout_registrations
   # The look the game's start puts to use, before any mod's screen draws.
-  Mod_Framework::UI::Theme.load
+  Mod_Framework::UI::Engine::Theme.load
 end
 
 # The boxes the scripts made arrangeable, by id, each [name, options], which open_fake_ui registers
@@ -110,7 +111,7 @@ $layout_registrations = {}
 
 # Has Layout.register note each box in $layout_registrations.
 def record_layout_registrations
-  layout = Mod_Framework::UI::Layout
+  layout = Mod_Framework::UI::Engine::Layout
   register = layout.method(:register)
   layout.define_singleton_method(:register) do |id, name, options = {}|
     $layout_registrations[id.to_sym] = [name, options]
@@ -133,7 +134,7 @@ end
 # drawing: each open root follows its :if and its hiding, the components that count frames count
 # one, and the changes queued since the tick go to the tree; then the frame ends with its tick.
 def tree_frame
-  tree = Mod_Framework::UI::Tree
+  tree = Mod_Framework::UI::Engine::Tree
   tree.send(:tick_components)
   tree.instance_variable_get(:@roots).dup.each { |root| tree.send(:watch, root) }
   tree.flush

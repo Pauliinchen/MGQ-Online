@@ -2,7 +2,8 @@
 #  ui_raid_bar.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Drew the strip and the bars over the bosses as huds of the Mod Framework's UI layer, the strip docked at the top in battle too
+#      Paulinchen  2026-11-06: Read the room at the top through the Mod Framework's UI.room
+#                            - Drew the strip and the bars over the bosses as huds of the Mod Framework's UI layer, the strip docked at the top in battle too
 #      Paulinchen  2026-11-05: Asked the DLL in one call per scan which troops' battles show a bar, and read the titles and tiers from its table
 #                            - Kept and read its switches in Player.ini as true or false, which the DLL writes as 1 or 0
 #                            - Counted its scans and redraws by the bridge's frame
@@ -558,7 +559,7 @@ module MGQ_MpRaidBar
     on_battle if bar
     self.strip_bar = bar
     self.battle_shown = strip_shown?
-    room = UI::Layout.room(:top)
+    room = UI.room(:top)
     self.battle_bottom = room > 0 ? room : nil
   rescue => e
     self.strip_bar = nil

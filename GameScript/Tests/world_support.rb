@@ -2,6 +2,8 @@
 #  world_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Reached the Mod Framework's engine under its own name
+#                            - Stood in for UI.in_front? of the Mod Framework
 #      Paulinchen  2026-11-05: Kept each message sent as the scripts hand it and took the fields of each message told as the test writes them
 #                            - Kept true or false and whole numbers in the stand-in of Player.ini as the DLL hands them back
 #                            - Wrote a state as the DLL writes its fields
@@ -159,10 +161,10 @@ class Color
   def initialize(red = nil, green = nil, blue = nil, alpha = nil); @red = red; @green = green; @blue = blue; @alpha = alpha; end
 end
 # Stands in for the game window: in front while $in_front is set.
-module Mod_Framework::UI::Tick; def self.in_front?; $in_front; end; end
+module Mod_Framework::UI; def self.in_front?; $in_front; end; end
 # Stands in for the keyboard: the key $pressed names is pressed once, and $down lists the keys
 # held.
-module Mod_Framework::UI::Key
+module Mod_Framework::UI::Engine::Key
   # Answers whether a key is pressed, once: the code in $pressed, or B when $pressed is true.
   def self.pressed?(code); p = $pressed == code || ($pressed == true && code == 0x42); $pressed = false if p; p; end
   # Answers whether a key is held, as $down lists it.
@@ -173,10 +175,10 @@ module Mod_Framework::UI::Key
   def self.frame; $ui_frames.to_i; end
 end
 # Stands in for the mouse: held while $mouse_held is true, at $mouse, its wheel's notches in $wheel.
-module Mod_Framework::UI::Mouse; def self.held?; $mouse_held == true; end; def self.position; $mouse; end; def self.wheel; $wheel.to_i; end; end
+module Mod_Framework::UI::Engine::Mouse; def self.held?; $mouse_held == true; end; def self.position; $mouse; end; def self.wheel; $wheel.to_i; end; end
 # Stands in for holding the game's buttons, held while any screen holds them; $held lists the
 # buttons held and $buttons those pressed, each read once.
-module Mod_Framework::UI::Capture
+module Mod_Framework::UI::Engine::Capture
   @owners = []
   # Holds the buttons for a screen.
   def self.start(owner); @owners.push(owner) unless @owners.include?(owner); end

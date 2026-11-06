@@ -2,7 +2,8 @@
 #  battles_sync_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Read the waiting box's lines from the wait and asked to leave through UI.confirm, leaving how it looks to the in-game suite
+#      Paulinchen  2026-11-06: Reached the Mod Framework's engine under its own name
+#                            - Read the waiting box's lines from the wait and asked to leave through UI.confirm, leaving how it looks to the in-game suite
 #      Paulinchen  2026-11-06: Checked that a target window follows the enemies another player's action takes and closes once none is left
 #      Paulinchen  2026-11-05: Expected the messages sent as the scripts hand them
 #                            - Answered the live battle's topics with the values each case sets and checked what the scripts ask instead of a copy of the C# rules
@@ -599,7 +600,7 @@ sync.finish
 
 sync.join_world(:host, "w4f", [2], "the party")
 # The numpad's 0 with Num Lock off, which $numpad_off presses.
-key = Mod_Framework::UI::Key
+key = Mod_Framework::UI::Engine::Key
 triggered = key.method(:triggered?)
 key.define_singleton_method(:triggered?) { |code| (code == Mod_Framework::UI::NUMPAD_ZERO[1] && $numpad_off) || triggered.call(code) }
 wait_back = lambda do |leave, numpad = false|

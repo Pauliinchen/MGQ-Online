@@ -2,7 +2,9 @@
 #  ui_leader_hud.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Drew the HUD as a hud of the Mod Framework's UI layer
+#      Paulinchen  2026-11-06: Read the room at the top left through the Mod Framework's UI.room
+#                            - Renamed add_options to offer_rows, which the Mod Framework's scan no longer takes for a call of the old UI
+#                            - Drew the HUD as a hud of the Mod Framework's UI layer
 #      Paulinchen  2026-11-05: Kept and read its switches in Player.ini as true or false, which the DLL writes as 1 or 0
 #      Paulinchen  2026-11-01: Built the HUD on the Mod Framework's components, docked at the top left under the game's windows
 #                            - Asked the wheels of the Mod Framework whether one is open
@@ -217,7 +219,7 @@ module MGQ_MpLeaderHud
     scene = SceneManager.scene
     return unless scene.is_a?(Scene_Map)
 
-    room = UI::Layout.room(:top_left)
+    room = UI.room(:top_left)
     offset = room > 0 ? room + BELOW : 0
     TOP_LEFT_WINDOWS.each do |field|
       window = MGQ_MpGame.get(scene, field)
@@ -260,7 +262,7 @@ module MGQ_MpLeaderHud
   end
 
   # Offers turning the HUD on and off and its size as rows of the Mod Config, kept in Player.ini.
-  def self.add_options
+  def self.offer_rows
     prefix = MGQ_Multiplayer::OPTION_PREFIX
     shown = Mod_Framework::Options.keep(SHOWN_OPTION, prefix + SHOWN_OPTION_NAME, SHOWN_OPTION_HELP, lambda { [ON, OFF] },
                                         lambda { shown? ? ON : OFF }, lambda { |value| show(value == ON) })
@@ -424,7 +426,7 @@ end
 # The Mod Config rows.
 
 begin
-  MGQ_MpLeaderHud.add_options
+  MGQ_MpLeaderHud.offer_rows
 rescue => e
   MGQ_MpLeaderHud.log("start FAILED: #{e.class}: #{e.message}")
 end

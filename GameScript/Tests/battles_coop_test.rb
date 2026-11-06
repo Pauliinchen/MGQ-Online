@@ -2,6 +2,7 @@
 #  battles_coop_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Compared the colors of the names in the status window by their values
 #      Paulinchen  2026-11-05: Answered the squad math with fixed values per case
 #                            - Read the messages sent as the scripts hand them and handed those of other games as the DLL reads them
 #                            - Answered the co-op topics with the values each case sets and checked what the scripts ask and do with the answers
@@ -228,8 +229,9 @@ end
 status = Window_BattleStatus.new
 own_drawn = status.draw_actor_name(party[0], 4, 0, 100)
 ally_drawn = status.draw_actor_name(party[2], 4, 24, 100)
+values = lambda { |color| [color.red, color.green, color.blue] }
 check("the status window names the player's own character in their color and another player's by its own name in its owner's",
-      [own_drawn, ally_drawn, status.drawn.map { |x, y, width, height, text, color| [x, y, width, height, text, color.equal?(Mod_Framework::UI::Style::OWN), color.equal?(MGQ_MpPlayerColor.of(friend))] }],
+      [own_drawn, ally_drawn, status.drawn.map { |x, y, width, height, text, color| [x, y, width, height, text, values.call(color) == values.call(Mod_Framework::UI.color_now(:own)), values.call(color) == values.call(MGQ_MpPlayerColor.of(friend))] }],
       [nil, nil, [[4, 0, 100, 24, "Actor1", true, false], [4, 24, 100, 24, "Actor7", false, true]]])
 party[2].hp = 24
 check("a character in crisis is left to the game's colors, as is one drawn without a width", [status.draw_actor_name(party[2], 4, 24, 100), status.draw_actor_name(party[0], 4, 0), status.drawn.size], [:original, :original, 2])

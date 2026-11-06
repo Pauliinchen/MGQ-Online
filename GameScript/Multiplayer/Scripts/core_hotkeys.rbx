@@ -2,6 +2,7 @@
 #  core_hotkeys.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Read whether a mod types through the UI layer
 #      Paulinchen  2026-10-31: Defined the hotkeys through the Mod Framework, whose own Accept and Decline the notices read
 #                            - Read the keys and the question box through the Mod Framework
 #      Paulinchen  2026-10-24: Named the World overview in single player in the overview hotkey's help
@@ -139,7 +140,7 @@ module MGQ_MpHotkeys
   # @param reason [String] Why the hotkey did nothing.
   # @return [nil] Always.
   def self.log_refusal(name, reason)
-    log("hotkey #{label(name)} (#{name_of(name)}) ignored: #{reason}") unless $mgq_text_input
+    log("hotkey #{label(name)} (#{name_of(name)}) ignored: #{reason}") unless Mod_Framework::UI.typing?
     nil
   rescue
     nil

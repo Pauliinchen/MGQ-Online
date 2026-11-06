@@ -2,7 +2,9 @@
 #  battles_join_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Left how the prompt looks to the in-game suite
+#      Paulinchen  2026-11-06: Reached the Mod Framework's engine under its own name
+#                            - Named the action line's color as the scripts name it
+#                            - Left how the prompt looks to the in-game suite
 #      Paulinchen  2026-11-05: Answered the squad math with fixed values per case
 #                            - Read the messages sent as the scripts hand them and handed those of other games as the DLL reads them
 #                            - Answered the co-op topics with the values each case sets and checked what the scripts ask and do with the answers
@@ -100,7 +102,7 @@ module MGQ_MpTrade; def self.session; $trading; end; end
 # The chat box, typed in while $typing is set.
 module MGQ_MpChat; def self.typing?; $typing ? true : false; end; end
 # The line color requests and offers share, and the action wheel, open while $wheel is set.
-module MGQ_MpActions; LINE_COLOR = Mod_Framework::UI::Style::OWN; def self.wheel; StandInWheel.new(lambda { $wheel }); end; end
+module MGQ_MpActions; LINE_COLOR = :mgq_online_own; def self.wheel; StandInWheel.new(lambda { $wheel }); end; end
 # The emote wheel, never open.
 module MGQ_MpEmotes; def self.wheel; StandInWheel.new(lambda { false }); end; end
 # The notification box, keeping each message's text in $messages.
@@ -116,7 +118,7 @@ $down = []
 # The player's settings from $settings and the hotkeys held in $down.
 module MGQ_Multiplayer
   module Player; def self.setting(key); ($settings || {})[key]; end; end
-  module Mod_Framework::UI::Key; def self.pressed?(code); $down.include?(code); end; end
+  module Mod_Framework::UI::Engine::Key; def self.pressed?(code); $down.include?(code); end; end
 end
 
 # Stand-ins for the map's sprites, which the prompt draws with.

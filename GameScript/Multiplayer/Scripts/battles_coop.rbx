@@ -2,6 +2,7 @@
 #  battles_coop.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Read the player's own color in the status window through the Mod Framework's UI.color_now
 #      Paulinchen  2026-11-05: Handed the enemy rates, the invite's fields and whether the player is busy as values, and read the invites' flags as true or false
 #                            - Had C# write and read the joins and the troop's changes
 #                            - Built other players' characters and the host's troop through MGQ_MpBattlers
@@ -2523,7 +2524,7 @@ module MGQ_MpBattlesCoop
   end
 
   # Draws a character's name in the status window of a co-op battle: the player's own in
-  # Mod_Framework::UI::Style::OWN, another player's character by its own name, without its owner,
+  # the player's look's own color, another player's character by its own name, without its owner,
   # in its owner's MGQ_MpPlayerColor. A character in crisis or knocked out is left to the game, which
   # colors it (hp_color: below a quarter of its max HP, which covers 0); so is every character
   # outside a co-op battle, and one drawn without a width.
@@ -2537,7 +2538,7 @@ module MGQ_MpBattlesCoop
     return original.call unless active? && actor && width && actor.hp >= actor.mhp / 4
 
     ally = actor.is_a?(Game_MpAlly)
-    window.change_color(ally ? MGQ_MpPlayerColor.of(MGQ_MpBattlesSync.peer_at(actor.mp_seat) || actor.owner) : Mod_Framework::UI::Style::OWN)
+    window.change_color(ally ? MGQ_MpPlayerColor.of(MGQ_MpBattlesSync.peer_at(actor.mp_seat) || actor.owner) : Mod_Framework::UI.color_now(:own))
     window.draw_text(x, y, width, window.line_height, Mod_Framework::UI.cut(window, ally ? actor.base_name : actor.name, width))
     nil
   rescue => e

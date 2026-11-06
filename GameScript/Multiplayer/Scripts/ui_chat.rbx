@@ -2,7 +2,8 @@
 #  ui_chat.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Drew the chat's log, box, player menu and bubbles through the UI layer
+#      Paulinchen  2026-11-06: Asked the UI layer whether the player arranges the parts
+#                            - Drew the chat's log, box, player menu and bubbles through the UI layer
 #                            - Named the chats' colors once
 #      Paulinchen  2026-11-05: Took the log's size kept in Player.ini as the width and lines the DLL reads
 #                            - Named a scene whose class has no name by the class it builds on, so the chat's model always gets one
@@ -563,7 +564,7 @@ module MGQ_MpChat
   def self.hint
     return "#{HELP_HINT} #{UI.close_hint}" if help_tab?
 
-    UI::Layout.arranging? ? ALT_HINT : BOX_HINT
+    UI.arranging? ? ALT_HINT : BOX_HINT
   end
 
   # Lists the log's rows of the view's lines.

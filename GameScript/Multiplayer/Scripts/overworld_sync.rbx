@@ -2,7 +2,8 @@
 #  overworld_sync.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Sent the lists and Hashes inside a message's fields whole, such as a whole story's lists
+#      Paulinchen  2026-11-06: Asked the Mod Framework's UI.in_front? whether the game is in front
+#                            - Sent the lists and Hashes inside a message's fields whole, such as a whole story's lists
 #      Paulinchen  2026-11-05: Sent the fields and the body of a message to the DLL, which writes the message, and read the player's id through a topic
 #                            - Kept the battle server's players away for the grace the DLL's Sessions counts
 #      Paulinchen  2026-10-31: Told the game behind other windows by the Mod Framework
@@ -561,7 +562,7 @@ module MGQ_MpOverworldSync
       name = current.class.name.to_s
       return "battle" if current.is_a?(Scene_Battle)
       return "event" if name =~ /Novel/ || (current.is_a?(Scene_Map) && !MGQ_MpOverworldSync.map_quiet?)
-      return "away" unless Mod_Framework::UI::Tick.in_front?
+      return "away" unless Mod_Framework::UI.in_front?
 
       busy = MGQ_MpOverworldSync.ask(:busy_scene).compact.first
       return busy if busy

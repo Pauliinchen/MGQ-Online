@@ -2,7 +2,9 @@
 #  bridge_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Stood in for UI.confirm as for the old question box
+#      Paulinchen  2026-11-06: Reached the Mod Framework's engine under its own name
+#                            - Left out sending the wheels defined by name, which the Mod Framework no longer has
+#                            - Stood in for UI.confirm as for the old question box
 #      Paulinchen  2026-11-06: Failed a test file whose scripts handed a topic a value that cannot cross the bridge
 #      Paulinchen  2026-11-05: Kept the requests the fixed answers of a test took, for every test to share
 #      Paulinchen  2026-11-01: Stood in for every wheel the Mod Framework defines and handed the framework's wheels their frames
@@ -398,7 +400,7 @@ class FakeUi
   def initialize(fake)
     @models = {}
     @ticks = []
-    fake.answer(Mod_Framework::UI::Tick::TOPIC) do |inputs|
+    fake.answer(Mod_Framework::UI::Engine::Tick::TOPIC) do |inputs|
       @ticks << inputs
       inputs.each { |name, input| @models[name].call(input) if @models[name] }
       nil
@@ -421,7 +423,7 @@ end
 # End and Delete move or remove. The rest of EditModel (the part shown, the lines, the blinking)
 # is MGQOnline.Game.Tests', so a box here shows no view and always its cursor.
 class FakeEdit
-  # The key bits, see Mod_Framework::UI::TextEdit::ARROW_BITS and KEY_BITS.
+  # The key bits, see Mod_Framework::UI::Engine::TextEdit::ARROW_BITS and KEY_BITS.
   LEFT, RIGHT, HOME, END_KEY, DELETE = 1, 2, 16, 32, 64
 
   # Answers the box's topics and takes its input from the tick.
@@ -434,12 +436,12 @@ class FakeEdit
     @typed = typed
     @boxes = {}
     @last = 0
-    fake.answer(Mod_Framework::UI::TextEdit::OPEN) { |request| open(request) }
-    fake.answer(Mod_Framework::UI::TextEdit::CLOSE) { |id| @boxes.delete(id); nil }
-    fake.answer(Mod_Framework::UI::TextEdit::SET) { |request| set(request); nil }
-    fake.answer(Mod_Framework::UI::TextEdit::VIEW) { |request| (@box = @boxes[request["id"]]) ? state : nil }
-    fake.answer(Mod_Framework::UI::TextEdit::TYPE) { |request| type_now(request) }
-    ui.model(Mod_Framework::UI::TextEdit::MODEL) { |input| tick(input) }
+    fake.answer(Mod_Framework::UI::Engine::TextEdit::OPEN) { |request| open(request) }
+    fake.answer(Mod_Framework::UI::Engine::TextEdit::CLOSE) { |id| @boxes.delete(id); nil }
+    fake.answer(Mod_Framework::UI::Engine::TextEdit::SET) { |request| set(request); nil }
+    fake.answer(Mod_Framework::UI::Engine::TextEdit::VIEW) { |request| (@box = @boxes[request["id"]]) ? state : nil }
+    fake.answer(Mod_Framework::UI::Engine::TextEdit::TYPE) { |request| type_now(request) }
+    ui.model(Mod_Framework::UI::Engine::TextEdit::MODEL) { |input| tick(input) }
   end
 
   # The open boxes by id; a test may keep several windows of boxes, where the game opens one at a
@@ -507,7 +509,7 @@ class FakeEdit
     follow(input[1]) if input[1] >= 0
     return if outcomes.empty? && keys.to_i == 0 && text.to_s.empty? && before == [@box[:text], @box[:cursor]]
 
-    @fake.post(Mod_Framework::UI::TextEdit::EVENT, state.merge("outcomes" => outcomes, "keys" => keys.to_i, "chars" => text.to_s.size))
+    @fake.post(Mod_Framework::UI::Engine::TextEdit::EVENT, state.merge("outcomes" => outcomes, "keys" => keys.to_i, "chars" => text.to_s.size))
   end
 
   # Leaves out the character of the key that opened the box once, and what is typed while Alt is
@@ -601,15 +603,15 @@ class FakeTree
     @told = {}
     @pending = {}
     @focused = nil
-    tree = Mod_Framework::UI::Tree
+    tree = Mod_Framework::UI::Engine::Tree
     ui.model(tree::MODEL) { |changes| apply(changes); send_report }
     fake.answer(tree::LAYOUT) { |changes| apply(changes); report }
     fake.answer(tree::RESET) { |_request| reset; nil }
     return if $tree_collecting
 
     $tree_collecting = true
-    Mod_Framework::UI::Tick.collect("Mod Framework components") { Mod_Framework::UI::Tree.collect }
-    Mod_Framework::UI::Tick.collect("Mod Framework text fields") { Mod_Framework::UI::TextField.follow }
+    Mod_Framework::UI::Engine::Tick.collect("Mod Framework components") { Mod_Framework::UI::Engine::Tree.collect }
+    Mod_Framework::UI::Engine::Tick.collect("Mod Framework text fields") { Mod_Framework::UI::Engine::TextField.follow }
   end
 
   # Hands a component an event of C#'s tree in the next frame, such as "close" or "submit".
@@ -638,7 +640,7 @@ class FakeTree
 
   # Queues the states of nodes for the next report, as C# tells them when they change.
   #
-  # @param states [Hash{Integer => Integer}] The states by node, such as Mod_Framework::UI::Tree::FOCUSED.
+  # @param states [Hash{Integer => Integer}] The states by node, such as Mod_Framework::UI::Engine::Tree::FOCUSED.
   def post_states(states)
     (@pending["states"] ||= {}).update(states)
   end
@@ -655,7 +657,7 @@ class FakeTree
 
   # Takes the scripts' changes, as Change does in C#, and tells the focus they ask for.
   #
-  # @param changes [Hash] The changes, see Mod_Framework::UI::Tree.changes.
+  # @param changes [Hash] The changes, see Mod_Framework::UI::Engine::Tree.changes.
   def apply(changes)
     Array(changes["add"]).each { |node, parent, kind, index, props| add(node, parent, kind, index, props || {}) }
     Array(changes["set"]).each { |node, props| @nodes[node][:props].update(props) if @nodes[node] }
@@ -715,7 +717,7 @@ class FakeTree
   # Builds what changed since the last report: the places of the nodes that are new or moved, and
   # the events queued.
   #
-  # @return [Hash] The report, see Mod_Framework::UI::Tree.take.
+  # @return [Hash] The report, see Mod_Framework::UI::Engine::Tree.take.
   def report
     report = @pending
     @pending = {}
@@ -732,7 +734,7 @@ class FakeTree
   # Posts the report, unless nothing changed, as the tree's event in the next frame.
   def send_report
     report = self.report
-    @fake.post(Mod_Framework::UI::Tree::EVENT, report) unless report.empty?
+    @fake.post(Mod_Framework::UI::Engine::Tree::EVENT, report) unless report.empty?
   end
 
   # Tells a node's place.
@@ -774,9 +776,7 @@ def open_fake_ui(&typed)
   open_framework(fake)
   MGQ_Multiplayer::Bridge.open(fake)
   reregister_boxes
-  wheel = Mod_Framework::UI::Wheel
-  wheel.instance_variable_get(:@definitions).each_key { |name| wheel.send(:send_definition, name) }
-  Mod_Framework::UI::Tick.collect("Mod Framework wheels") { Mod_Framework::UI::Wheel.collect } unless Mod_Framework::Run.started?
+  Mod_Framework::UI::Engine::Tick.collect("Mod Framework wheels") { Mod_Framework::UI::Engine::Wheel.collect } unless Mod_Framework::Run.started?
   [fake, ui, edit]
 end
 
@@ -793,15 +793,15 @@ end
 # Registers the boxes the scripts registered while the bridge was still closed once more, as the
 # game, whose bridge opens before the scripts load, has them registered in C#.
 def reregister_boxes
-  $layout_registrations.dup.each { |id, (name, options)| Mod_Framework::UI::Layout.register(id, name, options) }
+  $layout_registrations.dup.each { |id, (name, options)| Mod_Framework::UI::Engine::Layout.register(id, name, options) }
 end
 
 # Ends a frame as Graphics.update and the next Input.update do in the game: the frame ends, the
 # frame's tick goes over in the batch, and the drains hand back the models' events, which their
 # owners act on in the next frame. Counts the frames in $ui_frames.
 def ui_frame
-  Mod_Framework::UI::Tick.end_frame
-  Mod_Framework::UI::Tick.send_frame
+  Mod_Framework::UI::Engine::Tick.end_frame
+  Mod_Framework::UI::Engine::Tick.send_frame
   $ui_frames = $ui_frames.to_i + 1
   MGQ_Multiplayer::Bridge.frame
 end
@@ -813,7 +813,7 @@ end
 # emote wheel. The places are those of the Mod Framework's wheel fixtures; the grace and the rest of
 # WheelModel are the framework's tests'.
 class FakeWheels
-  # The directions, clockwise from the top, as Mod_Framework::UI::Wheel::DIRECTIONS names them.
+  # The directions, clockwise from the top, as Mod_Framework::UI::Engine::Wheel::DIRECTIONS names them.
   DIRECTIONS = %w[UP UP_RIGHT RIGHT DOWN_RIGHT DOWN DOWN_LEFT LEFT UP_LEFT]
 
   # The places of each count of choices, by the count, as WheelPlaces spreads them.
@@ -831,7 +831,7 @@ class FakeWheels
     @fake = fake
     @ui = ui
     @wheels = {}
-    wheel = Mod_Framework::UI::Wheel
+    wheel = Mod_Framework::UI::Engine::Wheel
     fake.answer(wheel::DEFINE) { |request| define(*request) }
     fake.answer(wheel::PLACES) { |request| places(request[0]).map { |name| DIRECTIONS.index(name) } }
     fake.answer(wheel::CLOSE) { |request| (@wheels[request[0]] || {})[:open] = false; nil }
@@ -878,7 +878,7 @@ class FakeWheels
       return unless key
 
       wheel[:open] = true
-      wheel[:selected] = wheel[:center] ? Mod_Framework::UI::Wheel::CENTER : nil
+      wheel[:selected] = wheel[:center] ? Mod_Framework::UI::Engine::Wheel::CENTER : nil
       return post(name, wheel, "cues" => ["cursor"])
     end
     if key || cancel
@@ -890,7 +890,7 @@ class FakeWheels
     column = (arrows & 8 != 0 ? 1 : 0) - (arrows & 4 != 0 ? 1 : 0)
     held = STEPS[[row, column]]
     pointed = wheel[:selected]
-    pointed = places(count).include?(@directions[held]) ? held : wheel[:center] ? Mod_Framework::UI::Wheel::CENTER : wheel[:selected] if held
+    pointed = places(count).include?(@directions[held]) ? held : wheel[:center] ? Mod_Framework::UI::Engine::Wheel::CENTER : wheel[:selected] if held
     moved = pointed != wheel[:selected]
     wheel[:selected] = pointed
     return post(name, wheel, "cues" => moved ? ["cursor"] : []) if moved && !confirm
@@ -906,7 +906,7 @@ class FakeWheels
   # @param wheel [Hash] Its state.
   # @param fields [Hash] What the event adds.
   def post(name, wheel, fields)
-    @fake.post(Mod_Framework::UI::Wheel::EVENT, { "wheel" => name, "open" => wheel[:open] == true, "selected" => wheel[:selected], "cues" => [] }.merge(fields))
+    @fake.post(Mod_Framework::UI::Engine::Wheel::EVENT, { "wheel" => name, "open" => wheel[:open] == true, "selected" => wheel[:selected], "cues" => [] }.merge(fields))
   end
 end
 
@@ -916,7 +916,7 @@ end
 module StandInConfirm
   # Stands in for the question box from now on.
   def self.install
-    confirm = Mod_Framework::UI::Confirm
+    confirm = Mod_Framework::UI::Engine::Confirm
     confirm.define_singleton_method(:ask) do |question, choices = ["Yes", "No"], _options = {}, &answer|
       next false if @block
 
@@ -938,7 +938,7 @@ module StandInConfirm
     #
     # @return [Boolean] Whether it does.
     def open?
-      Mod_Framework::UI::Confirm.open?
+      Mod_Framework::UI::Engine::Confirm.open?
     end
 
     # Answers it no from outside.
@@ -953,7 +953,7 @@ module StandInConfirm
   #
   # @param yes [Boolean] The answer.
   def self.answer(yes)
-    confirm = Mod_Framework::UI::Confirm
+    confirm = Mod_Framework::UI::Engine::Confirm
     block = confirm.instance_variable_get(:@block)
     return unless block
 
@@ -979,7 +979,7 @@ class FakeLayout
   def initialize(fake)
     @boxes = {}
     @stored = {}
-    layout = Mod_Framework::UI::Layout
+    layout = Mod_Framework::UI::Engine::Layout
     fake.answer(layout::REGISTER) do |request|
       id, _name, width, height, _max_width, _max_height, resize, _movable, text = request
       @boxes[id] = [width, height, resize]

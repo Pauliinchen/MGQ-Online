@@ -2,7 +2,9 @@
 #  components_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Stood in for the room of a zone's parts
+#      Paulinchen  2026-11-06: Reached the Mod Framework's engine under its own name
+#                            - Stood in for UI.room of the Mod Framework
+#                            - Stood in for the room of a zone's parts
 #      Paulinchen  2026-11-01: Created
 #
 #----------------------------------------------------------------
@@ -132,7 +134,7 @@ end
 # Lists the parts of a kind inside a component.
 #
 # @param component [Mod_Framework::UI::Component] The component.
-# @param kind [Class] The kind, such as Mod_Framework::UI::Label.
+# @param kind [Class] The kind, such as Mod_Framework::UI::Engine::Label.
 # @return [Array<Mod_Framework::UI::Component>] The parts.
 def parts_of_kind(component, kind)
   parts_of(component).select { |part| part.is_a?(kind) }
@@ -144,7 +146,7 @@ end
 # @param component [Mod_Framework::UI::Component] The component.
 # @return [Array<String>] The texts.
 def texts_of(component)
-  parts_of(component).select { |part| part.is_a?(Mod_Framework::UI::Label) || part.is_a?(Mod_Framework::UI::Button) }.map { |part| part.text.to_s }.reject { |text| text.empty? }
+  parts_of(component).select { |part| part.is_a?(Mod_Framework::UI::Engine::Label) || part.is_a?(Mod_Framework::UI::Engine::Button) }.map { |part| part.text.to_s }.reject { |text| text.empty? }
 end
 
 # Finds the label or button inside a component with a text.
@@ -153,7 +155,7 @@ end
 # @param text [String] The text.
 # @return [Mod_Framework::UI::Component, nil] The part, nil for none.
 def part_with_text(component, text)
-  parts_of(component).find { |part| (part.is_a?(Mod_Framework::UI::Label) || part.is_a?(Mod_Framework::UI::Button)) && part.text.to_s == text }
+  parts_of(component).find { |part| (part.is_a?(Mod_Framework::UI::Engine::Label) || part.is_a?(Mod_Framework::UI::Engine::Button)) && part.text.to_s == text }
 end
 
 # Tells whether a root of the framework hides now, by its :hidden_in and :hide_while.
@@ -167,5 +169,5 @@ end
 # Tells the room the framework answers a zone's parts take, which C# lays out in the game; a test
 # sets it in $docked_room by zone.
 $docked_room = {}
-Mod_Framework::UI::Layout.define_singleton_method(:docked_room) { |dock| $docked_room[dock].to_i }
-Mod_Framework::UI::Layout.define_singleton_method(:room) { |zone| $docked_room[zone].to_i }
+Mod_Framework::UI::Engine::Layout.define_singleton_method(:docked_room) { |dock| $docked_room[dock].to_i }
+Mod_Framework::UI.define_singleton_method(:room) { |zone| $docked_room[zone].to_i }

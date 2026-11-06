@@ -2,7 +2,8 @@
 #  ui_single_player.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Offered the restart through UI.confirm, Later lit first
+#      Paulinchen  2026-11-06: Renamed add_options to offer_rows, which the Mod Framework's scan no longer takes for a call of the old UI
+#                            - Offered the restart through UI.confirm, Later lit first
 #      Paulinchen  2026-11-05: Took the slot to resume as the number or name the DLL reads
 #      Paulinchen  2026-11-01: Named the Mod Framework's interface by its own name
 #      Paulinchen  2026-10-31: Kept its rows through the Mod Framework
@@ -99,7 +100,7 @@ module MGQ_MpSinglePlayer
 
   # Offers the group's rows in the Mod Config, kept in Player.ini, each change noted for the offer
   # to start the game again.
-  def self.add_options
+  def self.offer_rows
     added = rows.map do |key, name, help, read, write|
       Mod_Framework::Options.keep(key, MGQ_Multiplayer::SP_PREFIX + name, help, lambda { [MGQ_MpLeaderHud::ON, MGQ_MpLeaderHud::OFF] }, read,
                                   lambda { |value| changed(key, read.call, value, write) })
@@ -318,7 +319,7 @@ end
 # The Mod Config rows, through ui.rbx.
 
 begin
-  MGQ_MpSinglePlayer.add_options
+  MGQ_MpSinglePlayer.offer_rows
 rescue => e
   MGQ_MpSinglePlayer.log("Mod Config rows FAILED: #{e.class}: #{e.message}")
 end

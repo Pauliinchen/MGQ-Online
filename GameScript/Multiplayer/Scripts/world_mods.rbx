@@ -2,7 +2,8 @@
 #  world_mods.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Left installing a world's mods to the Mod Framework's dialog of the mods a world needs
+#      Paulinchen  2026-11-06: Renamed add_row to offer_row, which the Mod Framework's scan no longer takes for a call of the old UI
+#                            - Left installing a world's mods to the Mod Framework's dialog of the mods a world needs
 #      Paulinchen  2026-11-05: Took the relay's mods rule as the flag the DLL reads
 #                            - Handed the DLL the options of a world's mods as values and took its settings as values, building and splitting no pairs
 #                            - Handed the DLL an option for the catalog as values
@@ -844,7 +845,7 @@ module MGQ_MpWorldMods
   # Adds the row of Shared Mod Settings to Options > Mods, shown only in a world: every player sees
   # whether the world shares its creator's settings, only the creator may change it, and no world
   # sets it.
-  def self.add_row
+  def self.offer_row
     added = Mod_Framework::Options.add(SHARED_OPTION, ROW_NAME, lambda { MGQ_MpWorldMods.row_help }, { 1 => ["On", ROW_ON_HELP], 0 => ["Off", ROW_OFF_HELP] }, 0,
                                        :if => lambda { MGQ_MpWorldMods.in_world? }, :enabled => lambda { MGQ_MpWorldMods.own_world? },
                                        :personal => true) { |value| MGQ_MpWorldMods.switch(value) }
@@ -1029,7 +1030,7 @@ rescue => e
 end
 
 begin
-  MGQ_MpWorldMods.add_row
+  MGQ_MpWorldMods.offer_row
 rescue => e
   MGQ_MpWorldMods.log("Shared Mod Settings row FAILED: #{e.class}: #{e.message}")
 end

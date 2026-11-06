@@ -2,7 +2,8 @@
 #  ui_online_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Left the chat's places to the windows of the UI layer, which keep them as they open
+#      Paulinchen  2026-11-06: Reached the Mod Framework's engine under its own name
+#                            - Left the chat's places to the windows of the UI layer, which keep them as they open
 #      Paulinchen  2026-11-01: Left the world status to register as its box of the Mod Framework opens
 #      Paulinchen  2026-10-31: Created
 #
@@ -33,8 +34,8 @@ module DataManager
 end
 
 # The look's and the places' rows, as the framework adds them once the game runs with its DLL.
-Mod_Framework::UI::Theme.start_settings
-Mod_Framework::UI::Layout.add_option
+Mod_Framework::UI::Engine::Theme.start_settings
+Mod_Framework::UI::Engine::Layout.add_option
 keys = NWConst::Config::MOD_CONTENTS.map { |row| row[:key].to_s }
 check("Options > Mods holds none of MGQ Online's own look or place rows", keys.grep(/\Amp_ui_/), [])
 check("and each of the framework's once", %w[mf_ui_positions mf_ui_preset mf_ui_game_windows].map { |key| keys.count(key) }, [1, 1, 1])

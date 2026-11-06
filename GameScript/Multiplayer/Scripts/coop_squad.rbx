@@ -2,6 +2,7 @@
 #  coop_squad.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Read the color of the line past a squad in the player's look each time it draws
 #      Paulinchen  2026-11-05: Told the followers shown and read a ghost's as values, the DLL writing them
 #      Paulinchen  2026-11-01: Named the Mod Framework's interface by its own name
 #                            - Added the followers' row through the Mod Framework's options
@@ -94,8 +95,8 @@ module MGQ_MpCoopSquad
     LEADERS_ONLY => ["Leaders Only", "The players walk alone."],
   }
 
-  # Color of the line above the first character past a squad in the formation screens.
-  CUT_COLOR = Mod_Framework::UI::Style::BAD
+  # Color name of the line above the first character past a squad in the formation screens.
+  CUT_COLOR = :error
 
   # Shares of red, green and blue in a color's brightness, which a monochrome picture keeps.
   LUMA = [0.299, 0.587, 0.114]
@@ -666,7 +667,7 @@ module MGQ_MpCoopSquad
   # @param window [Window_Base] The formation screen's window.
   # @param rect [Rect] The row.
   def self.draw_cut(window, rect)
-    window.contents.fill_rect(rect.x, rect.y, rect.width, 2, CUT_COLOR)
+    window.contents.fill_rect(rect.x, rect.y, rect.width, 2, Mod_Framework::UI.color_now(CUT_COLOR))
   end
 
   # Installs the hooks on the game's plugins, which load after the Patch folder. Called once the

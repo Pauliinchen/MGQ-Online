@@ -2,7 +2,8 @@
 #  world_screen_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Checked the screen as its window of the UI layer hands over what the player does, the mods a world needs going to the Mod Framework's dialog
+#      Paulinchen  2026-11-06: Reached the Mod Framework's engine under its own name
+#                            - Checked the screen as its window of the UI layer hands over what the player does, the mods a world needs going to the Mod Framework's dialog
 #      Paulinchen  2026-11-05: Answered the list, the details, the choices, the list box, the forms and the mod picker with the values each check sets instead of their stand-ins
 #                            - Read the directory's list and the player's id through the DLL's topics
 #      Paulinchen  2026-11-01: Created
@@ -126,7 +127,7 @@ module MGQ_Multiplayer
 
   # Stands in for holding the buttons: the owner holding them is in $capture, the button pressed in
   # $pressed.
-  module Mod_Framework::UI::Capture
+  module Mod_Framework::UI::Engine::Capture
     # Holds the buttons for an owner.
     def self.start(owner); $capture = owner; end
 
@@ -141,7 +142,7 @@ module MGQ_Multiplayer
   end
 
   # Stands in for the mouse, never clicked.
-  module Mod_Framework::UI::Mouse; def self.clicked?; false; end; end
+  module Mod_Framework::UI::Engine::Mouse; def self.clicked?; false; end; end
 
   # Stands in for the player's id, as the DLL tells it.
   module Player; def self.id; "me"; end; end
