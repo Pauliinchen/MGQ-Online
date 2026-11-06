@@ -16,11 +16,11 @@
 #----------------------------------------------------------------
 
 # MGQ Online on the battle server: its scripts load from the game folder's Patch folder through the
-# Mod Framework it ships inside, as in the game (see boot.rb), but without either DLL. This takes
-# the DLL's place for the battle channel, the world room's sending and a Raid World's boss pools,
-# which the relay carries to the server and the core's ledger keeps, and makes MGQ Online's log
-# the server's. The core writes and reads the battle channel's messages (topics message.write and
-# message.read), as the DLL does in the game.
+# Mod Framework, as in the game (see boot.rb), but without either DLL. This takes the DLL's place
+# for the battle channel, the world room's sending and a Raid World's boss pools, which the relay
+# carries to the server and the core's ledger keeps, and makes MGQ Online's log the server's. The
+# core writes and reads the battle channel's messages (topics message.write and message.read), as
+# the DLL does in the game.
 module Online
   # Bytes of a log line MGQ Online writes that the server's log keeps.
   LOG_LINE_BYTES = 2_000

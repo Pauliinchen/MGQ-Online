@@ -4,25 +4,25 @@
 #  Changelog:
 #      Paulinchen  2026-11-06: Judged every key one a hotkey may take, as the Mod Framework asks the DLL
 #                            - Reached the Mod Framework's engine under its own name
+#                            - Took the Mod Framework's scripts only from MGQ_MOD_FRAMEWORK_DIR, since the mod no longer ships them
 #      Paulinchen  2026-11-01: Ran a frame of the Mod Framework's components as the game does
 #      Paulinchen  2026-10-31: Created
 #
 #----------------------------------------------------------------
 
 # The Mod Framework for the script tests: MGQ Online's scripts read their keys and draw their boxes
-# through it, so every test loads its scripts first, from the copy the build or the release's fetch
-# puts into package/Framework, or from MGQ_MOD_FRAMEWORK_DIR when it is set. Its DLL is closed, as
-# without the game; a test opens its bridge with a FakeBridge (bridge_support.rb).
+# through it, so every test loads its scripts first, from the copy MGQ_MOD_FRAMEWORK_DIR names. Its
+# DLL is closed, as without the game; a test opens its bridge with a FakeBridge (bridge_support.rb).
 
-# The folders a copy of the framework is looked for in, the first that holds its loader taken.
-FRAMEWORK_PLACES = [ENV["MGQ_MOD_FRAMEWORK_DIR"], File.expand_path("../../package/Framework/Patch/Mod_Framework", __dir__)].compact
+# The folder of the framework's copy, nil while MGQ_MOD_FRAMEWORK_DIR is not set.
+FRAMEWORK_PLACE = ENV["MGQ_MOD_FRAMEWORK_DIR"]
 
 # The copy of the framework the tests load, nil when none was found.
-FRAMEWORK_DIR = FRAMEWORK_PLACES.find { |dir| File.file?(File.join(dir, "loader.rbx")) && File.directory?(File.join(dir, "Scripts")) }
+FRAMEWORK_DIR = FRAMEWORK_PLACE && File.file?(File.join(FRAMEWORK_PLACE, "loader.rbx")) && File.directory?(File.join(FRAMEWORK_PLACE, "Scripts")) ? FRAMEWORK_PLACE : nil
 
 # The line a run without the framework fails with, naming where it looked.
-FRAMEWORK_MISSING = "The Mod Framework's scripts are missing: none in #{FRAMEWORK_PLACES.join(' or ')}. Build MGQParadox.Multiplayer, " \
-                    "fetch the framework release, or set MGQ_MOD_FRAMEWORK_DIR to a copy's folder (Patch/Mod_Framework)."
+FRAMEWORK_MISSING = "The Mod Framework's scripts are missing: none in #{FRAMEWORK_PLACE || 'MGQ_MOD_FRAMEWORK_DIR, which is not set'}. " \
+                    "Set MGQ_MOD_FRAMEWORK_DIR to a copy's folder, such as Patch/Mod_Framework of its release or GameScript/Mod_Framework of its checkout."
 
 # The lines the framework's log took, which its tests read.
 $framework_log = []

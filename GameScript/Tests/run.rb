@@ -2,6 +2,7 @@
 #  run.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-06: Took the Mod Framework's scripts only from MGQ_MOD_FRAMEWORK_DIR, since the mod no longer ships them
 #      Paulinchen  2026-10-31: Failed at once with one line when the Mod Framework's scripts are missing
 #      Paulinchen  2026-09-30: Created
 #
@@ -19,10 +20,11 @@ require "rbconfig"
 verbose = ARGV.include?("-v")
 failed = []
 
-# Every test loads the Mod Framework's scripts first; without them the run stops with one line.
-places = [ENV["MGQ_MOD_FRAMEWORK_DIR"], File.expand_path("../../package/Framework/Patch/Mod_Framework", __dir__)].compact
-unless places.any? { |dir| File.file?(File.join(dir, "loader.rbx")) }
-  puts "The Mod Framework's scripts are missing: none in #{places.join(' or ')}."
+# Every test loads the Mod Framework's scripts first, from the folder MGQ_MOD_FRAMEWORK_DIR names;
+# without them the run stops with one line.
+place = ENV["MGQ_MOD_FRAMEWORK_DIR"]
+unless place && File.file?(File.join(place, "loader.rbx"))
+  puts "The Mod Framework's scripts are missing: none in #{place || 'MGQ_MOD_FRAMEWORK_DIR, which is not set'}."
   exit(1)
 end
 

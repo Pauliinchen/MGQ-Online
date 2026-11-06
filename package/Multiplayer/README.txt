@@ -29,25 +29,29 @@ which loads the mod too: keep it and skip the wiki one.
 
    https://mgq.miraheze.org/wiki/Paradox_mods#Patch.rb_(enable_Type_1_mods)
 
-The Mod Framework comes with the mod (Patch\!Mod_Framework.rb and
-Patch\Multiplayer\Mod_Framework): it loads your other mods, installs and
-updates them from the title screen, and in Options > Mods you bind other
-hotkeys and see which options a world sets.
+The mod runs on the Mod Framework, which you install first: download it
+from the website and extract it into the same folder as this mod (see
+INSTALL). It loads your other mods, installs and updates them from the
+title screen, and in Options > Mods you bind other hotkeys and see which
+options a world sets. Without it the game says so as it starts, and the
+mod stays off.
+
+   https://mgqonline.org/mods
 
 
 INSTALL
 -------
-Close the game and extract the download into your Monster Girl Quest!
-Paradox RPG folder (the one that contains Game.exe). It should then look
-like this:
+Install the Mod Framework first (see REQUIREMENTS). Then close the game
+and extract the download into your Monster Girl Quest! Paradox RPG folder
+(the one that contains Game.exe). It should then look like this:
 
    Game.exe
-   Patch\!Mod_Framework.rb
+   Patch\!Mod_Framework.rb              (the Mod Framework, which the mod runs on)
+   Patch\Mod_Framework\
    Patch\Multiplayer.rb
    Patch\Multiplayer\Multiplayer.dll
    Patch\Multiplayer\Manifest.txt
    Patch\Multiplayer\README.txt
-   Patch\Multiplayer\Mod_Framework\   (the Mod Framework, which the mod runs on)
    Patch\Multiplayer\Scripts\*.rbx      (the mod's other scripts)
    Patch\Multiplayer\Data\events.db     (the game's events, read by the mod)
    ...
@@ -62,8 +66,8 @@ meanwhile.
 
 UPDATE
 ------
-The Mod Framework, which comes with the mod, counts the updates waiting
-on "Browser" in the title's Mods box and installs them, this mod's too.
+The Mod Framework counts the updates waiting on "Browser" in the title's
+Mods box and installs them, this mod's too.
 When the relay asks for another release, "Multiplayer" on the title
 screen offers it, since everyone needs the same version. The same
 question comes wherever the server turns your version away: at once on
@@ -84,8 +88,8 @@ UNINSTALL
 ---------
 Close the game and delete Multiplayer.rb and the Multiplayer folder in
 Patch. That folder also holds your worlds: keep Patch\Multiplayer\Worlds
-if you want to play them again later. The mod loader stays for your
-other mods.
+if you want to play them again later. The mod loader and the Mod
+Framework stay for your other mods.
 
 
 QUICK START

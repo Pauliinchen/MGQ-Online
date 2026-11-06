@@ -16,16 +16,17 @@ jobs:
         with:
           ruby-version: '3.3'
 
-      # The Mod Framework ships inside the mod, the release the project's FrameworkVersion names; the
-      # scripts' tests load its scripts from package/Framework.
+      # The scripts' tests load the Mod Framework's scripts, from the framework release named by
+      # MOD_FRAMEWORK_REQUIRED in Multiplayer.rb, which players install on their own.
       - name: Fetch the Mod Framework
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $version = (dotnet msbuild MGQParadox.Multiplayer -getProperty:FrameworkVersion).Trim()
-          gh release download "v$version" --repo Pauliinchen/MGQ-Mod-Framework --pattern "MGQ-Mod-Framework-$version.zip" --dir package --clobber
-          Expand-Archive "package/MGQ-Mod-Framework-$version.zip" -DestinationPath package/Framework -Force
+          $version = [regex]::Match((Get-Content GameScript/Multiplayer.rb -Raw), 'MOD_FRAMEWORK_REQUIRED = "([^"]+)"').Groups[1].Value
+          gh release download "v$version" --repo Pauliinchen/MGQ-Mod-Framework --pattern "MGQ-Mod-Framework-$version.zip" --dir $env:RUNNER_TEMP --clobber
+          Expand-Archive "$env:RUNNER_TEMP/MGQ-Mod-Framework-$version.zip" -DestinationPath "$env:RUNNER_TEMP/Framework" -Force
+          "MGQ_MOD_FRAMEWORK_DIR=$env:RUNNER_TEMP/Framework/Patch/Mod_Framework" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Test the scripts
         run: ruby GameScript/Tests/run.rb

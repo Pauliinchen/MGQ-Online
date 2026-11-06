@@ -2,7 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-06: Kept the mod off for the game session once any of its scripts did not load, telling the player once
+#      Paulinchen  2026-11-06: Told the player in the game's message box where to get the Mod Framework when it is not installed
+#                            - Kept the mod off for the game session once any of its scripts did not load, telling the player once
 #                            - Took the release the relay's refusal of this version names, and the version the DLL runs
 #                            - Dropped world_overview_mods.rbx, since other mods add their overview pages through UI.patch
 #      Paulinchen  2026-11-05: Kept true or false and whole numbers in Player.ini as the DLL writes them, the rest as text
@@ -186,7 +187,7 @@
 # What every way of playing together shares: the connection with a friend through
 # Patch/Multiplayer/Multiplayer.dll and the Discord mod, when it is installed. It also loads the
 # mod's other scripts, see SCRIPTS and Stages; their input, look and places come from the Mod
-# Framework, which ships inside the mod.
+# Framework, which the player installs on its own.
 module MGQ_Multiplayer
   # The lowest Mod Framework the mod runs with, defined before any script loads.
   MOD_FRAMEWORK_REQUIRED = "0.1.0"
@@ -550,6 +551,10 @@ module MGQ_Multiplayer
     # What the log says once, when the Mod Framework is missing.
     NO_FRAMEWORK = "Monster Girl Quest! Online needs the Mod Framework #{MOD_FRAMEWORK_REQUIRED} or newer, which is not installed"
 
+    # What the game's message box tells the player once, when the Mod Framework is missing.
+    NO_FRAMEWORK_MESSAGE = "Monster Girl Quest! Online needs the Mod Framework, which is not installed. " \
+                           "Get it from https://mgqonline.org/mods, then start the game again."
+
     # The settings of Player.ini the Mod Framework keeps since the look, the places and the Accept
     # and Decline hotkeys became its own, under the same names: the look, the window color, every
     # place (ui_<id>) and the two keys.
@@ -589,10 +594,12 @@ module MGQ_Multiplayer
       ::Mod_Framework::Run.on_start(TAG, :first => true) { MGQ_Multiplayer::Stages.load_title }
     end
 
-    # Stays off without the Mod Framework, which every script needs, and says why in the log once.
+    # Stays off without the Mod Framework, which every script needs, says why in the log and tells
+    # the player in the game's message box, which needs nothing of the framework.
     def self.load_all
       Log.write(NO_FRAMEWORK)
       Log.settle(false)
+      msgbox(NO_FRAMEWORK_MESSAGE) if respond_to?(:msgbox, true)
     end
 
     # Loads the first stage as the game starts running, before its first scene: starts the DLL,

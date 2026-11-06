@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-06: Checked that a script that did not load keeps the mod off, its hooks asleep, and tells the player once
+#                            - Checked that the game's message box tells where to get a Mod Framework that is not installed
 #      Paulinchen  2026-11-01: Dropped the check of a tag the package declares in the mod's folder
 #      Paulinchen  2026-10-31: Checked that the mod stays off without the Mod Framework, and logs whether the framework keeps it off and keeps the game running behind other windows as its first stage loads
 #      Paulinchen  2026-10-30: Created
@@ -22,6 +23,10 @@ source = File.read(File.expand_path("../Multiplayer.rb", __dir__), :encoding => 
 $calls = []
 $log = []
 $loaded = []
+$msgboxes = []
+
+# Stands in for RGSS's message box, noting each text in $msgboxes.
+def msgbox(*texts); $msgboxes << texts.join; end
 
 # The parts of MGQ_Multiplayer the stages call, standing in for the DLL, the hooks and the log.
 module MGQ_Multiplayer
@@ -81,9 +86,10 @@ Dir.mktmpdir do |game|
     $log.clear
     MGQ_Multiplayer::Stages.when_loaded("test") { $calls << :loaded }
     MGQ_Multiplayer::Stages.boot
-    check("without the framework no script loads and the mod stays off, saying why in one line",
-          [$calls, $loaded, MGQ_Multiplayer::Stages.staged?, $log],
-          [[[:settled, false]], [], false, ["Monster Girl Quest! Online needs the Mod Framework 0.1.0 or newer, which is not installed"]])
+    check("without the framework no script loads and the mod stays off, saying why in one line and where to get it in the game's message box",
+          [$calls, $loaded, MGQ_Multiplayer::Stages.staged?, $log, $msgboxes],
+          [[[:settled, false]], [], false, ["Monster Girl Quest! Online needs the Mod Framework 0.1.0 or newer, which is not installed"],
+           ["Monster Girl Quest! Online needs the Mod Framework, which is not installed. Get it from https://mgqonline.org/mods, then start the game again."]])
     check("and no world enters", MGQ_Multiplayer::Stages.enter("the world W"), false)
     Mod_Framework.const_set(:Mods, framework_mods)
 

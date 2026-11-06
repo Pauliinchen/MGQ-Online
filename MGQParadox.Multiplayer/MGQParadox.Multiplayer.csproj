@@ -18,15 +18,6 @@
 
     <PackageDir>$([MSBuild]::NormalizeDirectory($(MSBuildProjectDirectory), .., Shipping))</PackageDir>
     <ZipFile>$(MSBuildProjectDirectory)\bin\$(Configuration)\MGQ-Online-$(Version).zip</ZipFile>
-
-    <!-- The Mod Framework ships inside the mod: its loader as Patch\!Mod_Framework.rb and its copy in
-         Patch\Multiplayer\Mod_Framework, where the loader finds it. The release build downloads the
-         framework release FrameworkVersion names into FrameworkDir; a build on this PC copies it
-         there from the publish output of the framework checked out beside this repository. -->
-    <FrameworkVersion>0.1.0</FrameworkVersion>
-    <FrameworkDir>$([MSBuild]::NormalizeDirectory($(MSBuildProjectDirectory), .., package, Framework))</FrameworkDir>
-    <FrameworkSource>$([MSBuild]::NormalizeDirectory($(MSBuildProjectDirectory), .., .., MGQ-Modding-Framework, Shipping))</FrameworkSource>
-
   </PropertyGroup>
 
   <!-- NativeAOT's compiler at 10.0.14, which fixes advisory GHSA-p3jp-9v83-76w9; the SDK brings an
@@ -86,28 +77,13 @@
     <None Include="@(PatchFile)" Link="Shipped\Patch\%(Filename)%(Extension)" />
   </ItemGroup>
 
-  <Target Name="CopyFramework" BeforeTargets="AssemblePackage" Condition="Exists('$(FrameworkSource)Patch\!Mod_Framework.rb')">
-    <ItemGroup>
-      <FrameworkSourceFile Include="$(FrameworkSource)Patch\**\*" />
-    </ItemGroup>
-    <RemoveDir Directories="$(FrameworkDir)" />
-    <Copy SourceFiles="@(FrameworkSourceFile)" DestinationFiles="@(FrameworkSourceFile->'$(FrameworkDir)Patch\%(RecursiveDir)%(Filename)%(Extension)')" />
-  </Target>
-
   <Target Name="AssemblePackage" AfterTargets="Publish">
     <Error Condition="!Exists('@(DataFile)')" Text="The events database is missing: build @(DataFile) with MGQOnline.Data.Generator, see docs/DEVELOPER.md." />
-    <Error Condition="!Exists('$(FrameworkDir)Patch\!Mod_Framework.rb')" Text="The Mod Framework is missing: put the Patch folder of its release $(FrameworkVersion) into $(FrameworkDir), or publish the framework checked out beside this repository." />
-    <ItemGroup>
-      <FrameworkFile Include="$(FrameworkDir)Patch\Mod_Framework\**\*" />
-      <ShippedFile Include="Patch\!Mod_Framework.rb" />
-      <ShippedFile Include="@(FrameworkFile->'Patch\Multiplayer\Mod_Framework\%(RecursiveDir)%(Filename)%(Extension)')" />
-    </ItemGroup>
     <RemoveDir Directories="$(PackageDir)" />
     <Copy SourceFiles="$(PublishDir)$(AssemblyName).dll;@(ModFile)" DestinationFolder="$(PackageDir)Patch\Multiplayer" />
     <Copy SourceFiles="@(ScriptFile)" DestinationFolder="$(PackageDir)Patch\Multiplayer\Scripts" />
     <Copy SourceFiles="@(DataFile)" DestinationFolder="$(PackageDir)Patch\Multiplayer\Data" />
-    <Copy SourceFiles="@(PatchFile);$(FrameworkDir)Patch\!Mod_Framework.rb" DestinationFolder="$(PackageDir)Patch" />
-    <Copy SourceFiles="@(FrameworkFile)" DestinationFiles="@(FrameworkFile->'$(PackageDir)Patch\Multiplayer\Mod_Framework\%(RecursiveDir)%(Filename)%(Extension)')" />
+    <Copy SourceFiles="@(PatchFile)" DestinationFolder="$(PackageDir)Patch" />
     <WriteLinesToFile File="$(PackageDir)Patch\Multiplayer\Manifest.txt" Lines="@(ShippedFile)" Overwrite="true" />
     <Message Importance="high" Text="$(MSBuildProjectName) -> $(PackageDir)" />
   </Target>

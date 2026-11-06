@@ -11,7 +11,7 @@ Monster Girl Quest! Online keeps its first name inside: the `Multiplayer` instal
 - The .NET 10 SDK and the Visual Studio workload **Desktop development with C++**: NativeAOT links with its linker, and its compiler builds SQLite into the DLL. `Directory.Build.targets` puts `vswhere.exe` on the PATH, which the NativeAOT link needs.
 - The x86 .NET 10 runtime (`C:\Program Files (x86)\dotnet`) for the 32-bit test projects. With `DOTNET_ROOT` pointing at the x64 install, set `DOTNET_ROOT_X86` to the x86 one.
 - Ruby 3.3 or later for the script tests, Node for the relay and the tests that run the relay's code, Docker for the battle server's core.
-- The Mod Framework's checkout beside this repository (`..\MGQ-Modding-Framework`), published, for a publish on this PC.
+- A copy of the Mod Framework's scripts for the script tests: its release's `Patch/Mod_Framework` or its checkout's `GameScript/Mod_Framework`, named by `MGQ_MOD_FRAMEWORK_DIR`; and the framework installed in the game folder you try the mod in.
 
 ### Building the mod
 
@@ -24,14 +24,13 @@ dotnet publish MGQParadox.Multiplayer -c Release -p:Version=0.1.0
 The DLL is 32-bit, because the game is a 32-bit process; players need no .NET installed. A publish assembles the release layout in `Shipping/` (replaced every time); a Release publish also writes `bin/Release/MGQ-Online-<Version>.zip`. Copy `Shipping/` into a game folder to install; close the game first, since `Multiplayer.dll` is locked while it runs.
 
 ```
-Patch/                            !Mod_Framework.rb  Multiplayer.rb
-Patch/Multiplayer/                Multiplayer.dll  Manifest.txt  README.txt
-Patch/Multiplayer/Data/           events.db
-Patch/Multiplayer/Scripts/        *.rbx
-Patch/Multiplayer/Mod_Framework/  the Mod Framework's copy
+Patch/                      Multiplayer.rb
+Patch/Multiplayer/          Multiplayer.dll  Manifest.txt  README.txt
+Patch/Multiplayer/Data/     events.db
+Patch/Multiplayer/Scripts/  *.rbx
 ```
 
-- **The Mod Framework ships with the mod**, the release `FrameworkVersion` in `MGQParadox.Multiplayer.csproj` names. Its loader is `Patch/!Mod_Framework.rb`, which sorts before every mod's script; its files sit inside the mod's folder, and the loader picks them unless a newer framework is installed. A publish on this PC copies the framework's publish output into `package/Framework/Patch/` (git-ignored); the release workflow downloads that release's zip instead. Without it the publish stops.
+- **The Mod Framework is not in the package.** Players install it on their own (`Patch/!Mod_Framework.rb` and `Patch/Mod_Framework/`, from the website), as every mod built on it requires. `MOD_FRAMEWORK_REQUIRED` in `Multiplayer.rb` names the oldest framework the mod runs on. Without the framework the mod stays off and the game's message box says where to get it (see [Loading](#loading)). The manifest lists MGQ Online's own files only, so the updater of 0.6 removes `Patch/0_ModConfigRemake.rb`, which 0.6 shipped, as it updates to 0.7.
 - **The events database** `package/Multiplayer/Data/events.db` is committed and shipped as it is; a publish without it stops (see [The events database](#the-events-database)).
 
 ### Trying it out
@@ -52,7 +51,7 @@ Patch/Multiplayer/Mod_Framework/  the Mod Framework's copy
 | Battle server | see [BattleServer/README.md](../BattleServer/README.md) | Ruby |
 
 - The DLL's tests meet at a relay inside the test process (`TestRelay`), which never reaches the real one and closes a peer that sends too fast as the real relay does.
-- Each script test file runs in a Ruby process of its own, since each brings its own stand-ins for RGSS and the game. They load the Mod Framework's scripts first, as the game does: from `package/Framework/Patch/Mod_Framework`, or from the folder `MGQ_MOD_FRAMEWORK_DIR` names (such as a framework checkout's `GameScript/Mod_Framework`); without either, `run.rb` stops and says where it looked.
+- Each script test file runs in a Ruby process of its own, since each brings its own stand-ins for RGSS and the game. They load the Mod Framework's scripts first, as the game does, from the folder `MGQ_MOD_FRAMEWORK_DIR` names (a framework release's `Patch/Mod_Framework` or a checkout's `GameScript/Mod_Framework`); without it, `run.rb` stops and says so. The workflows fetch the framework release `MOD_FRAMEWORK_REQUIRED` names.
 - The script tests answer the C# topics with fixed values per case and check what the scripts ask and do with the answer; the rules themselves are tested in C#. The fake bridge round-trips every request and reply through Marshal and the core's plain-value check, so a test fails where the game would refuse a value.
 - **Trap:** the script tests run on Ruby 3.3, not the game's 1.9.2, so they do not catch what only 1.9.2 lacks. The C# number parsing that copies Ruby (`RubyNumbers`) was checked against Ruby 3.3 only. Drawing, input and the game's own battle and event engine need the game.
 - The JIT test hosts and the generator load SQLite from the `SQLitePCLRaw.lib.e_sqlite3` package (3.53.3), not the checked-in amalgamation the published DLL compiles in.
@@ -69,7 +68,7 @@ NativeAOT cannot build across systems, so `MGQOnline.ServerCore/build.ps1 [-Vers
 2. On GitHub, draft a release with a tag like `v0.1.0` and publish it. Players read the notes as they update, so write them for players, not as a commit log.
 3. The *Release* workflow runs the tests, builds the mod, attaches `MGQ-Online-0.1.0.zip` and builds and attaches `MGQOnline.ServerCore.so` (the mod zip does not hold it). Keep the zip name: the website's import takes it, and older releases' updaters look for `MGQ-Online-*.zip`. Its tests fail while the committed events database is older than the schema or the generator. If the run failed, fix the cause on `main`, then run **Actions → Release → Run workflow** with the release's tag.
 4. Import the release on the website as a new version of the mod `mgq-online`, which the Mod Framework updates from.
-5. Deploy the battle server: the release's scripts and events database into its game folder (`BattleServer/tools/deploy_release.sh`) and the core library (see [BattleServer/README.md](../BattleServer/README.md)). Its core reads the same `events.db` as the game.
+5. Deploy the battle server: the release's scripts and events database into its game folder (`BattleServer/tools/deploy_release.sh`), the Mod Framework only when the release needs a newer one, and the core library (see [BattleServer/README.md](../BattleServer/README.md)). Its core reads the same `events.db` as the game.
 
 Before a release, check the changes against the newest translation: the generator's `compare` counts which lists of a translated copy differ from the database (see below).
 
@@ -161,9 +160,8 @@ relay (Node) -- battle server (Ruby + the game's scripts + MGQOnline.ServerCore.
 - **Order matters.** A script may use only what loaded before it at load time; later ones are reached at run time (`defined?`). The order also decides how the battle scripts' hooks wrap each other, since they install them as the game starts running, the last loaded first. A script that fails to load is logged and the others load all the same.
 - **Under the Mod Framework** the mod is a Title mod in three stages: as the game starts it loads the log, hooks, hotkeys and look and adds the title's *Multiplayer* command; picking it loads the world screens; the rest loads as the player enters the game (New Game, a load, or a world, right before the world's save loads or its New Game starts). Never load before the world screen goes back to the title: the framework would make that a restart once the game counts as entered. A player who backs out of a world's New Game question has entered with the world's mods, so the game starts again into the world screen rather than letting Continue run with them.
 - A script of the world screens that joins a later script's registry waits for `Stages.when_loaded`. Every hook sleeps in a game entered without the mod (turned off on the title's Mods screen after its title part loaded).
-- **Without the framework** (the battle server) the game's loader runs `Multiplayer.rb`, which loads every script at once.
 - **Trap:** the Russian translation's own `Patch.rb` loads only `Patch/*.rb`, reads each as it is (a byte order mark breaks the file) and catches no error. So `Multiplayer.rb` is ASCII only and catches the errors of its own load, writing them to the log at once and showing them in the game's message box.
-- The mod requires a booted Mod Framework of at least `MOD_FRAMEWORK_REQUIRED`; without it no script loads, and the log says so.
+- The mod requires a booted Mod Framework of at least `MOD_FRAMEWORK_REQUIRED`; without it no script loads, and the log says why. When no framework is installed at all, the game's own message box (`msgbox`, which needs nothing of the framework) also tells the player where to get it, once per start.
 
 ### Hooks
 

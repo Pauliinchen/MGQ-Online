@@ -77,9 +77,28 @@ sudo bash deploy_release.sh /tmp/mgq-0.7.0 0.7.0   # the folder holding the rele
 
 `tools/deploy_release.sh` backs the game folder's `Patch` up to
 `/var/cache/mgq-battle/patch-before-<version>`, installs `Patch/Multiplayer.rb`,
-`Patch/Multiplayer/Scripts/` (removing the scripts the release no longer has), the Mod Framework MGQ Online ships inside (`Patch/!Mod_Framework.rb` and
-`Patch/Multiplayer/Mod_Framework/`) and `Patch/Multiplayer/Data/events.db`, root-owned and not
-writable by others, restarts `mgq-battle`
+`Patch/Multiplayer/Scripts/` (removing the scripts the release no longer has) and
+`Patch/Multiplayer/Data/events.db`, root-owned and not writable by others, restarts `mgq-battle`
 and compares every file it installed with the release's; it stops before changing anything when
 the release lacks one of them. `MGQ_BATTLE_GAME`, `MGQ_BATTLE_BACKUPS` and `MGQ_BATTLE_SERVICE`
 name another game folder, backup folder or service. The core library is deployed as above.
+
+### The Mod Framework
+
+MGQ Online's scripts run on the Mod Framework, which the release zip does not hold; the server
+keeps its own copy in `Patch/!Mod_Framework.rb` and `Patch/Mod_Framework/`. It is redeployed only
+when needed: the first deploy of 0.7, a release whose `MOD_FRAMEWORK_REQUIRED` (in
+`Multiplayer.rb`) is newer than the server's copy, or a framework release that changes how the
+scripts load or run. Then copy the `Patch` folder of the framework release's zip
+(`MGQ-Mod-Framework-<version>.zip`) to the server as well and name its folder third:
+
+```
+sudo bash deploy_release.sh /tmp/mgq-0.7.0 0.7.0 /tmp/framework-0.1.0
+```
+
+The script then installs the framework's entry file and folder the same way, keeping the `*.ini`
+settings in its folder, and compares them with the framework release too. Without the third
+argument the installed framework stays, and the deploy stops before changing anything when the
+server has none. Each deploy removes what earlier deploys left that the framework replaces: the
+copy inside MGQ Online's folder (`Patch/Multiplayer/Mod_Framework/`) and Mod Config Remake
+(`Patch/0_ModConfigRemake.rb`).

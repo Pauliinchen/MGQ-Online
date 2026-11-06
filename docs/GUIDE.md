@@ -85,7 +85,7 @@ They are kept in `Patch\Multiplayer\Player.ini`, so they hold in every save.
 
 ## Mods
 
-The [Mod Framework](https://github.com/Pauliinchen/MGQ-Mod-Framework), which comes with MGQ Online, installs, updates and removes the mods of the [website](https://mgqonline.org/mods) from the title screen. In the Mods box left of the title commands, *Browser* lists them and counts the updates waiting, *List* turns your mods on and off, and *Configuration* sets their options.
+The [Mod Framework](https://github.com/Pauliinchen/MGQ-Mod-Framework), which MGQ Online runs on and you install first (see the [README](../README.md#install)), installs, updates and removes the mods of the [website](https://mgqonline.org/mods) from the title screen. In the Mods box left of the title commands, *Browser* lists them and counts the updates waiting, *List* turns your mods on and off, and *Configuration* sets their options.
 
 ## Worlds
 
@@ -437,6 +437,7 @@ Your games meet at the mod's **server**, which passes their data on. Every game 
 
 | Message or problem | What to do |
 |---|---|
+| "Monster Girl Quest! Online needs the Mod Framework, which is not installed." | The game started without the Mod Framework, so the mod stays off. Download the framework from the [website](https://mgqonline.org/mods), close the game, extract it into the folder that contains `Game.exe` and start the game again. |
 | *Multiplayer* says a new version is out | Pick *Update and restart* in the Mod Framework's question: the game closes, the mod updates and the game starts again in the Multiplayer menu. Or close the game and run `Update.bat` in `Patch\Mod_Framework`. A Discord invite, or the return to a world after its mods were installed, asks the same while the mod is outdated; after updating, enter the world again yourself. |
 | "This version cannot play online. Update it at the title." | The server turned your version away while you played in a world. Go back to the title: it asks the Mod Framework's question about the update at once. |
 | "The server could not be reached" | Your internet connection is down, or something such as a firewall blocks the game from going online. |

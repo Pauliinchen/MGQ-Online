@@ -22,7 +22,7 @@ Play Monster Girl Quest! Paradox RPG together with friends over the internet, wi
 - **Co-op battles:** party members on the same map join each other's battles, each commanding their own characters.
 - **Duels and PvP battles:** your team against a friend's, live, inside a world.
 - **Trading:** swap items, equipment, stones and gold with a player on your map; a disconnect never loses or copies anything.
-- **Mods:** install, update and remove mods of the [website](https://mgqonline.org/mods) from the title screen, through the Mod Framework that comes with the mod.
+- **Mods:** install, update and remove mods of the [website](https://mgqonline.org/mods) from the title screen, through the Mod Framework the mod runs on.
 - **Your interface:** three looks for the mod and the game alike, Monarch, Legacy and the game's own window color, and every box of the mod moves and resizes while you hold the left **Alt**.
 
 Worlds, Raid Worlds, parties and co-op battles are a **prototype**: expect bugs, and please [report them](https://github.com/Pauliinchen/MGQ-Online/issues/new?template=bug_report.yml).
@@ -31,26 +31,26 @@ Worlds, Raid Worlds, parties and co-op battles are a **prototype**: expect bugs,
 
 - **Monster Girl Quest! Paradox RPG 3.06**, untranslated or with the English or Russian translation. Everyone needs the same game version and the same version of this mod. A translated and an untranslated game can play together; each shows battles in its own language.
 - **The community's mod loader:** the `Patch.rb` from [*Patch.rb (enable Type 1 mods)*](https://mgq.miraheze.org/wiki/Paradox_mods#Patch.rb_(enable_Type_1_mods)) on the MGQ wiki, in your `Patch` folder. The Russian translation brings its own `Patch.rb`, which loads the mod too: keep it and skip the wiki one.
+- **The [Mod Framework](https://github.com/Pauliinchen/MGQ-Mod-Framework)**, from the [website](https://mgqonline.org/mods): the mod runs on it, and it loads your other mods too. Its *Options → Mods* binds other hotkeys and shows which options a world sets. Without it the game says so as it starts, and the mod stays off.
 
 Optional:
 
 - [Discord Rich Presence](https://github.com/Pauliinchen/MGQ-Paradox-Discord-Rich-Presence) 1.5.1 or later: show on your profile who you're playing with and use your Discord name in worlds. With 1.6.1 or later you also invite friends into your world, password included.
 - [Battle Dialogue](https://github.com/Pauliinchen/MGQ-Paradox-Mod-Collection/tree/main/Battle_Dialogue): shows what characters say in boxes at the screen's sides, so nobody waits for another player to press a key.
 
-The [Mod Framework](https://github.com/Pauliinchen/MGQ-Mod-Framework) comes with the mod: its *Options → Mods* binds other hotkeys and shows which options a world sets.
-
 ## Install
 
-1. Download `MGQ-Online-<version>.zip` from the [latest release](https://github.com/Pauliinchen/MGQ-Online/releases/latest).
-2. Close the game and extract the zip into the folder that contains `Game.exe`.
+1. Install the Mod Framework first: download it from the [website](https://mgqonline.org/mods), close the game and extract it into the folder that contains `Game.exe`. You then have `!Mod_Framework.rb` and a `Mod_Framework` folder in your `Patch` folder. It loads your other mods too, also those that keep their scripts in a folder inside `Patch`.
+2. Download `MGQ-Online-<version>.zip` from the [latest release](https://github.com/Pauliinchen/MGQ-Online/releases/latest).
+3. Close the game and extract the zip into the folder that contains `Game.exe`.
 
-You then have `!Mod_Framework.rb` and `Multiplayer.rb` in your `Patch` folder, and next to them a `Multiplayer` folder with the rest of the mod; your name and worlds go there too. The mod runs on the [Mod Framework](https://github.com/Pauliinchen/MGQ-Mod-Framework), which comes inside it and loads your other mods too, also those that keep their scripts in a folder inside `Patch`. The logs go into the `Logs` folder of the game folder.
+You then have `Multiplayer.rb` in your `Patch` folder, and next to it a `Multiplayer` folder with the rest of the mod; your name and worlds go there too. The logs go into the `Logs` folder of the game folder.
 
 While the mod is installed, the game keeps running when its window is in the background. A gamepad does nothing meanwhile.
 
 **Update:** the Mod Framework counts the updates waiting on *Browser* in the title's Mods box and installs them, this mod's too. When a new release is needed, *Multiplayer* on the title screen offers it, as does the title after the server turned your version away in a world; until then worlds stay off. The framework closes the game, installs the release, shows what's new and starts the game again in the Multiplayer menu; under Wine and Proton too. If the game cannot start, run `Update.bat` in `Patch\Mod_Framework`. Your name, hotkeys, favourites and worlds are kept.
 
-**Uninstall:** close the game and delete `Multiplayer.rb` and the `Multiplayer` folder in `Patch`. Keep `Patch\Multiplayer\Worlds` if you want to play your worlds again later.
+**Uninstall:** close the game and delete `Multiplayer.rb` and the `Multiplayer` folder in `Patch`. Keep `Patch\Multiplayer\Worlds` if you want to play your worlds again later. The Mod Framework stays for your other mods.
 
 ## Quick start
 
