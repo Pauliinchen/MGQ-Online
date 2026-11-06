@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-06: Kept a member's levels per kind in one Hash, as the game does
+#                            - Left the form to the in-game suite, since the UI layer draws it, and read the typing from the framework
 #      Paulinchen  2026-11-05: Asked whether the DLL is a development build and the player's id through its topics
 #                            - Dropped the stand-in of the World overview, which hid the untranslated game's name
 #      Paulinchen  2026-11-01: Drew the form through the Mod Framework's window and answered the request from the DLL's topics
@@ -264,6 +265,8 @@ $asked = []
   fake.answer(topic) { |request| $asked << [topic, request]; $answers.key?(topic) ? $answers[topic] : (topic == report::Screenshot::TOPIC || nil) }
 end
 tree = Mod_Framework::UI::Tree
+# Whether any mod types, as the framework tells it, from $typing.
+Mod_Framework::UI.define_singleton_method(:typing?) { $typing == true }
 
 # Runs a frame: the hooks after Graphics.update, the map's update_scene when the map is the scene,
 # then the frame's end, whose drain hands the DLL's events over.
@@ -309,11 +312,11 @@ check("an older Mod Framework without UI.menu_screen? still waits in a mod's men
 ui.define_singleton_method(:menu_screen?, known) if known
 SceneManager.scene = Scene_Map.new
 $map_free = false
-$mgq_text_input = true
+$typing = true
 frame
 check("a busy map is not ready, and typing is told", asked("report.tick").last["scene"].values_at("map_ready", "typing"), [false, true])
 $map_free = true
-$mgq_text_input = false
+$typing = false
 capture = Mod_Framework::UI::Capture
 held = capture.method(:on?)
 capture.define_singleton_method(:on?) { true }
@@ -339,25 +342,9 @@ check("the screenshot hands C# the screen's bitmap by its address, with its size
       [asked(report::Screenshot::TOPIC).first, $bitmaps.last.disposed?], [[$bitmaps.last.object_id * 2, 4, 2], true])
 check("then tells the DLL it was kept, in the menu", asked("report.snapped").first,
       { "kept" => true, "scene" => asked("report.tick").last["scene"] })
-form = report.form
-check("the form opens in place over the menu", [form && form.window.open?, $called], [true, []])
-$answers.delete("report.tick")
-frame
-check("while it is open the DLL finds the form in front", asked("report.tick").last["scene"]["place"], "form")
-tree.take("events" => [[form.window.node, "close"]])
-check("cancel closes it and tells the DLL the player left it", [form.window.open?, asked("report.closed"), report.form],
-      [false, ["the player left it"], nil])
-reset
-$answers.update("report.tick" => true, "report.snapped" => true, "report.take_opening" => true)
-frame
-opened = report.form && report.form.window.open?
-tree.reset
-$answers.clear
-$hotkey = true
-frame
-$hotkey = false
-check("a form open at F12 is told closed, and the next hotkey asks again from the menu",
-      [opened, asked("report.closed"), report.form, asked("report.tick").last["scene"]["place"]], [true, ["F12 started the game again"], nil, "menu"])
+check("and the form opens", report.form.nil?, false)
+report.form.close
+check("closing it tells the DLL why", [asked("report.closed"), report.form], [["the script closed it"], nil])
 reset
 
 # A screenshot that fails or the DLL did not keep.
@@ -371,33 +358,6 @@ frame
 check("as is one the DLL did not keep, its bitmap disposed", [asked("report.snapped").last["kept"], $bitmaps.last.disposed?], [false, true])
 reset
 
-# On the map the form opens in a menu scene of its own.
-SceneManager.scene = Scene_Map.new
-$answers["report.on_map"] = true
-$answers["report.take_opening"] = false
-frame
-form = report.form
-check("the map's update asks the DLL, which opens the form in a menu scene of the framework's",
-      [asked("report.on_map").size, $called.size, form && form.window.open?, form && form.screenshot], [1, 1, false, nil])
-$answers.delete("report.on_map")
-frame
-check("while the menu scene starts the form is in front and not lost", [asked("report.tick").last["scene"]["place"], asked("report.closed")], ["form", []])
-SceneManager.scene.start
-check("then it opens there", form.window.open?, true)
-returned = $returned
-form.window.close(:cancel)
-check("and closing it goes back to the map", $returned, returned + 1)
-reset
-map = Scene_Map.new
-SceneManager.scene = map
-$answers["report.on_map"] = true
-$answers["report.take_opening"] = true
-frame
-SceneManager.scene = Scene_Battle.new
-tree.scene_ended(map)
-check("a form another scene took the place of before it opened is told closed",
-      [asked("report.closed"), report.form], [["another scene took its place"], nil])
-reset
 SceneManager.scene = Scene_Map.new
 $answers["report.on_map"] = true
 frame
@@ -438,65 +398,6 @@ check("the DLL's sounds play, its messages go to the box, its lines to the battl
        ["The bug report opens after the battle."]])
 check("and a refused hotkey is logged under the hotkeys", $log.grep(/ignored/),
       ["keys: hotkey F3 (Report a Bug) ignored: the game shows the title or game over screen"])
-reset
-
-# The form.
-SceneManager.scene = Scene_Menu.new
-$answers["report.take_opening"] = true
-report.open_form
-form = report.form
-check("the title takes 100 characters, the text 2000 in 6 lines, both typed only once confirmed",
-      [form.title.max_length, form.text.max_length, form.text.lines, form.title.confirm_to_type, form.text.confirm_to_type], [100, 2000, 6, true, true])
-check("both attachments start ticked", [form.screenshot.checked?, form.logs.checked?], [true, true])
-check("the help line names the key that starts typing on both boxes", [form.title.help, form.text.help].map { |help| help.end_with?("#{Mod_Framework::UI::Game.key_name(:C)}: type") },
-      [true, true])
-form.send_report
-check("an empty title keeps the form from being sent, with the buzzer", [asked("report.send"), $sounds], [[], ["buzzer"]])
-tree.take("states" => { form.title.node => tree::FOCUSED }, "events" => [[form.title.node, "focus"]])
-check("the focus goes to the title, and the help line says why", form.help.text, report::TITLE_MISSING)
-form.title.text = "Formation stays shut"
-form.send_report
-tree.take("states" => { form.title.node => 0, form.text.node => tree::FOCUSED }, "events" => [[form.text.node, "focus"]])
-check("then the empty text", form.help.text, report::TEXT_MISSING)
-form.text.text = "  After the meeting I cannot change my formation.  "
-tree.take("events" => [[form.logs.node, "click"]])
-check("a click on Attach the logs unticks it", form.logs.checked?, false)
-$answers["report.send"] = "The last bug report is still being sent."
-form.send_report
-check("a report the DLL refuses stays open and says why", [form.window.open?, form.help.text], [true, "The last bug report is still being sent."])
-$answers.delete("report.send")
-form.send_report
-check("a filled form is sent tidied, as the player ticked it", asked("report.send").last,
-      { "title" => "Formation stays shut", "text" => "After the meeting I cannot change my formation.", "screenshot" => true, "logs" => false })
-check("and closes, telling the DLL the report went", [form.window.open?, asked("report.closed"), report.form], [false, ["the report went"], nil])
-reset
-
-$answers["report.take_opening"] = false
-report.open_form
-form = report.form
-check("without a screenshot only the logs can be attached", [form.screenshot, form.logs.checked?], [nil, true])
-form.title.text = "T"
-form.text.text = "X"
-form.send_report
-check("and the screenshot is not asked for", asked("report.send").last["screenshot"], false)
-reset
-
-# A box that cannot be typed into while another mod types.
-$answers["report.take_opening"] = true
-report.open_form
-form = report.form
-tree.take("states" => { form.title.node => tree::FOCUSED }, "events" => [[form.title.node, "focus"]])
-form.title.send(:emit, :refuse)
-check("a box another mod keeps from typing says so", form.help.text, report::NO_KEYBOARD_REFUSAL)
-form.window.close(:cancel)
-reset
-
-# A form the framework does not open.
-Mod_Framework.available = false
-$answers["report.take_opening"] = true
-report.open_form
-check("a form the framework does not open is told closed", [asked("report.closed").size, report.form], [1, nil])
-Mod_Framework.available = true
 reset
 
 # The texts.

@@ -3,6 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-06: Named each member's base level, as the game keeps every kind of level in one Hash
+#                            - Drew the form through the UI layer, its refusals on its help line and the focus on the field they name
+#                            - Told the DLL whether any mod types through the framework
 #      Paulinchen  2026-11-05: Read the player's id through a topic
 #                            - Told an untranslated game in the report by its own name of the story's progress variable
 #      Paulinchen  2026-11-01: Built the form on the Mod Framework's components
@@ -26,7 +28,7 @@
 #----------------------------------------------------------------
 
 # The in-game bug report: its hotkey (F3 unless the player binds another, see core_hotkeys.rbx) or
-# the action wheel's Report a Bug takes a screenshot and opens a form, a Mod Framework window, whose
+# the action wheel's Report a Bug takes a screenshot and opens a form, a window of the UI layer, whose
 # title and text the DLL sends to the relay with a few public facts, the screenshot and the logs.
 # The relay makes a public GitHub issue of the title, the text and the facts; the screenshot, the
 # logs and the private details reach the developer only.
@@ -84,9 +86,6 @@ module MGQ_MpBugReport
 
   # Widest the form gets.
   FORM_WIDTH = 520
-
-  # The captions of the form's boxes, which line up.
-  CAPTIONS = ["Title", "What happened"]
 
   # What the notification box keeps the report's messages under, each replacing the one before.
   NOTICE_KEY = :bug_report
@@ -158,7 +157,7 @@ module MGQ_MpBugReport
   LOG_TAG = "bug report"
 
   class << self
-    # @return [Form, nil] The form, from its opening to its closing.
+    # @return [Object, nil] The form's handle, from its opening to its closing.
     attr_reader :form
   end
 
@@ -238,7 +237,7 @@ module MGQ_MpBugReport
   # @return [Hash] The scene.
   def self.scene_of(scene)
     { "name" => scene.class.name.to_s, "place" => place_of(scene), "in_world" => MGQ_MpOverworldSync.in_world? ? true : false,
-      "map_ready" => map_ready?, "shown" => MGQ_MpNotices.shown? ? true : false, "typing" => $mgq_text_input ? true : false }
+      "map_ready" => map_ready?, "shown" => MGQ_MpNotices.shown? ? true : false, "typing" => UI.typing? ? true : false }
   end
 
   # Tells what kind of scene the report is asked for or waits in.
@@ -282,28 +281,33 @@ module MGQ_MpBugReport
   end
 
   # Opens the form of the report the DLL hands over: in place in a menu, else in a menu scene of
-  # its own.
+  # its own. The form counts as open from here on, so a close the framework tells at once finds it.
   def self.open_form
     snapped = MGQ_Multiplayer::Bridge.call(OPENING_TOPIC)
     return log("no report waits for a form") if snapped.nil?
 
-    @form = Form.new(snapped == true)
+    serial = (@serial = @serial.to_i + 1)
+    @form = true
     log("opening the form#{snapped == true ? ' with the screenshot' : ' without a screenshot'}")
-    @form.open
+    handle = UI.open(BugReportForm, :snapped => snapped == true) { |result, why| closed(serial, result == :sent ? :sent : why) }
+    return closed(serial, "it could not open") unless handle
+
+    @form = handle if @form
   rescue => e
     log("the form could not open: #{MGQ_MpLog.failure(e)} at #{Array(e.backtrace).first}")
-    @form = nil
-    MGQ_Multiplayer::Bridge.call(CLOSED_TOPIC, "it could not open")
+    closed(serial, "it could not open") if serial
   end
 
   # Tells the DLL that the form closed, which forgets the screenshot unless the report went.
   #
-  # @param form [Form] The form.
-  # @param reason [String] Why, for the log.
-  def self.closed(form, reason)
-    return unless form.equal?(@form)
+  # @param serial [Integer] Which opening of the form closed.
+  # @param why [Symbol, String] :sent once the report went, else why the window closed.
+  def self.closed(serial, why)
+    return unless serial == @serial && @form
 
     @form = nil
+    reason = why == :sent ? "the report went" : CLOSED_REASONS.fetch(why, why.to_s)
+    log("the form closed: #{reason}")
     MGQ_Multiplayer::Bridge.call(CLOSED_TOPIC, reason)
   end
 
@@ -479,116 +483,98 @@ module MGQ_MpBugReport
     end
   end
 
-  # The report's form, a framework window over the menu it was asked for in, or in a menu scene of
-  # its own: who sees what, the help line, the title and the text typed in place once confirmed,
-  # whether to attach the screenshot, when there is one, and the logs, and the button that sends it.
-  class Form
-    # @return [UI::Window] The window.
-    attr_reader :window
+  # The report's form, in place over the menu it was asked for in, or in a menu scene of its own:
+  # who sees what, the help line, the title and the text typed in place once confirmed, whether to
+  # attach the screenshot, when there is one, and the logs, and the button that sends it.
+  class BugReportForm < UI::Component
+    # Whether the screenshot was taken at the press.
+    param :snapped
 
-    # @return [UI::TextField] The title's box.
-    attr_reader :title
+    # The title typed.
+    state :report_title, ""
 
-    # @return [UI::TextField] The text's box.
-    attr_reader :text
+    # What happened, as typed.
+    state :report_text, ""
 
-    # @return [UI::Checkbox, nil] Whether to attach the screenshot, nil without one.
-    attr_reader :screenshot
+    # Whether to attach the screenshot.
+    state :screenshot, true
 
-    # @return [UI::Checkbox] Whether to attach the logs.
-    attr_reader :logs
+    # Whether to attach the logs.
+    state :logs, true
 
-    # @return [UI::HelpLine] The line that tells what the focused part does, or why something is refused.
-    attr_reader :help
-
-    # Builds the form, both attachments ticked.
-    #
-    # @param snapped [Boolean] Whether a screenshot was taken.
-    def initialize(snapped)
-      @sent = false
-      @window = UI::Window.new(:title => WHEEL_TEXT, :menu => true, :center => true, :width => FORM_WIDTH, :log => MGQ_MpBugReport)
-      @window.add_label(HELP, :wrap => true, :font_size => :small)
-      @help = @window.add_help(:lines => 2)
-      report = @window.add_group("Report")
-      @title = add_box(report, "Title", :max_length => MAX_TITLE_CHARS, :help => TITLE_HINT)
-      @text = add_box(report, "What happened", :max_length => MAX_TEXT_CHARS, :lines => TEXT_LINES, :help => TEXT_HINT)
-      attach = @window.add_group("Attach").add_row(:gap => 16)
-      @screenshot = add_check(attach, "Attach the screenshot", SCREENSHOT_HINT) if snapped
-      @logs = add_check(attach, "Attach the logs", LOGS_HINT)
-      @window.add_button("Send the report", :quiet => true, :align => :center, :help => SEND_HINT).on(:click) { send_report }
-      @window.add_key_help([{ :button => :B, :text => "close" }])
-      @window.on(:close) { |why| closed(why) }
+    # Describes the form.
+    def render
+      window WHEEL_TEXT, id: :mgq_online_bug_report, menu: true, width: FORM_WIDTH do
+        text HELP, wrap: true, typo: :body2
+        help_line lines: 2, id: :mgq_online_bug_report_help
+        group "Report" do
+          field_of("Title", :mgq_online_bug_report_title, :report_title, MAX_TITLE_CHARS, TITLE_HINT, 1)
+          field_of("What happened", :mgq_online_bug_report_text, :report_text, MAX_TEXT_CHARS, TEXT_HINT, TEXT_LINES)
+        end
+        group "Attach" do
+          stack row: true, spacing: 4 do
+            checkbox("Attach the screenshot", bind: :screenshot, help: SCREENSHOT_HINT, on_change: ->(on) { ticked("Attach the screenshot", on) }) if snapped
+            checkbox "Attach the logs", bind: :logs, help: LOGS_HINT, on_change: ->(on) { ticked("Attach the logs", on) }
+          end
+        end
+        stack row: true, justify: :center do
+          button "Send the report", variant: :filled, help: SEND_HINT, on_click: -> { send_report }
+        end
+        key_help entries: [{ button: :B, text: "close" }]
+      end
     end
 
-    # Opens the window; a refused open tells close like any other end.
-    def open
-      @window.open
-    end
-
-    # Sends the report and closes the form, or puts the focus on the box that keeps it from being
+    # Sends the report and closes the form, or puts the focus on the field that keeps it from being
     # sent, or says why the DLL did not take it.
     def send_report
-      title = @title.text.to_s.strip
-      text = @text.text.to_s.strip
-      return refuse(TITLE_MISSING, @title) if title.empty?
-      return refuse(TEXT_MISSING, @text) if text.empty?
+      title = report_title.to_s.strip
+      body = report_text.to_s.strip
+      return refuse(TITLE_MISSING, :mgq_online_bug_report_title) if title.empty?
+      return refuse(TEXT_MISSING, :mgq_online_bug_report_text) if body.empty?
 
-      request = { "title" => title, "text" => text, "screenshot" => @screenshot ? @screenshot.checked? : false, "logs" => @logs.checked? }
+      request = { "title" => title, "text" => body, "screenshot" => snapped && screenshot ? true : false, "logs" => logs ? true : false }
       refusal = MGQ_Multiplayer::Bridge.call(SEND_TOPIC, request)
       return refuse(refusal) if refusal
 
       Sound.play_ok
-      @sent = true
-      @window.close(:button)
+      close(:sent)
     end
 
     private
 
-    # Adds a box typed into once confirmed, under its caption.
+    # Describes a field typed into once confirmed, under its label.
     #
-    # @param group [UI::Group] Where it goes.
-    # @param caption [String] Its caption.
-    # @param options [Hash] Its options.
-    # @return [UI::TextField] The box.
-    def add_box(group, caption, options)
-      box = group.add_field(caption, :caption_width => CAPTIONS).add_text_field(options.merge(:confirm_to_type => true))
-      box.on(:type) { MGQ_MpBugReport.log("typing into #{caption}") }
-      box.on(:submit) { |typed| MGQ_MpBugReport.log("kept #{caption}, #{typed.to_s.length} characters") }
-      box.on(:revert) { MGQ_MpBugReport.log("put #{caption} back as it was") }
-      box.on(:refuse) { refuse(NO_KEYBOARD_REFUSAL) }
-      box
-    end
-
-    # Adds a checkbox, ticked.
-    #
-    # @param row [UI::Component] Where it goes.
-    # @param text [String] Its text.
+    # @param label [String] Its label.
+    # @param id [Symbol] Its id, which the focus goes back to.
+    # @param bind [Symbol] The state that holds its text.
+    # @param most [Integer] The most characters it takes.
     # @param hint [String] What the help line says on it.
-    # @return [UI::Checkbox] The checkbox.
-    def add_check(row, text, hint)
-      check = row.add_checkbox(text, :checked => true, :help => hint)
-      check.on(:change) { |checked| MGQ_MpBugReport.log("#{checked ? 'ticked' : 'unticked'} #{text}") }
-      check
+    # @param lines [Integer] Its lines.
+    def field_of(label, id, bind, most, hint, lines)
+      text_field label, id: id, bind: bind, confirm_to_type: true, max_length: most, lines: lines, help: hint,
+                        on_type: -> { MGQ_MpBugReport.log("typing into #{label}") },
+                        on_submit: ->(typed) { MGQ_MpBugReport.log("kept #{label}, #{typed.to_s.length} characters") },
+                        on_revert: -> { MGQ_MpBugReport.log("put #{label} back as it was") },
+                        on_refuse: -> { refuse(NO_KEYBOARD_REFUSAL) }
     end
 
-    # Says why something is not accepted, with the focus on the box it names.
+    # Logs a checkbox the player ticked or unticked.
+    #
+    # @param label [String] Its label.
+    # @param on [Boolean] Whether it is ticked now.
+    def ticked(label, on)
+      MGQ_MpBugReport.log("#{on ? 'ticked' : 'unticked'} #{label}")
+    end
+
+    # Says why something is not accepted, with the focus on the field it names.
     #
     # @param why [String] Why.
-    # @param box [UI::TextField, nil] The box that keeps the form from being sent.
-    def refuse(why, box = nil)
+    # @param id [Symbol, nil] The field that keeps the form from being sent.
+    def refuse(why, id = nil)
       Sound.play_buzzer
       MGQ_MpBugReport.log("refused: #{why}")
-      box.focus if box
-      @help.say(why)
-    end
-
-    # Tells the DLL the form closed, and why.
-    #
-    # @param why [Symbol, String] Why the window closed.
-    def closed(why)
-      reason = @sent ? "the report went" : CLOSED_REASONS.fetch(why, why.to_s)
-      MGQ_MpBugReport.log("the form closed: #{reason}")
-      MGQ_MpBugReport.closed(self, reason)
+      part(id).focus if id
+      part(:mgq_online_bug_report_help).say(why)
     end
   end
 end
