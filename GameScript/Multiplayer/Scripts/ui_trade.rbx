@@ -2,6 +2,8 @@
 #  ui_trade.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Started the cursor on the bag's Items tab
+#                            - Moved the cursor into the bag's tabs as the screen shows, since autofocus: never reaches tabs that take the focus one by one
 #      Paulinchen  2026-11-07: Left the way back from the bag to its tab to the framework and gave the gold box its unit as adornment:
 #      Paulinchen  2026-11-06: Took how many of an item an offer holds and why a step changed nothing from the rules in C#
 #      Paulinchen  2026-11-06: Drew the trade screen through the UI layer: Q and W step the bag by ten, Page Up and Down page it, cancel in an offer asks
@@ -140,6 +142,18 @@ module MGQ_MpTradeUi
     nil
   end
 
+  # Holds the parts the caller hands in, so its handle's focus moves the focus onto the first of
+  # them that takes the keys.
+  #
+  # Tabs with enter: take the focus tab by tab, so autofocus: on them and their own handle's focus
+  # find no part to focus.
+  class FocusHolder < UI::Component
+    # Describes the parts the caller handed in.
+    def render
+      children
+    end
+  end
+
   # The trade screen: both offers, the bag's tabs with Gold, Confirm and Cancel, and the bag.
   class TradeScreen < UI::Component
     # The other player's name.
@@ -176,9 +190,11 @@ module MGQ_MpTradeUi
           end
         end
         stack row: true do
-          tabs bind: :category, pages: false, enter: true, id: :mgq_online_trade_tabs, disabled: committing,
-               on_change: ->(picked) { MGQ_MpTrade.log("showing the bag's #{picked}") } do
-            CATEGORIES.each { |kind, text| tab text, id: kind }
+          component(FocusHolder, id: :mgq_online_trade_tabs_holder) do
+            tabs bind: :category, pages: false, enter: true, id: :mgq_online_trade_tabs, disabled: committing,
+                 on_change: ->(picked) { MGQ_MpTrade.log("showing the bag's #{picked}") } do
+              CATEGORIES.each { |kind, text| tab text, id: kind }
+            end
           end
           button "Gold", id: :mgq_online_trade_gold, disabled: committing, on_click: -> { MGQ_MpTradeUi.guard("the gold") { ask_gold } }
           button session && session.confirmed ? "Unconfirm" : "Confirm", id: :mgq_online_trade_confirm, disabled: committing,
@@ -193,6 +209,11 @@ module MGQ_MpTradeUi
         key_help entries: [{ key: "Left/Right", text: "1 more or less" }, { key: "Q/W", text: "10 more or less" }, { button: :C, text: "All or none" },
                            { button: :B, text: "Back" }]
       end
+    end
+
+    # Starts the cursor on the bag's Items tab as the screen shows.
+    def mounted
+      part(:mgq_online_trade_tabs_holder).focus
     end
 
     # Writes a row of the bag: the item and how many the offer holds of how many the bag holds, in
