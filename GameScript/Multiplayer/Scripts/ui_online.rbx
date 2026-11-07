@@ -2,6 +2,7 @@
 #  ui_online.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Closed the list box on a click outside while its Name field shows
 #      Paulinchen  2026-11-07: Went back from the list box's Name field to its rows when cancel reaches the window
 #      Paulinchen  2026-11-06: Asked again for a HUD part the UI layer refused, a while later or in a new scene
 #                            - Read a player's color in the player's look through UI.color_now
@@ -389,12 +390,15 @@ class MGQ_MpListBox < Mod_Framework::UI::Component
 
   private
 
-  # Takes cancel that reached the window: from the Name field, which no longer types, the field goes
-  # and the rows take the focus again; otherwise the window closes.
+  # Takes cancel that reached the window: the cancel key from the Name field, which no longer
+  # types, takes the field away and gives the rows the focus again; a click outside, or cancel
+  # without the field, closes the window.
   #
   # @return [Boolean] Whether the window closes.
   def cancelled
-    return true unless naming
+    # The window hears a click outside as cancel too, without saying which; only the key presses
+    # cancel in the frame it arrives.
+    return true unless naming && Mod_Framework::UI.cancel?
 
     Sound.play_cancel
     self.naming = false

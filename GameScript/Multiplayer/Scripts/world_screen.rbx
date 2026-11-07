@@ -2,6 +2,9 @@
 #  world_screen.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Scrolled a form inside the right box instead of letting it grow past the screen
+#                            - Showed the details of the world under the cursor once the first worlds arrive
+#                            - Moved the focus onto a field of the form only once its last render made the field
 #      Paulinchen  2026-11-07: Left the form back to its list when cancel reaches the screen from a field, and greyed menu choices through disabled:
 #      Paulinchen  2026-11-06: Asked again for a release to play whose question could not open while one of the screen's was
 #                            - Refused a world whose mods the Mod Framework finds ready while MGQ Online's check finds them differing, instead of asking again
@@ -620,7 +623,10 @@ class Scene_MpWorlds < Scene_MenuBase
     changed
     if !@arrived && !entries.empty?
       @arrived = true
-      request_focus(:worlds_box) if !restore_world(entries) && @place.nil? && @whole == :commands && !@form_symbol
+      if !restore_world(entries) && @place.nil? && @whole == :commands && !@form_symbol
+        request_focus(:worlds_box)
+        @whole = :worlds
+      end
     elsif entries.empty? && @whole == :worlds && !@form_symbol
       request_focus(:commands_box)
       @whole = :commands
@@ -655,7 +661,10 @@ class Scene_MpWorlds < Scene_MenuBase
     return false unless at
 
     @world_index = at
-    request_focus(:worlds) unless @form_symbol
+    unless @form_symbol
+      request_focus(:worlds)
+      @whole = :worlds
+    end
     true
   end
 
@@ -1783,8 +1792,11 @@ class Scene_MpWorlds < Scene_MenuBase
                              on_change: ->(command) { scene.pointed_command(command) }, on_submit: ->(command) { scene.on_command(command) }
             end
           end
-          paper id: :right_box, grow: 1, height: :fill do
-            kind, target = scene.right_view
+          kind, target = scene.right_view
+          form = kind == :form || kind == :preview
+          # A form scrolls, since its fields would push the screen past its height; the details keep
+          # their description cut to the room left.
+          paper id: :right_box, key: form ? [:form, target] : :details, grow: 1, height: :fill, scroll: form ? :vertical : false do
             case kind
             when :world then details(target)
             when :form then component(WorldFormView, scene: scene, page: scene.forms[target], key: [:form, target, scene.forms[target].object_id])
@@ -1986,7 +1998,8 @@ class Scene_MpWorlds < Scene_MenuBase
 
     # Describes the field.
     def render
-      common = { id: field_id, help: input_field.hint, disabled: !page.enabled?(input_field) }
+      @rendered_id = field_id
+      common = { id: @rendered_id, help: input_field.hint, disabled: !page.enabled?(input_field) }
       case input_field.kind
       when :text, :password, :id
         text_field input_field.label, common.merge(bind: :value, password: input_field.kind == :password, max_length: input_field.max_chars, allowed: input_field.allowed,
@@ -2045,13 +2058,16 @@ class Scene_MpWorlds < Scene_MenuBase
       wanted
     end
 
-    # Takes the focus once the scene asks for this field.
+    # Takes the focus once the scene asks for this field and the field's last render made its part
+    # under the id it has now.
+    #
+    # A preview's field turning into the form's changes its id before it renders again.
     #
     # @return [Array, nil] The scene's ask.
     def follow_focus
       request = scene.focus_request
-      if request && request[1] != @focused && request[0] == [:field, input_field.key] && page.equal?(scene.form)
-        part(field_id).focus
+      if request && request[1] != @focused && request[0] == [:field, input_field.key] && page.equal?(scene.form) && @rendered_id == field_id
+        part(@rendered_id).focus
         @focused = request[1]
       end
       request

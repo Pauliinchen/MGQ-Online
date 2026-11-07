@@ -2,6 +2,8 @@
 #  world_screen_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Checked that a click outside closes the mod picker while its Name field shows
+#                            - Checked that the first worlds to arrive and the world chosen before the save screen show their details
 #      Paulinchen  2026-11-06: Dropped the stand-ins of the mouse and the held buttons, which no check reads
 #                            - Checked that mods the Mod Framework finds ready while the DLL finds them differing refuse the entry
 #                            - Reached the Mod Framework's engine under its own name
@@ -162,8 +164,9 @@ check("the screen opens with the commands' box picked as a whole, the lines at t
       [focused(scene), scene.strip_lines], [:commands_box, ["You play as Me.", "The list is being fetched . . ."]])
 screen_list(ROWS)
 scene.look_at_list
-check("the first worlds to arrive pick the worlds' box as a whole, the rows as the DLL wrote them",
-      [focused(scene), scene.entries.map { |entry| scene.world_row(entry)[:text] }], [:worlds_box, ["Iliasburg", "Sunset"]])
+check("the first worlds to arrive pick the worlds' box as a whole, the rows as the DLL wrote them, the right side on the world under the cursor",
+      [focused(scene), scene.entries.map { |entry| scene.world_row(entry)[:text] }, scene.right_view[0], scene.right_view[1].name],
+      [:worlds_box, ["Iliasburg", "Sunset"], :world, "Iliasburg"])
 
 # The boxes and the right side.
 scene.entered(:worlds)
@@ -319,7 +322,19 @@ $locals.set("modpick.act", "answer" => "Level_Cap is in the list already.", "pic
 $sounds = []
 scene.act_on_mod(0, 1)
 check("a change the DLL refuses buzzes and names why beside the title", [$sounds, scene.mod_pick_note], [["buzzer"], "Level_Cap is in the list already."])
-scene.list_box.close
+# The Name field: the cancel key that reaches the window goes back to the rows, a click outside
+# closes the picker, as the window's close_outside says.
+box_top = lambda { Mod_Framework::UI::Engine::Layer.tops.find { |top| top.id == MGQ_MpListBox::ID.to_s && !top.closed } }
+name_field = lambda { box_top.call.mount.component.send(:picked, scene.mod_pick_row(:add)) }
+name_field.call
+cancel_key = Mod_Framework::UI.method(:cancel?)
+Mod_Framework::UI.define_singleton_method(:cancel?) { |*_| true }
+box_top.call.root.engine.receive("cancel")
+Mod_Framework::UI.define_singleton_method(:cancel?, cancel_key)
+naming = box_top.call.mount.component.naming
+name_field.call
+box_top.call.root.engine.receive("cancel", "outside")
+check("cancel from the Name field goes back to the rows; a click outside closes the picker", [naming, box_top.call], [false, nil])
 check("closing the picker shows the mods in the form, back at their field", [scene.list_box, scene.form[:mods], focused(scene)], [nil, "", :mods])
 cancel_form(scene)
 
@@ -355,7 +370,8 @@ scene.terminate
 scene.start
 screen_changed
 scene.look_at_list
-check("back from the save screen the cursor is on the world chosen before", [scene.current_entry.name, focused(scene)], ["Sunset", :worlds])
+check("back from the save screen the cursor is on the world chosen before, the right side on it", [scene.current_entry.name, focused(scene), scene.right_view[0]],
+      ["Sunset", :worlds, :world])
 
 # The last world gone moves the pick to the commands.
 scene.entered(:worlds)
