@@ -2,6 +2,7 @@
 #  world_overview.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Wrote the world's type and difficulty right after its name in the title
 #      Paulinchen  2026-11-07: Greyed a player menu choice that cannot be taken through disabled:
 #      Paulinchen  2026-11-06: Dropped the opacity of the picture behind the Quests page
 #                            - Marked the Players tab from the players listed last, only while another page shows
@@ -843,8 +844,7 @@ module MGQ_MpWorldOverview
                   width: Graphics.width - DEFAULT_ROOM[0], height: Graphics.height - DEFAULT_ROOM[1], min_size: MIN_SIZE,
                   if: -> { overview.open_reason || true }, on_open: -> { overview.opened(self) }, on_close: ->(why) { overview.closed(why) } do
         stack row: true do
-          text overview.world_name, color: :title, most_lines: 1, grow: 1
-          text overview.title_tail, color: :title
+          text overview.world_name + overview.title_tail, color: :title, most_lines: 1, grow: 1
           party = overview.party_text
           text(party, color: :mgq_online_member) if party
         end
