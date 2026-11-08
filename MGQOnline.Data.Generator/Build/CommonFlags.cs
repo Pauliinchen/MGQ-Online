@@ -19,8 +19,7 @@ using MGQOnline.Game.Story;
 namespace MGQOnline.Data.Generator.Build;
 
 /// <summary>
-/// Reads the flags of common events as story_rewards.rb does: the battlefuck events and the Final
-/// Chapter's events.
+/// Reads the flags of common events: the battlefuck events and the Final Chapter's events.
 /// </summary>
 internal static partial class CommonFlags
 {

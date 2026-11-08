@@ -17,9 +17,10 @@ The player guide explains everything the mod does:
 
 REQUIREMENTS
 ------------
-Monster Girl Quest! Paradox RPG 3.06, untranslated or with the English
-or Russian translation. Everyone needs the same game version and the
-same version of this mod.
+Monster Girl Quest! Paradox RPG 3.06 on Windows, or on Linux with Wine
+or Proton, untranslated or with the English or Russian translation.
+Everyone needs the same game version and the same version of this mod.
+The mod does not run on JoiPlay.
 
 This is a Patch folder mod ("Type 1"), so the community's mod loader
 must be installed: download "Patch.rb (enable Type 1 mods)" from the MGQ
@@ -29,21 +30,23 @@ which loads the mod too: keep it and skip the wiki one.
 
    https://mgq.miraheze.org/wiki/Paradox_mods#Patch.rb_(enable_Type_1_mods)
 
-The mod runs on the Mod Framework, which you install first: download it
-from the website and extract it into the same folder as this mod (see
-INSTALL). It loads your other mods, installs and updates them from the
-title screen, and in Options > Mods you bind other hotkeys and see which
-options a world sets. Without it the game says so as it starts, and the
-mod stays off.
+The mod runs on the Mod Framework 0.1.0 or later, which you install
+first: download it from the website and extract it into the same folder
+as this mod (see INSTALL). It installs and updates this mod, which has
+no updater of its own. The mod's settings and hotkeys are in
+Options > Mods. Without the framework the game says so as it starts,
+and the mod stays off.
 
    https://mgqonline.org/mods
 
 
 INSTALL
 -------
-Install the Mod Framework first (see REQUIREMENTS). Then close the game
-and extract the download into your Monster Girl Quest! Paradox RPG folder
-(the one that contains Game.exe). It should then look like this:
+Install the Mod Framework first (see REQUIREMENTS). Then install this
+mod with the framework: "Browser" in the title's Mods box finds it. Or
+close the game and extract the download into your Monster Girl Quest!
+Paradox RPG folder (the one that contains Game.exe). It should then look
+like this:
 
    Game.exe
    Patch\!Mod_Framework.rb              (the Mod Framework, which the mod runs on)
@@ -66,18 +69,17 @@ meanwhile.
 
 UPDATE
 ------
-The Mod Framework counts the updates waiting on "Browser" in the title's
-Mods box and installs them, this mod's too.
-When the relay asks for another release, "Multiplayer" on the title
-screen offers it, since everyone needs the same version. The same
-question comes wherever the server turns your version away: at once on
-the title or in the Multiplayer menu, and in a world at the next title.
+The Mod Framework updates this mod like any mod of the website.
+When the server asks for another release, "Multiplayer" on the title
+screen asks the framework for it, since everyone needs the same version.
+The same question comes wherever the server turns your version away: at
+once on the title or in the Multiplayer menu, and in a world at the next
+title. Until you update, worlds, duels and trades stay off.
 
-The framework closes the game, installs the release, shows what's new
-and starts the game again in the Multiplayer menu. This works under Wine
-and Proton too. If the game cannot start, run Update.bat in
-Patch\Mod_Framework. Your player name, hotkeys, favourites and worlds
-are kept.
+"Update and restart" installs the release and starts the game again in
+the Multiplayer menu. This works under Wine and Proton too. Your player
+name, hotkeys, favourites and worlds are kept. If the game cannot start
+after an update, update by hand as below.
 
 To update by hand, close the game and extract the new download over the
 old one; then delete any Patch\Multiplayer\Scripts\*.rbx file the new
@@ -107,6 +109,10 @@ A world may start its new players from its creator's save. A save can
 run code on your PC, so take it only from creators you trust. The game
 asks first and lets you start at the beginning instead.
 
+A world may need mods, in the versions its creator has. Entering it
+installs them from the website through the Mod Framework; a mod the
+website does not have you get from its author.
+
 
 HOTKEYS
 -------
@@ -116,13 +122,15 @@ HOTKEYS
             (Alt + Left/Right switches tabs, Alt + drag resizes the chat)
    E        emote wheel
    F11      World overview, in a world and in single player
-   Y / N    accept / decline the first invite at the top left
+   Y / N    accept / decline the first invite among the notices
    M        make the party box small or full
    H        make the Leader HUD at the top left small or large
    J        join the battle of a player next to you in a Raid World
    F3       report a bug, with a screenshot and your logs
 
-Rebind them in "Options > Mods > MGQ Online Hotkeys".
+Rebind them in "Options > Mods > MGQ Online Hotkeys", Y and N in
+"Mod Framework Hotkeys". The mod's settings are in "MGQ Online Settings",
+those for single player in "MGQ Online SP".
 
 
 TROUBLE?

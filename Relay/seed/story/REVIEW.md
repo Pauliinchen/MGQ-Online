@@ -17,10 +17,7 @@ left for the user to decide.
 - The admin route takes at most 2,000 edits per request, so an admin sends the larger files in
   slices. The seeding has no such limit.
 - Seeding leaves the edits' `note` out; an admin who applies the files keeps them.
-- The tests of the DLL and of the scripts still read the generated candidates in
-  `fixtures/catchup/generated`, which `make_seed.rb` writes from the Ruby constants, since their
-  recorded cases were decided over those tables. The reviewed rows reach only the relay.
-- The review scripts are kept outside the repository, in `MGQ-Online-wt/rows-scratch`.
+- The tests of the DLL and of the scripts read the reviewed rows from these files too.
 - Since 2026-11-05 the C# tests hold every row to the shipped events database
   (`MGQOnline.Game.Tests` `MappingCheckTests`): a row that names a key, event, page or common event
   the game does not have, or a class the game data contradicts, fails the build.
@@ -73,7 +70,7 @@ TEST install.
 
 | | Rows |
 |---|---|
-| Candidates (`fixtures/catchup/generated/chests.json`) | 95 |
+| Candidates | 95 |
 | Confirmed in bulk | 91 |
 | Checked by hand | 4 (and the place of 10 more) |
 | Fixed | 3, and the places of 10 by the user's decision |
@@ -228,7 +225,7 @@ No chest row is left without a part.
 
 ### Notes
 
-- The generator's first-letter rule (`raid_data.rb` `scan_chest`) caused all three fixes.
+- The generator's first-letter rule caused all three fixes.
 
 ### chest_flags
 
@@ -238,7 +235,7 @@ story mapping's `chest` kind). Reviewed on 2026-10-28 against the game data of t
 
 | | Rows |
 |---|---|
-| Candidates (`fixtures/catchup/generated/chest_flags.json`) | 196 |
+| Candidates | 196 |
 | Confirmed in bulk | 185 |
 | Checked by hand | 11 |
 | Fixed | 0 |
@@ -248,7 +245,7 @@ story mapping's `chest` kind). Reviewed on 2026-10-28 against the game data of t
 
 ### How the rows were checked
 
-Running the Event Checker's own flag rule (`story_rewards.rb` `chest_flags_of`) over the TEST
+Running the generator's own flag rule over the TEST
 install gives exactly the 196 candidates. A separate script then went through every place that
 turns a switch on, turns it off or reads it: map pages, common events, troop pages, and scripts.
 A switch passed in bulk when all of these hold:
@@ -319,8 +316,8 @@ A switch passed in bulk when all of these hold:
 
 ### Notes
 
-- The Event Checker's `chest_flags_of` keeps out switch chests that any other event reads, which
-  is how the tour's chests were missed. Its `CHEST_CODES` also counts taking an item as a gift.
+- The generator's flag rule keeps out switch chests that any other event reads, which
+  is how the tour's chests were missed. It also counts taking an item as a gift.
 
 ### party_chests
 
@@ -330,7 +327,7 @@ of (`coop_story_rewards.rbx` `CHESTS`). Reviewed 2026-10-28 against the TEST ins
 
 | | Rows |
 |---|---|
-| Candidates (`fixtures/catchup/generated/party_chests.json`) | 5,223 |
+| Candidates | 5,223 |
 | Confirmed in bulk | 5,180 |
 | Checked by hand | 43 |
 | Fixed | 2 |
@@ -340,8 +337,8 @@ of (`coop_story_rewards.rbx` `CHESTS`). Reviewed 2026-10-28 against the TEST ins
 
 ### How the rows were checked
 
-The game's data was read with Ruby 3.3 and Marshal stubs, the same way the Event Checker reads
-it. Running the Event Checker's own chest rule (`story_rewards.rb`) over the TEST install gives
+The game's data was read with Ruby 3.3 and Marshal stubs. Running the generator's own chest rule
+over the TEST install gives
 exactly the 5,223 candidates, so they come from the same data.
 
 A separate script then checked every row. A row passed in bulk when the map and event exist and
@@ -487,10 +484,10 @@ decision then added 81 of them (see above).
   `key_items`) passes `readEdit` and `readRow` of the relay unchanged, applies as an admin's
   batches with the rows read back equal, and the whole folder seeds at one start.
 - The fixed and added rows carry a `note` with their reason.
-- Generator bugs in the Event Checker:
-  - `story_rewards.rb` `chest?` and `raid_data.rb` `scan_chest` take the first self switch a page
+- Bugs of the generator:
+  - Its chest rules take the first self switch a page
     turns on, not the one that shuts the gift.
-  - `CHEST_CODES` counts item, weapon and armor commands that take things away as gifts.
+  - It counts item, weapon and armor commands that take things away as gifts.
 
 ## Classes
 
@@ -501,15 +498,15 @@ world_catchup_data.rbx). The catch-up gives a row's class to the hero or a roste
 player's or the world's story is past the row's place, and only when `ran` is true.
 
 Checked against the game's own data in the TEST install
-(`Desktop\Monster Girl Quest Paradox\MGQ Paradox Test\Data`), read with Ruby 3.3 and Marshal stubs
-as the Event Checker reads it: every common event, every page of every map event (maps 1-999,
+(`Desktop\Monster Girl Quest Paradox\MGQ Paradox Test\Data`), read with Ruby 3.3 and Marshal stubs:
+every common event, every page of every map event (maps 1-999,
 1000-1999 and 2000+) and every troop page.
 
 ### Counts
 
 | | Rows |
 |---|---|
-| Candidates (fixtures/catchup/generated/class_levels.json) | 2,171 |
+| Candidates | 2,171 |
 | Written (Relay/seed/story/class_levels.json) | 2,079 |
 | Confirmed in bulk | 788 |
 | Checked by hand | 1,192 kept rows at 63 sites, plus the 191 dropped and 99 added rows |
@@ -648,14 +645,14 @@ before the world's log: later, the replay of the world's run that won the prize 
 
 Checked against the game's own data in the TEST install
 (`Desktop\Monster Girl Quest Paradox\MGQ Paradox Test\Data`, untranslated 3.06), read with Ruby 3.3
-and Marshal stubs as the Event Checker reads it: every common event and every page of every map
+and Marshal stubs: every common event and every page of every map
 event (maps 1-999, 1000-1999 and 2000+).
 
 ### Counts
 
 | | Rows |
 |---|---|
-| Candidates (fixtures/catchup/generated/rewards.json) | 1,089 |
+| Candidates | 1,089 |
 | Written (Relay/seed/story/rewards.json) | 888 |
 | Confirmed in bulk | 571 |
 | Checked by hand | 518 (344 kept unchanged at 56 sites, 18 fixed, 156 dropped), plus the 47 added |
@@ -669,7 +666,7 @@ Yamato (fixed) and the 32 tour chests (dropped).
 
 ### How the rows were checked
 
-1. **Regenerated.** The Event Checker's `raid_data.rb` run over the TEST install writes exactly the
+1. **Regenerated.** The generator run over the TEST install writes exactly the
    1,089 candidates (no line differs from world_catchup_data.rbx at 54a0c4ae).
 2. **The command, for every row.** The row's site exists, and its list holds a command that gives
    that skill to Luka (318, actor 1, learn) or that item, weapon or armor (126, 127, 128, gain,
@@ -875,13 +872,13 @@ player's carried them past. Several rows of one item owe the largest amount, not
 
 Checked against the game's own data in the TEST install
 (`Desktop\Monster Girl Quest Paradox\MGQ Paradox Test\Data`, untranslated 3.06), read with Ruby 3.3
-and Marshal stubs as the Event Checker reads it.
+and Marshal stubs.
 
 ### Counts
 
 | | Rows |
 |---|---|
-| Candidates (fixtures/catchup/generated/key_items.json) | 166 |
+| Candidates | 166 |
 | Written (Relay/seed/story/key_items.json) | 153 |
 | Confirmed in bulk | 137 |
 | Checked by hand | 29 (20 kept unchanged at 19 sites, 5 fixed, 4 dropped) |
@@ -893,7 +890,7 @@ and Marshal stubs as the Event Checker reads it.
 
 The same checks as the rewards review (see the [rewards](#rewards) section), with the key item's own rules:
 
-1. `raid_data.rb` over the TEST install writes exactly the 166 candidates.
+1. The generator over the TEST install writes exactly the 166 candidates.
 2. Every row's site holds a command that gives (126, gain) or takes (126, lose) that item with a
    constant amount, the row's amount is the largest of the list's, and the item is a key item or
    an ore (item type 2, description "[Key Item]" or "[Material]").
@@ -991,13 +988,13 @@ is left out for a member who starts another route than the leader's.
 
 Checked against the game's own data in the TEST install
 (`Desktop\Monster Girl Quest Paradox\MGQ Paradox Test\Data`, untranslated 3.06), read with Ruby 3.3
-and Marshal stubs as the Event Checker reads it.
+and Marshal stubs.
 
 ### Counts
 
 | | Rows |
 |---|---|
-| Candidates (fixtures/catchup/generated/event_rewards.json) | 417 (43 skills, 346 companions, 28 items) |
+| Candidates | 417 (43 skills, 346 companions, 28 items) |
 | Written (Relay/seed/story/event_rewards.json) | 417 |
 | Confirmed in bulk | 377 |
 | Checked by hand | 40 (the 28 items, and 12 skills and companions) |
@@ -1007,7 +1004,7 @@ and Marshal stubs as the Event Checker reads it.
 
 ### How the rows were checked
 
-1. **Regenerated.** The Event Checker's `story_rewards.rb` run over the TEST install writes the
+1. **Regenerated.** The generator run over the TEST install writes the
    same SKILLS, ACTORS, ITEMS, SIDED, ROUTE and FINAL as coop_story_rewards.rbx at 79c36f1f.
 2. **Recounted with a script of its own.** Every list of the game outside the chests was read
    again: Luka's learned skills (318, actor 1), the companions brought by party changes (129),
@@ -1069,7 +1066,7 @@ the TEST install's events (`MGQ Paradox Test/Data`) on 2026-10-28.
 
 | | Rows |
 |---|---|
-| Candidates (fixtures/catchup/generated/joins.json) | 664 |
+| Candidates | 664 |
 | Written (Relay/seed/story/joins.json) | 662 |
 | Confirmed in bulk | 551 (553 before the sampling review moved two rows to Fixed) |
 | Checked by hand | 113 |
@@ -1079,12 +1076,12 @@ the TEST install's events (`MGQ Paradox Test/Data`) on 2026-10-28.
 
 ### How the rows were checked
 
-1. The candidates are what the Event Checker's raid_data.rb writes from the TEST install, exactly:
+1. The candidates are what the generator writes from the TEST install, exactly:
    running it again on that install gives the same 664 rows. On the Translated install one command
    index differs (map:1613:18:1, Panty Sensei's join, 15 in TEST and 20 there); the rows keep
    TEST's. The index only orders a join against a removal of the same list, which no translation
    changes.
-2. An independent checker (Ruby over the game's Marshal data, not raid_data.rb's code) confirmed
+2. An independent checker (Ruby over the game's Marshal data, not the generator's code) confirmed
    for every row:
    - the site exists: map, event, page, or common event;
    - the command at `index` adds `persona` (event command 129 or a join script), and it is a
@@ -1185,11 +1182,11 @@ joins have none, by the table's rule.
 
 The companions of the Alice and Ilias choice reach only the players who took that side along in
 Iliasville, and from the Great Decision on follow the route ("MGQ Online row decisions.md",
-decision 12 note). The Event Checker's raid_data.rb (branch fix/choice-companions) reads a
+decision 12 note). The generator reads a
 companion's side from the side switch its list turns on and from the pages that set the keys its
 page reads, and gives the rows on a route a side only where their list reads switches 4 and 5
 before a route sets them anew (map 432 and map 410); the regenerated candidates
-(fixtures/catchup/generated) differ from the earlier ones only in the rows below, which were
+differ from the earlier ones only in the rows below, which were
 changed here the same way, each with a `note`, and in the sides of Micaela-chan, Lucifina-chan
 and Aurora, which this review had fixed already:
 
@@ -1224,7 +1221,7 @@ story_catchup.js `removals`), reviewed row by row against the TEST install's eve
 
 | | Rows |
 |---|---|
-| Candidates (fixtures/catchup/generated/removals.json) | 222 |
+| Candidates | 222 |
 | Written (Relay/seed/story/removals.json) | 222 |
 | Confirmed in bulk | 100 |
 | Checked by hand | 122 |
@@ -1234,7 +1231,7 @@ story_catchup.js `removals`), reviewed row by row against the TEST install's eve
 
 ### How the rows were checked
 
-1. The candidates are what the Event Checker's raid_data.rb writes from the TEST install, exactly.
+1. The candidates are what the generator writes from the TEST install, exactly.
    On the Translated install one command index differs (map:1529:6:1, Raphaela, 296 in TEST and
    300 there); the rows keep TEST's, and the order against her join in the same list (252) holds
    in both.
@@ -1281,7 +1278,7 @@ Every skill the story and its quests teach a companion's persona (Relay/core/sto
 
 | | Rows |
 |---|---|
-| Candidates (fixtures/catchup/generated/lessons.json) | 112 |
+| Candidates | 112 |
 | Written (Relay/seed/story/lessons.json) | 112 |
 | Confirmed in bulk | 102 |
 | Checked by hand | 10 |
@@ -1291,7 +1288,7 @@ Every skill the story and its quests teach a companion's persona (Relay/core/sto
 
 ### How the rows were checked
 
-1. The candidates are what the Event Checker's raid_data.rb writes from the TEST install, exactly
+1. The candidates are what the generator writes from the TEST install, exactly
    (the Translated install gives the same rows).
 2. An independent checker (Ruby over the game's Marshal data) confirmed for every row: the site
    exists; the list teaches `actor` the skill `skill` (event command 318, learn); the skill and
@@ -1335,7 +1332,7 @@ events (`MGQ Paradox Test/Data`) on 2026-10-28.
 
 | | Rows |
 |---|---|
-| Candidates (fixtures/catchup/generated/actor_changes.json) | 81 |
+| Candidates | 81 |
 | Written (Relay/seed/story/actor_changes.json) | 81 |
 | Confirmed in bulk | 78 |
 | Checked by hand | 3 |
@@ -1345,7 +1342,7 @@ events (`MGQ Paradox Test/Data`) on 2026-10-28.
 
 ### How the rows were checked
 
-1. The candidates are what the Event Checker's raid_data.rb writes from the TEST install, exactly
+1. The candidates are what the generator writes from the TEST install, exactly
    (the Translated install gives the same rows).
 2. An independent checker (Ruby over the game's Marshal data) read every script of the row's
    list, its continuation lines joined, and confirmed that `calls` are exactly the list's calls
@@ -1384,7 +1381,7 @@ TEST install and the workspace's "Level Cap milestones.md".
 
 | | Rows |
 |---|---|
-| Candidates (`fixtures/catchup/generated/parts.json`) | 6 |
+| Candidates | 6 |
 | Confirmed in bulk | 0 |
 | Checked by hand | 6 |
 | Fixed | 0 |
@@ -1436,7 +1433,7 @@ still holds what an earlier story step set (`world_catchup_data.rbx` `SETTINGS`)
 
 | | Rows |
 |---|---|
-| Candidates (`fixtures/catchup/generated/settings.json`) | 95 |
+| Candidates | 95 |
 | Confirmed in bulk | 48 |
 | Checked by hand | 47 |
 | Fixed | 7 |
@@ -1446,7 +1443,7 @@ still holds what an earlier story step set (`world_catchup_data.rbx` `SETTINGS`)
 
 ### How the rows were checked
 
-Running the Event Checker's `raid_data.rb` over the TEST install gives exactly the 95 candidates.
+Running the generator over the TEST install gives exactly the 95 candidates.
 A separate script then checked every row against the game data:
 
 - The site exists, and its list sets the row's value: an encounter command (code 136) or a
@@ -1523,7 +1520,7 @@ Neither follows the story, so no row was added.
   sets none of the player's own values whose latest row passed lies on such a step
   (`CatchupLook.Settle`). Once the world passes a later row, that row's value counts again.
 
-### For the generator (`raid_data.rb`, Event Checker)
+### For the generator
 
 - It takes a map's part from its root even where the page asks for the other route (row 73).
 - It marks variables and switches that a later scene of the same visit undoes (rows 26, 32, 40,
@@ -1539,7 +1536,7 @@ the TEST install.
 
 | | Rows |
 |---|---|
-| Candidates (`fixtures/catchup/generated/vehicles.json`) | 23 |
+| Candidates | 23 |
 | Confirmed in bulk | 8 |
 | Checked by hand | 15 |
 | Fixed | 0 |
@@ -1549,7 +1546,7 @@ the TEST install.
 
 ### How the rows were checked
 
-Running the Event Checker's `raid_data.rb` over the TEST install gives exactly the 23 candidates.
+Running the generator over the TEST install gives exactly the 23 candidates.
 A separate script checked every row:
 
 - The site's list puts the row's vehicle on a map. That is a "set vehicle location" command
@@ -1593,7 +1590,7 @@ cap where the gift waits for the story (`world_catchup_data.rbx` `MAKINA`). Revi
 
 | | Rows |
 |---|---|
-| Candidates (`fixtures/catchup/generated/makina.json`) | 29 |
+| Candidates | 29 |
 | Confirmed in bulk | 24 |
 | Checked by hand | 5 |
 | Fixed | 0 |
@@ -1603,7 +1600,7 @@ cap where the gift waits for the story (`world_catchup_data.rbx` `MAKINA`). Revi
 
 ### How the rows were checked
 
-Running the Event Checker's `raid_data.rb` over the TEST install gives exactly the 29 candidates.
+Running the generator over the TEST install gives exactly the 29 candidates.
 A separate script then:
 
 - listed every item of type 2 described as `[Makina]`: the same 29 items (700 to 728). No row
@@ -1633,7 +1630,7 @@ hand.
   Palace 1F (AD), map:1581:44:1 and the conquest copy map:1872:42:1, both at level 72. The row
   names the second, and the level is the same, so it stays.
 
-### For the generator (`raid_data.rb` `read_area`, Event Checker)
+### For the generator
 
 - The area's transfer links use the raw map number, so for maps from 1000 on most links are lost.
   None of the rows' levels changed because of it (725 is held at its cap). A later game update
@@ -1682,7 +1679,7 @@ the leader's story is past it. Reviewed on 2026-10-28 against the game data of t
 
 | | Rows |
 |---|---|
-| Candidates (`fixtures/catchup/generated/side_events.json`) | 19 |
+| Candidates | 19 |
 | Confirmed in bulk | 11 |
 | Checked by hand | 8 |
 | Fixed | 0 |
@@ -1692,7 +1689,7 @@ the leader's story is past it. Reviewed on 2026-10-28 against the game data of t
 
 ### How the rows were checked
 
-Running the Event Checker's `story_rewards.rb` over the TEST install gives exactly the 19
+Running the generator over the TEST install gives exactly the 19
 candidates. A separate script read every page of each row's event again:
 
 - Each page has a side from its conditions (switch 4 or 5), from its map's name, such as "Middle
@@ -1785,7 +1782,7 @@ gifts).
 
 ### How the rows were checked
 
-The game data was read with a Ruby script with Marshal stubs, as the Event Checker does. It
+The game data was read with a Ruby script with Marshal stubs. It
 collected every write and read of every switch and variable: map pages, common events, troop
 pages, page conditions, scripts, the switch commands of Set Move Route (codes 27 and 28) and
 scripts that write a range in a loop. The game's own scripts (Scripts.rvdata2) were searched for
@@ -1862,7 +1859,7 @@ In bulk:
   cutscene maps 746 and 747, whose autorun events go on to maps 728 and 749, and both fight Sonya
   Chaos (troop 870) there, so the row holds 870 too. A relay seeded before keeps the old row until
   an admin changes it.
-- **v1062 and v1339** (`defeatReturns`): derived again by `raid_data.rb`'s rule. Map 33 event 50
+- **v1062 and v1339** (`defeatReturns`): derived again by the generator's rule. Map 33 event 50
   sets v1062 to 4 before Gnosis (troops 672, 673), and her defeat events 3223 and 3224 set 3.
   Common event 9046 sets v1339 to 2 before troop 2157, and defeat event 3954 sets 1. v1140 came
   up too, but another list sets the same step, so it was rightly left out.
@@ -1984,8 +1981,8 @@ until an admin applies these edits.
 
 ### Notes
 
-- The rows come from the review scripts outside the repository (`rows-scratch/keys/build.rb`).
-  They read the reviewed chest tables, so they must run again if those tables change.
+- The rows were derived from the reviewed chest tables, so they must be checked again if those
+  tables change.
 - An admin applies the file in two slices of at most 2,000 edits: 0-1,999 and 2,000-3,754.
 - Once the relay is seeded, the battle server derives the self-switch index from these rows. A
   rough estimate of it (the index's rule in Ruby) shares the self switches of about 18,100 of the
@@ -2094,10 +2091,10 @@ events of the Navy's maps would be shared too.
    derived index shares (all 76 stage pay-outs and 4 of the 5 pick-ups; the Chimera Dryads' gem
    is each player's own without one), and a `shared` row for each of the 11 new world chests. The
    real derivation over the new rows gives the same index as before. The rows were added to this
-   file directly; `rows-scratch/keys/build.rb` does not know them yet.
+   file directly.
 
 ### Notes
 
-- The rows come from the review scripts outside the repository (`rows-scratch/keys/build.rb`),
-  which read the reviewed chest tables. If those change, the scripts must run again.
+- The rows were derived from the reviewed chest tables, so they must be checked again if those
+  tables change.
 - An admin applies the file in one batch (251 edits).

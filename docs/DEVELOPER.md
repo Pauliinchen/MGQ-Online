@@ -36,7 +36,7 @@ Patch/Multiplayer/Scripts/  *.rbx
 ### Trying it out
 
 - **Two games on one PC** can play each other; both go through the real relay as between two homes.
-- **A relay on this PC:** `node Relay/node/server.js` (port 8080; `ADMINS` for admin ids; `MGQ_RELAY_DB=<file>` keeps worlds, saves, mods and trades in SQLite instead of memory). Start the game with `MGQMP_RELAY=ws://127.0.0.1:8080` and the DLL talks to it instead of the live relay, so relay changes can be tried before a deploy.
+- **A relay on this PC:** `node Relay/node/server.js` (port 8080; `ADMINS` for admin ids; `MGQ_RELAY_DB=<file>` keeps worlds, saves and trades in SQLite instead of memory). Start the game with `MGQMP_RELAY=ws://127.0.0.1:8080` and the DLL talks to it instead of the live relay, so relay changes can be tried before a deploy.
 - A development build names itself `0.0.0-dev`: the relay's version check always lets it pass, and it never asks for updates.
 
 ### Tests
@@ -100,7 +100,7 @@ Relay r1 ran as a Cloudflare Worker up to 0.6.6.1 and is frozen there. Its sourc
 | `*.Tests/` | xUnit tests of the project of the same name |
 | `Relay/` | The relay server (Node), see [Relay/README.md](../Relay/README.md) |
 | `BattleServer/` | The battle server: the game's battles without Game.exe, see [BattleServer/README.md](../BattleServer/README.md) |
-| `native/` | The SQLite amalgamation and its build targets |
+| `MGQOnline.Data/native/` | The SQLite amalgamation and its build targets |
 | `package/Multiplayer/` | Static files shipped as they are, the events database among them |
 | `docs/` | This file and the player guide (`GUIDE.md`, `CLASSIC_WORLDS.md`, `RAID_WORLDS.md`, `images/`) |
 
@@ -114,7 +114,7 @@ Multiplayer.dll (win-x86): bridge host + MGQOnline.Game rules + network + files
 relay (Node) -- battle server (Ruby + the game's scripts + MGQOnline.ServerCore.so over Fiddle)
 ```
 
-- **Scripts read and apply; C# decides.** A script reads what only the game knows, hands it to a topic, and carries out the answer with the game's own methods. New logic goes to C#. No script writes or reads a message's text, a network format or a store C# reads; `loader_test.rb` holds a list of the formats that stay inside the game (the bridge's Marshal, copies of game objects, the game's own saves and event scripts, a frozen fight's save field) and fails on others.
+- **Scripts read and apply; C# decides.** A script reads what only the game knows, hands it to a topic, and carries out the answer with the game's own methods. New logic goes to C#. No script writes or reads a message's text, a network format or a store C# reads; the formats that stay inside the game are the bridge's Marshal, copies of game objects, the game's own saves and event scripts, and a frozen fight's save field. No test guards this; reviews check it.
 - **Rules both hosts need** (the battle server runs the same battle scripts) are registered on both through `SharedTopics`, so a script asks them the same way in the game and on the server.
 - **The Mod Framework** owns the interface (components, wheels, text boxes, question box, places, looks), the keyboard, mouse, button capture, running behind other windows, the mod loading stages and updates. MGQ Online builds on it and keeps no input or drawing engine of its own; only `ModFramework.dll` hooks the game's window.
 - **The relay** keeps worlds, the directory, trades, a Raid World's story tracks and boss pools, and routes world room messages it cannot read (sealed per sender). **The battle server** hosts co-op battles the relay hands it, as a stand-in host with no world room of its own.
@@ -144,7 +144,7 @@ relay (Node) -- battle server (Ruby + the game's scripts + MGQOnline.ServerCore.
 
 - RGSS3's Fixnum is 31 bits. The bridge writes larger integers as Bignums (1.9.2 reads a larger `i` wrong), and hashes the scripts compute (the 24-bit list shape) stay below it.
 - `at_exit` never runs (see Logs).
-- The game's Win32API refuses to load an export with more than 16 arguments (`loader_test.rb` checks it).
+- The game's Win32API refuses to load an export with more than 16 arguments.
 - RGSS3 has no Fiddle; the battle server's newer Ruby uses it to load the core.
 - RGSS3's `downcase` and `capitalize` are ASCII-only, so C# copies them (`RubyAscii`) where the scripts compared names before ("Élise" and "élise" stay two names).
 - The game's Ruby reads file names in the system's code page, so the DLL lists the Patch folder's scripts in UTF-8.
@@ -174,7 +174,7 @@ relay (Node) -- battle server (Ruby + the game's scripts + MGQOnline.ServerCore.
 ### Reaching the game
 
 - `core_game_access.rbx` reads and writes what the game keeps private, by key, in one place, so a game update that renames a field is followed in one script. The game's classes get no accessors of the mod's own, since another mod's could clash with them.
-- Hotkeys are defined through the framework and keep their keys in `Player.ini`, since `$game_system.conf` lives in each save. A hotkey is refused while any mod types (`$mgq_text_input`) or the question box is open, so nothing opens under them; while a mod types, a key is a letter typed and no refusal is logged.
+- Hotkeys are defined through the framework and keep their keys in `Player.ini`, since `$game_system.conf` lives in each save. A hotkey is refused while any mod types (`UI.typing?`) or the question box is open, so nothing opens under them; while a mod types, a key is a letter typed and no refusal is logged.
 - The game's cancel as the player bound it, plus Numpad 0, closes every screen of the mod (`UI.cancel?`). Every text box is the framework's `text_field`; a new screen should take it too.
 
 ## The bridge
@@ -209,7 +209,7 @@ The game's events as numbers, built once from the untranslated 3.06 by the gener
 - **Why numbers only:** no name or text is stored, so a translation leaves the database valid. Each list carries a shape, a 24-bit hash over the codes, indents and whole-number parameters of its kept commands, which stays a Fixnum on RGSS3 and changes with a branch, call, troop or variable but not with a translated text. Commands are numbered among the kept commands (`ord`), which a translation leaves where they were.
 - **A list is used only while it matches:** the scripts name a list with its length and shape; a list the database does not hold as the game shows it (a translation's changed branch, another mod's list) is handed over whole and still sorts. `LocalMaps` compares each map file's pages with the database and reads a map a mod changed from the player's own data. Before the scripts hand the fingerprint over, nothing of the database is read.
 - **The fingerprint gate:** the game data fingerprint has one CRC32 per part of the database (actors, items, troops, common events, maps, ...). A mod that changes another part leaves the maps' and common events' tables readable; a part that differs is not read.
-- **Static SQLite:** the public-domain amalgamation is checked in untouched (`native/sqlite/`); every NativeAOT publish compiles it into the binary, so no SQLite library ships and no compiled library is ever checked in. To move to another release, replace both files from sqlite.org's amalgamation zip. The flags leave out WAL, extensions and shared cache and keep temporary tables in memory, since a sandboxed child may write no file.
+- **Static SQLite:** the public-domain amalgamation is checked in untouched (`MGQOnline.Data/native/sqlite/`); every NativeAOT publish compiles it into the binary, so no SQLite library ships and no compiled library is ever checked in. To move to another release, replace both files from sqlite.org's amalgamation zip. The flags leave out WAL, extensions and shared cache and keep temporary tables in memory, since a sandboxed child may write no file.
 - **Read-only and immutable** (`file:...?immutable=1&mode=ro`): no lock and no journal, so it works in a read-only game folder, under Wine and in the sandbox. A missing file, another schema or a non-database makes the store foreign: it opens, says why, and answers nothing.
 - **The relay mirror** `story.db` holds the game's copy of the relay's story mapping beside it. It is never swapped as a file, since a file attached cannot be replaced on Windows: the tables are emptied and filled in one transaction. A torn file is deleted and made anew, never repaired; a folder the game may not write leaves the store without a mirror. It is in no manifest, so an update never removes it.
 - **Regenerating:** whenever the game data, the schema or a generator rule changes, build and commit again, then check:
@@ -233,7 +233,7 @@ A net10.0 library, AOT-clean, BCL plus `Bridge` and `Data` only, no state in sta
 - **Battle lines** (`Battles/Wire/`): the codec of live battle messages. It reads with the same refusals Ruby did (512 KB, 8 deep) and gives nil for a token naming nothing the reading game has; the script then finds each id within its own tables and each symbol among those the game already has, never made from the peer's text.
 - **Builds** (`Actors/`): characters as text for co-op and PvP. Builds are live texts only, never stored. Reading another game's text (field counts, ranges, ids) is C#'s.
 - **Telling, story pages, gather calls, story scene, flow guard, choices, catch-up, story tracks, raid pools and bosses, co-op matchmaking, trades, chat, HUD, overview, forms, worlds**: each folder holds the rules of the feature section of the same name below.
-- `StoryIds` is the one table of the story's ids (markers 1001 and 1141-1143, the Great Decision's step, routes, clears, castle bosses, places). `StoryIdsTests` fails on such an id written as a number or key in a script, relay module or C# file outside the table; the relay reads them from `Relay/core/story_ids.json`, written by the generator.
+- `StoryIds` is the one table of the story's ids (markers 1001 and 1141-1143, the Great Decision's step, routes, clears, castle bosses, places). No story id is written as a number or key in a script, relay module or C# file outside the table (no test guards this; reviews check it). The relay reads them from `Relay/core/story_ids.json`, written by the generator; `StoryIdsTests` fails while that copy differs from what the generator writes.
 
 ## Worlds
 
@@ -280,7 +280,7 @@ A world is a lasting place up to 32 games play in at once. There is no host: eve
 
 ### Updates
 
-The Mod Framework finds and installs every mod's updates, this one's too (website mod `mgq-online`, tagged Title). The relay alone names the release the games must play, newer or a step back; then *Multiplayer* on the title, a Discord invite and the entry after a restart ask the framework for it instead of opening the world screen, and the framework restarts the game into the world screen. The DLL passes its own version (`:have`), since the framework reads a changed copy's version as unknown. A player whose game cannot start runs the framework's `Update.bat`.
+The Mod Framework finds and installs every mod's updates, this one's too (website mod `mgq-online`, tagged Title). The relay alone names the release the games must play, newer or a step back; then *Multiplayer* on the title, a Discord invite and the entry after a restart ask the framework for it instead of opening the world screen, and the framework restarts the game into the world screen. The DLL passes its own version (`:have`), since the framework reads a changed copy's version as unknown. MGQ Online has no updater of its own; a player whose game cannot start extracts the release by hand.
 
 ## World mods
 
@@ -369,7 +369,6 @@ Every event page is sorted as it starts, since the answer depends on the game's 
   - A talk or travel with story only behind a choice is watched command by command: at the first command that moves the story on, the leader tells it as story and a member's game ends it. The Great Decision and 216 other pages hold their transfer behind the same choice as their story.
 - A sort the DLL cannot give plays as a talk, logged once.
 - **Chests** are each player's own; in a Classic party opening one opens it for the party by replay (see [Runs handed over by replay](#runs-handed-over-by-replay)).
-- The event checker (MGQ-Paradox-Event-Checker) measures what every page does in the game and compares it with the generator's sorting.
 
 ### Story scenes together
 
@@ -572,7 +571,8 @@ A co-op battle of two or more players goes to the relay's battle server where th
 
 ## Interface
 
-- **The framework owns it:** looks, places (arranged with the left Alt), text boxes, question box, wheels and menus. Settings an older release kept in `Player.ini` were handed to the framework once on the first start after the update.
+- **The framework owns it:** looks, places (arranged with the left Alt), text boxes, question box, notices, wheels and menus. The look and box places 0.6 kept in `Player.ini` are not carried over (user decision 2026-11-07): MGQ Online's boxes start in their default places once, and every UI id carries the `mgq_online_` prefix.
+- **Avatars:** the Leader HUD and the World overview's heads and reading pane show characters through the framework's `avatar`, so MGQ Online keeps no face or sprite drawing of its own.
 - **Hotkeys:** action wheel B, emote wheel E, chat T, World overview F11, party box size M, Leader HUD size H, join battle J, bug report F3; accept and decline invites are the framework's Y and N.
 - A wheel's choice runs in the next frame, so its confirm never reaches the screen it opens.
 - The mod's timers count frames; a countdown converts with `MGQ_MpActions.lapse_in`. The emote cooldown counts the bridge's frames in C# (`Emotes`), so a load or new game does not end it.

@@ -257,16 +257,14 @@ internal static partial class ScriptTexts
         int.TryParse(group.ValueSpan, NumberStyles.None, CultureInfo.InvariantCulture, out int number) ? number : int.MaxValue;
 
     /// <summary>
-    /// A script that moves the player at once, as the game's post-defeat processing does: map, x and y
-    /// (raid_freeze_data.rb's FORCED_TRANSFER).
+    /// A script that moves the player at once, as the game's post-defeat processing does: map, x and y.
     /// </summary>
     /// <returns>The pattern.</returns>
     [GeneratedRegex(@"forced_transfer\([ \t\r\n\f\v]*([0-9]+)[ \t\r\n\f\v]*,[ \t\r\n\f\v]*([0-9]+)[ \t\r\n\f\v]*,[ \t\r\n\f\v]*([0-9]+)[ \t\r\n\f\v]*\)", RegexOptions.CultureInvariant)]
     private static partial Regex ForcedTransferCall();
 
     /// <summary>
-    /// A switch a script reads, such as "$game_switches[2688]" or the choice condition "s[7102]"
-    /// (story_rewards.rb's SWITCH_IN_SCRIPT).
+    /// A switch a script reads, such as "$game_switches[2688]" or the choice condition "s[7102]".
     /// </summary>
     /// <returns>The pattern.</returns>
     [GeneratedRegex("(?:(?<![A-Za-z0-9_])s|switches)\\[([0-9]+)\\]", RegexOptions.CultureInvariant)]

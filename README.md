@@ -20,18 +20,18 @@ Play Monster Girl Quest! Paradox RPG together with friends over the internet, wi
 - **Turn off other mods:** a world can be played with its own mods and nothing else. Entering it loads only the world's mods, and yours come back when you leave the world.
 - **Parties:** up to four players play the leader's story together and share one team's worth of companions. Teleport to any party member once they allow it, or to the leader at once.
 - **Co-op battles:** party members on the same map join each other's battles, each commanding their own characters.
-- **Duels and PvP battles:** your team against a friend's, live, inside a world.
+- **Duels:** your team against a friend's, live, inside a world.
 - **Trading:** swap items, equipment, stones and gold with a player on your map; a disconnect never loses or copies anything.
-- **Mods:** install, update and remove mods of the [website](https://mgqonline.org/mods) from the title screen, through the Mod Framework the mod runs on.
-- **Your interface:** three looks for the mod and the game alike, Monarch, Legacy and the game's own window color, and every box of the mod moves and resizes while you hold the left **Alt**.
+- **World mods:** a world names the mods it needs, in the versions its creator has, and entering it installs them from the [website](https://mgqonline.org/mods) through the Mod Framework.
+- **Your interface:** the mod is drawn by the Mod Framework and wears its look, and every box of the mod moves and resizes while you hold the left **Alt**. The Leader HUD and the World overview show your characters' pictures.
 
 Worlds, Raid Worlds, parties and co-op battles are a **prototype**: expect bugs, and please [report them](https://github.com/Pauliinchen/MGQ-Online/issues/new?template=bug_report.yml).
 
 ## Requirements
 
-- **Monster Girl Quest! Paradox RPG 3.06**, untranslated or with the English or Russian translation. Everyone needs the same game version and the same version of this mod. A translated and an untranslated game can play together; each shows battles in its own language.
+- **Monster Girl Quest! Paradox RPG 3.06** on Windows, or on Linux with Wine or Proton, untranslated or with the English or Russian translation. Everyone needs the same game version and the same version of this mod. A translated and an untranslated game can play together; each shows battles in its own language. The mod does not run on JoiPlay.
 - **The community's mod loader:** the `Patch.rb` from [*Patch.rb (enable Type 1 mods)*](https://mgq.miraheze.org/wiki/Paradox_mods#Patch.rb_(enable_Type_1_mods)) on the MGQ wiki, in your `Patch` folder. The Russian translation brings its own `Patch.rb`, which loads the mod too: keep it and skip the wiki one.
-- **The [Mod Framework](https://github.com/Pauliinchen/MGQ-Mod-Framework)**, from the [website](https://mgqonline.org/mods): the mod runs on it, and it loads your other mods too. Its *Options → Mods* binds other hotkeys and shows which options a world sets. Without it the game says so as it starts, and the mod stays off.
+- **The [Mod Framework](https://github.com/Pauliinchen/MGQ-Mod-Framework)** 0.1.0 or later, from the [website](https://mgqonline.org/mods): the mod runs on it, and it installs and updates the mod. The mod's settings and hotkeys are in its *Options → Mods*. Without it the game says so as it starts, and the mod stays off.
 
 Optional:
 
@@ -40,15 +40,14 @@ Optional:
 
 ## Install
 
-1. Install the Mod Framework first: download it from the [website](https://mgqonline.org/mods), close the game and extract it into the folder that contains `Game.exe`. You then have `!Mod_Framework.rb` and a `Mod_Framework` folder in your `Patch` folder. It loads your other mods too, also those that keep their scripts in a folder inside `Patch`.
-2. Download `MGQ-Online-<version>.zip` from the [latest release](https://github.com/Pauliinchen/MGQ-Online/releases/latest).
-3. Close the game and extract the zip into the folder that contains `Game.exe`.
+1. Install the Mod Framework first: download it from the [website](https://mgqonline.org/mods), close the game and extract it into the folder that contains `Game.exe`. You then have `!Mod_Framework.rb` and a `Mod_Framework` folder in your `Patch` folder.
+2. Install *Monster Girl Quest! Online* with the Mod Framework: start the game and find it in *Browser* in the Mods box of the title screen. Or download `MGQ-Online-<version>.zip` from the [latest release](https://github.com/Pauliinchen/MGQ-Online/releases/latest), close the game and extract the zip into the folder that contains `Game.exe`.
 
 You then have `Multiplayer.rb` in your `Patch` folder, and next to it a `Multiplayer` folder with the rest of the mod; your name and worlds go there too. The logs go into the `Logs` folder of the game folder.
 
 While the mod is installed, the game keeps running when its window is in the background. A gamepad does nothing meanwhile.
 
-**Update:** the Mod Framework counts the updates waiting on *Browser* in the title's Mods box and installs them, this mod's too. When a new release is needed, *Multiplayer* on the title screen offers it, as does the title after the server turned your version away in a world; until then worlds stay off. The framework closes the game, installs the release, shows what's new and starts the game again in the Multiplayer menu; under Wine and Proton too. If the game cannot start, run `Update.bat` in `Patch\Mod_Framework`. Your name, hotkeys, favourites and worlds are kept.
+**Update:** the mod has no updater of its own; the Mod Framework updates it like any mod of the website. When the server needs a newer release, *Multiplayer* on the title screen asks for it, as does the title after the server turned your version away in a world; until then worlds, duels and trades stay off. *Update and restart* installs the release and starts the game again in the Multiplayer menu, under Wine and Proton too. Your name, hotkeys, favourites and worlds are kept. If the game cannot start after an update, download the release again and extract it over the old one.
 
 **Uninstall:** close the game and delete `Multiplayer.rb` and the `Multiplayer` folder in `Patch`. Keep `Patch\Multiplayer\Worlds` if you want to play your worlds again later. The Mod Framework stays for your other mods.
 
@@ -67,17 +66,17 @@ While the mod is installed, the game keeps running when its window is in the bac
 | **T** | Chat: **/g** everyone, **/m** your map, **/p** your party, **/w** one player, **/help** |
 | **E** | Emote wheel |
 | **F11** | World overview, in a world and in single player |
-| **Y** / **N** | Accept / decline the first invite at the top left, or answer a question box |
+| **Y** / **N** | Accept / decline the first invite among the notices, or answer a question box |
 | **M** | Make the party box small or full; in a raid boss battle, shrink the boss's HP bar to the bars alone or back |
 | **H** | Make the Leader HUD at the top left small or large |
 | **J** | Join the battle of a player next to you in a Raid World, fight a raid boss alongside a full boss battle, or fight a raid boss again where it beat you |
 | **F3** | Report a bug, with a screenshot and your logs, anywhere but the title and game over screens |
 
-Rebind them in *Options → Mods → MGQ Online Hotkeys*, Y and N in *Mod Framework Hotkeys*; the mod's other options are in *MGQ Online Settings*.
+Rebind them in *Options → Mods → MGQ Online Hotkeys*, Y and N in *Mod Framework Hotkeys*. The mod's settings are in *Options → Mods → MGQ Online Settings*, those for single player in *MGQ Online SP*.
 
 ## Documentation
 
-- [Player guide](docs/GUIDE.md): worlds, parties, co-op battles, duels, trading and PvP battles in full, and [troubleshooting](docs/GUIDE.md#troubleshooting).
+- [Player guide](docs/GUIDE.md): worlds, parties, co-op battles, duels and trading in full, and [troubleshooting](docs/GUIDE.md#troubleshooting).
 - World types: [Classic Worlds](docs/CLASSIC_WORLDS.md), where each party plays its leader's story, and [Raid Worlds](docs/RAID_WORLDS.md), with the world's story, catching up and every raid boss.
 - [Developer notes](docs/DEVELOPER.md): building, testing and how the mod works inside.
 - [Relay](Relay/README.md): the server the games meet at, and its protocol.

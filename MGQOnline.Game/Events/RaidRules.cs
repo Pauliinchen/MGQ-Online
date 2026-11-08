@@ -16,8 +16,7 @@ using MGQOnline.Game.Events.Data;
 namespace MGQOnline.Game.Events;
 
 /// <summary>
-/// The hand-written rules the raid freeze reads the game's story battles by, as the event checker's
-/// raid_freeze_data.rb keeps them.
+/// The hand-written rules the raid freeze reads the game's story battles by.
 /// </summary>
 /// <remarks>
 /// They move into the Raid Designer once its redesign owns the raid rules, so they stay in this one class.

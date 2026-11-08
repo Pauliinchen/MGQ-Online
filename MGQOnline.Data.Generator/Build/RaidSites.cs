@@ -19,8 +19,7 @@ using MGQOnline.Game.Story;
 namespace MGQOnline.Data.Generator.Build;
 
 /// <summary>
-/// Derives what the raid freeze reads of the story's battles as the event checker's
-/// raid_freeze_data.rb does, for every troop rather than the boss troops alone: which battles are
+/// Derives what the raid freeze reads of the story's battles, for every troop: which battles are
 /// story sites, the troops each side fights in the other's stead, how the story enters the battles
 /// on cutscene maps, and what the game's post-defeat processing writes. Troop pages hold no sites.
 /// </summary>

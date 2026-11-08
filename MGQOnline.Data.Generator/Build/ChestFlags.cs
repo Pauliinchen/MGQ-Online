@@ -14,7 +14,7 @@ using MGQOnline.Game.Events.Data;
 namespace MGQOnline.Data.Generator.Build;
 
 /// <summary>
-/// Finds the chest flags as story_rewards.rb's chest_flags_of does: the switches only pages that
+/// Finds the chest flags: the switches only pages that
 /// look like chests turn on, as a chest's record of its own, such as "Initial Machine" (2045); and
 /// the switches a chest notes itself opened in, which only such chests turn on and nothing but
 /// their own events reads. A chest that gives a story item notes no flag, since its switch tells

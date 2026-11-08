@@ -153,14 +153,14 @@ internal static partial class IdFlags
 
     /// <summary>
     /// The descriptions that tell key items and ores from the other items of the key item type:
-    /// story_rewards.rb's KEY_ITEM_TAGS, with 【貴重品】 and 【素材】, the untranslated game's tags.
+    /// [Key Item] and [Material], and 【貴重品】 and 【素材】, the untranslated game's tags.
     /// </summary>
     /// <returns>The pattern.</returns>
     [GeneratedRegex(@"\A(?:\[(?:Key Item|Material)\]|【(?:貴重品|素材)】)", RegexOptions.CultureInvariant)]
     private static partial Regex KeyItemTag();
 
     /// <summary>
-    /// The note tag of an enemy's level, as raid_data.rb reads it for the Makina.
+    /// The note tag of an enemy's level, read for the Makina.
     /// </summary>
     /// <returns>The pattern.</returns>
     [GeneratedRegex(@"<逃走レベル[ \t\r\n\f\v]?([0-9]+)>", RegexOptions.CultureInvariant)]

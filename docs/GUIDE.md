@@ -25,51 +25,39 @@ Everything Monster Girl Quest! Online does, for players. To install the mod, see
 | **T** | Opens the chat. |
 | **E** | Opens the emote wheel. |
 | **F11** | Opens the World overview, in a world and in single player. |
-| **Y** / **N** | Accepts / declines the first invite in the notification box, and answers a question box (see [Notifications](#notifications)). |
+| **Y** / **N** | Accepts / declines the first invite among the notices, and answers a question box (see [Notices](#notices)). |
 | **M** | Makes the party box small or full. In a raid boss battle, shrinks the boss's HP bar to the bars alone, without its title and the names, or back. |
 | **H** | Makes the Leader HUD at the top left small or large (see [Interface](#interface)). |
 | **J** | Joins the battle of a player next to you in a Raid World, fights a raid boss alongside a full boss battle, or fights a raid boss again where it beat you, while the prompt below your character shows. |
 | **F3** | Opens the bug report, with a screenshot taken at the press. Works anywhere but the title and game over screens: in a menu it opens at once, in a battle after the battle, and on a busy map once you're free. |
 
-This guide names the default hotkeys. To bind others, open *Options → Mods → MGQ Online Hotkeys*, confirm the hotkey's row (*Action Wheel*, *Chat*, *World Overview*, *Emote Wheel*, *Party Box Size*, *Leader HUD Size*, *Join Battle* or *Report a Bug*; *Accept Notification* and *Decline Notification* are under *Mod Framework Hotkeys*, since they answer the question boxes of every mod) and press the new key; **Esc** keeps the old one. Keys you bound to Accept and Decline before this version move there by themselves.
+This guide names the default hotkeys. To bind others, open *Options → Mods → MGQ Online Hotkeys*, confirm the hotkey's row (*Action Wheel*, *Chat*, *World Overview*, *Emote Wheel*, *Party Box Size*, *Leader HUD Size*, *Join Battle* or *Report a Bug*) and press the new key. *Accept Notification* and *Decline Notification* are the Mod Framework's, under *Mod Framework Hotkeys*, since they answer the notices and question boxes of every mod.
 
-- Keys the game uses itself can't be bound: the arrows, Enter, Space, Esc, Z, X, Shift, Ctrl, A, S, D, Q, W, Page Up, Page Down, numpad 0, 2, 4, 6 and 8, F1, F2, F5 to F9 and F12. Neither can a key another hotkey already uses.
+- The keys that can't be bound are listed in the [Mod Framework's guide](https://github.com/Pauliinchen/MGQ-Mod-Framework/blob/main/docs/GUIDE.md#hotkeys). Neither can a key another hotkey already uses.
 - Your hotkeys are kept in `Patch\Multiplayer\Player.ini`, so they hold in every save and every world, and the texts in the game name the hotkeys you bound.
 
 ## Interface
 
-**Look.** *Options → Mods → Mod Framework → Interface Look* sets the colors of every box, frame and window of the mod and of the game's own windows, for every mod built on the Mod Framework alike:
-
-- **Monarch** (the default): dark maroon with a gold edge in a black rim, gold titles and dark gold tabs, the look of the raid boss bar.
-- **Legacy**: black glass with a thin grey edge and grey tabs, the look the mod had before.
-- **Game's Default**: the game's own windows in the game's *Window Color* (*Options → Window Color*), and the mod's boxes in the same colors. A change of the Window Color shows at once.
-- **Same in every save.** The look, *Look on Game Windows* and the game's *Window Color* are kept for the whole install (in the Mod Framework's settings), not in each save: once you set a Window Color in *Options*, every save and new game shows it.
-
-With Monarch or Legacy the game's Window Color has no effect. *Look on Game Windows* (On by default) turns this off: with Off the game's own windows keep the game's Window Color, and only the mod's windows and boxes wear the look. The raid boss bar's red HP stays red in every look.
+Every screen, box and wheel of the mod is drawn by the Mod Framework, so it wears the look you pick in *Options → Mods → Mod Framework → Interface Look* and works with the mouse as the [Mod Framework's guide](https://github.com/Pauliinchen/MGQ-Mod-Framework/blob/main/docs/GUIDE.md#interface) says. The raid boss bar's red HP stays red in every look.
 
 **Closing.** Every screen, box, wheel and question of the mod closes with the game's cancel key as you bound it in *F1* (**X** and **Esc** unless you changed them) and with numpad **0**, Num Lock on or off; the hints name the key you bound. While you type into a text box, **Esc** and numpad **0** close it, and a letter you bound to cancel types its letter.
 
-**Scrolling.** The mouse wheel scrolls the list or text it points at: the world list and its choices, the players, mods and description boxes, the mod picker, the trade offers and your bag, the open chat log (three rows a notch), a description you type, and every page of the World overview. A thin scrollbar shows beside each of them while it holds more than fits.
+**Scrolling.** The mouse wheel scrolls the list or text it points at: the world list and its choices, the players, mods and description boxes, the mod picker, the trade offers and your bag, the open chat log, a description you type, and every page of the World overview. A thin scrollbar shows beside each of them while it holds more than fits.
 
-**Moving and resizing.** Hold the left **Alt** and every box of the mod you can move gets a white outline with its name, and the screen names the controls at its bottom:
-
-- Drag inside a box to move it.
-- Drag its edge or corner to resize it. Some boxes only change their width, since their height follows what they show.
-- Double-click a box to put it back where it starts.
+**Moving and resizing.** Hold the left **Alt** to move and resize the mod's boxes, as for every mod on the Mod Framework: drag inside a box to move it, drag its edge or corner to resize it, and double-click it to put it back where it starts. Some boxes only change their width, since their height follows what they show.
 
 **Leader HUD.** On the map, the top left shows your Formation Leader: their name and level, their HP and MP, and three thin bars with how far they are to their next base, job and race level. It shows in single player too.
 
 - *Options → Mods → MGQ Online Settings → Leader HUD* turns it **On** (the default) or **Off** inside worlds; *MGQ Online SP → Leader HUD* does the same in single player.
 - *Leader HUD Size* picks **Large** (the default), with their face and the numbers inside the HP and MP bars, or **Small**, with their map sprite and the bars alone. **H** switches between them on the map.
 - Hold the left **Alt** and drag it to move it, like the other boxes.
-- It hides while a message shows at the top of the screen. The map's name, a medal just won and the notification box move below it while it sits at the top left.
+- It hides while a message shows at the top of the screen. The map's name and a medal just won move below it while it sits at the top left.
 
-The boxes you can move: the chat (on the map, in battles and in shops, the casino and trades, each its own place), the Leader HUD, the notification box, the party box, the world status lines, the World overview, the raid boss bar, the waiting box of a co-op battle, the question and message boxes, and the list box of the world screen. Things that follow a character (names, bubbles, wheels, the bar above a raid boss) stay with it.
+The boxes you can move: the chat (on the map, in battles and in shops, the casino and trades, each its own place), the Leader HUD, the party box, the world status lines, the World overview, the raid boss bar, the waiting box of a co-op battle and the list box of the world screen. Things that follow a character (names, bubbles, wheels, the bar above a raid boss) stay with it.
 
 - A box never gets smaller than it needs to show everything it holds, and never leaves the screen.
-- While **Alt** is held, the mouse only moves and resizes; clicks don't reach the boxes.
-- *Options → Mods → Mod Framework → Interface Positions* says *Moved* while any box is moved; pick *Default* to put every box back, those of other mods too.
-- The look and the places are kept in the Mod Framework's settings, so they hold in every save and every world, and a world that sets its mods' options never changes them. The first start after the update takes your look, Window Color and places over from `Patch\Multiplayer\Player.ini`.
+- *Options → Mods → Mod Framework → Interface Positions → Default* puts every box back, those of other mods too.
+- The look and the places are kept in the Mod Framework's settings, so they hold in every save and every world, and a world that sets its mods' options never changes them. The look and places of earlier versions of this mod are not carried over: the boxes start in their first places once, and you pick your look again.
 
 ## Single player
 
@@ -85,11 +73,13 @@ They are kept in `Patch\Multiplayer\Player.ini`, so they hold in every save.
 
 ## Mods
 
-The [Mod Framework](https://github.com/Pauliinchen/MGQ-Mod-Framework), which MGQ Online runs on and you install first (see the [README](../README.md#install)), installs, updates and removes the mods of the [website](https://mgqonline.org/mods) from the title screen. In the Mods box left of the title commands, *Browser* lists them and counts the updates waiting, *List* turns your mods on and off, and *Configuration* sets their options.
+MGQ Online needs the [Mod Framework](https://github.com/Pauliinchen/MGQ-Mod-Framework), which you install first (see the [README](../README.md#install)). The framework installs, updates and removes the mods of the [website](https://mgqonline.org/mods), MGQ Online too, which has no updater of its own; its [guide](https://github.com/Pauliinchen/MGQ-Mod-Framework/blob/main/docs/GUIDE.md) tells how. MGQ Online's settings and hotkeys are in *Options → Mods*: *MGQ Online Settings*, *MGQ Online SP* and *MGQ Online Hotkeys*.
+
+When the server needs a newer release of MGQ Online, the mod asks the framework for it: on the title screen as you pick *Multiplayer*, and at the title after the server turned your version away in a world. *Update and restart* installs it and starts the game again in the Multiplayer menu. Until you update, worlds, duels and trades stay off.
 
 ## Worlds
 
-Pick **Multiplayer** below *Continue* on the title screen. The first time, the game asks for the name the others see, unless the Discord mod knows yours. Names and passwords are typed on the keyboard; with a gamepad, the game's letters appear.
+Pick **Multiplayer** below *Continue* on the title screen; it is greyed while the mod cannot run, and the log says why. The first time, the game asks for the name the others see, unless the Discord mod knows yours. Names and passwords are typed on the keyboard; with a gamepad, the game's letters appear.
 
 Each world keeps its own saves, Library, medals and affection in `Patch\Multiplayer\Worlds`, so your own game stays untouched. Going back to the title screen leaves the world.
 
@@ -158,13 +148,13 @@ The creator can change Max Players, Mods, *Shared Mod Settings*, *Turn off other
 - **Hidden worlds:** the creator copies the id with *Copy the world id* and sends it. The others pick *Add a hidden world* and type or paste it (Ctrl+V); **Enter** adds it, and the cursor lands on the world in their list ("\<name> was added to your list. Confirm to enter it."). *Remove from my list* takes it off again as long as you never entered it. Your game keeps the 50 worlds you added last.
 - **Favourites:** *Mark as a favourite* puts a world at the top of your list.
 - Your favourites and the hidden worlds you added are kept in `Patch\Multiplayer\Player.ini`.
-- **Taking a save home:** *Copy my latest save to my game* on a world you've played, or *Copy to my game* in the menu while you're in it, copies that world's latest save into the first free slot of your own saves. Your own Library, medals and affection stay as they are.
+- **Taking a save home:** *Copy my latest save to my game* on a world you've played, or *Copy to my game* in the menu while you're in it (greyed until the world has a save of yours), copies that world's latest save into the first free slot of your own saves. Your own Library, medals and affection stay as they are.
 - **Deleting your saves:** *Delete my saves of it* removes your saves of a world from this PC. You'd start anew there, and need its password again.
 - **The creator** can remove a player, who can then no longer enter, or delete the world for everyone. MGQ Online's admins can edit and delete any world.
 
 ### Mods of a world
 
-*Mods* in the create or edit form opens a list of the mods in your `Patch` folder, all unlisted at first. The mod loader, this mod and the Mod Framework aren't in it.
+*Mods* in the create or edit form opens a list of the mods in your `Patch` folder under *Your mods*, all unlisted at first, and the mods added by name under *Added by name*. The mod loader, this mod and the Mod Framework aren't in it.
 
 - **Enter** or a click on a mod lists or unlists it. *List all your mods* at the top lists every one at once, and then *Unlist all your mods* unlists them again.
 - Each mod has two buttons at the right, under the columns *Required* and *Essential*, reached with the right arrow or a click: the red **!** makes it required, the orange **?** essential. A filled button shows how a mod is named; pressing it again makes the mod only listed.
@@ -172,39 +162,40 @@ The creator can change Max Players, Mods, *Shared Mod Settings*, *Turn off other
 | Mod is | Meaning |
 |---|---|
 | Listed | Only tells the players; keeps nobody out. |
-| Required | A game needs a script `Name.rb` in its `Patch` folder, in the world's version, to enter. Case, spaces, underscores and hyphens don't matter. Shows first: green when you have the world's version, gold when yours is another, red when you don't have it. |
+| Required | A game needs the mod, in the world's version, to enter. Its name matches a script `Name.rb` in the `Patch` folder or the mod's name on the website; case, spaces, underscores and hyphens don't matter. Shows first: green when you have it, gold when yours differs from the world's, red when you don't have it. |
 | Essential | For mods that are data files without a script. Keeps nobody out; shows in gold. |
 
-- *Add a mod by name* names a mod you don't have yourself, such as a mod of data files: a *Name* field opens under the list, **Enter** adds the name you typed, **Esc** or numpad **0** goes back. Such a mod stays in the list when unlisted; **Del** or the *Remove* button removes it.
+- *Add a mod by name* names a mod you don't have yourself, such as a mod of data files: a *Name* field opens under the list, **Enter** adds the name you typed, **Esc** or numpad **0** goes back. Such a mod stays in the list when unlisted; the *Remove* button at the bottom, or *Remove* in its row's menu (a right click, the Menu key, or confirm held on a gamepad), removes it.
 - The mods take 16,000 characters at most; the top right of the list says when a change would pass that. The cancel key, numpad **0** or a click outside the list goes back to the form, which shows them as the world keeps them: `!` in front of a required mod, `?` in front of an essential one.
 
-The details show each mod in a box of its own, as many as fit the row, and count the rest in a last box.
+The details show the mods as chips in their colors, as many as fit the row, and a last chip counts the rest.
 
-**Same version for everyone.** MGQ Online keeps a list of mods, with each one's current version.
+**The creator's versions.** A world needs the versions of its required mods its creator has installed. They are written with the world when its creator creates or edits it: for a mod of the [website](https://mgqonline.org/mods) its version there, for any other mod the creator's copy of its script. A creator who updated a mod saves the world again with *Edit the world* to pass the new version on.
 
-- When you enter a world, each required mod is compared with that list. If one is missing, off or another version, the Mod Framework's dialog *Mods for <world>* names what happens to each (install, update, change or turn on) and its first button, such as *Install and enter*, fetches the world's version, checks every file, puts it into your `Patch` folder and enters the world, the mod loading as you do. Only a mod that runs already, such as one that changes the title screen, needs the game to start again first, which happens by itself and enters the world; a world you never entered asks for its password again then. A mod only its author has is named in the dialog: put it into your `Patch` folder yourself and enter again. *Back* keeps you on the world screen.
-- A required mod the list doesn't know is compared with the creator's copy. If yours differs, get the creator's version from the mod's author; nothing downloads it for you.
+- When you enter a world, each required mod is compared with the creator's version. If one is missing, off or another version, the Mod Framework's dialog *Mods for <world>* names what happens to each (install, update, change or turn on) and its first button, such as *Install and enter*, fetches the world's version, checks every file, puts it into your `Patch` folder and enters the world, the mod loading as you do. Only a mod that runs already, such as one that changes the title screen, needs the game to start again first, which happens by itself and enters the world; a world you never entered asks for its password again then. A mod only its author has is named in the dialog: put it into your `Patch` folder yourself and enter again. *Back* keeps you on the world screen.
+- A required mod the website doesn't have is compared with the creator's copy. If yours differs, get the creator's version from the mod's author; nothing downloads it for you.
 - A new version only reaches players the next time they enter.
+- A mod the creator had no version or copy of, such as one added by name, only needs to be installed and on.
 
-**The creator's settings.** With *Shared Mod Settings* ticked in the create or edit form, or switched *On* in *Options → Mods → MGQ Online Settings → Shared Mod Settings* while the creator plays in the world, the creator's options of the world's mods, required or listed, are the world's settings. Every player in the world gets them at once, and again whenever the creator changes an option; the notification box says what the world sets, and the menu shows those options greyed out as set by the world. Every player sees the row, but only the creator can switch it. Hotkeys and other personal options stay yours, and your own saves keep your own settings. MGQ Online's admins can change a world's settings too; every player in the world is told what changed.
+**The creator's settings.** With *Shared Mod Settings* ticked in the create or edit form, or switched *On* in *Options → Mods → MGQ Online Settings → Shared Mod Settings* while the creator plays in the world, the creator's options of the world's mods, required or listed, are the world's settings. Every player in the world gets them at once, and again whenever the creator changes an option; a notice says what the world sets, and the menu shows those options greyed out as set by the world. Every player sees the row, but only the creator can switch it. Hotkeys and other personal options stay yours, and your own saves keep your own settings. MGQ Online's admins can change a world's settings too; every player in the world is told what changed.
 
 ### Turning off other mods
 
-A world with *Turn off other mods* is played with the mods it names and nothing else. When you enter it, the Mod Framework loads only the mods the world names, whether listed, required or essential, and those MGQ Online's admins mark **personal**; the rest of your mods stay off until you leave the world. Nothing is moved in your `Patch` folder, and your Mods screen keeps your choices. This mod and the mod loader always stay on.
+A world with *Turn off other mods* is played with the mods it names and nothing else. When you enter it, the Mod Framework loads only the mods the world names, whether listed, required or essential, and those the website marks **personal**; the rest of your mods stay off until you leave the world. Nothing is moved in your `Patch` folder, and your Mods screen keeps your choices. This mod and the mod loader always stay on.
 
-- **Personal mods** stay on in every world, named or not, such as mods that only change how the game looks. MGQ Online's admins decide which mods are personal.
-- **Mods that run from the start of the game**, such as the framework's own and mods that change the title screen as a whole, can't be left out; the notification box names them as you enter ("Wide Text is part of the framework and stays on.").
+- **Personal mods** stay on in every world, named or not, such as mods that only change how the game looks. The website's admins decide which mods are personal.
+- **Mods that run from the start of the game**, such as the framework's own and mods that change the title screen as a whole, can't be left out; a notice names them as you enter ("Wide Text is part of the framework and stays on.").
 - **The world's details** say *Other mods: turned off (2 of yours)* or *Other mods: allowed*. The mods box lists *Your mods turned off here* below the world's mods, one line per mod.
-- **Entering** such a world tells you in the notification box which of your mods stay off ("\<world> plays without your other mods: ... stay off until you leave it."). The world is entered only once the mod list has loaded.
+- **Entering** such a world tells you in a notice which of your mods stay off ("\<world> plays without your other mods: ... stay off until you leave it."). The world is entered only once the website's mod list has loaded.
 - **Your mods come back** when you leave the world: going back to the title screen starts the game again with your own mods.
-- **When the creator or an admin changes the rule** while you're in the world, ticking *Turn off other mods* or changing the mods, and a mod you run is now turned off, the notification box says "\<world> now turns off other mods. The game starts again and enters it without them." and a few seconds later, once you're free on the map, the game starts again and enters the world: anything you haven't saved is lost.
+- **When the creator or an admin changes the rule** while you're in the world, ticking *Turn off other mods* or changing the mods, and a mod you run is now turned off, a notice says "\<world> now turns off other mods. The game starts again and enters it without them." and a few seconds later, once you're free on the map, the game starts again and enters the world: anything you haven't saved is lost.
 - **Mods an older version turned off:** a `Parked mods` folder an older version left in your game folder is emptied back into `Patch` the next time the game starts; mods in its `Conflicts` folder stay for you to sort.
 
 ### Game data
 
 - **What is compared:** which actors, classes, skills, items, weapons, armors, enemies, states, troops, common events and maps exist; names don't count. A mod that adds or removes any is noticed; a mod that only changes numbers isn't. A translated game, English or Russian, still matches the untranslated one.
 - **When it is compared:** as you enter a world. Every world type works the same way.
-- **A game that differs** enters all the same: the notification box names what differs ("Your game differs from the creator's of \<world>. Some things may not work as in their game.") and you play on. Nothing restarts for it. A world whose creator has not entered it since it was made is not compared yet.
+- **A game that differs** enters all the same: a notice names what differs ("Your game differs from the creator's of \<world>. Some things may not work as in their game.") and you play on. Nothing restarts for it. A world whose creator has not entered it since it was made is not compared yet.
 - **The creator's game is the measure:** each time the creator enters their world, its data becomes the world's, so after a mod update everyone else is compared with the creator's game as it is now. Nothing needs confirming.
 
 ## On the map
@@ -302,18 +293,18 @@ Press **F11** or pick the middle of the action wheel; **F11**, **B**, cancel, nu
 
 - **Main quest**, at the top next to Amira: the first sentence of what she tells you to do next in the story.
 - **The list** at the left: the **side quests** Amira tips you about, numbered, and your **companion quests**, the requests on the bulletin board in the Pocket Castle, each with the companion's name. Each shows its first sentence.
-- **The reading pane** at the right: the whole text of the quest you picked, each message as its own paragraph, under a companion quest the companion asking for help.
+- **The reading pane** at the right: the whole text of the quest you picked, each message as its own paragraph, under a companion quest the companion asking for help, with their portrait in a circle.
 - *Options → Mods → MGQ Online Settings → Quest Portraits* shows Amira and the companions by their map **Sprites** (the default) or their **Faces**. A companion whose name the translation hasn't reached yet has no portrait.
 
 The main quest at the top can be picked too. On the World, Quests and Unlocks pages every group in the list folds: confirm or a click on its title (▾ open, ▸ folded) hides or shows its rows. The page shows the quests whether or not Amira's information network or the Pocket Castle is ready yet, and in the game's language, so parts the translation hasn't reached show in Japanese.
 
 **The Unlocks page** (Raid Worlds only) shows Luka with your formation's catch-up experience at the top, and what catching up gives you by level: the levels you passed fold away under *Passed*, the others follow under *Coming up*, and the pane lists everything a level brings, in groups of as many columns as their names fit. See [World overview](RAID_WORLDS.md#world-overview) of the Raid World page.
 
-### Notifications
+### Notices
 
-The box at the top left, on the map and in menus, lists the invites that reach you, such as party invites, duel challenges, trade offers and teleport requests, from anywhere in the world, for as long as they stand. Below them, messages show for a moment, such as a party member meeting enemies; "Enemies! \<name> is in a battle." stays as long as you stand still for that battle, and goes as soon as you may walk on. The box shows five rows, more or fewer once you resize it (see [Interface](#interface)); past them, the last counts the rest ("+2 more"). Messages fade away, and the box fades in and out.
+The mod's invites and messages show among the Mod Framework's notices, in the corner you pick in *Options → Mods → Mod Framework → Notice Corner*, on the map, in menus and in battles. The invites that reach you, such as party invites, duel challenges, trade offers and teleport requests, from anywhere in the world, show as offers with *Accept* and *Decline* for as long as they stand. Messages show for a moment, such as a party member meeting enemies; "Enemies! \<name> is in a battle." stays as long as you stand still for that battle, and goes as soon as you may walk on. The notices hide while the World overview is open.
 
-**Y** accepts the first of them (a challenge only on the map), **N** declines it: the other player reads that you declined, and it stays away until they invite you anew.
+**Y** accepts the first offer (a challenge only on the map) and **N** declines it, or click an offer's *Accept* or *Decline*. A declined invite's player reads that you declined, and it stays away until they invite you anew. The cancel key never answers an offer.
 
 **Questions.** Some choices ask first, in a box in the middle of the screen: leaving your party, removing a member, cancelling a trade. The box names its two answers; the safe one starts picked. **Y** takes the first answer, **N**, the cancel key or numpad **0** the second; **Left** and **Right** move the pick and confirm takes the picked one; a hint under the answers says so. While the box is open, the hotkeys below it do nothing, so a **Y** never answers an invite by mistake.
 
@@ -355,7 +346,7 @@ Your Formation screens show your whole team: your share of the Frontline as the 
 Everyone goes where they like. In a Classic World the leader's story scenes bring the party together, see [Story scenes](CLASSIC_WORLDS.md#story-scenes); in a Raid World, the world's story offers to take you along, see [The story](RAID_WORLDS.md#the-story).
 
 - **Teleport to the leader:** *Teleport to \<leader>* takes the place of *Invite to a party* at the top of the wheel, and the leader's row in the World overview offers it too. It brings you over as soon as you're free on the map.
-- **Teleport to another member:** *Ask to teleport to \<name>* in that member's row of the World overview; the leader asks this way too. They allow or decline it in the notification box ("\<name> asks to teleport to you") or in your row of their World overview; once allowed, you come over as soon as you're free. A request stands for a minute, counted down above your head ("Asking \<name> to teleport (45 s) . . ."), and *Stop asking to teleport* in your own row takes it back.
+- **Teleport to another member:** *Ask to teleport to \<name>* in that member's row of the World overview; the leader asks this way too. They allow or decline it among the notices ("\<name> asks to teleport to you") or in your row of their World overview; once allowed, you come over as soon as you're free. A request stands for a minute, counted down above your head ("Asking \<name> to teleport (45 s) . . ."), and *Stop asking to teleport* in your own row takes it back.
 - **Busy when it's allowed:** an allowed teleport, to the leader or another member, waits up to a minute while you're in an event, a message or a menu, then lapses with "You were too busy to teleport to \<name>." Both teleports work in Classic and Raid Worlds alike.
 
 ## Co-op battles
@@ -365,7 +356,7 @@ Everyone goes where they like. In a Classic World the leader's story scenes brin
 When a battle starts for a party member, whether a random encounter, a wandering monster or a story boss, the party members playing on the same map join it; in a Raid World the players nearby join too. Who runs the battle and whose levels count depend on the world type: see [Classic Worlds](CLASSIC_WORLDS.md#co-op-battles) and [Raid Worlds](RAID_WORLDS.md#battles), whose page also explains the [raid bosses](RAID_WORLDS.md#raid-bosses).
 
 - **Fewer encounters each:** while a party member stands within 20 tiles of you (in a Raid World any player), your steps to the next random encounter are half again as long. Players farther away on a large map don't change your steps.
-- **Waiting for the party:** a random encounter waits up to 3 seconds for members on the same map who are in a menu, typing or on a vehicle. You stand still, they read "\<name> is in a battle!" in the notification box, and the battle starts as soon as they're back on the map. Whoever is still busy after 3 seconds misses it. Every member on that map stands still until they join, so nobody walks off first; "Enemies! \<name> is in a battle." shows for as long as they stand still.
+- **Waiting for the party:** a random encounter waits up to 3 seconds for members on the same map who are in a menu, typing or on a vehicle. You stand still, they read "\<name> is in a battle!" in a notice, and the battle starts as soon as they're back on the map. Whoever is still busy after 3 seconds misses it. Every member on that map stands still until they join, so nobody walks off first; "Enemies! \<name> is in a battle." shows for as long as they stand still.
 - **The waiting box** in a battle says what your game waits for, who is still to come ("Still choosing: \<name>, \<name>", "Not ready: \<name>") and how long you've waited ("12 s"). While the host waits for the others' commands, cancel takes the host back to choosing their own. After 10 seconds the last line offers to leave the battle with cancel instead, which asks first ("Leave the battle?": *Leave*, or *Stay*, or *Choose again* for the host); leaving a story battle you can't escape from loses it for you alone, while the others fight on.
 - **Connection drops:** a player whose connection drops for a moment, even while the server restarts, stays in the battle, which waits up to 15 seconds for them; what they missed reaches them once they're back.
 - **Too late to join:** when a battle you're joining ends or can't take you in after all, the bottom left of the map says so, such as "\<name>'s battle ended before you could join.", and you're back on the map, or your own encounter starts as a battle of its own.
@@ -385,8 +376,9 @@ When a battle starts for a party member, whether a random encounter, a wandering
 Trade items and gold with another player on your map. Nothing changes hands until you both confirm the same offers.
 
 - **Offer** a trade to the players next to you with *Trade* at the right of the action wheel, or to one player on your map through the World overview. "Wants to trade (B)" shows above your head on their screen for 15 seconds, or 60 when you picked them in the overview; "Offering a trade (15 s) . . ." above your own head counts them down.
-- **Accept** in the wheel next to them, in the World overview, or with **Y** in the notification box; accepting takes back an offer of your own. "Waiting for \<name>'s trade (6 s) . . ." shows above your head until their game opens it. The trade screen opens for both of you.
-- **Put your offer together:** pick *Items*, *Weapons*, *Armor* or *Stones* for your bag. **Right** and **Left** offer one more or one fewer, **R** and **L** ten, and confirm offers all or none. *Gold* sets the gold digit by digit: **Left** and **Right** pick a digit, **Up** and **Down** change it. The other player's offer shows on the right as they change it. *Offers* moves into the offers to look through a long one: **Up** and **Down** scroll, **Left** and **Right** switch between yours and theirs, cancel goes back.
+- **Accept** in the wheel next to them, in the World overview, or with **Y** among the notices; accepting takes back an offer of your own. "Waiting for \<name>'s trade (6 s) . . ." shows above your head until their game opens it. The trade screen opens for both of you.
+- **The screen:** both offers side by side at the top, yours at the left and the other player's at the right, which changes as they change it; below them the bag's tabs *Items*, *Weapons*, *Armor* and *Stones* with *Gold*, *Confirm* and *Cancel*, and your bag. The cursor starts on the *Items* tab; **Left** and **Right**, or a gamepad's shoulder buttons, pick a tab.
+- **Put your offer together:** in your bag, **Right** and **Left** offer one more or one fewer, **Q** and **W** ten, and confirm offers all or none; **Page Up** and **Page Down** page the bag. *Gold* opens a box to type the gold you offer, or step it with **Up** and **Down**; more than you have is lowered to what you have. To look through a long offer, move the cursor up into it.
 - **What can be traded:** everything in your bag but key items, also enchanted and socketed equipment, which arrives with all its enchantments and stones. Equipped items and items in the storehouse aren't offered; unequip or take them out first. A trade holds a few hundred enchanted copies at most; past that, confirming says "The offers hold too many items for one trade. Take some out."
 - **Confirm** once both offers are right. Any change to either offer takes both confirmations back. Once you both confirmed, the trade completes, both games save, and the screen closes: "Trade with \<player> complete, game saved". The save goes into the slot you last saved or loaded in the world, or the first free one.
 - **Cancel**, the cancel key or numpad **0** asks first ("Cancel the trade with \<player>? Both offers are lost."): *Cancel trade* ends the trade for both of you, *Keep trading* goes back to it. It also ends when the other player leaves the world for longer than 15 seconds.
@@ -438,15 +430,16 @@ Your games meet at the mod's **server**, which passes their data on. Every game 
 | Message or problem | What to do |
 |---|---|
 | "Monster Girl Quest! Online needs the Mod Framework, which is not installed." | The game started without the Mod Framework, so the mod stays off. Download the framework from the [website](https://mgqonline.org/mods), close the game, extract it into the folder that contains `Game.exe` and start the game again. |
-| *Multiplayer* says a new version is out | Pick *Update and restart* in the Mod Framework's question: the game closes, the mod updates and the game starts again in the Multiplayer menu. Or close the game and run `Update.bat` in `Patch\Mod_Framework`. A Discord invite, or the return to a world after its mods were installed, asks the same while the mod is outdated; after updating, enter the world again yourself. |
+| *Multiplayer* on the title is greyed | The mod cannot run: the Mod Framework is older than 0.1.0 or runs without its DLL, or the mod's `Multiplayer.dll` did not start. Today's log in the `Logs` folder says which. Update the framework, or install MGQ Online again. |
+| *Multiplayer* says a new version is out | Pick *Update and restart* in the Mod Framework's question: the game closes, the mod updates and the game starts again in the Multiplayer menu. A Discord invite, or the return to a world after its mods were installed, asks the same while the mod is outdated; after updating, enter the world again yourself. If the game cannot start after an update, download the release again and extract it over the old one. |
 | "This version cannot play online. Update it at the title." | The server turned your version away while you played in a world. Go back to the title: it asks the Mod Framework's question about the update at once. |
 | "The server could not be reached" | Your internet connection is down, or something such as a firewall blocks the game from going online. |
 | "\<world> is not in the list right now" | The world list hasn't loaded yet or couldn't be fetched; the top of the world screen says which. Try again once it has loaded. |
 | "Your game differs from the creator's of \<world>" | Your mods add or remove entries the creator's don't, or the other way round. You play on; the world's details list the mods it needs. |
-| "\<world> needs mods you do not have" | The world requires a mod you don't have. Install it, then enter again. |
-| "The mod list has not loaded yet" | Wait until the world list has loaded and enter again. |
+| "\<world> still needs mods that differ here: ..." | The Mod Framework installed the world's mods, yet the ones named still differ from the creator's, such as a mod the website doesn't have. Get the creator's version from the mod's author, put it into your `Patch` folder and enter again. |
+| "The mod list has not loaded yet" | The world turns off other mods, and the website's list of mods hasn't loaded yet. Wait a moment and enter again. |
 | "Player.ini could not be read; close programs that hold it" | Another program, such as an antivirus, a cloud sync or an editor, holds `Patch\Multiplayer\Player.ini`. Your settings in it stay as they are, but no setting is saved and no world entered until the file can be read again. Close the program, or check that the file is not damaged. |
-| "Update MGQ Online to play online." | Your version of the mod is too old. On the title or in the Multiplayer menu the Mod Framework asks to update it at once; or install the newest MGQ Online release yourself. |
-| "Update MGQ Online to enter this world." | Your version of the mod is too old for this world. Install the newest MGQ Online release. |
+| "Update MGQ Online to play online." | Your version of the mod is too old. On the title or in the Multiplayer menu the Mod Framework asks to update it at once. |
+| "Update MGQ Online to enter this world." | Your version of the mod is too old for this world. Go back to the title, which asks the Mod Framework to update it. |
 
 **Logs:** the log is in the `Logs` folder of your game folder, one per day you played, named after the day, such as `Multiplayer 2026-10-07.log`. It tells what the mod did inside the game and what the connection did. Starting the game deletes the logs of earlier days, so send it on the day something went wrong. The quickest way is **F3** (or *Report a Bug* in the action wheel): it sends today's log and a screenshot to the developer with your report. Otherwise please attach the log of the day it went wrong to a [bug report](https://github.com/Pauliinchen/MGQ-Online/issues/new?template=bug_report.yml).
