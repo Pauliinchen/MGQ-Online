@@ -333,7 +333,7 @@ In single player the map stops behind menus, battles and story scenes. In a worl
 
 - A party shares one single-player team: each player keeps a squad of their first characters and the rest are cut. The split and order are C# (`SquadMath`), since the battle server arranges its players too; scripts cache answers by request, since the game's hooks ask many times a frame.
 - Variable 56 is each player's own, since the game cuts its party list to `party_member_max` on every change and a leader's smaller value would drop a member's characters.
-- The formation screens wrap the game's own `draw_item`, so the game's and the translation's layouts stay. Grey copies of faces are made once per session, since pixel loops are slow.
+- The formation list and the party edit screen take their looks through the Mod Framework's row patch (`UI.patch` with `rows`), so the game's and the translation's drawing stays.
 - **In a Raid World** every player has a squad sized by the world's rules. The cap applies only to the `$game_party` fitted to the current rules and is lifted for a story's temporary party (a cut character would leave the story). Luka is never swapped to the front by the game's follower command, and Give Up is off unless he leads, since Give Up swaps him to the front.
 - The game's Backline window and swap count from `max_battle_members`, which is why the Frontline is narrowed there.
 

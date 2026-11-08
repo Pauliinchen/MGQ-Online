@@ -2,6 +2,7 @@
 #  battles_coop.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Named the characters in the battle's status window through the Mod Framework's row patch instead of drawing them
 #      Paulinchen  2026-11-06: Read the player's own color in the status window through the Mod Framework's UI.color_now
 #                            - Dropped RAID_PLAYERS, which the DLL's CoopMatchmaking keeps
 #      Paulinchen  2026-11-05: Handed the enemy rates, the invite's fields and whether the player is busy as values, and read the invites' flags as true or false
@@ -2510,39 +2511,41 @@ module MGQ_MpBattlesCoop
     log("shift change hooks FAILED: #{e.class}: #{e.message}")
   end
 
-  # Draws each character's name in the battle's status window in its player's color while a co-op
-  # battle runs, see draw_status_name.
+  # Names each character in the battle's status window in its player's color while a co-op battle
+  # runs, through the Mod Framework's row patch, see status_rows.
   def self.install_status_names
-    MGQ_MpHooks.around(Window_BattleStatus, :draw_actor_name, "battles_coop") do |window, args, original|
-      MGQ_MpBattlesCoop.draw_status_name(window, args, original)
-    end
+    Mod_Framework::UI.patch("Window_BattleStatus") { |status| status.rows { |rows| MGQ_MpBattlesCoop.status_rows(rows) } }
   rescue => e
-    log("status names hook FAILED: #{e.class}: #{e.message}")
+    log("status names patch FAILED: #{e.class}: #{e.message}")
   end
 
-  # Draws a character's name in the status window of a co-op battle: the player's own in
-  # the player's look's own color, another player's character by its own name, without its owner,
-  # in its owner's MGQ_MpPlayerColor. A character in crisis or knocked out is left to the game, which
-  # colors it (hp_color: below a quarter of its max HP, which covers 0); so is every character
-  # outside a co-op battle, and one drawn without a width.
+  # Gives the rows of the battle's status window the looks of their characters' names while a
+  # co-op battle runs, see status_look; outside one every row stays the game's.
   #
-  # @param window [Window_BattleStatus] The window.
-  # @param args [Array] The character, x, y and width, as draw_actor_name takes them.
-  # @param original [Proc] Draws the name as the game does.
-  # @return [Object] What the game's drawing returns, nil for the mod's.
-  def self.draw_status_name(window, args, original)
-    actor, x, y, width = args
-    return original.call unless active? && actor && width && actor.hp >= actor.mhp / 4
+  # @param rows [Array<Hash>] The window's rows, each { index: } of a battle member.
+  # @return [Array<Hash>] The rows with their looks.
+  def self.status_rows(rows)
+    return rows unless active?
 
+    members = $game_party.battle_members
+    rows.map { |row| members[row[:index]] ? row.merge(status_look(members[row[:index]])) : row }
+  end
+
+  # Tells the look of a character's name in the status window of a co-op battle: the player's own
+  # in the player's own color, another player's by its own name, without its owner, in its owner's
+  # MGQ_MpPlayerColor.
+  #
+  # The game colors a character in crisis or knocked out by hp_color (below a quarter of its max HP,
+  # which covers 0), so such a name keeps the game's color.
+  #
+  # @param actor [Game_Actor] The character.
+  # @return [Hash] :name for another player's character, :name_color unless in crisis.
+  def self.status_look(actor)
     ally = actor.is_a?(Game_MpAlly)
-    window.change_color(ally ? MGQ_MpPlayerColor.of(MGQ_MpBattlesSync.peer_at(actor.mp_seat) || actor.owner) : Mod_Framework::UI.color_now(:own))
-    window.draw_text(x, y, width, window.line_height, Mod_Framework::UI.cut(window, ally ? actor.base_name : actor.name, width))
-    nil
-  rescue => e
-    # A wrapped method's body runs without MGQ_MpHooks' rescue, and a raise here would take the
-    # status window down every time it refreshes.
-    log_once([:status_name, actor && actor.id], "drawing a status name failed, the game draws it: #{e.class}: #{e.message}")
-    original.call
+    look = {}
+    look[:name] = actor.base_name if ally
+    look[:name_color] = MGQ_MpPlayerColor.role(ally ? (MGQ_MpBattlesSync.peer_at(actor.mp_seat) || actor.owner) : :me) if actor.hp >= actor.mhp / 4
+    look
   end
 end
 

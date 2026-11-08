@@ -2,6 +2,7 @@
 #  battles_coop_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Checked the looks the status window's rows take through the Mod Framework's row patch
 #      Paulinchen  2026-11-06: Compared the colors of the names in the status window by their values
 #      Paulinchen  2026-11-05: Answered the squad math with fixed values per case
 #                            - Read the messages sent as the scripts hand them and handed those of other games as the DLL reads them
@@ -218,29 +219,13 @@ check("the status windows show the party", $refreshed, true)
 # The status window names each character in its player's color.
 # A character's max HP.
 class Game_Actor; def mhp; 100; end; end
-# A status window that records what it draws.
-class Window_BattleStatus
-  attr_reader :drawn, :color
-  def change_color(color); @color = color; end
-  def line_height; 24; end
-  def text_size(text); Rect.new(0, 0, text.to_s.size * 8, 24); end
-  def draw_text(x, y, width, height, text, align = 0); (@drawn ||= []) << [x, y, width, height, text, @color]; end
-end
-status = Window_BattleStatus.new
-own_drawn = status.draw_actor_name(party[0], 4, 0, 100)
-ally_drawn = status.draw_actor_name(party[2], 4, 24, 100)
-values = lambda { |color| [color.red, color.green, color.blue] }
-check("the status window names the player's own character in their color and another player's by its own name in its owner's",
-      [own_drawn, ally_drawn, status.drawn.map { |x, y, width, height, text, color| [x, y, width, height, text, values.call(color) == values.call(Mod_Framework::UI.color_now(:own)), values.call(color) == values.call(MGQ_MpPlayerColor.of(friend))] }],
-      [nil, nil, [[4, 0, 100, 24, "Actor1", true, false], [4, 24, 100, 24, "Actor7", false, true]]])
+status_rows = lambda { MGQ_MpBattlesCoop.status_rows(Array.new(4) { |index| { :index => index } }) }
+check("the status window names the player's own characters in their color and another player's by their own names in their owner's",
+      status_rows.call.map { |row| [row[:name], row[:name_color]] },
+      [[nil, :mgq_online_own], [nil, :mgq_online_own], ["Actor7", :mgq_online_member], ["Actor8", :mgq_online_member]])
 party[2].hp = 24
-check("a character in crisis is left to the game's colors, as is one drawn without a width", [status.draw_actor_name(party[2], 4, 24, 100), status.draw_actor_name(party[0], 4, 0), status.drawn.size], [:original, :original, 2])
+check("a character in crisis keeps the game's colors", status_rows.call[2], { :index => 2, :name => "Actor7" })
 party[2].hp = 50
-# A status window whose color fails.
-class Window_MpFailingStatus < Window_BattleStatus; def change_color(_color); raise "no color"; end; end
-failing = Window_MpFailingStatus.new
-check("a name the mod cannot draw is left to the game, logged once",
-      [failing.draw_actor_name(party[2], 4, 24, 100), failing.draw_actor_name(party[2], 4, 24, 100), $log.grep(/drawing a status name failed, the game draws it: RuntimeError: no color/).size], [:original, :original, 1])
 check("its name for the battle's messages stays whole", party[2].name, "Actor7 (Friend)")
 check("the others' characters start the battle, which the game does only for its own", party[2, 2].map(&:turn_hit_damage_count), [0, 0])
 party[2].turn_hit_damage_count = 3
@@ -356,6 +341,7 @@ $game_player.leader_shown = party[2]
 $sync_finished = false
 MGQ_MpBattlesCoop.ended
 check("the end gives the party back and ends the rules", [MGQ_MpBattlesCoop.active?, MGQ_MpBattlesSync.role, MGQ_MpBattles.running?, $game_party.battle_members], [false, nil, false, mine])
+check("and the status window names everyone as the game does", MGQ_MpBattlesCoop.status_rows([{ :index => 0 }]), [{ :index => 0 }])
 check("and ends the level sync", $sync_finished, true)
 check("and the map shows the player's own leader again", $game_player.leader_shown, mine[0])
 check("and leaves the world's room open", $cancelled, false)

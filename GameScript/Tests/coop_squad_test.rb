@@ -2,6 +2,8 @@
 #  coop_squad_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Checked the looks the party edit screen's rows take through the Mod Framework's row patch
+#                            - Checked the looks of the formation list's rows in place of its drawing
 #      Paulinchen  2026-11-05: Answered the player's squad with a fixed view per case and checked the followers' choice that goes to the DLL
 #                            - Answered the squad math with fixed values per case and dropped the checks that restated it
 #                            - Expected the followers' looks told as values
@@ -41,28 +43,6 @@
 
 require_relative "rules_support"
 
-# Stands in for the game's colors.
-class Color
-  attr_reader :red, :green, :blue, :alpha
-  def initialize(red = 0, green = 0, blue = 0, alpha = 255); @red, @green, @blue, @alpha = red, green, blue, alpha; end
-  def to_a; [@red.round, @green.round, @blue.round]; end
-end
-# A rectangle as the game's Rect holds it.
-Rect = Struct.new(:x, :y, :width, :height)
-# A picture of 2 by 2 pixels, enough to see each pixel turned grey.
-class Bitmap
-  attr_reader :pixels
-  def initialize(*); @pixels = {}; end
-  def blt(_x, _y, source, _rect, _opacity = 255); @pixels = source.pixels.dup; end
-  def get_pixel(x, y); @pixels[[x, y]] || Color.new(0, 0, 0, 0); end
-  def set_pixel(x, y, color); @pixels[[x, y]] = color; end
-  def disposed?; false; end
-end
-# Stands in for the game's picture cache: a red face, a blue system picture.
-module Cache
-  def self.face(name); Bitmap.new.tap { |b| b.set_pixel(0, 0, Color.new(255, 0, 0)) }; end
-  def self.system(name); Bitmap.new.tap { |b| b.set_pixel(0, 0, Color.new(0, 0, 255)) }; end
-end
 # Stands in for the game's scene manager.
 module SceneManager; def self.run; end; end
 # Stands in for the game's constants.
@@ -84,8 +64,6 @@ class Game_Actor
   def initialize(id); @id = id; end
   attr_writer :hidden
   def exist?; !@hidden; end
-  def face_name; "Face#{@id}"; end
-  def face_index; 0; end
   def name; "Actor#{@id}"; end
   def luca?; @id == 1; end
 end
@@ -123,51 +101,13 @@ class Game_Player
   attr_accessor :followers, :refreshed
   def refresh; @refreshed = (@refreshed || 0) + 1; end
 end
-# What a window drew: the lines over its rows, and the pictures put on it.
-class Contents
-  attr_reader :fills, :pictures
-  def initialize; @fills = []; @pictures = []; end
-  def fill_rect(*args); @fills << args; end
-  def blt(_x, _y, bitmap, *_rest); @pictures << bitmap.get_pixel(0, 0).to_a; end
-end
-# Draws a row as the game's Window_MenuStatus does: the face, opaque on the Frontline, then the
-# status in the skin's colors, with a state's icon.
-class Window_MenuStatus
-  attr_reader :contents, :faces, :texts
-  def initialize; @contents = Contents.new; @faces = []; @texts = []; end
-  def draw_item(index)
-    actor = $game_party.members[index]
-    draw_actor_face(actor, 0, index * 10, index < 4)
-    @texts << text_color(0).to_a
-    draw_icon(1, 0, index * 10)
-  end
-  def draw_actor_face(actor, _x, _y, enabled = true); @faces << [actor.id, enabled ? :opaque : :translucent]; end
-  def text_color(_n); Color.new(255, 128, 0); end
-  def draw_icon(_icon, _x, _y, _enabled = true); @contents.pictures << :colored_icon; end
-  def item_rect(index); Rect.new(0, index * 10, 100, 10); end
-end
 # Stands in for the namespace of the game's party edit script.
 module Foo
   # Stands in for the game's party edit script.
   module PTEdit
-    # Draws a row as the game's party edit screen does: the first four in the normal color, the
-    # rest in the system color.
+    # Holds the team as the game's party edit screen does.
     class Window_PartyMember
-      attr_reader :contents, :rows
-      def initialize(actors); @actors = actors; @contents = Contents.new; @rows = []; end
-      def draw_item(index)
-        change_color(index < 4 ? normal_color : system_color, command_enabled?(index))
-        draw_text(item_rect_for_text(index), command_name(index), alignment)
-      end
-      def normal_color; Color.new(255, 255, 255); end
-      def system_color; Color.new(132, 170, 255); end
-      def change_color(color, enabled = true); @color = [color.to_a, enabled]; end
-      def command_enabled?(index); true; end
-      def item_rect(index); Rect.new(0, index * 10, 100, 10); end
-      def item_rect_for_text(index); item_rect(index); end
-      def command_name(index); "row #{index}"; end
-      def alignment; 0; end
-      def draw_text(*); @rows << @color; end
+      def initialize(actors); @actors = actors; end
       # Lists the team as the game does, Luka's row disabled.
       def make_command_list; @list = @actors.map { |id| { :enabled => !$game_actors[id].luca? } }; end
       # Sends the character picked to standby as the game does, never Luka.
@@ -355,18 +295,14 @@ check("places of a member of three", actors.first(3).map { |a| squad.place_of(a)
 check("Discord hears of the party's size", MGQ_MpCoop.status_fields, { "mp_party" => "friend-p", "mp_party_size" => 3, "mp_party_max" => 4 })
 
 # The formation screens.
-menu = Window_MenuStatus.new
-(0...4).each { |row| menu.draw_item(row) }
-check("the menu draws the squad's Frontline opaque and its Backline translucent, as the game draws the Backline", menu.faces, [[1, :opaque], [2, :translucent]])
-check("and the rest monochrome: faces, texts and icons", [menu.contents.pictures, menu.texts],
-      [[:colored_icon, :colored_icon, [76, 76, 76], [29, 29, 29], [76, 76, 76], [29, 29, 29]], [[255, 128, 0], [255, 128, 0], [151, 151, 151], [151, 151, 151]]])
-check("under a line above the first one only", menu.contents.fills.map { |f| f[1] }, [20])
-check("past a row, the colors are the game's again", menu.text_color(0).to_a, [255, 128, 0])
-edit = Foo::PTEdit::Window_PartyMember.new(actors.first(3).map(&:id))
-(0...4).each { |row| edit.draw_item(row) }
-check("the party edit screen colors by the squad: Frontline, Backline, then grey", edit.rows,
-      [[[255, 255, 255], true], [[132, 170, 255], true], [[168, 168, 168], true], [[168, 168, 168], true]])
-check("with a line above the first cut row only", edit.contents.fills.map { |f| f[1] }, [20])
+formation_looks = lambda { squad.formation_rows(Array.new(4) { |index| { :index => index } }).map { |row| [row[:grey], row[:line_above]] } }
+check("the formation list greys the rows past the squad, a line above the first only, and keeps the game's drawing of the squad",
+      formation_looks.call, [[nil, nil], [nil, nil], [true, :error], [true, nil]])
+# The party edit screen's commands, one per place, each looked at as [name color, grey, line above].
+edit_rows = lambda { |ids| squad.party_edit_rows(ids, Array.new(4) { |index| { :name => "row #{index}", :symbol => :ok } }) }
+edit_looks = lambda { |ids| edit_rows.call(ids).map { |row| [row[:name_color], row[:grey], row[:line_above]] } }
+check("the party edit screen colors by the squad: Frontline, Backline, then grey with a line above the first cut row only, the empty row by its place",
+      edit_looks.call(actors.first(3).map(&:id)), [[0, nil, nil], [16, nil, nil], [16, true, :error], [16, true, nil]])
 
 # Big parties.
 check("three players are no full party", party.full?, false)
@@ -380,6 +316,7 @@ check("so is another party of four seen from outside", party.full?("friend-p"), 
 $open = false
 MGQ_MpOverworldSync.tick(false)
 check("outside a world nothing is cut", [squad.own_share, squad.place_of(actors[7])], [nil, nil])
+check("and the party edit screen keeps the game's colors", edit_looks.call(actors.first(3).map(&:id)), [[nil, nil, nil]] * 4)
 check("nor told to Discord", MGQ_MpCoop.status_fields, {})
 
 # A Raid World: one on the Frontline and two on the Backline for everyone, a team of four.
@@ -423,14 +360,7 @@ check("every player has one and two, in a party of four too", [MGQ_MpCoop.in_par
 check("the fourth place is cut", actors.first(4).map { |a| squad.place_of(a) }, [:front, :bench, :bench, :cut])
 check("nobody follows", $game_player.followers.map { |f| f.visible? }, [false, false, false])
 check("and no trail is told", squad.state_fields["trail"], [])
-menu = Window_MenuStatus.new
-(0...4).each { |row| menu.draw_item(row) }
-check("the menu draws the Frontline opaque, the Backline translucent", menu.faces, [[1, :opaque], [2, :translucent], [3, :translucent]])
-check("and the red line after the third place", menu.contents.fills.map { |f| f[1] }, [30])
-edit = Foo::PTEdit::Window_PartyMember.new(actors.first(4).map(&:id))
-(0...4).each { |row| edit.draw_item(row) }
-check("so does the party edit screen", [edit.rows.map { |color, _| color }, edit.contents.fills.map { |f| f[1] }],
-      [[[255, 255, 255], [132, 170, 255], [132, 170, 255], [168, 168, 168]], [30]])
+check("the party edit screen greys the fourth place under a line", edit_looks.call(actors.first(4).map(&:id)), [[0, nil, nil], [16, nil, nil], [16, nil, nil], [16, true, :error]])
 take_party(nil)
 MGQ_MpOverworldSync.tick(true)
 check("outside a party the same", [MGQ_MpCoop.in_party?, squad.own_share, squad.place_of(actors[3])], [false, [1, 2], :cut])

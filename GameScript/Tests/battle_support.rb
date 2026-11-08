@@ -2,6 +2,7 @@
 #  battle_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Dropped the status window's name drawing, which the scripts no longer hook
 #      Paulinchen  2026-11-06: Stood in for UI.confirm and read the waiting box's lines from the wait
 #      Paulinchen  2026-11-05: Kept each message sent as the scripts hand it instead of as a copy of the DLL's codec writes it
 #                            - Answered the live battle's topics and the battlers' plans with the values each test sets
@@ -412,7 +413,6 @@ end
 class Window_BattleStatus
   attr_accessor :index
   def current_item_enabled?; :original; end
-  def draw_actor_name(actor, x, y, width = 144); :original; end
 end
 # Stands in for the map scene, telling whether the menu was called.
 class Scene_Map; def update_scene; end; def scene_changing?; false; end; def update_call_menu; @menu_calling = true; end; attr_reader :menu_calling; end

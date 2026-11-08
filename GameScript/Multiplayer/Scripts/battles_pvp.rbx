@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-08: Built the friend's characters through the battler factory
+#                            - Kept the faces in a row of a face file itself
 #      Paulinchen  2026-11-06: Left the order of the automatic skills by speed to the rules in C#
 #      Paulinchen  2026-11-05: Left the team's rule of the Backline to C#, which writes and reads the builds
 #                            - Put back through the guard of the game's flow what the duel's snapshot leaves, such as a dark screen
@@ -554,7 +555,7 @@ module MGQ_MpBattlesPvp
     FACE_ZOOM = 2
 
     # Faces in a row of a face file.
-    FACE_COLUMNS = MGQ_MpCoopSquad::FACE_COLUMNS
+    FACE_COLUMNS = 4
 
     # Rows of faces in a face file.
     FACE_ROWS = 2

@@ -2,6 +2,8 @@
 #  coop_squad.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Colored the party edit screen's rows through the Mod Framework's row patch instead of drawing them
+#                            - Greyed the formation list's rows past the squad through the row patch instead of drawing them
 #      Paulinchen  2026-11-07: Greyed the Party Followers row for members through disabled:
 #      Paulinchen  2026-11-06: Read the color of the line past a squad in the player's look each time it draws
 #      Paulinchen  2026-11-05: Told the followers shown and read a ghost's as values, the DLL writing them
@@ -41,7 +43,7 @@
 # leader taking what does not split evenly, so each player keeps a squad of their first characters
 # and the rest are cut. Only the squad fights in co-op battles (battles_coop.rbx). The formation
 # screens show the squad's Frontline and Backline as the game shows its own, and the cut characters
-# monochrome under a line. On the map only each player's share of the Frontline follows them, or
+# grey under a line. On the map only each player's share of the Frontline follows them, or
 # nobody, as the leader chose in the Mod Config. A battle a player fights alone keeps their own
 # full team, so nothing here changes the game's party itself, except in a Raid World: there the
 # world's squad rules (see rules) size every player's team and squad, in a party or not and in
@@ -99,20 +101,11 @@ module MGQ_MpCoopSquad
   # Color name of the line above the first character past a squad in the formation screens.
   CUT_COLOR = :error
 
-  # Shares of red, green and blue in a color's brightness, which a monochrome picture keeps.
-  LUMA = [0.299, 0.587, 0.114]
+  # The game's text color of the party edit screen's Frontline.
+  NORMAL_TEXT = 0
 
-  # Faces in a row of a face file.
-  FACE_COLUMNS = 4
-
-  # Width and height of a face in a face file, in pixels.
-  FACE_SIZE = 96
-
-  # Icons in a row of the icon set.
-  ICON_COLUMNS = 16
-
-  # Width and height of an icon in the icon set, in pixels.
-  ICON_SIZE = 24
+  # The game's text color of the party edit screen's Backline.
+  SYSTEM_TEXT = 16
 
   # The player's share, the followers' mode and whether a Raid World is open, as tick last took
   # them, nil outside a world.
@@ -121,9 +114,6 @@ module MGQ_MpCoopSquad
   # The player's squad as the DLL read it this frame: "share", "mode" and "squads"; nil outside a
   # world and while the DLL does not answer.
   @view = nil
-
-  # Monochrome copies of picture parts, by the picture's name and the part, see monochrome.
-  @monochrome = {}
 
   # The party fitted to a Raid World, which party_member_max caps, nil while no cap holds.
   @capped = nil
@@ -403,39 +393,6 @@ module MGQ_MpCoopSquad
     true
   end
 
-  # Turns a color into the grey of the same brightness.
-  #
-  # @param color [Color] The color.
-  # @return [Color] The grey, with the color's opacity.
-  def self.grey(color)
-    level = color.red * LUMA[0] + color.green * LUMA[1] + color.blue * LUMA[2]
-    Color.new(level, level, level, color.alpha)
-  end
-
-  # Makes a monochrome copy of part of a picture, once per picture and part.
-  #
-  # The copies stay for the session, since reading and writing every pixel is slow.
-  #
-  # @param name [String] What the picture is, which keys the copy.
-  # @param source [Bitmap] The picture.
-  # @param rect [Rect] The part.
-  # @return [Bitmap] The copy.
-  def self.monochrome(name, source, rect)
-    key = [name, rect.x, rect.y, rect.width, rect.height]
-    copy = @monochrome[key]
-    return copy if copy && !copy.disposed?
-
-    copy = Bitmap.new(rect.width, rect.height)
-    copy.blt(0, 0, source, rect)
-    rect.height.times do |y|
-      rect.width.times do |x|
-        color = copy.get_pixel(x, y)
-        copy.set_pixel(x, y, grey(color)) if color.alpha > 0
-      end
-    end
-    @monochrome[key] = copy
-  end
-
   # Writes the looks of the followers the player shows, which their party's games show behind
   # their ghost.
   #
@@ -663,14 +620,6 @@ module MGQ_MpCoopSquad
     log(added ? "added the Party Followers to Options > Mods" : "no Party Followers in Options > Mods, see the Mod Framework's log")
   end
 
-  # Draws the line under the squad's last character, on top of a row of the first cut character.
-  #
-  # @param window [Window_Base] The formation screen's window.
-  # @param rect [Rect] The row.
-  def self.draw_cut(window, rect)
-    window.contents.fill_rect(rect.x, rect.y, rect.width, 2, Mod_Framework::UI.color_now(CUT_COLOR))
-  end
-
   # Installs the hooks on the game's plugins, which load after the Patch folder. Called once the
   # first scene starts.
   def self.install
@@ -678,7 +627,7 @@ module MGQ_MpCoopSquad
 
     @installed = true
     install_followers
-    install_menu
+    install_formation
     install_party_edit
     install_party_cap
     install_raid_battle
@@ -828,130 +777,61 @@ module MGQ_MpCoopSquad
     log("follower hook FAILED: #{e.class}: #{e.message}")
   end
 
-  # Draws the menu's formation list by the party's squad: the Frontline's share as the Frontline,
-  # the Backline's share as the Backline, and the rest monochrome under a line.
-  def self.install_menu
-    Window_MenuStatus.class_eval do
-      alias_method :mgq_mp_coop_squad_draw_item, :draw_item
-      alias_method :mgq_mp_coop_squad_draw_actor_face, :draw_actor_face
-      alias_method :mgq_mp_coop_squad_text_color, :text_color
-      alias_method :mgq_mp_coop_squad_draw_icon, :draw_icon
-
-      # Draws a character as the game does, in the style of their place in the player's squad
-      # while they have one, with a line above the first character past the squad.
-      #
-      # @param index [Integer] The row.
-      def draw_item(index)
-        squad = MGQ_MpCoopSquad
-        place = instance_of?(Window_MenuStatus) && !$game_party.in_battle ? squad.place_of($game_party.members[index]) : nil
-        @mgq_mp_coop_squad_place = place
-        mgq_mp_coop_squad_draw_item(index)
-        return unless place == :cut && !(index > 0 && squad.place_of($game_party.members[index - 1]) == :cut)
-
-        squad.draw_cut(self, item_rect(index))
-      rescue => e
-        MGQ_MpCoopSquad.log("menu row failed: #{e.class}: #{e.message}")
-      ensure
-        @mgq_mp_coop_squad_place = nil
-      end
-
-      # Draws a face: opaque on the squad's Frontline, translucent on its Backline as the game draws
-      # the Backline, monochrome past the squad.
-      #
-      # @param actor [Game_Actor] The character.
-      # @param x [Integer] The face's left edge.
-      # @param y [Integer] The face's top edge.
-      # @param enabled [Boolean] Whether the game draws it opaque.
-      def draw_actor_face(actor, x, y, enabled = true)
-        case @mgq_mp_coop_squad_place
-        when nil then mgq_mp_coop_squad_draw_actor_face(actor, x, y, enabled)
-        when :cut
-          squad = MGQ_MpCoopSquad
-          rect = Rect.new(actor.face_index % squad::FACE_COLUMNS * squad::FACE_SIZE, actor.face_index / squad::FACE_COLUMNS * squad::FACE_SIZE, squad::FACE_SIZE, squad::FACE_SIZE)
-          contents.blt(x, y, squad.monochrome("face:#{actor.face_name}", Cache.face(actor.face_name), rect), Rect.new(0, 0, squad::FACE_SIZE, squad::FACE_SIZE))
-        else mgq_mp_coop_squad_draw_actor_face(actor, x, y, @mgq_mp_coop_squad_place == :front)
-        end
-      end
-
-      # Picks a text color of the window's skin, grey past the squad.
-      #
-      # @param n [Integer] The color's number.
-      # @return [Color] The color.
-      def text_color(n)
-        color = mgq_mp_coop_squad_text_color(n)
-        @mgq_mp_coop_squad_place == :cut ? MGQ_MpCoopSquad.grey(color) : color
-      end
-
-      # Draws an icon, monochrome past the squad.
-      #
-      # @param icon_index [Integer] The icon.
-      # @param x [Integer] Its left edge.
-      # @param y [Integer] Its top edge.
-      # @param enabled [Boolean] Whether it is drawn opaque.
-      def draw_icon(icon_index, x, y, enabled = true)
-        return mgq_mp_coop_squad_draw_icon(icon_index, x, y, enabled) unless @mgq_mp_coop_squad_place == :cut
-
-        squad = MGQ_MpCoopSquad
-        rect = Rect.new(icon_index % squad::ICON_COLUMNS * squad::ICON_SIZE, icon_index / squad::ICON_COLUMNS * squad::ICON_SIZE, squad::ICON_SIZE, squad::ICON_SIZE)
-        contents.blt(x, y, squad.monochrome("icon", Cache.system("Iconset"), rect), Rect.new(0, 0, squad::ICON_SIZE, squad::ICON_SIZE))
-      end
-    end
+  # Greys the menu's formation list past the party's squad through the Mod Framework's row patch,
+  # see formation_rows. The game's own drawing stays.
+  def self.install_formation
+    Mod_Framework::UI.patch("Window_MenuStatus") { |formation| formation.rows { |rows| MGQ_MpCoopSquad.formation_rows(rows) } }
   rescue => e
-    log("menu hook FAILED: #{e.class}: #{e.message}")
+    log("formation patch FAILED: #{e.class}: #{e.message}")
   end
 
-  # Colors the party edit screen by the party's squad: the Frontline's share as the Frontline, the
-  # Backline's share as the Backline, and the rest grey under a line. The game's own drawing stays,
-  # with the translation's larger rows.
+  # Gives the rows of the menu's formation list the looks of their places in the player's squad
+  # while they have one: the rest past the squad grey with a line above the first of them, the
+  # squad's rows as the game draws them. Without squads and in a battle every row stays the game's.
+  #
+  # The patch also reaches the menu's list of targets for items and skills, a subclass of the
+  # formation list, which greys the same characters.
+  #
+  # @param rows [Array<Hash>] The window's rows, each { index: } of a party member.
+  # @return [Array<Hash>] The rows with their looks.
+  def self.formation_rows(rows)
+    return rows if $game_party.in_battle
+
+    cut = lambda { |index| index >= 0 && place_of($game_party.members[index]) == :cut }
+    rows.map do |row|
+      next row unless cut.call(row[:index])
+
+      row.merge(:grey => true, :line_above => cut.call(row[:index] - 1) ? nil : CUT_COLOR)
+    end
+  end
+
+  # Colors the party edit screen by the party's squad through the Mod Framework's row patch, see
+  # party_edit_rows. The game's own drawing stays, with the translation's larger rows.
   def self.install_party_edit
-    return unless defined?(Foo::PTEdit::Window_PartyMember)
+    Mod_Framework::UI.patch("Foo::PTEdit::Window_PartyMember") { |edit| edit.rows { |rows| MGQ_MpCoopSquad.party_edit_rows(edit.read(:actors), rows) } }
+  rescue => e
+    log("party edit patch FAILED: #{e.class}: #{e.message}")
+  end
 
-    Foo::PTEdit::Window_PartyMember.class_eval do
-      alias_method :mgq_mp_coop_squad_draw_item, :draw_item
-      alias_method :mgq_mp_coop_squad_change_color, :change_color
+  # Gives the rows of the party edit screen the looks of their places in the player's squad while
+  # they have one: the Frontline's share in the normal color, the Backline's share in the system
+  # color, and the rest grey with a line above the first of them; an empty row by its place.
+  # Without squads every row stays the game's.
+  #
+  # @param ids [Array<Integer>] The ids of the characters the screen holds, in order.
+  # @param rows [Array<Hash>] The screen's commands, one per place.
+  # @return [Array<Hash>] The commands with their looks.
+  def self.party_edit_rows(ids, rows)
+    return rows unless squads?
 
-      # Draws a row as the game does, in the color of its place in the player's squad while they
-      # have one, with a line above the first row past the squad.
-      #
-      # @param index [Integer] The row.
-      def draw_item(index)
-        place = MGQ_MpCoopSquad.squads? ? mgq_mp_coop_squad_place(index) : nil
-        @mgq_mp_coop_squad_place = place
-        mgq_mp_coop_squad_draw_item(index)
-        return unless place == :cut && index > 0 && mgq_mp_coop_squad_place(index - 1) != :cut
-
-        MGQ_MpCoopSquad.draw_cut(self, item_rect(index))
-      rescue => e
-        MGQ_MpCoopSquad.log("party edit row failed: #{e.class}: #{e.message}")
-      ensure
-        @mgq_mp_coop_squad_place = nil
-      end
-
-      # Sets the text color, by the row's place in the party's squad while one is drawn.
-      #
-      # @param color [Color] The color the game picked by the Frontline of single player.
-      # @param enabled [Boolean] Whether the row can be picked.
-      def change_color(color, enabled = true)
-        case @mgq_mp_coop_squad_place
-        when :front then color = normal_color
-        when :bench then color = system_color
-        when :cut then color = MGQ_MpCoopSquad.grey(system_color)
-        end
-        mgq_mp_coop_squad_change_color(color, enabled)
-      end
-
-      # Tells a row's place in the party's squad: its character's, or the place itself for an
-      # empty row.
-      #
-      # @param index [Integer] The row.
-      # @return [Symbol] :front, :bench or :cut.
-      def mgq_mp_coop_squad_place(index)
-        id = @actors[index]
-        (id ? MGQ_MpCoopSquad.place_of($game_actors[id]) : MGQ_MpCoopSquad.place_at(index)) || :cut
+    places = Array.new(rows.size) { |index| (ids[index] ? place_of($game_actors[ids[index]]) : place_at(index)) || :cut }
+    rows.each_with_index.map do |row, index|
+      case places[index]
+      when :front then row.merge(:name_color => NORMAL_TEXT)
+      when :bench then row.merge(:name_color => SYSTEM_TEXT)
+      else row.merge(:name_color => SYSTEM_TEXT, :grey => true, :line_above => index > 0 && places[index - 1] != :cut ? CUT_COLOR : nil)
       end
     end
-  rescue => e
-    log("party edit hook FAILED: #{e.class}: #{e.message}")
   end
 end
 
