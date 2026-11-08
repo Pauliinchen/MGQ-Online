@@ -2,6 +2,7 @@
 //  GameBridge.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Handed the overview topics the game's events for the quest walk
 //      Paulinchen  2026-11-07: Registered the topics of a Raid World's difficulty
 //                            - Registered the topics of a Raid World's gated areas
 //      Paulinchen  2026-11-06: Registered the topics of the items a trade moves
@@ -161,7 +162,7 @@ internal static unsafe class GameBridge
         EventTopics.Register(context, () => GameEvents.Current);
         EventTableTopics.Register(context, () => GameEvents.Current);
         WorldTopics.Register(context);
-        OverviewTopics.Register(context);
+        OverviewTopics.Register(context, () => GameEvents.Current);
         EmoteTopics.Register(context);
         TradeLimitTopics.Register(context);
         GateTopics.Register(context);

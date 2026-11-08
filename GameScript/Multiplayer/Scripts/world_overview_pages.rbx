@@ -2,6 +2,7 @@
 #  world_overview_pages.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Looked up the quests' texts and speakers at the places the DLL's quest walk names
 #      Paulinchen  2026-11-06: Dropped the picture behind the Quests page, which page views no longer take
 #                            - Drew the icons of the heads and the pane's things with the icon part
 #                            - Renamed add_options to offer_row, which the Mod Framework's scan no longer takes for a call of the old UI
@@ -29,8 +30,10 @@
 # reads of the game; the script adds the pictures and the panes that name the game's things, and the
 # view shows it and tells the folds.
 #
-# The Quests page reads the main quest and the side quests as Amira tells them and the companions'
-# requests on the Pocket Castle's board from the game's events, without running them.
+# The Quests page shows the main quest and the side quests as Amira tells them and the companions'
+# requests on the Pocket Castle's board: the DLL walks the game's events (QuestWalk in
+# MGQOnline.Game) and names each message by its place, and the script looks up its text and speaker
+# in the player's own game data.
 module MGQ_MpWorldOverview
   # Luka's actor, whose portrait heads the Unlocks page.
   LUKA = 1
@@ -39,13 +42,23 @@ module MGQ_MpWorldOverview
   SPLIT_PAGES = [:world, :quests, :unlocks]
 
   # The topic that lays the World page out: "seats", "story" (nil, or "part" and "done"), "main"
-  # (see quest_text), "sections" ([name, [boss names]] each), "bosses" ({boss name => [section,
+  # (see messages_of), "sections" ([name, [boss names]] each), "bosses" ({boss name => [section,
   # tier]}) and "tiers" ({tier => [[stat, factor]]}) in; the page out, see model_of.
   WORLD_TOPIC = "overview.world"
 
-  # The topic that lays the Quests page out: "main", "side" and "companion" (see quest_text) in;
-  # the page out, see model_of.
+  # The topic that lays the Quests page out: "main" (see messages_of), "side" and "companion" (such
+  # messages for each quest) in; the page out, see model_of.
   QUESTS_TOPIC = "overview.quests"
+
+  # The topic that walks the quests the game tells now: "party", "items" and "values" in; "needs",
+  # else the quests (see quest_walk) out.
+  QUEST_WALK_TOPIC = "overview.quest_walk"
+
+  # The quests while the DLL walked none.
+  NO_QUESTS = { "main" => [], "side" => [], "companion" => [] }.freeze
+
+  # The code of the command that shows a message, whose lines follow it.
+  SHOW_TEXT = 101
 
   # The topic that lays the Unlocks page out: "target", "level" and "unlocks" ([level, name, got,
   # due] each) in; the page out, see model_of.
@@ -148,7 +161,7 @@ module MGQ_MpWorldOverview
     (sections.map { |_, names| names }.flatten + pooled).uniq.each { |name| bosses[name] = [section_of(name), tier_of(name)] }
     tiers = {}
     MGQ_MpRaidBosses.tiers.each { |tier, stats| tiers[tier] = stats.map { |stat, factor| [stat.to_s, factor.to_s] } }
-    request = { "seats" => world ? world.seats.to_i : 0, "story" => story, "main" => quest_text(main_quest), "sections" => sections, "bosses" => bosses, "tiers" => tiers }
+    request = { "seats" => world ? world.seats.to_i : 0, "story" => story, "main" => messages_of(quest_walk["main"]), "sections" => sections, "bosses" => bosses, "tiers" => tiers }
     data = model_of(MGQ_Multiplayer::Bridge.call(WORLD_TOPIC, request))
     data.head.title = world_name
     data.head.note = world_note
@@ -158,12 +171,13 @@ module MGQ_MpWorldOverview
 
   # Lays the Quests page out through the DLL: Amira with the main quest at the top, the side quests
   # numbered and the companion quests by each companion's name in the list, from the quests the
-  # script reads of the game's events.
+  # DLL walks.
   #
   # @return [Model] The model.
   def self.quest_model
-    request = { "main" => quest_text(main_quest), "side" => side_quests.map { |quest| quest_text(quest) },
-                "companion" => companion_quests.map { |quest| quest_text(quest) } }
+    walked = quest_walk
+    request = { "main" => messages_of(walked["main"]), "side" => walked["side"].map { |quest| messages_of(quest) },
+                "companion" => walked["companion"].map { |quest| messages_of(quest) } }
     data = model_of(MGQ_Multiplayer::Bridge.call(QUESTS_TOPIC, request))
     amira = $data_actors && $data_actors[AMIRA]
     data.head.looks = looks(amira) if amira
@@ -187,12 +201,80 @@ module MGQ_MpWorldOverview
     data
   end
 
-  # Writes a quest the way the DLL takes it.
+  # Has the DLL walk the quests the game tells now, handing over the switches, variables and common
+  # events it names it needs (MGQ_MpCoopEvents.ask), the party's characters and its items.
   #
-  # @param quest [Quest, nil] The quest.
-  # @return [Array, nil] [speaker, texts]; nil for none.
-  def self.quest_text(quest)
-    quest ? [quest.speaker, quest.texts] : nil
+  # @return [Hash] "main" (the objective's messages), "side" and "companion" (each quest's
+  #   messages), each message [site, place] (see message_at); no quests while the DLL walked none.
+  def self.quest_walk
+    request = { "party" => $game_party.all_members.map { |actor| actor.id }, "items" => $game_party.items.map { |item| item.id } }
+    answer = MGQ_MpCoopEvents.ask(QUEST_WALK_TOPIC, request, @quest_needs ||= {})
+    return NO_QUESTS unless answer
+
+    log_once(:board, "the Pocket Castle's board has no requests to read") unless answer["board"]
+    answer
+  end
+
+  # Looks a quest's messages up in the player's own game data.
+  #
+  # @param messages [Array<Array>] The messages as the DLL names them, see message_at.
+  # @return [Array<Array>] [speaker, text] each; a place that holds no message here is left out.
+  def self.messages_of(messages)
+    messages.map { |site, place| message_at(site, place) }.compact
+  end
+
+  # Looks a message up by its list and its place among the commands the events database keeps,
+  # which a translation leaves where it was (see MGQ_MpStoryReplay.kept_place).
+  #
+  # @param site [Array] The list: ["ce", id] or ["map", map, event, page from 1].
+  # @param place [Integer] The message's place among the list's kept commands.
+  # @return [Array, nil] Its speaker (nil for none) and its text, plain; nil when the place holds
+  #   no message in this game.
+  def self.message_at(site, place)
+    list = quest_list(site)
+    index = list ? kept_indexes(list)[place] : nil
+    return nil unless index && list[index].code == SHOW_TEXT
+
+    [speaker_of(list, index + 1), plain_message(list, index + 1)]
+  end
+
+  # Finds a list of the game's events by its site.
+  #
+  # @param site [Array] The list, see message_at.
+  # @return [Array<RPG::EventCommand>, nil] Its commands; nil for a list the game lacks.
+  def self.quest_list(site)
+    kind, id, event, page = site
+    if kind == "ce"
+      common = $data_common_events ? $data_common_events[id] : nil
+      return common ? common.list : nil
+    end
+
+    found = quest_map(id) ? quest_map(id).events[event] : nil
+    found && found.pages[page - 1] ? found.pages[page - 1].list : nil
+  end
+
+  # Reads a map's events once a session, such as the board's.
+  #
+  # @param id [Integer] The map.
+  # @return [RPG::Map, nil] The map; nil when it cannot be read.
+  def self.quest_map(id)
+    @quest_maps ||= {}
+    return @quest_maps[id] if @quest_maps.key?(id)
+
+    @quest_maps[id] = load_data(MGQ_MpCoopGather.map_file(id))
+  rescue => e
+    log_once([:map, id], "reading map #{id} for the quests failed: #{e.class}: #{e.message}")
+    @quest_maps[id] = nil
+  end
+
+  # Lists the places of a list's commands the events database keeps, so a kept place finds its
+  # command.
+  #
+  # @param list [Array<RPG::EventCommand>] The commands.
+  # @return [Array<Integer>] The places, in order.
+  def self.kept_indexes(list)
+    @kept_indexes ||= {}.compare_by_identity
+    @kept_indexes[list] ||= (0...list.size).select { |index| list[index] && MGQ_MpStoryReplay.kept_code?(list[index].code) }
   end
 
   # Reads a page the DLL laid out.
@@ -289,114 +371,6 @@ module MGQ_MpWorldOverview
     Pane.new(title, nil, lines || [])
   end
 
-  # Runs through a list of commands as the game would run it now, without running any.
-  #
-  # @param list [Array<RPG::EventCommand>] The commands.
-  # @param depth [Integer] How many calls deep the list is.
-  # @param network [Boolean] Whether the branches on Amira's network hold as the game compares
-  #   them, see branch_holds?.
-  # @yieldparam kind [Symbol] :message (a message shown), :mark (the start of a quest, see
-  #   QUEST_COUNT) or :call (a common event about to be called).
-  # @yieldparam value [String, Integer, nil] The message as plain text, or the common event.
-  # @yieldparam indent [Integer] The command's indent.
-  # @yieldparam level [Integer] How many calls deep it is.
-  # @yieldparam speaker [String, nil] The message's speaker.
-  # @yieldreturn [Symbol, nil] :stop ends the walk, :skip leaves a call out.
-  # @return [Symbol, nil] :stop when a block ended the walk.
-  def self.walk(list, depth, network, &block)
-    index = 0
-    jumps = 0
-    skip = nil
-    held = {}
-    while index < list.size
-      command = list[index]
-      index += 1
-      indent = command.indent
-      next if skip && indent > skip
-
-      skip = nil
-      params = command.parameters
-      case command.code
-      when 111
-        held[indent] = branch_holds?(params, network)
-        skip = indent unless held[indent]
-      when 411 then skip = indent if held[indent]
-      when 402 then skip = indent unless params[0] == 0
-      when 403 then skip = indent
-      when 101
-        return :stop if block.call(:message, plain_message(list, index), indent, depth, speaker_of(list, index)) == :stop
-      when 122
-        return :stop if quest_mark?(params) && block.call(:mark, nil, indent, depth, nil) == :stop
-      when 117
-        called = depth < OBJECTIVE_DEPTH ? $data_common_events[params[0]] : nil
-        next unless called
-
-        answer = block.call(:call, params[0], indent, depth, nil)
-        return :stop if answer == :stop
-        return :stop if answer != :skip && walk(called.list || [], depth + 1, network, &block) == :stop
-      when 119
-        jumps += 1
-        label = jumps <= OBJECTIVE_JUMPS ? list.index { |other| other.code == 118 && other.parameters[0] == params[0] } : nil
-        return nil unless label
-
-        index = label + 1
-      when 115 then return :stop
-      end
-    end
-    nil
-  end
-
-  # Reports whether a command marks the start of a quest (see QUEST_COUNT).
-  #
-  # @param params [Array] The parameters of a variable's command.
-  # @return [Boolean] Whether it does.
-  def self.quest_mark?(params)
-    params[0] == QUEST_COUNT && params[1] == QUEST_COUNT && params[2] == 0 && params[3] == 0 && params[4] == 1
-  end
-
-  # Reports whether a branch holds now: on a switch, a variable, a party member, an item or one of
-  # the game's own checks; any other branch does not.
-  #
-  # Amira's network counts only where asked, since the objective shows whether she would tell it or
-  # not.
-  #
-  # @param params [Array] The branch's parameters.
-  # @param network [Boolean] Whether a branch on Amira's network compares as the game does.
-  # @return [Boolean] Whether it holds.
-  def self.branch_holds?(params, network = false)
-    case params[0]
-    when 0 then $game_switches[params[1]] == (params[2] == 0)
-    when 1
-      return false if params[1] == NETWORK_VARIABLE && !network
-
-      value = $game_variables[params[1]].to_i
-      other = params[2] == 0 ? params[3].to_i : $game_variables[params[3]].to_i
-      [value == other, value >= other, value <= other, value > other, value < other, value != other][params[4]] ? true : false
-    when 4 then params[2] == 0 && $game_party.all_members.any? { |actor| actor.id == params[1] }
-    when 8
-      item = $data_items[params[1]]
-      item ? $game_party.has_item?(item) : false
-    when 12 then check_holds?(params[1].to_s)
-    else false
-    end
-  end
-
-  # Reports whether one of the game's own checks holds, such as "actor_class_level_over?(1, 151, 10)".
-  #
-  # Only question methods with whole numbers run, since any other script might change the game.
-  #
-  # @param script [String] The branch's script.
-  # @return [Boolean] Whether it holds; false for any other script.
-  def self.check_holds?(script)
-    match = script.strip.match(/\A(\w+\?)\(([\d,\s]*)\)\z/)
-    return false unless match && Game_Interpreter.method_defined?(match[1])
-
-    Game_Interpreter.new.send(match[1], *match[2].split(",").map { |number| number.to_i }) ? true : false
-  rescue => e
-    log_once([:check, script], "a quest's check \"#{script}\" failed: #{e.class}: #{e.message}")
-    false
-  end
-
   # Reads the message whose lines follow a command as plain text: one line, without the speaker's
   # name and the text codes, a variable's and a companion's code replaced by its value and name.
   #
@@ -425,89 +399,6 @@ module MGQ_MpWorldOverview
     name = line[/\\n<([^>]*)>/, 1] || line[/\A\s*【([^】]*)】/, 1]
     name = TEXT_CODES.inject(name) { |plain, code| plain.gsub(code, "") }.strip if name
     name && !name.empty? ? name : nil
-  end
-
-  # Reads the main quest: every message Amira's objective shows now, her side quests left out.
-  #
-  # @return [Quest, nil] The quest; nil when she tells none.
-  def self.main_quest
-    event = $data_common_events && $data_common_events[OBJECTIVE_EVENT]
-    return nil unless event
-
-    texts = []
-    speaker = nil
-    walk(event.list || [], 0, false) do |kind, value, indent, level, who|
-      if kind == :call
-        SIDE_EVENTS.include?(value) ? :skip : nil
-      elsif kind == :message && !value.empty? && (indent > 0 || level > 0)
-        speaker ||= who
-        texts << value
-        nil
-      end
-    end
-    texts.empty? ? nil : Quest.new(:main, speaker, texts, nil)
-  end
-
-  # Reads the side quests Amira tells now, from her list for the story's place (see SIDE_EVENTS).
-  #
-  # @return [Array<Quest>] The quests.
-  def self.side_quests
-    id = SIDE_EVENTS[$game_variables[MGQ_MpStoryIds.route_variables[2].to_i].to_i >= CHAOS_SIDE_STEP ? 1 : 0]
-    event = $data_common_events && $data_common_events[id]
-    event ? quests_of(event.list || [], :side) : []
-  end
-
-  # Reads the companions' requests on the Pocket Castle's board now.
-  #
-  # @return [Array<Quest>] The requests, each by the companion who left it.
-  def self.companion_quests
-    quests_of(board_list, :companion)
-  end
-
-  # Reads the board's list of commands, once a session.
-  #
-  # @return [Array<RPG::EventCommand>] The commands; none when the map or the event is missing.
-  def self.board_list
-    return @board_list if @board_list
-
-    map = load_data(format("Data/Map%03d.rvdata2", BOARD_MAP))
-    event = map.events[BOARD_EVENT]
-    page = event && event.pages.find { |candidate| candidate.list.any? { |command| command.code == 122 && quest_mark?(command.parameters) } }
-    log("the Pocket Castle's board (map #{BOARD_MAP}, event #{BOARD_EVENT}) has no entries to read") unless page
-    @board_list = page ? page.list : []
-  rescue => e
-    log_once(:board, "reading the Pocket Castle's board failed: #{e.class}: #{e.message}")
-    @board_list = []
-  end
-
-  # Reads the quests a list tells now, each from its mark (see quest_mark?) to the end of its block.
-  #
-  # Only the first speaker's messages count, so the others' remarks in between stay out.
-  #
-  # @param list [Array<RPG::EventCommand>] The commands.
-  # @param kind [Symbol] The quests' kind, :side (numbered) or :companion.
-  # @return [Array<Quest>] The entries that say anything.
-  def self.quests_of(list, kind)
-    entries = []
-    entry = nil
-    walk(list, 0, true) do |kind, value, indent, level, speaker|
-      if kind == :mark
-        entry = { :indent => indent, :level => level, :speaker => nil, :texts => [] }
-        entries << entry
-      elsif kind == :message && entry
-        if level < entry[:level] || (level == entry[:level] && indent < entry[:indent])
-          entry = nil
-        elsif !value.empty?
-          entry[:speaker] ||= speaker
-          entry[:texts] << value if speaker == entry[:speaker]
-        end
-      end
-      nil
-    end
-    told = entries.reject { |found| found[:texts].empty? }
-    told.each_with_index.map do |found, index|
-      Quest.new(kind, found[:speaker], found[:texts], kind == :side ? index + 1 : nil, kind == :companion ? looks_of(found[:speaker]) : nil)
-    end
   end
 
   # Finds how a companion looks by their name: the one of that name in the party, else the first

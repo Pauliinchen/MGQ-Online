@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-08: Wrote the world's type and difficulty right after its name in the title
+#                            - Left the quest walk's events and markers to the DLL
 #      Paulinchen  2026-11-07: Greyed a player menu choice that cannot be taken through disabled:
 #      Paulinchen  2026-11-06: Dropped the opacity of the picture behind the Quests page
 #                            - Marked the Players tab from the players listed last, only while another page shows
@@ -151,38 +152,6 @@ module MGQ_MpWorldOverview
   # What the title says while no world is open.
   NO_WORLD = "World"
 
-  # The common event of Amira the Informant, whose words on the information asked for name the
-  # story's current objective (see main_quest).
-  OBJECTIVE_EVENT = 108
-
-  # The variable of Amira's information network ("Pornof Rabbit Events"), whose branch at the top
-  # of her event keeps every hint back until the rabbit side quest moved on; the World page passes
-  # it, since it shows the story's objective, not whether Amira would tell it.
-  NETWORK_VARIABLE = 1009
-
-  # Common events deep the objective follows the calls of Amira's event.
-  OBJECTIVE_DEPTH = 3
-
-  # Jumps to a label the objective follows at most, so labels that jump in a circle end.
-  OBJECTIVE_JUMPS = 50
-
-  # Amira's lists of side quests, which her event calls after the objective: the first until the
-  # Chaos route's step CHAOS_SIDE_STEP, the second from it.
-  SIDE_EVENTS = [131, 135]
-
-  # The Chaos route's step from which Amira tells the second list of SIDE_EVENTS.
-  CHAOS_SIDE_STEP = 21
-
-  # The map of the Pocket Castle's bulletin board, where companions leave their requests.
-  BOARD_MAP = 228
-
-  # The event of the Pocket Castle's bulletin board.
-  BOARD_EVENT = 37
-
-  # The variable Amira's lists and the board set to 1 before each entry they tell, which marks
-  # where an entry starts.
-  QUEST_COUNT = 11
-
   # Amira's actor, who heads the Quests page.
   AMIRA = 540
 
@@ -213,10 +182,6 @@ module MGQ_MpWorldOverview
 
   # How a character looks: their map sprite's sheet and place, and their face's sheet and place.
   Looks = Struct.new(:character_name, :character_index, :face_name, :face_index)
-
-  # A quest as the game tells it now: its kind (:main, :side or :companion), who tells it, each
-  # message as plain text, a side quest's number, and how a companion asking for help looks.
-  Quest = Struct.new(:kind, :speaker, :texts, :number, :looks)
 
   # A speaker's name at a message's start: the translation's "\n<Name>" and the untranslated
   # game's "【Name】".

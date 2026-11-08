@@ -2,6 +2,7 @@
 //  OverviewTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Walked the quests over the game's events and took their messages as the scripts look them up
 //      Paulinchen  2026-11-01: Dropped the story topics no script calls, since the rows and pages write the story
 //      Paulinchen  2026-10-31: Built the world, quests and unlocks pages
 //                            - Built the player, party, raid and map rows
@@ -14,6 +15,7 @@ using System.Collections.Generic;
 using System.Linq;
 using MGQOnline.Bridge;
 using MGQOnline.Bridge.Ruby;
+using MGQOnline.Game.Events.Data;
 using MGQOnline.Game.Overview;
 using MGQOnline.Game.Raid;
 using MGQOnline.Game.World;
@@ -63,17 +65,26 @@ internal static class OverviewTopics
 
     /// <summary>
     /// Lays the World page out: <c>seats</c>, <c>story</c> (nil, or <c>part</c> and <c>done</c>),
-    /// <c>main</c> (see <see cref="QuestOf"/>), <c>sections</c> ([name, [boss names]] each),
+    /// <c>main</c> (see <see cref="MessagesOf"/>), <c>sections</c> ([name, [boss names]] each),
     /// <c>bosses</c> ({boss name => [section, tier]}) and <c>tiers</c> ({tier => [[stat, factor
     /// text]]}) in; the page out, see <see cref="ModelValue"/>.
     /// </summary>
     public const string WorldPage = "overview.world";
 
     /// <summary>
-    /// Lays the Quests page out: <c>main</c>, <c>side</c> and <c>companion</c> (see <see cref="QuestOf"/>)
-    /// in; the page out, see <see cref="ModelValue"/>.
+    /// Lays the Quests page out: <c>main</c> (see <see cref="MessagesOf"/>), <c>side</c> and <c>companion</c>
+    /// (such messages for each quest) in; the page out, see <see cref="ModelValue"/>.
     /// </summary>
     public const string QuestsPage = "overview.quests";
+
+    /// <summary>
+    /// Walks the quests the game tells now (<see cref="QuestWalk"/>): <c>party</c> (the party's characters),
+    /// <c>items</c> (the items it holds) and <c>values</c> (see <see cref="EventTopics.RequestState"/>) in;
+    /// <c>needs</c>, else <c>main</c> (the objective's messages), <c>side</c> and <c>companion</c> (each
+    /// quest's messages) and <c>board</c> (the board's page, nil when the game has none) out. A message
+    /// is [site, place], as the story replay names a command.
+    /// </summary>
+    public const string QuestWalkTopic = "overview.quest_walk";
 
     /// <summary>
     /// Lays the Unlocks page out: <c>target</c>, <c>level</c> and <c>unlocks</c> ([level, name, got,
@@ -96,9 +107,11 @@ internal static class OverviewTopics
     /// Registers the topics on a context.
     /// </summary>
     /// <param name="context">The context the handshake opened.</param>
-    public static void Register(BridgeContext context)
+    /// <param name="events">Gives the game's events once a topic is called.</param>
+    public static void Register(BridgeContext context, System.Func<GameEvents> events)
     {
         context.Register(Title, (_, request) => TitleOf(request.AsHash()));
+        context.Register(QuestWalkTopic, (_, request) => QuestWalkOf(events(), request.AsHash()));
     }
 
     /// <summary>
@@ -168,7 +181,7 @@ internal static class OverviewTopics
             1 + room.Peers.Count(peer => peer.State.Has("name")),
             seats.IsNil ? 0 : seats.AsInt(),
             story.IsNil ? null : new OverviewWorldStory(story.AsHash()["part"].AsText(), [.. story.AsHash()["done"].AsArray().Select(part => part.AsText())]),
-            QuestOf(request["main"]),
+            OverviewPages.Told(MessagesOf(request["main"]), false),
             [.. request["sections"].AsArray().Select(section => new OverviewSection(section.AsArray()[0].AsText(), [.. section.AsArray()[1].AsArray().Select(boss => boss.AsText())]))],
             bosses,
             tiers);
@@ -181,8 +194,8 @@ internal static class OverviewTopics
     /// <param name="folds">The groups the player opened or folded.</param>
     /// <returns>The page.</returns>
     private static RubyHash QuestsOf(RubyHash request, OverviewFolds folds) =>
-        ModelValue(OverviewPages.Quests(QuestOf(request["main"]), [.. request["side"].AsArray().Select(quest => QuestOf(quest)!)],
-            [.. request["companion"].AsArray().Select(quest => QuestOf(quest)!)], folds));
+        ModelValue(OverviewPages.Quests(MessagesOf(request["main"]), [.. request["side"].AsArray().Select(MessagesOf)],
+            [.. request["companion"].AsArray().Select(MessagesOf)], folds));
 
     /// <summary>
     /// Answers <see cref="UnlocksPage"/>.
@@ -200,19 +213,32 @@ internal static class OverviewTopics
     }
 
     /// <summary>
-    /// Reads a quest as the scripts read it: [speaker (nil for none), [message, ...]].
+    /// Reads a quest's messages as the scripts looked them up: [speaker (nil for none), text] each.
     /// </summary>
-    /// <param name="quest">The quest, nil for none.</param>
-    /// <returns>The quest, <see langword="null"/> for none.</returns>
-    private static OverviewQuestText? QuestOf(RubyValue quest)
-    {
-        if (quest.IsNil)
-        {
-            return null;
-        }
+    /// <param name="messages">The messages.</param>
+    /// <returns>The messages.</returns>
+    private static IReadOnlyList<OverviewMessage> MessagesOf(RubyValue messages) =>
+        [.. messages.AsArray().Select(message => message.AsArray()).Select(pair => new OverviewMessage(pair[0].IsNil ? null : pair[0].AsText(), pair[1].AsText()))];
 
-        RubyArray pair = quest.AsArray();
-        return new OverviewQuestText(pair[0].IsNil ? null : pair[0].AsText(), [.. pair[1].AsArray().Select(text => text.AsText())]);
+    /// <summary>
+    /// Answers <see cref="QuestWalkTopic"/>.
+    /// </summary>
+    /// <param name="events">The game's events.</param>
+    /// <param name="request">The request.</param>
+    /// <returns>The values the walk lacked, else the quests.</returns>
+    internal static RubyHash QuestWalkOf(GameEvents events, RubyHash request)
+    {
+        var values = new EventTopics.RequestState(request["values"] as RubyHash);
+        var state = new RequestQuestState(values, [.. request["party"].AsArray().Select(id => id.AsLong())], [.. request["items"].AsArray().Select(id => id.AsLong())]);
+        QuestPlaces places = QuestWalk.Walk(new HandedCommonsSource(events.Source, values.HandedCommon), state);
+        RubyArray Messages(IReadOnlyList<QuestMessage> messages) => new(messages.Select(message => (RubyValue)new RubyArray { message.Site.Plain(), message.Place }));
+        return values.Needs() ?? new RubyHash
+        {
+            { "main", Messages(places.Main) },
+            { "side", new RubyArray(places.Sides.Select(quest => (RubyValue)Messages(quest))) },
+            { "companion", new RubyArray(places.Companions.Select(quest => (RubyValue)Messages(quest))) },
+            { "board", places.Board is { } board ? board.Plain() : RubyNil.Value },
+        };
     }
 
     /// <summary>
@@ -429,5 +455,27 @@ internal static class OverviewTopics
         RubyValue value = request["difficulty"];
         string? name = !value.IsNil && value.AsInt() is var difficulty && WorldDifficulty.IsValid(difficulty) ? WorldDifficulty.Names[difficulty - WorldDifficulty.Min] : null;
         return new RubyHash { { "tail", OverviewText.TitleTail(raid, name) }, { "note", OverviewText.Note(raid, name) } };
+    }
+
+    /// <summary>
+    /// The live values a quest walk reads: the switches and variables a request hands over, and the
+    /// party's characters and items.
+    /// </summary>
+    /// <param name="values">The switches and variables, which note what they lack.</param>
+    /// <param name="party">The party's characters.</param>
+    /// <param name="items">The items the party holds.</param>
+    private sealed class RequestQuestState(EventTopics.RequestState values, HashSet<long> party, HashSet<long> items) : IQuestState
+    {
+        /// <inheritdoc />
+        public bool Switch(long id) => values.Switch(id);
+
+        /// <inheritdoc />
+        public long? Variable(long id) => values.Variable(id);
+
+        /// <inheritdoc />
+        public bool InParty(long actor) => party.Contains(actor);
+
+        /// <inheritdoc />
+        public bool Holds(long item) => items.Contains(item);
     }
 }

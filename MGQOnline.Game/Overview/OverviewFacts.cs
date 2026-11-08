@@ -2,6 +2,7 @@
 //  OverviewFacts.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Added a quest's message as the scripts look it up
 //      Paulinchen  2026-10-31: Created
 //
 //----------------------------------------------------------------
@@ -11,7 +12,15 @@ using System.Collections.Generic;
 namespace MGQOnline.Game.Overview;
 
 /// <summary>
-/// A quest as the scripts read it from the game's events: who tells it and each message as plain text.
+/// A message of a quest as the scripts look it up in the player's own game data: who says it and
+/// its text, plain.
+/// </summary>
+/// <param name="Speaker">Who says it, <see langword="null"/> for nobody named.</param>
+/// <param name="Text">Its text, empty for a message that says nothing.</param>
+public sealed record OverviewMessage(string? Speaker, string Text);
+
+/// <summary>
+/// A quest as it tells itself: who tells it and each message as plain text.
 /// </summary>
 /// <param name="Speaker">Who tells it, <see langword="null"/> for nobody named.</param>
 /// <param name="Texts">Its messages, at least one.</param>

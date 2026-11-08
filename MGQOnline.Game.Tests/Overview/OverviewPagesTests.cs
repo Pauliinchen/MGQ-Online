@@ -2,6 +2,7 @@
 //  OverviewPagesTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Checked how the Quests page tells a quest from its messages
 //      Paulinchen  2026-11-06: Dropped the checks that replayed recorded cases
 //      Paulinchen  2026-10-31: Created
 //
@@ -40,6 +41,29 @@ public sealed class OverviewPagesTests
         IReadOnlyList<OverviewPaneLine> pane = OverviewBosses.Pane(new OverviewBoss("Alma Elma", 1, 1.0, false, null), "Part 1", tiers);
 
         Assert.Equal("Tier 1: enemies have HP x45, DEF x5, MDF x4.33.", pane[1].Text);
+    }
+
+    /// <summary>
+    /// Asserts that the Quests page tells each quest by its messages with a text: the objective by
+    /// every speaker, an entry by its first speaker alone, and an entry that says nothing left out
+    /// of the numbering.
+    /// </summary>
+    [Fact]
+    public void Quests_TellsEachQuestByItsSpokenMessages()
+    {
+        OverviewMessage[] main = [new("Amira", "Cross the mountains."), new("Luka", "Let's go."), new("Amira", string.Empty)];
+        OverviewMessage[][] sides =
+        [
+            [new("Amira", string.Empty), new("Amira", "A troublesome job."), new("Sonya", "She sounds scary."), new("Amira", "Go to the slums.")],
+            [new("Amira", string.Empty)],
+            [new(null, "Iron ore in the Pornof mines.")],
+        ];
+
+        OverviewModel page = OverviewPages.Quests(main, sides, [], new OverviewFolds());
+
+        Assert.Equal(
+            [("main", "Amira", "Cross the mountains. | Let's go.", (int?)null), ("side", "Amira", "A troublesome job. | Go to the slums.", 1), ("side", null, "Iron ore in the Pornof mines.", 2)],
+            page.Picks.OfType<OverviewQuest>().Select(quest => (quest.Kind, quest.Speaker, string.Join(" | ", quest.Texts), quest.Number)));
     }
 
     /// <summary>

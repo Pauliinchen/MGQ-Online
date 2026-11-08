@@ -2,6 +2,7 @@
 #  world_overview_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Checked the quests looked up at the places the DLL's quest walk names, the walk itself left to the C# tests
 #      Paulinchen  2026-11-07: Read a greyed menu choice from disabled:
 #      Paulinchen  2026-11-06: Dropped the check of the picture behind the Quests page
 #                            - Expected the DLL to hear that the player chose to leave the party
@@ -183,8 +184,8 @@ class Bitmap
   # Tells the texts drawn.
   def texts; @drawn.select { |kind, _| kind == :text }.map { |_, text, _| text }; end
 end
-# A character with a base level, Luka or not.
-Actor = Struct.new(:base_level, :luca) do
+# A character with a base level, Luka or not, and their id.
+Actor = Struct.new(:base_level, :luca, :id) do
   # Answers whether the character is Luka.
   def luca?; luca; end
   # Answers Luka, or the character's level as a name.
@@ -213,6 +214,14 @@ module MGQ_MpBattlesDuel
   def self.call_of(_peer); nil; end
 end
 MGQ_MpActions.offer(MGQ_MpBattlesDuel)
+# Stands in for story_replay.rbx's codes of the commands the events database keeps: every command
+# but a message's lines and a block's end.
+module MGQ_MpStoryReplay; def self.kept_code?(code); ![0, 401].include?(code); end; end
+# Stands in for coop_events.rbx's asking, which hands the DLL the values it names it needs; this
+# DLL names none.
+module MGQ_MpCoopEvents; def self.ask(topic, request, _needs); MGQ_Multiplayer::Bridge.call(topic, request.merge("values" => {})); end; end
+# Answers the items of the party's bag, as $bag_items lists them.
+def $game_party.items; Array($bag_items); end
 load_script "world_catchup_exp"
 load_script "world_overview"
 load_script "world_overview_pages"
@@ -615,7 +624,7 @@ overview.turned(:world)
 world = overview.model(:world)
 check("turning to the World page reads it, headed by the world's name with its type and difficulty, the DLL laying out the rest from the seats and the story the script hands",
       [overview.page, world.head.title, world.head.note, $overviews.asked("overview.world").last.values_at("seats", "story", "main"), world.head.lines, world.rows],
-      [:world, "Test World", "Classic | Per player", [8, nil, nil], ["Players online: 3 / 8", "Each party plays its leader's story."], [[:none, "Raid bosses fight in Raid Worlds."]]])
+      [:world, "Test World", "Classic | Per player", [8, nil, []], ["Players online: 3 / 8", "Each party plays its leader's story."], [[:none, "Raid bosses fight in Raid Worlds."]]])
 check("its head shows the globe, its list a dim line in place of raid bosses", [world.head.icon, world.rows.map { |item| overview.entry_row(item) }],
       [3988, [{ :none => "Raid bosses fight in Raid Worlds." }]])
 
@@ -740,64 +749,23 @@ check("a changed difficulty asks the DLL again", [overview.title_tail, $rule_ans
 $difficulty = 1
 $world_story = nil
 
-# The story's objective is what Amira's event tells when asked for information.
+# The quests: the DLL walks the game's events (overview.quest_walk; the walk is the C# tests') and
+# names each message by its list and its place among the commands the events database keeps, which
+# the script looks up in its own game data.
 # An event command: its code, indent and parameters.
 ObjectiveCommand = Struct.new(:code, :indent, :parameters)
 # A common event: its commands.
 ObjectiveEvent = Struct.new(:list)
 # Makes an event command.
 command = lambda { |code, indent, *params| ObjectiveCommand.new(code, indent, params) }
-# Makes a message: the command that shows Amira's face, then a command per line.
+# Makes a message: the command that shows a face, then a command per line.
 message = lambda { |indent, *lines| [command.call(101, indent, "amira_fc1", 0, 0, 2)] + lines.map { |line| command.call(401, indent, line) } }
-amira = message.call(0, "\\n<Amira>", "Let's see, your current primary objective is...") +
-        [command.call(111, 0, 1, 1009, 0, 1, 2)] + message.call(1, "\\n<Amira>Give me some time until my information network is developed.") + [command.call(115, 1), command.call(412, 0)] +
-        [command.call(111, 0, 1, 1001, 0, 9, 2)] + message.call(1, "\\n<Amira>Head to the \\C[17]Tartarus rift\\C[0] south", "of Iliasville.") + [command.call(412, 0)] +
-        [command.call(111, 0, 1, 1001, 0, 10, 0), command.call(117, 1, 120), command.call(412, 0)] +
-        [command.call(111, 0, 1, 1001, 0, 11, 0), command.call(119, 1, "tip"), command.call(412, 0)] +
-        [command.call(111, 0, 0, 5, 0), command.call(118, 1, "tip")] + message.call(1, "Your party has \\V[7] members.") + [command.call(412, 0)]
+# Kept places: 0 the opening, 1 the branch, 2 Amira's two lines, 3 Luka's, 4 the branch's end.
+amira = message.call(0, "\\n<Amira>", "Let's see, your current primary objective is...") + [command.call(111, 0, 1, 1001, 0, 10, 0)] +
+        message.call(1, "\\n<Amira>Head to the \\C[17]Tartarus rift\\C[0] south", "of Iliasville.") + message.call(1, "\\n<Luka>A party of \\V[7].") + [command.call(412, 0)]
 $data_common_events = []
-$data_common_events[overview::OBJECTIVE_EVENT] = ObjectiveEvent.new(amira)
-$data_common_events[120] = ObjectiveEvent.new(message.call(0, "\\n<Amira>Cross the eastern mountains."))
-# Tells the main quest's texts at a story progress, nil for none.
-objective = lambda do |progress|
-  $game_variables[1001] = progress
-  main = overview.main_quest
-  main && main.texts
-end
-$game_variables[1009] = 0
-$game_variables[7] = 3
-check("the main quest is Amira's words in a branch, plain, past her network's branch, through the events she calls and the labels she jumps to",
-      [objective.call(5), objective.call(10), objective.call(11), objective.call(12)],
-      [["Head to the Tartarus rift south of Iliasville."], ["Cross the eastern mountains."], ["Your party has 3 members."], nil])
-$world_story = { "part" => "1" }
-$game_variables[1001] = 5
-objective_row = ["entry", ["Objective", "Head to the Tartarus rift.", nil, false, nil], ["note", "Objective", ["Head to the Tartarus rift south of Iliasville.", "Then rest."]]]
-$overviews.set("overview.world", page_of.call(["Players online: 3 / 8", "Story: Part 1"], [objective_row], [0]))
-note = overview.world_model.rows.first[1]
-check("the World page hands the DLL the objective, and the objective's pane lays its texts out a gap apart",
-      [$overviews.asked("overview.world").last["main"], note.row.to_a, overview.pane_of(note).to_a],
-      [["Amira", ["Head to the Tartarus rift south of Iliasville."]], ["Objective", "Head to the Tartarus rift.", nil, false, nil],
-       ["Objective", nil, [[:text, "Head to the Tartarus rift south of Iliasville."], [:gap], [:text, "Then rest."]]]])
-
-# The Quests page: the main quest, Amira's side quests and the board's companion quests.
-# Makes the command that marks where a quest's entry starts.
-mark = lambda { |indent| command.call(122, indent, overview::QUEST_COUNT, overview::QUEST_COUNT, 0, 0, 1) }
-main = message.call(0, "\\n<Amira>", "Let's see, your current primary objective is...") +
-       [command.call(111, 0, 1, 1001, 0, 10, 0)] + message.call(1, "\\n<Amira>Cross the mountains.") + message.call(1, "\\n<Amira>Buy golden equipment.") + [command.call(412, 0)] +
-       [command.call(111, 0, 1, 1143, 0, 20, 2), command.call(117, 1, 131), command.call(115, 1), command.call(412, 0)]
-sides = message.call(0, "\\n<Amira>I have some other information.") +
-        [command.call(111, 0, 0, 2018, 1), mark.call(1)] + message.call(1, "\\n<Amira>Strange crying near Iliasville.") + [command.call(412, 0)] +
-        [command.call(111, 0, 1, 1004, 0, 0, 0), mark.call(1)] + message.call(1, "\\n<Amira>A troublesome job.") +
-        [command.call(111, 1, 0, 6, 0)] + message.call(2, "\\n<Sonya>She sounds scary.") + [command.call(411, 1)] + message.call(2, "\\n<Luka>So she sells them.") + [command.call(412, 1)] +
-        message.call(1, "\\n<Amira>Go to the slums.") + [command.call(412, 0)] +
-        [command.call(111, 0, 8, 151), command.call(411, 0), mark.call(1)] + message.call(1, "\\n<Amira>Iron ore in the Pornof mines.") + [command.call(412, 0)] +
-        [command.call(111, 0, 1, 1009, 0, 3, 1), mark.call(1)] + message.call(1, "\\n<Amira>The engineer wants makina.") + [command.call(412, 0)] +
-        [command.call(111, 0, 0, 2040, 0), mark.call(1)] + message.call(1, "\\n<Amira>A door in a solid wall.") + [command.call(412, 0)]
-board = message.call(0, "It seems your companions have written a variety of messages on this bulletin board.") +
-        [command.call(111, 0, 0, 1056, 0), mark.call(1), command.call(111, 1, 1, 1041, 0, 0, 0)] + message.call(2, "\\n<Rami>Take me to Harpy Village♪") + [command.call(412, 1), command.call(412, 0)] +
-        [command.call(111, 0, 12, "actor_class_level_over?(1, 151, 10)"), mark.call(1)] + message.call(1, "\\n<Kamuro>Homework.") + [command.call(412, 0)] +
-        [command.call(111, 0, 12, "$game_switches[1] = true"), mark.call(1)] + message.call(1, "\\n<Gigi>Never.") + [command.call(412, 0)] +
-        [command.call(111, 0, 0, 1060, 0), mark.call(1)] + message.call(1, "【ポチ】", "犬に会いたい") + [command.call(412, 0)]
+$data_common_events[108] = ObjectiveEvent.new(amira)
+$data_common_events[131] = ObjectiveEvent.new([command.call(122, 0, 11, 11, 0, 0, 1)] + message.call(0, "\\n<Amira>", "Strange crying near Iliasville."))
 # A page of the board's event: its commands.
 BoardPage = Struct.new(:list)
 # The board's event: its pages.
@@ -805,60 +773,39 @@ BoardEvent = Struct.new(:pages)
 # The board's map: its events by id.
 BoardMap = Struct.new(:events)
 $board_loads = 0
+# Stands in for the game's naming of a map's file.
+module DataManager; def self.map_file_name(id); format("Data/Map%03d.rvdata2", id); end; end
 # Stands in for the game's loading of data, which hands out the board's map, counting each load in
 # $board_loads.
 Object.send(:define_method, :load_data) do |path|
   $board_loads += 1
   raise "unexpected #{path}" unless path == "Data/Map228.rvdata2"
 
-  BoardMap.new({ overview::BOARD_EVENT => BoardEvent.new([BoardPage.new(board)]) })
+  BoardMap.new({ 37 => BoardEvent.new([BoardPage.new([]), BoardPage.new(message.call(0, "【ポチ】", "犬に会いたい"))]) })
 end
-# Stands in for the game's interpreter, whose methods the overview calls for the board's checks.
-class Game_Interpreter
-  # Answers $class_levels for the board's check of character 1's job 151 at level 10, false for
-  # any other.
-  def actor_class_level_over?(actor, job, level); $class_levels && [actor, job, level] == [1, 151, 10]; end
-end
-overview.instance_variable_set(:@board_list, nil)
-$data_items = []
-$data_items[151] = :iron_ore
-$held_items = []
-$class_levels = true
-# Answers whether the party holds an item, as $held_items lists it.
-def $game_party.has_item?(item); $held_items.include?(item); end
-$data_common_events = []
-$data_common_events[overview::OBJECTIVE_EVENT] = ObjectiveEvent.new(main)
-$data_common_events[131] = ObjectiveEvent.new(sides)
-$data_common_events[135] = ObjectiveEvent.new([mark.call(0)] + message.call(0, "\\n<Amira>Chaos errands."))
-$game_variables[1001] = 10
-$game_variables[1004] = 0
-$game_variables[1009] = 3
-$game_variables[1041] = 0
-$game_variables[1143] = 0
-[2018, 2040].each { |id| $game_switches[id] = false }
-[6, 1056, 1060].each { |id| $game_switches[id] = true }
-check("the main quest is every message of Amira's objective, her side quests left out",
-      overview.main_quest.to_a, [:main, "Amira", ["Cross the mountains.", "Buy golden equipment."], nil, nil])
-check("and Amira's lists of side quests never count as the main quest, so a step without one of its own has none", ($game_variables[1001] = 12; overview.main_quest), nil)
-$game_variables[1001] = 10
-# Tells each quest's texts as one line.
-texts = lambda { |quests| quests.map { |quest| quest.texts.join(" ") } }
-check("the side quests are the entries Amira tells now, each in her words alone, her network counting",
-      texts.call(overview.side_quests), ["Strange crying near Iliasville.", "A troublesome job. Go to the slums.", "Iron ore in the Pornof mines.", "The engineer wants makina."])
-check("each numbered, each message kept apart", overview.side_quests[1].to_a, [:side, "Amira", ["A troublesome job.", "Go to the slums."], 2, nil])
-$held_items = [:iron_ore]
-$game_variables[1009] = 2
-check("an item held or a network not yet grown leaves its entry out", texts.call(overview.side_quests), ["Strange crying near Iliasville.", "A troublesome job. Go to the slums."])
-$game_variables[1143] = 21
-check("from the Chaos route's step 21 Amira's second list counts", texts.call(overview.side_quests), ["Chaos errands."])
-$game_variables[1143] = 0
-check("the companion quests are the board's entries by their companion, a check of the game's own counting and any other script not",
-      overview.companion_quests.map { |quest| [quest.kind, quest.speaker, quest.texts, quest.number] },
-      [[:companion, "Rami", ["Take me to Harpy Village♪"], nil], [:companion, "Kamuro", ["Homework."], nil], [:companion, "ポチ", ["犬に会いたい"], nil]])
-overview.companion_quests
-check("the board's map is read once a session", $board_loads, 1)
 # A character of the game's data: its id, name, map sprite and face.
 LooksActor = Struct.new(:id, :name, :character_name, :character_index, :face_name, :face_index)
+# An item of the bag: its id.
+BagItem = Struct.new(:id)
+members_before_quests = $game_party.all_members
+$game_party.all_members = [LooksActor.new(1, "Luka", "Main01_cip", 0, "luka_fc", 0)]
+$bag_items = [BagItem.new(151)]
+$game_variables[7] = 3
+objective_place = lambda { |place| [["ce", 108], place] }
+walked = { "main" => [objective_place.call(2), objective_place.call(1), objective_place.call(3), [["ce", 999], 0]],
+           "side" => [[[["ce", 131], 1]]], "companion" => [[[["map", 228, 37, 2], 0]]], "board" => ["map", 228, 37, 2] }
+$overviews.set("overview.quest_walk", walked)
+$world_story = { "part" => "1" }
+objective_row = ["entry", ["Objective", "Head to the Tartarus rift.", nil, false, nil], ["note", "Objective", ["Head to the Tartarus rift south of Iliasville.", "Then rest."]]]
+$overviews.set("overview.world", page_of.call(["Players online: 3 / 8", "Story: Part 1"], [objective_row], [0]))
+note = overview.world_model.rows.first[1]
+check("the DLL walks the quests with the party's characters and items",
+      $overviews.asked("overview.quest_walk").last, { "party" => [1], "items" => [151], "values" => {} })
+check("the World page hands the DLL the objective's messages, each looked up at its place by who says it, plain; a place without a message here is left out",
+      $overviews.asked("overview.world").last["main"], [["Amira", "Head to the Tartarus rift south of Iliasville."], ["Luka", "A party of 3."]])
+check("the objective's pane lays its texts out a gap apart",
+      [note.row.to_a, overview.pane_of(note).to_a],
+      [["Objective", "Head to the Tartarus rift.", nil, false, nil], ["Objective", nil, [[:text, "Head to the Tartarus rift south of Iliasville."], [:gap], [:text, "Then rest."]]]])
 $data_actors = [nil, LooksActor.new(1, "Luka", "Main01_cip", 0, "luka_fc", 0), LooksActor.new(56, "Rami", "Evil01_cip", 5, "rami_fc", 1),
                 LooksActor.new(57, "Rami", "Evil02_cip", 2, "rami_fc", 2), LooksActor.new(103, "Kamuro", "", 0, "kamuro_fc", 0),
                 LooksActor.new(104, "Kamuro", "Beast03_cip", 7, "kamuro_fc", 3)]
@@ -871,7 +818,6 @@ check("a companion quest knows how its companion looks: the party's of that name
 $game_party.all_members = []
 check("without one in the party the game's first of that name", overview.looks_of("Rami").to_a, ["Evil01_cip", 5, "rami_fc", 1])
 $game_party.all_members = party_members
-check("the side quests and the main quest have no portrait of their own", [overview.side_quests[0].looks, overview.main_quest.looks], [nil, nil])
 check("the portraits are sprites until the player picks faces, which Player.ini keeps",
       [overview.portraits, (overview.choose_portraits("Faces"); overview.portraits), $player_ini["quest_portraits"], (overview.choose_portraits("Bogus"); overview.portraits)],
       ["Sprites", "Faces", "Faces", "Sprites"])
@@ -890,11 +836,10 @@ quests_page = page_of.call(["Cross the mountains."],
 $overviews.set("overview.quests", quests_page)
 $frame = $frame.to_i + overview::READ_FRAMES
 data = overview.model(:quests)
-check("the quests the script reads go to the DLL, each by who tells it with its texts",
+check("the Quests page hands the DLL each quest's messages as the script looks them up, the board's from the board's page",
       $overviews.asked("overview.quests").last,
-      { "main" => ["Amira", ["Cross the mountains.", "Buy golden equipment."]],
-        "side" => [["Amira", ["Strange crying near Iliasville."]], ["Amira", ["A troublesome job.", "Go to the slums."]]],
-        "companion" => [["Rami", ["Take me to Harpy Village♪"]], ["Kamuro", ["Homework."]], ["ポチ", ["犬に会いたい"]]] })
+      { "main" => [["Amira", "Head to the Tartarus rift south of Iliasville."], ["Luka", "A party of 3."]],
+        "side" => [[["Amira", "Strange crying near Iliasville."]]], "companion" => [[["ポチ", "犬に会いたい"]]] })
 check("the head holds Amira with the main quest's first sentence, its pane titled by who tells it", [data.head.title, data.head.lines, data.head.entry.equal?(data.picks.first), overview.pane_of(data.picks.last).title],
       ["Main quest", ["Cross the mountains."], true, "Request · ポチ"])
 
@@ -924,19 +869,16 @@ $frame = $frame.to_i + overview::READ_FRAMES
 kept = overview.model(:quests)
 $frame = $frame.to_i + overview::READ_FRAMES
 check("the same quests read again stay the same objects, so the view is not set anew", overview.model(:quests).equal?(kept), true)
-[1056, 1060].each { |id| $game_switches[id] = false }
-$game_variables[1001] = 12
-$game_variables[1004] = 1
-$game_switches[2018] = true
-$class_levels = false
+check("the board's map is read once a session", $board_loads, 1)
+$overviews.set("overview.quest_walk", nil)
 side_none = ["fold", [nil, "▾ Side quests (0)", nil, false, nil], ["fold", "side", "Side quests (0)", true]]
 companion_none = ["fold", [nil, "▾ Companion quests (0)", nil, false, nil], ["fold", "companion", "Companion quests (0)", true]]
 $overviews.set("overview.quests", page_of.call(["None right now."], [side_none, ["none", "None right now."], companion_none, ["none", "None right now."]], [0, 2], "title" => "Main quest"))
 $frame = $frame.to_i + overview::READ_FRAMES
 data = overview.model(:quests)
-check("with nothing to tell the DLL hears no quest, and the page has no main quest to pick",
+check("with no quests walked the DLL hears none, and the page has no main quest to pick",
       [$overviews.asked("overview.quests").last, data.head.entry, data.picks.map { |pick| pick.value[2] }],
-      [{ "main" => nil, "side" => [], "companion" => [] }, nil, ["Side quests (0)", "Companion quests (0)"]])
+      [{ "main" => [], "side" => [], "companion" => [] }, nil, ["Side quests (0)", "Companion quests (0)"]])
 check("its list: a line under each group", data.rows.map { |item| row = overview.entry_row(item); row[:none] || row[:text] },
       ["Side quests (0)", "None right now.", "Companion quests (0)", "None right now."])
 $overviews.set("overview.quests", page_of.call(["None right now."], [["fold", [nil, "▸ Side quests (0)", nil, false, nil], ["fold", "side", "Side quests (0)", false]], companion_none,
@@ -946,10 +888,13 @@ check("the quest groups fold too, through the DLL", [$overviews.asked("overview.
       [{ "page" => "quests", "key" => "side", "open" => false }, false])
 overview.turned(:world)
 $frame = $frame.to_i + overview::READ_FRAMES
+$overviews.set("overview.quest_walk", walked)
 $data_common_events = nil
-objective.call(5)
 overview.world_model
-check("without Amira's event the World page hands the DLL no objective", $overviews.asked("overview.world").last["main"], nil)
+check("without the game's common events no place holds a message, so the World page hands the DLL none", $overviews.asked("overview.world").last["main"], [])
+$overviews.set("overview.quest_walk", nil)
+$game_party.all_members = members_before_quests
+$bag_items = nil
 $world_story = nil
 $world_story = { "part" => "2" }
 

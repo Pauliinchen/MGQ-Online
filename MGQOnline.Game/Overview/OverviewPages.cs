@@ -2,6 +2,7 @@
 //  OverviewPages.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Took over the quests' text rules from the scripts
 //      Paulinchen  2026-10-31: Created
 //
 //----------------------------------------------------------------
@@ -230,25 +231,48 @@ public static class OverviewPages
 
     /// <summary>
     /// Lays the Quests page out: the main quest at the top, the side quests numbered and the
-    /// companions' requests in the list.
+    /// companions' requests in the list, each as <see cref="Told"/> tells it; one that says nothing
+    /// is left out.
     /// </summary>
-    /// <param name="main">Amira's objective, <see langword="null"/> while she tells none.</param>
-    /// <param name="sides">The side quests Amira tells now.</param>
-    /// <param name="companions">The companions' requests on the board now.</param>
+    /// <param name="main">The messages of Amira's objective.</param>
+    /// <param name="sides">The messages of each side quest Amira tells now.</param>
+    /// <param name="companions">The messages of each companion's request on the board now.</param>
     /// <param name="folds">The groups the player opened or folded.</param>
     /// <returns>The page; the scripts add how Amira and the companions look.</returns>
-    public static OverviewModel Quests(OverviewQuestText? main, IReadOnlyList<OverviewQuestText> sides, IReadOnlyList<OverviewQuestText> companions, OverviewFolds folds)
+    public static OverviewModel Quests(IReadOnlyList<OverviewMessage> main, IReadOnlyList<IReadOnlyList<OverviewMessage>> sides, IReadOnlyList<IReadOnlyList<OverviewMessage>> companions, OverviewFolds folds)
     {
         ArgumentNullException.ThrowIfNull(sides);
         ArgumentNullException.ThrowIfNull(companions);
-        OverviewQuest? told = main is null ? null : new OverviewQuest(MainKind, main.Speaker, main.Texts, null);
+        List<OverviewQuestText> sideQuests = [.. sides.Select(quest => Told(quest, true)).OfType<OverviewQuestText>()];
+        List<OverviewQuestText> requests = [.. companions.Select(quest => Told(quest, true)).OfType<OverviewQuestText>()];
+        OverviewQuest? told = Told(main, false) is { } objective ? new OverviewQuest(MainKind, objective.Speaker, objective.Texts, null) : null;
         var head = new OverviewHead(QuestTitles[MainKind], null, [told?.First ?? NoQuests], told);
         var list = new List<OverviewItem>();
-        AddGroup(list, folds, QuestsPage, SideKind, Format(QuestHeadings[SideKind], sides.Count), true,
-            [.. sides.Select((quest, index) => new OverviewQuest(SideKind, quest.Speaker, quest.Texts, index + 1))], NoQuests);
-        AddGroup(list, folds, QuestsPage, CompanionKind, Format(QuestHeadings[CompanionKind], companions.Count), true,
-            [.. companions.Select(quest => new OverviewQuest(CompanionKind, quest.Speaker, quest.Texts, null))], NoQuests);
+        AddGroup(list, folds, QuestsPage, SideKind, Format(QuestHeadings[SideKind], sideQuests.Count), true,
+            [.. sideQuests.Select((quest, index) => new OverviewQuest(SideKind, quest.Speaker, quest.Texts, index + 1))], NoQuests);
+        AddGroup(list, folds, QuestsPage, CompanionKind, Format(QuestHeadings[CompanionKind], requests.Count), true,
+            [.. requests.Select(quest => new OverviewQuest(CompanionKind, quest.Speaker, quest.Texts, null))], NoQuests);
         return new OverviewModel(head, list, [.. told is null ? [] : new OverviewEntry[] { told }, .. PicksOf(list)]);
+    }
+
+    /// <summary>
+    /// Tells what a quest says: its messages with a text, by the speaker of the first of them.
+    /// </summary>
+    /// <remarks>An entry of Amira's lists or of the board counts its first speaker alone, so the others' remarks in between stay out.</remarks>
+    /// <param name="messages">Its messages as the scripts looked them up.</param>
+    /// <param name="firstSpeakerOnly">Whether only the first speaker's messages count, as for an entry; the objective counts every one.</param>
+    /// <returns>The quest, <see langword="null"/> when it says nothing.</returns>
+    public static OverviewQuestText? Told(IReadOnlyList<OverviewMessage> messages, bool firstSpeakerOnly)
+    {
+        ArgumentNullException.ThrowIfNull(messages);
+        List<OverviewMessage> said = [.. messages.Where(message => message.Text.Length > 0)];
+        if (said.Count == 0)
+        {
+            return null;
+        }
+
+        string? speaker = said[0].Speaker;
+        return new OverviewQuestText(speaker, [.. said.Where(message => !firstSpeakerOnly || message.Speaker == speaker).Select(message => message.Text)]);
     }
 
     /// <summary>

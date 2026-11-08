@@ -2,6 +2,7 @@
 //  OverviewRoomTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Walked the quests through their topic and handed the pages each quest's messages
 //      Paulinchen  2026-11-06: Walked the World overview's title through its topic
 //      Paulinchen  2026-10-31: Checked the World page and the folds
 //                            - Checked that the lists of players come only when they changed
@@ -14,9 +15,12 @@ using System.Collections.Generic;
 using System.Linq;
 using MGQOnline.Bridge;
 using MGQOnline.Bridge.Ruby;
+using MGQOnline.Game.Overview;
 using MGQOnline.Game.Raid;
+using MGQOnline.Game.Tests.Events;
 using MGQOnline.Game.World;
 using MGQParadox.Multiplayer.Topics;
+using static MGQOnline.Game.Tests.Events.TinyGame;
 
 namespace MGQParadox.Multiplayer.Tests.Topics;
 
@@ -64,7 +68,7 @@ public sealed class OverviewRoomTopicsTests
         {
             { "seats", 8 },
             { "story", new RubyHash { { "part", "1" }, { "done", new RubyArray() } } },
-            { "main", RubyNil.Value },
+            { "main", new RubyArray() },
             { "sections", new RubyArray { new RubyArray { "Part 1", new RubyArray { "Alma Elma" } } } },
             { "bosses", new RubyHash { { "Alma Elma", new RubyArray { "Part 1", 1 } } } },
             { "tiers", new RubyHash { { 1, new RubyArray { new RubyArray { "mhp", "45" } } } } },
@@ -82,7 +86,7 @@ public sealed class OverviewRoomTopicsTests
     [Fact]
     public void Fold_KeepsTheGroupFolded()
     {
-        var request = new RubyHash { { "main", RubyNil.Value }, { "side", new RubyArray { new RubyArray { "Amira", new RubyArray { "One." } } } }, { "companion", new RubyArray() } };
+        var request = new RubyHash { { "main", new RubyArray() }, { "side", new RubyArray { new RubyArray { new RubyArray { "Amira", "One." } } } }, { "companion", new RubyArray() } };
 
         Call(OverviewTopics.Fold, new RubyHash { { "page", "quests" }, { "key", "side" }, { "open", false } });
         RubyArray rows = Call(OverviewTopics.QuestsPage, request)!.AsHash()["rows"].AsArray();
@@ -98,13 +102,38 @@ public sealed class OverviewRoomTopicsTests
     [Fact]
     public void Title_NamesTheTypeAndTheWorldsDifficulty()
     {
-        var topics = new TopicCaller(OverviewTopics.Register);
+        var topics = new TopicCaller(context => OverviewTopics.Register(context, () => throw new InvalidOperationException("the title reads no events")));
 
         RubyValue? classic = topics.Call(OverviewTopics.Title, new RubyHash { { "raid", false }, { "difficulty", RubyNil.Value } });
         RubyValue? raid = topics.Call(OverviewTopics.Title, new RubyHash { { "raid", true }, { "difficulty", 1 } });
 
         Assert.Equal(new RubyHash { { "tail", " | Classic" }, { "note", "Classic | Per player" } }, classic);
         Assert.Equal(new RubyHash { { "tail", " | Raid | Hard" }, { "note", "Raid | Hard" } }, raid);
+    }
+
+    /// <summary>
+    /// Asserts that the quest walk first names the values it reads, then names each message the game
+    /// would show by its list and its place among the kept commands, as the story replay does.
+    /// </summary>
+    [Fact]
+    public void QuestWalk_AsksForTheValuesItReads_ThenNamesTheMessages()
+    {
+        GameEvents events = TinyEvents.Of(new TinyGame().Common(QuestWalk.ObjectiveEvent,
+            At(999, 0, QuestWalk.ObjectiveEvent), At(111, 0, 1, 1001, 0, 10, 0), At(101, 1, "amira_fc1", 0, 0, 2), At(401, 1, "Cross the mountains."), At(412, 0))
+            .Common(QuestWalk.SideEvents[0], At(999, 0, QuestWalk.SideEvents[0])));
+        events.Fingerprint = events.Store.Meta!.Build.Fingerprint;
+        var topics = new TopicCaller(context => OverviewTopics.Register(context, () => events));
+        RubyHash Walk(RubyHash values) => topics.Call(OverviewTopics.QuestWalkTopic, new RubyHash { { "party", new RubyArray { 1 } }, { "items", new RubyArray() }, { "values", values } })!.AsHash();
+
+        RubyHash needs = Walk(new RubyHash());
+        RubyHash quests = Walk(new RubyHash { { "v", new RubyHash { { 1001, 10 }, { 1143, 0 } } } });
+
+        Assert.Equal(new RubyHash { { "needs", new RubyHash { { "v", new RubyArray { 1001, 1143 } } } } }, needs);
+        Assert.Equal(new RubyHash
+        {
+            { "main", new RubyArray { new RubyArray { new RubyArray { "ce", QuestWalk.ObjectiveEvent }, 2 } } },
+            { "side", new RubyArray() }, { "companion", new RubyArray() }, { "board", RubyNil.Value },
+        }, quests);
     }
 
     /// <summary>

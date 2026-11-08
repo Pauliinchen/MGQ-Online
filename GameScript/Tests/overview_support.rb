@@ -2,18 +2,20 @@
 #  overview_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Answered the quest walk
 #      Paulinchen  2026-11-05: Answered the World overview's models with the values each test sets instead of a copy of the C# rules
 #      Paulinchen  2026-11-01: Created
 #
 #----------------------------------------------------------------
 
 # Answers the World overview's topics of the DLL (OverviewTopics: what the player tells the others,
-# the lists of players and the World, Quests and Unlocks pages) on a FakeBridge with the fixed values
-# each test sets for its case. The lists go out with a serial that moves on whenever the test sets
-# others, and nil to a request that holds it, as the DLL hands them once per change. Unless a test
-# sets an answer, nothing changed of what the player told, the state carries the place alone, the
-# lists are empty and a page has nothing in it. Every rule (what is told, how the lists are built
-# and ordered, how a page is laid out and folded) is the C# tests' to cover.
+# the lists of players, the quest walk and the World, Quests and Unlocks pages) on a FakeBridge with
+# the fixed values each test sets for its case. The lists go out with a serial that moves on
+# whenever the test sets others, and nil to a request that holds it, as the DLL hands them once per
+# change. Unless a test sets an answer, nothing changed of what the player told, the state carries
+# the place alone, the lists are empty, no quest is walked and a page has nothing in it. Every rule
+# (what is told, how the lists are built and ordered, how the quests are walked, how a page is laid
+# out and folded) is the C# tests' to cover.
 
 require_relative "bridge_support"
 
@@ -22,7 +24,7 @@ class OverviewAnswers
   include NotedRequests
 
   # The topics answered.
-  TOPICS = %w(overview.tell overview.fields overview.rows overview.world overview.quests overview.unlocks overview.fold).freeze
+  TOPICS = %w(overview.tell overview.fields overview.rows overview.world overview.quests overview.unlocks overview.fold overview.quest_walk).freeze
 
   # The lists while the test set none.
   NO_LISTS = { "players" => [], "lines" => [], "party" => [], "raid_party" => [], "map" => [] }.freeze
