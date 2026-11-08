@@ -2,6 +2,7 @@
 #  pvp_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Loaded the battler factory, which builds the friend's characters
 #      Paulinchen  2026-11-05: Checked that a duel's end hands the guard of the game's flow what the snapshot left
 #      Paulinchen  2026-10-23: Dropped the checks of the deleted mirror match
 #                            - Checked hit messages left out without a target outside multiplayer battles too
@@ -127,6 +128,8 @@ class Game_Party
   attr_accessor :battle_members, :bench_members
   # Makes the party.
   def initialize; @battle_members = [Game_Actor.new(1), Game_Actor.new(2)]; @bench_members = [Game_Actor.new(3)]; end
+  # Starts the party's battle, which the battler factory hooks.
+  def on_battle_start; end
 end
 # The troop and the totals of its rewards.
 class Game_Troop
@@ -140,6 +143,8 @@ class Game_Troop
   def gold_total; 300; end
   # Answers the troop's drops.
   def make_drop_items; [:drop]; end
+  # Starts the troop's battle, which the battler factory hooks.
+  def on_battle_start; end
 end
 # The game's passing values, with the medals of a battle.
 class Game_Temp
@@ -231,6 +236,7 @@ $recovered = []
 $saves_written = []
 $system_written = []
 
+load_script "battles_battlers"
 load_script "battles_pvp"
 SceneManager.run
 

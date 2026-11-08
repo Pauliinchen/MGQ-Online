@@ -508,7 +508,10 @@ No ero offers, no Give Up, no swapping the Backline in where the battle has none
 
 ### Battlers the game's setup never makes
 
-Another player's character, enemies of another game's troop, a troop set up anew mid-battle, the other side's PvP Backline and a guest's start all go through one factory (`MGQ_MpBattlers`), which makes each as the game makes its own and gives it the game's own battle start where that start never reaches it.
+Another player's character, enemies of another game's troop, a troop set up anew mid-battle, the other side's PvP characters and Backline and a guest's start all go through one factory (`MGQ_MpBattlers`), which makes each as the game makes its own and gives it the game's own battle start where that start never reaches it.
+
+- A rebuilt character starts from the game's own setup of its actor; C# lists the steps of its build (`BattlerSetup.AllySteps`) and each goes through the game's own changer. The game settles a character at every change, so the rebuild holds that settle back until the whole build is on and settles once, as the owner's game had it settled; otherwise equipment that an ability or another piece makes wearable, or abilities that equipment gives the AP for, would come off.
+- The game's `add_ability` takes off what a later ability may not be set with, though the owner's game may have let it be set after that one, so the set abilities go in as the build lists them; `forget_skill` leaves the proof abilities of jobs learned, so those the build lacks are dropped directly. A rebuilt character never trades equipment with the player's bag (the game's settle would put what it takes off there).
 
 - An ally's HP goes in before its start, since a trait's low-HP states come only at the start (#31).
 - A Challenge Battle's enemy must be of the troop's `enemy_class` (#47).

@@ -2,6 +2,7 @@
 #  battles_pvp.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Built the friend's characters through the battler factory
 #      Paulinchen  2026-11-06: Left the order of the automatic skills by speed to the rules in C#
 #      Paulinchen  2026-11-05: Left the team's rule of the Backline to C#, which writes and reads the builds
 #                            - Put back through the guard of the game's flow what the duel's snapshot leaves, such as a dark screen
@@ -507,16 +508,7 @@ module MGQ_MpBattlesPvp
     # @param player [String] The friend's name.
     # @return [Array<Opponent>] The characters, without those that could not be rebuilt.
     def self.build(members, player)
-      opponents = members.map do |member|
-        begin
-          Opponent.new(member, player)
-        rescue => e
-          MGQ_MpBattlesPvp.log("could not rebuild actor #{member.actor_id}: #{e.class}: #{e.message}")
-          nil
-        end
-      end.compact
-
-      stand(opponents)
+      stand(members.map { |member| MGQ_MpBattlers.opponent(member, player) }.compact)
     end
 
     # Stands rebuilt characters side by side at the screen's bottom.

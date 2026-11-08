@@ -2,6 +2,8 @@
 #  core_actors.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Built a rebuilt character with the game's own setup and changers, in the steps C# gives
+#                            - Traded nothing of a rebuilt character's equipment with the player's bag
 #      Paulinchen  2026-11-07: Dropped the hero of a replaced Luka, which named another mod
 #      Paulinchen  2026-11-05: Dropped writing and reading an item as text, which a trade's tokens in the DLL do
 #                            - Handed the characters' and items' facts to C#, which writes and reads their text
@@ -459,6 +461,9 @@ class Game_MpActor < Game_Actor
   # Equipment slots without the extra accessory slot.
   BASIC_SLOT_COUNT = 5
 
+  # The DLL's topic that lists the steps of a rebuild, see rebuild.
+  STEPS_TOPIC = "battlers.steps"
+
   # The damage boost of each counter of MGQ_MpActors::Builds::COUNTERS, in NWFeature::Booster.
   COUNTER_BOOSTERS = {
     :battle_count => :BATTLE_COUNT,
@@ -485,9 +490,10 @@ class Game_MpActor < Game_Actor
   # @param member [MGQ_MpActors::Builds::Member] The character's build.
   # @param player [String] Who the character belongs to.
   def initialize(member, player)
-    super(member.actor_id)
+    # The game's setup already reads the build's equipment slots, see extra_accessory_slot?.
     @member = member
     @player = player
+    super(member.actor_id)
     rebuild
     log_rebuild
   end
@@ -585,6 +591,29 @@ class Game_MpActor < Game_Actor
   def consume_item(_item)
   end
 
+  # Trades nothing with the player's bag, where the game puts what a character takes off and takes
+  # what it puts on: the equipment belongs to the owner's save.
+  #
+  # @param _new_item [RPG::EquipItem, nil] The item the game would take from the bag.
+  # @param _old_item [RPG::EquipItem, nil] The item the game would put into the bag.
+  # @return [Boolean] Always, so the change goes on.
+  def trade_item_with_party(_new_item, _old_item)
+    true
+  end
+
+  # Takes off what the character cannot wear, as the game does, but not while the rebuild goes on.
+  #
+  # @param item_gain [Boolean] Whether the game would put it into the bag, see trade_item_with_party.
+  def release_unequippable_items(item_gain = true)
+    super unless @rebuilding
+  end
+
+  # Takes off the abilities the character cannot set, as the game does, but not while the rebuild
+  # goes on.
+  def refresh_ability_all
+    super unless @rebuilding
+  end
+
   # Returns the character's affection.
   #
   # @return [Integer] Its affection in the owner's save, which skill formulas and damage boosts read.
@@ -646,24 +675,19 @@ class Game_MpActor < Game_Actor
 
   private
 
-  # Gives the character the build: job, race and levels, stat growth, skills, abilities and
-  # equipment, then lets the game settle it the way it settles any character.
+  # Gives the character the build in the steps C# lists (BattlerSetup.AllySteps), each through
+  # the game's own changer, on the character the game's setup made of its actor, then lets the game
+  # settle it once, as the owner's game had it settled.
+  #
+  # The game settles a character at every change: what an ability or a piece of equipment makes
+  # wearable or settable before the rest of the build is on would be taken off.
   def rebuild
-    @class_id = @member.class_id if @member.class_id
-    @tribe_id = @member.tribe_id if @member.tribe_id
-    @level_list.update(@member.level_list)
-    @level_list[@class_id] ||= 1
-    @level_list[@tribe_id] ||= 1
-    @level = { :base => @member.base_level, :class => @level_list[@class_id], :tribe => @level_list[@tribe_id] }
-    @exp = {}
-    init_exp
-    @param_plus = @member.param_plus.dup
-    @skills = @member.skill_ids.sort
-    stypes = (@abilities || {}).keys | (@equip_abilities || {}).keys | @member.abilities.keys | @member.equip_abilities.keys
-    @abilities = ability_table(stypes, @member.abilities)
-    @equip_abilities = ability_table(stypes, @member.equip_abilities)
-    @equips = Array.new(basic_equip_slots.size) { Game_BaseItem.new }
-    @member.equips.first(@equips.size).each_with_index { |item, slot| @equips[slot].object = item if item }
+    @rebuilding = true
+    begin
+      rebuild_steps.each { |name, *values| apply_step(name, values) }
+    ensure
+      @rebuilding = false
+    end
     refresh
     recover_all
     # Only clearing the actions sets the chain input, which a pre-battle spell reads before the
@@ -671,12 +695,56 @@ class Game_MpActor < Game_Actor
     clear_actions
   end
 
-  # Completes an ability table for every skill type.
+  # Asks C# for the steps of the rebuild.
   #
-  # @param stypes [Array<Integer>] Every skill type of abilities.
-  # @param sent [Hash] The build's ability ids by skill type.
-  # @return [Hash] Ability ids for every skill type, none where the build has none.
-  def ability_table(stypes, sent)
-    stypes.each_with_object({}) { |stype_id, table| table[stype_id] = (sent[stype_id] || []).dup }
+  # @return [Array<Array>] Each step's changer and values, none while the DLL does not answer.
+  def rebuild_steps
+    member = @member
+    answer = MGQ_Multiplayer::Bridge.call(STEPS_TOPIC,
+                                          "class" => member.class_id, "tribe" => member.tribe_id, "levels" => member.level_list.to_a,
+                                          "level" => member.base_level, "skills" => member.skill_ids, "abilities" => member.abilities.values.flatten,
+                                          "equip_abilities" => member.equip_abilities.values.flatten, "param_plus" => member.param_plus,
+                                          "slots" => member.equips.size)
+    return answer if answer.is_a?(Array)
+
+    MGQ_MpActors.log_once(:steps, "the DLL did not list a rebuild's steps, so #{log_name} stays as the game sets its actor up")
+    []
+  end
+
+  # Applies a step of the rebuild with the game's own changer.
+  #
+  # @param name [String] The changer, see MGQOnline.Game's BattlerTopics.StepsTopic.
+  # @param values [Array<Integer>] What it hands the changer.
+  def apply_step(name, values)
+    case name
+    when "class"
+      # The game's own event command tells a job from a race this way.
+      change_class_level(values, NWConst::Class::JOB_RANGE.include?(values[0]) ? :class : :tribe)
+    when "job" then change_class_level(values, :class)
+    when "race" then change_class_level(values, :tribe)
+    when "classes" then (@level_list.keys - values).each { |class_id| erase_class(class_id) }
+    when "level" then change_level(values[0], false, :base)
+    when "skills"
+      (@skills + all_abilities - values).each { |skill_id| forget_skill(skill_id) }
+      # The game's forget_skill leaves the proof abilities of jobs learned.
+      @abilities.each_value { |ids| ids.select! { |skill_id| values.include?(skill_id) } }
+      values.each { |skill_id| learn_skill(skill_id) }
+    when "param" then add_param(values[0], values[1])
+    when "abilities"
+      remove_ability_all
+      # The game's add_ability takes off what a later ability may not be set with, which the
+      # owner's game may have let be set after that one; the settle after the rebuild checks each.
+      values.each { |skill_id| (@equip_abilities[$data_skills[skill_id].stype_id] ||= []) << skill_id }
+    when "equip" then force_change_equip(values[0], @member.equips[values[0]])
+    end
+  end
+
+  # Changes the job or race and its level with the game's own changers.
+  #
+  # @param values [Array(Integer, Integer)] The job's or race's id and level.
+  # @param kind [Symbol] :class for a job, :tribe for a race.
+  def change_class_level(values, kind)
+    change_class(values[0], kind)
+    change_level(values[1], false, kind)
   end
 end

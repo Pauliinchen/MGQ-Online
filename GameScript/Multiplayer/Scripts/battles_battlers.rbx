@@ -2,14 +2,16 @@
 #  battles_battlers.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Built the other side's characters of a PvP battle here too
 #      Paulinchen  2026-11-05: Created
 #
 #----------------------------------------------------------------
 
 # The one factory of the battlers the game's own setup never makes: another player's character in
 # a co-op battle's party, the enemies of a troop another game sent or set up after the battle's
-# start, and the other side's Backline in a PvP battle. Each is made as the game makes its own
-# (Game_Actor#setup through Game_MpActor, the troop's own kind of enemy) and given the game's own
+# start, and the other side's characters in a PvP battle, its Backline too. Each is made as the
+# game makes its own (Game_Actor#setup and the game's changers through Game_MpActor, the troop's
+# own kind of enemy) and given the game's own
 # battle start (Game_Battler#on_battle_start) where the game's start never reaches it, as the rules
 # in C# decide (topic battlers.plan, MGQOnline.Game's BattlerSetup), once in each battle. A guest,
 # whose battle the host's stream plays, starts its own party and troop through the game's unit
@@ -46,6 +48,19 @@ module MGQ_MpBattlers
   rescue => e
     log("building #{name}'s character at place #{place} failed: #{e.class}: #{e.message}")
     ally
+  end
+
+  # Builds one of the other side's characters in a PvP battle, which the troop's start starts with
+  # the troop, or start_reserve outside its Frontline.
+  #
+  # @param member [MGQ_MpActors::Builds::Member] The character's build.
+  # @param name [String] Its owner's name.
+  # @return [MGQ_MpBattlesPvp::Opponent, nil] The character, nil when it could not be built.
+  def self.opponent(member, name)
+    MGQ_MpBattlesPvp::Opponent.new(member, name)
+  rescue => e
+    log("building #{name}'s actor #{member.actor_id} for the other side failed: #{e.class}: #{e.message}")
+    nil
   end
 
   # Fills the troop with another game's enemies in place of this game's own, as the game's troop

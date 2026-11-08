@@ -2,6 +2,7 @@
 #  actors_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Checked that a rebuild applies the steps C# lists with the game's own changers and settles once
 #      Paulinchen  2026-11-07: Dropped the checks of the hero of a replaced Luka
 #      Paulinchen  2026-11-05: Checked the facts handed to C# and the members made of those it reads instead of the text's fields
 #      Paulinchen  2026-10-31: Checked that a rebuild measured in battle compares as its owner's game measured it
@@ -16,7 +17,8 @@
 # Covers what core_actors.rbx hands C# of a character's build and makes of what C# reads: the
 # facts of a character and its enchanted equipment, the members this game's data knows, the
 # fingerprint of the databases builds name, what a rebuilt character leaves of the player's save
-# alone, and how a rebuild compares with its owner's game outside of battle.
+# alone, how a rebuild compares with its owner's game outside of battle, and how a rebuild applies
+# the steps C# lists with the game's own changers.
 
 require_relative "support"
 
@@ -161,3 +163,66 @@ check("a rebuild measured in battle compares as its owner's game measured it, th
       [rebuilt.differences, $game_party.in_battle], [[], true])
 rebuilt.define_singleton_method(:param) { |id| id == 2 ? sent.params[id] * 2 : sent.params[id] }
 check("a rebuild that differs outside of battle too still tells", rebuilt.differences, ["Stat2 40 (sent 20)"])
+
+# A rebuild: the game's setup of the actor, then the steps C# lists through the game's changers,
+# then the game's settle once, which takes off what the character cannot wear.
+# The game's ids of the jobs, the rest being races.
+module NWConst; module Class; JOB_RANGE = (1..149).to_a; end; end
+# A skill of the database, of which the rebuild reads the skill type.
+Skill = Struct.new(:name, :stype_id)
+$data_skills = [nil] + Array.new(400) { |index| Skill.new("Skill", index >= 299 ? 4 : 0) }
+# The game's character as far as a rebuild reaches it: its setup and changers, each noted in @calls,
+# and its settle, which takes off the shield it cannot wear and puts it into the player's bag.
+class Game_Actor
+  attr_reader :calls, :level_list
+  def initialize(actor_id)
+    @calls = [[:setup, actor_id, extra_accessory_slot?]]
+    @level_list = { 1 => 1, 5 => 1, 151 => 1 }
+    @skills = [2, 7]
+    @abilities = { 4 => [300, 301] }
+    @equip_abilities = { 4 => [301] }
+  end
+  def all_abilities; @abilities.values.flatten; end
+  def change_class(id, kind); @calls << [:change_class, id, kind]; @level_list[id] ||= 1; refresh; end
+  def change_level(level, show, kind); @calls << [:change_level, level, show, kind]; refresh; end
+  def erase_class(id); @calls << [:erase_class, id]; @level_list.delete(id); end
+  def forget_skill(id); @calls << [:forget_skill, id]; @skills.delete(id); @abilities[4].delete(id) if id >= 300; end
+  def learn_skill(id); @calls << [:learn_skill, id]; id >= 300 ? @abilities[4] |= [id] : @skills |= [id]; end
+  def add_param(id, value); @calls << [:add_param, id, value]; refresh; end
+  def remove_ability_all; @calls << [:remove_ability_all]; @equip_abilities.each_value(&:clear); refresh; end
+  def force_change_equip(slot, item); @calls << [:force_change_equip, slot, item && item.name]; (@equips ||= [])[slot] = item; refresh; end
+  def refresh; release_unequippable_items; refresh_ability_all; end
+  def release_unequippable_items(_item_gain = true)
+    @calls << [:settle_equipment]
+    shield = (@equips || []).index { |item| item && item.name == "Shield" }
+    trade_item_with_party(nil, @equips[shield]) if shield
+  end
+  def refresh_ability_all; @calls << [:settle_abilities]; end
+  def trade_item_with_party(_new_item, old_item); $bag << old_item; true; end
+  def recover_all; @calls << [:recover_all]; end
+  def clear_actions; @calls << [:clear_actions]; end
+  def mhp; 100; end
+end
+$bag = []
+shield = Named.new("Shield")
+built = builds::Member.new(1, 30, 92, 151, { 10 => 20, 92 => 5, 151 => 3 }, [0, 0, 4, 0, 0, 0, 0, 0], [7, 8], { 4 => [300, 302] }, { 4 => [302, 300] },
+                           [Named.new("Sword"), shield, nil, nil, nil, nil], [100] * 8, [0.95] * 5, [0] * 7, [])
+$actors_fake.answer("battlers.steps") do |request|
+  $requests << request
+  [["class", 10, 20], ["job", 92, 5], ["race", 151, 3], ["classes", 10, 92, 151], ["level", 30], ["skills", 7, 8, 300, 302], ["param", 2, 4],
+   ["abilities", 302, 300]] + (0...6).map { |slot| ["equip", slot] }
+end
+$requests.clear
+rebuilt = Game_MpActor.new(built, "Player A")
+check("a rebuild hands C# what this game's data knows of the build", $requests,
+      [{ "class" => 92, "tribe" => 151, "levels" => [[10, 20], [92, 5], [151, 3]], "level" => 30, "skills" => [7, 8], "abilities" => [300, 302],
+         "equip_abilities" => [302, 300], "param_plus" => [0, 0, 4, 0, 0, 0, 0, 0], "slots" => 6 }])
+check("a rebuild starts from the game's setup with the build's slots, applies the steps with the game's changers and settles once",
+      rebuilt.calls,
+      [[:setup, 1, true], [:change_class, 10, :class], [:change_level, 20, false, :class], [:change_class, 92, :class], [:change_level, 5, false, :class],
+       [:change_class, 151, :tribe], [:change_level, 3, false, :tribe], [:erase_class, 1], [:erase_class, 5], [:change_level, 30, false, :base],
+       [:forget_skill, 2], [:forget_skill, 301], [:learn_skill, 7], [:learn_skill, 8], [:learn_skill, 300], [:learn_skill, 302], [:add_param, 2, 4],
+       [:remove_ability_all], [:force_change_equip, 0, "Sword"], [:force_change_equip, 1, "Shield"]] +
+      (2...6).map { |slot| [:force_change_equip, slot, nil] } + [[:settle_equipment], [:settle_abilities], [:recover_all], [:clear_actions]])
+check("the abilities stay set in the build's order, and what the settle takes off stays out of the player's bag",
+      [rebuilt.instance_variable_get(:@equip_abilities), $bag], [{ 4 => [302, 300] }, []])

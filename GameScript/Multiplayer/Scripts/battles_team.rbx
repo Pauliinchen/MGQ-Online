@@ -2,6 +2,7 @@
 #  battles_team.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Built the other side's characters through the battler factory
 #      Paulinchen  2026-10-30: Left the sides' answers of the duel's mode to the battle modes' defaults
 #                            - Kept who commands the characters of who left in the DLL
 #      Paulinchen  2026-10-23: Named the player by their seat in the battle
@@ -157,14 +158,15 @@ module MGQ_MpBattlesTeam
   def self.opponent(seat, name, member, place)
     return nil unless member
 
-    @opponents[[seat, place]] ||= MGQ_MpBattlesPvp::Opponent.new(member, name).tap do |opponent|
-      opponent.mp_seat = seat
-      opponent.mp_place = place
-      say { "rebuilt #{MGQ_MpBattlesSync.named(opponent)} of seat #{seat}, place #{place}, Lv#{member.base_level}" }
-    end
-  rescue => e
-    log("could not rebuild actor #{member.actor_id} of #{name}: #{e.class}: #{e.message}")
-    nil
+    return @opponents[[seat, place]] if @opponents[[seat, place]]
+
+    opponent = MGQ_MpBattlers.opponent(member, name)
+    return nil unless opponent
+
+    opponent.mp_seat = seat
+    opponent.mp_place = place
+    say { "rebuilt #{MGQ_MpBattlesSync.named(opponent)} of seat #{seat}, place #{place}, Lv#{member.base_level}" }
+    @opponents[[seat, place]] = opponent
   end
 
   # Makes this game's side the party: the player's own characters and the others of their side.
