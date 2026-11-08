@@ -17,7 +17,7 @@ using MGQOnline.Game.Mods;
 namespace MGQParadox.Multiplayer.Mods;
 
 /// <summary>
-/// A Mod Config option a mod of the catalog offers, as an admin's game read it.
+/// A Mod Config option a mod of the website offers, as an admin's game read it.
 /// </summary>
 /// <param name="Key">The option's key, the name of the Ruby symbol the game keeps its value under.</param>
 /// <param name="Name">Its name in the menu.</param>

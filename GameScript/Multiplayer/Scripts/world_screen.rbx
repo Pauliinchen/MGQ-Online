@@ -2,7 +2,9 @@
 #  world_screen.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-08: Scrolled a form inside the right box instead of letting it grow past the screen
+#      Paulinchen  2026-11-08: Handed the DLL the installed mods anew once the Mod Framework made a world's mods ready
+#                            - Handed the DLL the installed mods each second while the Mod Framework fetches the website
+#                            - Scrolled a form inside the right box instead of letting it grow past the screen
 #                            - Gave its UI ids the mgq_online_ prefix
 #                            - Showed the details of the world under the cursor once the first worlds arrive
 #                            - Moved the focus onto a field of the form only once its last render made the field
@@ -464,7 +466,7 @@ class Scene_MpWorlds < Scene_MenuBase
 
   # Asks for the player's name the first time, runs what a menu or a question answered, follows a
   # running action, asks again for a release to play whose question could not open, and keeps the
-  # list and the details fresh.
+  # list, the details and the installed mods fresh.
   def update
     started = Time.now
     @spent = {}
@@ -481,6 +483,7 @@ class Scene_MpWorlds < Scene_MenuBase
     return start_from_own if @own_start
 
     timed(:action) { follow_steps } if @busy
+    MGQ_MpWorldMods.follow_framework
     MGQ_MpWorld::Update.on_world_screen_update(self, popup_open?)
     timed(:details) { follow_details }
     timed(:list) { look_at_list }
@@ -1038,7 +1041,10 @@ class Scene_MpWorlds < Scene_MenuBase
     @mods_asked = nil
     log_screen("the mods of #{entry_text}: #{result}")
     case result
-    when :ready then answer("mods_ready")
+    when :ready
+      # The DLL checks the world's mods again at once, by the Mod Framework's list as it is now.
+      MGQ_MpWorldMods.hand_framework
+      answer("mods_ready")
     when :restarting then answer("mods_restarting")
     else answer("back")
     end

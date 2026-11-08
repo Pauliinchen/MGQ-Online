@@ -2,6 +2,7 @@
 //  sqlite_store.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Checked that the retired mod catalog's rows stay in the database for a rollback, in place of the catalog's own checks
 //      Paulinchen  2026-11-06: Checked the database in memory without a path
 //                            - Read the kept story through its keys
 //                            - Kept the derived index through the relay's own call
@@ -25,15 +26,14 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WorldBosses } from "../core/bosses.js";
 import { Directory, playerIdOf, sha256Hex } from "../core/directory.js";
-import { ModCatalog, zipHashes } from "../core/mods.js";
 import { WorldStory } from "../core/story.js";
 import { MAPPING_LIMITS, StoryMapping } from "../core/story_mapping.js";
 import { StoryTracks } from "../core/story_tracks.js";
-import { makeUpload, makeZip } from "../core/test_zip.js";
 import { TradeBook } from "../core/trades.js";
 import { openStores } from "./server.js";
 import { openSqliteStores } from "./sqlite_store.js";
@@ -44,7 +44,7 @@ import { openSqliteStores } from "./sqlite_store.js";
 const CREATOR = "c0".repeat(16);
 
 /**
- * Another player's key, an admin of the catalog.
+ * Another player's key, an admin.
  */
 const OTHER = "0f".repeat(16);
 
@@ -76,31 +76,31 @@ before(() => {
 after(() => rmSync(folder, { recursive: true, force: true }));
 
 /**
- * Opens the directory, the catalog and the trades over the test database.
+ * Opens the directory and the trades over the test database.
  *
  * @param {string[]} [admins] The admins' player ids.
- * @returns {{stores: ReturnType<typeof openSqliteStores>, directory: Directory, mods: ModCatalog, trades: TradeBook}} The stores and what runs over them.
+ * @returns {{stores: ReturnType<typeof openSqliteStores>, directory: Directory, trades: TradeBook}} The stores and what runs over them.
  */
 function openAll(admins = []) {
   const stores = openSqliteStores(path);
   const directory = new Directory(stores.directory, { admins });
-  const mods = new ModCatalog(stores.mods, { admins });
   const trades = new TradeBook(stores.trades, (id) => stores.directory.get(id));
-  return { stores, directory, mods, trades };
+  return { stores, directory, trades };
 }
 
-test("worlds, starting saves, mods, their zips and trades outlast closing the database", async () => {
+test("worlds, starting saves and trades outlast closing the database, and the retired mod catalog's rows stay for a rollback", async () => {
   const admins = [await playerIdOf(OTHER)];
   const save = new Uint8Array(300_000).map((_, index) => index % 251);
-  const zip = await makeZip([["Pack.rb", "# pack", true], ["Pack/a.luka", "A"]]);
-  const files = await zipHashes(zip);
   const trade = "7".repeat(32);
+  const older = new DatabaseSync(path);
+  older.exec("CREATE TABLE IF NOT EXISTS mods (id TEXT PRIMARY KEY, json TEXT NOT NULL)");
+  older.prepare("INSERT INTO mods (id, json) VALUES (?, ?)").run("pack", JSON.stringify({ key: "pack", version: "1.0" }));
+  older.close();
   const first = openAll(admins);
 
   const created = await first.directory.create({ id: WORLD, name: "Kept World", seats: 4, player: CREATOR, playerName: "Creator", authHash: await sha256Hex(AUTH), lock: { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(40) }, start: true, hidden: true });
   assert.equal(created.status, 201);
   assert.equal((await first.directory.putStart(WORLD, CREATOR, save)).status, 200);
-  assert.equal((await first.mods.upload(OTHER, "Pack", "1.0", makeUpload(files, zip))).status, 200);
   await first.directory.presence(WORLD, [{ player: await playerIdOf(OTHER), name: "Other" }]);
   assert.deepEqual((await first.trades.commit(trade, { player: OTHER, world: WORLD, partner: await playerIdOf(CREATOR), hash: "ab".repeat(32), sealed: "Qg==" })).body, { state: "pending" });
   assert.equal((await first.directory.say(WORLD, { player: await playerIdOf(OTHER), name: "Other" }, "kept line")).n, 1);
@@ -115,21 +115,17 @@ test("worlds, starting saves, mods, their zips and trades outlast closing the da
   assert.ok(fetched.bytes instanceof Uint8Array);
   assert.deepEqual(fetched.bytes, save);
 
-  const [mod] = (await second.mods.list()).body.mods;
-  assert.deepEqual([mod.key, mod.version, mod.files], ["pack", "1.0", files]);
-  assert.deepEqual((await second.mods.file("pack")).bytes, zip);
   assert.deepEqual((await second.trades.state(trade, OTHER)).body, { state: "pending" });
   assert.deepEqual((await second.trades.commit(trade, { player: CREATOR, world: WORLD, partner: await playerIdOf(OTHER), hash: "ab".repeat(32), sealed: "Qg==" })).body, { state: "committed" });
   second.stores.close();
+  const kept = new DatabaseSync(path);
+  assert.deepEqual(JSON.parse(kept.prepare("SELECT json FROM mods WHERE id = ?").get("pack").json), { key: "pack", version: "1.0" });
+  kept.close();
 });
 
-test("removing a world or a mod removes its bytes too, and a done trade goes", async () => {
-  const { stores, directory, mods, trades } = openAll([await playerIdOf(OTHER)]);
+test("removing a world removes its bytes too, and a done trade goes", async () => {
+  const { stores, directory, trades } = openAll([await playerIdOf(OTHER)]);
   const trade = "7".repeat(32);
-
-  assert.equal((await mods.remove(OTHER, "pack")).status, 200);
-  assert.equal(await stores.mods.getModFile("pack"), undefined);
-  assert.deepEqual(await stores.mods.allMods(), []);
 
   assert.deepEqual((await trades.done(trade, OTHER)).body, { state: "committed" });
   assert.deepEqual((await trades.done(trade, CREATOR)).body, { state: "committed" });

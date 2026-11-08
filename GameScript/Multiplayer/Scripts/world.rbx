@@ -1213,7 +1213,7 @@ module MGQ_MpWorld
     # @!attribute data [String] Its creator's game data, see GameData.fingerprint; empty when unknown.
     # @!attribute mods [String] The mods it needs, as its creator wrote them.
     # @!attribute description [String] What it is about, as its creator wrote it.
-    # @!attribute mod_hashes [String] Its creator's hashes of required mods outside the mod catalog, "name=hash" pairs separated by semicolons.
+    # @!attribute mod_hashes [String] Its creator's hashes of required mods the website does not have, "name=hash" pairs separated by semicolons.
     # @!attribute settings [String] Its creator's settings of the mods it names, "key=type:value" pairs separated by semicolons.
     # @!attribute type [String] Its type, one of TYPES; CLASSIC when the list names none.
     # @!attribute share [String] How a Raid World shares companions, one of SHARING; "off" when the list names none.

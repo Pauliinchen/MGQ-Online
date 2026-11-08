@@ -2,6 +2,7 @@
 //  WorldEntering.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Checked a world's mods by the creator's versions too, and waited for the website's catalog
 //      Paulinchen  2026-11-06: Asked for a world's differing mods through the Mod Framework's dialog of the mods it needs, which installs them and starts the game again where it must
 //                            - Refused a world whose mods still differ right after the Mod Framework made them ready, instead of asking again
 //      Paulinchen  2026-11-01: Had the scripts note a world started from another player's starting save, whose side is not the player's
@@ -133,13 +134,13 @@ internal interface IEnteringDirectory
     /// <param name="seats">Its seats.</param>
     /// <param name="description">Its description.</param>
     /// <param name="mods">Its mods.</param>
-    /// <param name="modHashes">Its creator's mod hashes, <see langword="null"/> to leave them.</param>
+    /// <param name="pins">Its creator's copies of its required mods, <see langword="null"/> to leave them.</param>
     /// <param name="difficulty">Its new difficulty, <see langword="null"/> to leave it.</param>
     /// <param name="otherModsOff">Whether it now turns other mods off, <see langword="null"/> to leave it.</param>
     /// <param name="squad">Its new squad rules as text, <see langword="null"/> to leave them.</param>
     /// <param name="raidBosses">Whether its story bosses now fight as raid bosses, <see langword="null"/> to leave it.</param>
     /// <returns>Whether the action started.</returns>
-    bool Edit(string id, int seats, string description, string mods, string? modHashes, int? difficulty, bool? otherModsOff, string? squad, bool? raidBosses);
+    bool Edit(string id, int seats, string description, string mods, ModPins? pins, int? difficulty, bool? otherModsOff, string? squad, bool? raidBosses);
 
     /// <summary>
     /// Replaces a world's mod settings.
@@ -673,7 +674,7 @@ internal sealed partial class WorldEntering
     /// <returns>Whether entering goes on now.</returns>
     private bool ModsAllow(ListedWorld listed)
     {
-        RubyHash check = _context.Ask("mods.check", new RubyHash { { "mods", listed.About.Mods }, { "hashes", listed.About.ModHashes }, { "world", _entry!.Name } })!.AsHash();
+        RubyHash check = _context.Ask(ModCheckTopics.CheckTopic, CheckRequest(listed, _entry!.Name))!.AsHash();
         RubyArray rows = check["rows"].AsArray();
         if (rows.Count == 0)
         {
@@ -701,31 +702,41 @@ internal sealed partial class WorldEntering
     }
 
     /// <summary>
-    /// Tells whether this game has a copy of a required mod that is not the world's, which the Mod
-    /// Framework's own version check may miss, such as one of a version the relay never saw.
+    /// Tells whether this game has a copy of a required mod that is not the creator's, such as a
+    /// changed copy, which the Mod Framework's dialog installs again rather than updates.
     /// </summary>
     /// <param name="row">The mod check's row.</param>
     /// <returns>Whether it does.</returns>
-    private static bool CopyDiffers(RubyHash row)
+    private static bool CopyDiffers(RubyHash row) => row["yours"].AsText() == ModCheck.Differs;
+
+    /// <summary>
+    /// Writes the mod check's request for a world.
+    /// </summary>
+    /// <param name="listed">The world.</param>
+    /// <param name="world">Its name to log the check under, nil to log nothing.</param>
+    /// <returns>The request.</returns>
+    private static RubyHash CheckRequest(ListedWorld listed, RubyValue world) => new()
     {
-        string yours = row["yours"].AsText();
-        return yours != ModCheck.NotInstalled && (row["worlds"].IsNil || yours != row["worlds"].AsText());
-    }
+        { "mods", listed.About.Mods },
+        { "versions", listed.About.ModVersions },
+        { "hashes", listed.About.ModHashes },
+        { "world", world },
+    };
 
     /// <summary>
     /// Decides whether this game may enter as far as other mods go: a world that turns them off needs
-    /// the catalog, which tells the personal mods its session keeps besides those it names.
+    /// the website's catalog, which tells the personal mods its session keeps besides those it names.
     /// </summary>
     /// <param name="listed">The world.</param>
     /// <returns>Whether entering goes on now.</returns>
     private bool CatalogAllows(ListedWorld listed)
     {
-        if (!listed.OtherModsOff || _context.Ask("mods.check", new RubyHash { { "mods", listed.About.Mods }, { "hashes", listed.About.ModHashes }, { "world", RubyNil.Value } })!.AsHash()["known"].AsBool())
+        if (!listed.OtherModsOff || _context.Ask(ModCheckTopics.CheckTopic, CheckRequest(listed, RubyNil.Value))!.AsHash()["catalog"].AsBool())
         {
             return true;
         }
 
-        Log($"kept out of {EntryText}: it turns other mods off, and the catalog that tells the personal mods is unknown");
+        Log($"kept out of {EntryText}: it turns other mods off, and the website's mod catalog that tells the personal mods is unknown");
         Refuse(SessionMods.Catalog);
         Back();
         return false;

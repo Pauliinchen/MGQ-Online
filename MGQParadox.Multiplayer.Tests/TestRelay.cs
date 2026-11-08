@@ -2,6 +2,8 @@
 //  TestRelay.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Served the website's mod catalog and kept the Mod Config options sent to it in place of the relay's catalog
+//                            - Kept the versions of the creator's copies of a world's required mods
 //      Paulinchen  2026-11-06: Turned every request away with 426 and the lowest version once a test says so
 //                            - Kept only the revision and the shared companions of a Raid World's story
 //      Paulinchen  2026-11-05: Let every game into a Raid World, as the relay no longer refuses one without its features
@@ -175,9 +177,10 @@ internal sealed partial class TestRelay : IDisposable
     public HashSet<string> Admins { get; init; } = [];
 
     /// <summary>
-    /// The mod catalog's mods as the relay keeps them, which the tests fill.
+    /// The website's mods as <c>GET /api/mods</c> lists them, which the tests fill; the relay serves
+    /// the website's routes too, so a test names it as the website.
     /// </summary>
-    public JsonArray CatalogMods { get; } = [];
+    public JsonArray SiteMods { get; } = [];
 
     /// <summary>
     /// Whether the list names whether each world turns other mods off; tests clear it to stand in for a relay from before.
@@ -221,19 +224,10 @@ internal sealed partial class TestRelay : IDisposable
     public int WorldRoomRequests => Volatile.Read(ref _worldRoomRequests);
 
     /// <summary>
-    /// The zips of uploaded mods by key, which the tests fill.
+    /// The Mod Config options games sent to the website, each with the mod's slug, the version, the
+    /// player's key and the body, in the order they arrived.
     /// </summary>
-    public Dictionary<string, byte[]> ModFiles { get; } = [];
-
-    /// <summary>
-    /// The Mod Config options games sent, each with the mod's key, in the order they arrived.
-    /// </summary>
-    public List<(string Key, JsonNode Body)> SentModOptions { get; } = [];
-
-    /// <summary>
-    /// The version whose Mod Config options the relay keeps instead of those sent; <see langword="null"/> to keep those sent.
-    /// </summary>
-    public string? KeptModOptionsVersion { get; set; }
+    public List<(string Slug, string Version, string? Player, JsonNode Body)> SentModOptions { get; } = [];
 
     /// <summary>
     /// What the last request named in the features header, <see langword="null"/> before one named any.
@@ -479,9 +473,9 @@ internal sealed partial class TestRelay : IDisposable
             return;
         }
 
-        if (!context.Request.IsWebSocketRequest && parts is ["v1", "mods", ..])
+        if (!context.Request.IsWebSocketRequest && parts is ["api", "mods", ..])
         {
-            await ServeModsAsync(context, parts);
+            await ServeSiteModsAsync(context, parts);
             return;
         }
 
@@ -517,42 +511,30 @@ internal sealed partial class TestRelay : IDisposable
     }
 
 /// <summary>
-/// Answers the mod catalog's requests: the list, which leaves out entries of a name alone and names
-/// every entry marked personal, an uploaded mod's zip, and the Mod Config options a game sends.
+/// Answers the website's mod catalog as the game reads it: the list, and the Mod Config options an
+/// admin's game sends.
 /// </summary>
 /// <param name="context">The request.</param>
-/// <param name="parts">The path's parts, "v1" and "mods" first.</param>
+/// <param name="parts">The path's parts, "api" and "mods" first.</param>
 /// <returns>Completes once answered.</returns>
-private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
+private async Task ServeSiteModsAsync(HttpListenerContext context, string[] parts)
 {
     byte[] bytes;
-    string type = "application/json";
     using var reader = new StreamReader(context.Request.InputStream, Encoding.UTF8);
     var sent = context.Request.HttpMethod == "POST" ? await reader.ReadToEndAsync() : null;
 
     lock (_gate)
     {
-        if (parts is ["v1", "mods", var optionsOf, "options"] && sent != null)
+        if (parts is ["api", "mods", var slug, "versions", var version, "options"] && sent != null)
         {
-            var body = JsonNode.Parse(sent)!;
-            SentModOptions.Add((optionsOf, body));
+            SentModOptions.Add((Uri.UnescapeDataString(slug), Uri.UnescapeDataString(version), context.Request.Headers["X-MGQ-Player"], JsonNode.Parse(sent)!));
             context.Response.StatusCode = 200;
-            var keptVersion = KeptModOptionsVersion ?? body["version"]?.GetValue<string>() ?? string.Empty;
-            bytes = Encoding.UTF8.GetBytes(new JsonObject { ["mod"] = new JsonObject { ["optionsVersion"] = keptVersion }, ["kept"] = KeptModOptionsVersion == null }.ToJsonString());
+            bytes = Encoding.UTF8.GetBytes("{}");
         }
-        else if (parts is ["v1", "mods"])
+        else if (parts is ["api", "mods"])
         {
             context.Response.StatusCode = 200;
-            var listed = CatalogMods.Where(mod => mod?["kind"]?.GetValue<string>() != "name").Select(mod => mod!.DeepClone()).ToArray();
-            var personal = CatalogMods.Where(mod => mod?["personal"]?.GetValue<bool>() == true)
-                .Select(mod => (JsonNode)new JsonObject { ["key"] = mod!["key"]!.GetValue<string>(), ["name"] = mod["name"]!.GetValue<string>() }).ToArray();
-            bytes = Encoding.UTF8.GetBytes(new JsonObject { ["mods"] = new JsonArray(listed), ["personal"] = new JsonArray(personal), ["admin"] = false }.ToJsonString());
-        }
-        else if (parts is ["v1", "mods", var key, "file"] && ModFiles.TryGetValue(key, out var zip))
-        {
-            context.Response.StatusCode = 200;
-            bytes = zip;
-            type = "application/octet-stream";
+            bytes = Encoding.UTF8.GetBytes(new JsonObject { ["schema"] = 3, ["mods"] = SiteMods.DeepClone() }.ToJsonString());
         }
         else
         {
@@ -561,7 +543,7 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
         }
     }
 
-    context.Response.ContentType = type;
+    context.Response.ContentType = "application/json";
     await context.Response.OutputStream.WriteAsync(bytes);
     context.Response.Close();
 }
@@ -988,8 +970,8 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
     }
 
     /// <summary>
-    /// Leaves a listed world's mods, mod hashes and settings out, counting its mods instead, as the
-    /// relay lists worlds for games.
+    /// Leaves a listed world's mods, mod hashes, mod versions and settings out, counting its mods
+    /// instead, as the relay lists worlds for games.
     /// </summary>
     /// <param name="world">The world as the list names it.</param>
     /// <returns>The same world.</returns>
@@ -999,6 +981,7 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
         entry["modsCount"] = (entry["mods"]?.GetValue<string>() ?? string.Empty).Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Length;
         entry.Remove("mods");
         entry.Remove("modHashes");
+        entry.Remove("modVersions");
         entry.Remove("settings");
         return entry;
     }
@@ -1108,6 +1091,7 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
             Data = body["data"]?.GetValue<string>() ?? string.Empty,
             Strict = body["strict"]?.GetValue<bool>() == true,
             ModHashes = body["modHashes"]?.GetValue<string>() ?? string.Empty,
+            ModVersions = body["modVersions"]?.GetValue<string>() ?? string.Empty,
             Settings = body["settings"]?.GetValue<string>() ?? string.Empty,
             Type = body["type"]?.GetValue<string>() ?? WorldType.Classic,
             Share = body["share"]?.GetValue<string>() ?? CompanionSharing.Off,
@@ -1157,9 +1141,9 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
     /// <returns>The answer.</returns>
     private static (int, JsonNode) Edit(string id, DirectoryWorld world, JsonNode body, string player, List<(string Room, string Text)> toTell)
     {
-        if ((body["data"] != null || body["modHashes"] != null) && player != world.CreatorId)
+        if ((body["data"] != null || body["modHashes"] != null || body["modVersions"] != null) && player != world.CreatorId)
         {
-            return (403, Error("only the world's creator may replace its game data and mod hashes"));
+            return (403, Error("only the world's creator may replace its game data, mod hashes and mod versions"));
         }
 
         if (TooManyMods(body) || NoFlag(body, "otherModsOff") || NoFlag(body, "raidBosses"))
@@ -1176,6 +1160,7 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
         world.OtherModsOff = body["otherModsOff"]?.GetValue<bool>() ?? world.OtherModsOff;
         world.Data = body["data"]?.GetValue<string>() ?? world.Data;
         world.ModHashes = body["modHashes"]?.GetValue<string>() ?? world.ModHashes;
+        world.ModVersions = body["modVersions"]?.GetValue<string>() ?? world.ModVersions;
         world.Settings = body["settings"]?.GetValue<string>() ?? world.Settings;
         world.Seats = body["seats"]?.GetValue<int>() ?? world.Seats;
         world.Description = body["description"]?.GetValue<string>() ?? world.Description;
@@ -1314,6 +1299,7 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
             ["data"] = world.Data,
             ["strict"] = world.Strict,
             ["modHashes"] = world.ModHashes,
+            ["modVersions"] = world.ModVersions,
             ["settings"] = world.Settings,
             ["type"] = world.Type,
             ["share"] = world.Share,
@@ -1825,9 +1811,14 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
         public string Data { get; set; } = string.Empty;
 
         /// <summary>
-        /// The creator's hashes of required mods outside the mod catalog.
+        /// The creator's hashes of required mods the website does not have.
         /// </summary>
         public string ModHashes { get; set; } = string.Empty;
+
+        /// <summary>
+        /// The versions of the creator's copies of required mods the website has.
+        /// </summary>
+        public string ModVersions { get; set; } = string.Empty;
 
         /// <summary>
         /// The creator's settings of the mods the world names.

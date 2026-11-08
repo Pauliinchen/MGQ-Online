@@ -2,6 +2,9 @@
 #  world_mods.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Handed the DLL the installed mods as the Mod Framework lists them, for the check of a world's mods
+#                            - Sent the Mod Config options of each website mod's version, which the website keeps
+#                            - Dropped the relay's mod catalog, which the website's replaced
 #      Paulinchen  2026-11-07: Greyed the options a world sets through a UI.patch of Options > Mods, naming no other mod
 #                            - Told the rows a world may set without the personal mark the Mod Framework dropped
 #      Paulinchen  2026-11-07: Greyed the row of Shared Mod Settings for anyone but the world's creator through disabled:
@@ -81,14 +84,14 @@
 #----------------------------------------------------------------
 
 # A world's mods: the ones its creator marked as required, which every game that enters must have
-# in the same version, and the creator's settings of every mod it names, which hold while the
-# player is in the world. A game whose copy of a catalog mod is missing or differs may install it
-# through the Mod Framework and enter the world, the mod loading as the player enters; a required
-# mod outside the catalog is checked against the hash of the creator's copy.
-# A world that turns other mods off loads only the mods it names and the personal ones as the
-# player enters it, through the Mod Framework's session. A world shares its creator's options of
-# its mods as its settings, or leaves every player their own. An admin's game sends every catalog
-# mod's options, and a game the World Admin tool starts writes them into a file and quits.
+# as the creator had them, and the creator's settings of every mod it names, which hold while the
+# player is in the world. A game whose copy of a website mod is missing or another version may
+# install the creator's version through the Mod Framework and enter the world, the mod loading as
+# the player enters; a required mod the website does not have is checked against the hash of the
+# creator's copy. A world that turns other mods off loads only the mods it names and those the
+# website marks personal as the player enters it, through the Mod Framework's session. A world
+# shares its creator's options of its mods as its settings, or leaves every player their own. An
+# admin's game sends each website mod's options to the website for its world settings editor.
 #
 # The game keeps the options in each save, and a world has saves of its own, so the player's own
 # saves keep their own settings.
@@ -98,22 +101,20 @@ module MGQ_MpWorldMods
   # What starts this script's lines in the log.
   LOG_TAG = "world mods"
 
-  # The topic that hands out the relay's mod catalog.
-  CATALOG_TOPIC = "mods.catalog"
-
-  # Frames between two readings of the catalog, a second.
-  CATALOG_FRAMES = 60
-
-  # The topic that checks a world's required mods.
-  CHECK_TOPIC = "mods.check"
-
   # The topic that forgets the scripts in Patch and their hashes.
   FORGET_INSTALLED_TOPIC = "mods.forget"
+
+  # The topic that takes the installed mods as the Mod Framework lists them.
+  FRAMEWORK_TOPIC = "mods.framework"
+
+  # Frames between two readings of the installed mods while the Mod Framework fetches the website, a
+  # second.
+  FRAMEWORK_FRAMES = 60
 
   # The topic that lists the mods of a world the battle server runs.
   SERVED_TOPIC = "mods.served"
 
-  # The topic that names the catalog mods whose options an admin's game sends now.
+  # The topic that names the website mods whose options an admin's game sends now.
   REPORT_TOPIC = "mods.report"
 
   # The topic that sends a mod's Mod Config options.
@@ -198,17 +199,6 @@ module MGQ_MpWorldMods
   # The topic that says what the details say about a world's settings.
   DETAILS_TOPIC = "settings.details"
 
-  # A required mod this game lacks or has in another version, as the DLL checks it (ModCheck in
-  # MGQOnline.Game).
-  #
-  # @!attribute name [String] The mod's name, as the world writes it.
-  # @!attribute yours [String] This game's version: "not installed", the version, "unknown" or "differs".
-  # @!attribute worlds [String, nil] The world's version, nil when only the creator's hash tells it.
-  # @!attribute key [String, nil] The catalog mod's key, which can be downloaded; nil for a mod outside the catalog.
-  # @!attribute target [String, nil] Where a link mod's script goes, relative to the game's folder.
-  # @!attribute text [String] The difference for the player, such as "Level Cap: yours 1.0.0, the world's 1.1.0".
-  Row = Struct.new(:name, :yours, :worlds, :key, :target, :text)
-
   # The keys of the options the world sets, which Options > Mods greys.
   @locked = []
 
@@ -221,39 +211,29 @@ module MGQ_MpWorldMods
     MGQ_MpOverworldSync.route(MGQ_MpOverworldSync::MODS_RULE_FIELD) { |_peer, message| MGQ_MpWorldMods.rule_pushed(message) } if defined?(MGQ_MpOverworldSync::MODS_RULE_FIELD)
   end
 
-  # Reads which mods the relay's catalog marks personal, at most once a second.
-  #
-  # @return [Array<String>, nil] The keys of the personal mods and of their names, as
-  #   MGQ_MpWorld.mod_key makes them; nil while the catalog is unknown.
-  def self.personal_keys
-    return @personal if @catalog_read && MGQ_Multiplayer::Bridge.frame_number - @catalog_read < CATALOG_FRAMES
-
-    @catalog_read = MGQ_Multiplayer::Bridge.frame_number
-    told = MGQ_Multiplayer::Bridge.call(CATALOG_TOPIC)
-    state = told ? told["state"] : "failed"
-    # The DLL hands out the catalog it had while it fetches the list again.
-    return @personal if state == "loading" && told["mods"].empty? && told["personal"].empty?
-
-    @personal = %w(ready loading).include?(state) ? told["personal"] : nil
-  end
-
-  # Forgets what was read of the installed mods, as the world screen opens or after an install.
+  # Forgets what was read of the installed mods and hands the DLL the Mod Framework's list anew, as
+  # the world screen opens or after an install.
   def self.forget_installed
-    @catalog_read = nil
     MGQ_Multiplayer::Bridge.call(FORGET_INSTALLED_TOPIC)
     MGQ_MpWorld.forget_installed
+    hand_framework
   end
 
-  # Lists the required mods of a world that this game lacks or has in another version, as the DLL
-  # checks them against the catalog, this game's copies and the creator's hashes.
-  #
-  # @param listed [MGQ_MpWorld::Directory::ListedWorld] The world.
-  # @return [Array<Row>] The mods, none when every one matches or the DLL did not answer.
-  def self.differing(listed)
-    checked = MGQ_Multiplayer::Bridge.call(CHECK_TOPIC, "mods" => listed.mods.to_s, "hashes" => listed.mod_hashes.to_s, "world" => nil)
-    return [] unless checked.is_a?(Hash)
+  # Hands the DLL the installed mods as the Mod Framework lists them, each with its version and its
+  # website id, which the check of a world's mods and the creator's versions read.
+  def self.hand_framework
+    state = defined?(Mod_Framework::Mods) ? Mod_Framework::Mods.state : nil
+    @fetching = state.is_a?(Hash) && state["fetching"] ? MGQ_Multiplayer::Bridge.frame_number : nil
+    mods = state.is_a?(Hash) ? Array(state["mods"]).map { |mod| [mod["name"].to_s, mod["title"], mod["version"], mod["id"], mod["on"] ? true : false] } : nil
+    MGQ_Multiplayer::Bridge.call(FRAMEWORK_TOPIC, mods && { "mods" => mods })
+  rescue => e
+    log("handing the DLL the installed mods failed: #{e.class}: #{e.message}")
+  end
 
-    checked["rows"].map { |row| Row.new(row["name"], row["yours"], row["worlds"], row["key"], row["target"], row["text"]) }
+  # Hands the DLL the installed mods again once a second while the Mod Framework fetches the
+  # website, whose list tells the versions. Called by the world screen every frame.
+  def self.follow_framework
+    hand_framework if @fetching && MGQ_Multiplayer::Bridge.frame_number - @fetching >= FRAMEWORK_FRAMES
   end
 
   # Takes the world the game should enter again after a restart, once, which the DLL's parking
@@ -328,7 +308,7 @@ module MGQ_MpWorldMods
     mods = Mod_Framework::Mods
     names = Array((mods.plan || {})["load"]).map { |name, _tag| name }
     session = MGQ_Multiplayer::Bridge.call(SESSION_TOPIC, "world" => listed.name.to_s, "mods" => listed.mods.to_s, "names" => names, "stays_on" => mods.stays_on)
-    log(session.is_a?(Hash) ? "#{listed.name} turns other mods off: its session keeps #{session['only'].join(', ')}" : "#{listed.name} turns other mods off, but the catalog is unknown: every mod that is on loads")
+    log(session.is_a?(Hash) ? "#{listed.name} turns other mods off: its session keeps #{session['only'].join(', ')}" : "#{listed.name} turns other mods off, but the website's mod list is unknown: every mod that is on loads")
     session.is_a?(Hash) ? session : nil
   end
 
@@ -507,23 +487,23 @@ module MGQ_MpWorldMods
     entry[:sub] && !entry[:keybind] && !entry[:mod_stored] && entry[:key] && entry[:key] != SHARED_OPTION ? true : false
   end
 
-  # Sends the Mod Config options of each catalog mod this game has installed that the DLL names,
-  # once a session per mod's version. Only an admin's game sends them; the World Admin tool lists
-  # them. Called by the world screen whenever it reads the list.
+  # Sends the Mod Config options of each website mod this game has installed that the DLL names,
+  # once a session per mod's version, for the website's world settings editor. Only an admin's game
+  # sends them. Called by the world screen whenever it reads the list.
   #
   # @param admin [Boolean] Whether the player is one of the relay's admins.
   def self.report_options(admin)
     return unless admin && defined?(NWConst::Config::MOD_CONTENTS)
 
-    (MGQ_Multiplayer::Bridge.call(REPORT_TOPIC) || []).each do |key, _name, version|
-      options = world_entries([key]).map { |entry| option_of(entry) }.compact
-      MGQ_Multiplayer::Bridge.call(OPTIONS_TOPIC, "key" => key, "version" => version, "options" => options)
+    (MGQ_Multiplayer::Bridge.call(REPORT_TOPIC) || []).each do |slug, name, version|
+      options = world_entries([MGQ_MpWorld.mod_key(slug), MGQ_MpWorld.mod_key(name)]).map { |entry| option_of(entry) }.compact
+      MGQ_Multiplayer::Bridge.call(OPTIONS_TOPIC, "key" => slug, "version" => version, "options" => options)
     end
   rescue => e
     log_once(:report_options, "sending the Mod Config options failed: #{e.class}: #{e.message}")
   end
 
-  # Reads one Mod Config option for the catalog: its key, name, default and choices; the DLL names
+  # Reads one Mod Config option for the website: its key, name, default and choices; the DLL names
   # its type and leaves out what a world does not keep (ModOption.Of).
   #
   # @param entry [Hash] The option's entry in MOD_CONTENTS.
@@ -568,8 +548,8 @@ module MGQ_MpWorldMods
   end
 
   # Lists the mods of the open world the player's game runs, which the battle server runs too for a
-  # battle it hosts: each mod the world names and the player installed, but those the catalog marks
-  # personal, with its kind, version and files' hashes as the catalog has them; a copy the server
+  # battle it hosts: each mod the world names and the player has on, but those the website marks
+  # personal, with its kind, version and files' hashes as the website lists them; a copy the server
   # cannot get comes without a kind. Called by MGQ_MpBattlesServed.setup_text.
   #
   # @return [Array<Array>] Each mod's key, kind, version and [path, hash] pairs.

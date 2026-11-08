@@ -22,7 +22,7 @@ public sealed record SessionPlan(IReadOnlyList<string> Only, IReadOnlyList<strin
 
 /// <summary>
 /// Which of the player's mods a world that turns other mods off lets load: those it names, those the
-/// relay's catalog marks personal and those every player has. The Mod Framework loads only these as
+/// website marks personal and those every player has. The Mod Framework loads only these as
 /// the player enters such a world, besides the mods that run from the start of the game.
 /// </summary>
 public static class SessionMods

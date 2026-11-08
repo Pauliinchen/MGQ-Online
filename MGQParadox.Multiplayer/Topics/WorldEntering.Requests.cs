@@ -2,6 +2,7 @@
 //  WorldEntering.Requests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Wrote the versions of the creator's copies of a world's required mods beside their hashes
 //      Paulinchen  2026-11-05: Read the new world's type, sharing and player's choice from what its form sets for good
 //      Paulinchen  2026-10-30: Made a new world without a data scan and without keeping differing games out, since its creator's game sets the scan as they enter
 //      Paulinchen  2026-10-23: Created
@@ -297,7 +298,8 @@ internal sealed partial class WorldEntering
         string? squad = raid ? SquadText(values.Squad) : null;
         int? difficulty = raid ? values.Difficulty ?? WorldDifficulty.Default : null;
         _creating = new Creating(name, setup.Type, setup.Share, difficulty, squad, !raid && values.RaidBosses, files, null);
-        WorldAbout about = new(form.TextOf("description"), mods, "", false, CreatorHashes(mods), form.IsTicked("shared") ? SharedSettings.WithMarker("") : "");
+        ModPins pins = CreatorPins(mods);
+        WorldAbout about = new(form.TextOf("description"), mods, "", false, pins.Hashes, form.IsTicked("shared") ? SharedSettings.WithMarker("") : "", pins.Versions);
         int seats = SeatsOf(form);
         StartRequest("create", () => _directory.Create(name, form.TextOf("password"), seats, form.IsTicked("hidden"), setup.Choose, files, about, setup.Type, setup.Share, difficulty, values.OtherModsOff, squad, raid ? null : values.RaidBosses));
     }
@@ -351,9 +353,8 @@ internal sealed partial class WorldEntering
     }
 
     /// <summary>
-    /// Changes the chosen world as the edit's form says: its creator's game sends the hashes of its
-    /// required mods outside the catalog too, and its mod settings after the rest when Shared Mod
-    /// Settings changed.
+    /// Changes the chosen world as the edit's form says: its creator's game sends its copies of the
+    /// required mods too, and its mod settings after the rest when Shared Mod Settings changed.
     /// </summary>
     /// <param name="fresh">Whether the list was fetched since the screen opened.</param>
     private void Edit(bool fresh)
@@ -377,8 +378,8 @@ internal sealed partial class WorldEntering
         string id = listed.Id;
         int seats = SeatsOf(form);
         string description = form.TextOf("description");
-        string? hashes = own ? CreatorHashes(mods) : null;
-        StartRequest("edit", () => _directory.Edit(id, seats, description, mods, hashes, edit.Difficulty, edit.OtherModsOff, edit.Squad is { } squad ? SquadText(squad) : null, edit.RaidBosses));
+        ModPins? pins = own ? CreatorPins(mods) : null;
+        StartRequest("edit", () => _directory.Edit(id, seats, description, mods, pins, edit.Difficulty, edit.OtherModsOff, edit.Squad is { } squad ? SquadText(squad) : null, edit.RaidBosses));
     }
 
     /// <summary>
@@ -464,11 +465,13 @@ internal sealed partial class WorldEntering
         RaidSquad.TryParse(text, out bool luka, out int formation, out int front, out int raidFront) ? new WorldSquad(luka, formation, front, raidFront) : null;
 
     /// <summary>
-    /// Writes the creator's hashes of a world's required mods outside the catalog.
+    /// Writes the creator's copies of a world's required mods: the versions of the website's mods,
+    /// the hashes of the rest.
     /// </summary>
     /// <param name="mods">The world's mods.</param>
-    /// <returns>The hashes, empty for none.</returns>
-    private string CreatorHashes(string mods) => _context.Ask("mods.creator_hashes", mods) is RubyString hashes ? hashes.AsText() : "";
+    /// <returns>The versions and hashes.</returns>
+    private ModPins CreatorPins(string mods) =>
+        _context.Ask(ModCheckTopics.CreatorPinsTopic, mods) is RubyHash pins ? new ModPins(pins["versions"].AsText(), pins["hashes"].AsText()) : new ModPins("", "");
 
     /// <summary>
     /// A new world being made.

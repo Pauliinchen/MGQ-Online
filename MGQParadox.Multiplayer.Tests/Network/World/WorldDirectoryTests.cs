@@ -2,6 +2,7 @@
 //  WorldDirectoryTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Named the test relay as the website whose mod catalog the directory reads
 //      Paulinchen  2026-11-06: Covered a list the relay turns away for this version
 //      Paulinchen  2026-11-05: Read a world before checking its mods in the list
 //                            - Read the list as the directory's topic hands it to the scripts, in place of its text
@@ -699,14 +700,22 @@ public sealed class WorldDirectoryTests
     }
 
     /// <summary>
-    /// Creates a directory client that reaches only the test relay, with cheap passwords.
+    /// Creates a directory client that reaches only the test relay, which serves the website's mod
+    /// catalog too, with cheap passwords.
     /// </summary>
     /// <param name="relay">The test relay.</param>
     /// <param name="key">The player's key.</param>
     /// <param name="name">The player's name.</param>
     /// <returns>The directory.</returns>
     internal static WorldDirectory NewDirectory(TestRelay relay, string key, string name) =>
-        new() { RelayAddress = _ => relay.Address, Iterations = 1_000, Playing = () => (key, name) };
+        new() { RelayAddress = _ => relay.Address, Site = SiteOf(relay), Iterations = 1_000, Playing = () => (key, name) };
+
+    /// <summary>
+    /// Names the test relay as the website.
+    /// </summary>
+    /// <param name="relay">The test relay.</param>
+    /// <returns>Its address over HTTP.</returns>
+    internal static Uri SiteOf(TestRelay relay) => new UriBuilder(relay.Address) { Scheme = "http" }.Uri;
 
     /// <summary>
     /// Makes a player key unique to a number.

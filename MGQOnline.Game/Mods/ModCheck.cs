@@ -2,6 +2,8 @@
 //  ModCheck.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Checked a world's required mods by the creator's versions of website mods and the Mod Framework's list
+//                            - Served a website mod in a version the website's list lacks, for the battle server to read its files
 //      Paulinchen  2026-10-31: Logged the creator's hashes the catalog makes unneeded
 //      Paulinchen  2026-10-30: Offered the download of a world's mods without a restart
 //      Paulinchen  2026-10-23: Created
@@ -15,53 +17,46 @@ using System.Linq;
 namespace MGQOnline.Game.Mods;
 
 /// <summary>
-/// A mod of the relay's catalog, as far as the check reads it.
+/// An installed mod as the Mod Framework lists it (<c>Mods.state</c>).
 /// </summary>
-/// <param name="Key">Its key, as <see cref="ModKey"/> makes it.</param>
-/// <param name="Name">Its name.</param>
-/// <param name="Kind">"link" for a script the relay follows on GitHub, "zip" for a zip of a release there, "upload" for a mod of several files an admin uploaded.</param>
-/// <param name="Version">Its current version.</param>
-/// <param name="Files">Its current files' hashes, a script's by its name, a zip's or an upload's by each path inside Patch, in the catalog's order.</param>
-/// <param name="Versions">Each version the relay saw and its files' hashes, newest first.</param>
-/// <param name="OptionsVersion">The version whose Mod Config options the relay keeps, <see langword="null"/> before an admin's game sent any.</param>
-public sealed record CheckedMod(
-    string Key,
-    string Name,
-    string Kind,
-    string Version,
-    IReadOnlyList<KeyValuePair<string, string>> Files,
-    IReadOnlyList<KeyValuePair<string, IReadOnlyList<KeyValuePair<string, string>>>> Versions,
-    string? OptionsVersion = null)
+/// <param name="Name">Its name in the Patch folder, such as "Level_Cap".</param>
+/// <param name="Title">Its name for the player, such as "Level Cap".</param>
+/// <param name="Version">The version its files are, <see cref="ModCheck.ChangedCopy"/> for a changed copy and a mod the website does not know.</param>
+/// <param name="Slug">Its slug on the website, <see langword="null"/> for a mod the website does not have.</param>
+/// <param name="On">Whether it is on.</param>
+public sealed record InstalledMod(string Name, string Title, string Version, string? Slug, bool On)
 {
     /// <summary>
-    /// Gets whether the mod comes as a zip whose files go to their paths inside Patch.
+    /// Gets whether the website has the mod and its files are one of its versions.
     /// </summary>
-    public bool IsZip => Kind is "upload" or "zip";
+    public bool KnownVersion => Slug != null && Version.Length > 0 && Version != ModCheck.ChangedCopy;
+
+    /// <summary>
+    /// Tells whether a world names the mod by a name.
+    /// </summary>
+    /// <param name="key">The name's key, as <see cref="ModKey"/> makes it.</param>
+    /// <returns>Whether its name in Patch, its name for the player or its slug has that key.</returns>
+    public bool Has(string key) => ModKey.Of(Name) == key || ModKey.Of(Title) == key || (Slug != null && ModKey.Of(Slug) == key);
 }
 
 /// <summary>
-/// A required mod this game lacks or has in another version.
+/// A required mod this game lacks, has turned off or has in another copy than the creator's.
 /// </summary>
 /// <param name="Name">The mod's name, as the world writes it.</param>
-/// <param name="Yours">This game's version: "not installed", the version, "unknown" or "differs".</param>
-/// <param name="Worlds">The world's version, <see langword="null"/> when only the creator's hash tells it.</param>
-/// <param name="Key">The catalog mod's key, which can be downloaded; <see langword="null"/> for a mod outside the catalog.</param>
-/// <param name="Target">Where a link mod's script goes, relative to the game's folder.</param>
-public sealed record ModCheckRow(string Name, string Yours, string? Worlds, string? Key, string? Target)
+/// <param name="Yours">This game's copy: <see cref="ModCheck.NotInstalled"/>, <see cref="ModCheck.Off"/>, <see cref="ModCheck.Differs"/> or its version.</param>
+/// <param name="Worlds">The version of the creator's copy, <see langword="null"/> when only the creator's hash tells it.</param>
+public sealed record ModCheckRow(string Name, string Yours, string? Worlds)
 {
-    /// <summary>
-    /// Gets whether the world's version can be downloaded.
-    /// </summary>
-    public bool Downloadable => Key != null;
-
     /// <summary>
     /// Gets the difference for the player, such as "Level Cap: yours 1.0.0, the world's 1.1.0".
     /// </summary>
-    public string Text => Worlds switch
+    public string Text => (Yours, Worlds) switch
     {
-        null when Yours == ModCheck.Differs => $"{Name}: yours differs from the world creator's copy",
-        null => $"{Name}: not installed",
-        _ when Yours == ModCheck.NotInstalled => $"{Name}: not installed, the world's {Worlds}",
+        (ModCheck.Off, _) => $"{Name}: turned off",
+        (ModCheck.Differs, null) => $"{Name}: yours differs from the world creator's copy",
+        (ModCheck.Differs, _) => $"{Name}: yours differs from the world's {Worlds}",
+        (ModCheck.NotInstalled, null) => $"{Name}: not installed",
+        (ModCheck.NotInstalled, _) => $"{Name}: not installed, the world's {Worlds}",
         _ => $"{Name}: yours {Yours}, the world's {Worlds}",
     };
 }
@@ -69,15 +64,24 @@ public sealed record ModCheckRow(string Name, string Yours, string? Worlds, stri
 /// <summary>
 /// A mod of the open world as the battle server runs it for a battle it hosts.
 /// </summary>
-/// <param name="Key">The mod's key.</param>
-/// <param name="Kind">Its kind as the catalog has it; empty for a copy the server cannot get.</param>
-/// <param name="Version">Its version; this game's for a copy the server cannot get, empty when unknown.</param>
-/// <param name="Files">Its files' hashes, none for a copy the server cannot get.</param>
+/// <param name="Key">The website's slug of the mod, or its key for a copy the server cannot get.</param>
+/// <param name="Kind"><see cref="ModCheck.SiteKind"/> for a mod the server downloads from the website; empty for a copy it cannot get.</param>
+/// <param name="Version">Its version, empty when unknown.</param>
+/// <param name="Files">Its files' hashes by their paths inside Patch as the website lists them; none for a copy the server cannot get, and none for a version the website's list lacks, whose files the server reads from the website's details of the mod.</param>
 public sealed record ServedMod(string Key, string Kind, string Version, IReadOnlyList<KeyValuePair<string, string>> Files);
 
 /// <summary>
-/// Checks a world's required mods against the relay's catalog, this game's copies and the hashes
-/// of the creator's copies, as the world screen does before entering.
+/// The creator's copies of a world's required mods, which the world keeps: the version of each mod
+/// the website has, the hash of each other one.
+/// </summary>
+/// <param name="Versions"><c>name=version</c> pairs separated by semicolons.</param>
+/// <param name="Hashes"><c>name=hash</c> pairs separated by semicolons.</param>
+public sealed record ModPins(string Versions, string Hashes);
+
+/// <summary>
+/// Checks a world's required mods against the mods the Mod Framework lists and the creator's copies,
+/// as the world screen does before entering: a mod the website has must be the creator's version,
+/// any other one the creator's copy by its hash.
 /// </summary>
 public sealed class ModCheck
 {
@@ -87,14 +91,24 @@ public sealed class ModCheck
     public const string NotInstalled = "not installed";
 
     /// <summary>
-    /// What a row says of a copy outside the catalog that differs from the creator's.
+    /// What a row says of a mod this game has turned off.
+    /// </summary>
+    public const string Off = "off";
+
+    /// <summary>
+    /// What a row says of a copy that is not the creator's: a changed copy, or one whose hash differs.
     /// </summary>
     public const string Differs = "differs";
 
     /// <summary>
-    /// What a row says of a copy of no version the relay saw.
+    /// The version the Mod Framework names for a changed copy and a mod the website does not know.
     /// </summary>
-    public const string Unknown = "unknown";
+    public const string ChangedCopy = "?";
+
+    /// <summary>
+    /// The kind of a mod the battle server downloads from the website.
+    /// </summary>
+    public const string SiteKind = "site";
 
     /// <summary>
     /// The folder of the game the mods lie in.
@@ -102,9 +116,9 @@ public sealed class ModCheck
     public const string PatchFolder = "Patch";
 
     /// <summary>
-    /// Longest mod name the relay takes among the creator's hashes.
+    /// Longest mod name the relay takes among the creator's hashes and versions.
     /// </summary>
-    public const int MaxHashNameChars = 100;
+    public const int MaxPinNameChars = 100;
 
     /// <summary>
     /// Most characters of the creator's hashes, as many as the relay takes.
@@ -112,14 +126,24 @@ public sealed class ModCheck
     public const int MaxHashesChars = 64_000;
 
     /// <summary>
-    /// The catalog's mods, <see langword="null"/> while the catalog is unknown.
+    /// Most characters of the creator's versions, as many as the relay takes.
     /// </summary>
-    private readonly IReadOnlyList<CheckedMod>? _catalog;
+    public const int MaxVersionsChars = 16_000;
+
+    /// <summary>
+    /// Longest version the relay takes among the creator's versions.
+    /// </summary>
+    private const int MaxVersionChars = 40;
+
+    /// <summary>
+    /// The mods the Mod Framework lists, <see langword="null"/> while unknown.
+    /// </summary>
+    private readonly IReadOnlyList<InstalledMod>? _mods;
 
     /// <summary>
     /// The scripts in Patch, <see langword="null"/> when the folder could not be read.
     /// </summary>
-    private readonly IReadOnlyList<(string Key, string Path)>? _installed;
+    private readonly IReadOnlyList<(string Key, string Path)>? _scripts;
 
     /// <summary>
     /// Hashes a file relative to the game folder, <see langword="null"/> when it is missing or cannot be read.
@@ -129,42 +153,46 @@ public sealed class ModCheck
     /// <summary>
     /// Creates a check.
     /// </summary>
-    /// <param name="catalog">The catalog's mods, <see langword="null"/> while the catalog is unknown.</param>
-    /// <param name="installed">The scripts in Patch with their keys, <see langword="null"/> when the folder could not be read.</param>
-    /// <param name="hash">Hashes a file relative to the game folder as the catalog does.</param>
-    public ModCheck(IReadOnlyList<CheckedMod>? catalog, IReadOnlyList<(string Key, string Path)>? installed, Func<string, string?> hash)
+    /// <param name="mods">The mods the Mod Framework lists, <see langword="null"/> while unknown.</param>
+    /// <param name="scripts">The scripts in Patch with their keys, <see langword="null"/> when the folder could not be read.</param>
+    /// <param name="hash">Hashes a file relative to the game folder as the creator's hashes are made.</param>
+    public ModCheck(IReadOnlyList<InstalledMod>? mods, IReadOnlyList<(string Key, string Path)>? scripts, Func<string, string?> hash)
     {
-        _catalog = catalog;
-        _installed = installed;
+        _mods = mods;
+        _scripts = scripts;
         _hash = hash;
     }
 
     /// <summary>
-    /// Gets whether the catalog is known.
+    /// Gets whether the Mod Framework told the installed mods, without which the creator's versions
+    /// cannot be compared.
     /// </summary>
-    public bool CatalogKnown => _catalog != null;
+    public bool Known => _mods != null;
 
     /// <summary>
-    /// Lists the required mods of a world that this game lacks or has in another version.
+    /// Lists the required mods this game lacks, has turned off or has in another copy than the creator's.
     /// </summary>
     /// <param name="mods">The world's mods as written.</param>
-    /// <param name="creatorHashes">The creator's hashes of mods outside the catalog, "name=hash" pairs separated by semicolons.</param>
-    /// <returns>The mods, none when every one matches.</returns>
-    public IReadOnlyList<ModCheckRow> Differing(string? mods, string? creatorHashes)
+    /// <param name="versions">The creator's versions, <c>name=version</c> pairs separated by semicolons.</param>
+    /// <param name="hashes">The creator's hashes, <c>name=hash</c> pairs separated by semicolons.</param>
+    /// <returns>A row per such mod, in the order written.</returns>
+    public IReadOnlyList<ModCheckRow> Differing(string? mods, string? versions, string? hashes)
     {
-        Dictionary<string, string> creator = HashesOf(creatorHashes);
-        return ModsText.Required(mods).Select(name => RowFor(name, ModNamed(name), creator)).OfType<ModCheckRow>().ToList();
+        Dictionary<string, string> wanted = PairsOf(versions);
+        Dictionary<string, string> creator = PairsOf(hashes);
+        return ModsText.Required(mods).Select(name => RowFor(name, wanted, creator)).OfType<ModCheckRow>().ToList();
     }
 
     /// <summary>
-    /// Describes how each required mod of a world compares with this game's, for the log.
+    /// Writes the log line of a world's mod check.
     /// </summary>
     /// <param name="world">The world's name.</param>
     /// <param name="mods">The world's mods as written.</param>
-    /// <param name="creatorHashes">The creator's hashes.</param>
-    /// <param name="rows">The mods that differ, see <see cref="Differing"/>.</param>
+    /// <param name="versions">The creator's versions.</param>
+    /// <param name="hashes">The creator's hashes.</param>
+    /// <param name="rows">The rows <see cref="Differing"/> found.</param>
     /// <returns>The line.</returns>
-    public string CheckLine(string world, string? mods, string? creatorHashes, IReadOnlyList<ModCheckRow> rows)
+    public string CheckLine(string world, string? mods, string? versions, string? hashes, IReadOnlyList<ModCheckRow> rows)
     {
         IReadOnlyList<string> required = ModsText.Required(mods);
         if (required.Count == 0)
@@ -172,75 +200,73 @@ public sealed class ModCheck
             return $"mod check of {world}: no required mods (mods \"{mods}\")";
         }
 
-        Dictionary<string, string> creator = HashesOf(creatorHashes);
+        Dictionary<string, string> wanted = PairsOf(versions);
+        Dictionary<string, string> creator = PairsOf(hashes);
         IEnumerable<string> results = required.Select(name =>
         {
-            if (rows.FirstOrDefault(row => row.Name == name) is { } row)
-            {
-                return row.Text + (row.Downloadable ? ", downloadable" : ", from its author only");
-            }
-
-            return ModNamed(name) is { } mod ? $"{name}: matches {mod.Version}"
-                : creator.ContainsKey(ModKey.Of(name)) ? $"{name}: matches the creator's copy"
-                : $"{name}: installed, not compared (outside the catalog, no creator's hash)";
+            string key = ModKey.Of(name);
+            return rows.FirstOrDefault(row => row.Name == name) is { } row ? row.Text
+                : Known && wanted.TryGetValue(key, out string? version) ? $"{name}: matches {version}"
+                : creator.ContainsKey(key) ? $"{name}: matches the creator's copy"
+                : $"{name}: installed, not compared ({(Known ? "no creator's version or hash" : "the installed mods are unknown")})";
         });
-        return $"mod check of {world}: {(rows.Count == 0 ? "all match" : $"{rows.Count} differ")}{(CatalogKnown ? "" : " (catalog unknown)")}: {string.Join("; ", results)}";
+        return $"mod check of {world}: {(rows.Count == 0 ? "all match" : $"{rows.Count} differ")}: {string.Join("; ", results)}";
     }
 
     /// <summary>
-    /// Writes the creator's hashes of the required mods outside the catalog, for a world being made
-    /// or changed. A mod the creator's game lacks, or whose name the relay does not take, is left out,
-    /// so it is only checked for being installed.
+    /// Writes the creator's copies of a world's required mods: the version of each mod the website
+    /// has in a version it knows, the hash of the script of each other one.
     /// </summary>
-    /// <param name="mods">The mods as the creator wrote them.</param>
-    /// <param name="log">Takes a line for each mod left out or checked by the catalog.</param>
-    /// <returns>"name=hash" pairs separated by semicolons.</returns>
-    public string CreatorHashes(string? mods, Action<string> log)
+    /// <param name="mods">The world's mods as written.</param>
+    /// <param name="log">Notes a mod left out, and why.</param>
+    /// <returns>The versions and hashes, each empty for none.</returns>
+    public ModPins CreatorPins(string? mods, Action<string> log)
     {
-        List<string> pairs = [];
+        List<string> versions = [];
+        List<string> hashes = [];
         foreach (string name in ModsText.Required(mods))
         {
-            if (ModNamed(name) is { } mod)
+            if (name.Contains('=', StringComparison.Ordinal) || name.Contains(';', StringComparison.Ordinal) || CodePoints(name) > MaxPinNameChars)
             {
-                log($"creator's hash of {name} not needed: the catalog's {mod.Version} is checked");
+                log($"creator's copy of {name} left out: the relay takes no such name");
                 continue;
             }
 
-            if (name.Contains('=', StringComparison.Ordinal) || name.Contains(';', StringComparison.Ordinal) || CodePoints(name) > MaxHashNameChars)
+            if (ModNamed(name) is { KnownVersion: true } mod && IsVersionText(mod.Version))
             {
+                versions.Add($"{name}={mod.Version}");
                 continue;
             }
 
-            string? path = InstalledPath(name);
+            string? path = ScriptPath(name);
             string? hash = path != null ? _hash(path) : null;
             if (hash == null)
             {
-                log($"creator's hash of {name} left out: {(path != null ? "it could not be read" : "not installed here")}");
+                log($"creator's copy of {name} left out: {(path != null ? "its script could not be read" : "no script of it here")}");
                 continue;
             }
 
-            pairs.Add($"{name}={hash}");
+            hashes.Add($"{name}={hash}");
         }
 
-        return FitHashes(pairs, MaxHashesChars, log);
+        return new ModPins(Fit(versions, MaxVersionsChars, log), Fit(hashes, MaxHashesChars, log));
     }
 
     /// <summary>
-    /// Joins the creator's hashes as long as they fit what the relay takes, leaving out the rest,
-    /// whose mods then only need to be installed.
+    /// Keeps as many pairs as fit the characters the relay takes, in order.
     /// </summary>
-    /// <param name="pairs">Each mod's "name=hash".</param>
-    /// <param name="most">The most characters the joined hashes take, counted as Ruby counts them.</param>
-    /// <param name="log">Takes a line for each pair left out.</param>
-    /// <returns>The hashes that fit, separated by semicolons.</returns>
-    public static string FitHashes(IEnumerable<string> pairs, int most, Action<string> log)
+    /// <param name="pairs">The pairs.</param>
+    /// <param name="most">The most characters.</param>
+    /// <param name="log">Notes a pair left out.</param>
+    /// <returns>The pairs kept, separated by semicolons.</returns>
+    public static string Fit(IEnumerable<string> pairs, int most, Action<string> log)
     {
         List<string> kept = [];
         foreach (string pair in pairs)
         {
             if (CodePoints(string.Join(";", kept.Append(pair))) > most)
             {
-                log($"creator's hash of {pair.Split('=')[0]} left out: the hashes would pass the {most} characters the relay takes");
+                log($"creator's copy of {pair.Split('=')[0]} left out: the world's mods would pass the {most} characters the relay takes");
                 continue;
             }
 
@@ -251,216 +277,126 @@ public sealed class ModCheck
     }
 
     /// <summary>
-    /// Tells the player what differs, in the world screen's lines.
-    /// </summary>
-    /// <param name="world">The world's name.</param>
-    /// <param name="rows">The mods that differ.</param>
-    /// <returns>The text.</returns>
-    public static string Summary(string world, IReadOnlyList<ModCheckRow> rows)
-    {
-        IEnumerable<string> names = rows.Select(row => row.Downloadable ? row.Name : $"{row.Name} (get it from its author)");
-        string action = rows.All(row => row.Downloadable) ? " Download them?" : "";
-        return $"{world} needs mods that are missing or in another version here: {string.Join(", ", names)}.{action}";
-    }
-
-    /// <summary>
-    /// Names the version of this game's copy of a catalog mod.
-    /// </summary>
-    /// <param name="mod">The catalog's mod.</param>
-    /// <returns>The version; "" for a copy that matches no version the relay knows; <see langword="null"/> when the mod is not installed.</returns>
-    public string? InstalledVersion(CheckedMod mod) => RowFor(mod.Name, mod, new Dictionary<string, string>()) switch
-    {
-        null => mod.Version,
-        { Yours: NotInstalled } => null,
-        { Yours: Unknown } => "",
-        var row => row.Yours,
-    };
-
-    /// <summary>
-    /// Lists the mods of a world this game runs, which the battle server runs too for a battle it
-    /// hosts: each mod the world names and the player installed, but personal ones.
+    /// Lists the mods of the open world this game runs, which the battle server runs too for a battle
+    /// it hosts: each mod the world names and this game has on, but the personal ones.
     /// </summary>
     /// <param name="mods">The world's mods as written.</param>
-    /// <param name="personal">The keys of the catalog's personal mods, none while the catalog is unknown.</param>
-    /// <returns>The mods; one the server cannot get, outside the catalog or of another version than its current one, without a kind.</returns>
-    public IReadOnlyList<ServedMod> Served(string? mods, IReadOnlyCollection<string> personal)
+    /// <param name="personal">The keys of the personal mods.</param>
+    /// <param name="files">Finds the files' hashes of a website mod's version by its slug and version, <see langword="null"/> for one the website's list lacks.</param>
+    /// <returns>The mods; one the server cannot get from the website with no kind.</returns>
+    public IReadOnlyList<ServedMod> Served(string? mods, IReadOnlyCollection<string> personal, Func<string, string, IReadOnlyList<KeyValuePair<string, string>>?> files)
     {
         List<ServedMod> served = [];
         foreach (string name in ModsText.Names(mods))
         {
             string key = ModKey.Of(name);
-            if (personal.Contains(key) || !IsInstalled(name))
+            if (personal.Contains(key) || !IsOn(name))
             {
                 continue;
             }
 
-            if (ModNamed(name) is not { } mod)
-            {
-                served.Add(new ServedMod(key, "", "", []));
-                continue;
-            }
-
-            ModCheckRow? row = mod.IsZip ? ZipRow(name, mod) : LinkRow(name, mod);
-            served.Add(row != null ? new ServedMod(key, "", row.Yours, []) : new ServedMod(mod.Key, mod.Kind, mod.Version, mod.Files));
+            served.Add(ModNamed(name) is { KnownVersion: true } mod
+                ? new ServedMod(mod.Slug!, SiteKind, mod.Version, files(mod.Slug!, mod.Version) ?? [])
+                : new ServedMod(key, "", "", []));
         }
 
         return served;
     }
 
     /// <summary>
-    /// Finds the catalog's mod for a name as a world writes it.
+    /// Finds the installed mod a world names.
     /// </summary>
-    /// <param name="name">The mod's name.</param>
-    /// <returns>The mod, <see langword="null"/> when the catalog lacks it or is unknown.</returns>
-    public CheckedMod? ModNamed(string name)
+    /// <param name="name">The name as the world writes it.</param>
+    /// <returns>The mod, <see langword="null"/> when none has that name or the mods are unknown.</returns>
+    public InstalledMod? ModNamed(string name)
     {
         string key = ModKey.Of(name);
-        return _catalog?.FirstOrDefault(mod => mod.Key == key);
+        return _mods?.FirstOrDefault(mod => mod.Has(key));
     }
 
     /// <summary>
-    /// Reads the creator's hashes of mods outside the catalog.
+    /// Reads <c>name=value</c> pairs separated by semicolons by the names' keys.
     /// </summary>
-    /// <param name="text">"name=hash" pairs separated by semicolons.</param>
-    /// <returns>The hashes by the mods' keys, a later pair winning.</returns>
-    public static Dictionary<string, string> HashesOf(string? text)
+    /// <param name="text">The pairs, <see langword="null"/> for none.</param>
+    /// <returns>Each value by its name's key.</returns>
+    public static Dictionary<string, string> PairsOf(string? text)
     {
-        Dictionary<string, string> hashes = new(StringComparer.Ordinal);
+        Dictionary<string, string> pairs = new(StringComparer.Ordinal);
         foreach (string pair in RubySplit(text ?? "", ';'))
         {
             string[] parts = pair.Split('=', 2);
             if (parts.Length == 2)
             {
-                hashes[ModKey.Of(parts[0])] = parts[1];
+                pairs[ModKey.Of(parts[0])] = parts[1];
             }
         }
 
-        return hashes;
+        return pairs;
     }
 
     /// <summary>
     /// Checks one required mod.
     /// </summary>
-    /// <param name="name">The mod's name, as the world writes it.</param>
-    /// <param name="mod">The catalog's mod, <see langword="null"/> when the catalog lacks it.</param>
+    /// <param name="name">Its name as the world writes it.</param>
+    /// <param name="wanted">The creator's versions by key.</param>
     /// <param name="creator">The creator's hashes by key.</param>
-    /// <returns>The difference, <see langword="null"/> when this game's copy matches.</returns>
-    private ModCheckRow? RowFor(string name, CheckedMod? mod, IReadOnlyDictionary<string, string> creator)
-    {
-        if (mod != null)
-        {
-            return mod.IsZip ? ZipRow(name, mod) : LinkRow(name, mod);
-        }
-
-        if (!IsInstalled(name))
-        {
-            return new ModCheckRow(name, NotInstalled, null, null, null);
-        }
-
-        if (!creator.TryGetValue(ModKey.Of(name), out string? expected) || InstalledPath(name) is not { } path)
-        {
-            return null;
-        }
-
-        return _hash(path) == expected ? null : new ModCheckRow(name, Differs, null, null, null);
-    }
-
-    /// <summary>
-    /// Checks a link mod's script.
-    /// </summary>
-    /// <param name="name">The mod's name, as the world writes it.</param>
-    /// <param name="mod">The catalog's mod.</param>
-    /// <returns>The difference, <see langword="null"/> when this game's script is the current one.</returns>
-    private ModCheckRow? LinkRow(string name, CheckedMod mod)
-    {
-        (string file, string current) = mod.Files.Count > 0 ? (mod.Files[0].Key, mod.Files[0].Value) : ("", "");
-        if (InstalledPath(name) is not { } path)
-        {
-            return new ModCheckRow(name, NotInstalled, mod.Version, mod.Key, $"{PatchFolder}/{file}");
-        }
-
-        string? hash = _hash(path);
-        if (hash == current)
-        {
-            return null;
-        }
-
-        return new ModCheckRow(name, VersionOf(mod, [new KeyValuePair<string, string?>(file, hash)]) ?? Unknown, mod.Version, mod.Key, path);
-    }
-
-    /// <summary>
-    /// Checks the files of a mod that comes as a zip.
-    /// </summary>
-    /// <param name="name">The mod's name, as the world writes it.</param>
-    /// <param name="mod">The catalog's mod.</param>
-    /// <returns>The difference, <see langword="null"/> when every file is the current one.</returns>
-    private ModCheckRow? ZipRow(string name, CheckedMod mod)
-    {
-        List<KeyValuePair<string, string?>> hashes = mod.Files.Select(file => new KeyValuePair<string, string?>(file.Key, _hash($"{PatchFolder}/{file.Key}"))).ToList();
-        if (Same(mod.Files, hashes))
-        {
-            return null;
-        }
-
-        return hashes.All(hash => hash.Value == null)
-            ? new ModCheckRow(name, NotInstalled, mod.Version, mod.Key, null)
-            : new ModCheckRow(name, VersionOf(mod, hashes) ?? Unknown, mod.Version, mod.Key, null);
-    }
-
-    /// <summary>
-    /// Names the version whose files a copy's hashes are.
-    /// </summary>
-    /// <param name="mod">The catalog's mod.</param>
-    /// <param name="hashes">The copy's hashes, a missing file's <see langword="null"/>.</param>
-    /// <returns>The version, <see langword="null"/> when the relay never saw this copy.</returns>
-    private static string? VersionOf(CheckedMod mod, IReadOnlyList<KeyValuePair<string, string?>> hashes) =>
-        mod.Versions.FirstOrDefault(version => Same(version.Value, hashes)).Key;
-
-    /// <summary>
-    /// Tells whether hashes are those of a version's files, whatever their order, as Ruby compares two Hashes.
-    /// </summary>
-    /// <param name="files">The version's files' hashes.</param>
-    /// <param name="hashes">The copy's hashes.</param>
-    /// <returns>Whether both name the same files with the same hashes.</returns>
-    private static bool Same(IReadOnlyList<KeyValuePair<string, string>> files, IReadOnlyList<KeyValuePair<string, string?>> hashes)
-    {
-        Dictionary<string, string?> mine = new(StringComparer.Ordinal);
-        foreach (var (path, hash) in hashes)
-        {
-            mine[path] = hash;
-        }
-
-        Dictionary<string, string> theirs = new(StringComparer.Ordinal);
-        foreach (var (path, hash) in files)
-        {
-            theirs[path] = hash;
-        }
-
-        return mine.Count == theirs.Count && theirs.All(file => mine.TryGetValue(file.Key, out string? hash) && hash == file.Value);
-    }
-
-    /// <summary>
-    /// Tells whether a mod's script is installed; also when Patch could not be read, so nobody is
-    /// kept out by mistake.
-    /// </summary>
-    /// <param name="name">The mod's name.</param>
-    /// <returns>Whether it is.</returns>
-    private bool IsInstalled(string name)
+    /// <returns>The row, <see langword="null"/> when this game's copy will do.</returns>
+    private ModCheckRow? RowFor(string name, IReadOnlyDictionary<string, string> wanted, IReadOnlyDictionary<string, string> creator)
     {
         string key = ModKey.Of(name);
-        return _installed == null || _installed.Any(script => script.Key == key);
+        string? version = wanted.GetValueOrDefault(key);
+        InstalledMod? mod = ModNamed(name);
+        if (Known ? mod == null : _scripts != null && ScriptPath(name) == null)
+        {
+            return new ModCheckRow(name, NotInstalled, version);
+        }
+
+        if (mod is { On: false })
+        {
+            return new ModCheckRow(name, Off, version);
+        }
+
+        if (version != null)
+        {
+            return mod == null || string.Equals(mod.Version, version, StringComparison.OrdinalIgnoreCase) ? null
+                : new ModCheckRow(name, mod.KnownVersion ? mod.Version : Differs, version);
+        }
+
+        if (!creator.TryGetValue(key, out string? expected) || ScriptPath(name) is not { } path)
+        {
+            return null;
+        }
+
+        return _hash(path) == expected ? null : new ModCheckRow(name, Differs, null);
     }
 
     /// <summary>
-    /// Finds a mod's script in Patch.
+    /// Tells whether this game has a mod a world names on: by the Mod Framework's list, or while it is
+    /// unknown by the scripts in Patch.
     /// </summary>
-    /// <param name="name">The mod's name.</param>
-    /// <returns>Its path relative to the game folder, <see langword="null"/> when it is not installed or Patch could not be read.</returns>
-    private string? InstalledPath(string name)
+    /// <param name="name">The name as the world writes it.</param>
+    /// <returns>Whether it does; true while neither is known.</returns>
+    private bool IsOn(string name) => Known ? ModNamed(name) is { On: true } : _scripts == null || ScriptPath(name) != null;
+
+    /// <summary>
+    /// Finds the script at the top of Patch of a mod a world names.
+    /// </summary>
+    /// <param name="name">The name as the world writes it.</param>
+    /// <returns>Its path relative to the game folder, <see langword="null"/> for none.</returns>
+    private string? ScriptPath(string name)
     {
         string key = ModKey.Of(name);
-        return _installed?.FirstOrDefault(script => script.Key == key).Path;
+        string? own = ModNamed(name) is { } mod ? ModKey.Of(mod.Name) : null;
+        return _scripts?.FirstOrDefault(script => script.Key == key || script.Key == own).Path;
     }
+
+    /// <summary>
+    /// Tells whether a version is one the relay keeps among the creator's versions.
+    /// </summary>
+    /// <param name="version">The version.</param>
+    /// <returns>Whether it has 1 to 40 letters, digits and <c>.+_-</c>.</returns>
+    private static bool IsVersionText(string version) =>
+        version.Length is > 0 and <= MaxVersionChars && version.All(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '+' or '_' or '-');
 
     /// <summary>
     /// Counts a text's characters as Ruby does, by code point.

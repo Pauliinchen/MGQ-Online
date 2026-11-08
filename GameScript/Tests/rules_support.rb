@@ -2,6 +2,7 @@
 #  rules_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Answered the installed mods the scripts hand over in place of the relay's mod catalog, and dropped the check the scripts no longer call
 #      Paulinchen  2026-11-06: Answered the sorts each test sets and wrote the world's rules out instead of reading recorded cases
 #      Paulinchen  2026-11-05: Answered the rewards a party member catches up with by the fields each test sets instead of from a stand-in of their constants
 #                            - Dropped the reader of the relay's seed rows, which only the tables of the catch-up engine read
@@ -137,39 +138,6 @@ class RuleAnswers
     fixed = @fixed[topic]
     fixed.respond_to?(:call) ? fixed.call(request) : fixed
   end
-end
-
-# The mod catalog the mods.catalog topic answers, which a test sets with catalog_told; nil answers
-# nothing, as when the DLL fails.
-$catalog = nil
-
-# Sets the mod catalog the DLL hands out, written as lines for short: "mod", key, name, kind,
-# version, then each current file and its hash; "old", key, version and its files; "opts", key and
-# the version whose options the relay keeps; "personal" and the keys of personal mods; each
-# separated by tabs.
-#
-# @param state [String] How the DLL's list stands: "ready", "loading", "failed" or "idle".
-# @param lines [Array<String>] The catalog's lines.
-def catalog_told(state, *lines)
-  mods = []
-  personal = []
-  lines.each do |line|
-    fields = line.split("\t", -1)
-    files = {}
-    case fields[0]
-    when "mod"
-      fields[5..-1].each_slice(2) { |name, hash| files[name] = hash if name && hash }
-      mods << { "key" => fields[1], "name" => fields[2], "kind" => fields[3], "version" => fields[4].to_s, "files" => files, "versions" => [], "options_version" => nil }
-    when "old"
-      fields[3..-1].each_slice(2) { |name, hash| files[name] = hash if name && hash }
-      mods.find { |mod| mod["key"] == fields[1] }["versions"] << [fields[2], files]
-    when "opts"
-      mods.find { |mod| mod["key"] == fields[1] }["options_version"] = fields[2]
-    when "personal"
-      personal |= fields[1..-1]
-    end
-  end
-  $catalog = { "state" => state, "error" => state == "failed" ? "down" : nil, "mods" => mods, "personal" => personal }
 end
 
 # Makes up an id, its digits counted up instead of drawn, so a test can tell ids apart: exactly the
@@ -317,31 +285,22 @@ def answer_journal(fake)
   FakeJournal.new(fake)
 end
 
-# What the mods check answers, a block a test sets that takes the request; nil answers that no
-# required mod is missing.
-$mod_check = nil
-
-# The mods the battle server runs as mods.served answers them, the mods mods.report names and the
-# options mods.options was handed.
+# The mods the battle server runs as mods.served answers them, the mods mods.report names, the
+# options mods.options was handed and the installed mods mods.framework was handed last.
 $served_mods = []
 $reported_mods = []
 $sent_options = []
+$framework_mods = nil
 
-# What mods.check answers while no test sets $mod_check: every required mod installed.
-NO_MODS_MISSING = { "known" => false, "rows" => [], "summary" => nil }.freeze
-
-# Answers the mods topics the world screen and the world's mods call: the check as $mod_check has
-# it, the catalog as catalog_told set it, and the rest from what a test sets.
+# Answers the mods topics the world screen and the world's mods call from what a test sets.
 #
 # @param fake [FakeBridge] The bridge.
 def answer_mod_check(fake)
-  fake.answer("mods.check") { |request| $mod_check ? $mod_check.call(request) : NO_MODS_MISSING }
-  fake.answer("mods.creator_hashes") { |_mods| $creator_hashes.to_s }
   fake.answer("mods.forget") { nil }
+  fake.answer("mods.framework") { |request| $framework_mods = request; nil }
   fake.answer("mods.served") { |_mods| $served_mods }
   fake.answer("mods.report") { $reported_mods }
   fake.answer("mods.options") { |request| $sent_options << request; true }
-  fake.answer("mods.catalog") { $catalog }
 end
 
 # Each settings topic called, as [topic, request], and the steps the next calls answer, one Array

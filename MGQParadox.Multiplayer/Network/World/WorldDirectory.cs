@@ -2,6 +2,8 @@
 //  WorldDirectory.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Fetched the website's mod catalog with the list and sent an admin's Mod Config options there
+//                            - Made and changed worlds with the versions of the creator's copies of their required mods
 //      Paulinchen  2026-11-06: Told the player to update once the relay turned this version away
 //      Paulinchen  2026-11-05: Dropped the list's text for the scripts, which read it through the directory's topic
 //      Paulinchen  2026-10-31: Worded what the player reads plainly, leaving causes and internals to the log
@@ -58,6 +60,7 @@ using System.Linq;
 using System.Net;
 using System.Text;
 using System.Threading;
+using MGQOnline.Game.Mods;
 using MGQOnline.Game.Squads;
 using MGQParadox.Multiplayer.Mods;
 using MGQParadox.Multiplayer.Network.Relay;
@@ -175,9 +178,9 @@ internal sealed class WorldDirectory
     private string? _listError;
 
     /// <summary>
-    /// The relay's mod catalog as last fetched with the list, <see langword="null"/> before one arrived.
+    /// The website's mod catalog as last fetched with the list, <see langword="null"/> before one arrived.
     /// </summary>
-    private ModCatalog? _catalog;
+    private SiteCatalog? _catalog;
 
     /// <summary>
     /// Why the last mod catalog could not be fetched.
@@ -236,6 +239,11 @@ internal sealed class WorldDirectory
     public Func<string, Uri?> RelayAddress { get; init; } = Relays.AddressOf;
 
     /// <summary>
+    /// The website whose mod catalog worlds read; tests name a local one.
+    /// </summary>
+    public Uri Site { get; init; } = SiteCatalog.Website;
+
+    /// <summary>
     /// How often a new world's password is hashed; tests make it cheap.
     /// </summary>
     public int Iterations { get; init; } = WorldLock.DefaultIterations;
@@ -267,7 +275,7 @@ internal sealed class WorldDirectory
     }
 
     /// <summary>
-    /// Fetches the list again, and with it the relay's mod catalog, unless they are being fetched already.
+    /// Fetches the list again, and with it the website's mod catalog, unless they are being fetched already.
     /// </summary>
     public void Refresh()
     {
@@ -288,7 +296,7 @@ internal sealed class WorldDirectory
         Threads.Start("MultiplayerDirectoryList", () =>
         {
             WorldListing? listing = null;
-            ModCatalog? catalog = null;
+            SiteCatalog? catalog = null;
             string? error = null;
             string? catalogError = null;
             string? errorLogged = null;
@@ -311,18 +319,17 @@ internal sealed class WorldDirectory
 
             try
             {
-                catalog = Client().Mods();
+                catalog = Client().SiteMods();
             }
             catch (Exception ex)
             {
-                // The worlds are listed all the same; the game script then checks only whether required
-                // mods are installed.
+                // The worlds are listed all the same; a world that turns other mods off waits for it.
                 catalogError = ReasonFor("catalog", ex);
                 catalogLogged = Failure(ex);
             }
 
             var listSummary = listing != null ? ListSummary(listing) : $"world list failed: {errorLogged}";
-            var catalogSummary = catalog != null ? CatalogSummary(catalog) : $"mod catalog failed: {catalogLogged}";
+            var catalogSummary = catalog != null ? CatalogSummary(catalog) : $"website mod catalog failed: {catalogLogged}";
             bool listChanged;
             bool catalogChanged;
 
@@ -481,7 +488,7 @@ internal sealed class WorldDirectory
         }
 
         Log.Write(kept
-            ? $"read the mods of world {Log.Short(world.Id)}: {world.About.Mods.Length.ToString(CultureInfo.InvariantCulture)} characters of mods, {world.About.ModHashes.Length.ToString(CultureInfo.InvariantCulture)} of mod hashes, {world.About.Settings.Length.ToString(CultureInfo.InvariantCulture)} of settings"
+            ? $"read the mods of world {Log.Short(world.Id)}: {world.About.Mods.Length.ToString(CultureInfo.InvariantCulture)} characters of mods, {world.About.ModHashes.Length.ToString(CultureInfo.InvariantCulture)} of mod hashes, {world.About.ModVersions.Length.ToString(CultureInfo.InvariantCulture)} of mod versions, {world.About.Settings.Length.ToString(CultureInfo.InvariantCulture)} of settings"
             : $"read the mods of world {Log.Short(world.Id)}, which is no longer opened");
     }
 
@@ -507,11 +514,11 @@ internal sealed class WorldDirectory
     /// Sums a fetched mod catalog up for the log.
     /// </summary>
     /// <param name="catalog">The catalog.</param>
-    /// <returns>How many mods it holds, then each mod's key, version, kind and file count, then the keys of the mods it marks personal.</returns>
-    private static string CatalogSummary(ModCatalog catalog) =>
-        $"mod catalog: {catalog.Mods.Count} mod(s)"
-        + (catalog.Mods.Count > 0 ? ": " + string.Join(", ", catalog.Mods.Select(mod => $"{mod.Key} {OnOneField(mod.Version)} ({mod.ScriptKind}, {mod.Files.Count.ToString(CultureInfo.InvariantCulture)} file(s))")) : string.Empty)
-        + (catalog.Personal.Count > 0 ? $"; personal: {string.Join(", ", catalog.Personal.Select(mod => mod.Key))}" : string.Empty);
+    /// <returns>How many mods it holds, then each mod's slug and how many versions it lists, then the slugs of the mods it marks personal.</returns>
+    private static string CatalogSummary(SiteCatalog catalog) =>
+        $"website mod catalog: {catalog.Mods.Count} mod(s)"
+        + (catalog.Mods.Count > 0 ? ": " + string.Join(", ", catalog.Mods.Select(mod => $"{mod.Slug} ({mod.Versions.Count.ToString(CultureInfo.InvariantCulture)} version(s))")) : string.Empty)
+        + (catalog.Mods.Any(mod => mod.Personal) ? $"; personal: {string.Join(", ", catalog.Mods.Where(mod => mod.Personal).Select(mod => mod.Slug))}" : string.Empty);
 
     /// <summary>
     /// Gets the list's revision, which moves whenever a fetch starts or ends or the opened world's mods were read.
@@ -559,20 +566,20 @@ internal sealed class WorldDirectory
     private string ListState() => _listing ? "loading" : _listError != null ? "failed" : _worlds != null ? "ready" : "idle";
 
     /// <summary>
-    /// Adds the mods, mod hashes and settings read on their own to a world the list left them out of;
+    /// Adds the mods, mod hashes, mod versions and settings read on their own to a world the list left them out of;
     /// called under the gate.
     /// </summary>
     /// <param name="world">The world as listed.</param>
     /// <returns>The world with them, or as listed.</returns>
     private ListedWorld WithDetails(ListedWorld world) => world.ModsUnread && _details is { } details && details.Id == world.Id
-        ? world with { About = world.About with { Mods = details.About.Mods, ModHashes = details.About.ModHashes, Settings = details.About.Settings }, ModsUnread = false }
+        ? world with { About = world.About with { Mods = details.About.Mods, ModHashes = details.About.ModHashes, ModVersions = details.About.ModVersions, Settings = details.About.Settings }, ModsUnread = false }
         : world;
 
     /// <summary>
-    /// Tells how the relay's mod catalog stands, as fetched with the list, for the game script.
+    /// Tells how the website's mod catalog stands, as fetched with the list.
     /// </summary>
     /// <returns>The state ("loading" while the list is fetched, "ready", "failed" or "idle"), why the catalog could not be fetched while none is known, and the catalog last fetched, <see langword="null"/> before the first.</returns>
-    public (string State, string? Error, ModCatalog? Catalog) CatalogNow()
+    public (string State, string? Error, SiteCatalog? Catalog) CatalogNow()
     {
         lock (_gate)
         {
@@ -582,18 +589,19 @@ internal sealed class WorldDirectory
     }
 
     /// <summary>
-    /// Sends the Mod Config options of a catalog mod, as the game's copy offers them, on a thread of
-    /// its own, outside the actions, so the world screen stays free; how it went is only logged.
+    /// Sends the Mod Config options of a website mod's version, as the game's copy offers them, for the
+    /// website's world settings editor, on a thread of its own, outside the actions, so the world
+    /// screen stays free; how it went is only logged.
     /// </summary>
-    /// <param name="key">The mod's key.</param>
-    /// <param name="version">The version the game's copy is; empty for a copy of no version the catalog knows.</param>
+    /// <param name="slug">The mod's slug.</param>
+    /// <param name="version">The version the game's copy is.</param>
     /// <param name="options">The options.</param>
     /// <returns><see langword="false"/> without a player.</returns>
-    public bool SendModOptions(string key, string version, IReadOnlyList<ModOption> options)
+    public bool SendModOptions(string slug, string version, IReadOnlyList<ModOption> options)
     {
         if (Playing() is not { } player)
         {
-            Log.Write($"Mod Config options of {key} not sent: {Player.NotSet}");
+            Log.Write($"Mod Config options of {slug} not sent: {Player.NotSet}");
             return false;
         }
 
@@ -602,14 +610,12 @@ internal sealed class WorldDirectory
         {
             try
             {
-                var (kept, keptVersion) = client.SetModOptions(key, player.Key, version, options);
-                Log.Write(kept
-                    ? $"sent {options.Count} Mod Config option(s) of {key} {version}, which the relay keeps"
-                    : $"sent {options.Count} Mod Config option(s) of {key} {version}, which the relay did not keep: it keeps those of {(keptVersion.Length > 0 ? keptVersion : "a newer version")}");
+                client.SendModOptions(slug, version, player.Key, options);
+                Log.Write($"sent {options.Count} Mod Config option(s) of {slug} {version} to the website");
             }
             catch (Exception ex)
             {
-                Log.Write($"sending the Mod Config options of {key} failed: {ex.GetBaseException().Message}");
+                Log.Write($"sending the Mod Config options of {slug} {version} failed: {Failure(ex)}");
             }
         });
         return true;
@@ -817,24 +823,23 @@ internal sealed class WorldDirectory
     /// <summary>
     /// Changes a world's seats, description, mods, whether it turns other mods off, a Raid World's
     /// difficulty and squad settings and a Classic world's raid bosses setting, which only its creator
-    /// or one of the relay's admins may, and for its creator the hashes of its required mods outside
-    /// the catalog.
+    /// or one of the relay's admins may, and for its creator the creator's copies of its required mods.
     /// </summary>
     /// <param name="id">The world.</param>
     /// <param name="seats">How many games it seats at once.</param>
     /// <param name="description">What the world is about.</param>
     /// <param name="mods">The mods it needs.</param>
-    /// <param name="modHashes">The creator's mod hashes, <see langword="null"/> to leave them, as an admin must.</param>
+    /// <param name="pins">The creator's copies of its required mods, <see langword="null"/> to leave them, as an admin must.</param>
     /// <param name="difficulty">A Raid World's new difficulty, see <see cref="WorldDifficulty"/>; <see langword="null"/> to leave it, as for every Classic world.</param>
     /// <param name="otherModsOff">Whether the world now turns off every mod of its players it does not name; <see langword="null"/> to leave it.</param>
     /// <param name="squad">A Raid World's new squad settings as text, see <see cref="RaidSquad"/>; <see langword="null"/> to leave them, as for every Classic world.</param>
     /// <param name="raidBosses">Whether a Classic world's players now meet raid bosses; <see langword="null"/> to leave it, as for every Raid World.</param>
     /// <returns><see langword="false"/> while another action runs.</returns>
-    public bool Edit(string id, int seats, string description, string mods, string? modHashes = null, int? difficulty = null, bool? otherModsOff = null, string? squad = null, bool? raidBosses = null) => Start("edit", () =>
+    public bool Edit(string id, int seats, string description, string mods, ModPins? pins = null, int? difficulty = null, bool? otherModsOff = null, string? squad = null, bool? raidBosses = null) => Start("edit", () =>
     {
         CheckSettings(seats, squad);
-        Client().Edit(id, Me().Key, seats, description, mods, modHashes, difficulty, otherModsOff, squad, raidBosses);
-        Log.Write($"changed world {Log.Short(id)}: {seats.ToString(CultureInfo.InvariantCulture)} seats, description of {description.Length.ToString(CultureInfo.InvariantCulture)} characters, mods '{OnOneField(mods)}', {(modHashes != null ? $"mod hashes '{OnOneField(modHashes)}'" : "mod hashes left as they are")}{(difficulty is { } level ? $", difficulty {level.ToString(CultureInfo.InvariantCulture)}" : string.Empty)}{SquadNote(squad)}{RaidBossesNote(raidBosses)}{OtherModsOffNote(otherModsOff)}");
+        Client().Edit(id, Me().Key, seats, description, mods, pins, difficulty, otherModsOff, squad, raidBosses);
+        Log.Write($"changed world {Log.Short(id)}: {seats.ToString(CultureInfo.InvariantCulture)} seats, description of {description.Length.ToString(CultureInfo.InvariantCulture)} characters, mods '{OnOneField(mods)}', {(pins != null ? $"mod versions '{OnOneField(pins.Versions)}', mod hashes '{OnOneField(pins.Hashes)}'" : "mod versions and hashes left as they are")}{(difficulty is { } level ? $", difficulty {level.ToString(CultureInfo.InvariantCulture)}" : string.Empty)}{SquadNote(squad)}{RaidBossesNote(raidBosses)}{OtherModsOffNote(otherModsOff)}");
         return null;
     });
 
@@ -1123,7 +1128,7 @@ internal sealed class WorldDirectory
     /// <param name="relay">The relay's id, the one this version keeps its worlds at unless a world code names another.</param>
     /// <returns>The client.</returns>
     private DirectoryClient Client(string relay = Relays.Current) =>
-        new(RelayAddress(relay) ?? throw new ActionException(UnknownRelay));
+        new(RelayAddress(relay) ?? throw new ActionException(UnknownRelay), Site);
 
     /// <summary>
     /// Reads who plays, which every action that changes the directory needs.

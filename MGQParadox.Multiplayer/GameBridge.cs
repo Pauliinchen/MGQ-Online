@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-11-08: Handed the overview topics the game's events for the quest walk
+//                            - Registered the mod topics without the world directory, whose relay catalog went
 //      Paulinchen  2026-11-07: Registered the topics of a Raid World's difficulty
 //                            - Registered the topics of a Raid World's gated areas
 //      Paulinchen  2026-11-06: Registered the topics of the items a trade moves
@@ -158,7 +159,7 @@ internal static unsafe class GameBridge
         var roster = new RaidRoster();
         SharedTopics.Register(context, RaidBosses.Current, roster);
         FreezeTopics.Register(context, () => RaidBosses.Current.Ledger, roster, () => GameEvents.Current);
-        ModTopics.Register(context, services.Scripts, services.Directory);
+        ModTopics.Register(context, services.Scripts);
         EventTopics.Register(context, () => GameEvents.Current);
         EventTableTopics.Register(context, () => GameEvents.Current);
         WorldTopics.Register(context);

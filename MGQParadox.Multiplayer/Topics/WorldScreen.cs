@@ -2,6 +2,7 @@
 //  WorldScreen.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Checked a world's required mods by its creator's versions too and took the personal mods from the website's catalog
 //      Paulinchen  2026-10-30: Stopped comparing the game data in the details, which the title has without the world's mods
 //                            - Counted the mods a world turns off without the parking
 //                            - Told the details whether a world's data scan has another format
@@ -175,7 +176,7 @@ internal sealed class WorldScreen
             me,
             _sources.List().Admin,
             name => installed == null || installed.Contains(ModKey.Of(name)),
-            listed == null || listed.ModsUnread ? [] : _sources.Rows(listed.About.Mods, listed.About.ModHashes),
+            listed == null || listed.ModsUnread ? [] : _sources.Rows(listed.About.Mods, listed.About.ModVersions, listed.About.ModHashes),
             listed == null ? string.Empty : _sources.SettingsText(listed.About.Settings, listed.CreatorId, listed.CreatorName, me),
             listed != null && SharedSettings.IsShared(listed.About.Settings),
             listed is { OtherModsOff: true } ? _sources.TurnedOff(listed.About.Mods) : null,
@@ -260,7 +261,7 @@ internal sealed class WorldScreen
 /// <param name="Local">The worlds on this PC, the player's lists and the game data.</param>
 /// <param name="Me">Gives the player's id, empty before the worlds were told who plays.</param>
 /// <param name="Installed">Lists the scripts in Patch, <see langword="null"/> when the folder cannot be read.</param>
-/// <param name="Rows">Checks a world's required mods by its mods and its creator's hashes.</param>
+/// <param name="Rows">Checks a world's required mods by its mods and its creator's versions and hashes.</param>
 /// <param name="SettingsText">Writes the details' line of a world's shared settings from its settings, its creator's id and name, and the player's id.</param>
 /// <param name="TurnedOff">Lists the player's mods a world of these mods turns off, <see langword="null"/> while unknown.</param>
 internal sealed record WorldScreenSources(
@@ -271,7 +272,7 @@ internal sealed record WorldScreenSources(
     LocalWorldTopics.Kept Local,
     Func<string> Me,
     Func<IReadOnlyList<string>?> Installed,
-    Func<string, string, IReadOnlyList<ScreenModRow>> Rows,
+    Func<string, string, string, IReadOnlyList<ScreenModRow>> Rows,
     Func<string, string, string, string, string> SettingsText,
     Func<string, IReadOnlyList<(string Name, int Scripts)>?> TurnedOff)
 {
@@ -295,9 +296,9 @@ internal sealed record WorldScreenSources(
         local,
         () => Player.Key is { } key ? WorldKeys.PlayerIdOf(key) : string.Empty,
         services.Scripts,
-        (mods, hashes) => [.. check.Check().Differing(mods, hashes).Select(row => new ScreenModRow(row.Name, row.Yours, row.Text))],
+        (mods, versions, hashes) => [.. check.Check().Differing(mods, versions, hashes).Select(row => new ScreenModRow(row.Name, row.Yours, row.Text))],
         settings.DetailsText,
-        mods => SessionMods.TurnedOff(services.Scripts(), mods, services.Directory().CatalogNow().Catalog is { } catalog ? ModTopics.Readable(catalog).Personal : null));
+        mods => SessionMods.TurnedOff(services.Scripts(), mods, check.Personal()));
 }
 
 /// <summary>

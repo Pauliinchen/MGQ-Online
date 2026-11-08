@@ -2,6 +2,7 @@
 //  schema.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Expected step 1 to keep making the retired mod catalog's tables, which the stores no longer make
 //      Paulinchen  2026-10-22: Tested that step 3 adds the live build each design build was compiled against
 //      Paulinchen  2026-10-21: Created
 //
@@ -50,7 +51,7 @@ test("a database the relay kept before the steps keeps every record, gains the d
   const before = tablesOf(db);
   assert.equal(versionOf(db), 0);
   assert.equal(migrate(db, STEPS), 3);
-  assert.deepEqual(tablesOf(db), [...before, ...DESIGN_TABLE_NAMES].sort());
+  assert.deepEqual(tablesOf(db), [...before, "mod_files", "mods", ...DESIGN_TABLE_NAMES].sort(), "the retired mod catalog's tables stay for a rollback");
   assert.ok(db.prepare("PRAGMA table_info(design_builds)").all().some((column) => column.name === "base_build_id"));
   assert.equal(migrate(db, STEPS), 3, "a second run changes nothing");
   db.close();

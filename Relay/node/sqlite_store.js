@@ -2,6 +2,7 @@
 //  sqlite_store.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Dropped the mod catalog's store and left its tables in the database for a rollback
 //      Paulinchen  2026-10-31: Kept the run entries of each story track one row each
 //      Paulinchen  2026-10-23: Kept the story mapping, its revision, each row's last changes and the derived index
 //                            - Kept each Raid World's story tracks: its summary, each track's keys, each player's record and each part's checkpoint
@@ -15,9 +16,9 @@
 //
 //----------------------------------------------------------------
 
-// The Node relay's stores over one SQLite database, so worlds, mods, trades, stories, boss pools,
+// The Node relay's stores over one SQLite database, so worlds, trades, stories, boss pools,
 // the story mapping and the story tracks outlast a restart. Records are kept as JSON, starting saves
-// and uploaded mods' zips as blobs, the tracks' keys one row each.
+// as blobs, the tracks' keys one row each. The mod catalog's tables of older relays stay untouched.
 
 import { DatabaseSync } from "node:sqlite";
 
@@ -25,7 +26,7 @@ import { DatabaseSync } from "node:sqlite";
  * Opens the stores over a SQLite database, making its tables when they are missing.
  *
  * @param {string} path The database file's path, made when it is missing.
- * @returns {{path: string, directory: import("../core/directory.js").DirectoryStore, mods: import("../core/mods.js").ModStore, trades: import("../core/trades.js").TradeStore, stories: (id: string) => import("../core/story.js").StoryStore, bosses: (id: string) => import("../core/bosses.js").BossStore, releases: import("../core/releases.js").ReleaseStore, mapping: import("../core/story_mapping.js").StoryMappingStore, tracks: (id: string) => import("../core/story_tracks.js").TrackStore, close: () => void}} The stores, and a way to close the database.
+ * @returns {{path: string, directory: import("../core/directory.js").DirectoryStore, trades: import("../core/trades.js").TradeStore, stories: (id: string) => import("../core/story.js").StoryStore, bosses: (id: string) => import("../core/bosses.js").BossStore, releases: import("../core/releases.js").ReleaseStore, mapping: import("../core/story_mapping.js").StoryMappingStore, tracks: (id: string) => import("../core/story_tracks.js").TrackStore, close: () => void}} The stores, and a way to close the database.
  */
 export function openSqliteStores(path) {
   const db = new DatabaseSync(path);
@@ -34,8 +35,6 @@ export function openSqliteStores(path) {
   const worlds = jsonTable(db, "worlds");
   const starts = blobTable(db, "starts");
   const chats = jsonTable(db, "chats");
-  const mods = jsonTable(db, "mods");
-  const modFiles = blobTable(db, "mod_files");
   const trades = jsonTable(db, "trades");
   const tradeSealed = jsonTable(db, "trade_sealed");
   const stories = jsonTable(db, "stories");
@@ -64,17 +63,6 @@ export function openSqliteStores(path) {
       getStart: async (id) => starts.get(id),
       putChat: async (id, lines) => chats.put(id, lines),
       getChat: async (id) => chats.get(id),
-    },
-    mods: {
-      getMod: async (key) => mods.get(key),
-      putMod: async (entry) => mods.put(entry.key, entry),
-      removeMod: async (key) => {
-        mods.remove(key);
-        modFiles.remove(key);
-      },
-      allMods: async () => mods.all(),
-      putModFile: async (key, bytes) => modFiles.put(key, bytes),
-      getModFile: async (key) => modFiles.get(key),
     },
     trades: {
       getTrade: async (id) => trades.get(id),

@@ -2,6 +2,8 @@
 //  WorldEnteringTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Answered the mods check with the website catalog's state and asked the Mod Framework to install again only a copy that differs
+//                            - Wrote the creator's versions of a world's required mods beside their hashes
 //      Paulinchen  2026-11-06: Checked the mods a world needs handed to the Mod Framework's dialog, in place of the download, the install and the restart
 //                            - Checked that mods still differing right after they were made ready are refused, not asked for again
 //      Paulinchen  2026-11-01: Checked that a starting save another player made is noted as theirs, and the creator's own not
@@ -22,6 +24,7 @@ using System.IO;
 using System.Linq;
 using MGQOnline.Bridge.Ruby;
 using MGQOnline.Game.Forms;
+using MGQOnline.Game.Mods;
 using MGQParadox.Multiplayer.Network.World;
 using MGQParadox.Multiplayer.Tests.Network.World;
 using MGQParadox.Multiplayer.Topics;
@@ -113,10 +116,10 @@ public sealed class WorldEnteringTests : IDisposable
         PlayerIni player = new(Path.Combine(_mod.Path, PlayerIni.FileName));
         WorldLists lists = new(player, _mod.Path, () => 0);
         _lists = lists;
-        Area("mods.check", _ => new RubyHash { { "known", true }, { "rows", new RubyArray() }, { "summary", RubyNil.Value } });
+        Area("mods.check", _ => new RubyHash { { "known", true }, { "catalog", true }, { "rows", new RubyArray() } });
         Area("mods.forget", _ => null);
         Area("worlds.invite_take", _ => null);
-        Area("mods.creator_hashes", _ => "Mod=abc");
+        Area("mods.creator_pins", _ => new RubyHash { { "versions", "Level Cap=1.4.0" }, { "hashes", "Mod=abc" } });
         Area("settings.of", request => request.AsHash()["settings"]);
         Area("settings.confirmed", _ => null);
         _topics = new TopicCaller(context =>
@@ -264,8 +267,8 @@ public sealed class WorldEnteringTests : IDisposable
 
     /// <summary>
     /// Asserts that a world whose required mods differ here hands the scripts the mods it needs, each
-    /// with the world's version and whether this game has a copy that is not the world's, for the Mod
-    /// Framework's dialog; that entering goes on once the dialog made them ready, with what Patch held
+    /// with the world's version and whether this game has a changed copy, for the Mod Framework's
+    /// dialog, which updates an older version and installs a changed copy again; that entering goes on once the dialog made them ready, with what Patch held
     /// forgotten; and that going back from it gives up the entry.
     /// </summary>
     [Fact]
@@ -275,20 +278,20 @@ public sealed class WorldEnteringTests : IDisposable
         Area("mods.check", _ => new RubyHash
         {
             { "known", true },
+            { "catalog", true },
             {
                 "rows", ready ? new RubyArray() : new RubyArray([
-                    new RubyHash { { "name", "Level Cap" }, { "key", "levelcap" }, { "yours", "1.3.5" }, { "worlds", "1.4.0" }, { "text", "Level Cap: yours 1.3.5, the world's 1.4.0" }, { "downloadable", true } },
-                    new RubyHash { { "name", "Mod C" }, { "yours", "differs" }, { "worlds", RubyNil.Value }, { "text", "Mod C: yours differs from the world creator's copy" }, { "downloadable", false } },
-                    new RubyHash { { "name", "Party Sheet" }, { "key", "party" }, { "yours", "not installed" }, { "worlds", "1.5.2" }, { "text", "Party Sheet: not installed, the world's 1.5.2" }, { "downloadable", true } }])
+                    new RubyHash { { "name", "Level Cap" }, { "yours", "1.3.5" }, { "worlds", "1.4.0" }, { "text", "Level Cap: yours 1.3.5, the world's 1.4.0" } },
+                    new RubyHash { { "name", "Mod C" }, { "yours", "differs" }, { "worlds", RubyNil.Value }, { "text", "Mod C: yours differs from the world creator's copy" } },
+                    new RubyHash { { "name", "Party Sheet" }, { "yours", "not installed" }, { "worlds", "1.5.2" }, { "text", "Party Sheet: not installed, the world's 1.5.2" } }])
             },
-            { "summary", "Plain needs mods." },
         });
         _directory.List(World("w1", open: true, mods: "!Level Cap; !Mod C; !Party Sheet"));
 
         RubyValue? asked = _topics.Call(WorldEntering.EnterTopic, new RubyHash { { "id", "w1" }, { "folder", RubyNil.Value }, { "name", "Plain" }, { "gone", false }, { "me", Me } });
         RubyArray step = asked!.AsHash()["steps"].AsArray()[0].AsArray();
         Assert.Equal(["needed_mods", "Plain"], [step[0].AsText(), step[1].AsText()]);
-        Assert.Equal([("Level Cap", "1.4.0", true), ("Mod C", (string?)null, true), ("Party Sheet", "1.5.2", false)],
+        Assert.Equal([("Level Cap", "1.4.0", false), ("Mod C", (string?)null, true), ("Party Sheet", "1.5.2", false)],
                      step[2].AsArray().Select(mod => mod.AsHash()).Select(mod => (mod["name"].AsText(), mod["version"].IsNil ? null : mod["version"].AsText(), mod["differs"].AsBool())));
 
         Assert.Equal(["back"], Answer("back"));
@@ -301,8 +304,8 @@ public sealed class WorldEnteringTests : IDisposable
 
     /// <summary>
     /// Asserts that a world whose mods still differ by MGQ Online's check once the Mod Framework made
-    /// them ready, such as a copy of a version the relay never saw, is refused instead of asked for
-    /// again, and that the next entry asks once more.
+    /// them ready, such as a changed copy the framework found nothing to do about, is refused instead
+    /// of asked for again, and that the next entry asks once more.
     /// </summary>
     [Fact]
     public void Enter_RefusesModsStillDifferingRightAfterTheyWereMadeReady()
@@ -310,25 +313,25 @@ public sealed class WorldEnteringTests : IDisposable
         Area("mods.check", _ => new RubyHash
         {
             { "known", true },
-            { "rows", new RubyArray([new RubyHash { { "name", "Level Cap" }, { "key", "levelcap" }, { "yours", "unknown" }, { "worlds", "1.4.0" }, { "text", "Level Cap: yours unknown, the world's 1.4.0" }, { "downloadable", true } }]) },
-            { "summary", "Plain needs mods." },
+            { "catalog", true },
+            { "rows", new RubyArray([new RubyHash { { "name", "Level Cap" }, { "yours", "differs" }, { "worlds", "1.4.0" }, { "text", "Level Cap: yours differs from the world's 1.4.0" } }]) },
         });
         _directory.List(World("w1", open: true, mods: "!Level Cap"));
 
         Assert.Equal(["needed_mods"], Enter("w1"));
-        Assert.Equal(["forget_installed", "buzz", "say Plain still needs mods that differ here: Level Cap: yours unknown, the world's 1.4.0. Check the Patch folder, then try again.", "back"], Answer("mods_ready"));
+        Assert.Equal(["forget_installed", "buzz", "say Plain still needs mods that differ here: Level Cap: yours differs from the world's 1.4.0. Check the Patch folder, then try again.", "back"], Answer("mods_ready"));
         Assert.Equal(["needed_mods"], Enter("w1"));
     }
 
     /// <summary>
-    /// Asserts that a world that turns other mods off keeps the game out while the catalog, which
-    /// tells the personal mods its session keeps, is unknown, and lets it in once it is known.
+    /// Asserts that a world that turns other mods off keeps the game out while the website's catalog,
+    /// which tells the personal mods its session keeps, is unknown, and lets it in once it is known.
     /// </summary>
     [Fact]
     public void Enter_WaitsForTheCatalogOfAWorldThatTurnsOtherModsOff()
     {
         bool known = false;
-        Area("mods.check", _ => new RubyHash { { "known", known }, { "rows", new RubyArray() }, { "summary", RubyNil.Value } });
+        Area("mods.check", _ => new RubyHash { { "known", true }, { "catalog", known }, { "rows", new RubyArray() } });
         _directory.List(World("w1", open: true, off: true));
 
         Assert.Equal(["buzz", "say The mod list has not loaded yet. Try again in a moment.", "back"], Enter("w1"));
@@ -457,7 +460,7 @@ public sealed class WorldEnteringTests : IDisposable
         form.Set("mods", "!Mod");
 
         Assert.Equal(["busy create"], Do("create"));
-        Assert.Equal("create Haven 6 classic/off d= s= b=False c=False Mod=abc loose data=[] []", _directory.Calls.Last());
+        Assert.Equal("create Haven 6 classic/off d= s= b=False c=False Level Cap=1.4.0 Mod=abc loose data=[] []", _directory.Calls.Last());
         _directory.Finish(Code, "none");
         Assert.Equal(["idle", "fresh_form", "close_form", "select", "say Haven was created. Confirm to enter it.", "back"], Step());
         Assert.Equal(["w1"], _lists.Favourites());
@@ -478,7 +481,7 @@ public sealed class WorldEnteringTests : IDisposable
         _forms["new_world"].Set("raid_bosses", true);
         _forms["new_world"].Set("shared", true);
         Do("create");
-        Assert.Equal("create Raid 4 raid/off d=0 s=0 4 1 1 b= c=False Mod=abc loose data=[] [@shared=o:1]", _directory.Calls.Last());
+        Assert.Equal("create Raid 4 raid/off d=0 s=0 4 1 1 b= c=False Level Cap=1.4.0 Mod=abc loose data=[] [@shared=o:1]", _directory.Calls.Last());
     }
 
     /// <summary>
@@ -495,7 +498,7 @@ public sealed class WorldEnteringTests : IDisposable
         form.Tick("shared");
 
         Assert.Equal(["busy edit"], Do("edit", new RubyHash { { "id", "w1" }, { "name", "Plain" }, { "me", Me }, { "fresh", true } }));
-        Assert.Equal("edit w1 8 hashes off=True", _directory.Calls.Last());
+        Assert.Equal("edit w1 8 Level Cap=1.4.0 Mod=abc off=True", _directory.Calls.Last());
         _directory.Finish(null, null);
         Assert.Equal(["idle", "busy settings"], Step());
         _directory.Finish(null, null);
@@ -775,11 +778,11 @@ public sealed class WorldEnteringTests : IDisposable
 
         /// <inheritdoc />
         public bool Create(string name, string password, int seats, bool hidden, bool choose, IReadOnlyList<(string Name, string Path)> start, WorldAbout about, string type, string share, int? difficulty, bool otherModsOff, string? squad, bool? raidBosses) =>
-            Started($"create {name} {seats} {type}/{share} d={difficulty} s={squad} b={raidBosses} c={choose} {about.ModHashes} {(about.Strict ? "strict" : "loose")} data=[{about.Data}] [{about.Settings}]");
+            Started($"create {name} {seats} {type}/{share} d={difficulty} s={squad} b={raidBosses} c={choose} {about.ModVersions} {about.ModHashes} {(about.Strict ? "strict" : "loose")} data=[{about.Data}] [{about.Settings}]");
 
         /// <inheritdoc />
-        public bool Edit(string id, int seats, string description, string mods, string? modHashes, int? difficulty, bool? otherModsOff, string? squad, bool? raidBosses) =>
-            Started($"edit {id} {seats} {(modHashes == null ? "" : "hashes")} off={otherModsOff}");
+        public bool Edit(string id, int seats, string description, string mods, ModPins? pins, int? difficulty, bool? otherModsOff, string? squad, bool? raidBosses) =>
+            Started($"edit {id} {seats} {(pins == null ? "" : $"{pins.Versions} {pins.Hashes}")} off={otherModsOff}");
 
         /// <inheritdoc />
         public bool SetSettings(string id, string settings) => Started($"settings {id} {settings}");

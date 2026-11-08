@@ -2,6 +2,8 @@
 //  WorldModsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Covered the website's mod catalog fetched with the list and the Mod Config options sent to the website, in place of the relay's catalog
+//                            - Covered the versions of the creator's copies of a world's required mods
 //      Paulinchen  2026-11-05: Read every list without the worlds' mods
 //                            - Handed an option's default and choices as values, whose type the DLL names
 //                            - Took the Mod Config options as the scripts hand them over and read the list as values
@@ -24,196 +26,73 @@
 
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
-using System.Text;
 using System.Text.Json.Nodes;
 using System.Threading;
 using MGQOnline.Bridge.Ruby;
+using MGQOnline.Game.Mods;
 using MGQParadox.Multiplayer.Mods;
-using MGQParadox.Multiplayer.Network.Transport;
 using MGQParadox.Multiplayer.Network.World;
-using MGQParadox.Multiplayer.Tests.Mods;
-using MGQParadox.Multiplayer.Topics;
 using static MGQParadox.Multiplayer.Tests.Network.World.WorldDirectoryTests;
 
 namespace MGQParadox.Multiplayer.Tests.Network.World;
 
 /// <summary>
-/// Covers a world's mods against a relay inside this process: the mod catalog fetched with the
-/// list, installing its mods, and the creator's mod hashes and mod settings of a world.
+/// Covers a world's mods against a relay inside this process, which stands in for the website too:
+/// the website's mod catalog fetched with the list, the Mod Config options an admin's game sends to
+/// the website, and the creator's mod versions, mod hashes and mod settings of a world.
 /// </summary>
 public sealed class WorldModsTests
 {
     /// <summary>
-    /// A script as GitHub serves it.
-    /// </summary>
-    private static readonly byte[] Script = Encoding.UTF8.GetBytes("# Level Cap\n");
-
-    /// <summary>
-    /// Asserts that the catalog comes with the list, every version with its files, as the game
-    /// script takes it.
+    /// Asserts that the website's catalog comes with the list: each version's files of the PC package
+    /// by their paths inside Patch, and the personal mods by their slug, their name and the name of
+    /// the installed copy.
     /// </summary>
     [Fact]
-    public void Refresh_FetchesTheCatalog()
+    public void Refresh_ReadsTheWebsiteCatalog()
     {
         using var relay = new TestRelay();
-        relay.CatalogMods.Add(LinkEntry("1.4.0", "bb", ["1.4.0", "bb"], ["1.3.5", "aa"]));
+        relay.SiteMods.Add(SiteEntry("level-cap", "Level Cap", personal: false, ("1.4.0", "bb"), ("1.3.5", "aa")));
+        relay.SiteMods.Add(SiteEntry("victory-screen", "Victory Screen", personal: true, ("2.0.0", "cc")));
         var player = NewDirectory(relay, CreatorKey, "Player");
 
         ListState(player);
-        RubyHash catalog = ModTopics.CatalogOf(player);
+        var (state, _, catalog) = player.CatalogNow();
 
-        Assert.Equal(RubyString.Utf8("ready"), catalog["state"]);
-        Assert.Equal(
-            new RubyHash
-            {
-                { "key", "levelcap" }, { "name", "Level Cap" }, { "kind", "link" }, { "version", "1.4.0" }, { "files", Files("bb") },
-                { "versions", new RubyArray([new RubyArray(["1.4.0", Files("bb")]), new RubyArray(["1.3.5", Files("aa")])]) }, { "options_version", RubyNil.Value },
-            },
-            Assert.Single(catalog["mods"].AsArray()));
+        Assert.Equal("ready", state);
+        Assert.Equal([new KeyValuePair<string, string>("Level_Cap.rb", "bb")], catalog!.FilesOf("level-cap", "1.4.0"));
+        Assert.Null(catalog.FilesOf("level-cap", "9.9.9"));
+        Assert.Equal(["victoryscreen", "victorysplash"], catalog.PersonalKeys([new InstalledMod("Victory_Splash", "Victory Splash", "2.0.0", "victory-screen", true)]));
     }
 
     /// <summary>
-    /// Asserts that a link the relay could not read yet, without a version or files, is left out,
-    /// so a world checks it as a mod outside the catalog.
+    /// Asserts that the options the game script read reach the website for the mod's version, with
+    /// the admin's key in its header.
     /// </summary>
     [Fact]
-    public void Refresh_LeavesOutALinkNotReadYet()
+    public void SendModOptions_PostsTheOptionsToTheWebsite()
     {
         using var relay = new TestRelay();
-        var entry = LinkEntry(string.Empty, "bb");
-        entry["files"] = new JsonObject();
-        relay.CatalogMods.Add(entry);
         var player = NewDirectory(relay, CreatorKey, "Player");
 
-        ListState(player);
+        Assert.True(player.SendModOptions("level-cap", "1.4.0", LevelCapOptions()));
+        var deadline = DateTime.UtcNow.AddSeconds(5);
 
-        Assert.Empty(ModTopics.CatalogOf(player)["mods"].AsArray());
-    }
-
-    /// <summary>
-    /// Asserts that the game script is told a link to a zip of a release apart from a link to a script.
-    /// </summary>
-    [Fact]
-    public void Refresh_TellsAZipOfAReleaseApart()
-    {
-        using var relay = new TestRelay();
-        var entry = LinkEntry("1.4.0", "bb");
-        entry["archive"] = true;
-        relay.CatalogMods.Add(entry);
-        var player = NewDirectory(relay, CreatorKey, "Player");
-
-        ListState(player);
-
-        Assert.Equal(RubyString.Utf8("zip"), ModTopics.CatalogOf(player)["mods"].AsArray()[0].AsHash()["kind"]);
-    }
-
-    /// <summary>
-    /// Asserts that the game script is told which version's Mod Config options the relay keeps.
-    /// </summary>
-    [Fact]
-    public void Refresh_TellsTheVersionOfTheOptions()
-    {
-        using var relay = new TestRelay();
-        var entry = LinkEntry("1.4.0", "bb");
-        entry["optionsVersion"] = "1.3.5";
-        relay.CatalogMods.Add(entry);
-        var player = NewDirectory(relay, CreatorKey, "Player");
-
-        ListState(player);
-
-        Assert.Equal(RubyString.Utf8("1.3.5"), ModTopics.CatalogOf(player)["mods"].AsArray()[0].AsHash()["options_version"]);
-    }
-
-    /// <summary>
-    /// Asserts that the game script is told the keys of every mod the catalog marks personal and of
-    /// their names, an entry of a name alone too, which is no mod to install.
-    /// </summary>
-    [Fact]
-    public void Refresh_TellsThePersonalMods()
-    {
-        using var relay = new TestRelay();
-        var entry = LinkEntry("1.4.0", "bb");
-        entry["personal"] = true;
-        relay.CatalogMods.Add(entry);
-        relay.CatalogMods.Add(new JsonObject
+        while (relay.SentModOptions.Count == 0 && DateTime.UtcNow < deadline)
         {
-            ["key"] = "victoryscreen", ["name"] = "Victory_Screen", ["kind"] = "name", ["version"] = string.Empty, ["fileUrl"] = string.Empty,
-            ["files"] = new JsonObject(), ["versions"] = new JsonArray(), ["personal"] = true,
-        });
-        var player = NewDirectory(relay, CreatorKey, "Player");
-
-        ListState(player);
-        RubyHash catalog = ModTopics.CatalogOf(player);
-
-        Assert.Equal(new RubyArray(["levelcap", "victoryscreen"]), catalog["personal"]);
-        Assert.Equal(["levelcap"], catalog["mods"].AsArray().Select(mod => mod.AsHash()["key"].AsText()));
-    }
-
-    /// <summary>
-    /// Asserts that the client reads the personal flag of a listed mod, and a mod of a name alone that
-    /// a relay lists for an admin as personal only, never as a mod to install.
-    /// </summary>
-    [Fact]
-    public void Mods_ReadsThePersonalFlag()
-    {
-        using var relay = new TestRelay();
-        var entry = LinkEntry("1.4.0", "bb");
-        entry["personal"] = true;
-        relay.CatalogMods.Add(entry);
-
-        var catalog = new DirectoryClient(relay.Address).Mods();
-
-        Assert.True(Assert.Single(catalog.Mods).Personal);
-        Assert.Equal(new PersonalMod("levelcap", "Level Cap"), Assert.Single(catalog.Personal));
-    }
-
-    /// <summary>
-    /// Asserts that the options the game script read reach the relay as the catalog keeps them.
-    /// </summary>
-    [Fact]
-    public void SendModOptions_PostsTheOptions()
-    {
-        using var relay = new TestRelay();
-        var player = NewDirectory(relay, CreatorKey, "Player");
-        var options = LevelCapOptions();
-
-        Assert.True(player.SendModOptions("levelcap", "1.4.0", options));
-        var deadline = System.DateTime.UtcNow.AddSeconds(5);
-
-        while (relay.SentModOptions.Count == 0 && System.DateTime.UtcNow < deadline)
-        {
-            System.Threading.Thread.Sleep(20);
+            Thread.Sleep(20);
         }
 
-        var (key, body) = Assert.Single(relay.SentModOptions);
-        Assert.Equal("levelcap", key);
-        Assert.Equal(CreatorKey, body["player"]!.GetValue<string>());
-        Assert.Equal("1.4.0", body["version"]!.GetValue<string>());
+        var (slug, version, key, body) = Assert.Single(relay.SentModOptions);
+        Assert.Equal(("level-cap", "1.4.0", CreatorKey), (slug, version, key));
         Assert.Equal(
-            """[{"key":"mod_level_cap","name":"Level Cap","type":"i","default":"1","choices":[{"value":"1","name":"On"},{"value":"0","name":"Off"}]}]""",
-            body["options"]!.ToJsonString());
+            """{"options":[{"key":"mod_level_cap","name":"Level Cap","type":"i","default":"1","choices":[{"value":"1","name":"On"},{"value":"0","name":"Off"}]}]}""",
+            body.ToJsonString());
     }
 
     /// <summary>
-    /// Asserts that the client reads whether the relay kept the options, and the version whose options it keeps.
-    /// </summary>
-    [Fact]
-    public void SetModOptions_ReadsWhatTheRelayKept()
-    {
-        using var relay = new TestRelay();
-        var client = new DirectoryClient(relay.Address);
-        var options = LevelCapOptions();
-
-        Assert.Equal((true, "1.4.0"), client.SetModOptions("levelcap", CreatorKey, "1.4.0", options));
-
-        relay.KeptModOptionsVersion = "1.5.0";
-        Assert.Equal((false, "1.5.0"), client.SetModOptions("levelcap", CreatorKey, "1.3.5", options));
-    }
-
-    /// <summary>
-    /// Asserts that a world lists its creator's mod hashes and mod settings; an edit by an admin leaves the hashes, the creator's replaces them, and neither touches the settings.
+    /// Asserts that a world lists its creator's mod versions, mod hashes and mod settings; an edit by an admin leaves the versions and hashes, the creator's replaces them, and neither touches the settings.
     /// </summary>
     [Fact]
     public void CreatorMods_AreListedAndOnlyTheCreatorReplacesThem()
@@ -224,14 +103,14 @@ public sealed class WorldModsTests
         var adminDirectory = NewDirectory(relay, admin, "Admin");
         var hashes = $"Some Mod={new string('a', 64)}";
 
-        var made = Act(creator, directory => directory.Create("Modded", "secret", 4, false, false, [], new WorldAbout(string.Empty, "!Some Mod", string.Empty, false, hashes, "key=i:1")));
-        Assert.Contains(ReadList(creator, made["world"]), world => world.Id == made["world"] && world.About.ModHashes == hashes && world.About.Settings == "key=i:1" && world.Type == "classic" && world.Share == "off" && world.Difficulty == null && !world.OtherModsOff && world.Squad == "" && !world.RaidBosses);
+        var made = Act(creator, directory => directory.Create("Modded", "secret", 4, false, false, [], new WorldAbout(string.Empty, "!Some Mod; !Level Cap", string.Empty, false, hashes, "key=i:1", "Level Cap=1.4.0")));
+        Assert.Contains(ReadList(creator, made["world"]), world => world.Id == made["world"] && world.About.ModHashes == hashes && world.About.ModVersions == "Level Cap=1.4.0" && world.About.Settings == "key=i:1" && world.Type == "classic" && world.Share == "off" && world.Difficulty == null && !world.OtherModsOff && world.Squad == "" && !world.RaidBosses);
 
         Assert.Equal("done", Act(adminDirectory, directory => directory.Edit(made["world"], 6, "Edited.", "!Some Mod"))["state"]);
-        Assert.Contains(ReadList(creator, made["world"]), world => world.Id == made["world"] && world.Seats == 6 && world.About.ModHashes == hashes && world.About.Settings == "key=i:1" && world.Type == "classic" && world.Share == "off" && world.Difficulty == null && !world.OtherModsOff && world.Squad == "" && !world.RaidBosses);
+        Assert.Contains(ReadList(creator, made["world"]), world => world.Id == made["world"] && world.Seats == 6 && world.About.ModHashes == hashes && world.About.ModVersions == "Level Cap=1.4.0" && world.About.Settings == "key=i:1" && world.Type == "classic" && world.Share == "off" && world.Difficulty == null && !world.OtherModsOff && world.Squad == "" && !world.RaidBosses);
 
-        Assert.Equal("done", Act(creator, directory => directory.Edit(made["world"], 6, "Edited.", "!Some Mod", string.Empty))["state"]);
-        Assert.Contains(ReadList(creator, made["world"]), world => world.Id == made["world"] && world.About.ModHashes == "" && world.About.Settings == "key=i:1" && world.Type == "classic" && world.Share == "off" && world.Difficulty == null && !world.OtherModsOff && world.Squad == "" && !world.RaidBosses);
+        Assert.Equal("done", Act(creator, directory => directory.Edit(made["world"], 6, "Edited.", "!Some Mod", new ModPins("Some Mod=1.0.0", string.Empty)))["state"]);
+        Assert.Contains(ReadList(creator, made["world"]), world => world.Id == made["world"] && world.About.ModHashes == "" && world.About.ModVersions == "Some Mod=1.0.0" && world.About.Settings == "key=i:1" && world.Type == "classic" && world.Share == "off" && world.Difficulty == null && !world.OtherModsOff && world.Squad == "" && !world.RaidBosses);
     }
 
     /// <summary>
@@ -297,28 +176,26 @@ public sealed class WorldModsTests
     }
 
     /// <summary>
-    /// Writes a script's hash as the game script is told it.
+    /// Writes a mod as the website lists it, each version with a package per platform whose files lie
+    /// in a Patch folder.
     /// </summary>
-    /// <param name="hash">The hash.</param>
-    /// <returns>The hash by the script's name.</returns>
-    private static RubyHash Files(string hash) => new() { { "Level_Cap.rb", hash } };
-
-    /// <summary>
-    /// Writes a link mod as the relay lists it.
-    /// </summary>
-    /// <param name="version">The current version.</param>
-    /// <param name="hash">The current script's hash.</param>
-    /// <param name="versions">Each version seen and its script's hash, newest first.</param>
+    /// <param name="slug">The mod's slug.</param>
+    /// <param name="name">Its name.</param>
+    /// <param name="personal">Whether the website marks it personal.</param>
+    /// <param name="versions">Each version and the hash of its script, newest first.</param>
     /// <returns>The entry.</returns>
-    private static JsonObject LinkEntry(string version, string hash, params string[][] versions) => new()
+    private static JsonObject SiteEntry(string slug, string name, bool personal, params (string Version, string Hash)[] versions) => new()
     {
-        ["key"] = "levelcap",
-        ["name"] = "Level Cap",
-        ["kind"] = "link",
-        ["version"] = version,
-        ["fileUrl"] = "https://github.com/Pauliinchen/MGQ-Paradox-Mod-Collection/releases/download/v1.4.0/Level_Cap.rb",
-        ["files"] = new JsonObject { ["Level_Cap.rb"] = hash },
-        ["versions"] = new JsonArray(versions.Select(entry => (JsonNode)new JsonObject { ["version"] = entry[0], ["files"] = new JsonObject { ["Level_Cap.rb"] = entry[1] } }).ToArray()),
+        ["slug"] = slug,
+        ["name"] = name,
+        ["personal"] = personal,
+        ["versions"] = new JsonArray(versions.Select(version => (JsonNode)new JsonObject
+        {
+            ["version"] = version.Version,
+            ["packages"] = new JsonArray(
+                new JsonObject { ["platform"] = "android", ["files"] = new JsonArray(new JsonObject { ["path"] = "Patch/Other.rb", ["sha256"] = "ff" }) },
+                new JsonObject { ["platform"] = "pc", ["files"] = new JsonArray(new JsonObject { ["path"] = $"Patch/{name.Replace(' ', '_')}.rb", ["sha256"] = version.Hash.ToUpperInvariant() }) }),
+        }).ToArray()),
     };
 
     /// <summary>

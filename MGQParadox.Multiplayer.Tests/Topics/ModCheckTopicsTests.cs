@@ -2,6 +2,9 @@
 //  ModCheckTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Covered the check by the Mod Framework's list and the creator's versions and hashes
+//                            - Covered the personal mods and the battle server's files from the website's catalog
+//                            - Covered a website mod in a version the website's list lacks for the battle server
 //      Paulinchen  2026-11-05: Covered the check of a game without the catalog
 //      Paulinchen  2026-10-31: Covered the creator's hashes of a mod installed after Patch was read
 //      Paulinchen  2026-10-30: Covered the mods a world's session loads and those it turns off now
@@ -20,30 +23,20 @@ using MGQParadox.Multiplayer.Topics;
 namespace MGQParadox.Multiplayer.Tests.Topics;
 
 /// <summary>
-/// Covers the topics of the required-mods check and the directory's tickets as the scripts call
-/// them; the check's rules are MGQOnline.Game's tests.
+/// Covers the topics of the required-mods check and the directory's tickets as the scripts and the
+/// way into a world call them, over the mods the Mod Framework lists and the website's catalog.
 /// </summary>
 public sealed class ModCheckTopicsTests
 {
     /// <summary>
-    /// The catalog the topics read.
-    /// </summary>
-    private ModCatalog? _catalog = CatalogOf("1.4.0", optionsVersion: "");
-
-    /// <summary>
     /// The files' hashes by path.
     /// </summary>
-    private readonly Dictionary<string, string> _files = new() { ["Patch/Level_Cap.rb"] = "aa" };
+    private readonly Dictionary<string, string> _files = new() { ["Patch/Level_Cap.rb"] = "aa", ["Patch/Free.rb"] = "ee" };
 
     /// <summary>
     /// The scripts in Patch.
     /// </summary>
-    private readonly List<string> _scripts = ["Patch/Level_Cap.rb"];
-
-    /// <summary>
-    /// How often each file was hashed.
-    /// </summary>
-    private readonly Dictionary<string, int> _hashed = [];
+    private readonly List<string> _scripts = ["Patch/Level_Cap.rb", "Patch/Free.rb"];
 
     /// <summary>
     /// The topics under test.
@@ -51,90 +44,83 @@ public sealed class ModCheckTopicsTests
     private readonly TopicCaller _topics;
 
     /// <summary>
-    /// Creates the topics over a catalog of Level Cap, whose copy here is the older 1.3.5.
+    /// The website's catalog the topics read: Level Cap in two versions and the personal Party Sheet.
+    /// </summary>
+    private SiteCatalog? _catalog = new([
+        new SiteMod("level-cap", "Level Cap", false, new Dictionary<string, IReadOnlyList<KeyValuePair<string, string>>>
+        {
+            ["1.4.0"] = [new("Level_Cap.rb", "bb")],
+            ["1.3.5"] = [new("Level_Cap.rb", "aa")],
+        }),
+        new SiteMod("party-sheet", "Party Sheet", true, new Dictionary<string, IReadOnlyList<KeyValuePair<string, string>>>()),
+    ]);
+
+    /// <summary>
+    /// Creates the topics; the Mod Framework lists Level Cap 1.3.5 of the website, Free, which the
+    /// website does not have, and Party Sheet, turned off.
     /// </summary>
     public ModCheckTopicsTests()
     {
         _topics = new TopicCaller(context =>
         {
-            ModCheckTopics topics = new(
-                () => _catalog,
-                () => [.. _scripts],
-                path =>
-                {
-                    _hashed[path] = _hashed.GetValueOrDefault(path) + 1;
-                    return _files.GetValueOrDefault(path);
-                },
-                (_, _, _) => true,
-                new TopicCaller.NoLog());
+            ModCheckTopics topics = new(() => _catalog, () => [.. _scripts], path => _files.GetValueOrDefault(path), (_, _, _) => true, new TopicCaller.NoLog());
             topics.Register(context, new WorldChanges(context));
         });
+        Framework(("Level_Cap", "Level Cap", "1.3.5", "site:level-cap", true), ("Free", "Free", "?", null, true), ("Party_Sheet", "Party Sheet", "2.0.0", "site:party-sheet", false));
     }
 
     /// <summary>
-    /// Asserts that a differing mod comes as a row with what the screen needs, and its file is hashed once until the scripts are forgotten.
+    /// Asserts that a website mod must be the creator's version, a mod the website lacks the creator's
+    /// copy by its hash, a mod turned off on and a missing one installed, and that a copy updated
+    /// through the Mod Framework matches once its list is handed over again.
     /// </summary>
     [Fact]
-    public void Check_AnswersTheRowsAndHashesOnce()
+    public void Check_ComparesTheCreatorsVersionsAndHashes()
     {
-        RubyHash request = new() { { "mods", "!Level Cap; Free" }, { "hashes", "" }, { "world", "Modded" } };
-        RubyHash check = _topics.Call(ModCheckTopics.CheckTopic, request)!.AsHash();
-        _topics.Call(ModCheckTopics.CheckTopic, request);
+        RubyHash request = new() { { "mods", "!Level Cap; !Free; !Party Sheet; !Missing; Other" }, { "versions", "Level Cap=1.4.0;Party Sheet=2.0.0" }, { "hashes", "Free=ff" }, { "world", "Modded" } };
 
         Assert.Equal(new RubyHash
         {
             { "known", true },
-            { "rows", new RubyArray([new RubyHash { { "name", "Level Cap" }, { "yours", "1.3.5" }, { "worlds", "1.4.0" }, { "key", "levelcap" }, { "target", "Patch/Level_Cap.rb" }, { "text", "Level Cap: yours 1.3.5, the world's 1.4.0" }, { "downloadable", true } }]) },
-            { "summary", "Modded needs mods that are missing or in another version here: Level Cap. Download them?" },
-        }, check);
-        Assert.Equal(1, _hashed["Patch/Level_Cap.rb"]);
+            { "catalog", true },
+            {
+                "rows", new RubyArray([
+                    Row("Level Cap", "1.3.5", "1.4.0", "Level Cap: yours 1.3.5, the world's 1.4.0"),
+                    Row("Free", "differs", null, "Free: yours differs from the world creator's copy"),
+                    Row("Party Sheet", "off", "2.0.0", "Party Sheet: turned off"),
+                    Row("Missing", "not installed", null, "Missing: not installed")])
+            },
+        }, _topics.Call(ModCheckTopics.CheckTopic, request));
 
-        _files["Patch/Level_Cap.rb"] = "bb";
-        _topics.Call(ModCheckTopics.ForgetTopic);
-        Assert.Empty(_topics.Call(ModCheckTopics.CheckTopic, request)!.AsHash()["rows"].AsArray());
-    }
-
-    /// <summary>
-    /// Asserts that without the catalog a required mod whose script Patch lacks comes as a row the
-    /// player can only get from its author, and an installed one as none.
-    /// </summary>
-    [Fact]
-    public void Check_WithoutTheCatalog_NamesTheMissingMods()
-    {
-        _catalog = null;
-
-        RubyHash check = _topics.Call(ModCheckTopics.CheckTopic, new RubyHash { { "mods", "!Level Cap; !Missing Mod" }, { "hashes", "" }, { "world", "Modded" } })!.AsHash();
-
-        Assert.Equal(new RubyHash
-        {
-            { "known", false },
-            { "rows", new RubyArray([new RubyHash { { "name", "Missing Mod" }, { "yours", "not installed" }, { "worlds", RubyNil.Value }, { "key", RubyNil.Value }, { "target", RubyNil.Value }, { "text", "Missing Mod: not installed" }, { "downloadable", false } }]) },
-            { "summary", "Modded needs mods that are missing or in another version here: Missing Mod (get it from its author)." },
-        }, check);
-    }
-
-    /// <summary>
-    /// Asserts that a world made right after a mod outside the catalog was put into Patch carries
-    /// the creator's hash of it, though the check read Patch before, and leaves out the catalog's mod.
-    /// </summary>
-    [Fact]
-    public void CreatorHashes_ReadPatchAsItIsNow()
-    {
-        _topics.Call(ModCheckTopics.CheckTopic, new RubyHash { { "mods", "!Free" }, { "hashes", "" }, { "world", RubyNil.Value } });
-        _scripts.Add("Patch/Free.rb");
+        Framework(("Level_Cap", "Level Cap", "1.4.0", "site:level-cap", true), ("Free", "Free", "?", null, true), ("Party_Sheet", "Party Sheet", "2.0.0", "site:party-sheet", true));
         _files["Patch/Free.rb"] = "ff";
-
-        Assert.Equal("Free=ff", _topics.Call(ModCheckTopics.CreatorHashesTopic, "!Free; !Level Cap")!.AsText());
+        _topics.Call(ModCheckTopics.ForgetTopic);
+        Assert.Equal(new RubyArray([Row("Missing", "not installed", null, "Missing: not installed")]), _topics.Call(ModCheckTopics.CheckTopic, request)!.AsHash()["rows"]);
     }
 
     /// <summary>
-    /// Asserts that a world's session keeps the mods it names, the personal ones and this mod, that it
-    /// is unknown while the catalog is, and that a running mod the world now turns off is named.
+    /// Asserts that a world made right after a mod the website lacks was put into Patch carries the
+    /// creator's hash of it, though the check read Patch before, and the creator's version of each
+    /// website mod in a version the website knows.
+    /// </summary>
+    [Fact]
+    public void CreatorPins_VersionsOfWebsiteModsAndHashesOfTheRest()
+    {
+        _topics.Call(ModCheckTopics.CheckTopic, new RubyHash { { "mods", "!New" }, { "world", RubyNil.Value } });
+        _scripts.Add("Patch/New.rb");
+        _files["Patch/New.rb"] = "nn";
+
+        Assert.Equal(new RubyHash { { "versions", "Level Cap=1.3.5" }, { "hashes", "Free=ee;New=nn" } }, _topics.Call(ModCheckTopics.CreatorPinsTopic, "!Level Cap; !Free; !New; !Missing"));
+    }
+
+    /// <summary>
+    /// Asserts that a world's session keeps the mods it names, those the website marks personal by
+    /// the installed copy's name too and this mod, that it is unknown while the website's catalog is,
+    /// and that a running mod the world now turns off is named.
     /// </summary>
     [Fact]
     public void Session_KeepsNamedAndPersonalModsAndNamesThoseTurnedOffNow()
     {
-        _catalog = _catalog! with { Personal = [new PersonalMod("partysheet", "Party Sheet")] };
         RubyArray names = new(["Multiplayer", "Level_Cap", "Party_Sheet", "Invasions"]);
 
         Assert.Equal(new RubyHash
@@ -151,16 +137,35 @@ public sealed class ModCheckTopicsTests
     }
 
     /// <summary>
-    /// Asserts that a mod's options are named once a session per version, and again for a new version.
+    /// Asserts that the battle server gets each website mod the world names in the player's version
+    /// with its files as the website lists them, a mod the website lacks without a kind, and neither
+    /// a personal mod nor one turned off; a version the website's list lacks, as a world pinned to an
+    /// older version has, still goes to the server by its version, which reads its files itself.
     /// </summary>
     [Fact]
-    public void Report_NamesEachModOncePerVersion()
+    public void Served_ListsTheWebsiteFilesOfThePlayersVersions()
     {
-        Assert.Equal(new RubyArray([new RubyArray(["levelcap", "Level Cap", "1.3.5"])]), _topics.Call(ModCheckTopics.ReportTopic));
+        Assert.Equal(new RubyArray([
+            new RubyArray(["level-cap", "site", "1.3.5", new RubyArray([new RubyArray(["Level_Cap.rb", "aa"])])]),
+            new RubyArray(["free", "", "", new RubyArray()])]),
+            _topics.Call(ModCheckTopics.ServedTopic, "!Level Cap; Free; Party Sheet; Missing"));
+
+        Framework(("Level_Cap", "Level Cap", "1.2.0", "site:level-cap", true));
+        Assert.Equal(new RubyArray([new RubyArray(["level-cap", "site", "1.2.0", new RubyArray()])]), _topics.Call(ModCheckTopics.ServedTopic, "!Level Cap"));
+    }
+
+    /// <summary>
+    /// Asserts that each website mod's options are named once a session per version, and again for a
+    /// new version, while a mod the website lacks is never named.
+    /// </summary>
+    [Fact]
+    public void Report_NamesEachWebsiteModOncePerVersion()
+    {
+        Assert.Equal(new RubyArray([new RubyArray(["level-cap", "Level_Cap", "1.3.5"]), new RubyArray(["party-sheet", "Party_Sheet", "2.0.0"])]), _topics.Call(ModCheckTopics.ReportTopic));
         Assert.Equal(new RubyArray(), _topics.Call(ModCheckTopics.ReportTopic));
 
-        _catalog = CatalogOf("1.4.1", optionsVersion: "1.3.5");
-        Assert.Equal(new RubyArray(), _topics.Call(ModCheckTopics.ReportTopic));
+        Framework(("Level_Cap", "Level Cap", "1.4.0", "site:level-cap", true));
+        Assert.Equal(new RubyArray([new RubyArray(["level-cap", "Level_Cap", "1.4.0"])]), _topics.Call(ModCheckTopics.ReportTopic));
     }
 
     /// <summary>
@@ -187,16 +192,33 @@ public sealed class ModCheckTopicsTests
     }
 
     /// <summary>
-    /// Makes a catalog of Level Cap.
+    /// Hands the topics the installed mods as the scripts read them from the Mod Framework.
     /// </summary>
-    /// <param name="version">Its current version, whose file hashes "bb"; 1.3.5 hashes "aa".</param>
-    /// <param name="optionsVersion">The version whose options the relay keeps.</param>
-    /// <returns>The catalog.</returns>
-    private static ModCatalog CatalogOf(string version, string optionsVersion)
+    /// <param name="mods">Each mod's name in Patch, title, version, website id and whether it is on.</param>
+    private void Framework(params (string Name, string Title, string Version, string? Id, bool On)[] mods)
     {
-        Dictionary<string, string> current = new() { ["Level_Cap.rb"] = "bb" };
-        return new ModCatalog(
-            [new CatalogMod("levelcap", "Level Cap", "link", version, current, [new ModVersion(version, current), new ModVersion("1.3.5", new Dictionary<string, string> { ["Level_Cap.rb"] = "aa" })], "https://example.invalid/Level_Cap.rb", OptionsVersion: optionsVersion)],
-            []);
+        RubyArray listed = [];
+        foreach (var (name, title, version, id, on) in mods)
+        {
+            listed.Add(new RubyArray([name, title, version, id == null ? RubyNil.Value : (RubyValue)id, on]));
+        }
+
+        _topics.Call(ModCheckTopics.FrameworkTopic, new RubyHash { { "mods", listed } });
     }
+
+    /// <summary>
+    /// Writes a row of the check as the topic answers it.
+    /// </summary>
+    /// <param name="name">The mod's name.</param>
+    /// <param name="yours">This game's copy.</param>
+    /// <param name="worlds">The creator's version, <see langword="null"/> for none.</param>
+    /// <param name="text">The text.</param>
+    /// <returns>The row.</returns>
+    private static RubyHash Row(string name, string yours, string? worlds, string text) => new()
+    {
+        { "name", name },
+        { "yours", yours },
+        { "worlds", worlds == null ? RubyNil.Value : (RubyValue)worlds },
+        { "text", text },
+    };
 }

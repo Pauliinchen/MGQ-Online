@@ -2,6 +2,7 @@
 //  EnteringTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Changed a world with the creator's versions and hashes of its required mods
 //      Paulinchen  2026-10-30: Entered without the parking
 //                            - Built the requests without this game's data, which entering compares once the world's mods loaded
 //      Paulinchen  2026-10-23: Built the world screen's requests from its forms
@@ -12,6 +13,7 @@
 using System;
 using System.Collections.Generic;
 using MGQOnline.Bridge;
+using MGQOnline.Game.Mods;
 using MGQParadox.Multiplayer.Network.World;
 using MGQParadox.Multiplayer.Windows;
 
@@ -90,8 +92,8 @@ internal static class EnteringTopics
             directory().Create(name, password, seats, hidden, choose, start, about, type, share, difficulty, otherModsOff, squad, raidBosses);
 
         /// <inheritdoc />
-        public bool Edit(string id, int seats, string description, string mods, string? modHashes, int? difficulty, bool? otherModsOff, string? squad, bool? raidBosses) =>
-            directory().Edit(id, seats, description, mods, modHashes, difficulty, otherModsOff, squad, raidBosses);
+        public bool Edit(string id, int seats, string description, string mods, ModPins? pins, int? difficulty, bool? otherModsOff, string? squad, bool? raidBosses) =>
+            directory().Edit(id, seats, description, mods, pins, difficulty, otherModsOff, squad, raidBosses);
 
         /// <inheritdoc />
         public bool SetSettings(string id, string settings) => directory().SetSettings(id, settings);

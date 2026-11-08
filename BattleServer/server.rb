@@ -2,6 +2,7 @@
 #  server.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Downloaded a co-op battle's mods from the website's catalog instead of the relay's
 #      Paulinchen  2026-11-05: Read a co-op battle's mods through ServedMods, which reads them without the game's scripts
 #                            - Had the core write the lines of a hosted battle to the relay, and wrote the line of a battle out of CPU time before it can run out
 #      Paulinchen  2026-10-31: Told a server of MGQ Online's battles by MGQ Online's file, which the Mod Framework loads only as the game runs
@@ -343,7 +344,7 @@ module BattleServer
     end
 
     # Gets the mods of a co-op battle a child is handed before it enters its sandbox: from the
-    # cache, else downloaded from the relay BATTLE_RELAY_URL names.
+    # cache, else downloaded from the website's catalog (ServedMods::SITE).
     #
     # @param line [String, nil] The child's first request.
     # @return [Array, ServedMods::Unavailable, nil] The mods, see ServedMods.fetch; why they could
@@ -371,7 +372,7 @@ module BattleServer
         @thread_mods ||= wanted
         return ServedMods::Unavailable.new("this server hosts one battle at a time and keeps the mods of its first; restart it for others") unless @thread_mods == wanted
       end
-      ServedMods.fetch(wanted, ENV["BATTLE_RELAY_URL"])
+      ServedMods.fetch(wanted, ServedMods::SITE)
     rescue ServedMods::Unavailable => e
       $stderr.puts("the battle's mods cannot be had: #{e.message}")
       e

@@ -2,6 +2,7 @@
 //  ScreenTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Checked a world's mods by its creator's versions too
 //      Paulinchen  2026-11-05: Covered a world on this PC that names no directory id, and finding one world of the list
 //      Paulinchen  2026-10-30: Listed the scripts of the Patch folder without the parking
 //      Paulinchen  2026-10-23: Marked a favourite through the lists, whose topic the DLL dropped
@@ -97,7 +98,7 @@ public sealed class ScreenTopicsTests : IDisposable
                 local,
                 () => Me,
                 () => [],
-                (_, _) => [],
+                (_, _, _) => [],
                 (_, _, _, _) => "Mod settings: the creator's own",
                 _ => []));
             ScreenTopics.Register(context, _screen, services.Changes, () => 0);

@@ -2,6 +2,8 @@
 #  mods.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Downloaded a world's mods from the website's catalog and checked the package and each file against its hashes
+#                            - Read the files of a version the starter names without them from the website's details of the mod
 #      Paulinchen  2026-11-05: Read the mods a setup names without the core, moved from battles_served.rbx
 #      Paulinchen  2026-10-15: Created
 #
@@ -16,38 +18,42 @@ require "uri"
 require "zlib"
 require_relative "boot"
 
-# The world's mods for a battle the server hosts. The starter names the mods it runs with each
-# file's hash (MGQ_MpWorldMods.served_mods); the server takes them from its cache or downloads
-# them from the relay's catalog as the games do, from the admins' GitHub releases or the relay's
-# uploads, and keeps only files whose hashes match. A battle's child then loads them as Patch.rb
-# would, inside its sandbox, and their other files read from memory as if they lay in Patch.
+# The world's mods for a battle the server hosts. The starter names the website mods it runs with
+# each file's hash as the website lists them (MGQ_MpWorldMods.served_mods), or without files for a
+# version the website's list lacks, such as one a world is pinned to; the server takes them from
+# its cache or downloads the version's package from the website's catalog, as the Mod Framework
+# installs it, and keeps it only when the package and each of its files match the website's hashes
+# and the starter's. A battle's child then loads them as Patch.rb would, inside its
+# sandbox, and their other files read from memory as if they lay in Patch.
 module ServedMods
   # The folder downloaded mods are kept in, outside the game folder, from BATTLE_MOD_CACHE.
   CACHE_DIR = File.expand_path(ENV["BATTLE_MOD_CACHE"] || File.join(__dir__, "..", "mod_cache"))
 
-  # Most bytes of a download, as the relay takes an upload.
-  MAX_DOWNLOAD_BYTES = 16 * 1024 * 1024
+  # The website whose catalog the mods come from: mgqonline.org, or the one MGQ_MODS_SITE names, as
+  # the Mod Framework reads it.
+  SITE = ENV["MGQ_MODS_SITE"] || "https://mgqonline.org"
+
+  # The query that asks the catalog for each platform's package.
+  SCHEMA_QUERY = "?schema=3"
+
+  # The platform whose package the server loads, the game's own scripts being the PC's.
+  PLATFORM = "pc"
+
+  # The kind of a mod the starter names that the website serves.
+  SITE_KIND = "site"
+
+  # Most bytes of a download, as the website takes a package.
+  MAX_DOWNLOAD_BYTES = 64 * 1024 * 1024
 
   # Most files of a mod, and most bytes they unpack to, as the relay takes a zip.
   MAX_FILES = 100
   MAX_UNPACKED_BYTES = 64 * 1024 * 1024
 
-  # Most redirects a release file may take on its way.
+  # Most redirects a download may take on its way, each within the website.
   MAX_REDIRECTS = 3
 
   # Seconds a download may take.
   DOWNLOAD_SECONDS = 60
-
-  # What the server tells the relay of itself, as every game does, which the relay's gate reads:
-  # Raid Worlds, and the version of its MGQ Online from BATTLE_MGQ_VERSION, a development build's
-  # unless named.
-  RELAY_HEADERS = { "X-MGQ-Features" => "raid", "X-MGQ-Version" => ENV["BATTLE_MGQ_VERSION"] || "0.0.0-dev" }.freeze
-
-  # Where a link mod's release file must lie: the admins' GitHub releases.
-  RELEASE_FILE = %r{\Ahttps://github\.com/[^/]+/[^/]+/releases/download/}
-
-  # The hosts GitHub serves release files from, which a release file may redirect to.
-  FILE_HOSTS = %w[objects.githubusercontent.com release-assets.githubusercontent.com].freeze
 
   # A path inside Patch a mod's file may have: no step up, no drive, no start at the root.
   PATCH_PATH = %r{\A(?!/)(?!.*(?:\A|/)\.\.(?:/|\z))[^:\\]+\z}
@@ -88,29 +94,33 @@ module ServedMods
       end
     end
 
-    # Gets the files of a battle's mods: from the cache, else from the relay's catalog.
+    # Gets the files of a battle's mods: from the cache, else from the website's catalog.
     #
-    # @param mods [Array<Array>] Each mod's key, kind, version and files' hashes by path, see
-    #   MGQ_MpBattlesServed.mods_of.
-    # @param relay [String, nil] The relay's address for its catalog, such as http://127.0.0.1:8080.
+    # @param mods [Array<Array>] Each mod's slug, kind, version and files' hashes by path, see
+    #   MGQ_MpWorldMods.served_mods; no hashes to take those the website's details list.
+    # @param site [String, nil] The website, such as SITE; nil to read the cache only.
     # @param log [IO] Where downloads are noted.
-    # @return [Array<Array(String, Hash)>] Each mod's key and its files' bytes by path inside Patch.
+    # @return [Array<Array(String, Hash)>] Each mod's slug and its files' bytes by path inside Patch.
     # @raise [Unavailable] For a mod the server cannot get in the starter's version.
-    def fetch(mods, relay, log = $stderr)
-      catalog = nil
-      mods.map do |key, kind, version, hashes|
-        raise Unavailable, "the starter's copy of #{key} (#{version.empty? ? 'unknown version' : version}) is none the catalog serves" if kind.empty? || hashes.empty?
+    def fetch(mods, site, log = $stderr)
+      mods.map do |slug, kind, version, hashes|
+        raise Unavailable, "the starter's copy of #{slug} (#{version.empty? ? 'unknown version' : version}) is none the website serves" if kind != SITE_KIND
 
-        cached = read_cache(key, hashes)
-        next [key, cached] if cached
+        package = nil
+        if hashes.empty?
+          raise Unavailable, "the starter names no files of #{slug} #{version}, and the server knows no website to read them from" unless site
 
-        raise Unavailable, "#{key} is not in the server's cache, and the server knows no relay to fetch it from" unless relay
+          package, hashes = package_of(site, slug, version)
+        end
+        cached = read_cache(slug, hashes)
+        next [slug, cached] if cached
 
-        catalog ||= catalog_of(relay)
-        files = download(catalog, key, hashes, relay)
-        write_cache(key, hashes, files)
-        log.puts("downloaded #{key} #{version}: #{files.size} file(s)")
-        [key, files]
+        raise Unavailable, "#{slug} is not in the server's cache, and the server knows no website to fetch it from" unless site
+
+        files = download(site, slug, version, hashes, package)
+        write_cache(slug, hashes, files)
+        log.puts("downloaded #{slug} #{version} from the website: #{files.size} file(s)")
+        [slug, files]
       end
     end
 
@@ -141,17 +151,16 @@ module ServedMods
       scripts.size
     end
 
-    # Hashes a mod's file as the catalog does: SHA-256, a script without its carriage returns.
+    # Hashes a mod's file as the website lists it: SHA-256 of its bytes.
     #
-    # @param path [String] The file's path or name.
     # @param bytes [String] The file.
     # @return [String] The hash as 64 lowercase hexadecimal characters.
-    def hash_of(path, bytes)
-      Digest::SHA256.hexdigest(path.downcase.end_with?(".rb") ? bytes.b.delete("\r") : bytes.b)
+    def hash_of(bytes)
+      Digest::SHA256.hexdigest(bytes.b)
     end
 
-    # Reads a zip's files: plain and deflated ones, as the relay reads them, a top Patch folder left
-    # out of their paths.
+    # Reads a zip's files: plain and deflated ones, a top Patch folder left out of their paths, as the
+    # Mod Framework installs a package.
     #
     # @param bytes [String] The zip.
     # @return [Hash] Each file's bytes by its path inside Patch.
@@ -250,71 +259,67 @@ module ServedMods
       raise Unavailable, "the zip's #{name[0, 80]} is damaged"
     end
 
-    # Reads the relay's catalog.
+    # Downloads a mod's version from the website: its package, checked against the website's hash,
+    # whose files must be those the website lists and the starter names.
     #
-    # @param relay [String] The relay's address.
-    # @return [Array<Hash>] Its mods as it lists them.
-    # @raise [Unavailable] When the relay could not be asked.
-    def catalog_of(relay)
-      body = get(URI.join(relay, "/v1/mods"))
-      mods = JSON.parse(body)["mods"]
-      raise Unavailable, "the relay's catalog lists no mods" unless mods.is_a?(Array)
-
-      mods
-    rescue JSON::ParserError
-      raise Unavailable, "the relay's catalog is no JSON"
-    end
-
-    # Downloads a mod in the starter's version, as the games do, and keeps only files whose
-    # hashes match.
-    #
-    # @param catalog [Array<Hash>] The relay's catalog.
-    # @param key [String] The mod's key.
+    # @param site [String] The website.
+    # @param slug [String] The mod's slug.
+    # @param version [String] The starter's version.
     # @param hashes [Hash] The starter's files' hashes by path.
-    # @param relay [String] The relay's address.
+    # @param package [Hash, nil] The version's package as package_of read it with those hashes; nil
+    #   to read it here.
     # @return [Hash] The files' bytes by path.
-    # @raise [Unavailable] For a mod the catalog lacks, serves in another version, or whose files differ.
-    def download(catalog, key, hashes, relay)
-      mod = catalog.find { |entry| entry.is_a?(Hash) && entry["key"] == key }
-      raise Unavailable, "the catalog lacks #{key}" unless mod
-      raise Unavailable, "the catalog serves #{key} #{mod['version']}, not the starter's version" unless mod["files"] == hashes
+    # @raise [Unavailable] For a version the website does not serve, or a package or file that differs.
+    def download(site, slug, version, hashes, package = nil)
+      unless package
+        package, listed = package_of(site, slug, version)
+        raise Unavailable, "the website serves #{slug} #{version} with other files than the starter's" unless listed == hashes
+      end
 
-      files = case mod["kind"]
-              when "upload" then unzip(get(URI.join(relay, "/v1/mods/#{URI.encode_www_form_component(key)}/file")))
-              when "link", "zip" then release(mod)
-              else raise Unavailable, "#{key} is a mod the catalog names but serves no file of"
-              end
-      raise Unavailable, "#{key}'s files are not the catalog's" unless files.keys.sort == hashes.keys.sort && files.all? { |path, bytes| hash_of(path, bytes) == hashes[path] }
+      bytes = get(URI.join(site, package["url"].to_s), site, redirects: MAX_REDIRECTS)
+      raise Unavailable, "#{slug} #{version}'s package differs from the website's hash" unless Digest::SHA256.hexdigest(bytes) == package["sha256"].to_s.downcase
+
+      files = unzip(bytes)
+      raise Unavailable, "#{slug} #{version}'s files are not the website's" unless files.keys.sort == hashes.keys.sort && files.all? { |path, file| hash_of(file) == hashes[path] }
 
       files
     end
 
-    # Downloads a link mod's release file: a script, or a zip of its files.
+    # Reads a mod's version from the website's catalog: its package for PLATFORM and its files.
     #
-    # @param mod [Hash] The catalog's mod.
-    # @return [Hash] The files' bytes by path.
-    # @raise [Unavailable] For a release file outside the admins' GitHub.
-    def release(mod)
-      url = mod["fileUrl"].to_s
-      raise Unavailable, "#{mod['key']}'s release file lies outside GitHub's releases" unless url.match?(RELEASE_FILE)
+    # @param site [String] The website.
+    # @param slug [String] The mod's slug.
+    # @param version [String] The version.
+    # @return [Array(Hash, Hash)] The package ("url", "sha256") and its files' hashes by path inside Patch.
+    # @raise [Unavailable] When the website does not list the version with a package.
+    def package_of(site, slug, version)
+      details = JSON.parse(get(URI.join(site, "/api/mods/#{URI.encode_www_form_component(slug)}#{SCHEMA_QUERY}"), site))
+      listed = Array(details.is_a?(Hash) && details["mod"].is_a?(Hash) ? details["mod"]["versions"] : nil).find { |each| each.is_a?(Hash) && each["version"] == version }
+      raise Unavailable, "the website does not list #{slug} #{version}" unless listed
 
-      bytes = get(URI(url), redirects: MAX_REDIRECTS)
-      return unzip(bytes) if mod["archive"] == true
+      package = Array(listed["packages"]).find { |each| each.is_a?(Hash) && each["platform"] == PLATFORM }
+      package ||= listed["package"].is_a?(Hash) ? listed["package"].merge("files" => listed["files"]) : nil
+      raise Unavailable, "the website has no package of #{slug} #{version}" unless package.is_a?(Hash) && package["url"].is_a?(String)
 
-      { mod["files"].keys.first => bytes }
+      files = Array(package["files"]).select { |file| file.is_a?(Hash) }.to_h { |file| [file["path"].to_s.tr("\\", "/").sub(%r{\APatch/}i, ""), file["sha256"].to_s.downcase] }
+      [package, files]
+    rescue JSON::ParserError
+      raise Unavailable, "the website's details of #{slug} are no JSON"
     end
 
-    # Downloads a file, following redirects to GitHub's file hosts only.
+    # Downloads a file from the website, following redirects within it only.
     #
     # @param uri [URI] The address.
+    # @param site [String] The website, whose host a redirect must keep.
     # @param redirects [Integer] How many redirects it may still take.
     # @return [String] The file.
-    # @raise [Unavailable] When it could not be downloaded.
-    def get(uri, redirects: 0)
+    # @raise [Unavailable] When it could not be downloaded or lies elsewhere.
+    def get(uri, site, redirects: 0)
+      host = URI(site).host
+      raise Unavailable, "#{uri} is not on the website" unless uri.host == host && %w[http https].include?(uri.scheme)
+
       response = Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == "https", open_timeout: 10, read_timeout: DOWNLOAD_SECONDS) do |http|
-        # GitHub's hosts get no word of the relay's headers.
-        headers = FILE_HOSTS.include?(uri.host) || uri.host == "github.com" ? {} : RELAY_HEADERS
-        http.request(Net::HTTP::Get.new(uri, headers)) do |answer|
+        http.request(Net::HTTP::Get.new(uri)) do |answer|
           next unless answer.is_a?(Net::HTTPSuccess)
 
           body = +""
@@ -326,13 +331,8 @@ module ServedMods
         end
       end
       return response.instance_variable_get(:@kept_body).to_s if response.is_a?(Net::HTTPSuccess)
+      return get(URI.join(uri, response["location"].to_s), site, redirects: redirects - 1) if response.is_a?(Net::HTTPRedirection) && redirects.positive?
 
-      if response.is_a?(Net::HTTPRedirection) && redirects.positive?
-        target = URI.join(uri, response["location"].to_s)
-        raise Unavailable, "a release file redirects to #{target.host}" unless target.scheme == "https" && FILE_HOSTS.include?(target.host)
-
-        return get(target, redirects: redirects - 1)
-      end
       raise Unavailable, "#{uri.host} answered #{response.code}"
     rescue SocketError, SystemCallError, IOError, Timeout::Error, OpenSSL::SSL::SSLError => e
       raise Unavailable, "#{uri.host} could not be reached: #{e.message}"
@@ -355,7 +355,7 @@ module ServedMods
     def read_cache(key, hashes)
       dir = cache_dir(key, hashes)
       files = hashes.to_h { |path, _| [path, File.binread(File.join(dir, path))] }
-      files.all? { |path, bytes| hash_of(path, bytes) == hashes[path] } ? files : nil
+      files.all? { |path, bytes| hash_of(bytes) == hashes[path] } ? files : nil
     rescue SystemCallError, IOError
       nil
     end

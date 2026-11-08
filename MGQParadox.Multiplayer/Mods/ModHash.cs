@@ -14,8 +14,8 @@ using System.Security.Cryptography;
 namespace MGQParadox.Multiplayer.Mods;
 
 /// <summary>
-/// Hashes a mod's files the way the relay's mod catalog does, so a game, the World Admin tool and
-/// the relay agree on whether two copies are the same.
+/// Hashes a mod's script for the creator's hashes of a world's required mods the website does not
+/// have, so the creator's game and a player's agree on whether two copies are the same.
 /// </summary>
 /// <remarks>
 /// A script is hashed without its carriage returns: Git checks scripts out with them on Windows,

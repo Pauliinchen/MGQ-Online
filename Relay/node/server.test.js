@@ -2,6 +2,7 @@
 //  server.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Tested the update refusal on every route of the retired mod catalog in place of its routes
 //      Paulinchen  2026-11-06: Tested that a 0.6.9.2 game asking for a PvP room gets the update refusal
 //                            - Expected the lowest version the relay serves beside a refusal of a game too old for it
 //                            - Dropped the check of a route lock an older game took over HTTP
@@ -77,13 +78,11 @@ import WebSocketClient from "ws";
 import { BOSS_LIMITS } from "../core/bosses.js";
 import { DIRECTORY_LIMITS, Directory, playerIdOf, sha256Hex } from "../core/directory.js";
 import { UPDATE_NEEDED, VERSION_HEADER } from "../core/gate.js";
-import { ModCatalog, zipHashes } from "../core/mods.js";
 import { AUTH_HEADER, CHAT_LIMITS, CHAT_SLOW, CLOSE, EVERYONE, FEATURES_HEADER, LIMITS, PING, PLAYER_HEADER, PONG, REFUSAL_HEADER, REPLACED } from "../core/relay.js";
 import { RELEASE_REPO, ReleaseWatch } from "../core/releases.js";
 import { REPORT_LIMITS, ReportDesk } from "../core/reports.js";
 import { STORY_LIMITS } from "../core/story.js";
 import { TRADE_LIMITS } from "../core/trades.js";
-import { makeUpload, makeZip } from "../core/test_zip.js";
 import { addressOf, clearPresence, createRelay, errorLine, openStores, requestLine } from "./server.js";
 
 /**
@@ -97,7 +96,7 @@ const AUTH = "ab".repeat(32);
 const CREATOR = "c0".repeat(16);
 
 /**
- * An admin's player key, of the directory and of the mod catalog.
+ * An admin's player key, of the directory.
  */
 const ADMIN = "ad".repeat(16);
 
@@ -144,7 +143,7 @@ const UNNAMED = Object.freeze({ [FEATURES_HEADER]: GAME[FEATURES_HEADER] });
 const ADMIN_TOOL = Object.freeze({ [FEATURES_HEADER]: "admin", [VERSION_HEADER]: "0.0.0-dev" });
 
 /**
- * Sends a request as a current game sends it to the world directory and the mod catalog, with GAME
+ * Sends a request as a current game sends it to the world directory, with GAME
  * before the request's own headers.
  *
  * @param {string} address The address.
@@ -1044,10 +1043,9 @@ test("a game without X-MGQ-Features, or naming a version below the lowest, is tu
   const listing = await fetch(`${trades}?world=${room}`, { headers: { [PLAYER_HEADER]: playerKey(80) } });
   assert.deepEqual([listing.status, await listing.json(), listing.headers.get("X-MGQ-Min-Version")], [426, { error: UPDATE_NEEDED }, "0.7.0"]);
 
-  const mods = directoryBase.replace("/v1/worlds", "/v1/mods");
-  assert.deepEqual([(await fetch(directoryBase)).status, (await fetch(mods)).status], [426, 200], "a game before 0.6.0 or an older World Admin tool build, while the Mod Framework reads the mod catalog without headers");
+  assert.equal((await fetch(directoryBase)).status, 426, "a game before 0.6.0 or an older World Admin tool build");
   assert.equal((await fetch(`${directoryBase}/${room}/raid`, { headers: { [PLAYER_HEADER]: ADMIN, [VERSION_HEADER]: "0.0.0-dev" } })).status, 426, "the Raid World admin routes ask for X-MGQ-Features too");
-  assert.deepEqual([(await gameFetch(directoryBase)).status, (await gameFetch(mods)).status], [200, 200]);
+  assert.equal((await gameFetch(directoryBase)).status, 200);
   assert.equal((await fetch(`${directoryBase}/${room}/raid`, { headers: { ...ADMIN_TOOL, [PLAYER_HEADER]: ADMIN } })).status, 404, "the World Admin tool passes");
   // Deleted, so the creator stays below the worlds a creator may have for the tests after this one.
   assert.equal((await gameFetch(`${directoryBase}/${room}/delete`, { method: "POST", headers: { [PLAYER_HEADER]: CREATOR }, body: JSON.stringify({}) })).status, 200);
@@ -1070,10 +1068,10 @@ test("the MIN_VERSION setting raises the lowest version a game may name, which o
       await Promise.all(["0.6.9", "no version", "0.6.9-dev", "0.7.0+abc", "0.7.0-beta", "0.0.0-dev", "0.0.0-dev+abc"].map((version) => status(trades, { ...GAME, [VERSION_HEADER]: version }))),
       [426, 426, 426, 200, 200, 200, 200],
     );
-    assert.deepEqual([await status(`http://${at}/v1/worlds`, {}), await status(`http://${at}/v1/mods`, {}), await status(`http://${at}/v1/worlds`, { [VERSION_HEADER]: "0.6.9" })], [426, 200, 426], "the world directory too, but not a read of the mod catalog");
-    assert.deepEqual([await status(`http://${at}/v1/worlds`, ADMIN_TOOL), await status(`http://${at}/v1/mods`, ADMIN_TOOL)], [200, 200], "the World Admin tool names 0.0.0-dev");
-    assert.deepEqual([await status(`http://${at}/v1/worlds`, { ...GAME, [VERSION_HEADER]: "0.7.0" }), await status(`http://${at}/v1/mods`, { ...GAME, [VERSION_HEADER]: "0.7.1" })], [200, 200]);
-    assert.deepEqual([await status(`http://${at}/v1/worlds`, { [VERSION_HEADER]: "0.7.0" }), (await fetch(`http://${at}/v1/mods`, { method: "POST", headers: { [VERSION_HEADER]: "0.7.1" } })).status], [426, 426], "they ask for X-MGQ-Features too, a change of the mod catalog included");
+    assert.deepEqual([await status(`http://${at}/v1/worlds`, {}), await status(`http://${at}/v1/worlds`, { [VERSION_HEADER]: "0.6.9" })], [426, 426], "the world directory too");
+    assert.equal(await status(`http://${at}/v1/worlds`, ADMIN_TOOL), 200, "the World Admin tool names 0.0.0-dev");
+    assert.equal(await status(`http://${at}/v1/worlds`, { ...GAME, [VERSION_HEADER]: "0.7.0" }), 200);
+    assert.equal(await status(`http://${at}/v1/worlds`, { [VERSION_HEADER]: "0.7.0" }), 426, "it asks for X-MGQ-Features too");
     assert.deepEqual(await openWithHeaders(`ws://${at}/v1/world/${roomId(133)}?name=Old`, { [AUTH_HEADER]: AUTH, [PLAYER_HEADER]: playerKey(81), ...UNNAMED }), { status: 400, refusal: "update" }, "a released game's world room");
   } finally {
     await gated.stop();
@@ -1093,7 +1091,7 @@ test("every request is logged as one line without its query, and a caught error 
   assert.ok(logged.info.some((line) => / GET \/v1\/world\/[0-9a-f]{32} 101 /.test(line)), "an opened WebSocket is logged as 101");
   assert.ok(logged.info.some((line) => / GET \/v1\/world\/[0-9a-f]{32} 403 /.test(line)), "a refused WebSocket is logged with its status");
 
-  assert.equal(requestLine(new Date(0), "POST", "/v1/mods", 413, 2.6, null), "1970-01-01T00:00:00.000Z POST /v1/mods 413 3ms -");
+  assert.equal(requestLine(new Date(0), "POST", "/v1/worlds", 413, 2.6, null), "1970-01-01T00:00:00.000Z POST /v1/worlds 413 3ms -");
   const line = errorLine(new Date(0), "sweep", new Error("the store failed"));
   assert.match(line, /^1970-01-01T00:00:00\.000Z error sweep: Error: the store failed\n\s+at /);
   assert.equal(errorLine(new Date(0), "sweep", "plain"), "1970-01-01T00:00:00.000Z error sweep: plain");
@@ -1354,82 +1352,12 @@ test("the admins' stats count the world rooms with their players and the game ve
   }
 });
 
-/**
- * The link an admin sets, which leads to a release's script on a fake GitHub.
- */
-const LINK = "https://github.com/Pauliinchen/MGQ-Paradox-Mod-Collection/releases/latest/download/Level_Cap.rb";
-
-/**
- * A fake GitHub: the latest link leads to the release's script, which GitHub's file host serves.
- *
- * @param {string} url The address fetched.
- * @returns {Promise<Response>} The answer.
- */
-async function fakeGitHub(url) {
-  const file = "https://github.com/Pauliinchen/MGQ-Paradox-Mod-Collection/releases/download/v1.4.0/Level_Cap.rb";
-
-  if (url === LINK) {
-    return new Response(null, { status: 302, headers: { Location: file } });
+test("every route of the retired mod catalog answers the update refusal, a current game's too", async () => {
+  const base = directoryBase.replace("/v1/worlds", "/v1/mods");
+  for (const [path, method] of [["", "GET"], ["/levelcap/file", "GET"], ["/levelcap/options", "POST"]]) {
+    const answer = await gameFetch(`${base}${path}`, { method, headers: { [PLAYER_HEADER]: ADMIN }, ...(method === "POST" ? { body: "{}" } : {}) });
+    assert.deepEqual([answer.status, await answer.json(), answer.headers.get("X-MGQ-Min-Version")], [426, { error: UPDATE_NEEDED }, "0.7.0"], `${method} ${path}`);
   }
-
-  if (url === file) {
-    return new Response(null, { status: 302, headers: { Location: "https://release-assets.githubusercontent.com/file" } });
-  }
-
-  return url === "https://release-assets.githubusercontent.com/file" ? new Response("# cap", { status: 200 }) : new Response("not found", { status: 404 });
-}
-
-test("every mod catalog route answers over HTTP", async () => {
-  const mods = new ModCatalog(openStores().mods, { clock: () => now, admins: [await playerIdOf(ADMIN)], fetch: fakeGitHub });
-  const catalogRelay = createRelay({ clock: () => now, checkEveryMs: 3_600_000, mods, log: LOG });
-  await new Promise((resolve) => catalogRelay.server.listen(0, "127.0.0.1", resolve));
-  const modsBase = `http://127.0.0.1:${catalogRelay.server.address().port}/v1/mods`;
-  const admin = { [PLAYER_HEADER]: ADMIN };
-  const post = (path, body, headers = admin) => gameFetch(`${modsBase}${path}`, { method: "POST", headers, body: typeof body === "string" || body instanceof Uint8Array ? body : JSON.stringify(body) });
-
-  assert.deepEqual(await (await gameFetch(modsBase)).json(), { mods: [], admin: false, personal: [] });
-  assert.equal((await post("", { name: "Level Cap", link: LINK }, {})).status, 403);
-  const added = await post("", { name: "Level Cap", link: LINK });
-  assert.equal(added.status, 200);
-  assert.equal((await added.json()).mod.version, "1.4.0");
-  assert.equal((await (await gameFetch(modsBase, { headers: admin })).json()).mods[0].link, LINK);
-
-  const checked = await post("/check", {});
-  assert.equal(checked.status, 200);
-  assert.equal((await checked.json()).mods.length, 1);
-
-  const zip = await makeZip([["Pack.rb", "# pack", true], ["Pack/a.luka", "A"]]);
-  const files = await zipHashes(zip);
-  assert.equal((await post(`/${encodeURIComponent("pack!")}/upload?name=Pack!&version=2.0`, makeUpload(files, zip))).status, 200);
-  assert.equal((await post("/pack!/upload?name=Pack!&version=2.1", makeUpload({ ...files, "Pack.rb": "00".repeat(32) }, zip))).status, 400);
-  const listedMods = (await (await gameFetch(modsBase)).json()).mods;
-  assert.deepEqual(listedMods.map((mod) => [mod.key, mod.version]), [["levelcap", "1.4.0"], ["pack!", "2.0"]]);
-  assert.deepEqual(listedMods[1].files, files);
-
-  const options = [{ key: "mod_pack", name: "Pack", type: "b", default: "1", choices: [] }];
-  assert.equal((await post("/pack%21/options", { version: "1.0", options })).status, 200, "an older version's options are kept until the current version's arrive");
-  assert.equal((await (await gameFetch(modsBase)).json()).mods[1].optionsVersion, "1.0");
-  assert.equal((await post("/pack%21/options", { version: "2.0", options })).status, 200);
-  assert.deepEqual((await (await gameFetch(modsBase)).json()).mods[1].options, options);
-
-  const file = await gameFetch(`${modsBase}/pack%21/file`);
-  assert.equal(file.headers.get("content-type"), "application/octet-stream");
-  assert.deepEqual(new Uint8Array(await file.arrayBuffer()), zip);
-  assert.equal((await gameFetch(`${modsBase}/levelcap/file`)).status, 404);
-
-  assert.equal((await post("/victoryscreen/name", { name: "Victory_Screen" })).status, 200);
-  assert.equal((await post("/levelcap/personal", { personal: true }, {})).status, 403);
-  assert.equal((await post("/levelcap/personal", { personal: true })).status, 200);
-  const forGames = await (await gameFetch(modsBase)).json();
-  assert.deepEqual(forGames.mods.map((mod) => [mod.key, mod.personal]), [["levelcap", true], ["pack!", false]], "a mod known by its name alone is no mod to download");
-  assert.deepEqual(forGames.personal, [{ key: "levelcap", name: "Level Cap" }, { key: "victoryscreen", name: "Victory_Screen" }]);
-
-  assert.equal((await post("/pack%21/delete", {}, {})).status, 403);
-  assert.equal((await post("/pack%21/delete", {})).status, 200);
-  assert.equal((await gameFetch(`${modsBase}/pack%21/file`)).status, 404);
-  assert.equal((await post("", "x".repeat(9000))).status, 413);
-  assert.equal((await gameFetch(`${modsBase}/levelcap/elsewhere`)).status, 404);
-  await catalogRelay.stop();
 });
 
 test("addressOf trusts X-Forwarded-For from this machine only, and takes the address the proxy appended last", () => {

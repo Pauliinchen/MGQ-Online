@@ -2,6 +2,7 @@
 //  gate.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Answered every request to the retired mod catalog with the update refusal
 //      Paulinchen  2026-11-06: Held the PvP rooms older games ask for to X-MGQ-Features, so those games get the update refusal
 //                            - Named the lowest version the relay serves in X-MGQ-Min-Version beside a refusal of a game too old for it
 //                            - Refused a request that names no version and dropped the PvP room answer and the long drain before a refusal
@@ -95,6 +96,11 @@ export const UPDATE_NEEDED = "Update MGQ Online to play online.";
 export const GATE = Object.freeze({ features: "features", designer: "designer" });
 
 /**
+ * The route's name after the version of the mod catalog the relay kept before the website's.
+ */
+export const RETIRED_CATALOG_ROUTE = "mods";
+
+/**
  * The route's name after the version of the routes the Raid Designer uses.
  */
 export const DESIGN_ROUTE = "designs";
@@ -163,18 +169,11 @@ const VERSION_PATTERN = /^(\d+(?:\.\d+)*)(-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?
 /**
  * Tells what a route asks of a game's version.
  *
- * A GET of the mod catalog asks nothing, since the Mod Framework reads the catalog and its files for every game, naming no game version.
- *
  * @param {URL} url The request's address.
- * @param {string} [method] The request's HTTP method; none counts as a change.
- * @returns {string | null} GATE.features for the world directory's and the mod catalog's routes, the Raid World admin, story and boss routes included, the trades, the bug reports, the world rooms, the PvP rooms older games ask for, the game's design routes and the story mapping games read; GATE.designer for the Raid Designer's routes; null for every other route and a GET of the mod catalog.
+ * @returns {string | null} GATE.features for the world directory's routes, the Raid World admin, story and boss routes included, the trades, the bug reports, the world rooms, the PvP rooms older games ask for, the game's design routes and the story mapping games read; GATE.designer for the Raid Designer's routes; null for every other route.
  */
-export function gateOf(url, method = undefined) {
-  if (routeIs(url, "mods") && method === "GET") {
-    return null;
-  }
-
-  if (storyRouteOf(url) || bossRouteOf(url) || routeIs(url, "trades") || routeIs(url, "reports") || routeIs(url, "world") || routeIs(url, "worlds") || routeIs(url, "mods")
+export function gateOf(url) {
+  if (storyRouteOf(url) || bossRouteOf(url) || routeIs(url, "trades") || routeIs(url, "reports") || routeIs(url, "world") || routeIs(url, "worlds")
       || routeIs(url, "room") || routeIs(url, GAME_DESIGN_ROUTE) || routeIs(url, MAPPING_GAME_ROUTE)) {
     return GATE.features;
   }
@@ -369,17 +368,17 @@ export function listsWorldMods(featuresHeader) {
 }
 
 /**
- * Turns a game too old for the relay away before its request is routed.
+ * Turns a game too old for the relay away before its request is routed, and every request to the
+ * mod catalog, which the website's took over.
  *
  * @param {URL} url The request's address.
  * @param {string | null | undefined} featuresHeader The request's FEATURES_HEADER.
  * @param {string | null | undefined} versionHeader The request's VERSION_HEADER.
  * @param {string | null | undefined} [minVersion] The relay's MIN_VERSION setting.
- * @param {string} [method] The request's HTTP method, see gateOf.
  * @returns {{status: number, reason: string, socket: boolean, code: string | null, minimum: string | null} | null} The refusal, with whether the route is a world room's, answered as a refused WebSocket, the code to name in REFUSAL_HEADER, which only a world room's carries, and the lowest version the relay serves to name in MIN_VERSION_HEADER; null when the game may go on.
  */
-export function updateRefusal(url, featuresHeader, versionHeader, minVersion, method = undefined) {
-  if (!tooOld(gateOf(url, method), featuresHeader, versionHeader, minVersion)) {
+export function updateRefusal(url, featuresHeader, versionHeader, minVersion) {
+  if (!routeIs(url, RETIRED_CATALOG_ROUTE) && !tooOld(gateOf(url), featuresHeader, versionHeader, minVersion)) {
     return null;
   }
 

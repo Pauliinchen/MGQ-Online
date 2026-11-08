@@ -2,6 +2,7 @@
 //  directory.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Kept the versions of the creator's copies of a world's required mods that the website has
 //      Paulinchen  2026-11-06: Took the player's key from the X-MGQ-Player header only
 //      Paulinchen  2026-11-05: Let every game the version gate passes into a Raid World and dropped the mod settings feature
 //                            - Took the player's key and auth key from the headers only, never from the address
@@ -84,6 +85,7 @@ export const DIRECTORY_LIMITS = Object.freeze({
   // Far above any real list; games from 0.6.8 read a world's mods from its own route, not the list.
   maxModsLength: 16_000,
   maxModHashesLength: 64_000,
+  maxModVersionsLength: 16_000,
   maxSettingsLength: 64_000,
   maxWorlds: 2000,
   maxWorldsPerCreator: 20,
@@ -208,10 +210,16 @@ const HEX = /^(?:[0-9a-f]{2})+$/;
 const GAME_DATA = /^[0-9a-z:.]{1,160}$/;
 
 /**
- * The hashes of a world's required mods outside the mod catalog, as the creator's game wrote them:
- * "name=hash" pairs separated by semicolons.
+ * The hashes of a world's required mods the website does not have, as the creator's game wrote
+ * them: "name=hash" pairs separated by semicolons.
  */
 const MOD_HASHES = /^(?:[^=;\u0000-\u001f]{1,100}=[0-9a-f]{64})(?:;[^=;\u0000-\u001f]{1,100}=[0-9a-f]{64})*$/;
+
+/**
+ * The versions of the creator's copies of a world's required mods that the website has, as the
+ * creator's game wrote them: "name=version" pairs separated by semicolons.
+ */
+const MOD_VERSIONS = /^(?:[^=;\u0000-\u001f]{1,100}=[0-9A-Za-z.+_-]{1,40})(?:;[^=;\u0000-\u001f]{1,100}=[0-9A-Za-z.+_-]{1,40})*$/;
 
 /**
  * Hashes a text with SHA-256.
@@ -335,7 +343,7 @@ export class Directory {
   /**
    * Makes a world.
    *
-   * @param {object} request The world: id, name, seats, the creator's player key and name, the hash of the auth key, the lock, whether a starting save follows, whether it is hidden from the list, whether each new player chooses where to start, whether it has no password, whether it is featured, its description, the mods it needs, the creator's game data, whether only games with the same data may enter, the hashes of its required mods outside the catalog, its mod settings, its type, how a Raid World shares companions, its difficulty, its squad settings, whether a Classic world fights raid bosses and whether it turns other mods off.
+   * @param {object} request The world: id, name, seats, the creator's player key and name, the hash of the auth key, the lock, whether a starting save follows, whether it is hidden from the list, whether each new player chooses where to start, whether it has no password, whether it is featured, its description, the mods it needs, the creator's game data, whether only games with the same data may enter, the hashes of its required mods the website does not have, the versions of those it has, its mod settings, its type, how a Raid World shares companions, its difficulty, its squad settings, whether a Classic world fights raid bosses and whether it turns other mods off.
    * @param {string | null} [address] The asking game's address, whose worlds a rate limit counts; null for none.
    * @returns {Promise<{status: number, body: object}>} The world's id, or why it was refused.
    */
@@ -398,6 +406,7 @@ export class Directory {
       data: request.data ?? "",
       strict: request.strict === true,
       modHashes: request.modHashes ?? "",
+      modVersions: request.modVersions ?? "",
       settings: cleanSettings(request.settings),
       type: raid ? WORLD_TYPE.raid : WORLD_TYPE.classic,
       share: raid ? (request.share ?? SHARING.off) : SHARING.off,
@@ -438,13 +447,13 @@ export class Directory {
    * seats, its description, the mods it needs, its mod settings, a Raid World's difficulty and
    * squad settings, whether a Classic world fights raid bosses and whether it turns other mods off.
    * Games already in the world stay when the seats become fewer.
-   * Its game data and its mods' hashes only the creator or an admin replaces. Only an admin
+   * Its game data and its mods' hashes and versions only the creator or an admin replaces. Only an admin
    * renames it, features or hides it, hands it to another of its players, gives it a new lock and
    * sets its strict rule; for anyone else these fields stay as they are, as they always did.
    *
    * @param {string} id The world.
    * @param {unknown} key The asking player's key.
-   * @param {any} changes Whichever of `seats`, `description`, `mods`, `data`, `modHashes`, `settings`, `difficulty`, `squad`, `raidBosses` and `otherModsOff` change, and for an admin `name`, `featured`, `hidden`, `strict`, `creator` (a player's id), `lock` and `open`.
+   * @param {any} changes Whichever of `seats`, `description`, `mods`, `data`, `modHashes`, `modVersions`, `settings`, `difficulty`, `squad`, `raidBosses` and `otherModsOff` change, and for an admin `name`, `featured`, `hidden`, `strict`, `creator` (a player's id), `lock` and `open`.
    * @returns {Promise<{status: number, body: object, difficulty?: number, squad?: {luka: boolean, formation: number, front: number, raidFront: number}, raidBosses?: boolean, modsRule?: {off: boolean, mods: string}, modSettings?: {by: string, settings: string}}>} The answer, the difficulty, the squad settings and whether it fights raid bosses, which every game in the world room must be told when they changed, whether the world turns other mods off with its mods, which every game must be told when either changed, and its mod settings with who changed them, which every game must be told when they changed.
    */
   async edit(id, key, changes) {
@@ -454,7 +463,7 @@ export class Directory {
       return refusal;
     }
 
-    const { seats, description, mods, data, modHashes, settings, difficulty, squad, raidBosses, otherModsOff } = changes ?? {};
+    const { seats, description, mods, data, modHashes, modVersions, settings, difficulty, squad, raidBosses, otherModsOff } = changes ?? {};
     const admin = this.admins.has(player);
     const settled = admin ? this.adminChanges(entry, changes ?? {}) : { changes: {} };
 
@@ -470,12 +479,16 @@ export class Directory {
       return badRequest("the mod hashes must be name=hash pairs separated by semicolons");
     }
 
+    if (modVersions !== undefined && !this.modVersionsOk(modVersions)) {
+      return badRequest("the mod versions must be name=version pairs separated by semicolons");
+    }
+
     if (settings !== undefined && !this.settingsOk(settings)) {
       return badRequest(`the mod settings must be a text of at most ${this.limits.maxSettingsLength} characters`);
     }
 
-    if ((data !== undefined || modHashes !== undefined) && player !== entry.creator.id && !admin) {
-      return { status: 403, body: { error: "only the world's creator or an admin may replace its game data and mod hashes" } };
+    if ((data !== undefined || modHashes !== undefined || modVersions !== undefined) && player !== entry.creator.id && !admin) {
+      return { status: 403, body: { error: "only the world's creator or an admin may replace its game data, mod hashes and mod versions" } };
     }
 
     if (seats !== undefined && (!Number.isInteger(seats) || seats < WORLD_SEATS.min || seats > WORLD_SEATS.max)) {
@@ -531,6 +544,7 @@ export class Directory {
     if (mods !== undefined) entry.mods = cleanMods(mods);
     if (data !== undefined) entry.data = data;
     if (modHashes !== undefined) entry.modHashes = modHashes;
+    if (modVersions !== undefined) entry.modVersions = modVersions;
     if (settings !== undefined) entry.settings = cleanSettings(settings);
     if (difficulty !== undefined) entry.difficulty = difficulty;
     if (newSquad !== undefined) entry.squad = newSquad;
@@ -1098,6 +1112,7 @@ export class Directory {
     if (request.data !== undefined && (typeof request.data !== "string" || !GAME_DATA.test(request.data))) return "the game data must be 1 to 160 lowercase letters, digits, colons and dots";
     if (request.strict !== undefined && typeof request.strict !== "boolean") return "strict must be true or false";
     if (request.modHashes !== undefined && !this.modHashesOk(request.modHashes)) return "the mod hashes must be name=hash pairs separated by semicolons";
+    if (request.modVersions !== undefined && !this.modVersionsOk(request.modVersions)) return "the mod versions must be name=version pairs separated by semicolons";
     if (request.settings !== undefined && !this.settingsOk(request.settings)) return `the mod settings must be a text of at most ${this.limits.maxSettingsLength} characters`;
     if (request.type !== undefined && !Object.values(WORLD_TYPE).includes(request.type)) return `the type must be ${Object.values(WORLD_TYPE).join(" or ")}`;
     if (request.share !== undefined && !Object.values(SHARING).includes(request.share)) return `the companion sharing must be ${Object.values(SHARING).join(", ")}`;
@@ -1133,13 +1148,23 @@ export class Directory {
   }
 
   /**
-   * Checks the hashes of a world's required mods outside the catalog.
+   * Checks the hashes of a world's required mods the website does not have.
    *
    * @param {unknown} text The hashes, empty for none.
    * @returns {boolean} Whether they are as they should be.
    */
   modHashesOk(text) {
     return typeof text === "string" && text.length <= this.limits.maxModHashesLength && (text === "" || MOD_HASHES.test(text));
+  }
+
+  /**
+   * Checks the versions of a world's required mods the website has.
+   *
+   * @param {unknown} text The versions, empty for none.
+   * @returns {boolean} Whether they are as they should be.
+   */
+  modVersionsOk(text) {
+    return typeof text === "string" && text.length <= this.limits.maxModVersionsLength && (text === "" || MOD_VERSIONS.test(text));
   }
 
   /**
@@ -1401,6 +1426,7 @@ export function publicView(entry) {
     data: entry.data ?? "",
     strict: entry.strict === true,
     modHashes: entry.modHashes ?? "",
+    modVersions: entry.modVersions ?? "",
     settings: entry.settings ?? "",
     type: entry.type ?? WORLD_TYPE.classic,
     share: entry.type === WORLD_TYPE.raid ? (entry.share ?? SHARING.off) : SHARING.off,
@@ -1417,14 +1443,14 @@ export function publicView(entry) {
 
 /**
  * Makes the view of a world the list hands games, which read its mods from the world's own route:
- * the public view without its mods, mod hashes and settings, which may be long, and with how many
- * mods it names.
+ * the public view without its mods, mod hashes, mod versions and settings, which may be long, and
+ * with how many mods it names.
  *
  * @param {object} entry The world entry.
  * @returns {object} The view.
  */
 export function listedView(entry) {
-  const { mods, modHashes, settings, ...view } = publicView(entry);
+  const { mods, modHashes, modVersions, settings, ...view } = publicView(entry);
   return { ...view, modsCount: modsCountOf(mods) };
 }
 

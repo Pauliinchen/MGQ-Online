@@ -3,6 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-08: Named no other mod in a check
+#                            - Covered the installed mods handed to the DLL as the Mod Framework lists them, again while it fetches the website
+#                            - Sent the options of a website mod by its slug, found by its name in Patch
 #      Paulinchen  2026-11-07: Read the options a world sets from the rows Options > Mods greys, and kept a row its mod keeps itself out of a world's settings
 #      Paulinchen  2026-11-06: Left installing a world's mods to the Mod Framework's dialog, which the world screen's test hands over
 #      Paulinchen  2026-11-05: Answered the mods texts, the mod keys and the world entered with fixed values instead of from their stand-ins
@@ -292,7 +294,7 @@ $rule_answers.cases("mods.text", {
   "!Level Cap; Party Sheet" => { "names" => ["Level Cap", "Party Sheet"], "required" => ["Level Cap"], "essential" => [] },
   "!Level Cap; Party Sheet; Own Mod" => { "names" => ["Level Cap", "Party Sheet", "Own Mod"], "required" => ["Level Cap"], "essential" => [] },
 })
-mod_keys = { "Party_Sheet" => "partysheet", "Party Sheet" => "partysheet", "Level Cap" => "levelcap", "Own Mod" => "ownmod", "Tab\tMod" => "tabmod",
+mod_keys = { "Party_Sheet" => "partysheet", "Party Sheet" => "partysheet", "Level Cap" => "levelcap", "Level_Cap" => "levelcap", "level-cap" => "levelcap", "Own Mod" => "ownmod", "Tab\tMod" => "tabmod",
              "MGQ Online Settings" => "mgqonlinesettings", "MGQ Online Hotkeys" => "mgqonlinehotkeys" }
 $rule_answers.set("mods.keys") { |names| names.map { |name| mod_keys.fetch(name) } }
 open_fake_ui { typed = $typed.to_s; $typed = nil; [typed, typed.size] }
@@ -306,14 +308,6 @@ def new_scene
   scene = world_scene
   scene.instance_variable_set(:@me, "me")
   scene
-end
-
-# Hands the mods module a catalog and forgets what it read before.
-#
-# @param lines [Array<String>] The catalog's lines, see catalog_told.
-def catalog(*lines)
-  catalog_told("ready", *lines)
-  MGQ_MpWorldMods.forget_installed
 end
 
 mods = MGQ_MpWorldMods
@@ -341,6 +335,25 @@ MGQ_MpWorld::GameData.instance_variable_set(:@fingerprint, "1:x")
 scene = new_scene
 MGQ_MpWorld::GameData.instance_variable_set(:@fingerprint, nil)
 check("the world screen hands the DLL the world to enter again as it opens, which it enters once the list holds it", [screen_requests("screen.do").select { |request| request["do"] == "open" }.last["rejoin"], mods.rejoining], ["w1", nil])
+
+# The installed mods as the Mod Framework lists them, which the DLL checks a world's mods by.
+frame = 100
+clock_from { frame }
+framework = { "fetching" => true, "mods" => [{ "name" => "Level_Cap", "title" => "Level Cap", "version" => "?", "id" => nil, "on" => true }] }
+Mod_Framework::Mods.define_singleton_method(:state) { framework }
+mods.forget_installed
+check("the DLL gets them as the world screen opens", $framework_mods, { "mods" => [["Level_Cap", "Level Cap", "?", nil, true]] })
+framework = { "fetching" => false, "mods" => [{ "name" => "Level_Cap", "title" => "Level Cap", "version" => "1.4.0", "id" => "site:level-cap", "on" => false }] }
+frame += 30
+mods.follow_framework
+check("while the Mod Framework fetches the website, not within a second", $framework_mods["mods"][0][2], "?")
+frame += 30
+mods.follow_framework
+check("but again after it, with the versions the website tells", $framework_mods, { "mods" => [["Level_Cap", "Level Cap", "1.4.0", "site:level-cap", false]] })
+frame += 120
+$framework_mods = nil
+mods.follow_framework
+check("and no more once the fetch ended", $framework_mods, nil)
 
 # A world that turns other mods off: the Mod Framework enters the game with the mods of its session.
 entered = []
@@ -537,13 +550,13 @@ Scene_Title.new.start
 
 $world_open = false
 
-# The Mod Config options an admin's game sends for the catalog mods the DLL names.
-$reported_mods = [["levelcap", "Level Cap", "1.4.0"]]
+# The Mod Config options an admin's game sends for the website mods the DLL names.
+$reported_mods = [["level-cap", "Level_Cap", "1.4.0"]]
 mods.report_options(false)
 check("a game that is no admin's sends none", $sent_options, [])
 mods.report_options(true)
 check("an admin's game sends the options of each mod the DLL names, with the version its copy is, without key bindings, buttons or ones their mod keeps itself", $sent_options,
-      [{ "key" => "levelcap", "version" => "1.4.0", "options" => [{ "key" => "mod_level_cap", "name" => "Level Cap", "default" => 1, "choices" => [[1, "On"], [0, "Off"]] },
+      [{ "key" => "level-cap", "version" => "1.4.0", "options" => [{ "key" => "mod_level_cap", "name" => "Level Cap", "default" => 1, "choices" => [[1, "On"], [0, "Off"]] },
                                                                   { "key" => "mod_level_cap_limits", "name" => "Job and Race Limits", "default" => 1, "choices" => [] }] }])
 $reported_mods = []
 check("an option's values come from its :values too", mods.option_of(NWConst::Config::MOD_CONTENTS.find { |entry| entry[:key] == :mod_party_sheet_size }),

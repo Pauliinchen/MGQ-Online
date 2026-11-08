@@ -11,8 +11,9 @@
 // has taken, and each step runs once, in a transaction of its own. Later plans append their steps.
 
 /**
- * Step 1: the tables the relay kept before the steps, made exactly as node/sqlite_store.js makes
- * them, so the step leaves a database that has them as it is.
+ * Step 1: the tables the relay kept before the steps, made exactly as node/sqlite_store.js made
+ * them, so the step leaves a database that has them as it is; the retired mod catalog's stay, so a
+ * rollback finds them.
  */
 const RELAY_TABLES = [
   "CREATE TABLE IF NOT EXISTS worlds (id TEXT PRIMARY KEY, json TEXT NOT NULL)",

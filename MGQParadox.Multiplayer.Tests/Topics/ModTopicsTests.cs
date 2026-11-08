@@ -2,6 +2,7 @@
 //  ModTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Gave the topics no world directory, since the relay's mod catalog went
 //      Paulinchen  2026-10-30: Listed the scripts of the Patch folder without the parking
 //      Paulinchen  2026-10-23: Covered the mods text topic
 //                            - Gave the topics the world directory too
@@ -13,7 +14,6 @@ using System;
 using System.IO;
 using MGQOnline.Bridge.Ruby;
 using MGQParadox.Multiplayer.Mods;
-using MGQParadox.Multiplayer.Network.World;
 using MGQParadox.Multiplayer.Tests.Network.World;
 using MGQParadox.Multiplayer.Topics;
 
@@ -39,7 +39,7 @@ public sealed class ModTopicsTests : IDisposable
     /// </summary>
     public ModTopicsTests()
     {
-        _topics = new TopicCaller(context => ModTopics.Register(context, () => PatchScripts.List(_game.Path), () => WorldDirectory.Current));
+        _topics = new TopicCaller(context => ModTopics.Register(context, () => PatchScripts.List(_game.Path)));
     }
 
     /// <summary>

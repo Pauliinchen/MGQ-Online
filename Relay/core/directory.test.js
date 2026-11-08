@@ -2,6 +2,7 @@
 //  directory.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Tested the versions of the creator's copies of a world's required mods beside its hashes
 //      Paulinchen  2026-11-06: Sent the player's key in the X-MGQ-Player header only
 //      Paulinchen  2026-11-05: Tested that a Raid World lets in every game the version gate passes
 //                            - Tested the player's key and auth key taken from the headers only
@@ -223,27 +224,29 @@ test("only the creator or an admin replaces a world's game data, with data that 
   assert.deepEqual([world.data, world.strict, world.seats], ["1:ffffffff", true, 4]);
 });
 
-test("a world keeps its creator's hashes of mods outside the catalog and its mod settings", async () => {
+test("a world keeps its creator's hashes of mods the website lacks, the versions of those it has and its mod settings", async () => {
   const hashes = `Some Mod=${"a1".repeat(32)};Other=${"b2".repeat(32)}`;
   const { directory } = newDirectory();
 
   assert.equal((await directory.create(await newWorld({ modHashes: "Some Mod=notahash" }))).status, 400);
-  assert.equal((await directory.create(await newWorld({ modHashes: hashes, settings: "mod_level_cap=i:1;\tmod_x=b:true" }))).status, 201);
+  assert.equal((await directory.create(await newWorld({ modVersions: "Level Cap=1.5.2 beta" }))).status, 400);
+  assert.equal((await directory.create(await newWorld({ modHashes: hashes, modVersions: "Level Cap=1.5.2;Party Sheet=2.0.0-rc.1", settings: "mod_level_cap=i:1;\tmod_x=b:true" }))).status, 201);
 
   const world = (await directory.list()).body.worlds[0];
-  assert.deepEqual([world.modHashes, world.settings], [hashes, "mod_level_cap=i:1;mod_x=b:true"]);
+  assert.deepEqual([world.modHashes, world.modVersions, world.settings], [hashes, "Level Cap=1.5.2;Party Sheet=2.0.0-rc.1", "mod_level_cap=i:1;mod_x=b:true"]);
 });
 
-test("only the creator or an admin replaces a world's mod hashes and its mod settings", async () => {
+test("only the creator or an admin replaces a world's mod hashes, mod versions and its mod settings", async () => {
   const { directory } = newDirectory(DIRECTORY_LIMITS, [await playerIdOf(ADMIN)]);
   await directory.create(await newWorld());
 
   assert.equal((await directory.edit(WORLD, OTHER, { modHashes: "" })).status, 403);
+  assert.equal((await directory.edit(WORLD, OTHER, { modVersions: "" })).status, 403);
   assert.equal((await directory.edit(WORLD, CREATOR, { modHashes: "x".repeat(10) })).status, 400);
-  assert.equal((await directory.edit(WORLD, CREATOR, { modHashes: `Mod=${"c3".repeat(32)}`, settings: "a=i:2" })).status, 200);
+  assert.equal((await directory.edit(WORLD, CREATOR, { modHashes: `Mod=${"c3".repeat(32)}`, modVersions: "Level Cap=1.6.0", settings: "a=i:2" })).status, 200);
 
   const world = (await directory.list()).body.worlds[0];
-  assert.deepEqual([world.modHashes, world.settings], [`Mod=${"c3".repeat(32)}`, "a=i:2"]);
+  assert.deepEqual([world.modHashes, world.modVersions, world.settings], [`Mod=${"c3".repeat(32)}`, "Level Cap=1.6.0", "a=i:2"]);
   assert.equal((await directory.edit(WORLD, ADMIN, { seats: 6 })).status, 200);
   assert.equal((await directory.edit(WORLD, ADMIN, { settings: "a=i:3" })).status, 200);
   assert.equal((await directory.list()).body.worlds[0].settings, "a=i:3");
@@ -910,7 +913,7 @@ test("a world's mods past the limit are refused, never cut, when it is made or e
   assert.equal((await directory.list()).body.worlds[0].mods, "y".repeat(16_000));
 });
 
-test("the list leaves out each world's mods, mod hashes and settings when asked, counting its mods instead", async () => {
+test("the list leaves out each world's mods, mod hashes, mod versions and settings when asked, counting its mods instead", async () => {
   const { directory } = newDirectory();
   await directory.create(await newWorld({ mods: "!Level Cap; ?Party Sheet;;Invasions; ! ", modHashes: `Level Cap=${"a1".repeat(32)}`, settings: "a=i:1" }));
   await directory.create(await newWorld({ id: "1".repeat(32) }));
@@ -919,7 +922,7 @@ test("the list leaves out each world's mods, mod hashes and settings when asked,
   assert.deepEqual([full.mods, full.modHashes, full.settings, full.modsCount], ["!Level Cap; ?Party Sheet;;Invasions; !", `Level Cap=${"a1".repeat(32)}`, "a=i:1", undefined]);
 
   const [listed, empty] = (await directory.list(undefined, undefined, false)).body.worlds;
-  const { mods, modHashes, settings, ...rest } = full;
+  const { mods, modHashes, modVersions, settings, ...rest } = full;
   assert.deepEqual(listed, { ...rest, modsCount: 3 });
   assert.equal(empty.modsCount, 0);
   assert.equal(none.mods, "");

@@ -42,6 +42,16 @@ limit (256 MB); leave `DOTNET_GCHeapHardLimit` unset unless a larger one is need
 without `0x`). Removing the setting and restarting turns the core off again, and with it MGQ Online's battles on
 this server.
 
+## A world's mods
+
+A co-op battle's starter names the website mods of its world it runs, each with its version and
+the hashes of its files as the website lists them (`lib/mods.rb`). The server takes them from its
+cache (`BATTLE_MOD_CACHE`), else downloads the version's PC package from the website's catalog
+(`GET /api/mods/<slug>?schema=3`; `MGQ_MODS_SITE` names another website than mgqonline.org, as for
+the Mod Framework) and keeps it only when the package matches the website's hash and each file the
+starter's. A mod the website does not have, or a download that differs, refuses the battle with
+the code `mods`.
+
 ## The story mapping's index
 
 The relay asks the server for the derived index of the story mapping (see "Story mapping" in
