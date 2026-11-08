@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-11-09: Handed the World page's players online and story over as values with their captions
+//                            - Listed the labels of every entry of a page, those of folded groups too
 //      Paulinchen  2026-11-08: Took over the quests' text rules from the scripts
 //      Paulinchen  2026-10-31: Created
 //
@@ -209,16 +210,20 @@ public static class OverviewPages
         ArgumentNullException.ThrowIfNull(facts);
         string online = facts.Seats > 0 ? Format(PlayersOf, facts.Online, facts.Seats) : facts.Online.ToString(CultureInfo.InvariantCulture);
         var list = new List<OverviewItem>();
+        var entries = new List<OverviewEntry>();
         if (facts.Main is { } main)
         {
-            list.Add(new OverviewItem(null, new OverviewNote(ObjectiveLabel, main.Texts)));
+            var objective = new OverviewNote(ObjectiveLabel, main.Texts);
+            list.Add(new OverviewItem(null, objective));
+            entries.Add(objective);
         }
 
         var sections = facts.Raid ? OverviewBosses.Sections(facts, pools, told) : [];
         foreach ((string section, IReadOnlyList<OverviewBoss> bosses) in sections)
         {
-            AddGroup(list, folds, WorldPage, section, Format(BossSection, section, bosses.Count), true,
-                [.. bosses.Select(boss => new OverviewBossEntry(boss, section, OverviewBosses.Pane(boss, section, facts.Tiers)))]);
+            List<OverviewEntry> group = [.. bosses.Select(boss => new OverviewBossEntry(boss, section, OverviewBosses.Pane(boss, section, facts.Tiers)))];
+            AddGroup(list, folds, WorldPage, section, Format(BossSection, section, bosses.Count), true, group);
+            entries.AddRange(group);
         }
 
         if (sections.Count == 0)
@@ -230,7 +235,7 @@ public static class OverviewPages
         OverviewHead head = facts.Raid
             ? new(null, null, [players, new OverviewField(StoryCaption, OverviewText.WorldStoryText(facts.Story?.Part))], [], null)
             : new(null, null, [players], [ClassicStory], null);
-        return new OverviewModel(head, list, PicksOf(list));
+        return new OverviewModel(head, list, PicksOf(list), LabelsOf(entries));
     }
 
     /// <summary>
@@ -252,11 +257,11 @@ public static class OverviewPages
         OverviewQuest? told = Told(main, false) is { } objective ? new OverviewQuest(MainKind, objective.Speaker, objective.Texts, null) : null;
         var head = new OverviewHead(QuestTitles[MainKind], null, [], [told?.First ?? NoQuests], told);
         var list = new List<OverviewItem>();
-        AddGroup(list, folds, QuestsPage, SideKind, Format(QuestHeadings[SideKind], sideQuests.Count), true,
-            [.. sideQuests.Select((quest, index) => new OverviewQuest(SideKind, quest.Speaker, quest.Texts, index + 1))], NoQuests);
-        AddGroup(list, folds, QuestsPage, CompanionKind, Format(QuestHeadings[CompanionKind], requests.Count), true,
-            [.. requests.Select(quest => new OverviewQuest(CompanionKind, quest.Speaker, quest.Texts, null))], NoQuests);
-        return new OverviewModel(head, list, [.. told is null ? [] : new OverviewEntry[] { told }, .. PicksOf(list)]);
+        List<OverviewQuest> sideEntries = [.. sideQuests.Select((quest, index) => new OverviewQuest(SideKind, quest.Speaker, quest.Texts, index + 1))];
+        List<OverviewQuest> requestEntries = [.. requests.Select(quest => new OverviewQuest(CompanionKind, quest.Speaker, quest.Texts, null))];
+        AddGroup(list, folds, QuestsPage, SideKind, Format(QuestHeadings[SideKind], sideQuests.Count), true, sideEntries, NoQuests);
+        AddGroup(list, folds, QuestsPage, CompanionKind, Format(QuestHeadings[CompanionKind], requests.Count), true, requestEntries, NoQuests);
+        return new OverviewModel(head, list, [.. told is null ? [] : new OverviewEntry[] { told }, .. PicksOf(list)], LabelsOf([.. sideEntries, .. requestEntries]));
     }
 
     /// <summary>
@@ -313,7 +318,7 @@ public static class OverviewPages
             list.Add(new OverviewItem(NothingUnlocked, null));
         }
 
-        return new OverviewModel(head, list, PicksOf(list));
+        return new OverviewModel(head, list, PicksOf(list), LabelsOf(levels));
     }
 
     /// <summary>
@@ -374,6 +379,14 @@ public static class OverviewPages
     /// <param name="list">The rows.</param>
     /// <returns>The groups and the entries, in their order.</returns>
     private static List<OverviewEntry> PicksOf(List<OverviewItem> list) => [.. list.Select(item => item.Entry).OfType<OverviewEntry>()];
+
+    /// <summary>
+    /// Lists the labels of entries as their rows show them, each once.
+    /// </summary>
+    /// <param name="entries">The entries.</param>
+    /// <returns>The labels.</returns>
+    private static List<string> LabelsOf(IEnumerable<OverviewEntry> entries) =>
+        [.. entries.Select(entry => entry.Row().Label).OfType<string>().Where(label => label.Length > 0).Distinct(StringComparer.Ordinal)];
 
     /// <summary>
     /// Takes the whitespace off a text's ends as Ruby 1.9's <c>String#strip</c> does, nulls at its end too.

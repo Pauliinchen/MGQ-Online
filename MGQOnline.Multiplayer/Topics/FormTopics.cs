@@ -2,6 +2,7 @@
 //  FormTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-09: Told whether a field's caption is narrow in place of its width
 //      Paulinchen  2026-11-08: Moved to the MGQOnline.Multiplayer namespace
 //      Paulinchen  2026-11-06: Wrote the bounds of a number's field into its view, which the field steps within
 //      Paulinchen  2026-11-05: Wrote the world type, sharing, shared save and player's choice into the new world's view alone
@@ -28,7 +29,7 @@ namespace MGQOnline.Multiplayer.Topics;
 /// <remarks>
 /// A view is <c>title</c>, <c>page</c>, <c>fields</c> (each shown field: <c>key</c>, <c>kind</c>, <c>label</c>, <c>row</c>,
 /// <c>side</c>, <c>max_chars</c>, <c>allowed</c>, <c>optional</c>, <c>group</c>, <c>lines</c>, <c>hint</c>, <c>choices</c>,
-/// <c>label_width</c>, <c>enabled</c>), <c>values</c>, <c>derived</c> (what the values add up to, see <see cref="WorldFormValues"/>) and
+/// <c>narrow_caption</c>, <c>enabled</c>), <c>values</c>, <c>derived</c> (what the values add up to, see <see cref="WorldFormValues"/>) and
 /// <c>sends_on_enter</c> (whether Enter in its text box sends it, see <see cref="WorldForms.SendsOnEnter"/>);
 /// it comes only with an action that may change what shows, never per frame.
 /// </remarks>
@@ -313,7 +314,7 @@ internal sealed class FormTopics
         { "lines", field.Lines },
         { "hint", field.Hint },
         { "choices", new RubyArray(field.Choices.Select(choice => (RubyValue)choice)) },
-        { "label_width", field.LabelWidth is { } width ? width : RubyNil.Value },
+        { "narrow_caption", field.NarrowCaption },
         { "min", field.Kind == FieldKind.Number ? field.Min : RubyNil.Value },
         { "max", field.Kind == FieldKind.Number ? field.Max : RubyNil.Value },
         { "enabled", form.IsEnabled(field) },

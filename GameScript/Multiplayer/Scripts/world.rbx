@@ -2,6 +2,7 @@
 #  world.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-09: Read whether a field's caption is narrow in place of its width
 #      Paulinchen  2026-11-07: Dropped the check for a Mod Framework call older versions lacked
 #      Paulinchen  2026-11-06: Kept a refusal of this version on the world screen whose question could not open, asking again once none of the screen's questions is open
 #                            - Kept the form's fields alone of the base form, which no screen builds
@@ -1776,8 +1777,9 @@ module MGQ_MpWorld
       # the form and the outcome's index, nil for no line.
       attr_reader :note
 
-      # Width of a switch's or a save's label, nil for the width its window gives every label.
-      attr_reader :label_width
+      # Whether its caption lines up with the other narrow captions of its page instead of the width
+      # every caption gets, so a switch fits half a row.
+      attr_reader :narrow_caption
 
       # The least number a number's box takes, nil for a field of another kind.
       attr_reader :min
@@ -1796,7 +1798,7 @@ module MGQ_MpWorld
       # @param row [Integer] The row it is on.
       # @param hint [String] What the lines at the top say while the cursor is on it.
       # @param options [Hash] Whichever of :side, :max_chars, :allowed, :needs (a key or a proc), :optional (also for a save), :group, :lines,
-      #   :empty_ok (a proc), :empty_text, :choices, :note (a proc), :label_width, :shows (a proc), :min and :max apply.
+      #   :empty_ok (a proc), :empty_text, :choices, :note (a proc), :narrow_caption, :shows (a proc), :min and :max apply.
       def initialize(key, kind, label, row, hint, options = {})
         @key = key
         @kind = kind
@@ -1814,7 +1816,7 @@ module MGQ_MpWorld
         @empty_text = options[:empty_text] || "This field cannot be empty."
         @choices = options[:choices] || []
         @note = options[:note]
-        @label_width = options[:label_width]
+        @narrow_caption = options[:narrow_caption] == true
         @shows = options[:shows]
         @min = options[:min]
         @max = options[:max]
@@ -2217,7 +2219,7 @@ module MGQ_MpWorld
       Form::Field.new(about["key"].to_sym, about["kind"].to_sym, about["label"].to_s, about["row"].to_i, about["hint"].to_s,
                 :side => about["side"] && about["side"].to_sym, :max_chars => about["max_chars"], :allowed => ALLOWED[about["allowed"]],
                 :optional => about["optional"] == true, :group => about["group"], :lines => about["lines"], :choices => Array(about["choices"]),
-                :label_width => about["label_width"], :min => about["min"], :max => about["max"])
+                :narrow_caption => about["narrow_caption"] == true, :min => about["min"], :max => about["max"])
     end
   end
 

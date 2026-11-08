@@ -2,6 +2,10 @@
 #  screen_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-09: Handed the details' captions by their column, as the DLL does
+#                            - Let the details' World panel open the world's facts and the Game data panel its mods and settings, as the DLL does
+#                            - Handed every caption the details can show with the details, as the DLL does
+#                            - Gave the details' players as lines, one player each, as the DLL does
 #      Paulinchen  2026-11-06: Wrote the screen's texts out instead of reading recorded ones
 #      Paulinchen  2026-11-05: Answered the world screen's model with the values each test sets instead of the screen's methods as they were before they moved to C#
 #      Paulinchen  2026-11-01: Dropped the details' old methods for tests, which read only the prototype
@@ -159,7 +163,7 @@ def screen_entry(row)
 end
 
 # Makes a world's details as screen.details tells them: its World panel naming its creator, its
-# mods as chips that open the list box, its players that open it too, and its description.
+# mods as chips, its players as lines that open the list box, and its description.
 #
 # @param title [String] The world's name.
 # @param mods [Array<String>] Its mods.
@@ -169,9 +173,11 @@ end
 def screen_details(title, mods, players, description)
   cell = lambda { |label, text, extra = {}| { "label" => label, "text" => text, "color" => "normal", "target" => nil, "chips" => nil, "chip_colors" => nil }.merge(extra) }
   { "title" => title, "title_color" => nil, "played" => "", "description" => description,
-    "panels" => [{ "title" => "World", "note" => nil, "target" => nil, "rows" => [[cell.call("Creator", "Cara")]] },
-                 { "title" => "Game data", "note" => nil, "target" => nil, "rows" => [[cell.call("Mods", mods.join(", "), "target" => "mods", "chips" => mods)]] },
-                 { "title" => "Players", "note" => "#{players.size} joined", "target" => "players", "rows" => [players.map { |name| cell.call(nil, name) }] }] }
+    "captions" => [["Status", "Creator", "Password", "Start", "Sharing", "Raid Bosses", "Mods"], ["Players", "Listed", "Difficulty", "Squad"]],
+    "panels" => [{ "title" => "World", "note" => nil, "target" => "world", "rows" => [[cell.call("Creator", "Cara")]] },
+                 { "title" => "Game data", "note" => nil, "target" => "data", "rows" => [[cell.call("Mods", mods.join(", "), "target" => "mods", "chips" => mods)]] },
+                 { "title" => "Players", "note" => "#{players.size} joined", "target" => "players", "lines" => true,
+                   "rows" => players.map { |name| [cell.call(nil, name)] } }] }
 end
 
 # Tells the screen that the list and what the details read changed, as the DLL's drain does.

@@ -2,6 +2,7 @@
 //  FormField.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-09: Marked a narrow caption in place of a label width in pixels
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -121,8 +122,8 @@ public sealed record FormField(string Key, FieldKind Kind, string Label, int Row
     /// <summary>Gets the outcomes a switch moves between, as shown.</summary>
     public IReadOnlyList<string> Choices { get; init; } = [];
 
-    /// <summary>Gets the width of a switch's or a save's label, <see langword="null"/> for the width its window gives every label.</summary>
-    public int? LabelWidth { get; init; }
+    /// <summary>Gets whether its caption lines up with the other narrow captions of its page, the widest of them, instead of the width every caption gets, so a switch fits half a row.</summary>
+    public bool NarrowCaption { get; init; }
 
     /// <summary>Gets what must hold for the field to be part of the form now, <see langword="null"/> for always.</summary>
     public FormRule? Shows { get; init; }

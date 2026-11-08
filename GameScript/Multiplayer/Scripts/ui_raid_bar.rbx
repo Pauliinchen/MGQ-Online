@@ -2,6 +2,7 @@
 #  ui_raid_bar.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-09: Framed the gauges by the Mod Framework's border: :theme two pixels thick, which replaced framed:
 #      Paulinchen  2026-11-08: Listed the tiles of a boss's events in place of counting the steps to them
 #                            - Gave its UI ids the mgq_online_ prefix
 #      Paulinchen  2026-11-06: Read the room at the top through the Mod Framework's UI.room
@@ -661,7 +662,7 @@ module MGQ_MpRaidBar
           end
           stack row: true, spacing: 1.5, width: width, align_self: :center do
             names.each_index do |index|
-              progress value: -> { MGQ_MpRaidBar.fill(MGQ_MpRaidBar.strip_bar, index) }, max: STEPS, colors: FILL_COLORS, vertical: true, framed: true,
+              progress value: -> { MGQ_MpRaidBar.fill(MGQ_MpRaidBar.strip_bar, index) }, max: STEPS, colors: FILL_COLORS, vertical: true, border: :theme, border_width: 2,
                        trail: true, height: GAUGE_HEIGHT, text: -> { MGQ_MpRaidBar.gauge_texts(index) }, grow: 1, key: index
             end
           end
@@ -703,7 +704,7 @@ module MGQ_MpRaidBar
         stack row: true, spacing: 1.5 do
           names.each_index do |index|
             progress value: -> { MGQ_MpRaidBar.fill(MGQ_MpRaidBar.overhead_bar(event), index) }, max: STEPS, colors: FILL_COLORS, vertical: true,
-                     framed: true, trail: true, height: GAUGE_HEIGHT, grow: 1, key: index
+                     border: :theme, border_width: 2, trail: true, height: GAUGE_HEIGHT, grow: 1, key: index
           end
         end
       end

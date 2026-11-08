@@ -2,6 +2,8 @@
 #  form_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-09: Marked the difficulty's and the squad rules' captions narrow as the DLL does
+#                            - Gave the save no label width, as the DLL gives it none
 #      Paulinchen  2026-11-06: Wrote the form views out instead of reading recorded ones
 #      Paulinchen  2026-11-05: Answered the world screen's forms with the DLL's recorded views and the values each test sets instead of the Ruby forms they were made from
 #      Paulinchen  2026-10-23: Created
@@ -31,7 +33,7 @@ require_relative "bridge_support"
 def form_field(key, kind, label, row, fields = {}, hint = "")
   fields, hint = {}, fields if fields.is_a?(String)
   { "key" => key, "kind" => kind, "label" => label, "row" => row, "side" => nil, "max_chars" => nil, "allowed" => nil, "optional" => false, "group" => nil,
-    "lines" => 1, "hint" => hint, "choices" => [], "label_width" => nil, "enabled" => true }.merge(fields)
+    "lines" => 1, "hint" => hint, "choices" => [], "narrow_caption" => false, "enabled" => true }.merge(fields)
 end
 
 # Writes a form's view as the DLL writes it.
@@ -63,13 +65,13 @@ class FormAnswers
                  "Players in the world at once, 2 to 32."),
       form_field("hidden", "check", "Hidden", 2, { "side" => "left", "group" => "World" },
                  "Only its players see it in the list. Others add it with its id."),
-      form_field("type", "switch", "World type", 2, { "side" => "right", "group" => "World", "choices" => ["Classic", "Raid"], "label_width" => 70 },
+      form_field("type", "switch", "World type", 2, { "side" => "right", "group" => "World", "choices" => ["Classic", "Raid"] },
                  "Classic: each party plays its own story. Raid: the whole world plays one. Fixed once created."),
       form_field("from_save", "check", "Shared save", 3, { "side" => "left", "group" => "World" },
                  "Classic only: new players start from one of your saves. Fixed once created."),
       form_field("choose", "check", "Player's choice", 3, { "side" => "right", "group" => "World" },
                  "Classic only: new players pick their start, the opening or a save. Fixed once created."),
-      form_field("save", "save", "Save", 4, { "side" => "left", "group" => "World", "label_width" => 40, "enabled" => false },
+      form_field("save", "save", "Save", 4, { "side" => "left", "group" => "World", "enabled" => false },
                  "The save every new player starts from."),
       form_field("raid_bosses", "check", "Raid Bosses", 4, { "side" => "right", "group" => "World" },
                  "Classic only: story bosses fight as raid bosses of their tier, far stronger. Changeable later."),
@@ -94,15 +96,15 @@ class FormAnswers
                  "Players in the world at once, 2 to 32."),
       form_field("hidden", "check", "Hidden", 2, { "side" => "left", "group" => "World" },
                  "Only its players see it in the list. Others add it with its id."),
-      form_field("type", "switch", "World type", 2, { "side" => "right", "group" => "World", "choices" => ["Classic", "Raid"], "label_width" => 70 },
+      form_field("type", "switch", "World type", 2, { "side" => "right", "group" => "World", "choices" => ["Classic", "Raid"] },
                  "Classic: each party plays its own story. Raid: the whole world plays one. Fixed once created."),
       form_field("share", "switch", "Sharing companions", 3, { "group" => "World", "choices" => ["Off", "Story companions", "Story + battle recruits"] },
                  "Raid only: companions everyone gets on reaching their level. Fixed once created."),
       form_field("from_save", "check", "Shared save", 4, { "side" => "left", "group" => "World" },
                  "New players start from one of your saves, the world's story from its point. Fixed once created."),
-      form_field("difficulty", "switch", "Difficulty", 4, { "side" => "right", "group" => "World", "choices" => ["VERY EASY", "EASY", "NORMAL", "HARD", "VERY HARD", "HELL", "PARADOX"], "label_width" => 70 },
+      form_field("difficulty", "switch", "Difficulty", 4, { "side" => "right", "group" => "World", "choices" => ["VERY EASY", "EASY", "NORMAL", "HARD", "VERY HARD", "HELL", "PARADOX"], "narrow_caption" => true },
                  "Every player of the world plays on it. You can change it later in the edit form."),
-      form_field("save", "save", "Save", 5, { "side" => "left", "group" => "World", "label_width" => 40, "enabled" => false },
+      form_field("save", "save", "Save", 5, { "side" => "left", "group" => "World", "enabled" => false },
                  "The save every new player starts from."),
       form_field("limits", "button", "Set formation limits", 5, { "side" => "right", "group" => "World" },
                  "Luka, the team size and the Frontlines every player keeps. Changeable later too."),
@@ -127,15 +129,15 @@ class FormAnswers
                  "Players in the world at once, 2 to 32."),
       form_field("hidden", "check", "Hidden", 2, { "side" => "left", "group" => "World" },
                  "Only its players see it in the list. Others add it with its id."),
-      form_field("type", "switch", "World type", 2, { "side" => "right", "group" => "World", "choices" => ["Classic", "Raid"], "label_width" => 70 },
+      form_field("type", "switch", "World type", 2, { "side" => "right", "group" => "World", "choices" => ["Classic", "Raid"] },
                  "Classic: each party plays its own story. Raid: the whole world plays one. Fixed once created."),
       form_field("share", "switch", "Sharing companions", 3, { "group" => "World", "choices" => ["Off", "Story companions", "Story + battle recruits"] },
                  "Raid only: companions everyone gets on reaching their level. Fixed once created."),
       form_field("from_save", "check", "Shared save", 4, { "side" => "left", "group" => "World" },
                  "New players start from one of your saves, the world's story from its point. Fixed once created."),
-      form_field("difficulty", "switch", "Difficulty", 4, { "side" => "right", "group" => "World", "choices" => ["VERY EASY", "EASY", "NORMAL", "HARD", "VERY HARD", "HELL", "PARADOX"], "label_width" => 70 },
+      form_field("difficulty", "switch", "Difficulty", 4, { "side" => "right", "group" => "World", "choices" => ["VERY EASY", "EASY", "NORMAL", "HARD", "VERY HARD", "HELL", "PARADOX"], "narrow_caption" => true },
                  "Every player of the world plays on it. You can change it later in the edit form."),
-      form_field("save", "save", "Save", 5, { "side" => "left", "group" => "World", "label_width" => 40, "enabled" => false },
+      form_field("save", "save", "Save", 5, { "side" => "left", "group" => "World", "enabled" => false },
                  "The save every new player starts from."),
       form_field("limits", "button", "Set formation limits", 5, { "side" => "right", "group" => "World" },
                  "Luka, the team size and the Frontlines every player keeps. Changeable later too."),
@@ -154,11 +156,11 @@ class FormAnswers
     "create with its formation limits" => form_view("Formation limits", [
       form_field("luka", "check", "Luka Replaceable", 0, { "side" => "left", "group" => "Team" },
                  "Ticked: players may take Luka out of their team. Unticked: he always stays in it."),
-      form_field("formation", "switch", "Formation Size", 0, { "side" => "right", "group" => "Team", "choices" => ["Original", "4", "5", "6", "7", "8"], "label_width" => 80 },
+      form_field("formation", "switch", "Formation Size", 0, { "side" => "right", "group" => "Team", "choices" => ["Original", "4", "5", "6", "7", "8"], "narrow_caption" => true },
                  "The team size every player keeps. Its last place sits out, except with Original, the game's own."),
-      form_field("front", "switch", "Frontline", 1, { "side" => "left", "group" => "Team", "choices" => ["1", "2", "3", "4"], "label_width" => 80 },
+      form_field("front", "switch", "Frontline", 1, { "side" => "left", "group" => "Team", "choices" => ["1", "2", "3", "4"], "narrow_caption" => true },
                  "In front in regular fights, the rest on the Backline. With more players, each one's first fights."),
-      form_field("raid_front", "switch", "Raid Frontline", 1, { "side" => "right", "group" => "Team", "choices" => ["1", "2", "3", "4"], "label_width" => 80 },
+      form_field("raid_front", "switch", "Raid Frontline", 1, { "side" => "right", "group" => "Team", "choices" => ["1", "2", "3", "4"], "narrow_caption" => true },
                  "In front in raid boss fights, the rest on the Backline. With more players, each one's first fights."),
       form_field("done", "button", "Done", 2,
                  "Back to the world's form. Cancel goes back too, keeping the limits."),
@@ -182,7 +184,7 @@ class FormAnswers
     "edit of a Raid World turned to its first difficulty" => form_view("Edit Raid", [
       form_field("seats", "number", "Max Players", 0, { "max_chars" => 2, "allowed" => "digits", "group" => "World" },
                  "Players in the world at once, 2 to 32."),
-      form_field("difficulty", "switch", "Difficulty", 1, { "side" => "left", "group" => "World", "choices" => ["Per player", "VERY EASY", "EASY", "NORMAL", "HARD", "VERY HARD", "HELL", "PARADOX"], "label_width" => 70 },
+      form_field("difficulty", "switch", "Difficulty", 1, { "side" => "left", "group" => "World", "choices" => ["Per player", "VERY EASY", "EASY", "NORMAL", "HARD", "VERY HARD", "HELL", "PARADOX"], "narrow_caption" => true },
                  "Every player of the world plays on it, those in it now at once."),
       form_field("limits", "button", "Set formation limits", 1, { "side" => "right", "group" => "World" },
                  "Luka, the team size and the Frontlines every player keeps. Changeable later too."),
@@ -199,7 +201,7 @@ class FormAnswers
     "edit of a Raid World without a difficulty, by its creator" => form_view("Edit Raid", [
       form_field("seats", "number", "Max Players", 0, { "max_chars" => 2, "allowed" => "digits", "group" => "World" },
                  "Players in the world at once, 2 to 32."),
-      form_field("difficulty", "switch", "Difficulty", 1, { "side" => "left", "group" => "World", "choices" => ["Per player", "VERY EASY", "EASY", "NORMAL", "HARD", "VERY HARD", "HELL", "PARADOX"], "label_width" => 70 },
+      form_field("difficulty", "switch", "Difficulty", 1, { "side" => "left", "group" => "World", "choices" => ["Per player", "VERY EASY", "EASY", "NORMAL", "HARD", "VERY HARD", "HELL", "PARADOX"], "narrow_caption" => true },
                  "Every player of the world plays on it, those in it now at once."),
       form_field("limits", "button", "Set formation limits", 1, { "side" => "right", "group" => "World" },
                  "Luka, the team size and the Frontlines every player keeps. Changeable later too."),

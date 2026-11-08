@@ -2,6 +2,8 @@
 //  WorldScreen.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-09: Marked the worlds the list's search and filters show, and logged their changes summed once they rest
+//                            - Told the scripts of the list only once what it shows changed, a refresh running showing the list as it stood
 //      Paulinchen  2026-11-08: Checked a world's required mods by its creator's versions too and took the personal mods from the website's catalog
 //                            - Moved to the MGQOnline.Multiplayer namespace
 //      Paulinchen  2026-10-30: Stopped comparing the game data in the details, which the title has without the world's mods
@@ -16,6 +18,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using MGQOnline.Bridge.Ruby;
 using MGQOnline.Game.Mods;
 using MGQOnline.Game.Squads;
 using MGQOnline.Game.Worlds;
@@ -27,7 +30,7 @@ namespace MGQOnline.Multiplayer.Topics;
 /// <summary>
 /// The world screen's model in the DLL: the worlds it lists, joined from the directory's list, the
 /// folders on this PC and the player's lists, the facts each world's details read, and the list's
-/// refresh while the screen is open.
+/// refresh while the screen is open, which the scripts hear of only once what the list shows changed.
 /// </summary>
 internal sealed class WorldScreen
 {
@@ -40,6 +43,11 @@ internal sealed class WorldScreen
     /// What a row's key starts with for a world on this PC whose world.ini names no directory id.
     /// </summary>
     public const string FolderKey = "folder:";
+
+    /// <summary>
+    /// Frames the search and the filters rest before the log tells them, a second at 60 frames a second.
+    /// </summary>
+    public const long FilterRestFrames = 60;
 
     /// <summary>
     /// Where the screen's facts come from.
@@ -55,6 +63,47 @@ internal sealed class WorldScreen
     /// The rows of the list as last made, by key; made anew whenever asked.
     /// </summary>
     private Dictionary<string, ScreenItem> _items = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The search and the filters the scripts asked the list with last.
+    /// </summary>
+    private ScreenFilter _filter = ScreenFilter.None;
+
+    /// <summary>
+    /// How often the search and the filters changed since the log told them.
+    /// </summary>
+    private int _filterChanges;
+
+    /// <summary>
+    /// The frame of their last change.
+    /// </summary>
+    private long _filterAt;
+
+    /// <summary>
+    /// How many worlds showed of how many as they changed last.
+    /// </summary>
+    private (int Shown, int Total) _filterCount;
+
+    /// <summary>
+    /// How the list stood once a fetch ended last since the screen opened, which it shows while the
+    /// next fetch runs; <see langword="null"/> before.
+    /// </summary>
+    private (string State, string? Error)? _settled;
+
+    /// <summary>
+    /// The directory list's revision the list was last compared at.
+    /// </summary>
+    private long _seenRevision = -1;
+
+    /// <summary>
+    /// What the scripts were last told the list shows, <see langword="null"/> while the screen is closed.
+    /// </summary>
+    private RubyHash? _shown;
+
+    /// <summary>
+    /// The fetches since what the list shows changed last.
+    /// </summary>
+    private int _refreshes;
 
     /// <summary>
     /// Creates the model.
@@ -75,26 +124,52 @@ internal sealed class WorldScreen
     public bool IsOpen => _refreshedAt.HasValue;
 
     /// <summary>
+    /// Gets the list's revision, which moves only when what the list shows changed while the screen is open.
+    /// </summary>
+    public long Revision { get; private set; }
+
+    /// <summary>
     /// Opens the screen: the list is fetched at once and every <see cref="RefreshFrames"/> after.
     /// </summary>
     /// <param name="frame">The frame now.</param>
     public void Open(long frame)
     {
         _refreshedAt = frame;
+        _filter = ScreenFilter.None;
+        _filterChanges = 0;
+        _settled = null;
+        _refreshes = 0;
         Refresh();
     }
 
     /// <summary>
-    /// Closes the screen, which stops the refresh.
+    /// Closes the screen, which stops the refresh and tells the search and the filters not told yet.
     /// </summary>
-    public void Close() => _refreshedAt = null;
+    public void Close()
+    {
+        _refreshedAt = null;
+        _shown = null;
+        TellFilter();
+    }
 
     /// <summary>
-    /// Fetches the list again when it is due and no directory action runs; called at each drain.
+    /// Compares the list with what the scripts were told once the directory's list moved, and fetches
+    /// the list again when it is due and no directory action runs; called at each drain.
     /// </summary>
     /// <param name="frame">The frame now.</param>
-    public void Tick(long frame)
+    /// <param name="listRevision">The directory list's revision now.</param>
+    public void Tick(long frame, long listRevision)
     {
+        if (IsOpen)
+        {
+            Follow(listRevision);
+        }
+
+        if (_filterChanges > 0 && frame - _filterAt >= FilterRestFrames)
+        {
+            TellFilter();
+        }
+
         if (_refreshedAt is not { } at)
         {
             return;
@@ -110,6 +185,7 @@ internal sealed class WorldScreen
         if (frame - at >= RefreshFrames && _sources.ActionState() != "busy")
         {
             _refreshedAt = frame;
+            _refreshes++;
             Refresh();
         }
     }
@@ -120,12 +196,42 @@ internal sealed class WorldScreen
     public void Refresh() => _sources.Refresh(_sources.Local.Lists.Added());
 
     /// <summary>
+    /// Makes the list as it stands under the search and the filters the scripts asked with, and notes
+    /// a change of them for the log.
+    /// </summary>
+    /// <param name="filter">The search and the filters.</param>
+    /// <param name="frame">The frame now.</param>
+    /// <returns>The list.</returns>
+    public ScreenList ListFor(ScreenFilter filter, long frame)
+    {
+        ScreenList list = List(filter);
+        if (filter != _filter)
+        {
+            _filter = filter;
+            _filterChanges++;
+            _filterAt = frame;
+        }
+
+        _filterCount = (list.Items.Count(list.Shows), list.Items.Count);
+        return list;
+    }
+
+    /// <summary>
     /// Makes the list as it stands.
     /// </summary>
-    /// <returns>How the list stands, whether the player is an admin, and its worlds in order.</returns>
-    public ScreenList List()
+    /// <param name="filter">The search and the filters, <see langword="null"/> for none.</param>
+    /// <returns>How the list stands, whether the player is an admin, and every world in order, each marked whether the filter shows it.</returns>
+    public ScreenList List(ScreenFilter? filter = null)
     {
         (string state, string? error, bool admin, IReadOnlyList<ListedWorld> worlds) = _sources.List();
+        if (state == "loading" && _settled is { } settled)
+        {
+            (state, error) = settled;
+        }
+        else if (state != "loading")
+        {
+            _settled = (state, error);
+        }
         IReadOnlyList<LocalWorld> local = _sources.Local.Worlds.All();
         Dictionary<string, LocalWorld> byFolder = local.ToDictionary(world => world.Id, StringComparer.Ordinal);
         List<ListedWorldRow> listedRows = [.. worlds.Select(world => new ListedWorldRow(world.Id, OnOneField(world.Name), world.Type == WorldType.Raid, world.Featured))];
@@ -145,7 +251,7 @@ internal sealed class WorldScreen
         }
 
         _items = items;
-        return new ScreenList(state, error, admin, ordered);
+        return new ScreenList(state, error, admin, ordered, filter ?? ScreenFilter.None);
     }
 
     /// <summary>
@@ -195,6 +301,50 @@ internal sealed class WorldScreen
             value => WorldDifficulty.IsValid(value) ? WorldDifficulty.Names[value - WorldDifficulty.Min] : null,
             WorldTopics.FormationName,
             new ScreenSquad(luka, formation, front, raidFront));
+    }
+
+    /// <summary>
+    /// Moves <see cref="Revision"/> once the directory's list moved and what the list shows differs
+    /// from what the scripts were told, so a refresh that brought nothing new rebuilds nothing.
+    /// </summary>
+    /// <param name="listRevision">The directory list's revision now.</param>
+    private void Follow(long listRevision)
+    {
+        if (listRevision == _seenRevision && _shown != null)
+        {
+            return;
+        }
+
+        _seenRevision = listRevision;
+        RubyHash shown = ScreenTopics.ListValue(List());
+        if (shown.Equals(_shown))
+        {
+            return;
+        }
+
+        if (_shown != null)
+        {
+            Log.Write($"world screen: the list changed and shows anew, {_refreshes.ToString(CultureInfo.InvariantCulture)} refresh(es) since its last change");
+        }
+
+        _shown = shown;
+        _refreshes = 0;
+        Revision++;
+    }
+
+    /// <summary>
+    /// Writes the search and the filters to the log once, with how many worlds they show and how many
+    /// changes the line sums.
+    /// </summary>
+    private void TellFilter()
+    {
+        if (_filterChanges == 0)
+        {
+            return;
+        }
+
+        Log.Write($"world screen: the list shows {_filterCount.Shown.ToString(CultureInfo.InvariantCulture)} of {_filterCount.Total.ToString(CultureInfo.InvariantCulture)} worlds under {WorldScreenModel.FilterText(_filter)}, after {_filterChanges.ToString(CultureInfo.InvariantCulture)} change(s)");
+        _filterChanges = 0;
     }
 
     /// <summary>
@@ -308,8 +458,17 @@ internal sealed record WorldScreenSources(
 /// <param name="State">"idle", "loading", "ready" or "failed".</param>
 /// <param name="Error">Why it failed.</param>
 /// <param name="Admin">Whether the player is one of the relay's admins.</param>
-/// <param name="Items">The worlds in order.</param>
-internal sealed record ScreenList(string State, string? Error, bool Admin, IReadOnlyList<ScreenItem> Items);
+/// <param name="Items">Every world in order.</param>
+/// <param name="Filter">The search and the filters it was made under.</param>
+internal sealed record ScreenList(string State, string? Error, bool Admin, IReadOnlyList<ScreenItem> Items, ScreenFilter Filter)
+{
+    /// <summary>
+    /// Tells whether a world of the list shows under its search and filters.
+    /// </summary>
+    /// <param name="item">The world.</param>
+    /// <returns>Whether it shows.</returns>
+    public bool Shows(ScreenItem item) => WorldScreenModel.Shows(item.View, Filter);
+}
 
 /// <summary>
 /// A world of the screen's list with what it came from.

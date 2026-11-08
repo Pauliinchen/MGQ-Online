@@ -2,6 +2,9 @@
 //  ScreenTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-09: Checked that the World and Game data panels open list box lines of their own
+//                            - Covered the list's search and filters together, in the list's order
+//                            - Checked that a refresh that brings nothing new tells the scripts nothing
 //      Paulinchen  2026-11-08: Checked a world's mods by its creator's versions too
 //                            - Moved to the MGQOnline.Multiplayer namespace
 //      Paulinchen  2026-11-05: Covered a world on this PC that names no directory id, and finding one world of the list
@@ -66,6 +69,16 @@ public sealed class ScreenTopicsTests : IDisposable
     private string _action = "idle";
 
     /// <summary>
+    /// The directory list's revision.
+    /// </summary>
+    private long _revision;
+
+    /// <summary>
+    /// How the directory's list stands.
+    /// </summary>
+    private string _state = "ready";
+
+    /// <summary>
     /// The model under test.
     /// </summary>
     private WorldScreen? _screen;
@@ -92,7 +105,7 @@ public sealed class ScreenTopicsTests : IDisposable
             WorldServices services = new(player, new WorldChanges(context), () => WorldDirectory.Current, () => PatchScripts.List(_game.Path), new DirectoryTickets(() => "idle", () => { }));
             LocalWorldTopics.Kept local = LocalWorldTopics.Register(context, services, new LocalWorlds(Path.Combine(_mod.Path, "Worlds"), "Worlds", () => 1_000), _lists);
             _screen = new WorldScreen(new WorldScreenSources(
-                () => ("ready", null, false, _listed),
+                () => (_state, null, false, _listed),
                 id => ("ready", _listed.FirstOrDefault(world => world.Id == id)),
                 added => _refreshes.Add(added),
                 () => _action,
@@ -102,7 +115,7 @@ public sealed class ScreenTopicsTests : IDisposable
                 (_, _, _) => [],
                 (_, _, _, _) => "Mod settings: the creator's own",
                 _ => []));
-            ScreenTopics.Register(context, _screen, services.Changes, () => 0);
+            ScreenTopics.Register(context, _screen, services.Changes, () => _revision);
         });
     }
 
@@ -132,6 +145,33 @@ public sealed class ScreenTopicsTests : IDisposable
     }
 
     /// <summary>
+    /// Asserts that the search, the type and the players online filter the list together, any case
+    /// and in the list's order, a favourite first, and that a list they empty says so.
+    /// </summary>
+    [Fact]
+    public void List_FiltersBySearchTypeAndPlayersOnline()
+    {
+        _listed.Add(World("a", "Sunset Keep", "c") with { Type = WorldType.Raid });
+        _listed.Add(World("b", "Sunrise", "c"));
+        _listed.Add(World("c", "Sunken Raid", "c") with { Type = WorldType.Raid, Online = 0 });
+        _listed.Add(World("d", "Moonfall", "c") with { Type = WorldType.Raid });
+        _listed.Add(World("e", "Old Sun", "c") with { Type = WorldType.Raid });
+        _lists.Favour("e", null);
+
+        RubyHash all = _topics.Call(ScreenTopics.List)!.AsHash();
+        RubyHash raid = _topics.Call(ScreenTopics.List, new RubyHash { { "search", " SUN " }, { "type", "raid" }, { "online", true } })!.AsHash();
+        RubyHash none = _topics.Call(ScreenTopics.List, new RubyHash { { "search", "moon" }, { "type", "classic" }, { "online", false } })!.AsHash();
+
+        static string[] Shown(RubyHash list) => [.. list["rows"].AsArray().Select(row => row.AsHash()).Where(row => row["shown"].AsBool()).Select(row => row["key"].AsText())];
+        Assert.Equal(5, Shown(all).Length);
+        Assert.Equal(["e", "a"], Shown(raid));
+        Assert.Equal(5, raid["rows"].AsArray().Count);
+        Assert.Equal((true, true), (all["empty"].IsNil, raid["empty"].IsNil));
+        Assert.Equal([], Shown(none));
+        Assert.Equal(WorldScreenModel.NoMatch, none["empty"].AsText());
+    }
+
+    /// <summary>
     /// Asserts that a world's details, choices and list box lines come from the model by its row's
     /// key, and a key the list lacks answers nothing.
     /// </summary>
@@ -143,11 +183,17 @@ public sealed class ScreenTopicsTests : IDisposable
         RubyHash details = _topics.Call(ScreenTopics.Details, "a")!.AsHash();
         RubyArray actions = _topics.Call(ScreenTopics.Actions, "a")!.AsArray();
         RubyArray players = _topics.Call(ScreenTopics.Box, new RubyHash { { "key", "a" }, { "kind", "players" } })!.AsArray();
+        RubyArray world = _topics.Call(ScreenTopics.Box, new RubyHash { { "key", "a" }, { "kind", "world" } })!.AsArray();
+        RubyArray data = _topics.Call(ScreenTopics.Box, new RubyHash { { "key", "a" }, { "kind", "data" } })!.AsArray();
 
         Assert.Equal("Alpha", details["title"].AsText());
         Assert.Equal("You", details["panels"].AsArray()[0].AsHash()["rows"].AsArray()[0].AsArray()[0].AsHash()["text"].AsText());
         Assert.Contains("edit_world", actions.Select(action => action.AsArray()[1].AsText()));
         Assert.Equal("Online (1)", players[0].AsArray()[1].AsText());
+        Assert.Equal(["world", "data", "players"], details["panels"].AsArray().Select(panel => panel.AsHash()["target"].AsText()));
+        Assert.Equal("Creator: You", world[0].AsArray()[1].AsText());
+        Assert.DoesNotContain("Mod settings: the creator's own", world.Select(line => line.AsArray()[1].AsText()));
+        Assert.Equal(["Mods (0)", "Settings", "Mod settings: the creator's own", "Other mods: allowed"], data.Select(line => line.AsArray()[1].AsText()));
         Assert.Null(_topics.Call(ScreenTopics.Details, "nowhere"));
     }
 
@@ -178,15 +224,40 @@ public sealed class ScreenTopicsTests : IDisposable
     {
         WorldScreen screen = _screen!;
         screen.Open(100);
-        screen.Tick(100 + WorldScreen.RefreshFrames - 1);
+        screen.Tick(100 + WorldScreen.RefreshFrames - 1, 0);
         _action = "busy";
-        screen.Tick(100 + WorldScreen.RefreshFrames);
+        screen.Tick(100 + WorldScreen.RefreshFrames, 0);
         _action = "idle";
-        screen.Tick(100 + WorldScreen.RefreshFrames + 1);
+        screen.Tick(100 + WorldScreen.RefreshFrames + 1, 0);
         screen.Close();
-        screen.Tick(100 + (WorldScreen.RefreshFrames * 3));
+        screen.Tick(100 + (WorldScreen.RefreshFrames * 3), 0);
 
         Assert.Equal(2, _refreshes.Count);
+    }
+
+    /// <summary>
+    /// Asserts that a refresh whose list shows the same tells the scripts nothing, also while it
+    /// runs, and one that changed what a world shows tells them once.
+    /// </summary>
+    [Fact]
+    public void Tick_TellsTheScriptsOnlyOfAListThatChanged()
+    {
+        WorldScreen screen = _screen!;
+        _listed.Add(World("a", "Alpha", "c"));
+        screen.Open(0);
+        screen.Tick(1, ++_revision);
+        long opened = screen.Revision;
+
+        _state = "loading";
+        screen.Tick(2, ++_revision);
+        _state = "ready";
+        _listed[0] = World("a", "Alpha", "c");
+        screen.Tick(3, ++_revision);
+        long unchanged = screen.Revision;
+        _listed[0] = World("a", "Alpha", "c") with { Online = 2 };
+        screen.Tick(4, ++_revision);
+
+        Assert.Equal((opened, opened + 1), (unchanged, screen.Revision));
     }
 
     /// <inheritdoc />

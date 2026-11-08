@@ -2,6 +2,8 @@
 //  WorldForms.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-09: Dropped the Save label width, as the save's caption stands above its button
+//                            - Marked the difficulty's and the squad rules' captions narrow in place of their widths in pixels
 //      Paulinchen  2026-11-05: Left the world type, sharing, shared save and player's choice out of every form but the new world's, which alone sets them
 //      Paulinchen  2026-10-30: Dropped Allow data mismatch and Update current data scan, since the game data is compared only as the player enters
 //      Paulinchen  2026-10-23: Told whether Enter sends a form
@@ -131,15 +133,6 @@ public static class WorldForms
     /// <summary>The lines of the description a Raid World's form shows at once, whose shared save takes a row of its own.</summary>
     public const int RaidDescriptionLines = 2;
 
-    /// <summary>Width of the world type's label, so the switch fits half a row.</summary>
-    public const int TypeLabelWidth = 70;
-
-    /// <summary>Width of a Save label that shares its row, so the save's name fits half a row.</summary>
-    public const int SaveLabelWidth = 40;
-
-    /// <summary>Width of the squad rules' switch labels, so Original fits half a row.</summary>
-    public const int SquadLabelWidth = 80;
-
     /// <summary>What the lines at the top say on Shared Mod Settings.</summary>
     public const string SharedHint = "Ticked: every player plays with your mod options here. Unticked: each keeps their own.";
 
@@ -241,15 +234,15 @@ public static class WorldForms
             new("password", FieldKind.Password, "Password", 1, "Typed once to enter the world. Left empty, anyone may enter.") { MaxChars = MaxPasswordChars, Side = FieldSide.Left, Group = WorldGroup },
             Seats(rules, 1, FieldSide.Right),
             new("hidden", FieldKind.Check, "Hidden", 2, "Only its players see it in the list. Others add it with its id.") { Side = FieldSide.Left, Group = WorldGroup },
-            new("type", FieldKind.Switch, "World type", 2, TypeHint) { Side = FieldSide.Right, Group = WorldGroup, Choices = ["Classic", "Raid"], LabelWidth = TypeLabelWidth },
+            new("type", FieldKind.Switch, "World type", 2, TypeHint) { Side = FieldSide.Right, Group = WorldGroup, Choices = ["Classic", "Raid"] },
             new("share", FieldKind.Switch, "Sharing companions", 3, SharingHint) { Group = WorldGroup, Choices = SharingNames, Shows = IsRaid },
             new("from_save", FieldKind.Check, "Shared save", 3, "Classic only: new players start from one of your saves. Fixed once created.") { Side = FieldSide.Left, Group = WorldGroup, Shows = IsClassic },
             new("choose", FieldKind.Check, "Player's choice", 3, "Classic only: new players pick their start, the opening or a save. Fixed once created.") { Side = FieldSide.Right, Group = WorldGroup, Shows = IsClassic },
-            new("save", FieldKind.Save, "Save", 4, SaveHint) { Side = FieldSide.Left, Group = WorldGroup, LabelWidth = SaveLabelWidth, Needs = fromSave, Shows = IsClassic },
+            new("save", FieldKind.Save, "Save", 4, SaveHint) { Side = FieldSide.Left, Group = WorldGroup, Needs = fromSave, Shows = IsClassic },
             new("raid_bosses", FieldKind.Check, "Raid Bosses", 4, RaidBossesHint) { Side = FieldSide.Right, Group = WorldGroup, Shows = IsClassic },
             new("from_save", FieldKind.Check, "Shared save", 4, RaidSaveHint) { Side = FieldSide.Left, Group = WorldGroup, Shows = IsRaid },
-            new("difficulty", FieldKind.Switch, "Difficulty", 4, DifficultyHint) { Side = FieldSide.Right, Group = WorldGroup, Choices = DifficultyNames(rules), LabelWidth = TypeLabelWidth, Shows = IsRaid },
-            new("save", FieldKind.Save, "Save", 5, SaveHint) { Side = FieldSide.Left, Group = WorldGroup, LabelWidth = SaveLabelWidth, Needs = fromSave, Shows = IsRaid },
+            new("difficulty", FieldKind.Switch, "Difficulty", 4, DifficultyHint) { Side = FieldSide.Right, Group = WorldGroup, Choices = DifficultyNames(rules), NarrowCaption = true, Shows = IsRaid },
+            new("save", FieldKind.Save, "Save", 5, SaveHint) { Side = FieldSide.Left, Group = WorldGroup, Needs = fromSave, Shows = IsRaid },
             LimitsButton(5, FieldSide.Right) with { Shows = IsRaid },
             new("mods", FieldKind.Mods, "Mods", 6, ModsHint) { Group = DataGroup },
             new("shared", FieldKind.Check, "Shared Mod Settings", 7, SharedHint) { Group = DataGroup },
@@ -298,7 +291,7 @@ public static class WorldForms
         {
             fields.InsertRange(1,
             [
-                new("difficulty", FieldKind.Switch, "Difficulty", 1, EditDifficultyHint) { Side = FieldSide.Left, Group = WorldGroup, Choices = choices, LabelWidth = TypeLabelWidth },
+                new("difficulty", FieldKind.Switch, "Difficulty", 1, EditDifficultyHint) { Side = FieldSide.Left, Group = WorldGroup, Choices = choices, NarrowCaption = true },
                 LimitsButton(1, FieldSide.Right),
             ]);
         }
@@ -459,9 +452,9 @@ public static class WorldForms
         FormField[] limits =
         [
             new("luka", FieldKind.Check, "Luka Replaceable", 0, LukaHint) { Side = FieldSide.Left, Group = TeamGroup },
-            new("formation", FieldKind.Switch, "Formation Size", 0, FormationHint) { Side = FieldSide.Right, Group = TeamGroup, Choices = rules.Formations.Select(formation => formation.Name).ToList(), LabelWidth = SquadLabelWidth },
-            new("front", FieldKind.Switch, "Frontline", 1, FrontHint) { Side = FieldSide.Left, Group = TeamGroup, Choices = fronts, LabelWidth = SquadLabelWidth },
-            new("raid_front", FieldKind.Switch, "Raid Frontline", 1, RaidFrontHint) { Side = FieldSide.Right, Group = TeamGroup, Choices = fronts, LabelWidth = SquadLabelWidth },
+            new("formation", FieldKind.Switch, "Formation Size", 0, FormationHint) { Side = FieldSide.Right, Group = TeamGroup, Choices = rules.Formations.Select(formation => formation.Name).ToList(), NarrowCaption = true },
+            new("front", FieldKind.Switch, "Frontline", 1, FrontHint) { Side = FieldSide.Left, Group = TeamGroup, Choices = fronts, NarrowCaption = true },
+            new("raid_front", FieldKind.Switch, "Raid Frontline", 1, RaidFrontHint) { Side = FieldSide.Right, Group = TeamGroup, Choices = fronts, NarrowCaption = true },
             new("done", FieldKind.Button, "Done", 2, DoneHint),
         ];
         return new Dictionary<string, FormPage>(StringComparer.Ordinal) { [Form.MainPage] = new FormPage(title, fields), [LimitsPage] = new FormPage("Formation limits", limits) };

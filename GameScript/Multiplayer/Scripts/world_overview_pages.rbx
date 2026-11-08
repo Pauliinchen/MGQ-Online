@@ -2,7 +2,8 @@
 #  world_overview_pages.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-09: Lined the Unlocks page's grid up in a grid of the Mod Framework
+#      Paulinchen  2026-11-09: Lined the labels' column up by every entry's label, folded ones too, measured by the Mod Framework
+#                            - Lined the Unlocks page's grid up in a grid of the Mod Framework
 #                            - Showed the head's values with their captions as fields of the Mod Framework
 #      Paulinchen  2026-11-08: Showed the characters of the heads and the reading pane as avatars of the Mod Framework
 #                            - Looked up the quests' texts and speakers at the places the DLL's quest walk names
@@ -84,8 +85,9 @@ module MGQ_MpWorldOverview
   Head = Struct.new(:actor, :icon, :title, :note, :fields, :lines, :grid, :entry)
 
   # A page's model as the DLL laid it out: its head, the rows of its list ([:none, text], [:fold,
-  # Entry] or [:entry, Entry]) and what can be picked, the head's entry first.
-  Model = Struct.new(:head, :rows, :picks)
+  # Entry] or [:entry, Entry]), what can be picked, the head's entry first, and the labels of every
+  # entry, those of folded groups too.
+  Model = Struct.new(:head, :rows, :picks, :labels)
 
   # A group or an entry of a page's list as the DLL describes it: its kind ("fold", "note", "quest",
   # "boss" or "level"), what its row shows (RowView, nil for the head's entry) and what it holds,
@@ -141,7 +143,7 @@ module MGQ_MpWorldOverview
     @models[page] = old && old.to_a == built.to_a ? old : built
   rescue => e
     log_once([:model, page], "laying out the #{page} page failed: #{e.class}: #{e.message}")
-    @models[page] = Model.new(nil, [], [])
+    @models[page] = Model.new(nil, [], [], [])
   end
 
   # Has a page's model read again at its next look.
@@ -286,10 +288,11 @@ module MGQ_MpWorldOverview
   #
   # @param answer [Hash, nil] "head" ("title", "note", "fields", "lines", "entry"), "rows" (["none", text], or
   #   ["fold"] or ["entry"] with the row's view [label, text, note, dim, gauge in GAUGE_PARTS] and
-  #   the entry, see Entry) and "picks" (each pick's place among the rows, -1 for the head's entry).
+  #   the entry, see Entry), "picks" (each pick's place among the rows, -1 for the head's entry) and
+  #   "labels" (every entry's label, those of folded groups too).
   # @return [Model] The model; an empty one while the DLL did not answer.
   def self.model_of(answer)
-    return Model.new(Head.new(nil, nil, "", nil, [], [], nil, nil), [], []) unless answer
+    return Model.new(Head.new(nil, nil, "", nil, [], [], nil, nil), [], [], []) unless answer
 
     told = answer["head"]
     head = Head.new(nil, nil, told["title"].to_s, told["note"], Array(told["fields"]), Array(told["lines"]), nil, told["entry"] ? Entry.new(told["entry"][0], nil, told["entry"]) : nil)
@@ -300,7 +303,7 @@ module MGQ_MpWorldOverview
       [kind == "fold" ? :fold : :entry, Entry.new(value[0], RowView.new(label, text.to_s, note, dim ? true : false, gauge && gauge.to_f / GAUGE_PARTS), value)]
     end
     picks = answer["picks"].map { |place| place < 0 ? head.entry : rows[place][1] }
-    Model.new(head, rows, picks)
+    Model.new(head, rows, picks, Array(answer["labels"]))
   end
 
   # Tells a formation member's catch-up experience for the Unlocks page's head.
@@ -559,6 +562,7 @@ module MGQ_MpWorldOverview
       head = data.head
       view = { id: :"mgq_online_overview_#{kind}", row: ->(item) { overview.entry_row(item) }, bind: :picked, height: :fill,
                on_fold: ->(group, open) { overview.fold(kind, group, open) } }
+      view[:label_width] = data.labels unless data.labels.empty?
       page_view data.rows, view do
         page_head(head && head.entry ? { pick: :head } : {}) { head_of(head) } if head
         page_pane { pane_of(overview.pick_pane(data, picked)) }

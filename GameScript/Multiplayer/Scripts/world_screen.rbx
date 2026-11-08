@@ -2,12 +2,28 @@
 #  world_screen.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-09: Gave the details' boxes a little room at their sides
+#                            - Wrapped the description to as many lines as its box holds, where it showed one
+#                            - Drew a thin box around each part of the details the player can pick, at one height for every world
+#                            - Lined the details' captions and values up in fixed columns, each column of captions at its widest caption
+#                            - Gave the description four lines beside narrower players and dropped the frames of the details' parts, so none is cut at the bottom
+#                            - Opened the World panel into the list box with the world's facts alone, the Game data panel with its mods and game data settings alone
+#                            - Put the search and the filters in a box of their own above the worlds, which the cursor in the list no longer reaches
+#                            - Cut a world detail too long for its cell with ... and showed its whole text as its tooltip
+#                            - Lined the captions of the details up at the widest caption the details can show for any world, so the column never moves
+#                            - Lined the narrow captions of a form up at the widest of them
+#                            - Kept the screen at a fixed size, its commands always on screen, with the details and the forms fitted into the right box instead of scrolling
+#                            - Searched the worlds by name and filtered them by type and players online above the list
+#                            - Put the captions of the mods and the save above their buttons so their text shows
+#                            - Kept the players and the description at one height and place for every world
+#                            - Made the right box itself the preview of a form, so the form fits it
 #      Paulinchen  2026-11-08: Handed the DLL the installed mods anew once the Mod Framework made a world's mods ready
 #                            - Handed the DLL the installed mods each second while the Mod Framework fetches the website
 #                            - Scrolled a form inside the right box instead of letting it grow past the screen
 #                            - Gave its UI ids the mgq_online_ prefix
 #                            - Showed the details of the world under the cursor once the first worlds arrive
 #                            - Moved the focus onto a field of the form only once its last render made the field
+#                            - Showed a world's mods in its details as chips that only show
 #      Paulinchen  2026-11-07: Left the form back to its list when cancel reaches the screen from a field, and greyed menu choices through disabled:
 #      Paulinchen  2026-11-06: Asked again for a release to play whose question could not open while one of the screen's was
 #                            - Refused a world whose mods the Mod Framework finds ready while MGQ Online's check finds them differing, instead of asking again
@@ -191,10 +207,10 @@ module MGQ_MpWorldScreen
   BOX_TOPIC = "screen.box"
 
   # The list as it stands, while the DLL did not answer.
-  NO_LIST = { "state" => "idle", "error" => nil, "admin" => false, "info" => nil, "rows" => [] }
+  NO_LIST = { "state" => "idle", "error" => nil, "admin" => false, "info" => nil, "empty" => nil, "rows" => [] }
 
-  # The colors of the list box's rows, by the names the DLL gives them; "plain" takes none.
-  BOX_COLORS = { "good" => :success, "gold" => :gold, "bad" => :error, "grey" => :dim }
+  # The colors of the list box's rows, by the names the DLL gives them; "plain" and "normal" take none.
+  BOX_COLORS = { "good" => :success, "gold" => :gold, "warn" => :warning, "bad" => :error, "grey" => :dim }
 
   # Opens the screen.
   def self.open
@@ -230,15 +246,17 @@ module MGQ_MpWorldScreen
     @texts.is_a?(Hash) ? @texts : {}
   end
 
-  # Reads the list as it stands.
+  # Reads the list as it stands under the search and the filters, which the DLL matches.
   #
+  # @param filter [Hash] "search", "type" ("all", "raid" or "classic") and "online".
   # @return [Array] The state ("idle", "loading", "ready" or "failed"), why it failed, whether the
-  #   player is one of the relay's admins, the list's line at the top (nil for none) and the
-  #   entries, each an MGQ_MpWorld::Entry with its row.
-  def self.list
-    list = MGQ_Multiplayer::Bridge.call(LIST_TOPIC)
+  #   player is one of the relay's admins, the list's line at the top (nil for none), what the list
+  #   says while the filters hide every world (nil otherwise) and every entry, each an
+  #   MGQ_MpWorld::Entry with its row, whose "shown" tells whether the filters show it.
+  def self.list(filter = nil)
+    list = MGQ_Multiplayer::Bridge.call(LIST_TOPIC, filter)
     list = NO_LIST unless list.is_a?(Hash)
-    [list["state"], list["error"], list["admin"] == true, list["info"], list["rows"].map { |row| entry_of(row) }]
+    [list["state"], list["error"], list["admin"] == true, list["info"], list["empty"], list["rows"].map { |row| entry_of(row) }]
   end
 
   # Finds one world in the list as it stands, with its mods once they were read.
@@ -272,10 +290,10 @@ module MGQ_MpWorldScreen
     answer.map { |label, symbol, enabled| [label, symbol.to_sym, enabled] }
   end
 
-  # Reads the list box's rows of a world's players or mods.
+  # Reads the list box's rows of a world's players, mods, World facts or Game data.
   #
   # @param entry [MGQ_MpWorld::Entry] The world.
-  # @param kind [Symbol] :players or :mods.
+  # @param kind [Symbol] :players, :mods, :world or :data.
   # @return [Array<Hash>] The rows of MGQ_MpListBox: headings, and items with their color and what
   #   their right end says; none when the DLL's list lacks the world.
   def self.box(entry, kind)
@@ -348,14 +366,53 @@ class Scene_MpWorlds < Scene_MenuBase
   # Width of the worlds and the commands.
   LEFT_WIDTH = 230
 
-  # Width of the captions of the details' values.
-  CAPTION_WIDTH = 68
+  # Height of the lines at the top: three lines and the room of their box, kept while the third says
+  # nothing, so the boxes below never move.
+  STRIP_HEIGHT = 92
+
+  # Room the screen's window leaves between the lines at the top and the boxes below.
+  STRIP_GAP = 4
+
+  # Room between the rows of a panel of the details or a group of a form, in units of 4 pixels.
+  ROW_SPACING = 0.5
+
+  # The caption the captions of a form line up with, the widest of the usual ones; a longer caption
+  # keeps its own width.
+  FORM_CAPTION = "Max Players"
+
+  # How a cell of a row of the details takes its room: an equal share of the row whatever it holds,
+  # so its caption and its value start at one place on every row.
+  DETAIL_CELL = { width: 0, grow: 1 }
+
+  # Least heights of the boxes of the World and the Game data panels of the details, by their
+  # target: the most rows either shows, a Raid World's four and the Game data's three, inside a
+  # border of one pixel, so a world with fewer rows moves nothing below them while the cursor walks
+  # the worlds.
+  BOX_HEIGHTS = { "world" => 112, "data" => 84 }
+
+  # Width of the players beside the description, which takes the rest of the row to read.
+  PLAYERS_WIDTH = 140
+
+  # How a part of the details the player presses draws: a thin box in the look's edge color, so it
+  # stands out as a part to pick, with a little room at its sides alone and no background of its
+  # own, so the details fit the right box; the focus lights its edge.
+  PRESSED_AREA = { clickable: true, border: :theme, border_width: 1, padding: [0, 0.5], background: false }
+
+  # How a part of the details that opens nothing draws: without a box, as nothing there is picked.
+  PLAIN_AREA = { clickable: false, border: false }
 
   # What the description says while a world has none.
   NO_DESCRIPTION = "No description."
 
   # The heading of a world's description.
   DESCRIPTION_TITLE = "Description"
+
+  # What the lines at the top say on the World and the Game data panels of the details, by the
+  # target the DLL gives them.
+  PANEL_HELPS = { "world" => "Confirm shows every fact of this world in full.", "data" => "Confirm shows the world's mods and game data settings in full." }
+
+  # The list box's note for each kind of lines the DLL writes.
+  BOX_NOTES = { :players => "Players", :world => "World", :data => "Game data" }
 
   # The title of the formation limits over a form.
   LIMITS_TITLE = "Formation limits"
@@ -381,6 +438,33 @@ class Scene_MpWorlds < Scene_MenuBase
   # The most rows a menu of the screen shows before it scrolls.
   MENU_ROWS = 10
 
+  # The caption of the search above the worlds, which also titles a gamepad's letter pages.
+  SEARCH_CAPTION = "Search"
+
+  # What the search shows while it is empty.
+  SEARCH_PLACEHOLDER = "World name"
+
+  # The most characters the search takes, a world name's.
+  SEARCH_CHARS = 40
+
+  # What the help line says on the search.
+  SEARCH_HELP = "Type part of a world's name to show only the worlds that hold it."
+
+  # The type filter's items: text, value the DLL matches and tooltip.
+  TYPE_FILTERS = [["All", "all", "Every world"], ["Raid", "raid", "Raid Worlds only"], ["Classic", "classic", "Classic worlds only"]]
+
+  # What the help line says on the type filter.
+  TYPE_HELP = "Show every world, only Raid Worlds or only Classic worlds."
+
+  # The players online filter's one item: text and tooltip.
+  ONLINE_FILTER = ["Online", "Someone online"]
+
+  # What the help line says on the players online filter.
+  ONLINE_HELP = "Show only the worlds with someone online."
+
+  # What the help line says on the box of the search and the filters as a whole.
+  FILTERS_HELP = "Confirm to search the worlds by name or filter them by type and players online."
+
   # Tells what the lines at the top say while a field types, naming the keys that go back while
   # typing.
   #
@@ -395,8 +479,21 @@ class Scene_MpWorlds < Scene_MenuBase
   # @return [Integer] Counts the changes the window shows, which it watches.
   attr_reader :serial
 
-  # @return [Array<MGQ_MpWorld::Entry>] The worlds, in the list's order.
+  # @return [Array<MGQ_MpWorld::Entry>] The worlds the search and the filters show, in the list's
+  #   order.
   attr_reader :entries
+
+  # @return [String] What the search holds.
+  attr_reader :search
+
+  # @return [String] The type filter: "all", "raid" or "classic".
+  attr_reader :type_filter
+
+  # @return [Boolean] Whether only worlds with someone online show.
+  attr_reader :online_filter
+
+  # @return [String, nil] What the list says while the filters hide every world, nil otherwise.
+  attr_reader :list_empty
 
   # @return [Integer] The row of the worlds the cursor is on.
   attr_reader :world_index
@@ -427,8 +524,8 @@ class Scene_MpWorlds < Scene_MenuBase
 
   # Opens the window, fetches the list, and takes what the save screen handed back.
   #
-  # The scene is the same object again when the save screen returns, so the forms keep what was
-  # filled in; the window opens anew.
+  # The scene is the same object again when the save screen returns, so the forms, the search and
+  # the filters keep what was filled in; the window opens anew.
   def start
     super
     returning = @forms ? true : false
@@ -445,6 +542,10 @@ class Scene_MpWorlds < Scene_MenuBase
     @place = nil
     @arrived = false
     @entries = []
+    @all_entries = []
+    @search ||= ""
+    @type_filter ||= TYPE_FILTERS[0][1]
+    @online_filter ||= false
     @restore = @entry.id if @entry && (@form_symbol.nil? || WORLD_FORMS.include?(@form_symbol))
     request_focus(:commands_box)
     say(MGQ_MpWorldScreen.text("hint"))
@@ -609,26 +710,76 @@ class Scene_MpWorlds < Scene_MenuBase
   def look_at_list
     changed = MGQ_MpWorld::Changes.take?(MGQ_MpWorld::Changes::LIST)
     if changed || @list_state.nil?
-      @list_state, @list_error, @admin, @list_info, entries = MGQ_MpWorldScreen.list
-      show_entries(entries)
+      read_list
       MGQ_MpWorldMods.report_options(@admin) if @list_state == "ready"
     end
-    look_for_entry(@entries, @list_state) if @waiting
+    look_for_entry(@all_entries, @list_state) if @waiting
   end
 
-  # Shows other worlds. The first worlds to arrive pick the worlds' box as a whole if the commands'
-  # box is still picked as a whole where it started, or the cursor goes onto the world chosen before
-  # the save screen; the commands' box is picked as a whole when the last world went; the cursor
-  # moves onto a world asked for once the list shows it.
+  # Reads the list under the search and the filters and shows it.
+  def read_list
+    @list_state, @list_error, @admin, @list_info, @list_empty, entries = MGQ_MpWorldScreen.list(filter_request)
+    show_entries(entries)
+  end
+
+  # Tells the DLL's list the search and the filters.
   #
-  # @param entries [Array<MGQ_MpWorld::Entry>] The worlds.
+  # @return [Hash] "search", "type" and "online".
+  def filter_request
+    { "search" => @search, "type" => @type_filter, "online" => @online_filter }
+  end
+
+  # Takes what the search holds as the player types.
+  #
+  # @param text [String] The text.
+  def searched(text)
+    return if text.to_s == @search
+
+    @search = text.to_s
+    read_list
+  end
+
+  # Takes the type filter the player turned on.
+  #
+  # @param type [String] "all", "raid" or "classic".
+  def type_turned(type)
+    return if type.nil? || type.to_s == @type_filter
+
+    @type_filter = type.to_s
+    read_list
+  end
+
+  # Takes the players online filter as the player turned it.
+  #
+  # @param values [Array] The values on: the filter's own while it is on.
+  def online_turned(values)
+    @online_filter = !Array(values).empty?
+    read_list
+  end
+
+  # Moves the focus from the search onto the worlds, as Enter there does.
+  def search_done
+    request_focus(:worlds)
+  end
+
+  # Shows other worlds, the cursor kept on its world while the filters show it. The first worlds to
+  # arrive pick the worlds' box as a whole if the commands' box is still picked as a whole where it
+  # started, or the cursor goes onto the world chosen before the save screen; the commands' box is
+  # picked as a whole when the last world went; the cursor moves onto a world asked for once the
+  # list shows it.
+  #
+  # @param entries [Array<MGQ_MpWorld::Entry>] Every world, each row telling whether the filters
+  #   show it.
   def show_entries(entries)
-    @entries = entries
-    @world_index = [[@world_index, entries.size - 1].min, 0].max
+    kept = current_entry && current_entry.key
+    @all_entries = entries
+    @entries = entries.select { |entry| entry.row.nil? || entry.row["shown"] != false }
+    at = kept && @entries.index { |entry| entry.key == kept }
+    @world_index = at || [[@world_index, @entries.size - 1].min, 0].max
     changed
-    if !@arrived && !entries.empty?
+    if !@arrived && !@entries.empty?
       @arrived = true
-      if !restore_world(entries) && @place.nil? && @whole == :commands && !@form_symbol
+      if !restore_world(@entries) && @place.nil? && @whole == :commands && !@form_symbol
         request_focus(:worlds_box)
         @whole = :worlds
       end
@@ -685,20 +836,25 @@ class Scene_MpWorlds < Scene_MenuBase
 
   # Moves the cursor into the worlds, onto the world asked for with select_world, once the list
   # shows it; the ask is over then. The cursor stays where it is when the player moved on to a form
-  # or a menu meanwhile, since it would jump under them.
+  # or a menu meanwhile, since it would jump under them. A world the search or the filters hide
+  # clears them, so it shows under the cursor.
   #
-  # @param entries [Array<MGQ_MpWorld::Entry>] The worlds, in the list's order.
+  # @param entries [Array<MGQ_MpWorld::Entry>] Every world, in the list's order.
   # @return [Boolean] Whether the cursor moved onto it.
   def select_asked(entries)
     id = @select
-    at = id ? entries.index { |entry| entry.id == id } : nil
-    return false unless at
+    return false unless id && entries.any? { |entry| entry.id == id }
 
-    @select = nil
     unless on_left_side?
+      @select = nil
       log_screen("the cursor stays off world #{MGQ_MpWorld.short(id)}, which the list shows now: the player moved on")
       return false
     end
+
+    at = @entries.index { |entry| entry.id == id }
+    return filtered? ? clear_filters(id) : false unless at
+
+    @select = nil
 
     @world_index = at
     @whole = :worlds
@@ -707,23 +863,45 @@ class Scene_MpWorlds < Scene_MenuBase
     true
   end
 
-  # Tells whether the focus is in the worlds or the commands, with no form, menu, question or box
-  # over them.
+  # Tells whether the search or a filter is on.
+  #
+  # @return [Boolean] Whether one is.
+  def filtered?
+    !@search.strip.empty? || @type_filter != TYPE_FILTERS[0][1] || @online_filter
+  end
+
+  # Clears the search and the filters, which hide a world the cursor should go onto, and shows the
+  # list anew.
+  #
+  # @param id [String] The world's directory id.
+  # @return [Boolean] Whether the cursor moved onto it.
+  def clear_filters(id)
+    log_screen("the search and the filters are cleared: they hid world #{MGQ_MpWorld.short(id)}, which the cursor goes onto")
+    @search = ""
+    @type_filter = TYPE_FILTERS[0][1]
+    @online_filter = false
+    read_list
+    @select.nil?
+  end
+
+  # Tells whether the focus is in the filters, the worlds or the commands, with no form, menu,
+  # question or box over them.
   #
   # @return [Boolean] Whether it is.
   def on_left_side?
     !@form_symbol && !popup_open? && !box_open? && !@busy
   end
 
-  # Notes that the keys went into the worlds' or the commands' box. Coming straight from a field of
-  # the form entered, as cancel, a click or a key there does, the form is left and the focus stays
-  # where it went.
+  # Notes that the keys went into the box of the search and filters, the worlds or the commands; in
+  # the search and filters the right side keeps the world under the cursor. Coming straight from a
+  # field of the form entered, as cancel, a click or a key there does, the form is left and the
+  # focus stays where it went.
   #
-  # @param side [Symbol] :worlds or :commands.
+  # @param side [Symbol] :filters, :worlds or :commands.
   def entered(side)
     from_form = @form_symbol && @place == :form
     @place = side
-    @whole = side
+    @whole = side == :filters ? :worlds : side
     changed
     return unless from_form
     return keep_name_form("moved off it") if name_missing?
@@ -731,11 +909,14 @@ class Scene_MpWorlds < Scene_MenuBase
     on_form_cancel(false)
   end
 
-  # Notes that the keys left the worlds' or the commands' box: into the form entered, or back out
-  # onto the box as a whole or the details.
+  # Notes that the keys left the box of the search and filters, the worlds or the commands: into the
+  # form entered, or back out onto the box as a whole or the details. A box the keys left after
+  # they went into another keeps the other's place.
   #
-  # @param _side [Symbol] :worlds or :commands.
-  def left(_side)
+  # @param side [Symbol] :filters, :worlds or :commands.
+  def left(side)
+    return unless @place == side
+
     @place = @form_symbol ? :form : nil
     changed
   end
@@ -1079,7 +1260,7 @@ class Scene_MpWorlds < Scene_MenuBase
 
   # Opens the list box for what the details point at.
   #
-  # @param target [Symbol] :mods, :players or :description.
+  # @param target [Symbol] :world, :data, :players or :description.
   def open_target(target)
     return if held?("opening the #{target}")
 
@@ -1090,9 +1271,9 @@ class Scene_MpWorlds < Scene_MenuBase
     open_box(target)
   end
 
-  # Opens the list box with the chosen world's players, mods or description.
+  # Opens the list box with the chosen world's players, World facts, Game data or description.
   #
-  # @param kind [Symbol] :players, :mods or :description.
+  # @param kind [Symbol] :players, :world, :data or :description.
   def open_box(kind)
     log_screen("showing the #{kind} of #{entry_text}")
     close_popups
@@ -1100,7 +1281,7 @@ class Scene_MpWorlds < Scene_MenuBase
     params = if kind == :description
                { :source => MGQ_MpListBox::Source.new(nil, DESCRIPTION_TITLE), :description => @entry.listed ? @entry.listed.description.to_s : "" }
              else
-               { :source => MGQ_MpListBox::Source.new(MGQ_MpWorldScreen.box(@entry, kind), kind == :players ? "Players" : "Mods") }
+               { :source => MGQ_MpListBox::Source.new(MGQ_MpWorldScreen.box(@entry, kind), BOX_NOTES[kind]) }
              end
     @list_box = UI.open(MGQ_MpListBox, params.merge(:title => @entry.name.to_s))
   rescue => e
@@ -1763,8 +1944,8 @@ class Scene_MpWorlds < Scene_MenuBase
     answer("start_failed", "text" => error.to_s, "placed" => placed ? true : false) if error
   end
 
-  # The world screen's window: the lines at the top, the worlds' and the commands' boxes the keys
-  # stop on as a whole first, and at the right a world's details or a form.
+  # The world screen's window: the lines at the top, the boxes of the search and filters, the worlds
+  # and the commands the keys stop on as a whole first, and at the right a world's details or a form.
   class WorldScreen < UI::Component
     # The scene, which keeps what the screen shows.
     param :scene
@@ -1775,24 +1956,37 @@ class Scene_MpWorlds < Scene_MenuBase
     # The row the commands' cursor is on.
     state(:command_index) { scene.command_index }
 
+    # What the search holds.
+    state(:search) { scene.search }
+
+    # The type filter on.
+    state(:type_filter) { scene.type_filter }
+
+    # The players online filter's values on: its own while it is on.
+    state(:online_filter) { scene.online_filter ? [:online] : [] }
+
     watch { scene.serial }
     watch { follow_scene }
 
     # Describes the screen.
     def render
       window nil, id: ROOT_ID, width: :screen, height: :screen, frame: false, movable: false, on_cancel: -> { scene.cancelled; false } do
-        paper id: :mgq_online_world_screen_strip do
+        paper id: :mgq_online_world_screen_strip, height: STRIP_HEIGHT do
           lines = scene.strip_lines
           text lines[0], typo: :body2, most_lines: 1
           help_line id: :mgq_online_world_screen_help, lines: 1
           text(lines[1], typo: :body2, most_lines: 1, color: :dim) unless lines[1].empty?
         end
-        stack row: true, height: :fill do
-          stack width: LEFT_WIDTH, height: :fill do
+        stack row: true, height: Graphics.height - STRIP_HEIGHT - STRIP_GAP do
+          stack width: LEFT_WIDTH do
+            paper enter: true, id: :mgq_online_world_filters_box, help: FILTERS_HELP,
+                  on_enter: -> { scene.entered(:filters) }, on_leave: -> { scene.left(:filters) } do
+              filters
+            end
             paper enter: true, id: :mgq_online_worlds_box, height: :fill, help: MGQ_MpWorldScreen.text("enter_hint"),
                   on_enter: -> { scene.entered(:worlds) }, on_leave: -> { scene.left(:worlds) } do
-              list scene.entries, id: :mgq_online_worlds, bind_index: :world_index, rows_shown: :fill, height: :fill, row: ->(entry) { scene.world_row(entry) },
-                                  on_change: ->(entry) { scene.pointed_world(entry) }, on_submit: ->(entry) { scene.on_world(entry) }
+              list scene.entries, id: :mgq_online_worlds, bind_index: :world_index, rows_shown: :fill, height: :fill, autofocus: true, empty: scene.list_empty,
+                                  row: ->(entry) { scene.world_row(entry) }, on_change: ->(entry) { scene.pointed_world(entry) }, on_submit: ->(entry) { scene.on_world(entry) }
             end
             paper enter: true, id: :mgq_online_commands_box, help: MGQ_MpWorldScreen.text("hint"),
                   on_enter: -> { scene.entered(:commands) }, on_leave: -> { scene.left(:commands) } do
@@ -1801,14 +1995,13 @@ class Scene_MpWorlds < Scene_MenuBase
             end
           end
           kind, target = scene.right_view
-          form = kind == :form || kind == :preview
-          # A form scrolls, since its fields would push the screen past its height; the details keep
-          # their description cut to the room left.
-          paper id: :mgq_online_right_box, key: form ? [:form, target] : :details, grow: 1, height: :fill, scroll: form ? :vertical : false do
+          # A preview makes the box itself the part a click or confirm presses, so the form has the
+          # room it has once entered, which a framed box inside would cut.
+          preview = kind == :preview ? { clickable: true, on_click: -> { scene.enter_preview } } : {}
+          paper({ id: :mgq_online_right_box, grow: 1, key: preview.empty? ? :box : :preview }.merge(preview)) do
             case kind
             when :world then details(target)
-            when :form then component(WorldFormView, scene: scene, page: scene.forms[target], key: [:form, target, scene.forms[target].object_id])
-            when :preview then component(WorldFormView, scene: scene, page: scene.forms[target], preview: true, key: [:preview, target, scene.forms[target].object_id])
+            when :form, :preview then component(WorldFormView, scene: scene, page: scene.forms[target], key: [kind, target, scene.forms[target].object_id])
             end
           end
         end
@@ -1817,83 +2010,165 @@ class Scene_MpWorlds < Scene_MenuBase
 
     private
 
+    # Describes the search in its box above the worlds, its caption beside it, then the filters of
+    # the worlds' type and players online side by side; the DLL matches the worlds against them.
+    def filters
+      field SEARCH_CAPTION, caption_width: [SEARCH_CAPTION] do
+        text_field bind: :search, id: :mgq_online_world_search, placeholder: SEARCH_PLACEHOLDER, max_length: SEARCH_CHARS, help: SEARCH_HELP,
+                   typing_help: Scene_MpWorlds.typing_hint, on_change: ->(text) { scene.searched(text) }, on_submit: ->(_text) { scene.search_done }
+      end
+      stack row: true, spacing: 1 do
+        toggle_group bind: :type_filter, id: :mgq_online_world_type, help: TYPE_HELP, on_change: ->(type) { scene.type_turned(type) } do
+          TYPE_FILTERS.each { |text, value, tip| toggle_item text, value: value, tooltip: tip, key: value }
+        end
+        toggle_group bind: :online_filter, id: :mgq_online_world_online, multi: true, help: ONLINE_HELP, on_change: ->(values) { scene.online_turned(values) } do
+          toggle_item ONLINE_FILTER[0], value: :online, tooltip: ONLINE_FILTER[1]
+        end
+      end
+    end
+
     # Describes a world's details as the DLL tells them: its name with when the player played it
-    # last, the panels of plated values, then the description in the rest of the room. A panel with
-    # a target is one part the player presses to open the list box with it.
+    # last, the panels of plated values, then at the foot the panels of lines beside the
+    # description, at one height and place for every world. A panel with a target is one part the
+    # player presses to open the list box with it.
     #
     # @param entry [MGQ_MpWorld::Entry] The world.
     def details(entry)
       about = MGQ_MpWorldScreen.details(entry)
       return unless about
 
-      stack row: true do
-        text about["title"].to_s, color: ROW_COLORS[about["title_color"]] || :system, grow: 1, most_lines: 1
-        text about["played"].to_s, typo: :caption, color: :dim
+      panels = Array(about["panels"])
+      beside = panels.select { |panel| panel["lines"] }
+      captions = Array(about["captions"])
+      stack spacing: 1, key: :facts do
+        stack row: true do
+          text about["title"].to_s, color: ROW_COLORS[about["title_color"]] || :system, grow: 1, most_lines: 1
+          text about["played"].to_s, typo: :caption, color: :dim
+        end
+        (panels - beside).each_with_index { |panel, index| panel_of(panel, index, captions) }
       end
-      Array(about["panels"]).each_with_index { |panel, index| panel_of(panel, index) }
-      description_of(about["description"].to_s) if about["description"]
+      return if beside.empty? && !about["description"]
+
+      stack row: true, height: :fill, key: :rest do
+        beside.each_with_index { |panel, index| lines_panel_of(panel, index) }
+        description_of(about["description"].to_s) if about["description"]
+      end
     end
 
     # Describes a panel of a world's details: its title with its note, and its rows of one or two
-    # cells, pressed as one part where it opens something.
+    # cells, pressed as one boxed part at its least height where it opens something, such as the
+    # world's facts in full.
     #
     # @param panel [Hash] The panel, as screen.details tells it.
     # @param index [Integer] Its place among the panels.
-    def panel_of(panel, index)
+    # @param captions [Array<Array<String>>] Every caption the details can show by column, whose widest sets that column's width.
+    def panel_of(panel, index, captions)
       target = panel["target"]
-      group panel["title"].to_s, { size: :tiny, key: index }.merge(panel["note"] ? { note: panel["note"].to_s } : {}) do
-        paper({ clickable: !target.nil?, on_click: target ? -> { scene.open_target(target.to_sym) } : nil }.merge(target ? { id: :"mgq_online_details_#{target}" } : {})) do
-          Array(panel["rows"]).each_with_index do |cells, row|
-            stack(row: true, key: row) { cells.each_with_index { |cell, column| cell_of(cell, column) } }
-          end
+      group panel["title"].to_s, { size: :tiny, dense: true, key: index }.merge(panel["note"] ? { note: panel["note"].to_s } : {}) do
+        if target
+          paper(area_of(true, id: :"mgq_online_details_#{panel['title'].to_s.downcase.tr(' ', '_')}", help: PANEL_HELPS[target],
+                        min_size: [0, BOX_HEIGHTS.fetch(target, 0)], on_click: -> { scene.open_target(target.to_sym) })) { rows_of_panel(panel, captions) }
+        else
+          rows_of_panel(panel, captions)
         end
       end
     end
 
-    # Describes a cell of a world's details: its caption and its value on a plate, or its values as
-    # chips; an empty cell keeps its half.
+    # Describes the rows of a panel of a world's details, each of one or two cells.
+    #
+    # @param panel [Hash] The panel, as screen.details tells it.
+    # @param captions [Array<Array<String>>] Every caption the details can show by column, whose widest sets that column's width.
+    def rows_of_panel(panel, captions)
+      stack spacing: ROW_SPACING do
+        Array(panel["rows"]).each_with_index do |cells, row|
+          stack(row: true, key: row) { cells.each_with_index { |cell, column| cell_of(cell, column, captions) } }
+        end
+      end
+    end
+
+    # Describes a panel of a world's details whose rows are lines, such as its players, narrow
+    # beside the description: as many as the room left holds, the last telling how many more there
+    # are, pressed as one boxed part where it opens something.
+    #
+    # @param panel [Hash] The panel, as screen.details tells it.
+    # @param index [Integer] Its place among such panels.
+    def lines_panel_of(panel, index)
+      target = panel["target"]
+      shown = Array(panel["rows"]).map do |cells|
+        color = CELL_COLORS[cells[0]["color"]]
+        { text: cells[0]["text"].to_s }.merge(color ? { color: color } : {})
+      end
+      group panel["title"].to_s, { size: :tiny, dense: true, key: [:lines, index], width: PLAYERS_WIDTH }.merge(panel["note"] ? { note: panel["note"].to_s } : {}) do
+        paper(area_of(!target.nil?, { height: :fill, on_click: target ? -> { scene.open_target(target.to_sym) } : nil }.merge(target ? { id: :"mgq_online_details_#{target}" } : {}))) do
+          lines shown, size: :small, height: :fill
+        end
+      end
+    end
+
+    # Describes a cell of a world's details in its column: its caption at the column's caption width
+    # and its value on a plate, cut with ... and whole in its tooltip where it is too long, or its
+    # values as chips; an empty cell keeps its half.
     #
     # @param cell [Hash, nil] The cell, as screen.details tells it.
     # @param column [Integer] Its place in its row.
-    def cell_of(cell, column)
-      return stack(grow: 1, key: column) {} unless cell
+    # @param captions [Array<Array<String>>] Every caption the details can show by column, whose widest sets that column's width.
+    def cell_of(cell, column, captions)
+      return stack(DETAIL_CELL.merge(key: column)) {} unless cell
 
       color = CELL_COLORS[cell["color"]]
       if cell["chips"]
         colors = Hash[Array(cell["chip_colors"]).to_a]
-        stack row: true, wrap: true, grow: 1, key: column do
-          Array(cell["chips"]).each do |chip|
-            chip_color = CELL_COLORS[colors[chip] || cell["color"]]
-            text chip.to_s, { plate: true, key: chip }.merge(chip_color ? { color: chip_color } : {})
+        chip_set DETAIL_CELL.merge(key: column) do
+          Array(cell["chips"]).each do |name|
+            chip_color = CELL_COLORS[colors[name] || cell["color"]]
+            chip name.to_s, { key: name }.merge(chip_color ? { color: chip_color } : {})
           end
         end
       else
-        field cell["label"].to_s, caption_width: CAPTION_WIDTH, plate: true, grow: 1, key: column do
-          text cell["text"].to_s, color ? { color: color } : {}
+        field cell["label"].to_s, DETAIL_CELL.merge(caption_width: captions[column], plate: true, key: column) do
+          text cell["text"].to_s, { wrap: true, most_lines: 1 }.merge(color ? { color: color } : {})
         end
       end
     end
 
-    # Describes the description, which takes the rest of the room, its last line cut when it does not
-    # all fit; the player presses it to read it whole in the list box.
+    # Describes the description, which takes the rest of the room, in lines of the small font's
+    # height, its last line cut when it does not all fit; the player presses its box to read it whole
+    # in the list box. A text that keeps as many lines as its room holds measures as one line, so it
+    # takes the box's whole height.
     #
     # @param description [String] The description, empty for none.
     def description_of(description)
-      group DESCRIPTION_TITLE, size: :tiny, height: :fill do
-        paper clickable: !description.empty?, id: :mgq_online_details_description, height: :fill,
-              on_click: description.empty? ? nil : -> { scene.open_target(:description) } do
-          text description.empty? ? NO_DESCRIPTION : description, { wrap: true, most_lines: :fill, typo: :body2 }.merge(description.empty? ? { color: :dim } : {})
+      group DESCRIPTION_TITLE, size: :tiny, dense: true, width: 0, grow: 1 do
+        paper area_of(!description.empty?, id: :mgq_online_details_description, height: :fill,
+                      on_click: description.empty? ? nil : -> { scene.open_target(:description) }) do
+          text description.empty? ? NO_DESCRIPTION : description,
+               { wrap: true, most_lines: :fill, height: :fill, typo: :body2, line_height: UI::SMALL_LINE_HEIGHT }.merge(description.empty? ? { color: :dim } : {})
         end
       end
     end
 
-    # Follows what the scene asks of the window: the cursors it moved, the focus it wants and what
-    # the lines at the top say, the focus first, as a text said keeps until the focus moves.
+    # Tells how a part of the details draws: as a thin box the player presses where it opens
+    # something, else without a box.
+    #
+    # @param pressed [Boolean] Whether it opens something.
+    # @param params [Hash] Its own params.
+    # @return [Hash] Its params.
+    def area_of(pressed, params)
+      PRESSED_AREA.merge(pressed ? {} : PLAIN_AREA).merge(params)
+    end
+
+    # Follows what the scene asks of the window: the cursors it moved, the search and the filters it
+    # cleared, the focus it wants and what the lines at the top say, the focus first, as a text said
+    # keeps until the focus moves.
     #
     # @return [Array] What it followed.
     def follow_scene
       self.world_index = scene.world_index unless world_index == scene.world_index
       self.command_index = scene.command_index unless command_index == scene.command_index
+      self.search = scene.search unless search == scene.search
+      self.type_filter = scene.type_filter unless type_filter == scene.type_filter
+      online = scene.online_filter ? [:online] : []
+      self.online_filter = online unless online_filter == online
       request = scene.focus_request
       if request && request[1] != @focused && request[0].is_a?(Symbol)
         part(:"mgq_online_#{request[0]}").focus
@@ -1909,17 +2184,14 @@ class Scene_MpWorlds < Scene_MenuBase
   end
 
   # A form at the right from the DLL's view, or its page of the formation limits: its title, its
-  # fields in titled groups, one or two to a row. As a preview it takes no keys, and a click or
-  # confirm on it moves into it.
+  # first group across with one or two fields to a row, the groups after it side by side with a
+  # field to a line, and the fields of no group last.
   class WorldFormView < UI::Component
     # The scene, which keeps the forms.
     param :scene
 
     # The form, or its page of the limits.
     param :page
-
-    # Whether it only shows, as while the commands' cursor is on its command.
-    param :preview, false
 
     # Whether it shows its title, which the limits' dialog shows instead.
     param :titled, true
@@ -1928,51 +2200,65 @@ class Scene_MpWorlds < Scene_MenuBase
 
     # Describes the form.
     def render
-      if preview
-        paper clickable: true, id: :mgq_online_form_preview, grow: 1, on_click: -> { scene.enter_preview } do
-          fields_of
-        end
-      else
-        stack grow: 1 do
-          fields_of
-        end
+      stack grow: 1, spacing: 1 do
+        fields_of
       end
     end
 
     private
 
-    # Describes the title and the fields.
+    # Describes the title and the fields: the first group across, the groups after it side by side
+    # in one row, so the form fits the right box without scrolling, and the fields of no group after
+    # the last group.
     def fields_of
       text(page.title, color: :system) if titled
       fields = page.fields
-      fields.map { |field| field.group }.uniq.each do |name|
-        grouped = fields.select { |field| field.group == name }
-        if name
-          group(name, size: :tiny, key: name) { rows_of(grouped) }
-        else
-          rows_of(grouped)
+      groups = fields.map { |field| field.group }.compact.uniq
+      loose = fields.select { |field| field.group.nil? }
+      if groups.first
+        group(groups.first, size: :tiny, key: groups.first) { stack(spacing: ROW_SPACING) { rows_of(fields.select { |field| field.group == groups.first }) } }
+      end
+      return rows_of(loose) if groups.size < 2
+
+      stack row: true, key: :beside do
+        groups.drop(1).each do |name|
+          stack width: 0, grow: 1, spacing: 1, key: name do
+            group(name, size: :tiny) { lines_of(fields.select { |field| field.group == name }) }
+            lines_of(loose) if name == groups.last && !loose.empty?
+          end
         end
       end
     end
 
-    # Describes the rows of a group's fields, one or two to a row, a lone field on its side.
+    # Describes the rows of a group's fields as the DLL sets them, one or two to a row in halves of
+    # equal width, a lone field on its side.
     #
     # @param fields [Array<MGQ_MpWorld::Form::Field>] The fields.
     def rows_of(fields)
       fields.map { |field| field.row }.uniq.each do |row|
         on_row = fields.select { |field| field.row == row }
         stack row: true, key: row do
-          stack(grow: 1) {} if on_row.size == 1 && on_row[0].side == :right
-          on_row.each { |field| component(FormField, scene: scene, page: page, input_field: field, key: [field.key, field.kind], grow: 1) }
-          stack(grow: 1) {} if on_row.size == 1 && on_row[0].side == :left
+          stack(width: 0, grow: 1) {} if on_row.size == 1 && on_row[0].side == :right
+          on_row.each { |field| component(FormField, scene: scene, page: page, input_field: field, key: [field.key, field.kind], width: 0, grow: 1) }
+          stack(width: 0, grow: 1) {} if on_row.size == 1 && on_row[0].side == :left
         end
+      end
+    end
+
+    # Describes fields one to a line, as in a group beside another.
+    #
+    # @param fields [Array<MGQ_MpWorld::Form::Field>] The fields.
+    def lines_of(fields)
+      stack spacing: ROW_SPACING do
+        fields.each { |field| component(FormField, scene: scene, page: page, input_field: field, key: [field.key, field.kind]) }
       end
     end
   end
 
   # A field of a form: a text box, a password shown as stars, a number, a box of several lines, a
-  # checkbox, a switch, the save to start from, the mods, or a button. It takes the focus as the
-  # scene asks.
+  # checkbox, a switch, the save to start from, the mods, or a button, its caption beside it where
+  # it has no label of its own, above it for the save and the mods. It takes the focus as the scene
+  # asks.
   class FormField < UI::Component
     # The scene, which hands the field's changes to the form.
     param :scene
@@ -2010,22 +2296,25 @@ class Scene_MpWorlds < Scene_MenuBase
       common = { id: @rendered_id, help: input_field.hint, disabled: !page.enabled?(input_field) }
       case input_field.kind
       when :text, :password, :id
-        text_field input_field.label, common.merge(bind: :value, password: input_field.kind == :password, max_length: input_field.max_chars, allowed: input_field.allowed,
-                                             leave_sides: true, typing_help: Scene_MpWorlds.typing_hint, on_change: ->(text) { scene.typed(page, input_field, text) },
-                                             on_submit: ->(text) { scene.submitted(page, input_field, text) })
+        captioned do
+          text_field common.merge(bind: :value, password: input_field.kind == :password, max_length: input_field.max_chars, allowed: input_field.allowed,
+                                  leave_sides: true, typing_help: Scene_MpWorlds.typing_hint, on_change: ->(text) { scene.typed(page, input_field, text) },
+                                  on_submit: ->(text) { scene.submitted(page, input_field, text) })
+        end
       when :number
-        numeric_field input_field.label, common.merge(bind: :value, min: input_field.min, max: input_field.max, on_change: ->(number) { scene.typed(page, input_field, number.to_s) },
-                                                on_submit: ->(number) { scene.submitted(page, input_field, number.to_s) })
+        captioned do
+          numeric_field common.merge(bind: :value, min: input_field.min, max: input_field.max, on_change: ->(number) { scene.typed(page, input_field, number.to_s) },
+                                     on_submit: ->(number) { scene.submitted(page, input_field, number.to_s) })
+        end
       when :area
-        text_field input_field.label, common.merge(bind: :value, lines: input_field.lines, max_length: input_field.max_chars, typing_help: Scene_MpWorlds.typing_hint,
-                                             on_change: ->(text) { scene.typed(page, input_field, text) }, on_submit: ->(text) { scene.submitted(page, input_field, text) })
+        text_field common.merge(bind: :value, lines: input_field.lines, max_length: input_field.max_chars, placeholder: input_field.label, typing_help: Scene_MpWorlds.typing_hint,
+                                on_change: ->(text) { scene.typed(page, input_field, text) }, on_submit: ->(text) { scene.submitted(page, input_field, text) })
       when :check
         checkbox input_field.label, common.merge(bind: :value, on_change: ->(_on) { scene.ticked(page, input_field) })
       when :switch
         switch_of(common)
       when :save, :mods
-        stack spacing: 0 do
-          text input_field.label, typo: :caption, color: :system
+        captioned_above do
           button scene.value_text(page, input_field), common.merge(variant: :outlined, on_click: -> { input_field.kind == :save ? scene.choose_save : scene.open_mod_pick })
         end
       when :button
@@ -2042,7 +2331,8 @@ class Scene_MpWorlds < Scene_MenuBase
       :"mgq_online_form_#{page.equal?(scene.form) ? 'main' : 'limits'}_#{input_field.key}"
     end
 
-    # Describes a switch: of two outcomes a switch that Left and Right turn, of more a select of them.
+    # Describes a switch: of two outcomes a switch that Left and Right turn, of more a select of them
+    # with its caption beside it.
     #
     # @param common [Hash] The params every field takes.
     def switch_of(common)
@@ -2050,10 +2340,27 @@ class Scene_MpWorlds < Scene_MenuBase
       if choices.size == 2
         switch input_field.label, common.merge(bind: :value, values: choices, on_change: ->(on) { scene.turned(page, input_field, on ? 1 : 0) })
       else
-        select input_field.label, common.merge(bind: :value, on_change: ->(index) { scene.turned(page, input_field, index) if index }) do
-          choices.each_with_index { |choice, index| select_item choice, value: index, key: index }
+        captioned do
+          select common.merge(bind: :value, on_change: ->(index) { scene.turned(page, input_field, index) if index }) do
+            choices.each_with_index { |choice, index| select_item choice, value: index, key: index }
+          end
         end
       end
+    end
+
+    # Describes the field's caption with its value beside it, as a field whose label would take a
+    # row of its own above it. A narrow caption lines up with the page's other narrow captions at
+    # the widest of them, so the value gets the room; the others line up at FORM_CAPTION's width.
+    def captioned(&value)
+      label = input_field.label
+      captions = input_field.narrow_caption ? page.fields.select { |field| field.narrow_caption }.map { |field| field.label } : [label, Scene_MpWorlds::FORM_CAPTION]
+      field label, caption_width: captions, &value
+    end
+
+    # Describes the field's caption above its value, which takes the field's whole width, as the
+    # save's and the mods' buttons show names that a caption beside them would cut.
+    def captioned_above(&value)
+      group input_field.label, size: :small, spacing: 0, &value
     end
 
     # Keeps what the field holds on the form's value, which the DLL may change, such as a text it

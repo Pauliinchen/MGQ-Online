@@ -96,7 +96,9 @@ This guide covers what works in both, and says in a line where a type changes it
 
 ![The world screen: the worlds and commands at the left, a world's details at the right](images/world-list.png)
 
-The left side has two boxes: the worlds, and below them the commands (*Create new world*, *Add a hidden world*, *Change your name*, *Back*). Up and down pick a box, confirm moves into it and cancel moves back out, so the commands are reached without scrolling through a long list. Cancel with a box picked leaves the screen.
+The left side has three boxes: the search and filters, below them the worlds, and below those the commands (*Create new world*, *Add a hidden world*, *Change your name*, *Back*). Up and down pick a box, confirm moves into it and cancel moves back out, so the commands are reached without scrolling through a long list. Cancel with a box picked leaves the screen.
+
+**Search and filters.** Type part of a world's name to show only the worlds that hold it; **Enter** moves into the worlds. Below the search, *All*, *Raid* and *Classic* show every world, only Raid Worlds or only Classic worlds, and *Online* only the worlds with someone online. They reset each time the screen opens.
 
 **Your name** is the one the others see: your name on Discord, until you choose one in *Change your name*, typed in place at the right; **Enter** keeps it. Without Discord and without a name, the world screen asks for one when it opens. The last name Discord told stands in while Discord is still connecting, such as right after a restart.
 
@@ -109,7 +111,7 @@ The worlds box lists every public world, the hidden worlds you joined and the hi
 
 Worlds you played that are no longer listed, such as one its creator deleted, come last.
 
-With the cursor on a world, the right side shows its details: who made it, its password (*None*, *Needed*, or *Known* once this PC entered it with the password), its players, how new players start, the mods it needs, that your game data is compared with the creator's as you enter, and its description. The right arrow moves into the details; up and down pick the mods, the players or the description, and confirm (or a click) opens the full list or text. Every player who ever joined is listed, those online first. The left arrow or cancel goes back to the list.
+With the cursor on a world, the right side shows its details: who made it, its password (*None*, *Needed*, or *Known* once this PC entered it with the password), its players, how new players start, the mods it needs, that your game data is compared with the creator's as you enter, and its description. The right arrow moves into the details; the arrows pick the world's facts, its game data, its players or its description, and confirm (or a click) opens it in full: every fact of the world, its mods with the mod settings and other mods, every player, or the whole description. Every player who ever joined is listed, those online first. The left arrow or cancel goes back to the list.
 
 ### Entering a world
 
@@ -185,7 +187,7 @@ A world with *Turn off other mods* is played with the mods it names and nothing 
 
 - **Personal mods** stay on in every world, named or not, such as mods that only change how the game looks. The website's admins decide which mods are personal.
 - **Mods that run from the start of the game**, such as the framework's own and mods that change the title screen as a whole, can't be left out; a notice names them as you enter ("Wide Text is part of the framework and stays on.").
-- **The world's details** say *Other mods: turned off (2 of yours)* or *Other mods: allowed*. The mods box lists *Your mods turned off here* below the world's mods, one line per mod.
+- **The world's details** say *Other mods: turned off (2 of yours)* or *Other mods: allowed*. Their game data box lists *Your mods turned off here* below the world's mods, one line per mod.
 - **Entering** such a world tells you in a notice which of your mods stay off ("\<world> plays without your other mods: ... stay off until you leave it."). The world is entered only once the website's mod list has loaded.
 - **Your mods come back** when you leave the world: going back to the title screen starts the game again with your own mods.
 - **When the creator or an admin changes the rule** while you're in the world, ticking *Turn off other mods* or changing the mods, and a mod you run is now turned off, a notice says "\<world> now turns off other mods. The game starts again and enters it without them." and a few seconds later, once you're free on the map, the game starts again and enters the world: anything you haven't saved is lost.

@@ -2,6 +2,12 @@
 //  WorldScreenModel.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-09: Listed the details' captions by their column, so each column of captions keeps its own width
+//                            - Opened the World panel into the list box with the world's facts alone, the Game data panel with its mods and game data settings alone
+//                            - Listed every caption the details can show, so their column keeps one width for every world
+//                            - Fitted the details into the worlds screen's fixed box: the type and the player's game in the panels' notes, the Frontline short, every player as a line
+//                            - Joined a Raid World's Luka, Formation and Frontline into one Squad line
+//                            - Matched the worlds against the list's search and filters
 //      Paulinchen  2026-10-30: Told in the details that the game data is compared as the player enters, no longer at the title
 //                            - Told a data scan of another format in the details
 //      Paulinchen  2026-10-23: Created
@@ -170,7 +176,8 @@ public sealed record ScreenCell(string? Label, string Text, string Color, string
 /// <param name="Note">What the heading says at its right, <see langword="null"/> for nothing.</param>
 /// <param name="Rows">The rows, one cell across the panel or two side by side, a missing one <see langword="null"/>.</param>
 /// <param name="Target">What the whole panel opens, <see langword="null"/> for nothing.</param>
-public sealed record ScreenPanel(string Title, string? Note, IReadOnlyList<IReadOnlyList<ScreenCell?>> Rows, string? Target = null);
+/// <param name="Lines">Whether its rows are lines of one cell each that show as many as the room holds, beside the description.</param>
+public sealed record ScreenPanel(string Title, string? Note, IReadOnlyList<IReadOnlyList<ScreenCell?>> Rows, string? Target = null, bool Lines = false);
 
 /// <summary>
 /// A world as the list draws it.
@@ -190,11 +197,30 @@ public sealed record ScreenRow(string Text, string? Count, string Color, bool Di
 public sealed record ScreenAction(string Label, string Symbol, bool Enabled = true);
 
 /// <summary>
+/// The search and the filters over the world list.
+/// </summary>
+/// <param name="Search">The text a world's name must hold, any case; empty for every name.</param>
+/// <param name="Type">"all", "raid" or "classic".</param>
+/// <param name="Online">Whether only worlds with someone online show.</param>
+public sealed record ScreenFilter(string Search, string Type, bool Online)
+{
+    /// <summary>
+    /// Gets the filter that shows every world.
+    /// </summary>
+    public static ScreenFilter None { get; } = new(string.Empty, WorldScreenModel.AllTypes, false);
+
+    /// <summary>
+    /// Gets a value indicating whether the search or a filter hides any world.
+    /// </summary>
+    public bool Active => Search.Trim().Length > 0 || Type != WorldScreenModel.AllTypes || Online;
+}
+
+/// <summary>
 /// A line of the list box: a heading, or an item with its colour and what the box says of it.
 /// </summary>
 /// <param name="Kind">"head" or "item".</param>
 /// <param name="Text">What it says.</param>
-/// <param name="Color">An item's colour: "good", "grey", "gold", "bad" or "plain".</param>
+/// <param name="Color">An item's colour: "good", "grey", "gold", "warn", "bad", or "plain" or "normal" for the plain text colour.</param>
 /// <param name="Note">What the box says of an item, <see langword="null"/> for nothing.</param>
 public sealed record BoxLine(string Kind, string Text, string? Color = null, string? Note = null);
 
@@ -210,6 +236,21 @@ public static class WorldScreenModel
     public const string RaidType = "raid";
 
     /// <summary>
+    /// The type filter that shows Classic worlds only.
+    /// </summary>
+    public const string ClassicType = "classic";
+
+    /// <summary>
+    /// The type filter that shows every world.
+    /// </summary>
+    public const string AllTypes = "all";
+
+    /// <summary>
+    /// What the list says while the search and the filters hide every world.
+    /// </summary>
+    public const string NoMatch = "No world matches the search and filters.";
+
+    /// <summary>
     /// What the screen says while nothing else happened.
     /// </summary>
     public const string Hint = "Up and down pick the worlds or the commands, confirm moves into them. Right arrow on a world: its details.";
@@ -220,14 +261,89 @@ public static class WorldScreenModel
     public const string EnterHint = "Confirm to enter it.";
 
     /// <summary>
-    /// The places of the players' panel; with more players the last one counts the rest.
-    /// </summary>
-    private const int NamedPlayers = 4;
-
-    /// <summary>
     /// What the mods check says of a required mod this game lacks.
     /// </summary>
     private const string NotInstalled = "not installed";
+
+    /// <summary>
+    /// What the World panel opens: the list box with the world's facts in full.
+    /// </summary>
+    public const string WorldTarget = "world";
+
+    /// <summary>
+    /// What the Game data panel opens: the list box with the world's mods and game data settings in full.
+    /// </summary>
+    public const string DataTarget = "data";
+
+    /// <summary>
+    /// What the details and the list box say of a world's mods while they are read.
+    /// </summary>
+    private const string ReadingText = "Reading . . .";
+
+    /// <summary>
+    /// The details' caption of a world no longer in the list.
+    /// </summary>
+    private const string StatusCaption = "Status";
+
+    /// <summary>
+    /// The details' caption of who made the world.
+    /// </summary>
+    private const string CreatorCaption = "Creator";
+
+    /// <summary>
+    /// The details' caption of the players online.
+    /// </summary>
+    private const string PlayersCaption = "Players";
+
+    /// <summary>
+    /// The details' caption of whether the world needs a password.
+    /// </summary>
+    private const string PasswordCaption = "Password";
+
+    /// <summary>
+    /// The details' caption of whether the world is public or hidden.
+    /// </summary>
+    private const string ListedCaption = "Listed";
+
+    /// <summary>
+    /// The details' caption of how a player starts.
+    /// </summary>
+    private const string StartCaption = "Start";
+
+    /// <summary>
+    /// The details' caption of a Raid World's difficulty.
+    /// </summary>
+    private const string DifficultyCaption = "Difficulty";
+
+    /// <summary>
+    /// The details' caption of how a Raid World shares companions.
+    /// </summary>
+    private const string SharingCaption = "Sharing";
+
+    /// <summary>
+    /// The details' caption of a Raid World's squad rules.
+    /// </summary>
+    private const string SquadCaption = "Squad";
+
+    /// <summary>
+    /// The details' caption of a Classic world's raid bosses.
+    /// </summary>
+    private const string RaidBossesCaption = "Raid Bosses";
+
+    /// <summary>
+    /// The details' caption of the mods the world needs.
+    /// </summary>
+    private const string ModsCaption = "Mods";
+
+    /// <summary>
+    /// Every caption the details can show, by the column of a row it stands in, whose widest sets
+    /// that column's caption width for every world.
+    /// </summary>
+    public static IReadOnlyList<IReadOnlyList<string>> DetailCaptions { get; } =
+    [
+        [StatusCaption, CreatorCaption, PasswordCaption, StartCaption, SharingCaption, RaidBossesCaption, ModsCaption],
+        [PlayersCaption, ListedCaption, DifficultyCaption, SquadCaption],
+    ];
 
     /// <summary>
     /// What the screen says while an action runs, by the action's kind.
@@ -261,6 +377,61 @@ public static class WorldScreenModel
         entry.Listed is { } listed ? $"{listed.Online}/{listed.Seats}" : null,
         entry.Raid ? "raid" : entry.Featured ? "featured" : entry.Favourite ? "favourite" : "normal",
         entry.Gone);
+
+    /// <summary>
+    /// Tells whether a world shows under the search and the filters: its name holds the search in any
+    /// case, its type is the one asked for, and someone is online in it where that is asked for.
+    /// </summary>
+    /// <param name="entry">The world.</param>
+    /// <param name="filter">The search and the filters.</param>
+    /// <returns>Whether it shows.</returns>
+    public static bool Shows(ScreenEntry entry, ScreenFilter filter)
+    {
+        string search = filter.Search.Trim();
+        bool named = search.Length == 0 || entry.Name.Contains(search, StringComparison.OrdinalIgnoreCase);
+        bool typed = filter.Type switch
+        {
+            RaidType => entry.Raid,
+            ClassicType => !entry.Raid,
+            _ => true,
+        };
+        return named && typed && (!filter.Online || entry.Listed?.Online > 0);
+    }
+
+    /// <summary>
+    /// Tells what the list says in place of its rows.
+    /// </summary>
+    /// <param name="total">How many worlds the list holds.</param>
+    /// <param name="shown">How many of them show.</param>
+    /// <param name="filter">The search and the filters.</param>
+    /// <returns><see cref="NoMatch"/> while they hide every world, else <see langword="null"/>.</returns>
+    public static string? EmptyText(int total, int shown, ScreenFilter filter) => total > 0 && shown == 0 && filter.Active ? NoMatch : null;
+
+    /// <summary>
+    /// Describes the search and the filters for the log.
+    /// </summary>
+    /// <param name="filter">The search and the filters.</param>
+    /// <returns>Such as "search \"sun\", Raid Worlds, someone online", or "no search or filter".</returns>
+    public static string FilterText(ScreenFilter filter)
+    {
+        List<string> parts = [];
+        if (filter.Search.Trim().Length > 0)
+        {
+            parts.Add($"search \"{filter.Search.Trim()}\"");
+        }
+
+        if (filter.Type is RaidType or ClassicType)
+        {
+            parts.Add(filter.Type == RaidType ? "Raid Worlds" : "Classic worlds");
+        }
+
+        if (filter.Online)
+        {
+            parts.Add("someone online");
+        }
+
+        return parts.Count == 0 ? "no search or filter" : string.Join(", ", parts);
+    }
 
     /// <summary>
     /// Names the colour of a world's name above its details.
@@ -301,7 +472,7 @@ public static class WorldScreenModel
     {
         if (entry.Listed is not { } listed)
         {
-            return [new ScreenPanel("World", null, [[new ScreenCell("Status", entry.Gone ? "Only on this PC: deleted, or you were removed" : "Not in the list right now", "normal")]])];
+            return [new ScreenPanel("World", null, [[new ScreenCell(StatusCaption, entry.Gone ? "Only on this PC: deleted, or you were removed" : "Not in the list right now", "normal")]])];
         }
 
         return [WorldPanel(entry, listed, facts.Me, rules), DataPanel(listed, facts), PlayersPanel(listed, facts.Me)];
@@ -366,6 +537,31 @@ public static class WorldScreenModel
         actions.Add(new("Back", "cancel"));
         return actions;
     }
+
+    /// <summary>
+    /// Writes the list box's lines for the facts of a world's World panel, each in full, as
+    /// "Caption: value".
+    /// </summary>
+    /// <param name="entry">The world.</param>
+    /// <param name="listed">The world in the directory.</param>
+    /// <param name="me">The player's id.</param>
+    /// <param name="rules">The rules the details name.</param>
+    /// <returns>The lines.</returns>
+    public static IReadOnlyList<BoxLine> WorldLines(ScreenEntry entry, ScreenListed listed, string me, ScreenRules rules) =>
+        [.. WorldPanel(entry, listed, me, rules).Rows.SelectMany(row => row).OfType<ScreenCell>().Select(cell => new BoxLine("item", $"{cell.Label}: {cell.Text}", cell.Color))];
+
+    /// <summary>
+    /// Writes the list box's lines for a world's Game data panel in full: its mods as
+    /// <see cref="ModLines"/> writes them, then its shared mod settings and whether it turns other
+    /// mods off.
+    /// </summary>
+    /// <param name="listed">The world in the directory.</param>
+    /// <param name="facts">What the details read beyond the world.</param>
+    /// <returns>The lines.</returns>
+    public static IReadOnlyList<BoxLine> DataLines(ScreenListed listed, ScreenFacts facts) => listed.ModsUnread
+        ? [new("head", ModsCaption), new("item", ReadingText, "plain")]
+        : [.. ModLines(listed, facts), new("head", "Settings"), new("item", facts.SettingsText, facts.SettingsShared ? "gold" : "plain"),
+           new("item", OtherModsText(listed, facts), listed.OtherModsOff ? "warn" : "plain")];
 
     /// <summary>
     /// Writes the list box's lines for a world's players: those online, then the others.
@@ -464,11 +660,11 @@ public static class WorldScreenModel
 
     /// <summary>
     /// Tells who made a world, how full it is, how it is entered and where its players start, and
-    /// for a Raid World its type, sharing, difficulty and squad rules.
+    /// for a Raid World its sharing, difficulty and squad rules, its type in the note.
     /// </summary>
     /// <remarks>
-    /// A Classic world gets no type row and a raid bosses row only while they are on, since every row
-    /// takes a line from the description below.
+    /// The details have a fixed box, so a Raid World's facts go two to a row, its squad rules in one
+    /// cell, and a Classic world gets a raid bosses row only while they are on.
     /// </remarks>
     /// <param name="entry">The world.</param>
     /// <param name="listed">The world in the directory.</param>
@@ -479,33 +675,50 @@ public static class WorldScreenModel
     {
         List<IReadOnlyList<ScreenCell?>> rows =
         [
-            [new ScreenCell("Creator", listed.CreatorId == me ? "You" : listed.CreatorName, "normal"), new ScreenCell("Players", $"{listed.Online} / {listed.Seats} online", "normal")],
-            [new ScreenCell("Password", listed.Open ? "None" : entry.Local != null ? "Known" : "Needed", "normal"), new ScreenCell("Listed", listed.Hidden ? "Hidden" : "Public", "normal")],
+            [new ScreenCell(CreatorCaption, listed.CreatorId == me ? "You" : listed.CreatorName, "normal"), new ScreenCell(PlayersCaption, $"{listed.Online} / {listed.Seats} online", "normal")],
+            [new ScreenCell(PasswordCaption, listed.Open ? "None" : entry.Local != null ? "Known" : "Needed", "normal"), new ScreenCell(ListedCaption, listed.Hidden ? "Hidden" : "Public", "normal")],
         ];
         if (listed.Raid)
         {
-            rows.Add([new ScreenCell("Type", "Raid", "raid"), new ScreenCell("Sharing", SharingTexts.GetValueOrDefault(listed.Share) ?? SharingTexts["off"], "normal")]);
             string? difficulty = listed.Difficulty is { } value ? rules.DifficultyName(value) : null;
-            rows.Add([new ScreenCell("Start", RaidStartText(listed), "normal"), new ScreenCell("Difficulty", difficulty ?? "Per player", "normal")]);
+            rows.Add([new ScreenCell(StartCaption, RaidStartText(listed), "normal"), new ScreenCell(DifficultyCaption, difficulty ?? "Per player", "normal")]);
             ScreenSquad squad = listed.Squad ?? rules.DefaultSquad;
-            rows.Add([new ScreenCell("Luka", squad.Luka ? "Replaceable" : "Fixed", "normal"), new ScreenCell("Formation", rules.FormationName(squad.Formation), "normal")]);
-            rows.Add([new ScreenCell("Frontline", $"{squad.Front} | {squad.RaidFront}  (regular | raids)", "normal")]);
+            rows.Add([new ScreenCell(SharingCaption, SharingTexts.GetValueOrDefault(listed.Share) ?? SharingTexts["off"], "normal"), new ScreenCell(SquadCaption, SquadText(squad, rules), "normal")]);
         }
         else
         {
-            rows.Add([new ScreenCell("Start", StartText(listed), "normal")]);
+            rows.Add([new ScreenCell(StartCaption, StartText(listed), "normal")]);
             if (listed.RaidBosses)
             {
-                rows.Add([new ScreenCell("Raid Bosses", "On: story bosses of their tier", "normal")]);
+                rows.Add([new ScreenCell(RaidBossesCaption, "On: story bosses of their tier", "normal")]);
             }
         }
 
-        return new ScreenPanel("World", listed.Featured ? "featured" : null, rows);
+        string? note = (listed.Raid, listed.Featured) switch
+        {
+            (true, true) => "Raid World, featured",
+            (true, false) => "Raid World",
+            (false, true) => "featured",
+            _ => null,
+        };
+        return new ScreenPanel("World", note, rows, WorldTarget);
     }
 
     /// <summary>
-    /// Tells the mods a world needs, its mod settings, whether it turns other mods off, and that the
-    /// player's game data is compared with its creator's as they enter.
+    /// Sums up a Raid World's squad rules in one short line for half a row of the details.
+    /// </summary>
+    /// <param name="squad">The squad rules.</param>
+    /// <param name="rules">The rules the details name.</param>
+    /// <returns>Such as "4, front 1, Luka fixed" or "6, front 3, raids 4, Luka optional"; the raids' frontline only where it differs.</returns>
+    private static string SquadText(ScreenSquad squad, ScreenRules rules)
+    {
+        string raids = squad.RaidFront == squad.Front ? "" : $", raids {squad.RaidFront}";
+        return $"{rules.FormationName(squad.Formation)}, front {squad.Front}{raids}, Luka {(squad.Luka ? "optional" : "fixed")}";
+    }
+
+    /// <summary>
+    /// Tells the mods a world needs, its mod settings and whether it turns other mods off, its note
+    /// that the player's game data is compared with its creator's as they enter.
     /// </summary>
     /// <remarks>
     /// The title has loaded none of the world's mods, so a comparison there would name the entries
@@ -517,20 +730,19 @@ public static class WorldScreenModel
     private static ScreenPanel DataPanel(ScreenListed listed, ScreenFacts facts)
     {
         IReadOnlyList<string> mods = ModsText.Names(listed.Mods);
-        ScreenCell game = new("Your game", listed.CreatorId == facts.Me ? "Becomes the world's as you enter" : "Compared with the creator's as you enter", "normal");
-        const string note = "differing games are warned";
+        string note = listed.CreatorId == facts.Me ? "becomes the world's as you enter" : "compared with the creator's as you enter";
         if (listed.ModsUnread)
         {
-            return new ScreenPanel("Game data", note, [[new ScreenCell("Mods", "Reading . . .", "normal")], [game]]);
+            return new ScreenPanel("Game data", note, [[new ScreenCell(ModsCaption, ReadingText, "normal")]], DataTarget);
         }
 
         List<KeyValuePair<string, string>> colors = [.. ModMarks(listed.Mods, facts).Select(mark => new KeyValuePair<string, string>(mark.Key, mark.Value.Color))];
         ScreenCell modsCell = mods.Count == 0
-            ? new ScreenCell("Mods", "No mod named", "normal", null, null, colors)
-            : new ScreenCell("Mods", string.Join(", ", mods), "normal", "mods", mods, colors);
+            ? new ScreenCell(ModsCaption, "No mod named", "normal", null, null, colors)
+            : new ScreenCell(ModsCaption, string.Join(", ", mods), "normal", "mods", mods, colors);
         ScreenCell settings = new(null, facts.SettingsText, facts.SettingsShared ? "gold" : "normal");
         ScreenCell otherMods = new(null, OtherModsText(listed, facts), listed.OtherModsOff ? "warn" : "normal");
-        return new ScreenPanel("Game data", note, [[modsCell], [settings], [otherMods], [game]]);
+        return new ScreenPanel("Game data", note, [[modsCell], [settings], [otherMods]], DataTarget);
     }
 
     /// <summary>
@@ -545,7 +757,7 @@ public static class WorldScreenModel
             : $"Other mods: turned off ({facts.TurnedOff.Count} of yours)";
 
     /// <summary>
-    /// Names a world's players, those online first as listed, two to a row.
+    /// Names every player of a world, those online first as listed, one to a line.
     /// </summary>
     /// <param name="listed">The world in the directory.</param>
     /// <param name="me">The player's id.</param>
@@ -553,15 +765,8 @@ public static class WorldScreenModel
     private static ScreenPanel PlayersPanel(ScreenListed listed, string me)
     {
         IReadOnlyList<ScreenMember> members = listed.Members;
-        IEnumerable<ScreenMember> named = members.Count > NamedPlayers ? members.Take(NamedPlayers - 1) : members;
-        List<ScreenCell> cells = [.. named.Select(member => new ScreenCell(null, NameOf(member, me), member.Online ? "good" : "normal"))];
-        if (cells.Count < members.Count)
-        {
-            cells.Add(new ScreenCell(null, $"and {members.Count - cells.Count} more", "normal"));
-        }
-
-        List<IReadOnlyList<ScreenCell?>> rows = [.. cells.Chunk(2).Select(pair => (IReadOnlyList<ScreenCell?>)(pair.Length == 2 ? [pair[0], pair[1]] : [pair[0], null]))];
-        return new ScreenPanel("Players", $"{members.Count} joined", rows, "players");
+        List<IReadOnlyList<ScreenCell?>> rows = [.. members.Select(member => (IReadOnlyList<ScreenCell?>)[new ScreenCell(null, NameOf(member, me), member.Online ? "good" : "normal")])];
+        return new ScreenPanel("Players", $"{members.Count} joined", rows, "players", Lines: true);
     }
 
     /// <summary>

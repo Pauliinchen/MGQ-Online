@@ -2,6 +2,7 @@
 //  OverviewPagesTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-09: Checked that a folded group keeps its entries' labels for the labels' column
 //      Paulinchen  2026-11-08: Checked how the Quests page tells a quest from its messages
 //      Paulinchen  2026-11-06: Dropped the checks that replayed recorded cases
 //      Paulinchen  2026-10-31: Created
@@ -64,6 +65,24 @@ public sealed class OverviewPagesTests
         Assert.Equal(
             [("main", "Amira", "Cross the mountains. | Let's go.", (int?)null), ("side", "Amira", "A troublesome job. | Go to the slums.", 1), ("side", null, "Iron ore in the Pornof mines.", 2)],
             page.Picks.OfType<OverviewQuest>().Select(quest => (quest.Kind, quest.Speaker, string.Join(" | ", quest.Texts), quest.Number)));
+    }
+
+    /// <summary>
+    /// Asserts that the Quests page lists the labels of a folded group's entries too, so folding
+    /// never moves the labels' column.
+    /// </summary>
+    [Fact]
+    public void Quests_KeepsTheLabelsOfAFoldedGroup()
+    {
+        OverviewMessage[][] sides = [[new("Amira", "Go to the slums.")]];
+        OverviewMessage[][] requests = [[new("Alma Elma", "Bring me a souvenir.")]];
+        var folds = new OverviewFolds();
+        folds.Choose(OverviewPages.QuestsPage, OverviewPages.SideKind, false);
+
+        OverviewModel page = OverviewPages.Quests([], sides, requests, folds);
+
+        Assert.DoesNotContain(page.Rows, row => row.Entry is OverviewQuest { Kind: OverviewPages.SideKind });
+        Assert.Equal(["1.", "Alma Elma"], page.Labels);
     }
 
     /// <summary>

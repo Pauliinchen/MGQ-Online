@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-11-09: Handed the head's values with their captions apart from its lines
+//                            - Handed the labels of every entry of a page, those of folded groups too
 //      Paulinchen  2026-11-08: Walked the quests over the game's events and took their messages as the scripts look them up
 //                            - Moved to the MGQOnline.Multiplayer namespace
 //      Paulinchen  2026-11-01: Dropped the story topics no script calls, since the rows and pages write the story
@@ -249,7 +250,7 @@ internal static class OverviewTopics
     /// <param name="model">The page.</param>
     /// <returns><c>head</c> (<c>title</c>, <c>note</c>, <c>fields</c> ([caption, value] each), <c>lines</c> and <c>entry</c>, see <see cref="EntryValue"/>),
     /// <c>rows</c> (["none", text], or ["fold"] or ["entry"] with the row's view, see <see cref="ViewValue"/>,
-    /// and its entry) and <c>picks</c> (each pick's place among the rows, -1 for the head's entry).</returns>
+    /// and its entry), <c>picks</c> (each pick's place among the rows, -1 for the head's entry) and <c>labels</c> (every entry's label, those of folded groups too).</returns>
     private static RubyHash ModelValue(OverviewModel model)
     {
         var rows = new RubyArray();
@@ -280,7 +281,7 @@ internal static class OverviewTopics
             { "lines", Texts(model.Head.Lines) },
             { "entry", model.Head.Entry is { } shown ? EntryValue(shown) : RubyNil.Value },
         };
-        return new RubyHash { { "head", head }, { "rows", rows }, { "picks", picks } };
+        return new RubyHash { { "head", head }, { "rows", rows }, { "picks", picks }, { "labels", Texts(model.Labels) } };
     }
 
     /// <summary>

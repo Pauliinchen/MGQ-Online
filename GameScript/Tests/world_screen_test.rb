@@ -2,8 +2,15 @@
 #  world_screen_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-09: Checked that the description takes the whole height of its box
+#                            - Checked that the World and Game data panels of the details open list boxes of their own
+#                            - Checked that the search and the filters lie in a box of their own above the worlds, whose list wraps at its ends
+#                            - Checked that a world's details show its players as lines
+#                            - Checked that the screen hands the list's search and filters to the DLL and shows the rows it marks shown
+#                            - Checked that a list changed in a refresh keeps the cursor on its world
 #      Paulinchen  2026-11-08: Checked that a click outside closes the mod picker while its Name field shows
 #                            - Checked that the first worlds to arrive and the world chosen before the save screen show their details
+#                            - Checked that a world's details show its mods as chips
 #      Paulinchen  2026-11-06: Dropped the stand-ins of the mouse and the held buttons, which no check reads
 #                            - Checked that mods the Mod Framework finds ready while the DLL finds them differing refuse the entry
 #                            - Reached the Mod Framework's engine under its own name
@@ -172,6 +179,68 @@ check("the first worlds to arrive pick the worlds' box as a whole, the rows as t
 scene.entered(:worlds)
 scene.pointed_world(scene.entries[1])
 check("in the worlds the right side shows the world the cursor is on", [scene.right_view[0], scene.right_view[1].name], [:world, "Sunset"])
+Mod_Framework::UI::Engine::Layer.frame
+screen_top = Mod_Framework::UI::Engine::Layer.tops.find { |top| top.id == Scene_MpWorlds::ROOT_ID.to_s && !top.closed }
+parts_in = lambda { |part| [part] + Array(part.children).map { |child| parts_in.call(child) }.flatten }
+chip_sets = parts_in.call(screen_top.root.engine).select { |part| part.is_a?(Mod_Framework::UI::Engine::Chips) }
+check("its details show the world's mods as chips",
+      chip_sets.map { |chips| chips.children.select { |chip| chip.visible? }.map { |chip| chip.text } }, [["Level Cap", "Party Sheet"]])
+player_lines = parts_in.call(screen_top.root.engine).select { |part| part.is_a?(Mod_Framework::UI::Engine::Lines) }
+check("and its players a line each beside the description, as many as its fixed box holds",
+      player_lines.map { |part| part.lines.map { |line| line[:text] } }, [["Cara", "Ana", "Me (you)"]])
+description = parts_in.call(screen_top.root.engine.find(:mgq_online_details_description)).find { |part| part.is_a?(Mod_Framework::UI::Engine::Label) }
+check("and its description takes the whole height of its box, so it wraps to the lines the box holds instead of one",
+      [description.text, description.wrap, description.grow], ["A slow run.", true, 1])
+$screens.boxes[["w1", "world"]] = [["item", "Creator: Cara", "normal", nil]]
+$screens.boxes[["w1", "data"]] = [["head", "Mods (2)"], ["item", "Level Cap", "plain", nil]]
+asked = []
+[:world, :data].each do |target|
+  scene.open_target(target)
+  asked << [$screens.asked("screen.box").last["kind"], scene.list_box && scene.list_box.open?]
+  scene.list_box.close
+end
+check("confirm or a click on its World panel opens the world's facts in the list box, on its Game data panel its mods and game data settings",
+      asked, [["world", true], ["data", true]])
+
+# The search and the filters in their box above the worlds go to the DLL, which marks the rows they show.
+engine = Mod_Framework::UI::Engine
+filter_parts = parts_in.call(screen_top.root.engine.find(:mgq_online_world_filters_box))
+worlds_list = screen_top.root.engine.find(:mgq_online_worlds)
+check("above the worlds a box of its own holds the search field and the filters of the type and the players online",
+      [filter_parts.count { |part| part.is_a?(engine::TextField) }, filter_parts.select { |part| part.is_a?(engine::ToggleGroup) }.map { |group| group.children.map { |item| item.text } }],
+      [1, [["All", "Raid", "Classic"], ["Online"]]])
+check("the worlds' box holds the list alone, which wraps at its ends instead of leaving for the filters",
+      [screen_top.root.engine.find(:mgq_online_worlds_box).children.map { |part| part.class }, worlds_list.leave_ends], [[engine::List], false])
+scene.entered(:commands)
+scene.entered(:filters)
+scene.left(:commands)
+check("in the search and the filters the right side shows the world under the cursor", [scene.right_view[0], scene.right_view[1].name], [:world, "Sunset"])
+$screens.list = $screens.list.merge("rows" => [listed_row(LISTED[1], "shown" => false), listed_row(LISTED[0])])
+scene.searched("sun")
+check("typing a search asks the list with it and shows the rows the DLL marks shown, the cursor kept on its world",
+      [$screens.asked("screen.list").last, scene.entries.map { |entry| entry.name }, scene.current_entry.name], [{ "search" => "sun", "type" => "all", "online" => false }, ["Sunset"], "Sunset"])
+scene.type_turned("raid")
+scene.online_turned([:online])
+$screens.list = $screens.list.merge("rows" => ROWS.map { |row| row.merge("shown" => false) }, "empty" => "No world matches the search and filters.")
+scene.searched("sunx")
+check("the type and players online go with it; a list they empty says so and the worlds' box keeps the keys",
+      [$screens.asked("screen.list").last, scene.entries, scene.list_empty, scene.instance_variable_get(:@whole)],
+      [{ "search" => "sunx", "type" => "raid", "online" => true }, [], "No world matches the search and filters.", :worlds])
+scene.searched("")
+scene.type_turned("all")
+scene.online_turned([])
+screen_list(ROWS)
+scene.look_at_list
+scene.pointed_world(scene.entries[1])
+
+# A refresh that changed the list keeps the cursor on its world, wherever its row went.
+focus = scene.focus_request
+screen_list([listed_row(LISTED[0], "count" => "2/4"), ROWS[0]])
+scene.look_at_list
+check("a list that changed in a refresh keeps the cursor on the world it was on, the focus where it was",
+      [scene.current_entry.name, scene.world_index, scene.focus_request], ["Sunset", 0, focus])
+screen_list(ROWS)
+scene.look_at_list
 scene.entered(:commands)
 scene.pointed_command(Scene_MpWorlds::COMMANDS[3])
 check("on Back of the commands the right side shows nothing", scene.right_view, nil)

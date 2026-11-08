@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-11-09: Handed the head's captioned values over apart from its lines
+//                            - Handed the labels of every entry over, those of folded groups too
 //      Paulinchen  2026-10-31: Created
 //
 //----------------------------------------------------------------
@@ -43,4 +44,5 @@ public sealed record OverviewItem(string? None, OverviewEntry? Entry);
 /// <param name="Head">Its head.</param>
 /// <param name="Rows">Its list's rows.</param>
 /// <param name="Picks">What can be picked, the head's entry first.</param>
-public sealed record OverviewModel(OverviewHead Head, IReadOnlyList<OverviewItem> Rows, IReadOnlyList<OverviewEntry> Picks);
+/// <param name="Labels">The labels of every entry of its list, those of folded groups too, whose widest sets the labels' column so a fold never moves it.</param>
+public sealed record OverviewModel(OverviewHead Head, IReadOnlyList<OverviewItem> Rows, IReadOnlyList<OverviewEntry> Picks, IReadOnlyList<string> Labels);
