@@ -2,7 +2,10 @@
 #  world_overview.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-08: Wrote the world's type and difficulty right after its name in the title
+#      Paulinchen  2026-11-08: Removed the Looks struct, the pages showing characters as avatars
+#                            - Showed each player's leader before their name on the Players page
+#                            - Showed a stand-in for a leader whose sprite this game lacks, as the map does
+#                            - Wrote the world's type and difficulty right after its name in the title
 #                            - Gave its UI ids the mgq_online_ prefix
 #                            - Left the quest walk's events and markers to the DLL
 #      Paulinchen  2026-11-07: Greyed a player menu choice that cannot be taken through disabled:
@@ -87,13 +90,14 @@
 # with its hotkey (F11 unless the player binds another, see core_hotkeys.rbx) or the action wheel's
 # middle, moved and resized with the left Alt held, its place kept under the id ID, with its pages
 # on tabs that Left, Right, Tab or a click turn. The Players page lists every player of the world
-# online, grouped by where they are, with their formation's highest level, their place in the story
-# and their ping; a player picked opens a menu of what the scripts offer, such as party invites,
-# duels and trades. The other pages are page views, see world_overview_pages.rbx; other mods append
-# their own tabs to "#mgq_online_overview_tabs" through UI.patch "#mgq_online_overview". It also
-# lists the player's party for the party box of ui_party_box.rbx and, in a Raid World, everyone on
-# the player's map for the map box, and tells the others where the player is, their levels and
-# their place in the story in the state overworld_sync.rbx sends.
+# online, grouped by where they are, with their leader's map sprite before their name, their
+# formation's highest level, their place in the story and their ping; a player picked opens a menu
+# of what the scripts offer, such as party invites, duels and trades. The other pages are page
+# views, see world_overview_pages.rbx; other mods append their own tabs to
+# "#mgq_online_overview_tabs" through UI.patch "#mgq_online_overview". It also lists the player's
+# party for the party box of ui_party_box.rbx and, in a Raid World, everyone on the player's map for
+# the map box, and tells the others where the player is, their levels and their place in the story
+# in the state overworld_sync.rbx sends.
 module MGQ_MpWorldOverview
   # The framework's components, short.
   UI = Mod_Framework::UI
@@ -182,9 +186,6 @@ module MGQ_MpWorldOverview
   PORTRAIT_OPTION_HELP = "How the Quests page of the World overview shows Amira and the companions asking for help:\n" \
                          "Sprites by their map sprite, Faces by their face."
 
-  # How a character looks: their map sprite's sheet and place, and their face's sheet and place.
-  Looks = Struct.new(:character_name, :character_index, :face_name, :face_index)
-
   # A speaker's name at a message's start: the translation's "\n<Name>" and the untranslated
   # game's "【Name】".
   SPEAKER = /\\n<[^>]*>|\A\s*【[^】]*】/
@@ -240,6 +241,10 @@ module MGQ_MpWorldOverview
   # The widths of the Players page's columns: the icons, the name, the party, the level, the place
   # in the story (the rest) and the ping.
   PLAYER_CELLS = [52, 172, 52, 56, nil, 64]
+
+  # The side of the leader's picture before a player's name, which makes the Players page's rows
+  # 32 px high.
+  LEADER_SIDE = 28
 
   # Width of a player's menu.
   MENU_WIDTH = 210
@@ -708,7 +713,7 @@ module MGQ_MpWorldOverview
   #
   # @return [Array] The signature.
   def self.signature
-    [rows.map { |row| [key_of(row), row.call] }, @serial, title_tail, party_text, in_world?, raid?]
+    [rows.map { |row| [key_of(row), row.call, leader_of(row)] }, @serial, title_tail, party_text, in_world?, raid?]
   end
 
   # Writes the Players page's rows: a heading per place and a row per player, see player_row.
@@ -719,8 +724,8 @@ module MGQ_MpWorldOverview
   end
 
   # Makes a player's row of the list: the icon of what they do and a party leader's crown, their
-  # name in their color, their party's size, their level, their place in the story or their call
-  # in its color, and their ping in its color at the right.
+  # leader's map sprite and their name in their color, their party's size, their level, their place
+  # in the story or their call in its color, and their ping in its color at the right.
   #
   # @param row [Row] The player.
   # @return [Hash] The row, keyed by the player, see key_of.
@@ -729,10 +734,24 @@ module MGQ_MpWorldOverview
     icons = [row.icon, row.badge && row.badge[1] ? MGQ_MpOverworld::CROWN_ICON : nil].compact
     text, text_color = row.call || [row.story, :text]
     ping, ping_color = row.ping
-    cells = [{ :icons => icons }, { :text => row.name, :color => color }, { :text => row.badge ? row.badge[0] : "", :typo => :caption, :color => color },
+    leader = { :character => leader_of(row), :image => :sprite, :shape => :box, :width => LEADER_SIDE, :height => LEADER_SIDE }
+    cells = [{ :icons => icons }, { :avatar => leader, :text => row.name, :color => color }, { :text => row.badge ? row.badge[0] : "", :typo => :caption, :color => color },
              { :text => row.level, :typo => :caption }, { :text => text.to_s, :typo => :caption, :color => text_color },
              { :text => ping.to_s, :typo => :caption, :color => ping_color || :text, :align => :end }]
     { :key => key_of(row), :data => row, :cells => cells }
+  end
+
+  # Tells whose map sprite a player's row shows before their name: the player's own party leader,
+  # or the sprite their ghost on the map shows for the one their game last told.
+  #
+  # @param row [Row] The player.
+  # @return [Symbol, Hash] :party_leader, or the sprite's file and its index in the file.
+  def self.leader_of(row)
+    return :party_leader if row.player == :me
+
+    state = row.player.state || {}
+    name, index = MGQ_MpOverworld.sprite(state["sprite"].to_s, state["index"].to_i)
+    { :sprite => name, :index => index }
   end
 
   # Opens the menu of the player in a row of the Players page beside it, its choices from what the

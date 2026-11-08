@@ -2,6 +2,7 @@
 #  ui_leader_hud_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Checked the leader's avatar in both sizes
 #      Paulinchen  2026-11-07: Typed through a text box of the Mod Framework instead of the old typing flag
 #                            - Dropped the stand-in for Mod Config Remake, which nothing reads
 #      Paulinchen  2026-11-06: Left what the HUD shows to the in-game suite, checking what its bars read
@@ -20,7 +21,7 @@
 
 # Covers the Leader HUD, ui_leader_hud.rbx: what its bars read of the Formation Leader, the hotkey
 # that switches its sizes, hiding it, the map's top left windows moved below the parts there, and
-# its Mod Config rows. What it shows is the in-game suite's.
+# its Mod Config rows, and which picture of the leader it shows. How it looks is the in-game suite's.
 
 require_relative "hud_support"
 
@@ -118,6 +119,23 @@ check("H makes it small, kept in Player.ini, with the cursor's sound, and render
 $pressed = 0x48
 hud.on_map
 check("and large again", hud.size, "Large")
+
+# The leader's picture: an avatar of the party's leader in a square, the face while Large and the
+# map sprite while Small.
+avatars = lambda do
+  10.times { Mod_Framework::UI::Engine::Layer.frame }
+  tree_frame
+  Mod_Framework::UI::Engine::Tree.instance_variable_get(:@roots).map { |root| parts_of_kind(root, Mod_Framework::UI::Engine::Avatar) }.flatten
+                                 .map { |part| [part.actor.equal?(leader), part.image, part.shape] }
+end
+hud.keep_shown
+large_avatars = avatars.call
+$pressed = 0x48
+hud.on_map
+check("the HUD shows the leader's face in a square while Large, their map sprite while Small", [large_avatars, avatars.call],
+      [[[true, :face, :box]], [[true, :sprite, :box]]])
+$pressed = 0x48
+hud.on_map
 MGQ_MpChat.singleton_class.send(:alias_method, :leader_hud_test_typing?, :typing?)
 MGQ_MpChat.define_singleton_method(:typing?) { true }
 logged = []

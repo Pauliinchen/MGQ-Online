@@ -2,7 +2,8 @@
 #  ui_leader_hud.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-08: Gave its UI ids the mgq_online_ prefix
+#      Paulinchen  2026-11-08: Showed the leader as an avatar of the Mod Framework
+#                            - Gave its UI ids the mgq_online_ prefix
 #      Paulinchen  2026-11-06: Read the room at the top left through the Mod Framework's UI.room
 #                            - Renamed add_options to offer_rows, which the Mod Framework's scan no longer takes for a call of the old UI
 #                            - Drew the HUD as a hud of the Mod Framework's UI layer
@@ -359,7 +360,7 @@ module MGQ_MpLeaderHud
       hud id: ID, place_name: PLACE_NAME, anchor: :top_left, order: ORDER, shown_in: [Scene_Map], width: WIDTHS[size],
           hide_while: -> { !MGQ_MpLeaderHud.shows? } do
         stack row: true, spacing: 1.5 do
-          paper(width: side, height: side) { picture(large) }
+          paper(width: side, height: side) { avatar character: :party_leader, image: (large ? :face : :sprite), shape: :box, height: :fill }
           stack grow: 1, spacing: 0.5 do
             stack row: true do
               text -> { leader_name }, typo: (large ? :subtitle2 : :caption), grow: 1
@@ -379,16 +380,6 @@ module MGQ_MpLeaderHud
     end
 
     private
-
-    # Describes the leader's face for the Large size, their whole map figure for the Small one.
-    #
-    # @param large [Boolean] Whether the HUD is Large.
-    def picture(large)
-      leader = MGQ_MpLeaderHud.leader
-      return unless leader
-
-      large ? image(face: leader, fit: :cover, height: :fill) : image(figure: leader, fit: :contain, anchor: :bottom, height: :fill)
-    end
 
     # Describes the HP or the MP bar: while Large with its name at its left and its numbers inside.
     #

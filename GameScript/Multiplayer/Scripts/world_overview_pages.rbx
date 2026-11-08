@@ -2,7 +2,8 @@
 #  world_overview_pages.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-08: Looked up the quests' texts and speakers at the places the DLL's quest walk names
+#      Paulinchen  2026-11-08: Showed the characters of the heads and the reading pane as avatars of the Mod Framework
+#                            - Looked up the quests' texts and speakers at the places the DLL's quest walk names
 #                            - Gave its UI ids the mgq_online_ prefix
 #      Paulinchen  2026-11-06: Dropped the picture behind the Quests page, which page views no longer take
 #                            - Drew the icons of the heads and the pane's things with the icon part
@@ -75,9 +76,9 @@ module MGQ_MpWorldOverview
   # The kind of the companions' requests on the board, as the DLL names it.
   COMPANION = "companion"
 
-  # A page's head: how a character looks or an icon in a framed box, its title with a note at the
+  # A page's head: a character's picture or an icon in a framed box, its title with a note at the
   # right, and under it lines or a grid of columns; the entry picking the head shows, if any.
-  Head = Struct.new(:looks, :icon, :title, :note, :lines, :grid, :entry)
+  Head = Struct.new(:actor, :icon, :title, :note, :lines, :grid, :entry)
 
   # A page's model as the DLL laid it out: its head, the rows of its list ([:none, text], [:fold,
   # Entry] or [:entry, Entry]) and what can be picked, the head's entry first.
@@ -98,12 +99,12 @@ module MGQ_MpWorldOverview
   # and the share of a gauge, if any.
   RowView = Struct.new(:label, :text, :note, :dim, :gauge)
 
-  # What the reading pane shows: its title, how the one it is about looks, and its lines, each
+  # What the reading pane shows: its title, the character it is about, and its lines, each
   # [:text, paragraph], [:item, PaneItem], [:gauge, share, text] or [:gap].
-  Pane = Struct.new(:title, :looks, :lines)
+  Pane = Struct.new(:title, :actor, :lines)
 
-  # A pane line naming something by its icon or how it looks, with a note at the right.
-  PaneItem = Struct.new(:icon, :looks, :name, :note, :dim)
+  # A pane line naming something by its icon or its character's picture, with a note at the right.
+  PaneItem = Struct.new(:icon, :actor, :name, :note, :dim)
 
   # A member's level in the Unlocks page's grid.
   LEVEL_SHORT = "Lv %d"
@@ -181,13 +182,13 @@ module MGQ_MpWorldOverview
                 "companion" => walked["companion"].map { |quest| messages_of(quest) } }
     data = model_of(MGQ_Multiplayer::Bridge.call(QUESTS_TOPIC, request))
     amira = $data_actors && $data_actors[AMIRA]
-    data.head.looks = looks(amira) if amira
+    data.head.actor = amira
     data
   end
 
   # Lays the Unlocks page out through the DLL: Luka with the formation's catch-up experience at the
   # top; the levels whose every unlock the player got folded under Passed, the others under Coming
-  # up. The script adds the formation's grid and Luka's looks.
+  # up. The script adds the formation's grid and Luka.
   #
   # @return [Model] The model.
   def self.unlock_model
@@ -197,7 +198,7 @@ module MGQ_MpWorldOverview
                 "unlocks" => @unlocks.map { |unlock| [unlock.level, unlock.name.to_s, unlock.got ? true : false, unlock.due ? true : false] } }
     data = model_of(MGQ_Multiplayer::Bridge.call(UNLOCKS_TOPIC, request))
     hero = $game_actors ? $game_actors[LUKA] : nil
-    data.head.looks = looks(hero) if hero
+    data.head.actor = hero
     data.head.grid = $game_party.battle_members.select { |actor| MGQ_MpWorldCatchup.counts?(actor) }.map { |actor| exp_cells(actor, target) } if target
     data
   end
@@ -309,7 +310,7 @@ module MGQ_MpWorldOverview
   end
 
   # Tells what the reading pane shows of an entry: a note or a quest with its paragraphs, a
-  # companion's request beside how they look, a raid boss as the DLL wrote its pane, or what a
+  # companion's request beside their picture, a raid boss as the DLL wrote its pane, or what a
   # level brings, see level_pane.
   #
   # @param entry [Entry, nil] The entry.
@@ -355,7 +356,7 @@ module MGQ_MpWorldOverview
         end
       when :companion
         actor = unlock.id && $data_actors ? $data_actors[unlock.id] : nil
-        groups[:companion] << PaneItem.new(nil, actor ? looks(actor) : nil, unlock.name, note, unlock.got)
+        groups[:companion] << PaneItem.new(nil, actor, unlock.name, note, unlock.got)
       else
         groups[:makina] << PaneItem.new(unlock.icon, nil, unlock.name, note, unlock.got)
       end
@@ -402,36 +403,28 @@ module MGQ_MpWorldOverview
     name && !name.empty? ? name : nil
   end
 
-  # Finds how a companion looks by their name: the one of that name in the party, else the first
-  # character of the game with that name and a map sprite.
+  # Finds a companion by their name: the one of that name in the party, else the first character of
+  # the game with that name and a map sprite.
   #
   # Companions with several forms share a name, so the party's form comes first.
   #
   # @param name [String, nil] The companion's name.
-  # @return [Looks, nil] How they look; nil for a name no character has.
+  # @return [Game_Actor, RPG::Actor, nil] The party's character or the game's; nil for a name no
+  #   character has.
   def self.looks_of(name)
     return nil if name.to_s.empty?
 
     members = $game_party.all_members + ($game_party.respond_to?(:stand_members) ? $game_party.stand_members.to_a : [])
     member = members.find { |actor| actor && actor.name.to_s == name && !actor.character_name.to_s.empty? }
-    return looks(member) if member
+    return member if member
 
     @looks_by_name ||= ($data_actors || []).compact.reverse.each_with_object({}) do |actor, found|
       found[actor.name.to_s] = actor unless actor.character_name.to_s.empty?
     end
-    actor = @looks_by_name[name]
-    actor ? looks(actor) : nil
+    @looks_by_name[name]
   rescue => e
     log_once([:looks, name], "finding how #{name} looks failed: #{e.class}: #{e.message}")
     nil
-  end
-
-  # Reads how a character looks.
-  #
-  # @param actor [Game_Actor, RPG::Actor] The character.
-  # @return [Looks] How they look.
-  def self.looks(actor)
-    Looks.new(actor.character_name.to_s, actor.character_index.to_i, actor.face_name.to_s, actor.face_index.to_i)
   end
 
   # Tells how the Quests page shows Amira and the companions, as Player.ini keeps it.
@@ -520,13 +513,13 @@ module MGQ_MpWorldOverview
     row
   end
 
-  # Tells how a character's picture shows, as the Quest Portraits row picks: by their face, else
-  # by their map sprite.
+  # Tells which picture of a character an avatar shows, as the Quest Portraits row picks: their
+  # face, else their map sprite.
   #
-  # @param looks [Looks] How they look.
-  # @return [Hash] { :face } or { :figure }, as image takes them.
-  def self.picture_of(looks)
-    portraits == FACES && !looks.face_name.to_s.empty? ? { :face => looks } : { :figure => looks }
+  # @param actor [Game_Actor, RPG::Actor] The character.
+  # @return [Symbol] :face or :sprite, as avatar takes them.
+  def self.image_of(actor)
+    portraits == FACES && !actor.face_name.to_s.empty? ? :face : :sprite
   end
 
   # An own page of the overview, World, Quests or Unlocks: a page view of a head, the model's rows
@@ -534,9 +527,6 @@ module MGQ_MpWorldOverview
   class OverviewPage < UI::Component
     # Side of a portrait or an icon in the head.
     HEAD_PICTURE = 64
-
-    # Side of a portrait in the pane's title.
-    PANE_PICTURE = 48
 
     # Side of a portrait beside a thing named in the pane.
     ITEM_PICTURE = 24
@@ -579,8 +569,8 @@ module MGQ_MpWorldOverview
     # @param head [Head] The head.
     def head_of(head)
       stack row: true do
-        if head.looks
-          image(MGQ_MpWorldOverview.picture_of(head.looks).merge(width: HEAD_PICTURE, height: HEAD_PICTURE))
+        if head.actor
+          avatar character: head.actor, image: MGQ_MpWorldOverview.image_of(head.actor), shape: :box, width: HEAD_PICTURE, height: HEAD_PICTURE
         elsif head.icon
           icon head.icon
         end
@@ -614,7 +604,7 @@ module MGQ_MpWorldOverview
       return unless pane
 
       stack row: true do
-        image(MGQ_MpWorldOverview.picture_of(pane.looks).merge(width: PANE_PICTURE, height: PANE_PICTURE)) if pane.looks
+        avatar(character: pane.actor, image: MGQ_MpWorldOverview.image_of(pane.actor), size: :medium) if pane.actor
         text pane.title.to_s, typo: :subtitle2, wrap: true, grow: 1
       end
       pane.lines.each do |kind, value, extra|
@@ -635,8 +625,8 @@ module MGQ_MpWorldOverview
       stack row: true do
         if item.icon
           icon item.icon
-        elsif item.looks
-          image(MGQ_MpWorldOverview.picture_of(item.looks).merge(width: ITEM_PICTURE, height: ITEM_PICTURE))
+        elsif item.actor
+          avatar character: item.actor, image: MGQ_MpWorldOverview.image_of(item.actor), width: ITEM_PICTURE, height: ITEM_PICTURE
         end
         name = { grow: 1 }
         name[:color] = :dim if item.dim

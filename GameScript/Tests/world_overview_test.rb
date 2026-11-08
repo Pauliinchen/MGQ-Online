@@ -2,7 +2,10 @@
 #  world_overview_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-08: Checked the quests looked up at the places the DLL's quest walk names, the walk itself left to the C# tests
+#      Paulinchen  2026-11-08: Checked the characters the Quests page shows as avatars, by the game's actors themselves
+#                            - Checked each player's leader before their name on the Players page
+#                            - Checked the stand-in for a leader whose sprite this game lacks
+#                            - Checked the quests looked up at the places the DLL's quest walk names, the walk itself left to the C# tests
 #                            - Expected the menu beside the players list under its mgq_online_ id
 #      Paulinchen  2026-11-07: Read a greyed menu choice from disabled:
 #      Paulinchen  2026-11-06: Dropped the check of the picture behind the Quests page
@@ -200,8 +203,8 @@ $data_mapinfos = { 5 => MapInfo.new("Ilias Village (editor)") }
 
 # Stands in for the game's cache of the characters' sprites and faces, which the portraits measure.
 module Cache
-  # Answers a sheet of map sprites.
-  def self.character(_name); Bitmap.new(384, 256); end
+  # Answers a sheet of map sprites, none for a sprite a mod of another player added.
+  def self.character(name); raise Errno::ENOENT, name if name == "Modded_cip"; Bitmap.new(384, 256); end
   # Answers a sheet of faces.
   def self.face(_name); Bitmap.new(384, 384); end
 end
@@ -229,6 +232,14 @@ load_script "world_overview_pages"
 # Stands in for the emote wheel, shut until a test opens it with $emotes_open.
 module MGQ_MpEmotes; def self.wheel; StandInWheel.new(lambda { $emotes_open }); end; end
 load_script "ui_party_box"
+# Stands in for RGSS's load_data, with Luka's sprite in the actors, which the map shows for a sprite
+# this game lacks.
+def load_data(path)
+  raise Errno::ENOENT, path unless path == "Data/Actors.rvdata2"
+
+  [nil, Struct.new(:character_name, :character_index).new("Luka", 0)]
+end
+MGQ_MpOverworld.read_stand_in
 rules_bridge = open_rules_bridge
 # The title's tail and the World page's note the DLL writes for the worlds below, by whether it is
 # a Raid World and its difficulty.
@@ -292,7 +303,7 @@ set_lists.call("Ilias Village", false)
 
 # The Players page lays the players out by place as the DLL lines them up.
 other = { "id" => "other", "name" => "member", "map" => 5, "x" => 30, "y" => 30, "d" => 2, "scene" => "menu", "place" => "Ilias Village", "lv" => 12, "progress" => "1", "ping" => 40 }
-friend = { "id" => "friend", "name" => "Friend", "map" => 7, "x" => 1, "y" => 1, "d" => 2, "scene" => "battle", "place" => "Forest", "lv" => 30, "progress" => "2:ilias", "ping" => 250 }
+friend = { "id" => "friend", "name" => "Friend", "sprite" => "Hero03_cip", "index" => 1, "map" => 7, "x" => 1, "y" => 1, "d" => 2, "scene" => "battle", "place" => "Forest", "lv" => 30, "progress" => "2:ilias", "ping" => 250 }
 $inbox << entry("seat", 0) << entry("in", 2) << entry("message", 2, told(friend)) << entry("in", 3) << entry("message", 3, told(other))
 MGQ_MpOverworldSync.tick
 lines = overview.lines(overview.rows)
@@ -355,6 +366,17 @@ friend_cells = overview.player_rows[4][:cells]
 check("a player's row: what they do, their name, their party, their level, their story and their ping in its color",
       [friend_cells.map { |cell| cell[:icons] || cell[:text] }, friend_cells[5].values_at(:color, :align)],
       [[[451], "Friend", "", "Lv 30", "Part 2: Ilias side", "250 ms"], [:error, :end]])
+signature = overview.signature
+$inbox << entry("message", 2, told(friend.merge("sprite" => "Hero05_cip", "index" => 3)))
+MGQ_MpOverworldSync.tick
+check("a row shows the player's leader before the name: the own party's, another's as their game tells it, which a new leader redraws",
+      [overview.player_rows[1][:cells][1][:avatar], friend_cells[1][:avatar][:character], overview.player_rows[4][:cells][1][:avatar][:character],
+       overview.signature == signature],
+      [{ :character => :party_leader, :image => :sprite, :shape => :box, :width => 28, :height => 28 }, { :sprite => "Hero03_cip", :index => 1 },
+       { :sprite => "Hero05_cip", :index => 3 }, false])
+$inbox << entry("message", 2, told(friend.merge("sprite" => "Modded_cip", "index" => 2)))
+MGQ_MpOverworldSync.tick
+check("a leader whose sprite this game lacks shows Luka in its place, as on the map", overview.player_rows[4][:cells][1][:avatar][:character], { :sprite => "Luka", :index => 0 })
 submit.call(4)
 check("confirm on a player opens their menu beside the row, greying what cannot be taken now with why as its tooltip",
       [menu.call, $menu[0][1][:tooltip], $menu[1].values_at(:beside, :row)],
@@ -813,11 +835,10 @@ $data_actors = [nil, LooksActor.new(1, "Luka", "Main01_cip", 0, "luka_fc", 0), L
 overview.instance_variable_set(:@looks_by_name, nil)
 party_members = $game_party.all_members
 $game_party.all_members = [LooksActor.new(57, "Rami", "Evil02_cip", 2, "rami_fc", 2)]
-check("a companion quest knows how its companion looks: the party's of that name first, else the first with a map sprite, none for a name without a character",
-      [overview.looks_of("Rami").to_a, overview.looks_of("Kamuro").to_a, overview.looks_of("ポチ"), overview.looks_of(nil)],
-      [["Evil02_cip", 2, "rami_fc", 2], ["Beast03_cip", 7, "kamuro_fc", 3], nil, nil])
+check("a companion quest finds its companion: the party's of that name first, else the first with a map sprite, none for a name without a character",
+      [overview.looks_of("Rami").id, overview.looks_of("Kamuro").id, overview.looks_of("ポチ"), overview.looks_of(nil)], [57, 104, nil, nil])
 $game_party.all_members = []
-check("without one in the party the game's first of that name", overview.looks_of("Rami").to_a, ["Evil01_cip", 5, "rami_fc", 1])
+check("without one in the party the game's first of that name", overview.looks_of("Rami").id, 56)
 $game_party.all_members = party_members
 check("the portraits are sprites until the player picks faces, which Player.ini keeps",
       [overview.portraits, (overview.choose_portraits("Faces"); overview.portraits), $player_ini["quest_portraits"], (overview.choose_portraits("Bogus"); overview.portraits)],
@@ -854,17 +875,17 @@ overview.instance_variable_set(:@looks_by_name, nil)
 overview.turned(:quests)
 quests = overview.model(:quests)
 check("the Quests page heads Amira by her map sprite with the main quest's first sentence, the whole quest in the pane of the head",
-      [overview.page, quests.head.title, quests.head.lines, overview.picture_of(quests.head.looks).keys, quests.head.looks.to_a, overview.pick_pane(quests, :head).lines],
-      [:quests, "Main quest", ["Cross the mountains."], [:figure], ["Civlian01_cip", 0, "amira_fc1", 0], [[:text, "Cross the mountains."], [:gap], [:text, "Buy golden equipment."]]])
+      [overview.page, quests.head.title, quests.head.lines, quests.head.actor.equal?($data_actors[540]), overview.image_of(quests.head.actor), overview.pick_pane(quests, :head).lines],
+      [:quests, "Main quest", ["Cross the mountains."], true, :sprite, [[:text, "Cross the mountains."], [:gap], [:text, "Buy golden equipment."]]])
 check("its list holds the groups and under them the quests, numbered or by who asks",
       quests.rows.map { |item| overview.entry_row(item).values_at(:label, :text) },
       [[nil, "Side quests (2)"], ["1.", "Strange crying near Iliasville."], ["2.", "A troublesome job."],
        [nil, "Companion quests (3)"], ["Rami", "Take me to Harpy Village♪"], ["Kamuro", "Homework."], ["ポチ", "犬に会いたい"]])
 pane = overview.pick_pane(quests, quests.rows[4])
 check("a companion's request picked shows in the pane by its title, beside the companion's sprite",
-      [pane.title, pane.looks.to_a, pane.lines], ["Request · Rami", ["Evil01_cip", 5, "rami_fc", 1], [[:text, "Take me to Harpy Village♪"]]])
+      [pane.title, pane.actor.id, overview.image_of(pane.actor), pane.lines], ["Request · Rami", 56, :sprite, [[:text, "Take me to Harpy Village♪"]]])
 overview.choose_portraits("Faces")
-check("with faces picked they show by their faces", [overview.picture_of(quests.head.looks).keys, overview.picture_of(pane.looks).keys], [[:face], [:face]])
+check("with faces picked they show by their faces", [overview.image_of(quests.head.actor), overview.image_of(pane.actor)], [:face, :face])
 overview.choose_portraits("Sprites")
 $frame = $frame.to_i + overview::READ_FRAMES
 kept = overview.model(:quests)
