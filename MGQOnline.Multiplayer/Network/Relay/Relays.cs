@@ -1,0 +1,160 @@
+//----------------------------------------------------------------
+//  Relays.cs
+//
+//  Changelog:
+//      Paulinchen  2026-11-08: Moved to the MGQOnline.Multiplayer namespace
+//      Paulinchen  2026-11-06: Told a refusal of this version apart and read the lowest version the relay names with it
+//      Paulinchen  2026-10-31: Dropped the PvP relay room
+//      Paulinchen  2026-10-15: Moved r1 to the relay on our own server
+//      Paulinchen  2026-10-12: Named the text for a game too old for the relay and read its refusal reason for both kinds of room
+//      Paulinchen  2026-10-06: Pointed every relay at the address in MGQMP_RELAY when it is set
+//                            - Wrote hexadecimal in lowercase at once
+//      Paulinchen  2026-09-29: Named the world room of a world's token
+//                            - Created
+//
+//----------------------------------------------------------------
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Net;
+using System.Net.Http;
+using System.Net.WebSockets;
+using System.Security.Cryptography;
+using System.Text;
+
+namespace MGQOnline.Multiplayer.Network.Relay;
+
+/// <summary>
+/// The relays the games meet at, which pass their frames on, by the id a world code names them with.
+/// </summary>
+/// <remarks>
+/// A world code names its relay by id, so an id keeps meaning one relay for every
+/// version that may still play; r1 moved to its new address only once the old one turned every
+/// version before away.
+/// </remarks>
+internal static class Relays
+{
+    /// <summary>
+    /// The relay this version hosts on.
+    /// </summary>
+    public const string Current = "r1";
+
+    /// <summary>
+    /// What the game tells once the relay turns it away as too old, unless the relay names a text of its own.
+    /// </summary>
+    public const string UpdateNeeded = "Update MGQ Online to play online.";
+
+    /// <summary>
+    /// The code the relay names a world room's 400 with when it turns a game away as too old.
+    /// </summary>
+    public const string UpdateCode = "update";
+
+    /// <summary>
+    /// The response header the relay names why it turned a game away in.
+    /// </summary>
+    private const string RefusalHeader = "X-MGQ-Refusal";
+
+    /// <summary>
+    /// The response header the relay names the lowest version it serves in, beside a refusal of a game too old.
+    /// </summary>
+    private const string MinVersionHeader = "X-MGQ-Min-Version";
+
+    /// <summary>
+    /// Separates the world room id from anything else ever derived from the same token.
+    /// </summary>
+    private static readonly byte[] WorldRoomInfo = "mgqmp world room v1"u8.ToArray();
+
+    /// <summary>
+    /// Size of a room id before it is written as hexadecimal.
+    /// </summary>
+    private const int RoomBytes = 16;
+
+    /// <summary>
+    /// The address of each relay.
+    /// </summary>
+    private static readonly Dictionary<string, Uri> Addresses = new(StringComparer.Ordinal)
+    {
+        // Our own server, see Relay/node in the repository; Cloudflare Workers until 0.6.6.1.
+        ["r1"] = new Uri("wss://relay.mgqonline.org"),
+    };
+
+    /// <summary>
+    /// Environment variable that points every relay at another address, such as a relay on this PC
+    /// for testing, for example "ws://127.0.0.1:8080".
+    /// </summary>
+    public const string OverrideVariable = "MGQMP_RELAY";
+
+    /// <summary>
+    /// Looks a relay up.
+    /// </summary>
+    /// <param name="id">The relay's id.</param>
+    /// <returns>Its address, or <see langword="null"/> for a relay this version does not know.</returns>
+    public static Uri? AddressOf(string id) => AddressOf(id, Environment.GetEnvironmentVariable(OverrideVariable));
+
+    /// <summary>
+    /// Looks a relay up, unless another address stands in for every relay.
+    /// </summary>
+    /// <param name="id">The relay's id.</param>
+    /// <param name="replacement">The address that stands in, <see langword="null"/> or not a WebSocket address for none.</param>
+    /// <returns>Its address, or <see langword="null"/> for a relay this version does not know.</returns>
+    internal static Uri? AddressOf(string id, string? replacement)
+    {
+        if (!Addresses.TryGetValue(id, out var address))
+        {
+            return null;
+        }
+
+        return Uri.TryCreate(replacement, UriKind.Absolute, out var local) && local.Scheme is "ws" or "wss" ? local : address;
+    }
+
+    /// <summary>
+    /// Reads why the relay turned a WebSocket away, as it names it in its response header.
+    /// </summary>
+    /// <param name="socket">The refused WebSocket, which collected the response's headers.</param>
+    /// <returns>The code or text, <see langword="null"/> for none.</returns>
+    public static string? RefusalOf(ClientWebSocket socket) =>
+        socket.HttpResponseHeaders?.FirstOrDefault(header => string.Equals(header.Key, RefusalHeader, StringComparison.OrdinalIgnoreCase)).Value?.FirstOrDefault();
+
+    /// <summary>
+    /// Reads the lowest version the relay serves, as it names it beside a refused WebSocket.
+    /// </summary>
+    /// <param name="socket">The refused WebSocket, which collected the response's headers.</param>
+    /// <returns>The version, <see langword="null"/> for none.</returns>
+    public static string? MinVersionOf(ClientWebSocket socket) =>
+        socket.HttpResponseHeaders?.FirstOrDefault(header => string.Equals(header.Key, MinVersionHeader, StringComparison.OrdinalIgnoreCase)).Value?.FirstOrDefault();
+
+    /// <summary>
+    /// Reads the lowest version the relay serves, as it names it beside a refused request.
+    /// </summary>
+    /// <param name="response">The refused request's answer.</param>
+    /// <returns>The version, <see langword="null"/> for none.</returns>
+    public static string? MinVersionOf(HttpResponseMessage response) =>
+        response.Headers.TryGetValues(MinVersionHeader, out var values) ? values.FirstOrDefault() : null;
+
+    /// <summary>
+    /// Tells whether the relay turned the game away as too old: a 426 on any route, or a world room's
+    /// 400 with <see cref="UpdateCode"/>.
+    /// </summary>
+    /// <param name="status">The HTTP status the relay refused the game with, <see langword="null"/> for none.</param>
+    /// <param name="code">The code the relay named why with, <see langword="null"/> for none.</param>
+    /// <returns>Whether it did.</returns>
+    public static bool IsVersionRefusal(HttpStatusCode? status, string? code) =>
+        status == HttpStatusCode.UpgradeRequired || (status == HttpStatusCode.BadRequest && code == UpdateCode);
+
+    /// <summary>
+    /// Names the world room of a world's token.
+    /// </summary>
+    /// <param name="token">The world's token.</param>
+    /// <returns>32 lowercase hexadecimal characters.</returns>
+    public static string WorldRoomOf(string token) => HexOf(token, WorldRoomInfo);
+
+    /// <summary>
+    /// Derives a room id from a token.
+    /// </summary>
+    /// <param name="token">The token.</param>
+    /// <param name="info">What the id is for, which keeps ids for different uses apart.</param>
+    /// <returns>32 lowercase hexadecimal characters.</returns>
+    private static string HexOf(string token, byte[] info) =>
+        Convert.ToHexStringLower(HKDF.DeriveKey(HashAlgorithmName.SHA256, Encoding.UTF8.GetBytes(token), RoomBytes, info: info));
+}

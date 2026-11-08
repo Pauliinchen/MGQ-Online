@@ -18,7 +18,7 @@
     <InternalsVisibleTo Include="MGQOnline.Data.Generator.Tests" />
     <InternalsVisibleTo Include="MGQOnline.Game.Tests" />
     <InternalsVisibleTo Include="MGQOnline.ServerCore.Tests" />
-    <InternalsVisibleTo Include="MGQParadox.Multiplayer.Tests" />
+    <InternalsVisibleTo Include="MGQOnline.Multiplayer.Tests" />
   </ItemGroup>
 
   <ItemGroup>

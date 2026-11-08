@@ -12,7 +12,7 @@
 
 # Answers the topics of the raid bosses' rules (MGQOnline.Game's RaidTopics), of a Raid World's boss
 # pools and the battle that fights them (PoolTopics) and of a lost raid boss battle's defeat
-# (MGQParadox.Multiplayer's FreezeTopics) on a FakeBridge with the fixed values each test sets for its
+# (MGQOnline.Multiplayer's FreezeTopics) on a FakeBridge with the fixed values each test sets for its
 # case. The scripts only forward the rules' answers; the C# tests cover the rules.
 
 require_relative "bridge_support"

@@ -30,7 +30,7 @@
 # game's does; the raid pool, the freeze's tables (as the DLL's events database answers them), the
 # world's story and the world's entries are stand-ins; the DLL's write journal is the shared stand-in bridge's (rules_support.rb),
 # and the DLL's rules of the records, the tableau's place, the fresh start and the items answer with
-# fixed values per case (raid_support.rb), which MGQParadox.Multiplayer.Tests and MGQOnline.Game.Tests cover.
+# fixed values per case (raid_support.rb), which MGQOnline.Multiplayer.Tests and MGQOnline.Game.Tests cover.
 
 require_relative "rules_support"
 

@@ -43,7 +43,7 @@ A file that differs from every candidate is a hot fix that lives only on the ser
 
 1. Cut `deploy/raid-designs` from the live commit and merge `feat/raid-design` into it. A dry run on 2026-10-22 against main `6ecc712` conflicts in `README.md`, `cloudflare/worker.js`, `core/gate.js`, `core/gate.test.js` and `node/server.js`; both sides only add, so keep both.
 2. `npm test` must be green, with `SQLITE3` set so the backup tests run.
-3. Check that it stays additive: `git diff <live commit> deploy/raid-designs -- Relay/core Relay/node ':!*.test.js'` may only add routes, branches and files outside the design files, and nothing a released game reads may change (`git show v<latest>:MGQParadox.Multiplayer/Network/World/DirectoryClient.cs` shows what the DLL reads).
+3. Check that it stays additive: `git diff <live commit> deploy/raid-designs -- Relay/core Relay/node ':!*.test.js'` may only add routes, branches and files outside the design files, and nothing a released game reads may change (`git show v<latest>:MGQOnline.Multiplayer/Network/World/DirectoryClient.cs` shows what the DLL reads).
 
 ## 2. Backups (M1 step 1, before any collaborator)
 

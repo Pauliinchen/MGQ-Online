@@ -1,0 +1,674 @@
+//----------------------------------------------------------------
+//  WorldTrades.cs
+//
+//  Changelog:
+//      Paulinchen  2026-11-08: Moved to the MGQOnline.Multiplayer namespace
+//      Paulinchen  2026-11-06: Told the player to update once the relay turned this version away
+//      Paulinchen  2026-10-31: Worded what the player reads plainly, leaving causes and internals to the log
+//      Paulinchen  2026-10-30: Answered the trade of the DLL with how the commit and the fetch stand
+//      Paulinchen  2026-10-07: Logged each commit, its replacement, refused starts, a lost relay once per commit and each trade fetched
+//                            - Woke a commit's wait when a newer commit replaces it and waited on the gate before each new try
+//      Paulinchen  2026-10-06: Started its threads through Threads and read who plays through Player.Current
+//                            - Cancelled a trade from its commit once the commit arrived
+//                            - Created
+//
+//----------------------------------------------------------------
+
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Net;
+using System.Text;
+using System.Threading;
+using MGQOnline.Game.Trade;
+using MGQOnline.Multiplayer.Network.Relay;
+using MGQOnline.Multiplayer.Network.Transport;
+
+namespace MGQOnline.Multiplayer.Network.World;
+
+/// <summary>
+/// Trades between two players of a world as the trade of the DLL (TradeMachine) and the game script
+/// use them: committing one trade at a time with the relay until both sides committed or it ended,
+/// cancelling, marking a trade done once applied and saved, and fetching the committed trades not
+/// yet done, for recovery. Each runs on a thread of its own, and the trade reads how the commit and
+/// the fetch stand.
+/// </summary>
+/// <remarks>
+/// The offers are sealed with a key from the token of the world the game is in, so only games
+/// that hold the token read them; the relay only compares their hashes.
+/// </remarks>
+internal sealed class WorldTrades : ITradeRelay
+{
+    /// <summary>
+    /// What the game script reads as the state of the commit or the fetch.
+    /// </summary>
+    private const string StateHeader = "state";
+
+    /// <summary>
+    /// The trade the commit is about.
+    /// </summary>
+    private const string TradeHeader = "trade";
+
+    /// <summary>
+    /// Why the trade was cancelled.
+    /// </summary>
+    private const string ReasonHeader = "reason";
+
+    /// <summary>
+    /// Why the commit or the fetch failed.
+    /// </summary>
+    private const string ErrorHeader = "error";
+
+    /// <summary>
+    /// The relay's state of a trade only one side committed.
+    /// </summary>
+    private const string Pending = "pending";
+
+    /// <summary>
+    /// The relay's state of a trade both sides committed with the same offers, which both games apply.
+    /// </summary>
+    private const string Committed = "committed";
+
+    /// <summary>
+    /// The relay's state of a trade that ended without a swap.
+    /// </summary>
+    private const string Cancelled = "cancelled";
+
+    /// <summary>
+    /// Why a request failed when the relay could not be reached.
+    /// </summary>
+    private const string Unreachable = "The server could not be reached. Check your internet connection.";
+
+    /// <summary>
+    /// Why the commit failed when the relay never settled the trade.
+    /// </summary>
+    private const string NoAnswer = "The trade could not be completed in time.";
+
+    /// <summary>
+    /// Guards every field below.
+    /// </summary>
+    private readonly object _gate = new();
+
+    /// <summary>
+    /// Counts the commits, so a thread of an earlier one changes nothing.
+    /// </summary>
+    private int _commitGeneration;
+
+    /// <summary>
+    /// The running or last commit, <see langword="null"/> before the first.
+    /// </summary>
+    private TradeCommitState? _commit;
+
+    /// <summary>
+    /// The trade of the running commit that the game script asked to cancel, <see langword="null"/> while it did not.
+    /// </summary>
+    private string? _cancelWanted;
+
+    /// <summary>
+    /// Whether the committed trades not yet done are being fetched.
+    /// </summary>
+    private bool _fetching;
+
+    /// <summary>
+    /// Why the last fetch failed.
+    /// </summary>
+    private string? _fetchError;
+
+    /// <summary>
+    /// The committed trades not yet done as last fetched, each with its offers; <see langword="null"/> before the first fetch.
+    /// </summary>
+    private IReadOnlyList<(string Id, string Offers)>? _pending;
+
+    /// <summary>
+    /// The game's trades, which the game script uses.
+    /// </summary>
+    public static WorldTrades Current { get; } = new();
+
+    /// <summary>
+    /// Looks up a relay's address by its id.
+    /// </summary>
+    public Func<string, Uri?> RelayAddress { get; init; } = Relays.AddressOf;
+
+    /// <summary>
+    /// Tells who plays: the game script's <see cref="Player"/>, or another for tests that run several players at once.
+    /// </summary>
+    public Func<(string Key, string Name)?> Playing { get; init; } = Player.Current;
+
+    /// <summary>
+    /// Finds the world the game is in by its id, whose token seals the offers; tests hand out their own.
+    /// </summary>
+    public Func<string, WorldCode?> WorldOf { get; init; } = id => WorldSession.Current.OpenWorld(id);
+
+    /// <summary>
+    /// How often a commit asks the relay how the trade stands.
+    /// </summary>
+    public TimeSpan PollInterval { get; init; } = TimeSpan.FromSeconds(1);
+
+    /// <summary>
+    /// How long a commit waits for the relay to settle the trade, a little longer than the relay keeps it pending.
+    /// </summary>
+    public TimeSpan GiveUpAfter { get; init; } = TimeSpan.FromSeconds(150);
+
+    /// <summary>
+    /// How long a cancel or a done waits before each new try after the relay could not be reached.
+    /// </summary>
+    public TimeSpan[] RetryDelays { get; init; } = [TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10)];
+
+    /// <summary>
+    /// Commits this game's side of a trade and follows it until both sides committed or it ended,
+    /// replacing whatever commit ran before.
+    /// </summary>
+    /// <param name="world">The world both players are in.</param>
+    /// <param name="trade">The trade's id, the same in both games.</param>
+    /// <param name="partner">The other player's id.</param>
+    /// <param name="offers">The offers both games agreed on, the same text in both, on one line without tabs.</param>
+    /// <returns><see langword="false"/> without a player, outside that world, or for offers that are empty, too long or not on one line.</returns>
+    public bool Commit(string world, string trade, string partner, string offers)
+    {
+        if (!IsOneField(offers) || offers.Length == 0 || TradeOffers.IsTooLarge(offers))
+        {
+            Log.Write($"trade {Log.Short(trade)} not committed: the offers are empty, too long or not on one line");
+            return false;
+        }
+
+        if (Playing() is not { } player || WorldOf(world) is not { } code || RelayAddress(code.Relay) is not { } relay)
+        {
+            Log.Write($"trade {Log.Short(trade)} not committed: no player, or not in world {Log.Short(world)}");
+            return false;
+        }
+
+        int generation;
+        TradeCommitState? replaced;
+
+        lock (_gate)
+        {
+            replaced = _commit;
+            generation = ++_commitGeneration;
+            _commit = new TradeCommitState(trade, "sending");
+            _cancelWanted = null;
+            Monitor.PulseAll(_gate);
+        }
+
+        if (replaced is { State: "sending" or "waiting" })
+        {
+            Log.Write($"trade {Log.Short(replaced.Trade)} is no longer followed, trade {Log.Short(trade)} replaces its commit");
+        }
+
+        Log.Write($"committing trade {Log.Short(trade)} with {Log.Short(partner)} in world {Log.Short(world)}, {Encoding.UTF8.GetByteCount(offers)} bytes of offers");
+
+        var client = new DirectoryClient(relay);
+        Threads.Start("MultiplayerTradeCommit", () => RunCommit(generation, client, new TradeCommit(world, trade, partner, offers, player.Key, code.Token)));
+        return true;
+    }
+
+    /// <summary>
+    /// Cancels a trade while the relay still holds it pending; how it went is only logged, and the
+    /// commit learns the outcome from the relay.
+    /// </summary>
+    /// <remarks>
+    /// The running commit of the trade cancels it again once its commit arrived, since this cancel
+    /// may reach the relay first and find no trade.
+    /// </remarks>
+    /// <param name="world">The world both players are in.</param>
+    /// <param name="trade">The trade's id.</param>
+    /// <returns><see langword="false"/> without a player or a relay.</returns>
+    public bool Cancel(string world, string trade)
+    {
+        if (Playing() is not { } player || ClientFor(world) is not { } client)
+        {
+            Log.Write($"trade {Log.Short(trade)} not cancelled: no player, or a relay this version does not know");
+            return false;
+        }
+
+        bool following;
+
+        lock (_gate)
+        {
+            following = _commit?.Trade == trade;
+
+            if (following)
+            {
+                _cancelWanted = trade;
+            }
+        }
+
+        Log.Write($"cancelling trade {Log.Short(trade)}{(following ? ", its running commit cancels it too once it arrived" : string.Empty)}");
+
+        Threads.Start("MultiplayerTradeCancel", () => Retry($"cancelling trade {Log.Short(trade)}", () =>
+        {
+            var answer = client.CancelTrade(trade, player.Key);
+            Log.Write($"cancelled trade {Log.Short(trade)}: {answer.State}");
+        }));
+        return true;
+    }
+
+    /// <summary>
+    /// Marks a committed trade done for this player, whose game applied and saved it; how it went is only logged.
+    /// </summary>
+    /// <param name="world">The world both players are in.</param>
+    /// <param name="trade">The trade's id.</param>
+    /// <returns><see langword="false"/> without a player or a relay.</returns>
+    public bool Done(string world, string trade)
+    {
+        if (Playing() is not { } player || ClientFor(world) is not { } client)
+        {
+            Log.Write($"trade {Log.Short(trade)} not marked done: no player, or a relay this version does not know");
+            return false;
+        }
+
+        Threads.Start("MultiplayerTradeDone", () => Retry($"marking trade {Log.Short(trade)} done", () =>
+        {
+            try
+            {
+                client.TradeDone(trade, player.Key);
+                Log.Write($"marked trade {Log.Short(trade)} done");
+            }
+            catch (DirectoryException ex) when (ex.Status == HttpStatusCode.NotFound)
+            {
+                // The relay deletes a trade once both games marked it done, so a repeated done finds none.
+                Log.Write($"trade {Log.Short(trade)} is gone from the relay, done already");
+            }
+        }));
+        return true;
+    }
+
+    /// <summary>
+    /// Fetches the committed trades of a world this player has not marked done, and unseals their offers.
+    /// </summary>
+    /// <param name="world">The world the game is in.</param>
+    /// <returns><see langword="false"/> while a fetch runs, without a player, or outside that world.</returns>
+    public bool FetchPending(string world)
+    {
+        if (Playing() is not { } player || WorldOf(world) is not { } code || RelayAddress(code.Relay) is not { } relay)
+        {
+            Log.Write($"trades not yet done not fetched: no player, or not in world {Log.Short(world)}");
+            return false;
+        }
+
+        lock (_gate)
+        {
+            if (_fetching)
+            {
+                Log.Write("trades not yet done not fetched: a fetch still runs");
+                return false;
+            }
+
+            _fetching = true;
+        }
+
+        var client = new DirectoryClient(relay);
+        Threads.Start("MultiplayerTradePending", () =>
+        {
+            List<(string Id, string Offers)>? trades = null;
+            string? error = null;
+
+            try
+            {
+                trades = Unseal(client.PendingTrades(player.Key, world), code.Token);
+                Log.Write($"fetched {trades.Count} committed trade(s) not yet done in world {Log.Short(world)}");
+            }
+            catch (Exception ex)
+            {
+                error = ReasonFor(ex);
+                Log.Write($"fetching the trades not yet done failed: {ex.GetBaseException().Message}");
+            }
+
+            lock (_gate)
+            {
+                _fetching = false;
+                _fetchError = error;
+
+                if (trades != null)
+                {
+                    _pending = trades;
+                }
+            }
+        });
+        return true;
+    }
+
+    /// <inheritdoc />
+    public TradeCommitState? CommitNow()
+    {
+        lock (_gate)
+        {
+            return _commit;
+        }
+    }
+
+    /// <summary>
+    /// Describes the running or last commit for the game script.
+    /// </summary>
+    /// <returns>Empty before the first commit; else <c>trade</c>, <c>state</c> ("sending", "waiting", "committed", "cancelled" or "failed"), and <c>reason</c> ("cancelled", "differ" or "expired") for a cancelled trade or <c>error</c> for a failed commit.</returns>
+    public string DescribeCommit()
+    {
+        lock (_gate)
+        {
+            if (_commit is not { } commit)
+            {
+                return string.Empty;
+            }
+
+            var headers = new KeyValuePair<string, string?>[]
+            {
+                new(TradeHeader, commit.Trade),
+                new(StateHeader, commit.State),
+                new(ReasonHeader, commit.Reason),
+                new(ErrorHeader, commit.Error),
+            };
+
+            return new Message(headers).Encode();
+        }
+    }
+
+    /// <inheritdoc />
+    public TradePendingState PendingNow()
+    {
+        lock (_gate)
+        {
+            if (_fetching)
+            {
+                return new TradePendingState("busy", []);
+            }
+
+            if (_fetchError != null)
+            {
+                return new TradePendingState("failed", []);
+            }
+
+            return _pending == null ? new TradePendingState(string.Empty, []) : new TradePendingState("done", _pending);
+        }
+    }
+
+    /// <summary>
+    /// Describes the last fetch of the committed trades not yet done for the game script.
+    /// </summary>
+    /// <returns>Empty before the first fetch; else <c>state</c> ("busy", "failed" or "done"), <c>error</c> when failed, and once done one line per trade: <c>trade=</c>, its id, a tab and its offers.</returns>
+    public string DescribePending()
+    {
+        lock (_gate)
+        {
+            if (_fetching)
+            {
+                return new Message([new(StateHeader, "busy")]).Encode();
+            }
+
+            if (_fetchError != null)
+            {
+                return new Message([new(StateHeader, "failed"), new(ErrorHeader, _fetchError)]).Encode();
+            }
+
+            if (_pending == null)
+            {
+                return string.Empty;
+            }
+
+            var lines = new StringBuilder();
+
+            foreach (var (id, offers) in _pending)
+            {
+                lines.Append(TradeHeader).Append('=').Append(id).Append('\t').Append(offers).Append('\n');
+            }
+
+            return new Message([new(StateHeader, "done")], lines.ToString()).Encode();
+        }
+    }
+
+    /// <summary>
+    /// Sends a commit and asks how the trade stands about once a second, until the relay committed
+    /// or cancelled it, a newer commit replaced this one, or the time is up.
+    /// </summary>
+    /// <remarks>
+    /// The commit is sent again until one arrives, which the relay takes as the same commit.
+    /// </remarks>
+    /// <param name="generation">The commit this thread belongs to.</param>
+    /// <param name="client">The relay's client.</param>
+    /// <param name="commit">What is committed.</param>
+    private void RunCommit(int generation, DirectoryClient client, TradeCommit commit)
+    {
+        try
+        {
+            var hash = TradeSeal.HashOf(commit.Offers);
+            var sealedOffers = TradeSeal.Seal(commit.Token, commit.Trade, commit.Offers);
+            var deadline = DateTime.UtcNow + GiveUpAfter;
+            var arrived = false;
+            var reached = false;
+            var cancelSent = false;
+            var lost = false;
+
+            while (IsCurrent(generation))
+            {
+                try
+                {
+                    var answer = arrived ? client.TradeState(commit.Trade, commit.PlayerKey) : client.CommitTrade(commit.Trade, commit.PlayerKey, commit.World, commit.Partner, hash, sealedOffers);
+
+                    if (!arrived)
+                    {
+                        Log.Write($"committed trade {Log.Short(commit.Trade)} with {Log.Short(commit.Partner)}: {answer.State}");
+                    }
+                    else if (lost)
+                    {
+                        Log.Write($"trade {Log.Short(commit.Trade)} reached the relay again: {answer.State}");
+                    }
+
+                    lost = false;
+
+                    arrived = true;
+                    reached = true;
+
+                    if (answer.State == Pending && !cancelSent && IsCancelWanted(commit.Trade))
+                    {
+                        answer = client.CancelTrade(commit.Trade, commit.PlayerKey);
+                        cancelSent = true;
+                        Log.Write($"cancelled trade {Log.Short(commit.Trade)} once its commit arrived: {answer.State}");
+                    }
+
+                    if (answer.State is Committed or Cancelled)
+                    {
+                        Log.Write($"trade {Log.Short(commit.Trade)} {answer.State}{(answer.Reason.Length > 0 ? $" ({answer.Reason})" : string.Empty)}");
+                        Settle(generation, commit.Trade, answer.State, answer.Reason, null);
+                        return;
+                    }
+
+                    if (answer.State != Pending)
+                    {
+                        throw new InvalidDataException($"The relay answered the state {answer.State}.");
+                    }
+
+                    Settle(generation, commit.Trade, "waiting", null, null);
+                }
+                catch (DirectoryException ex) when (ex.Status == null)
+                {
+                    // Lost on the way, so the game tries again until the time is up.
+                    if (!lost)
+                    {
+                        Log.Write($"trade {Log.Short(commit.Trade)} lost the relay, trying again every {PollInterval.TotalSeconds.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)} s: {ex.Message}");
+                        lost = true;
+                    }
+                }
+
+                if (DateTime.UtcNow >= deadline)
+                {
+                    Log.Write($"trade {Log.Short(commit.Trade)} failed: the relay never settled it");
+                    Settle(generation, commit.Trade, "failed", null, reached ? NoAnswer : Unreachable);
+                    return;
+                }
+
+                Pause(PollInterval, () => generation == _commitGeneration);
+            }
+
+            Log.Write($"stopped following trade {Log.Short(commit.Trade)}, a newer commit replaced it");
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"trade {Log.Short(commit.Trade)} failed: {ex.GetBaseException().Message}");
+            Settle(generation, commit.Trade, "failed", null, ReasonFor(ex));
+        }
+    }
+
+    /// <summary>
+    /// Notes how a commit stands, unless a newer one replaced it.
+    /// </summary>
+    /// <param name="generation">The commit.</param>
+    /// <param name="trade">The trade's id.</param>
+    /// <param name="state">The state the game script reads.</param>
+    /// <param name="reason">Why the trade was cancelled, or <see langword="null"/>.</param>
+    /// <param name="error">Why the commit failed, or <see langword="null"/>.</param>
+    private void Settle(int generation, string trade, string state, string? reason, string? error)
+    {
+        lock (_gate)
+        {
+            if (generation == _commitGeneration)
+            {
+                _commit = new TradeCommitState(trade, state, reason is { Length: > 0 } ? reason : null, error);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Reports whether a commit is still the current one.
+    /// </summary>
+    /// <param name="generation">The commit.</param>
+    /// <returns><see langword="true"/> while it is.</returns>
+    private bool IsCurrent(int generation)
+    {
+        lock (_gate)
+        {
+            return generation == _commitGeneration;
+        }
+    }
+
+    /// <summary>
+    /// Reports whether the game script asked to cancel a trade while its commit ran.
+    /// </summary>
+    /// <param name="trade">The trade's id.</param>
+    /// <returns><see langword="true"/> when it did.</returns>
+    private bool IsCancelWanted(string trade)
+    {
+        lock (_gate)
+        {
+            return _cancelWanted == trade;
+        }
+    }
+
+    /// <summary>
+    /// Unseals the offers of fetched trades, leaving out and logging any that do not open or whose hash differs.
+    /// </summary>
+    /// <param name="trades">The trades as the relay keeps them.</param>
+    /// <param name="token">The world's token.</param>
+    /// <returns>Each trade's id and offers.</returns>
+    private static List<(string Id, string Offers)> Unseal(IReadOnlyList<SealedTrade> trades, string token)
+    {
+        var opened = new List<(string Id, string Offers)>();
+
+        foreach (var trade in trades)
+        {
+            try
+            {
+                var offers = TradeSeal.Open(token, trade.Id, trade.Sealed);
+
+                if (TradeSeal.HashOf(offers) != trade.Hash || !IsOneField(offers) || !IsOneField(trade.Id))
+                {
+                    throw new InvalidDataException("The offers do not match their hash.");
+                }
+
+                opened.Add((trade.Id, offers));
+                Log.Write($"trade {Log.Short(trade.Id)} is committed and not yet done here, {Encoding.UTF8.GetByteCount(offers)} bytes of offers");
+            }
+            catch (InvalidDataException ex)
+            {
+                Log.Write($"left out trade {Log.Short(trade.Id)}: {ex.Message}");
+            }
+        }
+
+        return opened;
+    }
+
+    /// <summary>
+    /// Runs a request, again after each of the retry delays while the relay cannot be reached; how it went is only logged.
+    /// </summary>
+    /// <param name="what">What the request does, for the log.</param>
+    /// <param name="request">The request.</param>
+    private void Retry(string what, Action request)
+    {
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                request();
+                return;
+            }
+            catch (DirectoryException ex) when (ex.Status == null && attempt < RetryDelays.Length)
+            {
+                Log.Write($"{what} failed, trying again: {ex.Message}");
+                Pause(RetryDelays[attempt], static () => true);
+            }
+            catch (Exception ex)
+            {
+                Log.Write($"{what} failed: {ex.GetBaseException().Message}");
+                return;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Waits on the gate for a while, or until a pulse finds the wait no longer wanted.
+    /// </summary>
+    /// <param name="delay">How long at most.</param>
+    /// <param name="stillWanted">Tells whether to go on waiting, called with the gate held.</param>
+    private void Pause(TimeSpan delay, Func<bool> stillWanted)
+    {
+        var until = DateTime.UtcNow + delay;
+
+        lock (_gate)
+        {
+            while (stillWanted() && until - DateTime.UtcNow is { Ticks: > 0 } left)
+            {
+                Monitor.Wait(_gate, left);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Makes a client for the relay of the world the game is in, or of this version's relay once it left.
+    /// </summary>
+    /// <param name="world">The world's id.</param>
+    /// <returns>The client, or <see langword="null"/> for a relay this version does not know.</returns>
+    private DirectoryClient? ClientFor(string world) =>
+        RelayAddress(WorldOf(world)?.Relay ?? Relays.Current) is { } relay ? new DirectoryClient(relay) : null;
+
+    /// <summary>
+    /// Tells whether a text stays inside one field of a line the game script reads.
+    /// </summary>
+    /// <param name="text">The text.</param>
+    /// <returns>Whether it holds no tab and no line break.</returns>
+    private static bool IsOneField(string text) => text.IndexOfAny(['\t', '\r', '\n']) < 0;
+
+    /// <summary>
+    /// Tells the player why a request failed.
+    /// </summary>
+    /// <param name="ex">What went wrong.</param>
+    /// <returns>The reason.</returns>
+    private static string ReasonFor(Exception ex) => ex switch
+    {
+        DirectoryException { Status: null } => Unreachable,
+        DirectoryException { Code: Relays.UpdateCode } => Relays.UpdateNeeded,
+        DirectoryException { Status: HttpStatusCode.Forbidden } => "Both players must be players of this world.",
+        DirectoryException { Status: HttpStatusCode.NotFound } => "This trade no longer exists.",
+        DirectoryException { Status: HttpStatusCode.TooManyRequests } => "You have too many open trades. Finish one first.",
+        DirectoryException => "The server turned this down. Try again later.",
+        InvalidDataException => "The offers could not be read.",
+        _ => "Something went wrong. Try again.",
+    };
+
+    /// <summary>
+    /// What a commit sends.
+    /// </summary>
+    /// <param name="World">The world both players are in.</param>
+    /// <param name="Trade">The trade's id.</param>
+    /// <param name="Partner">The other player's id.</param>
+    /// <param name="Offers">The offers both games agreed on.</param>
+    /// <param name="PlayerKey">This player's key.</param>
+    /// <param name="Token">The world's token, which seals the offers.</param>
+    private sealed record TradeCommit(string World, string Trade, string Partner, string Offers, string PlayerKey, string Token);
+}

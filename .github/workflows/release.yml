@@ -47,7 +47,7 @@ jobs:
       - name: Test
         env:
           DOTNET_ROOT_X86: C:\Program Files (x86)\dotnet
-        run: dotnet run --project MGQParadox.Multiplayer.Tests
+        run: dotnet run --project MGQOnline.Multiplayer.Tests
 
       - name: Test the bridge
         run: dotnet run --project MGQOnline.Bridge.Tests
@@ -91,13 +91,13 @@ jobs:
         shell: pwsh
         run: |
           $version = $env:TAG.TrimStart("v")
-          dotnet publish MGQParadox.Multiplayer -c Release -p:Version=$version
+          dotnet publish MGQOnline.Multiplayer -c Release -p:Version=$version
 
       - name: Attach zip to the release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload $env:TAG (Get-ChildItem MGQParadox.Multiplayer/bin/Release/*.zip).FullName --clobber
+        run: gh release upload $env:TAG (Get-ChildItem MGQOnline.Multiplayer/bin/Release/*.zip).FullName --clobber
 
   # The battle server's core, a linux-x64 NativeAOT library, built in the pinned SDK container as
   # on a developer's PC (MGQOnline.ServerCore/build.ps1), then loaded into sandboxed battle

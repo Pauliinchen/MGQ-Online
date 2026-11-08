@@ -1,0 +1,367 @@
+//----------------------------------------------------------------
+//  EventTopicsTests.cs
+//
+//  Changelog:
+//      Paulinchen  2026-11-08: Moved to the MGQOnline.Multiplayer namespace
+//      Paulinchen  2026-11-05: Checked the castle's maps and a map's chests and pages without the events database, and a resumed fight's page as story
+//                            - Checked that a sort answers the one decision of where its list runs
+//                            - Checked that a map a mod changed is read from the game's own data
+//                            - Expected the Library's switch among the values a sort needs
+//                            - Checked that the battlefuck events are read once and stay while the common events differ
+//      Paulinchen  2026-10-30: Kept the database fingerprint format in the differing game data
+//      Paulinchen  2026-10-28: Checked the command index of a map's pages at once
+//                            - Sorted over the events database of a tiny game, by length and shape, and checked its gate
+//                            - Handed the topics the event source alone
+//                            - Read the events through an event source
+//      Paulinchen  2026-10-23: Checked that a failed read ahead is logged
+//                            - Checked the event command index
+//                            - Created
+//
+//----------------------------------------------------------------
+
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using System.Linq;
+using MGQOnline.Bridge.Ruby;
+using MGQOnline.Data.Events;
+using MGQOnline.Data.Generator.Build;
+using MGQOnline.Game.Tests.Events;
+using MGQOnline.Multiplayer.Tests.Network.World;
+using MGQOnline.Multiplayer.Topics;
+using static MGQOnline.Game.Tests.Events.TinyGame;
+
+namespace MGQOnline.Multiplayer.Tests.Topics;
+
+/// <summary>
+/// Covers the event sorter's topics as the scripts call them, over the events database of a tiny
+/// game: the values a sort names it needs, a page found only while the scripts hold it as the
+/// database does, the gate of the game data's fingerprint, a map a mod changed read from the
+/// game's own data, the map's pages at once, and a read ahead that fails.
+/// </summary>
+public sealed class EventTopicsTests
+{
+    /// <summary>
+    /// The tiny game: on map 1 event 2 a talk that turns switch 60 on, event 3 a talk that calls
+    /// common event 40, which fights troop 71 and turns switch 61 on by a script.
+    /// </summary>
+    private readonly GameEvents _events = TinyEvents.Of(new TinyGame()
+        .Event(2, C(101, "", 0, 0, 2), C(401, "Hello."), C(121, 60, 60, 0))
+        .Event(3, C(101, "", 0, 0, 2), C(401, "Hello."), C(117, 40))
+        .Common(40, C(301, 0, 71, false, false), C(355, "$game_switches[61] = true")));
+
+    /// <summary>
+    /// The topics under test, over the tiny game.
+    /// </summary>
+    private readonly TopicCaller _topics;
+
+    /// <summary>
+    /// Creates the topics over the tiny game, its fingerprint handed over.
+    /// </summary>
+    public EventTopicsTests()
+    {
+        _topics = new TopicCaller(context => EventTopics.Register(context, () => _events));
+        _topics.Call(EventTopics.Open, new RubyHash { { "fingerprint", _events.Store.Meta!.Build.Fingerprint } });
+    }
+
+    /// <summary>
+    /// Asserts that a sort names the values it reads and lacks, and sorts once they come: a story
+    /// switch behind a branch on variable 1001, which holds at 7 only, and whose switch is no one's own.
+    /// </summary>
+    [Fact]
+    public void Sort_NamesTheValuesItNeedsThenSorts()
+    {
+        RubyArray list =
+        [
+            Row(111, 0, [1, 1001, 0, 7, 0]), Row(121, 1, [60, 60, 0]), Row(0, 1, []), Row(412, 0, []), Row(101, 0, ["", 0, 0, 2]), Row(0, 0, []),
+        ];
+
+        RubyValue? first = _topics.Call(EventTopics.Sort, new RubyHash { { "list", list } });
+        RubyValue? held = _topics.Call(EventTopics.Sort, new RubyHash { { "list", list }, { "values", Values(7) } });
+        RubyValue? passed = _topics.Call(EventTopics.Sort, new RubyHash { { "list", list }, { "values", Values(12) } });
+
+        Assert.Equal(new RubyHash { { "needs", new RubyHash { { "s", new RubyArray { 443 } }, { "v", new RubyArray { 1001 } } } } }, first);
+        Assert.Equal("story", held!.AsHash()["kind"].AsText());
+        Assert.Equal("talk", passed!.AsHash()["kind"].AsText());
+    }
+
+    /// <summary>
+    /// Asserts that a sort answers the one decision of where its list runs, whatever list it is: a
+    /// list handed over that is the game's transfer process (common event 114) runs in the player's
+    /// own game, one that calls the maid's party saves is a talk on the Pocket Castle's maps only,
+    /// never turning into story there, and a resumed raid fight's page is story whatever it holds.
+    /// </summary>
+    [Fact]
+    public void Sort_AnswersWhereTheListRuns()
+    {
+        RubyArray story = [Row(101, 0, ["", 0, 0, 2]), Row(121, 0, [60, 60, 0]), Row(0, 0, [])];
+        RubyArray maid = [Row(101, 0, ["", 0, 0, 2]), Row(102, 0, [new RubyArray { "Save", "Story" }, 1]), Row(402, 0, [0, "Save"]), Row(117, 1, [111]), Row(402, 0, [1, "Story"]), Row(121, 1, [60, 60, 0]), Row(404, 0, []), Row(0, 0, [])];
+        RubyHash Sort(RubyArray list, params (string Field, RubyValue Value)[] fields)
+        {
+            var request = new RubyHash { { "list", list }, { "values", Values(0) } };
+            foreach ((string field, RubyValue value) in fields)
+            {
+                request[field] = value;
+            }
+
+            return _topics.Call(EventTopics.Sort, request)!.AsHash();
+        }
+
+        Assert.Equal(("own", "common event 114 is one of the game's own"), (Sort(story, ("common", 114))["kind"].AsText(), Sort(story, ("common", 114))["own"].AsText()));
+        Assert.Equal(("talk", false), (Sort(maid, ("map", 228))["kind"].AsText(), Sort(maid, ("map", 228))["may_tell"] is RubyBool { Flag: true }));
+        Assert.Equal(new RubyHash { { "story", false } }, _topics.Call(EventTopics.Sort, new RubyHash { { "list", maid }, { "map", 228 }, { "index", 5 }, { "values", Values(0) } }));
+        Assert.Equal(("talk", true), (Sort(maid, ("map", 1))["kind"].AsText(), Sort(maid, ("map", 1))["may_tell"] is RubyBool { Flag: true }));
+        Assert.Equal(("story", "story"), (Sort(maid, ("map", 1), ("resumed", true))["kind"].AsText(), Sort(maid, ("map", 1), ("resumed", true))["list_kind"].AsText()));
+    }
+
+    /// <summary>
+    /// Asserts that a page the scripts hold as the database does sorts from it, and one of another
+    /// shape, such as a translation that changed a branch, or one it lacks is unknown, so the
+    /// scripts hand it over.
+    /// </summary>
+    [Fact]
+    public void Sort_OfAPage_ReadsTheDatabaseOnlyWhileTheShapeMatches()
+    {
+        RubyHash page = TinyEvents.Page(_events, 1, 2);
+        RubyHash changed = TinyEvents.Page(_events, 1, 2);
+        changed["shape"] = page["shape"].AsLong() + 1;
+
+        Assert.Equal("story", _topics.Call(EventTopics.Sort, With(page, "values", Values(0)))!.AsHash()["kind"].AsText());
+        Assert.Equal(new RubyHash { { "unknown", true } }, _topics.Call(EventTopics.Sort, changed));
+        Assert.Equal(new RubyHash { { "unknown", true } }, _topics.Call(EventTopics.Sort, new RubyHash { { "map", 1 }, { "event", 9 }, { "page", 0 }, { "size", 2 }, { "shape", 0 } }));
+    }
+
+    /// <summary>
+    /// Asserts that asking for one command of a page finds it among the kept commands by its place in
+    /// the list the game runs: the text line before it is not kept.
+    /// </summary>
+    [Fact]
+    public void Sort_OfOneCommand_FindsItAmongTheKeptCommands()
+    {
+        RubyHash Command(int index) => With(With(TinyEvents.Page(_events, 1, 2), "values", Values(0)), "index", index);
+
+        Assert.Equal(new RubyHash { { "story", false } }, _topics.Call(EventTopics.Sort, Command(1)));
+        Assert.Equal(new RubyHash { { "story", true } }, _topics.Call(EventTopics.Sort, Command(2)));
+    }
+
+    /// <summary>
+    /// Asserts that the common events of a game data that differs from the database's in them are
+    /// unknown while its map pages still sort, and that without a fingerprint nothing is read.
+    /// </summary>
+    [Fact]
+    public void Open_LeavesOutTheTablesOfTheDifferingParts()
+    {
+        string[] halves = _events.Store.Meta!.Build.Fingerprint.Split(':');
+        string[] sums = halves[1].Split('.');
+        sums[9] = "ffffffff";
+        ListRow list = _events.Store.CommonList(40)!.Value;
+        var common = new RubyHash { { "common", 40 }, { "size", list.CountAll }, { "shape", list.Shape } };
+
+        RubyHash opened = _topics.Call(EventTopics.Open, new RubyHash { { "fingerprint", halves[0] + ":" + string.Join(".", sums) } })!.AsHash();
+
+        Assert.Equal((true, new RubyArray { "common events" }), (opened["usable"].AsBool(), opened["differing"].AsArray()));
+        Assert.Equal(new RubyHash { { "unknown", true } }, _topics.Call(EventTopics.Sort, common));
+        Assert.Equal("story", _topics.Call(EventTopics.Sort, With(TinyEvents.Page(_events, 1, 2), "values", Values(0)))!.AsHash()["kind"].AsText());
+
+        _topics.Call(EventTopics.Open, new RubyHash { { "fingerprint", RubyNil.Value } });
+        Assert.Equal(new RubyHash { { "unknown", true } }, _topics.Call(EventTopics.Sort, TinyEvents.Page(_events, 1, 2)));
+    }
+
+    /// <summary>
+    /// Asserts that the battlefuck events the generator listed, the count of a win (6999) and a
+    /// battlefucker's talk that calls it (7001), are read once for every sort, and that a page that
+    /// calls the talk still plays alone while the game data differs in the common events, which
+    /// leaves the common events themselves unknown.
+    /// </summary>
+    [Fact]
+    public void Sort_ReadsTheBattlefuckEventsOnceWhateverTheGate()
+    {
+        GameEvents events = TinyEvents.Of(new TinyGame()
+            .Event(4, C(101, "", 0, 0, 2), C(401, "Fight me."), C(121, 60, 60, 0), C(117, 7001))
+            .Common(6999, C(121, 61, 61, 0))
+            .Common(7001, C(117, 6999)));
+        var topics = new TopicCaller(context => EventTopics.Register(context, () => events));
+        string[] halves = events.Store.Meta!.Build.Fingerprint.Split(':');
+        string[] sums = halves[1].Split('.');
+        sums[9] = "ffffffff";
+        topics.Call(EventTopics.Open, new RubyHash { { "fingerprint", halves[0] + ":" + string.Join(".", sums) } });
+
+        string kind = topics.Call(EventTopics.Sort, With(TinyEvents.Page(events, 1, 4), "values", Values(0)))!.AsHash()["kind"].AsText();
+
+        Assert.Equal("own", kind);
+        Assert.Equal(new long[] { 6999, 7001 }, events.Source.Battlefucks.Order());
+        Assert.Same(events.Source.Battlefucks, events.Source.Battlefucks);
+        Assert.Empty(events.Source.CommonIds);
+    }
+
+    /// <summary>
+    /// Asserts that a map a mod changed is read from the player's own game data: its changed page
+    /// and its new event sort from the player's commands, the map is logged once, a map whose page
+    /// only shows on another switch counts as changed too, and a map the mod left alone still sorts
+    /// from the database.
+    /// </summary>
+    [Fact]
+    public void Sort_OfAMapAModChanged_ReadsThePlayersOwnMap()
+    {
+        TinyPage farewell = new([C(101, "", 0, 0, 2), C(401, "Bye."), C(121, 60, 60, 0)]);
+        TinyGame shipped = new TinyGame()
+            .Event(2, C(101, "", 0, 0, 2), C(401, "Hello."), C(121, 60, 60, 0))
+            .MapEvent(2, 1, 0, 0, farewell)
+            .MapEvent(3, 1, 0, 0, farewell);
+        TinyGame modded = new TinyGame()
+            .Event(2, C(126, 5, 0, 0, 1), C(123, "A", 0))
+            .Event(5, C(101, "", 0, 0, 2), C(401, "New."), C(121, 60, 60, 0))
+            .MapEvent(2, 1, 0, 0, farewell)
+            .MapEvent(3, 1, 0, 0, farewell with { Switch1 = 70 });
+        EventStore store = StoreOf(shipped);
+        EventStore own = StoreOf(modded);
+        var lines = new List<string>();
+        var events = new GameEvents(() => store, modded.Files, lines.Add);
+        var topics = new TopicCaller(context => EventTopics.Register(context, () => events));
+        topics.Call(EventTopics.Open, new RubyHash { { "fingerprint", store.Meta!.Build.Fingerprint } });
+        string KindOf(int map, int eventId)
+        {
+            ListRow list = own.ListOf(map, eventId, 0)!.Value;
+            var request = new RubyHash { { "map", map }, { "event", eventId }, { "page", 0 }, { "size", list.CountAll }, { "shape", list.Shape }, { "values", Values(0) } };
+            return topics.Call(EventTopics.Sort, request)!.AsHash()["kind"].AsText();
+        }
+
+        Assert.Equal(("chest", "story", "chest"), (KindOf(1, 2), KindOf(1, 5), KindOf(1, 2)));
+        Assert.Equal(("story", "story"), (KindOf(2, 1), KindOf(3, 1)));
+        Assert.Equal([1, 3], lines.Where(line => line.EndsWith("differ from the events database, so they are read from the game's own data", StringComparison.Ordinal)).Select(line => int.Parse(line.Split(' ')[5], CultureInfo.InvariantCulture)));
+    }
+
+    /// <summary>
+    /// Asserts that a mod folder without the events database answers why and names the castle's
+    /// maps, still sorts the lists the scripts hand over, and knows no chest or page flags of a map.
+    /// </summary>
+    [Fact]
+    public void Open_WithoutTheDatabase_SortsOnlyTheListsHandedOver()
+    {
+        using var folder = new TempFolder();
+        var missing = new GameEvents(() => EventStore.Open(Path.Combine(folder.Path, EventSchema.GamePath)), () => new TinyGame().Files(), _ => { });
+        var topics = new TopicCaller(context =>
+        {
+            EventTopics.Register(context, () => missing);
+            EventTableTopics.Register(context, () => missing);
+        });
+
+        RubyHash opened = topics.Call(EventTopics.Open, new RubyHash { { "fingerprint", "1:0.0.0.0.0.0.0.0.0.0.0" } })!.AsHash();
+        var rows = new RubyHash { { "map", 1 }, { "rows", new RubyArray { new RubyArray { 2, 0, 4, 1 } } } };
+
+        Assert.False(opened["usable"].AsBool());
+        Assert.StartsWith("no events database at ", opened["problem"].AsText(), StringComparison.Ordinal);
+        Assert.Equal((new RubyArray(), new RubyArray { 227, 228, 229, 230, 268, 269, 270, 271, 272, 273, 274, 275, 276, 277, 278 }), (opened["differing"], opened["castle_maps"]));
+        Assert.Equal(new RubyHash { { "letters", new RubyArray { RubyNil.Value } } }, topics.Call(EventTableTopics.Chests, rows));
+        Assert.Equal(new RubyHash { { "pages", new RubyArray { RubyNil.Value } } }, topics.Call(EventTableTopics.Pages, rows));
+        Assert.Equal(new RubyHash { { "unknown", true } }, topics.Call(EventTopics.Sort, new RubyHash { { "map", 1 }, { "event", 2 }, { "page", 0 }, { "size", 4 }, { "shape", 1 } }));
+        Assert.Equal("talk", topics.Call(EventTopics.Sort, new RubyHash { { "list", new RubyArray { Row(101, 0, ["", 0, 0, 2]), Row(0, 0, []) } }, { "values", Values(0) } })!.AsHash()["kind"].AsText());
+    }
+
+    /// <summary>
+    /// Asserts that a map's pages sort at once, a page held otherwise as none, and that the scripts
+    /// sort such pages from their commands in the same topic.
+    /// </summary>
+    [Fact]
+    public void Kinds_SortsThePagesHeldOtherwiseFromTheirCommands()
+    {
+        var pages = new RubyHash { { "map", 1 }, { "pages", new RubyArray { TinyEvents.Row(_events, 2), TinyEvents.Row(_events, 3, 1) } }, { "values", Values(0) } };
+        var handed = new RubyHash
+        {
+            { "map", 1 }, { "pages", new RubyArray { new RubyArray { 3, 0, new RubyArray { Row(101, 0, ["", 0, 0, 2]), Row(0, 0, []) } } } }, { "values", Values(0) },
+        };
+
+        Assert.Equal(new RubyHash { { "kinds", new RubyArray { "story", RubyNil.Value } } }, _topics.Call(EventTopics.Kinds, pages));
+        Assert.Equal(new RubyHash { { "kinds", new RubyArray { "talk" } } }, _topics.Call(EventTopics.Kinds, handed));
+    }
+
+    /// <summary>
+    /// Asserts that the command index tells the troops a page fights and what it sets through the
+    /// common event it calls, a script's write too, which the database keeps as the list's rows.
+    /// </summary>
+    [Fact]
+    public void Index_TellsTheTroopsAndWritesThroughTheCommonEvents()
+    {
+        RubyHash answer = _topics.Call(EventTopics.Index, TinyEvents.Page(_events, 1, 3))!.AsHash();
+
+        Assert.Equal(new RubyArray { 71 }, answer["troops"]);
+        Assert.Equal(new RubyHash { { "s", new RubyArray { new RubyArray { 61, 61 } } }, { "v", new RubyArray() }, { "ss", new RubyArray() } }, answer["writes"]);
+    }
+
+    /// <summary>
+    /// Asserts that the command index of a map's pages answers each page in one call, none for a page
+    /// held otherwise, and a page the scripts hand over from its commands.
+    /// </summary>
+    [Fact]
+    public void Index_OfAMapsPages_AnswersEachAtOnce()
+    {
+        var request = new RubyHash
+        {
+            { "map", 1 },
+            { "pages", new RubyArray { TinyEvents.Row(_events, 3), TinyEvents.Row(_events, 2, 1), new RubyArray { 2, 0, new RubyArray { Row(301, 0, [0, 72, false, false]), Row(0, 0, []) } } } },
+        };
+
+        RubyArray indexes = _topics.Call(EventTopics.Index, request)!.AsHash()["indexes"].AsArray();
+
+        Assert.Equal(new RubyArray { 71 }, indexes[0].AsHash()["troops"]);
+        Assert.Equal(RubyNil.Value, indexes[1]);
+        Assert.Equal(new RubyArray { 72 }, indexes[2].AsHash()["troops"]);
+    }
+
+    /// <summary>
+    /// Asserts that a read ahead that fails is logged and goes no further, since an exception
+    /// escaping the DLL's thread would end the game.
+    /// </summary>
+    [Fact]
+    public void ReadAhead_ThatFails_IsLogged()
+    {
+        var lines = new List<string>();
+
+        EventTopics.ReadAhead(() => throw new DllNotFoundException("e_sqlite3"), lines.Add);
+
+        Assert.Equal(["events: could not open the events database: DllNotFoundException: e_sqlite3"], lines);
+    }
+
+    /// <summary>
+    /// Builds the events database of a tiny game, as the generator writes it.
+    /// </summary>
+    /// <param name="game">The game.</param>
+    /// <returns>The database, in memory.</returns>
+    private static EventStore StoreOf(TinyGame game) => EventStore.Over(EventDatabaseWriter.Build(EventBuilder.Build(game.Files(), new BuildOptions())));
+
+    /// <summary>
+    /// Writes a command as the scripts hand it over.
+    /// </summary>
+    /// <param name="code">The code.</param>
+    /// <param name="indent">The indent.</param>
+    /// <param name="parameters">The parameters.</param>
+    /// <returns>[code, indent, parameters].</returns>
+    private static RubyArray Row(int code, int indent, RubyArray parameters) => [code, indent, parameters];
+
+    /// <summary>
+    /// Adds a field to a request.
+    /// </summary>
+    /// <param name="request">The request.</param>
+    /// <param name="field">The field.</param>
+    /// <param name="value">Its value.</param>
+    /// <returns>The same request.</returns>
+    private static RubyHash With(RubyHash request, string field, RubyValue value)
+    {
+        request[field] = value;
+        return request;
+    }
+
+    /// <summary>
+    /// Writes the values a sort of the tiny game names: variable 1001, and switches 60 and 61, no
+    /// one's own, while the Library replays no scene.
+    /// </summary>
+    /// <param name="progress">Variable 1001.</param>
+    /// <returns>The values.</returns>
+    private static RubyHash Values(long progress) => new()
+    {
+        { "s", new RubyHash { { 443, false } } },
+        { "v", new RubyHash { { 1001, progress } } },
+        { "ps", new RubyHash { { 60, false }, { 61, false } } },
+    };
+}

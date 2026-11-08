@@ -15,7 +15,7 @@
 # A Raid World's frozen boss fights: a player who lost a raid boss's story battle keeps the story at
 # that battle (see battles_raid_freeze.rbx), and the world's story keeps it there for every player
 # until the fight is over. The list and the one decision whether a fight is over are the DLL's
-# (MGQOnline.Game's FrozenFights, the topics of MGQParadox.Multiplayer's FreezeTopics): a fight ends
+# (MGQOnline.Game's FrozenFights, the topics of MGQOnline.Multiplayer's FreezeTopics): a fight ends
 # once the player won its battle, its pools are defeated, or the player's or the world's story beat
 # its boss or the fight the other side plays in its stead, and that is final for the world. Each
 # frozen fight is one key of the relay's story tracks by its troop (f<troop>), which this script

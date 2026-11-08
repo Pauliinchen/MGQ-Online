@@ -2,7 +2,7 @@
 
 This file holds what the code cannot say: how to build, test and release, how the parts connect, why things are the way they are, and the traps that broke before. What a method does, which topics exist and which fields they carry is in the code and its docs.
 
-Monster Girl Quest! Online keeps its first name inside: the `Multiplayer` install folder, `Multiplayer.dll`, the `MGQParadox.Multiplayer` projects, `MGQ_Multiplayer`, the `MGQ_Mp` modules and the DLL's `mp_` functions. The `mgqmp` strings in join and world codes, key derivation labels and player ids must never change, since every world and player id on the relay derives from them.
+Monster Girl Quest! Online keeps its first name inside: the `Multiplayer` install folder, `Multiplayer.dll`, `MGQ_Multiplayer`, the `MGQ_Mp` modules and the DLL's `mp_` functions. The `mgqmp` strings in join and world codes, key derivation labels and player ids must never change, since every world and player id on the relay derives from them.
 
 ## Build and test
 
@@ -18,7 +18,7 @@ Monster Girl Quest! Online keeps its first name inside: the `Multiplayer` instal
 Only a publish runs NativeAOT, so a plain build gives no usable DLL:
 
 ```powershell
-dotnet publish MGQParadox.Multiplayer -c Release -p:Version=0.1.0
+dotnet publish MGQOnline.Multiplayer -c Release -p:Version=0.1.0
 ```
 
 The DLL is 32-bit, because the game is a 32-bit process; players need no .NET installed. A publish assembles the release layout in `Shipping/` (replaced every time); a Release publish also writes `bin/Release/MGQ-Online-<Version>.zip`. Copy `Shipping/` into a game folder to install; close the game first, since `Multiplayer.dll` is locked while it runs.
@@ -43,7 +43,7 @@ Patch/Multiplayer/Scripts/  *.rbx
 
 | Project | Run | Runtime |
 |---|---|---|
-| `MGQParadox.Multiplayer.Tests` (the DLL) | `dotnet run --project MGQParadox.Multiplayer.Tests` | 32-bit, x86 runtime |
+| `MGQOnline.Multiplayer.Tests` (the DLL) | `dotnet run --project MGQOnline.Multiplayer.Tests` | 32-bit, x86 runtime |
 | `MGQOnline.Data.Tests` | `dotnet run --project MGQOnline.Data.Tests` | 32-bit, x86 runtime |
 | `MGQOnline.Bridge.Tests`, `MGQOnline.Game.Tests`, `MGQOnline.ServerCore.Tests`, `MGQOnline.Data.Generator.Tests` | `dotnet run --project <name>` | 64-bit, any .NET 10 runtime |
 | Script tests (`GameScript/Tests/`) | `ruby GameScript/Tests/run.rb` (`-v` shows every check) | Ruby 3.3+ |
@@ -91,7 +91,7 @@ Relay r1 ran as a Cloudflare Worker up to 0.6.6.1 and is frozen there. Its sourc
 | `GameScript/Multiplayer.rb` | The scripts' foundation: loading, the log, the bridge client; loads the others |
 | `GameScript/Multiplayer/Scripts/*.rbx` | The game scripts, one per area (Ruby 1.9.2 in RGSS3) |
 | `GameScript/Tests/` | Script tests outside the game |
-| `MGQParadox.Multiplayer/` | NativeAOT project -> `Multiplayer.dll` (win-x86): the bridge host, the network (relay, world rooms, directory), the files on disk, the topics |
+| `MGQOnline.Multiplayer/` | NativeAOT project -> `Multiplayer.dll` (win-x86): the bridge host, the network (relay, world rooms, directory), the files on disk, the topics |
 | `MGQOnline.Bridge/`, `MGQOnline.Bridge.Native/` | The bridge between the scripts and C#, and its four exports |
 | `MGQOnline.Game/` | The game-side rules, one folder per area, shared by the DLL and the battle server's core |
 | `MGQOnline.Data/` | The events database over a static SQLite |
@@ -227,7 +227,7 @@ The game's events as numbers, built once from the untranslated 3.06 by the gener
 
 ## Game rules (MGQOnline.Game)
 
-A net10.0 library, AOT-clean, BCL plus `Bridge` and `Data` only, no state in statics, one folder per area. The DLL answers the scripts with it through topics in `MGQParadox.Multiplayer/Topics/`, the server core through `ServerBridge`; rules the battle scripts need on both go through `SharedTopics`.
+A net10.0 library, AOT-clean, BCL plus `Bridge` and `Data` only, no state in statics, one folder per area. The DLL answers the scripts with it through topics in `MGQOnline.Multiplayer/Topics/`, the server core through `ServerBridge`; rules the battle scripts need on both go through `SharedTopics`.
 
 - **Event sorting** (`Events/`): what a page or list is for a party (story, talk, travel, chest, battle, own) and what it reads and writes; see [Events in a party](#events-in-a-party). The rules read the game only through `IEventSource`, answered by the database or, outside it, by the game's own data.
 - **Battle lines** (`Battles/Wire/`): the codec of live battle messages. It reads with the same refusals Ruby did (512 KB, 8 deep) and gives nil for a token naming nothing the reading game has; the script then finds each id within its own tables and each symbol among those the game already has, never made from the peer's text.

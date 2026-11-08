@@ -1,0 +1,984 @@
+//----------------------------------------------------------------
+//  WorldSessionTests.cs
+//
+//  Changelog:
+//      Paulinchen  2026-11-08: Moved to the MGQOnline.Multiplayer namespace
+//      Paulinchen  2026-11-05: Expected true written as 1
+//                            - Sent a message of the scripts through the world room's topics to another game
+//      Paulinchen  2026-10-31: Covered the world's mod settings the relay tells
+//                            - Used the join code, which moved beside the world code
+//      Paulinchen  2026-10-31: Expected the plainer texts the player reads
+//      Paulinchen  2026-10-30: Covered the world room refusals in one theory
+//      Paulinchen  2026-10-13: Covered the relay's word of a Classic world's new raid bosses setting
+//                            - Covered the relay's word of a Raid World's new squad settings
+//      Paulinchen  2026-10-12: Covered paced message bursts and closing a connection that sends too fast
+//                            - Covered entering a world again while the first connect still waits
+//                            - Covered a late "replaced" close and the relay turning an outdated game away
+//                            - Covered a cut connect held past its own timeout and the "update" refusal
+//                            - Covered older relays turning the world room down with 426 or 400
+//      Paulinchen  2026-10-09: Covered the relay's word that a world turns other mods off
+//                            - Covered the relay's word of a Raid World's new difficulty
+//      Paulinchen  2026-10-08: Covered entering a Raid World
+//                            - Read the relay's chat lines under its lock and covered chat lines that come too fast
+//      Paulinchen  2026-10-07: Covered mirrored chat lines and an admin's line
+//      Paulinchen  2026-10-06: Covered a player entering from another game and took the entry the inbox handed out
+//      Paulinchen  2026-10-02: Made the test world with every player starting alike
+//      Paulinchen  2026-09-30: Made the test world without a starting save, public
+//      Paulinchen  2026-09-29: Covered the ping an open connection tells
+//                            - Made every world in the directory first and covered deleted worlds and removed or missing players
+//                            - Created
+//
+//----------------------------------------------------------------
+
+using System;
+using System.Diagnostics;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using MGQOnline.Bridge.Ruby;
+using MGQOnline.Game.World;
+using MGQOnline.Multiplayer.Network.Relay;
+using MGQOnline.Multiplayer.Network.Transport;
+using MGQOnline.Multiplayer.Network.World;
+using MGQOnline.Multiplayer.Tests.Topics;
+
+namespace MGQOnline.Multiplayer.Tests.Network.World;
+
+/// <summary>
+/// Covers games entering a world, finding each other and passing messages, all inside this process
+/// and meeting at a relay inside it too.
+/// </summary>
+public sealed class WorldSessionTests
+{
+    /// <summary>
+    /// How long a test waits for the others.
+    /// </summary>
+    private static readonly TimeSpan Patience = TimeSpan.FromSeconds(20);
+
+    /// <summary>
+    /// Asserts that each game takes a seat, learns the seats already taken, and hears of those who come later.
+    /// </summary>
+    [Fact]
+    public void Games_TakeSeatsAndHearOfEachOther()
+    {
+        using var relay = new TestRelay();
+        var code = MakeWorld(relay, 4);
+        var first = NewSession(relay.Address);
+        var second = NewSession(relay.Address);
+
+        Assert.True(first.Open(code));
+        var firstSeat = NextEntry(first);
+        Assert.Equal(("seat", "0", ""), (firstSeat[Message.Kind], firstSeat["seat"], firstSeat["others"]));
+
+        second.Open(code);
+        var secondSeat = NextEntry(second);
+        Assert.Equal(("seat", "1", "0"), (secondSeat[Message.Kind], secondSeat["seat"], secondSeat["others"]));
+
+        var arrival = NextEntry(first);
+        Assert.Equal(("in", "1"), (arrival[Message.Kind], arrival["seat"]));
+
+        var state = Message.Decode(first.Describe());
+        Assert.Equal(("open", "0", "1"), (state["state"], state["seat"], state["others"]));
+
+        first.Close();
+        second.Close();
+    }
+
+    /// <summary>
+    /// Asserts that an open connection tells its round trip to the relay as the ping.
+    /// </summary>
+    [Fact]
+    public void OpenConnection_TellsItsPing()
+    {
+        using var relay = new TestRelay();
+        var session = NewSession(relay.Address);
+
+        session.Open(MakeWorld(relay, 2));
+        var state = Await(session, described => described["ping"].Length > 0, "a ping");
+
+        Assert.Equal("open", state["state"]);
+        Assert.InRange(int.Parse(state["ping"], System.Globalization.CultureInfo.InvariantCulture), 0, (int)Patience.TotalMilliseconds);
+
+        session.Close();
+        Assert.Equal(string.Empty, Message.Decode(session.Describe())["ping"]);
+    }
+
+    /// <summary>
+    /// Asserts that a message goes to every other game, or only to the seat it names, with the sender's seat.
+    /// </summary>
+    [Fact]
+    public void Messages_GoToEveryoneOrToOneSeat()
+    {
+        using var relay = new TestRelay();
+        var code = MakeWorld(relay, 4);
+        var games = new[] { NewSession(relay.Address), NewSession(relay.Address), NewSession(relay.Address) };
+
+        foreach (var game in games)
+        {
+            game.Open(code);
+            AwaitState(game, "open");
+        }
+
+        AwaitOthers(games[0], "1,2");
+        AwaitOthers(games[1], "0,2");
+        Drain(games);
+
+        Assert.True(games[0].Send(-1, "pos\n3\n4"));
+        Assert.Equal(("0", "pos\n3\n4"), Received(NextEntry(games[1])));
+        Assert.Equal(("0", "pos\n3\n4"), Received(NextEntry(games[2])));
+
+        Assert.True(games[2].Send(1, "hello, second"));
+        Assert.Equal(("2", "hello, second"), Received(NextEntry(games[1])));
+
+        // The first game got nothing meant for the second, so the next thing it hears is this.
+        Assert.True(games[1].Send(-1, "hello, all"));
+        Assert.Equal(("1", "hello, all"), Received(NextEntry(games[0])));
+
+        Assert.False(games[0].Send(RelayWorldChannel.Everyone, "no such seat"));
+
+        foreach (var game in games)
+        {
+            game.Close();
+        }
+    }
+
+    /// <summary>
+    /// Asserts that the scripts' message goes through the world room's topics: the DLL enters the
+    /// world, writes the fields and the body the scripts hand over, and another game reads the same
+    /// fields and body; a list goes as its items separated by commas, true as 1 and a line break in a
+    /// value as a space.
+    /// </summary>
+    [Fact]
+    public void SendTopic_WritesTheScriptsFieldsAndAnotherGameReadsThem()
+    {
+        using var relay = new TestRelay();
+        var code = MakeWorld(relay, 4);
+        var sender = NewSession(relay.Address);
+        var receiver = NewSession(relay.Address);
+        var topics = new TopicCaller(context => WorldRoomTopics.Register(context, sender, _ => { }));
+
+        Assert.Equal(RubyBool.True, topics.Call(WorldRoomTopics.OpenTopic, code));
+        receiver.Open(code);
+        AwaitState(sender, "open");
+        AwaitState(receiver, "open");
+        var senderSeat = Await(sender, described => described["others"].Length > 0, "the other game")["seat"];
+        Await(receiver, described => described["others"].Length > 0, "the other game");
+        Drain(sender, receiver);
+
+        var fields = new RubyHash
+        {
+            { "coop", "hot_ok" },
+            { "seats", new RubyArray { 0, 2 } },
+            { "level", 30 },
+            { "escape", true },
+            { "none", RubyNil.Value },
+            { "note", "two\nlines" },
+        };
+        Assert.Equal(RubyBool.True, topics.Call(WorldRoomTopics.SendTopic, new RubyHash { { "seat", -1 }, { "fields", fields }, { "body", "アリス" } }));
+
+        var (seat, text) = Received(NextEntry(receiver, "message"));
+        var read = WorldFields.Parse(text, out var body);
+        Assert.Equal(senderSeat, seat);
+        Assert.Equal(["coop=hot_ok", "seats=0,2", "level=30", "escape=1", "none=", "note=two lines"], read.Select(pair => $"{pair.Key}={pair.Value}"));
+        Assert.Equal("アリス", body);
+
+        topics.Call(WorldRoomTopics.CloseTopic);
+        AwaitState(sender, "idle");
+        receiver.Close();
+    }
+
+    /// <summary>
+    /// Asserts that a game leaving frees its seat for the others, and that closing forgets everything.
+    /// </summary>
+    [Fact]
+    public void Leaving_FreesTheSeatAndClosingForgetsEverything()
+    {
+        using var relay = new TestRelay();
+        var code = MakeWorld(relay, 4);
+        var first = NewSession(relay.Address);
+        var second = NewSession(relay.Address);
+
+        first.Open(code);
+        AwaitState(first, "open");
+        second.Open(code);
+        AwaitState(second, "open");
+        AwaitOthers(first, "1");
+        Drain(first);
+
+        second.Close();
+        var departure = NextEntry(first);
+        Assert.Equal(("out", "1"), (departure[Message.Kind], departure["seat"]));
+        Assert.Equal(string.Empty, Message.Decode(first.Describe())["others"]);
+
+        var closed = Message.Decode(second.Describe());
+        Assert.Equal(("idle", "", ""), (closed["state"], closed["seat"], closed["others"]));
+        Assert.Null(second.PeekMessage());
+        Assert.False(second.Send(-1, "anyone there?"));
+
+        first.Close();
+    }
+
+    /// <summary>
+    /// Asserts that a game finding every seat taken waits and says why, and takes the seat once one is free.
+    /// </summary>
+    [Fact]
+    public void FullWorld_WaitsUntilASeatIsFree()
+    {
+        using var relay = new TestRelay();
+        var code = MakeWorld(relay, 2);
+        var first = NewSession(relay.Address);
+        var second = NewSession(relay.Address);
+        var third = NewSession(relay.Address);
+
+        first.Open(code);
+        AwaitState(first, "open");
+        second.Open(code);
+        AwaitState(second, "open");
+        third.Open(code);
+
+        var waiting = AwaitError(third);
+        Assert.Equal("connecting", waiting["state"]);
+        Assert.Contains("full", waiting["error"]);
+
+        second.Close();
+        AwaitState(third, "open");
+        Assert.Equal("1", Message.Decode(third.Describe())["seat"]);
+
+        first.Close();
+        third.Close();
+    }
+
+    /// <summary>
+    /// Asserts that a cut connection is taken up again by itself, with a new seat entry for the game script.
+    /// </summary>
+    [Fact]
+    public void CutConnection_ComesBackByItself()
+    {
+        using var relay = new TestRelay();
+        var code = MakeWorld(relay, 4);
+        var first = NewSession(relay.Address);
+        var second = NewSession(relay.Address);
+
+        first.Open(code);
+        AwaitState(first, "open");
+        second.Open(code);
+        AwaitState(second, "open");
+        Drain(first, second);
+
+        relay.CutWorlds();
+
+        var reseated = NextEntry(first, kind: "seat");
+        Assert.Equal("seat", reseated[Message.Kind]);
+        AwaitState(second, "open");
+        AwaitOthers(first, Message.Decode(second.Describe())["seat"]);
+        Drain(second);
+
+        Assert.True(first.Send(-1, "still here"));
+        Assert.Equal("still here", NextEntry(second, kind: "message").Team);
+
+        first.Close();
+        second.Close();
+    }
+
+    /// <summary>
+    /// Asserts that a text that is no world code, or a world of an unknown relay, fails with a reason.
+    /// </summary>
+    [Fact]
+    public void NoCodeOrUnknownRelay_Fails()
+    {
+        var session = NewSession(relay: null);
+
+        Assert.False(session.Open("mgqmp2;abcdefghjkmnpqrs;r1"));
+        Assert.Equal("failed", Message.Decode(session.Describe())["state"]);
+
+        Assert.True(session.Open(NewCode(4)));
+        var failed = AwaitError(session);
+        Assert.Equal("failed", failed["state"]);
+        Assert.Contains("newer version", failed["error"]);
+    }
+
+    /// <summary>
+    /// Asserts that a world its creator deletes, or that was never in the directory, ends the session for good, with a reason.
+    /// </summary>
+    [Fact]
+    public void DeletedWorld_EndsForGood()
+    {
+        using var relay = new TestRelay();
+        var code = MakeWorld(relay, 4);
+        var guest = NewSession(relay.Address);
+
+        guest.Open(code);
+        AwaitState(guest, "open");
+        WorldDirectoryTests.Act(Creator(relay), directory => directory.Delete(Relays.WorldRoomOf(WorldCode.Parse(code)!.Token)));
+
+        var ended = AwaitError(guest);
+        Assert.Equal("failed", ended["state"]);
+        Assert.Contains("deleted", ended["error"]);
+
+        var stranger = NewSession(relay.Address);
+        stranger.Open(NewCode(4));
+        Assert.Contains("no longer exists", AwaitError(stranger)["error"]);
+    }
+
+    /// <summary>
+    /// Asserts that a game enters a Raid World, since it names Raid Worlds in the features header the relay checks.
+    /// </summary>
+    [Fact]
+    public void RaidWorld_LetsThisGameIn()
+    {
+        using var relay = new TestRelay();
+        var made = WorldDirectoryTests.Act(Creator(relay), directory => directory.Create("Raid World", "secret", 4, false, false, [], null, WorldType.Raid, CompanionSharing.All));
+        var session = NewSession(relay.Address);
+
+        session.Open(made["code"]);
+        AwaitState(session, "open");
+        session.Close();
+    }
+
+    /// <summary>
+    /// Asserts that a player the creator removes is closed for good, with a reason, while the others stay.
+    /// </summary>
+    [Fact]
+    public void RemovedPlayer_EndsForGood()
+    {
+        using var relay = new TestRelay();
+        var code = MakeWorld(relay, 4);
+        var world = Relays.WorldRoomOf(WorldCode.Parse(code)!.Token);
+        var removedKey = WorldDirectoryTests.PlayerKey(7);
+        var removed = NewSession(relay.Address, removedKey);
+        var staying = NewSession(relay.Address);
+
+        removed.Open(code);
+        staying.Open(code);
+        AwaitState(removed, "open");
+        AwaitState(staying, "open");
+        WorldDirectoryTests.Act(Creator(relay), directory => directory.Ban(world, WorldKeys.PlayerIdOf(removedKey)));
+
+        var ended = AwaitError(removed);
+        Assert.Equal("failed", ended["state"]);
+        Assert.Contains("removed", ended["error"]);
+        Assert.Equal("open", Message.Decode(staying.Describe())["state"]);
+
+        var again = NewSession(relay.Address, removedKey);
+        again.Open(code);
+        Assert.Contains("removed", AwaitError(again)["error"]);
+        staying.Close();
+    }
+
+    /// <summary>
+    /// Asserts that a player entering a world from another game ends the earlier game's session for
+    /// good, with a reason, and takes its seat.
+    /// </summary>
+    [Fact]
+    public void SamePlayerElsewhere_ReplacesTheEarlierGame()
+    {
+        using var relay = new TestRelay();
+        var code = MakeWorld(relay, 2);
+        var key = WorldDirectoryTests.PlayerKey(8);
+        var earlier = NewSession(relay.Address, key);
+        var later = NewSession(relay.Address, key);
+
+        earlier.Open(code);
+        AwaitState(earlier, "open");
+        later.Open(code);
+        AwaitState(later, "open");
+
+        var ended = AwaitError(earlier);
+        Assert.Equal("failed", ended["state"]);
+        Assert.Contains("another game", ended["error"]);
+        AwaitOthers(later, string.Empty);
+
+        later.Close();
+    }
+
+    /// <summary>
+    /// Asserts that entering a world again cuts the connect still waiting at the relay, and that the
+    /// game connects again instead of failing once the relay still lets that cut connect in and it
+    /// takes the new connection's place.
+    /// </summary>
+    [Fact]
+    public void EnteringAgain_OutlastsTheConnectItCut()
+    {
+        using var relay = new TestRelay();
+        var code = MakeWorld(relay, 2);
+        var session = NewSession(relay.Address);
+        var hold = new TaskCompletionSource();
+
+        relay.WorldUpgradeHold = hold;
+        session.Open(code);
+        Assert.True(SpinWait.SpinUntil(() => relay.WorldUpgradeHold == null, Patience), "The first connect never reached the relay.");
+
+        session.Open(code);
+        NextEntry(session, kind: "seat");
+        hold.SetResult();
+
+        NextEntry(session, kind: "seat");
+        var state = Await(session, described => described["state"] == "open", "the state open after the cut connect took its place");
+        Assert.Equal(string.Empty, state["error"]);
+
+        session.Close();
+    }
+
+    /// <summary>
+    /// Asserts that a "replaced" close arriving once the connect cut by entering again could no longer
+    /// take a seat ends the session for good, as another game of the same player took its place.
+    /// </summary>
+    [Fact]
+    public void ReplacedAfterTheCutConnectWindow_EndsForGood()
+    {
+        using var relay = new TestRelay();
+        var code = MakeWorld(relay, 2);
+        var key = WorldDirectoryTests.PlayerKey(9);
+        var connectTimeout = TimeSpan.FromSeconds(1);
+        var session = NewSession(relay.Address, key, connectTimeout: connectTimeout);
+        var later = NewSession(relay.Address, key);
+        var hold = new TaskCompletionSource();
+
+        try
+        {
+            relay.WorldUpgradeHold = hold;
+            session.Open(code);
+            Assert.True(SpinWait.SpinUntil(() => relay.WorldUpgradeHold == null, Patience), "The first connect never reached the relay.");
+
+            session.Open(code);
+            NextEntry(session, kind: "seat");
+            Thread.Sleep(connectTimeout + TimeSpan.FromMilliseconds(500));
+
+            later.Open(code);
+            AwaitState(later, "open");
+
+            var ended = AwaitError(session);
+            Assert.Equal("failed", ended["state"]);
+            Assert.Contains("another game", ended["error"]);
+        }
+        finally
+        {
+            hold.TrySetResult();
+            later.Close();
+            session.Close();
+        }
+    }
+
+    /// <summary>
+    /// Asserts that a "replaced" close from a connect cut by entering again, which the relay held
+    /// past the window counted from when that connect started, still connects again, since the
+    /// window counts from the cut.
+    /// </summary>
+    [Fact]
+    public void CutConnectHeldPastItsOwnTimeout_OutlastsItsReplace()
+    {
+        using var relay = new TestRelay();
+        var code = MakeWorld(relay, 2);
+        var connectTimeout = TimeSpan.FromSeconds(2);
+        var session = NewSession(relay.Address, connectTimeout: connectTimeout);
+        var hold = new TaskCompletionSource();
+
+        try
+        {
+            relay.WorldUpgradeHold = hold;
+            session.Open(code);
+            Assert.True(SpinWait.SpinUntil(() => relay.WorldUpgradeHold == null, Patience), "The first connect never reached the relay.");
+            var held = Stopwatch.StartNew();
+
+            Thread.Sleep(TimeSpan.FromSeconds(1.5));
+            session.Open(code);
+            NextEntry(session, kind: "seat");
+
+            // Past when the cut connect started plus its timeout, still within the timeout after the cut.
+            var pastItsOwnTimeout = connectTimeout + TimeSpan.FromSeconds(0.5) - held.Elapsed;
+
+            if (pastItsOwnTimeout > TimeSpan.Zero)
+            {
+                Thread.Sleep(pastItsOwnTimeout);
+            }
+
+            hold.SetResult();
+
+            NextEntry(session, kind: "seat");
+            var state = Await(session, described => described["state"] == "open", "the state open after the cut connect took its place");
+            Assert.Equal(string.Empty, state["error"]);
+        }
+        finally
+        {
+            hold.TrySetResult();
+            session.Close();
+        }
+    }
+
+    /// <summary>
+    /// Asserts that a world room turned down ends the session for good with the reason, after a single
+    /// request: 400 with the code "update" as the relay turns a game too old for it away, 426 with or
+    /// without a text as an older or self-hosted relay may, and 400 without a code or with one this
+    /// game does not know.
+    /// </summary>
+    /// <param name="status">The status the relay answers.</param>
+    /// <param name="code">The code in X-MGQ-Refusal, or <see langword="null"/> for none.</param>
+    /// <param name="reason">The reason the session ends with.</param>
+    [Theory]
+    [InlineData(400, "update", "Update MGQ Online to play online.")]
+    [InlineData(426, "This relay serves MGQ Online 0.7.0 and newer.", "This relay serves MGQ Online 0.7.0 and newer.")]
+    [InlineData(426, null, "Update MGQ Online to play online.")]
+    [InlineData(400, null, "Update MGQ Online to enter this world.")]
+    [InlineData(400, "something_new", "Update MGQ Online to enter this world.")]
+    public void RefusedWorldRoom_EndsForGoodWithTheReason(int status, string? code, string reason)
+    {
+        using var relay = new TestRelay();
+        var world = MakeWorld(relay, 2);
+        var session = NewSession(relay.Address);
+
+        relay.WorldRoomRefusal = (status, code);
+        session.Open(world);
+
+        var ended = AwaitError(session);
+        Assert.Equal(("failed", reason), (ended["state"], ended["error"]));
+        Thread.Sleep(500);
+        Assert.Equal(1, relay.WorldRoomRequests);
+    }
+
+    /// <summary>
+    /// Asserts that a session without a player cannot open a world.
+    /// </summary>
+    [Fact]
+    public void NoPlayer_CannotOpen()
+    {
+        var session = new WorldSession { RelayAddress = _ => null, Playing = () => null };
+
+        Assert.False(session.Open(NewCode(4)));
+        Assert.Contains("name is not known", Message.Decode(session.Describe())["error"]);
+    }
+
+    /// <summary>
+    /// Asserts that a chat line the game script says reaches the relay as text, on one line, and
+    /// that a line the relay says for an admin reaches the game script as a chat entry.
+    /// </summary>
+    [Fact]
+    public void Chat_IsMirroredToTheRelayAndAnAdminsLineReachesTheGame()
+    {
+        using var relay = new TestRelay();
+        var code = MakeWorld(relay, 4);
+        var session = NewSession(relay.Address);
+
+        session.Open(code);
+        AwaitState(session, "open");
+        Drain(session);
+
+        Assert.Equal(WorldSession.Mirror.NotMirrored, session.Say(" \n "));
+        Assert.Equal(WorldSession.Mirror.Mirrored, session.Say(" hello\neveryone "));
+        var deadline = DateTime.UtcNow + Patience;
+
+        while (DateTime.UtcNow < deadline && relay.ChatLines.Length == 0)
+        {
+            Thread.Sleep(20);
+        }
+
+        Assert.Equal("hello everyone", Assert.Single(relay.ChatLines).Text);
+
+        relay.Say(Relays.WorldRoomOf(WorldCode.Parse(code)!.Token), "Global", "welcome");
+        var said = NextEntry(session, kind: "chat");
+        Assert.Equal(("Global", "welcome"), (said[WorldSession.NameHeader], said.Team));
+
+        session.Close();
+        Assert.Equal(WorldSession.Mirror.NotMirrored, session.Say("gone"));
+    }
+
+    /// <summary>
+    /// Asserts that the relay's word of a world's new difficulty reaches the game script as a
+    /// difficulty entry, and that a value that is no difficulty is ignored.
+    /// </summary>
+    [Fact]
+    public void Difficulty_ReachesTheGame()
+    {
+        using var relay = new TestRelay();
+        var code = MakeWorld(relay, 4);
+        var session = NewSession(relay.Address);
+
+        session.Open(code);
+        AwaitState(session, "open");
+        Drain(session);
+
+        var room = Relays.WorldRoomOf(WorldCode.Parse(code)!.Token);
+        relay.Tell(room, $"{WorldSession.DifficultyKind} 9");
+        relay.Tell(room, $"{WorldSession.DifficultyKind} -2");
+        var told = NextEntry(session);
+        Assert.Equal((WorldSession.DifficultyKind, "-2"), (told[Message.Kind], told[WorldSession.ValueHeader]));
+
+        session.Close();
+    }
+
+    /// <summary>
+    /// Asserts that the relay's word of a world's new squad settings reaches the game script as a
+    /// squad entry, and that a value that holds no squad settings is ignored.
+    /// </summary>
+    [Fact]
+    public void Squad_ReachesTheGame()
+    {
+        using var relay = new TestRelay();
+        var code = MakeWorld(relay, 4);
+        var session = NewSession(relay.Address);
+
+        session.Open(code);
+        AwaitState(session, "open");
+        Drain(session);
+
+        var room = Relays.WorldRoomOf(WorldCode.Parse(code)!.Token);
+        relay.Tell(room, $"{WorldSession.SquadKind} 1 9 2 1");
+        relay.Tell(room, $"{WorldSession.SquadKind} 1 6 2");
+        relay.Tell(room, $"{WorldSession.SquadKind} 1 6 2 1");
+        var told = NextEntry(session);
+        Assert.Equal((WorldSession.SquadKind, "1 6 2 1"), (told[Message.Kind], told[WorldSession.ValueHeader]));
+
+        session.Close();
+    }
+
+    /// <summary>
+    /// Asserts that the relay's word of whether a Classic world's players now meet raid bosses, sent as
+    /// its creator's edit changes it, reaches the game script as a raid_bosses entry, and that a value
+    /// other than 1 or 0 is ignored.
+    /// </summary>
+    [Fact]
+    public void RaidBosses_ReachTheGame()
+    {
+        using var relay = new TestRelay();
+        var code = MakeWorld(relay, 4);
+        var session = NewSession(relay.Address);
+
+        session.Open(code);
+        AwaitState(session, "open");
+        Drain(session);
+
+        var room = Relays.WorldRoomOf(WorldCode.Parse(code)!.Token);
+        relay.Tell(room, $"{WorldSession.RaidBossesKind} 2");
+        relay.Tell(room, $"{WorldSession.RaidBossesKind} on");
+        relay.Tell(room, $"{WorldSession.RaidBossesKind} 1 ");
+        Assert.Equal("done", WorldDirectoryTests.Act(Creator(relay), directory => directory.Edit(room, 4, string.Empty, string.Empty, null, null, null, null, true))["state"]);
+        var told = NextEntry(session);
+        Assert.Equal((WorldSession.RaidBossesKind, "1"), (told[Message.Kind], told[WorldSession.ValueHeader]));
+
+        relay.Tell(room, $"{WorldSession.RaidBossesKind} 0");
+        told = NextEntry(session);
+        Assert.Equal((WorldSession.RaidBossesKind, "0"), (told[Message.Kind], told[WorldSession.ValueHeader]));
+
+        session.Close();
+    }
+
+    /// <summary>
+    /// Asserts that the relay's word that a world now turns other mods off, sent as its creator's
+    /// edit changes it, reaches the game script as a mods rule entry with the world's mods, and that
+    /// a value that is neither 0 nor 1 is ignored.
+    /// </summary>
+    [Fact]
+    public void ModsRule_ReachesTheGame()
+    {
+        using var relay = new TestRelay();
+        var code = MakeWorld(relay, 4);
+        var session = NewSession(relay.Address);
+        var room = Relays.WorldRoomOf(WorldCode.Parse(code)!.Token);
+
+        session.Open(code);
+        AwaitState(session, "open");
+        Drain(session);
+
+        relay.Tell(room, $"{WorldSession.ModsRuleKind} 2\t!Level Cap");
+        Assert.Equal("done", WorldDirectoryTests.Act(Creator(relay), directory => directory.Edit(room, 4, string.Empty, "!Level Cap, Victory Screen", null, null, true))["state"]);
+        var told = NextEntry(session);
+        Assert.Equal((WorldSession.ModsRuleKind, "1", "!Level Cap, Victory Screen"), (told[Message.Kind], told[WorldSession.ValueHeader], told[WorldSession.ModsHeader]));
+
+        relay.Tell(room, $"{WorldSession.ModsRuleKind} 0");
+        told = NextEntry(session);
+        Assert.Equal((WorldSession.ModsRuleKind, "0", string.Empty), (told[Message.Kind], told[WorldSession.ValueHeader], told[WorldSession.ModsHeader]));
+
+        session.Close();
+    }
+
+    /// <summary>
+    /// Asserts that the world's mod settings the relay tells reach the game script as a mod settings
+    /// entry with who changed them, and that a frame naming someone the relay never names is ignored.
+    /// </summary>
+    [Fact]
+    public void ModSettings_ReachTheGame()
+    {
+        using var relay = new TestRelay();
+        var code = MakeWorld(relay, 4);
+        var session = NewSession(relay.Address);
+        var room = Relays.WorldRoomOf(WorldCode.Parse(code)!.Token);
+
+        session.Open(code);
+        AwaitState(session, "open");
+        Drain(session);
+
+        relay.Tell(room, $"{WorldSession.ModSettingsKind} someone\t@shared=o:1");
+        relay.Tell(room, $"{WorldSession.ModSettingsKind} admin\t@shared=o:1;a=i:1");
+        var told = NextEntry(session);
+        Assert.Equal((WorldSession.ModSettingsKind, "@shared=o:1;a=i:1", "admin"), (told[Message.Kind], told[WorldSession.SettingsHeader], told[WorldSession.ByHeader]));
+
+        session.Close();
+    }
+
+    /// <summary>
+    /// Asserts that chat lines past the relay's burst are dropped until the allowance refills, and
+    /// that the relay saying it dropped one leaves the connection and the inbox as they are.
+    /// </summary>
+    [Fact]
+    public void Chat_LinesThatComeTooFastAreDropped()
+    {
+        using var relay = new TestRelay();
+        var code = MakeWorld(relay, 4);
+        var now = new DateTime(2026, 10, 8, 20, 0, 0, DateTimeKind.Utc);
+        var session = NewSession(relay.Address, now: () => now);
+
+        session.Open(code);
+        AwaitState(session, "open");
+        Drain(session);
+
+        for (var line = 0; line < WorldSession.ChatBurst; line++)
+        {
+            Assert.Equal(WorldSession.Mirror.Mirrored, session.Say($"line {line}"));
+        }
+
+        Assert.Equal(WorldSession.Mirror.TooFast, session.Say("one too many"));
+        now = now.AddSeconds(1 / WorldSession.ChatLinesPerSecond);
+        Assert.Equal(WorldSession.Mirror.Mirrored, session.Say("later"));
+        Assert.Equal(WorldSession.Mirror.TooFast, session.Say("too soon again"));
+
+        relay.Tell(Relays.WorldRoomOf(WorldCode.Parse(code)!.Token), WorldSession.ChatSlow);
+        relay.Say(Relays.WorldRoomOf(WorldCode.Parse(code)!.Token), "Global", "still here");
+        var next = NextEntry(session);
+        Assert.Equal(("chat", "still here"), (next[Message.Kind], next.Team));
+        Assert.Equal("open", Message.Decode(session.Describe())["state"]);
+
+        session.Close();
+    }
+
+    /// <summary>
+    /// Asserts that a game queuing far more messages than the relay keeps at once sends them all, in
+    /// order, paced so the relay never closes its connection.
+    /// </summary>
+    [Fact]
+    public void Sending_IsPacedBelowTheRelayLimit()
+    {
+        const int Messages = 400;
+        using var relay = new TestRelay();
+        var code = MakeWorld(relay, 4);
+        var sender = NewSession(relay.Address);
+        var receiver = NewSession(relay.Address);
+
+        sender.Open(code);
+        AwaitState(sender, "open");
+        receiver.Open(code);
+        AwaitOthers(sender, "1");
+        AwaitOthers(receiver, "0");
+        Drain(sender, receiver);
+
+        var started = DateTime.UtcNow;
+
+        for (var message = 0; message < Messages; message++)
+        {
+            Assert.True(sender.Send(-1, $"step {message}"));
+        }
+
+        for (var message = 0; message < Messages; message++)
+        {
+            Assert.Equal(("0", $"step {message}"), Received(NextEntry(receiver)));
+        }
+
+        var took = (DateTime.UtcNow - started).TotalSeconds;
+        Assert.True(took >= (Messages - WorldSession.MessageBurst) / WorldSession.MessagesPerSecond - 0.5, $"{Messages} messages took only {took} s");
+        Assert.Equal(0, relay.TooFastCloses);
+        Assert.Equal("open", Message.Decode(sender.Describe())["state"]);
+        Assert.Null(sender.PeekMessage());
+
+        sender.Close();
+        receiver.Close();
+    }
+
+    /// <summary>
+    /// Asserts that the test relay closes a connection that sends past its limit with 4003, as the
+    /// relay does, so the paced test above proves the pacing.
+    /// </summary>
+    [Fact]
+    public void TestRelay_ClosesAConnectionThatSendsTooFast()
+    {
+        using var relay = new TestRelay();
+        var token = WorldCode.Parse(MakeWorld(relay, 4))!.Token;
+        using var channel = RelayWorldChannel.Connect(relay.Address, Relays.WorldRoomOf(token), WorldDirectoryTests.PlayerKey(7), "Flooder", WorldKeys.AuthKeyOf(token), Patience, CancellationToken.None, out _, out _)!;
+        var frame = new byte[] { 1, 2, 3 };
+
+        try
+        {
+            for (var message = 0; message < TestRelay.Burst + 60; message++)
+            {
+                channel.Send(RelayWorldChannel.Everyone, frame, Patience);
+            }
+        }
+        catch (Exception)
+        {
+            // The relay may have closed the connection before the last frames went out.
+        }
+
+        while (channel.Receive(Patience) != null)
+        {
+        }
+
+        Assert.Equal(4003, channel.CloseCode);
+        Assert.Equal(1, relay.TooFastCloses);
+    }
+
+    /// <summary>
+    /// Counts the players the tests make, so each session plays as another.
+    /// </summary>
+    private static int players;
+
+    /// <summary>
+    /// Creates a session that reaches only the test relay and tries again quickly.
+    /// </summary>
+    /// <param name="relay">The relay every id leads to, or <see langword="null"/> for none.</param>
+    /// <param name="key">The player's key, a new player's unless given.</param>
+    /// <param name="now">The clock the chat's allowance refills by, the real one unless given.</param>
+    /// <param name="connectTimeout">How long reaching the relay may take, the session's own unless given.</param>
+    /// <returns>The session.</returns>
+    private static WorldSession NewSession(Uri? relay, string? key = null, Func<DateTime>? now = null, TimeSpan? connectTimeout = null)
+    {
+        var player = key ?? WorldDirectoryTests.PlayerKey(100 + Interlocked.Increment(ref players));
+
+        return new WorldSession
+        {
+            RelayAddress = _ => relay,
+            Playing = () => (player, $"Player {player[^3..]}"),
+            RetryDelays = [TimeSpan.FromMilliseconds(100)],
+            PingInterval = TimeSpan.FromSeconds(1),
+            SilenceTimeout = TimeSpan.FromSeconds(5),
+            Now = now ?? (() => DateTime.UtcNow),
+            ConnectTimeout = connectTimeout ?? TimeSpan.FromSeconds(6),
+        };
+    }
+
+    /// <summary>
+    /// Makes a world in the test relay's directory.
+    /// </summary>
+    /// <param name="relay">The test relay.</param>
+    /// <param name="seats">The world's seats.</param>
+    /// <returns>The world's code.</returns>
+    private static string MakeWorld(TestRelay relay, int seats) =>
+        WorldDirectoryTests.Act(Creator(relay), directory => directory.Create("Test World", "secret", seats, false, false, []))["code"];
+
+    /// <summary>
+    /// Makes the directory client of the tests' world creator.
+    /// </summary>
+    /// <param name="relay">The test relay.</param>
+    /// <returns>The directory.</returns>
+    private static WorldDirectory Creator(TestRelay relay) => WorldDirectoryTests.NewDirectory(relay, WorldDirectoryTests.CreatorKey, "Creator");
+
+    /// <summary>
+    /// Makes the code of a world the directory does not know.
+    /// </summary>
+    /// <param name="seats">The world's seats.</param>
+    /// <returns>The code.</returns>
+    private static string NewCode(int seats) => new WorldCode(JoinCode.NewToken(), "r1", seats).ToText();
+
+    /// <summary>
+    /// Reads the sender and text of a message entry.
+    /// </summary>
+    /// <param name="entry">The entry.</param>
+    /// <returns>The sender's seat and the text.</returns>
+    private static (string Seat, string Text) Received(Message entry)
+    {
+        Assert.Equal("message", entry[Message.Kind]);
+        return (entry["seat"], entry.Team);
+    }
+
+    /// <summary>
+    /// Takes inbox entries until one of a kind arrived.
+    /// </summary>
+    /// <param name="session">The session.</param>
+    /// <param name="kind">The kind, or <see langword="null"/> for the next entry of any kind.</param>
+    /// <returns>The entry.</returns>
+    private static Message NextEntry(WorldSession session, string? kind = null)
+    {
+        var deadline = DateTime.UtcNow + Patience;
+
+        while (DateTime.UtcNow < deadline)
+        {
+            if (session.PeekMessage() is { } text)
+            {
+                session.TakeMessage(text);
+                var entry = Message.Decode(text);
+
+                if (kind == null || entry[Message.Kind] == kind)
+                {
+                    return entry;
+                }
+
+                continue;
+            }
+
+            Thread.Sleep(20);
+        }
+
+        throw new TimeoutException($"No {kind ?? "inbox"} entry arrived.");
+    }
+
+    /// <summary>
+    /// Throws away every waiting inbox entry.
+    /// </summary>
+    /// <param name="sessions">The sessions.</param>
+    private static void Drain(params WorldSession[] sessions)
+    {
+        foreach (var session in sessions)
+        {
+            while (session.PeekMessage() is { } text)
+            {
+                session.TakeMessage(text);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Waits until a session reaches a state.
+    /// </summary>
+    /// <param name="session">The session.</param>
+    /// <param name="state">The state, as the game script reads it.</param>
+    private static void AwaitState(WorldSession session, string state) =>
+        Await(session, described => described["state"] == state, $"the state {state}");
+
+    /// <summary>
+    /// Waits until a session knows exactly these other seats.
+    /// </summary>
+    /// <param name="session">The session.</param>
+    /// <param name="others">The seats, separated by commas.</param>
+    private static void AwaitOthers(WorldSession session, string others) =>
+        Await(session, described => described["others"] == others, $"the others {others}");
+
+    /// <summary>
+    /// Waits until a session tells an error.
+    /// </summary>
+    /// <param name="session">The session.</param>
+    /// <returns>Its state.</returns>
+    private static Message AwaitError(WorldSession session) =>
+        Await(session, described => described["error"].Length > 0, "an error");
+
+    /// <summary>
+    /// Waits until a session's state meets a condition.
+    /// </summary>
+    /// <param name="session">The session.</param>
+    /// <param name="condition">The condition.</param>
+    /// <param name="what">What is awaited, for the timeout's message.</param>
+    /// <returns>The state that met it.</returns>
+    private static Message Await(WorldSession session, Func<Message, bool> condition, string what)
+    {
+        var deadline = DateTime.UtcNow + Patience;
+
+        while (DateTime.UtcNow < deadline)
+        {
+            var described = Message.Decode(session.Describe());
+
+            if (condition(described))
+            {
+                return described;
+            }
+
+            Thread.Sleep(20);
+        }
+
+        throw new TimeoutException($"The session never reached {what}: {session.Describe()}");
+    }
+}
