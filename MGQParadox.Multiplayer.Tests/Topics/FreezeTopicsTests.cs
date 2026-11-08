@@ -2,6 +2,7 @@
 //  FreezeTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Walked the record's end, the items given back, the held values, the records check and the blocker through their topics
 //      Paulinchen  2026-11-05: Created
 //
 //----------------------------------------------------------------
@@ -27,11 +28,13 @@ public sealed class FreezeTopicsTests
     private const int Troop = 870;
 
     /// <summary>
-    /// Asserts that an event's battle against Sonya Chaos fights her pool; lost with a frozen
-    /// record, its defeat goes back, an event's own change to its start and the player's own value
-    /// left; its frozen fight holds its keys for the world; once the world empties her pool the
-    /// fight is over for every caller, the list drops it and asks the relay to end it, and a battle
-    /// against her wins at once (#78); a lost event battle that froze no record puts nothing back (#71).
+    /// Asserts that an event's battle against Sonya Chaos fights her pool; lost with a record, the
+    /// record waits and its defeat goes back, an event's own change to its start, the player's own
+    /// value left and the item it took given back; its frozen fight holds its keys for the world,
+    /// the record waits and pressing the fight's own event resumes it; once the world empties her
+    /// pool the fight is over for every caller, the list and the record drop it and the relay is
+    /// asked to end it, and a battle against her wins at once (#78); a lost event battle that froze
+    /// no record puts nothing back (#71).
     /// </summary>
     [Fact]
     public void PoolFight_FromItsBattleToItsUndoAndTheWorldsEnd()
@@ -54,27 +57,47 @@ public sealed class FreezeTopicsTests
 
         RubyHash fights = topics.Call(RaidTopics.Kind, battle)!.AsHash();
         RubyValue? defeat = topics.Call(FreezeTopics.Defeat, Defeat(facts, record: true));
-        RubyArray undo = topics.Call(FreezeTopics.Undo, new RubyHash
+        RubyHash end = topics.Call(FreezeTopics.RecordsEnd, new RubyHash { { "result", 2 }, { "kind", "event" }, { "state", "battle" }, { "took", true } })!.AsHash();
+        RubyHash undo = topics.Call(FreezeTopics.Undo, new RubyHash
         {
             { "rows", new RubyArray { new RubyArray { 1, 1075, false, true }, new RubyArray { 1, 1011, false, false }, new RubyArray { 1, 1050, true, false } } },
-        })!.AsArray();
+            { "items", new RubyHash { { "before", new RubyArray { new RubyArray { "i", 557, 1 } } }, { "after", new RubyArray() } } },
+        })!.AsHash();
+        RubyHash entryHeld = topics.Call(FreezeTopics.RecordsHeld, new RubyHash
+        {
+            { "start", new RubyArray { new RubyArray { 0, 22, true }, new RubyArray { 1, 1075, false } } },
+            { "undone", new RubyArray { new RubyArray { 1, 1075 }, new RubyArray { 1, 1011 } } },
+        })!.AsHash();
 
         Assert.Equal(("event", false), (fights["kind"].AsText(), fights["defeated"].AsBool()));
         Assert.True(defeat is null || defeat.IsNil);
-        Assert.Equal(new RubyArray { "start", "was", RubyNil.Value }, undo);
+        Assert.Equal("lost", end["record"].AsText());
+        Assert.Equal(new RubyArray { "start", "was", RubyNil.Value }, undo["values"]);
+        Assert.Equal(new RubyArray { new RubyArray { "i", 557, 1 } }, undo["items"]);
+        Assert.Equal((new RubyArray { false, true }, new RubyArray { false, true }), (entryHeld["start"], entryHeld["undone"]));
 
         RubyHash noted = topics.Call(FreezeTopics.Note, Base(facts).With("entry", Entry()))!.AsHash();
         RubyHash held = topics.Call(FreezeTopics.State, Base(facts))!.AsHash();
+        RubyHash waiting = topics.Call(FreezeTopics.RecordsCheck, Base(facts).With("records", new RubyArray { new RubyArray { Troop, "frozen" } }))!.AsHash();
+        RubyValue pressed = topics.Call(FreezeTopics.Blocker, new RubyHash
+        {
+            { "map", 138 }, { "event", 13 }, { "trigger", 0 }, { "writes", new RubyArray() },
+            { "tableaux", new RubyArray { new RubyArray { Troop, new RubyArray { 13 }, new RubyArray { new RubyArray { 1, 1075 } }, true } } },
+        })!;
 
         Assert.True(noted["held"].AsBool());
         Assert.Equal(Troop, noted["writes"].AsArray().Single().AsArray()[0].AsInt());
         Assert.Equal(new RubyArray { new RubyArray { 1, 1075, 16 } }, held["held"]);
+        Assert.Equal(new RubyArray { Troop }, waiting["listed"]);
+        Assert.Equal((Troop, true), (pressed.AsHash()["troop"].AsInt(), pressed.AsHash()["leads_in"].AsBool()));
 
         ledger.Hear(new PoolWord("Sonya Chaos", 0, 9000, true, "Hero"), PoolSource.Fetched);
         RubyArray over = topics.Call(FreezeTopics.Over, Base(facts).With("troops", new RubyArray { Troop }))!.AsArray();
+        RubyHash dropped = topics.Call(FreezeTopics.RecordsCheck, Base(facts).With("records", new RubyArray { new RubyArray { Troop, "frozen" } }))!.AsHash();
         RubyHash ended = topics.Call(FreezeTopics.State, Base(facts))!.AsHash();
 
         Assert.Equal(new RubyArray { new RubyArray { Troop, "its pools are defeated" } }, over);
+        Assert.Equal((new RubyArray(), over), (dropped["listed"], dropped["dropped"]));
         Assert.Equal((0, Troop, false), (ended["entries"].AsArray().Count, ended["writes"].AsArray().Single().AsArray()[0].AsInt(), ended["writes"].AsArray().Single().AsArray()[1].AsBool()));
         Assert.True(topics.Call(RaidTopics.Kind, battle)!.AsHash()["defeated"].AsBool());
         Assert.Equal("its fight froze no record, so no stand-in waits to resume it", topics.Call(FreezeTopics.Defeat, Defeat(facts, record: false))!.AsText());

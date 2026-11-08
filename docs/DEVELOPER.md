@@ -468,7 +468,7 @@ A player behind a Raid World's story is carried along; `CatchupEngine` in C# dec
 
 Each story boss of a Raid World is one fight the whole world shares: a pool at the relay keeps the share of its raid max HP left, every battle reports what it dealt, and the boss falls once the world wore the pool down. The pool refills 3% of its max a minute and stays defeated until an admin resets it. Classic worlds keep none.
 
-- **No clock comparison:** every answer's share is the share now, and the game adds the regeneration from when the answer came; the relay's `at` is never read.
+- **No clock comparison:** every answer's share is the share now, and between the relay's words the game keeps the last one: only the relay counts what a pool gains back, and the game never asks for it on a timer (user 2026-11-08). The relay's `at` is never read.
 - **The newest word wins:** the relay tells the world room before it answers, and the two travel apart, so every pool carries a rising stamp and an answer to a request sent before the pool was last heard is not taken. A defeat is lifted only by a reset or an answer to a request sent after the defeat was heard.
 - **Reports** go in order and are never merged; a resent report with the same `seq` counts once. A report the relay cannot take (unreachable, 429, 5xx) is tried again for about two minutes and then dropped, since the queue goes in order and one the relay never takes would hold back every later one; any other refusal drops it at once.
 - Nothing waits for the relay: a local kill is a kill and the battle wins at once.

@@ -2,6 +2,7 @@
 //  FreezeTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Answered the records, the tableau, the fresh start and the blocker of the frozen fights, and the items a defeat gives back
 //      Paulinchen  2026-11-05: Created
 //
 //----------------------------------------------------------------
@@ -18,11 +19,12 @@ using MGQOnline.Game.Events;
 namespace MGQParadox.Multiplayer.Topics;
 
 /// <summary>
-/// The bridge topics of a Raid World's frozen boss fights (<see cref="FrozenFights"/>) and of a lost
-/// raid boss battle's defeat (<see cref="FreezeRules"/>), which only the game answers: the battle
-/// server keeps no story. Each request names the open world and hands the player's facts
-/// (<see cref="RaidFacts.Of"/>); the writes the list asks of the relay come back with each answer,
-/// which the scripts send as story keys.
+/// The bridge topics of a Raid World's frozen boss fights (<see cref="FrozenFights"/>), of the
+/// player's own records of them (<see cref="FreezeRecords"/>, <see cref="FreezeTableau"/>,
+/// <see cref="FreezeFresh"/>, <see cref="FreezeBlocker"/>) and of a lost raid boss battle's defeat
+/// (<see cref="FreezeRules"/>), which only the game answers: the battle server keeps no story. Each
+/// list request names the open world and hands the player's facts (<see cref="RaidFacts.Of"/>); the
+/// writes the list asks of the relay come back with each answer, which the scripts send as story keys.
 /// </summary>
 internal static class FreezeTopics
 {
@@ -77,11 +79,59 @@ internal static class FreezeTopics
     public const string Defeat = "freeze.defeat";
 
     /// <summary>
-    /// Decides which value each key a defeat changed goes back to (<see cref="FreezeRules.Undo"/>):
-    /// <c>rows</c> ([kind, id, personal, changed before the battle] each) in; per row "start",
-    /// "was" or nil out.
+    /// Decides which value each key a defeat changed goes back to (<see cref="FreezeRules.Undo"/>)
+    /// and which items come back (<see cref="FreezeRules.ItemsBack"/>): <c>rows</c> ([kind, id,
+    /// personal, changed before the battle] each) and <c>items</c> (<c>before</c> and <c>after</c>,
+    /// [letter, id, count] each) in; <c>values</c> (per row "start", "was" or nil) and <c>items</c>
+    /// ([letter, id, change] each) out.
     /// </summary>
     public const string Undo = "freeze.undo";
+
+    /// <summary>
+    /// Sorts the player's records (<see cref="FreezeRecords.Check"/>): <c>world</c>, <c>facts</c>,
+    /// <c>records</c> ([troop, state] each) in; <c>listed</c> (troops) and <c>dropped</c> ([troop,
+    /// why] each) out.
+    /// </summary>
+    public const string RecordsCheck = "freeze.records.check";
+
+    /// <summary>
+    /// Picks the story values a record's world entry holds (<see cref="FreezeRecords.Held"/>):
+    /// <c>start</c> ([kind, key, personal] each) and <c>undone</c> ([kind, key] each) in; per row of
+    /// each, under the same names, whether the entry holds it out.
+    /// </summary>
+    public const string RecordsHeld = "freeze.records.held";
+
+    /// <summary>
+    /// Decides what becomes of the player's record as a raid boss battle ends
+    /// (<see cref="FreezeRecords.AtEnd"/>): <c>result</c>, <c>kind</c>, <c>state</c>, <c>refused</c>,
+    /// <c>took</c>, <c>entry_spot</c> and <c>record_spot</c> in; <c>won</c>, <c>record</c>,
+    /// <c>spot</c> and <c>whose</c> out.
+    /// </summary>
+    public const string RecordsEnd = "freeze.records.end";
+
+    /// <summary>
+    /// Places a frozen fight's tableau (<see cref="FreezeTableau.Place"/>): <c>scene</c>,
+    /// <c>moved</c>, <c>map</c>, <c>event</c>, <c>outer</c> (the outer page's site), <c>origin</c>
+    /// ([map, x, y, direction] or nil), <c>place</c> ([x, y] or nil) and <c>frames</c> (the frames'
+    /// sites) in; <c>map</c>, <c>at</c> ([x, y] or nil), <c>blocked</c> and <c>callers</c> out.
+    /// </summary>
+    public const string Tableau = "freeze.tableau";
+
+    /// <summary>
+    /// Plans the fresh start of a world's entry (<see cref="FreezeFresh.Plan"/>): <c>troop</c>,
+    /// <c>scene</c>, <c>outer</c>, <c>map</c>, <c>shown</c>, <c>trigger</c> and <c>switches</c> (the
+    /// switches that are on) in; <c>start</c> ("scene", "touch", "action", "here" or nil),
+    /// <c>site</c>, <c>spot</c> and <c>refusal</c> out.
+    /// </summary>
+    public const string Fresh = "freeze.fresh";
+
+    /// <summary>
+    /// Finds the frozen fight that keeps an event from starting (<see cref="FreezeBlocker.Find"/>):
+    /// <c>map</c>, <c>event</c>, <c>trigger</c>, <c>writes</c> ([kind, first, last] or [2, letter]
+    /// each) and <c>tableaux</c> ([troop, blocked, held [kind, key] each, shown] each) in;
+    /// <c>troop</c>, <c>reason</c> and <c>leads_in</c>, or nil, out.
+    /// </summary>
+    public const string Blocker = "freeze.blocker";
 
     /// <summary>
     /// What a log line starts with, as the script's lines did.
@@ -174,6 +224,12 @@ internal static class FreezeTopics
         });
         context.Register(Defeat, (_, request) => DefeatOf(request.AsHash()));
         context.Register(Undo, (_, request) => UndoOf(Tables(), request.AsHash()));
+        context.Register(RecordsCheck, (_, request) => CheckOf(request.AsHash(), OverFor(request.AsHash())));
+        context.Register(RecordsHeld, (_, request) => HeldOf(request.AsHash()));
+        context.Register(RecordsEnd, (_, request) => EndOf(request.AsHash()));
+        context.Register(Tableau, (_, request) => TableauOf(Tables(), request.AsHash()));
+        context.Register(Fresh, (_, request) => FreshOf(Tables(), request.AsHash()));
+        context.Register(Blocker, (_, request) => BlockerOf(Tables(), request.AsHash()));
     }
 
     /// <summary>
@@ -190,7 +246,6 @@ internal static class FreezeTopics
     /// <returns>Why, nil when the defeat changes back.</returns>
     private static RubyValue DefeatOf(RubyHash request)
     {
-        static bool Flag(RubyValue value) => value is RubyBool { Flag: true };
         var ask = new DefeatAsk(request["troop"].AsInt(), request["troop_now"] is RubyInteger now ? now.AsInt() : 0, Flag(request["active"]), Flag(request["can_lose"]),
             Flag(request["library"]), Flag(request["known"]), request["kind"] is RubyString kind ? kind.AsText() : null, Flag(request["record"]), Flag(request["over"]));
         return FreezeRules.DefeatRefusal(ask, RaidFacts.Of(request["facts"]));
@@ -201,14 +256,232 @@ internal static class FreezeTopics
     /// </summary>
     /// <param name="tables">The freeze's tables, see <see cref="EventTableTopics.Sites"/>.</param>
     /// <param name="request">The request.</param>
-    /// <returns>Per row "start", "was" or nil.</returns>
-    private static RubyArray UndoOf(RubyHash tables, RubyHash request)
+    /// <returns><c>values</c> and <c>items</c>.</returns>
+    private static RubyHash UndoOf(RubyHash tables, RubyHash request)
+    {
+        (HashSet<int> switches, HashSet<int> variables) = DefeatWrites(tables);
+        List<UndoRow> rows = [.. request["rows"].AsArray().Select(row => row.AsArray())
+            .Select(row => new UndoRow(row[0].AsInt(), row[1] is RubyInteger id ? id.AsInt() : 0, Flag(row[2]), Flag(row[3])))];
+        RubyHash items = request["items"] is RubyHash hash ? hash : new RubyHash();
+        IReadOnlyList<(string, int, int)> back = FreezeRules.ItemsBack(CountsOf(items["before"]), CountsOf(items["after"]));
+        return new RubyHash
+        {
+            { "values", new RubyArray(FreezeRules.Undo(rows, switches, variables).Select(choice => (RubyValue)choice)) },
+            { "items", new RubyArray(back.Select(item => (RubyValue)new RubyArray([item.Item1, item.Item2, item.Item3]))) },
+        };
+    }
+
+    /// <summary>
+    /// Answers <see cref="RecordsCheck"/>.
+    /// </summary>
+    /// <param name="request">The request.</param>
+    /// <param name="over">Tells why a troop's fight is over.</param>
+    /// <returns><c>listed</c> and <c>dropped</c>.</returns>
+    private static RubyHash CheckOf(RubyHash request, Func<int, string?> over)
+    {
+        List<(int, string)> records = [.. request["records"].AsArray().Select(record => record.AsArray()).Select(record => (record[0].AsInt(), record[1].AsText()))];
+        (IReadOnlyList<int> listed, IReadOnlyList<(int Troop, string Reason)> dropped) = FreezeRecords.Check(records, over);
+        return new RubyHash
+        {
+            { "listed", Ints(listed) },
+            { "dropped", new RubyArray(dropped.Select(each => (RubyValue)new RubyArray([each.Troop, each.Reason]))) },
+        };
+    }
+
+    /// <summary>
+    /// Answers <see cref="RecordsHeld"/>.
+    /// </summary>
+    /// <param name="request">The request.</param>
+    /// <returns><c>start</c> and <c>undone</c>.</returns>
+    private static RubyHash HeldOf(RubyHash request)
+    {
+        List<(int, RubyValue, bool)> start = [.. request["start"].AsArray().Select(row => row.AsArray()).Select(row => (row[0].AsInt(), row[1], Flag(row[2])))];
+        List<(int, RubyValue)> undone = [.. request["undone"].AsArray().Select(row => row.AsArray()).Select(row => (row[0].AsInt(), row[1]))];
+        (IReadOnlyList<bool> fromStart, IReadOnlyList<bool> fromUndone) = FreezeRecords.Held(start, undone);
+        return new RubyHash
+        {
+            { "start", new RubyArray(fromStart.Select(held => (RubyValue)held)) },
+            { "undone", new RubyArray(fromUndone.Select(held => (RubyValue)held)) },
+        };
+    }
+
+    /// <summary>
+    /// Answers <see cref="RecordsEnd"/>.
+    /// </summary>
+    /// <param name="request">The request.</param>
+    /// <returns><c>won</c>, <c>record</c>, <c>spot</c> and <c>whose</c>.</returns>
+    private static RubyHash EndOf(RubyHash request)
+    {
+        var end = new RecordEnd(request["result"].AsInt(), TextOrNull(request["kind"]), TextOrNull(request["state"]), Flag(request["refused"]), Flag(request["took"]),
+            SpotOf(request["entry_spot"]), SpotOf(request["record_spot"]));
+        RecordPlan plan = FreezeRecords.AtEnd(end);
+        return new RubyHash
+        {
+            { "won", plan.Won },
+            { "record", plan.Record },
+            { "spot", plan.Spot is { } spot ? Ints(spot) : RubyNil.Value },
+            { "whose", plan.Whose },
+        };
+    }
+
+    /// <summary>
+    /// Answers <see cref="Tableau"/>.
+    /// </summary>
+    /// <param name="tables">The freeze's tables, see <see cref="EventTableTopics.Sites"/>.</param>
+    /// <param name="request">The request.</param>
+    /// <returns><c>map</c>, <c>at</c>, <c>blocked</c> and <c>callers</c>.</returns>
+    private static RubyHash TableauOf(RubyHash tables, RubyHash request)
+    {
+        bool scene = Flag(request["scene"]);
+        List<SceneSource> sources = scene && SceneOf(tables, request["outer"]) is { } row
+            ? [.. row[1].AsArray()[0].AsArray().Select(source => source.AsArray()).Select(source => new SceneSource(source[0].AsInt(), source[1].AsInt(), source[2].AsInt(), source[3].AsInt()))]
+            : [];
+        RubyHash callers = tables["callers"].AsHash();
+        List<(int, int)> calling = [.. request["frames"].AsArray().Select(CommonOf).OfType<int>().Distinct()
+            .SelectMany(common => callers[common] is RubyArray sites ? sites.Select(MapSiteOf).OfType<(int Map, int Event, int Page)>() : Enumerable.Empty<(int Map, int Event, int Page)>())
+            .Select(site => (site.Map, site.Event))];
+        (int, int, int)? origin = request["origin"] is RubyArray { Count: >= 3 } at ? (at[0].AsInt(), at[1].AsInt(), at[2].AsInt()) : null;
+        (int, int)? place = request["place"] is RubyArray { Count: 2 } stood ? (stood[0].AsInt(), stood[1].AsInt()) : null;
+        TableauPlace found = FreezeTableau.Place(new TableauAsk(scene, Flag(request["moved"]), request["map"].AsInt(), request["event"].AsInt(), origin, place, sources, calling));
+        return new RubyHash
+        {
+            { "map", found.Map },
+            { "at", found.At is { } spot ? new RubyArray([spot.X, spot.Y]) : RubyNil.Value },
+            { "blocked", Ints(found.Blocked) },
+            { "callers", found.Callers },
+        };
+    }
+
+    /// <summary>
+    /// Answers <see cref="Fresh"/>.
+    /// </summary>
+    /// <param name="tables">The freeze's tables, see <see cref="EventTableTopics.Sites"/>.</param>
+    /// <param name="request">The request.</param>
+    /// <returns><c>start</c>, <c>site</c>, <c>spot</c> and <c>refusal</c>.</returns>
+    private static RubyHash FreshOf(RubyHash tables, RubyHash request)
+    {
+        List<FreshScene> scenes = [];
+        if (tables["sites"].AsHash()[request["troop"].AsInt()] is RubyArray rows)
+        {
+            foreach (RubyArray row in rows.Select(row => row.AsArray()))
+            {
+                if (Flag(row[4]) && MapSiteOf(row[0]) is { } site && SceneOf(tables, row[0]) is { } scene)
+                {
+                    RubyArray entry = scene[1].AsArray();
+                    scenes.Add(new FreshScene(site.Map, site.Event, site.Page, entry[1] is RubyInteger side ? side.AsInt() : null, SpotOf(entry[2]) ?? [0, 0, 0, 0]));
+                }
+            }
+        }
+
+        HashSet<int> on = request["switches"] is RubyArray switches ? [.. switches.Select(id => id.AsInt())] : [];
+        var ask = new FreshAsk(Flag(request["scene"]), scenes, on, MapSiteOf(request["outer"]), request["map"].AsInt(), IntOrNull(request["shown"]), IntOrNull(request["trigger"]));
+        FreshPlan plan = FreezeFresh.Plan(ask);
+        return new RubyHash
+        {
+            { "start", plan.Start == FreshStart.None ? RubyNil.Value : plan.Start.ToString().ToLowerInvariant() },
+            { "site", plan.Start == FreshStart.None ? RubyNil.Value : new RubyArray(["map", plan.Map, plan.Event, plan.Page]) },
+            { "spot", plan.Spot is { } spot ? Ints(spot) : RubyNil.Value },
+            { "refusal", plan.Refusal },
+        };
+    }
+
+    /// <summary>
+    /// Answers <see cref="Blocker"/>.
+    /// </summary>
+    /// <param name="tables">The freeze's tables, see <see cref="EventTableTopics.Sites"/>.</param>
+    /// <param name="request">The request.</param>
+    /// <returns><c>troop</c>, <c>reason</c> and <c>leads_in</c>; nil when the event may start.</returns>
+    private static RubyValue BlockerOf(RubyHash tables, RubyHash request)
+    {
+        List<PageWrite> writes = [.. request["writes"].AsArray().Select(write => write.AsArray())
+            .Select(write => write[0].AsInt() == 2 ? new PageWrite(2, 0, 0, write[1].AsText()) : new PageWrite(write[0].AsInt(), write[1].AsInt(), write[2].AsInt(), string.Empty))];
+        List<BlockingTableau> tableaux = [.. request["tableaux"].AsArray().Select(tableau => tableau.AsArray())
+            .Select(tableau => new BlockingTableau(tableau[0].AsInt(), [.. tableau[1].AsArray().Select(id => id.AsInt())],
+                [.. tableau[2].AsArray().Select(value => value.AsArray()).Select(value => (value[0].AsInt(), value[1]))], Flag(tableau[3])))];
+        (HashSet<int> switches, HashSet<int> variables) = DefeatWrites(tables);
+        BlockedStart? found = FreezeBlocker.Find(new BlockerAsk(request["map"].AsInt(), request["event"].AsInt(), request["trigger"].AsInt(), writes, tableaux), switches, variables);
+        return found is null ? RubyNil.Value : new RubyHash { { "troop", found.Troop }, { "reason", found.Reason }, { "leads_in", found.LeadsIn } };
+    }
+
+    /// <summary>
+    /// Reads the switches and variables the post-defeat processing writes itself.
+    /// </summary>
+    /// <param name="tables">The freeze's tables, see <see cref="EventTableTopics.Sites"/>.</param>
+    /// <returns>The switches and the variables.</returns>
+    private static (HashSet<int> Switches, HashSet<int> Variables) DefeatWrites(RubyHash tables)
     {
         RubyHash defeat = tables["defeat"].AsHash();
-        HashSet<int> switches = [.. defeat["switches"].AsArray().Select(id => id.AsInt())];
-        HashSet<int> variables = [.. defeat["variables"].AsArray().Select(id => id.AsInt())];
-        List<UndoRow> rows = [.. request["rows"].AsArray().Select(row => row.AsArray())
-            .Select(row => new UndoRow(row[0].AsInt(), row[1] is RubyInteger id ? id.AsInt() : 0, row[2] is RubyBool { Flag: true }, row[3] is RubyBool { Flag: true }))];
-        return new RubyArray(FreezeRules.Undo(rows, switches, variables).Select(choice => (RubyValue)choice));
+        return ([.. defeat["switches"].AsArray().Select(id => id.AsInt())], [.. defeat["variables"].AsArray().Select(id => id.AsInt())]);
     }
+
+    /// <summary>
+    /// Finds the row of a cutscene site in the freeze's tables.
+    /// </summary>
+    /// <param name="tables">The freeze's tables, see <see cref="EventTableTopics.Sites"/>.</param>
+    /// <param name="site">The site.</param>
+    /// <returns>[site, [sources, side switch, transfer]], null for a site no cutscene has.</returns>
+    private static RubyArray? SceneOf(RubyHash tables, RubyValue site) =>
+        tables["scenes"].AsArray().Select(row => row.AsArray()).FirstOrDefault(row => row[0].Equals(site));
+
+    /// <summary>
+    /// Reads a map page's site, ["map", map, event, page from 1].
+    /// </summary>
+    /// <param name="site">The site.</param>
+    /// <returns>The map, event and page; null for a common event's or another value.</returns>
+    private static (int Map, int Event, int Page)? MapSiteOf(RubyValue site) =>
+        site is RubyArray { Count: 4 } parts && parts[0] is RubyString { } kind && kind.AsText() == "map" && parts.Skip(1).All(part => part is RubyInteger)
+            ? (parts[1].AsInt(), parts[2].AsInt(), parts[3].AsInt())
+            : null;
+
+    /// <summary>
+    /// Reads a common event's site, ["ce", id].
+    /// </summary>
+    /// <param name="site">The site.</param>
+    /// <returns>The common event, null for a map page's or another value.</returns>
+    private static int? CommonOf(RubyValue site) =>
+        site is RubyArray { Count: 2 } parts && parts[0] is RubyString { } kind && kind.AsText() == "ce" && parts[1] is RubyInteger id ? id.AsInt() : null;
+
+    /// <summary>
+    /// Reads a spot a transfer takes: map, x, y and direction.
+    /// </summary>
+    /// <param name="value">The value.</param>
+    /// <returns>The spot, null for nil or another value.</returns>
+    private static IReadOnlyList<int>? SpotOf(RubyValue value) =>
+        value is RubyArray { Count: 4 } spot && spot.All(part => part is RubyInteger) ? [.. spot.Select(part => part.AsInt())] : null;
+
+    /// <summary>
+    /// Reads the party's counts of items, weapons and armors.
+    /// </summary>
+    /// <param name="value">[letter, id, count] each, or nil.</param>
+    /// <returns>The counts.</returns>
+    private static List<(string, int, int)> CountsOf(RubyValue value) =>
+        value is RubyArray counts ? [.. counts.Select(count => count.AsArray()).Select(count => (count[0].AsText(), count[1].AsInt(), count[2].AsInt()))] : [];
+
+    /// <summary>
+    /// Tells whether a value is true.
+    /// </summary>
+    /// <param name="value">The value.</param>
+    /// <returns>Whether it is.</returns>
+    private static bool Flag(RubyValue value) => value is RubyBool { Flag: true };
+
+    /// <summary>
+    /// Reads a whole number that may be nil.
+    /// </summary>
+    /// <param name="value">The value.</param>
+    /// <returns>The number, null for nil or another value.</returns>
+    private static int? IntOrNull(RubyValue value) => value is RubyInteger number ? number.AsInt() : null;
+
+    /// <summary>
+    /// Reads a text that may be nil.
+    /// </summary>
+    /// <param name="value">The value.</param>
+    /// <returns>The text, null for nil or another value.</returns>
+    private static string? TextOrNull(RubyValue value) => value is RubyString text ? text.AsText() : null;
+
+    /// <summary>
+    /// Writes whole numbers as an Array.
+    /// </summary>
+    /// <param name="numbers">The numbers.</param>
+    /// <returns>The Array.</returns>
+    private static RubyArray Ints(IEnumerable<int> numbers) => new(numbers.Select(number => (RubyValue)number));
 }

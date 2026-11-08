@@ -2,6 +2,7 @@
 //  RaidBosses.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Left what the pools gain back to the relay alone
 //      Paulinchen  2026-11-06: Told the player to update once the relay turned this version away
 //      Paulinchen  2026-10-30: Kept the pools in the ledger the game and the battle server share, which counts the game's own reports at once
 //                            - Took the reports of the fights in C# as the game's way to the pools
@@ -195,7 +196,6 @@ internal sealed class RaidBosses : IRaidRelay
                 {
                     if (_world == world)
                     {
-                        Ledger.TakeRegen(list.RegenPerMinute);
                         Ledger.Fetched(list.Pools.Where(pool => IsKey(pool.Key)).Select(WordOf).ToList(), sent);
                     }
                 }
@@ -303,7 +303,7 @@ internal sealed class RaidBosses : IRaidRelay
                 return string.Empty;
             }
 
-            var headers = new List<KeyValuePair<string, string?>> { new("world", _world), new("regen", Fraction(Ledger.RegenPerMinute)) };
+            var headers = new List<KeyValuePair<string, string?>> { new("world", _world) };
 
             if (_fetch is { } fetch)
             {

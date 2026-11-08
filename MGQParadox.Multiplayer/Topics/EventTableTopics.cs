@@ -2,6 +2,7 @@
 //  EventTableTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Dropped the post-defeat processing's common events, which nothing reads
 //      Paulinchen  2026-11-06: Dropped the excluded maps and the preamble's commands, which the scripts no longer read
 //      Paulinchen  2026-11-05: Named the frozen fights' sites as plain values, the cutscenes' as rows
 //      Paulinchen  2026-11-01: Dropped the topics of troops' members and whether a file exists, which no script calls
@@ -52,8 +53,8 @@ internal static class EventTableTopics
     /// event of a site the map pages that reach it, as sites), <c>alternatives</c> (per troop the asked
     /// troops the other side fights in its place), <c>scenes</c> ([site, [[[map, event, x, y] of each
     /// field event that leads into it], the side switch the first one needs or nil, [map, x, y,
-    /// direction] of the transfer into it]] of each cutscene map's site), <c>scene_maps</c> (every cutscene map) and <c>defeat</c> (the post-defeat processing's
-    /// <c>events</c>, <c>switches</c> and <c>variables</c>); every table empty while the database may not be
+    /// direction] of the transfer into it]] of each cutscene map's site), <c>scene_maps</c> (every cutscene map) and <c>defeat</c> (the
+    /// <c>switches</c> and <c>variables</c> the post-defeat processing writes); every table empty while the database may not be
     /// read for the maps, common events or troops.
     /// </summary>
     public const string Sites = "raid.sites";
@@ -136,7 +137,7 @@ internal static class EventTableTopics
         var answer = new RubyHash
         {
             { "sites", sites }, { "callers", callers }, { "alternatives", alternatives }, { "scenes", scenes },
-            { "scene_maps", new RubyArray() }, { "defeat", new RubyHash { { "events", new RubyArray() }, { "switches", new RubyArray() }, { "variables", new RubyArray() } } },
+            { "scene_maps", new RubyArray() }, { "defeat", new RubyHash { { "switches", new RubyArray() }, { "variables", new RubyArray() } } },
         };
         if (!events.Reads(SiteParts))
         {
@@ -191,7 +192,6 @@ internal static class EventTableTopics
         answer["scene_maps"] = new RubyArray(store.CutsceneMaps().Select(map => (RubyValue)map));
         answer["defeat"] = new RubyHash
         {
-            { "events", new RubyArray(defeat.Select(row => row.CommonId).Distinct().Order().Select(id => (RubyValue)id)) },
             { "switches", IdsOf(defeat, KeyKind.Switch) },
             { "variables", IdsOf(defeat, KeyKind.Variable) },
         };

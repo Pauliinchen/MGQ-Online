@@ -2,6 +2,7 @@
 #  ui_raid_freeze_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Answered which frozen fight keeps an event from starting with fixed values per case, and checked what the scripts hand the DLL
 #      Paulinchen  2026-11-06: Told whether a page runs nothing through the engine's stand-in, as the DLL tells it
 #      Paulinchen  2026-11-05: Told the telling of the story as true or false
 #                            - Read the scripts' clock from $frame
@@ -23,9 +24,10 @@
 # action button facing a boss's stand-in or across a counter, which resumes its fight; the nearest
 # frozen fight for the Join Battle hotkey; the sprites a spriteset keeps; and building anew after a
 # map's setup and a load. battles_raid_freeze.rbx, world_freeze.rbx and battles_raid_pool.rbx stand
-# in here.
+# in here, and the DLL's rule of which fight keeps an event from starting (FreezeBlocker, covered by
+# MGQOnline.Game.Tests) answers with fixed values per case.
 
-require_relative "support"
+require_relative "bridge_support"
 
 $log = []
 # The mod's log, kept in $log and printed with the checks.
@@ -33,6 +35,17 @@ module MGQ_Multiplayer; module Log; def self.write(m); $log << m; puts "  log: #
 $frame = 0
 # The scripts' clock, at $frame.
 clock_from { $frame }
+# The DLL's answer of which frozen fight keeps an event from starting: $blocker by event, each the
+# troop, why and whether the start resumes the fight; the requests kept in $blocker_asked.
+$blocker = {}
+$blocker_asked = []
+ui_fake = FakeBridge.new
+ui_fake.answer("freeze.blocker") do |request|
+  $blocker_asked << request
+  troop, reason, leads_in = $blocker[request["event"]]
+  troop ? { "troop" => troop, "reason" => reason, "leads_in" => leads_in } : nil
+end
+MGQ_Multiplayer::Bridge.open(ui_fake)
 
 # Stand-ins for the game's characters, map and sprites.
 
@@ -153,8 +166,6 @@ module MGQ_MpRaidFreeze
   def self.resuming?(troop = nil); troop ? ($resuming || []).include?(troop) : !($resuming || []).empty?; end
   # Notes a resume asked for.
   def self.resume(troop); ($resumed ||= []) << troop; $resume_ok; end
-  # The freeze's data: what the post-defeat processing writes itself.
-  def self.data(name, default); name == :DEFEAT_WRITES ? { :switches => [22, 31..37], :variables => [11] } : default; end
   # Whether an event's page runs nothing.
   def self.runs_nothing?(event); ($quiet || []).include?(event.id); end
 end
@@ -246,6 +257,8 @@ def reset
   $counters = []
   $checked = false
   $names = { 868 => "Sonya Mazda", 126 => "Morrigan", 870 => "Sonya Chaos" }
+  $blocker = {}
+  $blocker_asked.clear
   $frame += MGQ_MpRaidFreezeUi::SCAN_FRAMES
   MGQ_MpRaidFreezeUi.forget("a test")
 end
@@ -328,9 +341,12 @@ $quiet = []
 check("one whose page has something to run, such as a talk, shows and serves on; the boss's hides all the same",
       [ui.hidden?(alice), ui.hidden?(sonya)], [false, true])
 $quiet = [13, 14, 15]
+$blocker[13] = [868, "it is the fight's own event", false]
 sonya.trigger = 3
 sonya.update
 guard.start
+check("the DLL hears the event, its trigger and the map's fight with the events it blocks, shown",
+      $blocker_asked.first.values_at("map", "event", "trigger", "writes", "tableaux"), [138, 13, 3, [], [[868, [13], [], true]]])
 check("the frozen event that runs by itself cannot start again: after its update it does not count as starting",
       [sonya.starting, $game_map.setup_starting_map_event.equal?(guard)], [false, true])
 $frame += 1
@@ -359,6 +375,7 @@ reset
 $records = [frozen(868, 138, sonya_rows, [13, 16])]
 tile = Game_Event.new(16, 30, 11, 1)
 $game_map.events = { 13 => Game_Event.new(13, 30, 8), 16 => tile }
+$blocker[16] = [868, "it is the fight's own event", true]
 tile.start
 $game_map.setup_starting_map_event
 check("touching another caller of the fight's common event resumes the fight, the caller not starting",
@@ -380,6 +397,7 @@ source = Game_Event.new(37, 10, 6)
 source.list = [RPG::EventCommand.new(201, 0, [0, 587, 1, 1, 0]), RPG::EventCommand.new(0, 0, [])]
 villager = Game_Event.new(38, 11, 6)
 $game_map.events = { 37 => source, 38 => villager }
+$blocker[37] = [126, "it is the fight's own event", true]
 source.start
 check("pressing the source event resumes the fight, the event not starting", [source.starting, $resumed, $notices], [false, [126], []])
 check("which is logged", $log.grep(/the player started event 37 on map 139, which leads into the frozen fight against Morrigan \(troop 126\): resuming its fight/).size, 1)
@@ -414,28 +432,28 @@ $entries = [frozen(249, 2, [row(39, 257, 249, "$Astaroth", 1, 0)], [39, 40]).mer
 gate = Game_Event.new(39, 257, 249, 1)
 row_tile = Game_Event.new(40, 258, 249, 2)
 $game_map.events = { 39 => gate, 40 => row_tile }
+$blocker[39] = [249, "it is the fight's own event", true]
+$blocker[40] = [249, "it is the fight's own event", true]
 gate.start
 check("walking onto a world map source tile of a world's entry resumes its fight", [gate.starting, $resumed], [false, [249]])
 $frame += 2
 row_tile.start
 check("so does an event touch source", [row_tile.starting, $resumed], [false, [249, 249]])
 gate.trigger = 3
+$blocker[39] = [249, "it is the fight's own event", false]
 $frame += 2
 gate.start
-check("one of the fight's own that runs by itself resumes nothing and stays blocked", [gate.starting, $resumed], [false, [249, 249]])
-gate.trigger = 4
-$frame += 2
-gate.start
-check("nor one that runs in parallel", [gate.starting, $resumed], [false, [249, 249]])
+check("one of the fight's own the DLL tells resumes nothing stays blocked, its trigger handed", [gate.starting, $resumed, $blocker_asked.last["trigger"]], [false, [249, 249], 3])
 reset
 $game_map.map_id = 139
 $records = [frozen(126, 139, [row(37, 12, 6, "$Morrigan", 1, 0)], [37]).merge("scene" => true)]
 source = Game_Event.new(37, 10, 6)
 $game_map.events = { 37 => source }
 $teller = MGQ_MpOverworldSync::Peers::Peer.new({ "telling" => true, "map" => "139", "name" => "Player Two" })
+$blocker[37] = [126, "it is the fight's own event", false]
 source.start
-check("while another player tells the story here the source event stays blocked, as the stand-in steps aside",
-      [source.starting, $resumed, $notices], [false, [], []])
+check("while another player tells the story here the DLL hears that the stand-in steps aside, and the source event stays blocked",
+      [$blocker_asked.last["tableaux"].first[3], source.starting, $resumed, $notices], [false, false, [], []])
 
 # A world's entry that arrives on the fight's map blocks at once.
 reset
@@ -443,6 +461,7 @@ sonya = Game_Event.new(13, 30, 8, 3)
 $game_map.events = { 13 => sonya }
 check("nothing frozen yet", ui.tableaux, [])
 $entries = [frozen(868, 138, sonya_rows, [13]).merge("held" => [[1, 1075, 14]])]
+$blocker[13] = [868, "it is the fight's own event", false]
 sonya.update
 check("an entry that arrived this very frame keeps the autorun its held values turned on from starting",
       [sonya.starting, ui.tableaux.map { |each| each.troop }], [false, [868]])
@@ -464,11 +483,16 @@ inn.list = [RPG::EventCommand.new(122, 0, [11, 11, 0, 0, 1]), RPG::EventCommand.
 talk = Game_Event.new(43, 37, 7)
 talk.list = [RPG::EventCommand.new(101, 0, []), RPG::EventCommand.new(0, 0, [])]
 $game_map.events = { 32 => writer, 33 => calling, 40 => self_writer, 41 => other_self, 42 => inn, 43 => talk }
+$blocker[32] = [868, "its page writes v1075, which the fight holds", false]
+$blocker[33] = [868, "its page writes s2307, which the fight holds", false]
+$blocker[40] = [868, "its page writes self switch 138.40.A, which the fight holds", false]
 $game_map.events.each_value(&:start)
-check("one whose page writes a held variable, one whose common event writes a held switch and one that writes its held self switch cannot start",
-      [writer.starting, calling.starting, self_writer.starting], [false, false, false])
-check("one writing another event's self switch, an inn writing the post-defeat processing's own values and a talk start",
-      [other_self.starting, inn.starting, talk.starting], [true, true, true])
+asked = lambda { |id| $blocker_asked.find { |request| request["event"] == id } }
+check("the DLL hears what each page writes, through the common events it calls, and the values the fight holds",
+      [asked.call(32)["writes"], asked.call(33)["writes"], asked.call(40)["writes"], asked.call(32)["tableaux"].first[2]],
+      [[[1, 1075, 1075]], [[0, 2300, 2310]], [[2, "A"]], [[1, 1075], [0, 2307], [1, 11], [2, [138, 40, "A"]]]])
+check("those the DLL names cannot start", [writer.starting, calling.starting, self_writer.starting], [false, false, false])
+check("the others start", [other_self.starting, inn.starting, talk.starting], [true, true, true])
 check("each refusal is logged with the value",
       [$log.grep(/kept event 32 on map 138 from starting: its page writes v1075, which the fight holds/).size,
        $log.grep(/kept event 33 on map 138 from starting: its page writes s2307/).size,
@@ -492,6 +516,7 @@ reset
 $records = [frozen(868, 138, sonya_rows, [13])]
 sonya = Game_Event.new(13, 30, 8, 3)
 $game_map.events = { 13 => sonya }
+$blocker[13] = [868, "it is the fight's own event", false]
 $teller = MGQ_MpOverworldSync::Peers::Peer.new({ "telling" => true, "map" => "138", "name" => "Player Two" })
 check("another player telling the story on the map hides the stand-ins and shows the live events",
       [ui.tableaux, ui.bar_targets, ui.hidden?(sonya), ui.press_target], [[], [], false, nil])

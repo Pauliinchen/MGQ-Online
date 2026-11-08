@@ -2,6 +2,7 @@
 #  ui_raid_freeze.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Asked the DLL which frozen fight keeps an event from starting and whether the start resumes it
 #      Paulinchen  2026-11-06: Asked the freeze whether a page runs nothing, as the DLL tells it
 #                            - Logged each kept start once, without the frame in its key, and compared the sources by their hash instead of a deep copy
 #      Paulinchen  2026-11-05: Read whether the teller tells the story as true or false
@@ -20,7 +21,8 @@
 # characters the fight's scene brought out, so the map's own people stay live. The live events a
 # stand-in stands for hide meanwhile, the boss's always, any other only while its page runs
 # nothing, so a shop or a villager to talk to never hides; and neither the frozen event nor an
-# event whose page writes a story value the fight holds can start. The stand-ins step aside while
+# event whose page writes a story value the fight holds can start, as the DLL tells (topic
+# freeze.blocker). The stand-ins step aside while
 # the scene plays live: another player tells the story on the map, or an event the fight blocks
 # runs. The action button facing the boss's stand-in, or the Join Battle hotkey near it (see
 # battles_coop_join.rbx), resumes the fight, whose HP bar ui_raid_bar.rbx draws above the stand-in;
@@ -41,9 +43,8 @@ module MGQ_MpRaidFreezeUi
   # The trigger of an event that runs by itself.
   AUTORUN_TRIGGER = 3
 
-  # The triggers of events the player starts: the action button, the player's touch and the
-  # event's touch.
-  PLAYER_TRIGGERS = [0, 1, 2]
+  # The DLL's topic that tells which frozen fight keeps an event from starting, see FreezeBlocker.
+  BLOCKER_TOPIC = "freeze.blocker"
 
   # Frames between two log lines of a refused start of the same event, two seconds.
   REFUSE_FRAMES = 120
@@ -69,9 +70,9 @@ module MGQ_MpRaidFreezeUi
   # @!attribute hidden [Hash{Integer => Row}] The rows that stand for live events of the map, by
   #   the event's id, see hidden?.
   # @!attribute blocked [Array<Integer>] The live events that cannot start while it shows.
-  # @!attribute writes [Array<Hash>] The story values it holds by kind (switches, variables, self
-  #   switches), each a Hash of keys to true, whose writers cannot start while it shows.
-  Tableau = Struct.new(:troop, :name, :own, :standins, :boss, :hidden, :blocked, :writes)
+  # @!attribute held [Array<Array>] The story values it holds, each as kind and key, whose writers
+  #   cannot start while it shows.
+  Tableau = Struct.new(:troop, :name, :own, :standins, :boss, :hidden, :blocked, :held)
 
   # The frozen fights of the map as last built: its map id, the hash of the sources they were built
   # from and the tableaux, nil until built.
@@ -281,35 +282,8 @@ module MGQ_MpRaidFreezeUi
     hidden = rows.each_with_object({}) { |row, ids| ids[row.event_id] = row if row.hide == 1 && row.event_id > 0 }
     blocked = Array(data[2]).map { |id| id.to_i }.select { |id| id > 0 }
     boss = standins.find { |standin| standin.boss? } || standins.first
-    Tableau.new(troop, MGQ_MpRaidPool.troop_label(troop), own, standins, boss, hidden, blocked, writes_of(held))
-  end
-
-  # Indexes the story values a frozen fight holds by kind, those of the game's post-defeat
-  # processing left out (the freeze's DEFEAT_WRITES, see MGQ_MpRaidFreeze.data).
-  #
-  # The game's events use those as scratch values, so a shop or an inn writes them too.
-  #
-  # @param held [Array<Array>] Each value as kind, key and value.
-  # @return [Array<Hash>] The keys of switches, variables and self switches, each to true.
-  def self.writes_of(held)
-    writes = [{}, {}, {}]
-    Array(held).each do |kind, key, _value|
-      next unless [0, 1, 2].include?(kind) && !scratch?(kind, key)
-
-      writes[kind][key] = true
-    end
-    writes
-  end
-
-  # Reports whether the game's post-defeat processing writes a switch or variable itself.
-  #
-  # @param kind [Integer] 0 for a switch, 1 for a variable, 2 for a self switch.
-  # @param key [Integer, Array] Its id or key.
-  # @return [Boolean] Whether it does.
-  def self.scratch?(kind, key)
-    return false if kind == 2 || !defined?(MGQ_MpRaidFreeze)
-
-    Array(MGQ_MpRaidFreeze.data(:DEFEAT_WRITES, {})[kind == 0 ? :switches : :variables]).any? { |range| range === key }
+    keys = Array(held).select { |kind, _key, _value| [0, 1, 2].include?(kind) }.map { |kind, key, _value| [kind, key] }
+    Tableau.new(troop, MGQ_MpRaidPool.troop_label(troop), own, standins, boss, hidden, blocked, keys)
   end
 
   # Reads a row of a tableau, its values made the types the stand-in takes.
@@ -501,7 +475,7 @@ module MGQ_MpRaidFreezeUi
 
   # Keeps an event from starting while a frozen fight of the map holds (see blocker_of), so the
   # frozen scene does not run again and no earlier scene moves the held story values back; an event
-  # of the fight's own the player starts resumes the fight instead, see leads_in?. Called around
+  # of the fight's own the player starts resumes the fight instead, as the DLL tells. Called around
   # Game_Event#start, which an event that runs by itself calls every frame.
   #
   # @param event [Game_Event] The event.
@@ -513,28 +487,15 @@ module MGQ_MpRaidFreezeUi
     shown = blocking(true)
     return false if shown.empty?
 
-    tableau, reason = blocker_of(event, shown)
+    tableau, reason, leads_in = blocker_of(event, shown)
     return false unless tableau
-    return lead_in(event, tableau) if leads_in?(event, tableau)
+    return lead_in(event, tableau) if leads_in
 
     refused(event, tableau, reason)
     true
   rescue => e
     log_once(:refuse_start, "looking whether a frozen fight keeps an event from starting failed: #{e.class}: #{e.message}")
     false
-  end
-
-  # Reports whether the player starting an event resumes a frozen fight shown on the map: the event
-  # is one of the fight's own, such as the field event that leads into its cutscene or another
-  # caller of its common event, started by the action button or a touch.
-  #
-  # @param event [Game_Event] The event.
-  # @param tableau [Tableau] The fight that keeps it from starting.
-  # @return [Boolean] Whether it does.
-  def self.leads_in?(event, tableau)
-    return false unless tableau.blocked.include?(event.id) && PLAYER_TRIGGERS.include?(event.trigger)
-
-    tableaux.any? { |shown| shown.equal?(tableau) }
   end
 
   # Resumes a frozen fight from an event of its own the player started, as its boss's stand-in
@@ -575,56 +536,35 @@ module MGQ_MpRaidFreezeUi
     true
   end
 
-  # Finds the frozen fight that keeps an event from starting: one that blocks the event itself, else
-  # one that holds a story value the event's page writes, see held_write.
+  # Asks the DLL which frozen fight keeps an event from starting (FreezeBlocker.Find): one that
+  # blocks the event itself, else one that holds a story value the event's page writes; and whether
+  # the player's start resumes that fight instead, as pressing or touching one of the fight's own
+  # events does while its stand-ins show.
   #
   # @param event [Game_Event] The event.
   # @param shown [Array<Tableau>] The fights, see blocking.
-  # @return [Array(Tableau, String), nil] The fight and why, nil for none.
+  # @return [Array(Tableau, String, Boolean), nil] The fight, why and whether the start resumes it;
+  #   nil for none.
   def self.blocker_of(event, shown)
-    own = shown.find { |tableau| tableau.blocked.include?(event.id) }
-    return [own, "it is the fight's own event"] if own
-
-    shown.each do |tableau|
-      write = held_write(event, tableau)
-      return [tableau, "its page writes #{write}, which the fight holds"] if write
-    end
-    nil
-  end
-
-  # Finds a story value a frozen fight holds that an event's page writes, through the common events
-  # it calls too.
-  #
-  # @param event [Game_Event] The event.
-  # @param tableau [Tableau] The fight.
-  # @return [String, nil] The value's name, such as "v1075", nil for none.
-  def self.held_write(event, tableau)
-    writes = tableau.writes
-    return nil if writes.all? { |keys| keys.empty? }
-
-    page_writes(event).each do |kind, target|
-      if kind == 2
-        key = [$game_map.map_id, event.id, target]
-        return "self switch #{key.join('.')}" if writes[2][key]
-      else
-        key = writes[kind].keys.find { |held| target === held }
-        return "#{kind == 0 ? 's' : 'v'}#{key}" if key
-      end
-    end
-    nil
+    visible = tableaux
+    rows = shown.map { |tableau| [tableau.troop, tableau.blocked, tableau.held, visible.any? { |each| each.equal?(tableau) }] }
+    answer = MGQ_Multiplayer::Bridge.call(BLOCKER_TOPIC, "map" => $game_map.map_id, "event" => event.id, "trigger" => event.trigger.to_i,
+                                                         "writes" => page_writes(event), "tableaux" => rows)
+    tableau = answer.is_a?(Hash) ? shown.find { |each| each.troop == answer["troop"] } : nil
+    tableau ? [tableau, answer["reason"].to_s, answer["leads_in"] ? true : false] : nil
   end
 
   # Lists what the page an event shows writes, through the common events it calls too, as the DLL's
   # command index tells it (MGQ_MpCoopEvents.page_writes), kept per list of commands.
   #
   # @param event [Game_Event] The event.
-  # @return [Array<Array>] Each write: 0 or 1 with the switches' or variables' range, or 2 with the
-  #   self switch's letter.
+  # @return [Array<Array>] Each write: 0 or 1 with the first and last switch or variable, or 2 with
+  #   the self switch's letter.
   def self.page_writes(event)
     list = event.list
     return [] unless list
 
-    @writes[list.object_id] ||= MGQ_MpCoopEvents.page_writes(event)
+    @writes[list.object_id] ||= MGQ_MpCoopEvents.page_writes(event).map { |kind, target| kind == 2 ? [2, target.to_s] : [kind, target.first, target.last] }
   end
 
   # Logs a refused start once in REFUSE_FRAMES per event; an event that runs by itself is logged once.

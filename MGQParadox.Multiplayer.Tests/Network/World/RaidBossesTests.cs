@@ -2,6 +2,7 @@
 //  RaidBossesTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Expected no share the pools gain back among the states, and dropped the check of the regeneration, which only the relay counts
 //      Paulinchen  2026-10-30: Waited for the world room's word in the pools, which no longer reach the game script as entries
 //                            - Checked that a report counts in the ledger before the relay answers
 //      Paulinchen  2026-10-10: Covered the pools as shares of a raid max HP
@@ -46,10 +47,10 @@ public sealed class RaidBossesTests
     private static readonly string OtherKey = PlayerKey(9);
 
     /// <summary>
-    /// Asserts that a world nobody reported a boss of hands out no pools, with the rate they fill up by.
+    /// Asserts that a world nobody reported a boss of hands out no pools.
     /// </summary>
     [Fact]
-    public void Fetch_NothingReported_TellsTheRate()
+    public void Fetch_NothingReported_HandsOutNoPools()
     {
         using var relay = new TestRelay { BossClock = () => Fixed };
         var code = MakeWorld(relay, WorldType.Raid);
@@ -59,7 +60,7 @@ public sealed class RaidBossesTests
         Assert.True(bosses.Fetch(IdOf(code)));
         var state = Await(bosses, "fetch", "done");
 
-        Assert.Equal((IdOf(code), "0.03", string.Empty), (state["world"], state["regen"], state.Team));
+        Assert.Equal((IdOf(code), string.Empty), (state["world"], state.Team));
     }
 
     /// <summary>
@@ -363,28 +364,6 @@ public sealed class RaidBossesTests
 
         Assert.True(bosses.Report(IdOf(code), "Erubetie", "b1", "3\t0.6\t3000\t0"));
         Assert.Equal("Erubetie\t0\t3000\t1\tCreator\n", AwaitReports(bosses).Team);
-    }
-
-    /// <summary>
-    /// Asserts that the pools the game script reads fill up at 3 % of their raid max HP a minute
-    /// from when they were told, at most full, while a defeated boss stays at 0.
-    /// </summary>
-    [Fact]
-    public void Describe_FillsThePoolsUpSinceTheyWereTold()
-    {
-        using var relay = new TestRelay { BossClock = () => Fixed };
-        var code = MakeWorld(relay, WorldType.Raid);
-        var now = DateTime.UtcNow;
-        var bosses = NewBosses(relay, CreatorKey, code, () => now);
-
-        Assert.True(bosses.Report(IdOf(code), "Morrigan", "b1", "1\t0.5\t2000\t0"));
-        Assert.True(bosses.Report(IdOf(code), "Sylph", "b2", "1\t0.5\t2000\t1"));
-        Assert.Equal("Morrigan\t0.5\t2000\t0\t\nSylph\t0\t2000\t1\tCreator\n", AwaitReports(bosses).Team);
-
-        now += TimeSpan.FromMinutes(10);
-        Assert.Equal("Morrigan\t0.8\t2000\t0\t\nSylph\t0\t2000\t1\tCreator\n", Message.Decode(bosses.Describe()).Team);
-        now += TimeSpan.FromHours(1);
-        Assert.Equal("Morrigan\t1\t2000\t0\t\nSylph\t0\t2000\t1\tCreator\n", Message.Decode(bosses.Describe()).Team);
     }
 
     /// <summary>

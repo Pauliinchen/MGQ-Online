@@ -795,7 +795,7 @@ module MGQ_MpRaidPool
   end
 
   # Takes the pools' HP every few seconds while the battle waits for its players' commands, so its
-  # bar and enemies show the other battles' blows and the regeneration meanwhile. Nothing of the
+  # bar and enemies show the other battles' blows the relay told meanwhile. Nothing of the
   # battle's own runs then, so the HP undoes none of its damage. A battle whose enemies all fall
   # wins, as at the command phase, or by the answer of a live battle's wait for the other players'
   # commands while one is open; a guest's keeps its host's HP and falls with its host's. Called

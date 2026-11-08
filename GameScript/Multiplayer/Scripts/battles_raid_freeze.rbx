@@ -2,6 +2,8 @@
 #  battles_raid_freeze.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Asked the DLL which records wait, what a record's world entry holds, what becomes of a record as its battle ends, where a tableau stands and what it blocks, how a fresh start begins and which items a defeat gives back
+#                            - Dropped the scene switches assumed when the DLL tells nothing of a page, and the tables nothing reads
 #      Paulinchen  2026-11-06: Read the preamble's start and whether a page runs nothing from the DLL, and left the Hades halls to its sites
 #      Paulinchen  2026-11-05: Asked the DLL whether a frozen fight is over, the one decision every caller asks, and dropped the player's own record once it is
 #                            - Asked the DLL whether a lost battle's defeat goes back and which value each key it changed goes back to
@@ -50,20 +52,31 @@ module MGQ_MpRaidFreeze
   # The DLL's topic that tells why a lost battle's defeat puts nothing back, see FreezeTopics.
   DEFEAT_TOPIC = "freeze.defeat"
 
-  # The DLL's topic that tells which value each key a defeat changed goes back to.
+  # The DLL's topic that tells which value each key a defeat changed goes back to and which items
+  # come back.
   UNDO_TOPIC = "freeze.undo"
+
+  # The DLL's topic that tells which of the player's records wait and whose fight is over, see
+  # FreezeRecords.Check.
+  RECORDS_TOPIC = "freeze.records.check"
+
+  # The DLL's topic that tells which story values a record's world entry holds.
+  HELD_TOPIC = "freeze.records.held"
+
+  # The DLL's topic that tells what becomes of the player's record as a battle ends.
+  END_TOPIC = "freeze.records.end"
+
+  # The DLL's topic that tells where a fight's tableau stands and which events it blocks.
+  TABLEAU_TOPIC = "freeze.tableau"
+
+  # The DLL's topic that tells how the world's entry of a fight starts afresh.
+  FRESH_TOPIC = "freeze.fresh"
 
   # The event command that calls a common event.
   CALL_CODE = 117
 
   # The event command that starts a battle.
   BATTLE_CODE = 301
-
-  # The triggers of a page that starts when touched: by the player, by the event.
-  TOUCH_TRIGGERS = [1, 2]
-
-  # The trigger of a page the action button starts.
-  ACTION_TRIGGER = 0
 
   # The directions of a tile's neighbours.
   NEIGHBOUR_DIRECTIONS = [2, 4, 6, 8]
@@ -85,9 +98,6 @@ module MGQ_MpRaidFreeze
   # Refused hand-overs between two log lines while the DLL keeps refusing the journal's writes, about
   # ten seconds at one a frame.
   REFUSALS_PER_LOG = 600
-
-  # The switches of the scenes when the freeze's data lacks them, see scene_page?.
-  SCENE_SWITCHES = [31..39]
 
   # The DLL's topic that tells where the story fights troops, see EventTableTopics.Sites.
   SITES_TOPIC = "raid.sites"
@@ -154,20 +164,31 @@ module MGQ_MpRaidFreeze
     @shared = {}
   end
 
-  # Lists the player's own frozen fights of the open world whose fight is not over, as the DLL's one
-  # decision tells (MGQ_MpWorldFreeze.over).
+  # Lists the player's own frozen fights of the open world whose fight is not over, as the DLL tells
+  # (see checked).
   #
   # @return [Array<Hash>] The records, each with at least the keys of a world entry (see entry_of).
   def self.records
     notes = field
     return [] unless notes
 
-    frozen = notes["records"].values.select { |record| record["state"] == "frozen" }
-    over = defined?(MGQ_MpWorldFreeze) ? MGQ_MpWorldFreeze.over(frozen.map { |record| record["troop"] }) : {}
-    frozen.reject { |record| over.key?(record["troop"].to_i) }
+    Array(checked(notes)["listed"]).map { |troop| notes["records"][troop] }.compact
   rescue => e
     log_once(:records, "listing the frozen fights failed: #{e.class}: #{e.message}")
     []
+  end
+
+  # Asks the DLL which of the player's records wait and which fights are over (FreezeRecords.Check).
+  #
+  # @param notes [Hash] The save's notes, see field.
+  # @return [Hash] "listed" (the troops of the records that wait) and "dropped" ([troop, why] of each
+  #   record whose fight is over); empty without records or an answer.
+  def self.checked(notes)
+    rows = notes["records"].values.map { |record| [record["troop"].to_i, record["state"].to_s] }
+    return {} if rows.empty?
+
+    answer = MGQ_Multiplayer::Bridge.call(RECORDS_TOPIC, "world" => MGQ_MpWorldStory.world_id.to_s, "facts" => MGQ_MpRaidBosses.facts, "records" => rows)
+    answer.is_a?(Hash) ? answer : {}
   end
 
   # Finds the player's own record of a troop's fight in the open world, in any state.
@@ -224,19 +245,19 @@ module MGQ_MpRaidFreeze
   end
 
   # Builds the world's entry of a record: where the fight is and its boss waits, and the story values
-  # the world holds at the fight's start (its pre-battle keys that are no player's own, then the keys
-  # its defeat's undo wrote, the first of a key winning).
+  # the world holds at the fight's start, as the DLL picks them (FreezeRecords.Held).
   #
   # @param record [Hash] The record.
   # @return [Hash] The entry: "troop", "site", "outer", "scene", "tableau", "spot" and "held".
   def self.entry_of(record)
-    held = []
-    seen = {}
-    (Array(record["start"]).reject { |kind, key, _| personal?(kind, key) } + Array(record["undone"])).each do |kind, key, value|
-      next if seen[[kind, key]]
-
-      seen[[kind, key]] = true
-      held << [kind, key, value]
+    start = Array(record["start"])
+    undone = Array(record["undone"])
+    picked = MGQ_Multiplayer::Bridge.call(HELD_TOPIC, "start" => start.map { |kind, key, _| [kind, key, personal?(kind, key)] },
+                                                      "undone" => undone.map { |kind, key, _| [kind, key] })
+    picked = {} unless picked.is_a?(Hash)
+    held = [[start, "start"], [undone, "undone"]].flat_map do |rows, name|
+      flags = Array(picked[name])
+      rows.each_with_index.select { |_row, index| flags[index] }.map { |row, _index| row }
     end
     {
       "troop" => record["troop"], "site" => record["site"], "outer" => record["outer"], "scene" => record["scene"] ? true : false,
@@ -603,12 +624,7 @@ module MGQ_MpRaidFreeze
     scene = !moved && scene_map?(map)
     frames = chain[:frames]
     outer = frames[0][0]
-    before = @run ? @run[:shown] : nil
-    tableau = if moved
-                moved_tableau(chain)
-              else
-                scene ? scene_tableau(outer, chain[:event], before, frames) : field_tableau(map, chain[:event], before, frames)
-              end
+    tableau = tableau_of(chain, scene, @run ? @run[:shown] : nil)
     record = {
       "troop" => troop, "site" => frames.last[0], "outer" => outer, "scene" => scene, "tableau" => tableau,
       "spot" => [map, $game_player.x, $game_player.y, $game_player.direction],
@@ -635,16 +651,36 @@ module MGQ_MpRaidFreeze
     data(:SITES, {})[troop].find { |row| row[0] == site && row[1] == index }[3]
   end
 
-  # Builds the stand-ins of a fight on a field map: its boss and the events only its scene shows,
+  # Builds a fight's tableau: the DLL tells where it stands and which events it blocks
+  # (FreezeTableau.Place), and the map tells which events stand in, see field_rows and away_row.
+  #
+  # @param chain [Hash] The fight's chain, see chain_of.
+  # @param scene [Boolean] Whether its battle runs on a cutscene map.
+  # @param before [Hash, nil] The events as the fight's event started, see event_states.
+  # @return [Array] The tableau: map, sprite rows and the events whose start is blocked.
+  def self.tableau_of(chain, scene, before)
+    run = @run
+    moved = chain[:moved] ? true : false
+    frames = chain[:frames]
+    place = MGQ_Multiplayer::Bridge.call!(TABLEAU_TOPIC, "scene" => scene, "moved" => moved, "map" => moved ? chain[:map] : $game_map.map_id,
+                                                         "event" => chain[:event_id], "outer" => frames[0][0], "origin" => field["origin"],
+                                                         "place" => moved && run ? run[:place] : nil, "frames" => frames.map { |frame| frame[0] })
+    map = place["map"]
+    blocked = Array(place["blocked"])
+    log("blocks the starts of events #{blocked.inspect} on map #{map}, #{place['callers']} of them other callers of its common events") if place["callers"].to_i > 0
+    rows = place["at"] ? [away_row(chain, scene, before, map, place["at"])] : field_rows(chain[:event], before, map)
+    [map, rows, blocked]
+  end
+
+  # Writes the stand-ins of a fight on a field map: its boss and the events only its scene shows,
   # each standing in for itself. The map's other events stay live, so its shops, inns and villagers
   # serve on while the boss waits.
   #
-  # @param map [Integer] The map.
   # @param outer [Game_Event] The event whose page runs the fight.
   # @param before [Hash, nil] The events as the fight's event started, see event_states.
-  # @param frames [Array<Array>] The fight's frames, see chain_of.
-  # @return [Array] The tableau: map, sprite rows and the events whose start is blocked.
-  def self.field_tableau(map, outer, before, frames)
+  # @param map [Integer] The map, for the log.
+  # @return [Array<Array>] The sprite rows.
+  def self.field_rows(outer, before, map)
     shown = visible_events
     scene = scene_events(shown, before)
     boss = boss_event(outer, shown, scene)
@@ -653,70 +689,27 @@ module MGQ_MpRaidFreeze
     rows << [outer.id, outer.x, outer.y, outer.direction, 0, "", 0, 0, 255, 0, 1, 1, 1] unless boss
     log("the frozen scene of map #{map} keeps #{boss ? "event #{boss.id}" : 'an unseen stand-in'} as its boss and the events its scene shows " \
         "#{scene.map(&:id).inspect}; #{shown.size - kept.size} other event(s) that showed before it stay live")
-    [map, rows, blocked_events(map, [outer.id], frames)]
+    rows
   end
 
-  # Builds the stand-in of a fight on a cutscene map: its boss on the field map the story entered
-  # the cutscene from, where the player left it, or else at the field event that leads there.
-  #
-  # @param outer [String] The site key of the page that runs the fight.
-  # @param event [Game_Event] The event of that page.
-  # @param before [Hash, nil] The events as the fight's event started, see event_states.
-  # @param frames [Array<Array>] The fight's frames, see chain_of.
-  # @return [Array] The tableau: map, sprite rows and the events whose start is blocked.
-  def self.scene_tableau(outer, event, before, frames)
-    sources = data(:SCENES, {})[outer][0]
-    origin = field["origin"]
-    if origin && sources.any? { |source| source[0] == origin[0] }
-      map, x, y = origin
-    else
-      map, _event_id, x, y = sources[0]
-    end
-    shown = visible_events
-    boss = boss_event(event, shown, scene_events(shown, before))
-    row = boss ? sprite_row(boss, x, y, 2, true, 0) : [event.id, x, y, 2, 0, "", 0, 0, 255, 0, 1, 1, 0]
-    [map, [row], blocked_events(map, sources.select { |source| source[0] == map }.map { |source| source[1] }, frames)]
-  end
-
-  # Builds the stand-in of a fight whose event moved the player to another map before its battle:
-  # its boss at that event on the map it started on, as for a cutscene, the boss's look taken from
-  # the map of the battle.
-  #
-  # The events of the battle's map are not the started map's, so the run's notes of which events
-  # showed tell nothing here.
+  # Writes the stand-in of a fight whose boss waits away from the battle's map: a cutscene's boss,
+  # picked among the events of the cutscene as on a field map, or the boss of a fight whose event
+  # moved the player away before its battle, picked among the battle map's events alone, since the
+  # run's notes of which events showed belong to the map the event started on.
   #
   # @param chain [Hash] The fight's chain, see chain_of.
-  # @return [Array] The tableau: map, sprite rows and the events whose start is blocked.
-  def self.moved_tableau(chain)
-    run = @run
-    map = chain[:map]
-    event_id = chain[:event_id]
-    x, y = run && run[:place] ? run[:place] : [0, 0]
-    boss = boss_event(nil, visible_events, [])
-    row = boss ? sprite_row(boss, x, y, 2, true, 0) : [event_id, x, y, 2, 0, "", 0, 0, 255, 0, 1, 1, 0]
-    log("the fight's event #{event_id} moved the player from map #{map} to map #{$game_map.map_id} before its battle: " \
-        "#{boss ? "event #{boss.id} of the battle's map" : 'an unseen stand-in'} waits at #{x},#{y} on map #{map}")
-    [map, [row], blocked_events(map, [event_id], chain[:frames])]
-  end
-
-  # Lists the events of a tableau's map whose start is blocked: the given ones and every page of
-  # the map that calls a common event of the fight's frames (the freeze's CALLERS), as a
-  # row of touch triggers that each start the same cutscene.
-  #
-  # @param map [Integer] The tableau's map.
-  # @param ids [Array<Integer>] The events blocked in any case.
-  # @param frames [Array<Array>] The fight's frames, see chain_of.
-  # @return [Array<Integer>] The events by id.
-  def self.blocked_events(map, ids, frames)
-    callers = data(:CALLERS, {})
-    siblings = Array(frames).flat_map do |key, _index, _branch|
-      common = key.is_a?(Array) && key[0] == "ce" ? key[1] : nil
-      common ? Array(callers[common]).map { |caller| site_parts(caller) }.select { |parts| parts[0] == map }.map { |parts| parts[1] } : []
-    end
-    blocked = (ids + siblings).uniq.sort
-    others = blocked - ids
-    log("blocks the starts of events #{blocked.inspect} on map #{map}, #{others.size} of them other callers of its common events") unless others.empty?
-    blocked
+  # @param scene [Boolean] Whether its battle runs on a cutscene map.
+  # @param before [Hash, nil] The events as the fight's event started, see event_states.
+  # @param map [Integer] The map the boss waits on, for the log.
+  # @param at [Array(Integer, Integer)] Where it waits.
+  # @return [Array] The sprite row.
+  def self.away_row(chain, scene, before, map, at)
+    x, y = at
+    shown = visible_events
+    boss = scene ? boss_event(chain[:event], shown, scene_events(shown, before)) : boss_event(nil, shown, [])
+    log("the fight's event #{chain[:event_id]} moved the player from map #{chain[:map]} to map #{$game_map.map_id} before its battle: " \
+        "#{boss ? "event #{boss.id} of the battle's map" : 'an unseen stand-in'} waits at #{x},#{y} on map #{map}") unless scene
+    boss ? sprite_row(boss, x, y, 2, true, 0) : [chain[:event_id], x, y, 2, 0, "", 0, 0, 255, 0, 1, 1, 0]
   end
 
   # Notes each event of the map: the page it shows, whether it shows and where it stands.
@@ -783,25 +776,15 @@ module MGQ_MpRaidFreeze
     moved && event.mgq_mp_pages[now].move_type.to_i == 0
   end
 
-  # Reports whether a page shows only during a scene: its conditions name a switch the game's
-  # post-defeat processing turns off (the freeze's DEFEAT_WRITES), such as the scene switches 31 to
-  # 39. The DLL's events database tells it for a page it holds as the game does (see page_flags).
+  # Reports whether a page shows only during a scene, as the DLL's events database tells it for a
+  # page it holds as the game does (see page_flags).
   #
   # @param event [Game_Event] The event.
   # @param place [Integer] The page's place.
-  # @return [Boolean] Whether it does.
+  # @return [Boolean] Whether it does; false for a page the database does not tell of.
   def self.scene_page?(event, place)
     flags = page_flags(event, place)
-    return flags["scene_page"] == true if flags
-
-    page = event.mgq_mp_pages[place]
-    condition = page && page.respond_to?(:condition) ? page.condition : nil
-    return false unless condition && condition.respond_to?(:switch1_valid)
-
-    switches = data(:DEFEAT_WRITES, {})[:switches] || SCENE_SWITCHES
-    [[condition.switch1_valid, condition.switch1_id], [condition.switch2_valid, condition.switch2_id]].any? do |valid, id|
-      valid && switches.any? { |range| range === id }
-    end
+    flags ? flags["scene_page"] == true : false
   end
 
   # Reports whether an event's page runs nothing when started, such as a figure only shown, as the
@@ -965,18 +948,15 @@ module MGQ_MpRaidFreeze
     @at_301 = nil
     troop = battle[:troop]
     reason = defeat_refusal(battle)
+    plan = record_end(2, battle, reason ? true : false)
     if reason
-      record = record_for(troop)
-      field["records"].delete(troop) if record && record["state"] == "battle"
-      return log("the lost battle against troop #{troop} puts nothing back: #{reason}#{record && record['state'] == 'battle' ? '; its record goes' : ''}")
+      return log("the lost battle against troop #{troop} puts nothing back: #{reason}#{plan['record'] == 'drop' ? '; its record goes' : ''}")
     end
 
     @pending = { :troop => troop, :kind => battle[:kind], :mark => @seq, :items => item_counts,
                  :start => battle[:start], :pre => battle[:pre], :at => MGQ_Multiplayer::Bridge.frame_number }
-    record = record_for(troop)
-    record["state"] = "lost" if record && battle[:record]
     log("lost the battle against #{label(troop)} (troop #{troop}, #{battle[:kind] || 'no pool'}#{battle[:side] ? ', side' : ''}): " \
-        "its defeat's changes of the story go back once it ended#{record && battle[:record] ? ', and the fight waits' : ''}")
+        "its defeat's changes of the story go back once it ended#{plan['record'] == 'lost' ? ', and the fight waits' : ''}")
   rescue => e
     @pending = nil
     log("taking the story at the defeat failed: #{e.class}: #{e.message}")
@@ -1039,34 +1019,45 @@ module MGQ_MpRaidFreeze
 
     @battle = nil
     troop = battle[:troop]
-    if result == 0 && battle[:kind]
+    plan = record_end(result, battle)
+    if plan["won"]
       MGQ_MpWorldFreeze.won(troop) if defined?(MGQ_MpWorldFreeze)
       log("won the battle against troop #{troop}: the world's frozen fight against it ends")
     end
-    record = record_for(troop)
-    if record && record["state"] == "battle"
-      field["records"].delete(troop)
-      log("the fight against #{record['boss']} (troop #{troop}) was #{result == 0 ? 'won' : 'escaped'}: its record goes")
-      record = nil
+    spot = plan["spot"]
+    if spot
+      @teleport = { :troop => troop, :spot => spot }
+      log("the won #{battle[:kind]} battle against troop #{troop} brings the player onto #{plan['whose']} spot #{spot.join(',')}")
+    elsif plan["won"] && [:guest, :side].include?(battle[:kind])
+      log("the won #{battle[:kind]} battle against troop #{troop} has no spot of the starter nor of an own record")
     end
-    return unless result == 0 && [:guest, :side].include?(battle[:kind])
-
-    if record
-      field["records"].delete(troop)
-      log("the boss of troop #{troop} fell in the won #{battle[:kind]} battle: the player's own #{record['state']} record of it goes")
-    end
-    spot = battle[:entry] ? battle[:entry]["spot"] : nil
-    whose = "the starter's"
-    unless spot_valid?(spot)
-      spot = record ? record["spot"] : nil
-      whose = "the player's own record's"
-    end
-    return log("the won #{battle[:kind]} battle against troop #{troop} has no spot of the starter nor of an own record") unless spot_valid?(spot)
-
-    @teleport = { :troop => troop, :spot => spot }
-    log("the won #{battle[:kind]} battle against troop #{troop} brings the player onto #{whose} spot #{spot.join(',')}")
   rescue => e
     log("following the battle's end failed: #{e.class}: #{e.message}")
+  end
+
+  # Asks the DLL what becomes of the player's record of a battle's troop as the battle ends
+  # (FreezeRecords.AtEnd), and drops the record or marks it lost as it answers.
+  #
+  # @param result [Integer] 0 won, 1 escaped, 2 lost.
+  # @param battle [Hash] The battle, see battle_set_up.
+  # @param refused [Boolean] Whether a lost battle's defeat puts nothing back, see defeat_refusal.
+  # @return [Hash] "won", "record", "spot" and "whose".
+  def self.record_end(result, battle, refused = false)
+    troop = battle[:troop]
+    record = record_for(troop)
+    entry = battle[:entry]
+    plan = MGQ_Multiplayer::Bridge.call!(END_TOPIC, "result" => result, "kind" => battle[:kind] && battle[:kind].to_s, "state" => record && record["state"],
+                                                    "refused" => refused, "took" => battle[:record] ? true : false,
+                                                    "entry_spot" => entry && entry["spot"], "record_spot" => record && record["spot"])
+    case plan["record"]
+    when "drop"
+      field["records"].delete(troop)
+      log(record["state"] == "battle" ? "the fight against #{record['boss']} (troop #{troop}) was #{%w(won escaped lost)[result]}: its record goes" :
+          "the boss of troop #{troop} fell in the won #{battle[:kind]} battle: the player's own #{record['state']} record of it goes")
+    when "lost"
+      record["state"] = "lost"
+    end
+    plan
   end
 
   # Notes where the player leaves a field map for a cutscene map, where a fight on the cutscene map
@@ -1427,41 +1418,54 @@ module MGQ_MpRaidFreeze
     true
   end
 
-  # Starts a world entry's event from its first command: on a field map where the player stands, or
-  # on the cutscene map of the player's side, after a transfer onto its entry.
+  # Starts a world entry's event from its first command as the DLL plans it (FreezeFresh.Plan): a
+  # cutscene's on the cutscene map of the player's side, after a transfer onto its way in; a field
+  # page after a transfer onto the spot its trigger starts it from, or where the player stands.
   #
   # @param troop [Integer] The troop.
   # @param entry [Hash] The world entry.
   # @return [Boolean] Whether it started.
   def self.start_fresh(troop, entry)
-    entry["scene"] ? start_fresh_scene(troop) : start_fresh_field(troop, entry)
+    map, event_id, _page = site_parts(entry["outer"])
+    event = map == $game_map.map_id ? $game_map.events[event_id] : nil
+    shown = event ? event.mgq_mp_page : nil
+    page = shown && shown >= 0 ? event.mgq_mp_pages[shown] : nil
+    plan = MGQ_Multiplayer::Bridge.call!(FRESH_TOPIC, "troop" => troop, "scene" => entry["scene"] ? true : false, "outer" => entry["outer"],
+                                                      "map" => $game_map.map_id, "shown" => shown, "trigger" => page ? page.trigger.to_i : nil,
+                                                      "switches" => entry["scene"] ? switches_on : [])
+    return refuse(troop, "Cannot fight #{label(troop)} here yet.", plan["refusal"]) unless plan["start"]
+    return start_fresh_scene(troop, plan) if plan["start"] == "scene"
+    return start_fresh_in_place(troop, entry, event, nil) if plan["start"] == "here"
+
+    start_fresh_field(troop, entry, event, plan["start"] == "touch")
   end
 
-  # Starts a world entry's field event from its first command: a page the player starts by touch or
-  # the action button after a transfer onto the spot that starts it, the tableau's hidden events
-  # letting the player through meanwhile; another where the player stands.
+  # Lists the switches that are on.
+  #
+  # @return [Array<Integer>] Their ids.
+  def self.switches_on
+    data = MGQ_MpStoryState.data_of($game_switches)
+    (0...data.size).select { |id| data[id] }
+  end
+
+  # Starts a world entry's field event from its first command after a transfer onto the spot that
+  # starts it, the tableau's hidden events letting the player through meanwhile; where the player
+  # stands when no tile next to it is free.
   #
   # @param troop [Integer] The troop.
   # @param entry [Hash] The world entry.
+  # @param event [Game_Event] The entry's event.
+  # @param touch [Boolean] Whether a touch starts its page, else the action button.
   # @return [Boolean] Whether it started.
-  def self.start_fresh_field(troop, entry)
-    map, event_id, page = site_parts(entry["outer"])
-    event = map == $game_map.map_id ? $game_map.events[event_id] : nil
-    unless event && page && event.mgq_mp_page == page - 1
-      return refuse(troop, "Cannot fight #{label(troop)} here yet.", "#{entry['outer']} is not the page that shows here (map #{$game_map.map_id})")
-    end
-
-    trigger = event.mgq_mp_pages[page - 1].trigger.to_i
-    return start_fresh_in_place(troop, entry, event, page, nil) unless TOUCH_TRIGGERS.include?(trigger) || trigger == ACTION_TRIGGER
-
+  def self.start_fresh_field(troop, entry, event, touch)
     before = snapshot(nil)
     through = hold_through(entry)
-    spot = trigger_spot(event, trigger)
-    return start_fresh_in_place(troop, entry, event, page, through) unless spot
+    spot = touch ? touch_spot(event) : front_spot(event)
+    return start_fresh_in_place(troop, entry, event, through) unless spot
 
     $game_player.reserve_transfer(spot[0], spot[1], spot[2], spot[3])
     $game_temp.fade_type = 0
-    @resume = { :troop => troop, :record => nil, :fresh => true, :stage => :transfer, :target => map, :site => entry["outer"], :snapshot => before,
+    @resume = { :troop => troop, :record => nil, :fresh => true, :stage => :transfer, :target => spot[0], :site => entry["outer"], :snapshot => before,
                 :through => through }
     log("starts #{entry['outer']} from its first command for the fight against troop #{troop}: the player has no record of their own " \
         "and goes onto #{spot[1]},#{spot[2]} facing #{spot[3]} first")
@@ -1472,31 +1476,33 @@ module MGQ_MpRaidFreeze
   #
   # @param troop [Integer] The troop.
   # @param entry [Hash] The world entry.
-  # @param event [Game_Event] The entry's event.
-  # @param page [Integer] Its page, 1-based.
+  # @param event [Game_Event] The entry's event, showing the entry's page.
   # @param through [Hash, nil] The hidden events let through, see hold_through.
   # @return [Boolean] true.
-  def self.start_fresh_in_place(troop, entry, event, page, through)
+  def self.start_fresh_in_place(troop, entry, event, through)
     @resume = { :troop => troop, :record => nil, :fresh => true, :stage => :event, :through => through }
-    as_story { $game_map.interpreter.setup(event.mgq_mp_pages[page - 1].list, event.id) }
+    as_story { $game_map.interpreter.setup(event.mgq_mp_pages[event.mgq_mp_page].list, event.id) }
     log("starts #{entry['outer']} from its first command for the fight against troop #{troop}: the player has no record of their own")
     true
   end
 
-  # Finds the spot a page's trigger starts it from: the event's own tile and direction for a touch,
-  # else the free tile in front of it, else a free neighbour of it nearest the player, facing it.
+  # Finds the spot a touch starts an event from: its own tile and direction.
   #
   # @param event [Game_Event] The event.
-  # @param trigger [Integer] Its page's trigger.
+  # @return [Array(Integer, Integer, Integer, Integer)] Map, x, y and direction.
+  def self.touch_spot(event)
+    log("the touch of event #{event.id} starts it on its own tile #{event.x},#{event.y}")
+    [$game_map.map_id, event.x, event.y, event.direction]
+  end
+
+  # Finds the spot the action button starts an event from: the free tile in front of it, else a
+  # free neighbour of it nearest the player, facing it.
+  #
+  # @param event [Game_Event] The event.
   # @return [Array(Integer, Integer, Integer, Integer), nil] Map, x, y and direction; nil when no
   #   neighbour is free.
-  def self.trigger_spot(event, trigger)
+  def self.front_spot(event)
     map = $game_map.map_id
-    if TOUCH_TRIGGERS.include?(trigger)
-      log("the touch of event #{event.id} starts it on its own tile #{event.x},#{event.y}")
-      return [map, event.x, event.y, event.direction]
-    end
-
     front = NEIGHBOUR_DIRECTIONS.include?(event.direction) ? event.direction : 2
     others = (NEIGHBOUR_DIRECTIONS - [front]).sort_by do |direction|
       x, y = neighbour(event, direction)
@@ -1606,27 +1612,24 @@ module MGQ_MpRaidFreeze
     event.through ? true : false
   end
 
-  # Starts a world entry's cutscene from its first command: the cutscene site of the player's side
-  # whose page applies, after a transfer onto the spot the story enters it at.
+  # Starts a world entry's cutscene from its first command, the cutscene of the player's side the DLL
+  # picked, after a transfer onto the spot the story enters it at, once its event would show its page.
   #
   # @param troop [Integer] The troop.
+  # @param plan [Hash] The DLL's plan: "site" and "spot", see start_fresh.
   # @return [Boolean] Whether it started.
-  def self.start_fresh_scene(troop)
-    scenes = data(:SCENES, {})
-    rows = (data(:SITES, {})[troop] || []).select { |row| row[4] && scenes[row[0]] }
-    row = rows.find { |candidate| (switch = scenes[candidate[0]][1]).nil? || $game_switches[switch] }
-    return refuse(troop, "Cannot fight #{label(troop)} here yet.", "no cutscene of the player's side is known") unless row
-
-    map, event_id, page = site_parts(row[0])
+  def self.start_fresh_scene(troop, plan)
+    site = plan["site"]
+    map, event_id, page = site_parts(site)
     shown = probe_page(map, event_id)
-    return refuse(troop, "Cannot fight #{label(troop)} here yet.", "#{row[0]} is not the page the event would show (#{shown.inspect})") unless shown == page - 1
+    return refuse(troop, "Cannot fight #{label(troop)} here yet.", "#{site.inspect} is not the page the event would show (#{shown.inspect})") unless shown == page - 1
 
-    spot = scenes[row[0]][2]
+    spot = plan["spot"]
     before = snapshot(nil)
     $game_player.reserve_transfer(spot[0], spot[1], spot[2], spot[3])
     $game_temp.fade_type = 0
-    @resume = { :troop => troop, :record => nil, :fresh => true, :stage => :transfer, :target => spot[0], :site => row[0], :snapshot => before }
-    log("starts #{row[0]} from its first command for the fight against troop #{troop}: to map #{spot[0]} at #{spot[1]},#{spot[2]}")
+    @resume = { :troop => troop, :record => nil, :fresh => true, :stage => :transfer, :target => spot[0], :site => site, :snapshot => before }
+    log("starts #{site.inspect} from its first command for the fight against troop #{troop}: to map #{spot[0]} at #{spot[1]},#{spot[2]}")
     true
   end
 
@@ -1670,7 +1673,7 @@ module MGQ_MpRaidFreeze
   # Puts back what a defeat changed of the story: each value that changed since the defeat started
   # goes back to the value the DLL names (FreezeRules.Undo: none for the post-defeat processing's
   # own and the player's own, the event's start for a key the event changed before the battle, else
-  # the defeat's start); and the items. A fight with a record then waits.
+  # the defeat's start); and the items it names. A fight with a record then waits.
   #
   # @param pending [Hash] The defeat's snapshot.
   def self.undo(pending)
@@ -1680,7 +1683,8 @@ module MGQ_MpRaidFreeze
     starts = {}
     Array(pending[:start]).each { |kind, key, value| starts[[kind, key]] = value }
     asked = rows.map { |kind, key, _was, _now| [kind, kind == 2 ? 0 : key, personal?(kind, key), starts.key?([kind, key])] }
-    choices = Array(MGQ_Multiplayer::Bridge.call(UNDO_TOPIC, "rows" => asked))
+    answer = undo_answer(asked, pending[:items])
+    choices = Array(answer["values"])
     undone = []
     texts = []
     rows.each_with_index do |(kind, key, was, now), index|
@@ -1693,21 +1697,32 @@ module MGQ_MpRaidFreeze
       texts << "#{value_name(kind, key)} #{value_text(now)} -> #{value_text(value)}"
     end
     $game_map.need_refresh = true
-    texts.concat(give_items_back(pending[:items]))
+    texts.concat(give_items_back(answer["items"]))
     log("the defeat by troop #{pending[:troop]} ended: put back #{texts.empty? ? 'nothing' : texts.join(', ')}")
     record = record_for(pending[:troop])
     freeze(record, undone) if record && record["state"] == "lost"
   end
 
-  # Gives back the items whose count the defeat changed.
+  # Asks the DLL which value each changed key goes back to and which items come back, from the
+  # counts at the defeat's start and now.
   #
+  # @param rows [Array<Array>] Each changed key: kind, id (0 for a self switch), whether it is the
+  #   player's own and whether the event changed it before the battle.
   # @param before [Hash{Array => Integer}] The counts at the defeat's start, see item_counts.
+  # @return [Hash] "values" (per row "start", "was" or nil) and "items" ([letter, id, change] each).
+  def self.undo_answer(rows, before)
+    counts = lambda { |found| found.map { |(letter, id), count| [letter, id, count] } }
+    answer = MGQ_Multiplayer::Bridge.call(UNDO_TOPIC, "rows" => rows, "items" => { "before" => counts.call(before), "after" => counts.call(item_counts) })
+    answer.is_a?(Hash) ? answer : {}
+  end
+
+  # Gives the items the DLL names back.
+  #
+  # @param items [Array<Array>, nil] Each item's letter, id and how many, see undo_answer.
   # @return [Array<String>] What changed, for the log.
-  def self.give_items_back(before)
-    after = item_counts
-    (before.keys | after.keys).sort.map do |letter, id|
-      change = before.fetch([letter, id], 0) - after.fetch([letter, id], 0)
-      item = change == 0 ? nil : MGQ_MpGame.item(letter, id)
+  def self.give_items_back(items)
+    Array(items).map do |letter, id, change|
+      item = MGQ_MpGame.item(letter, id)
       next unless item
 
       $game_party.gain_item(item, change)
@@ -1762,7 +1777,7 @@ module MGQ_MpRaidFreeze
     log("brought the player onto the starter's spot of troop #{teleport[:troop]}: #{spot[1]},#{spot[2]}")
   end
 
-  # Forgets the records of fights that are over, as the DLL's one decision tells, and tells the world
+  # Forgets the records of fights that are over, as the DLL tells (see checked), and tells the world
   # of frozen fights it lacks, every CHECK_FRAMES.
   def self.drop_beaten
     now = MGQ_Multiplayer::Bridge.frame_number
@@ -1772,8 +1787,7 @@ module MGQ_MpRaidFreeze
     notes = field
     return unless notes
 
-    over = defined?(MGQ_MpWorldFreeze) ? MGQ_MpWorldFreeze.over(notes["records"].keys) : {}
-    over.each do |troop, reason|
+    Array(checked(notes)["dropped"]).each do |troop, reason|
       next unless notes["records"].delete(troop)
 
       log("dropped the record of troop #{troop}: #{reason}")
@@ -2192,7 +2206,7 @@ module MGQ_MpRaidFreeze
   #
   # @param pending [Hash] The defeat's snapshot.
   def self.lost_undo(pending)
-    texts = give_items_back(pending[:items])
+    texts = give_items_back(undo_answer([], pending[:items])["items"])
     record = record_for(pending[:troop])
     field["records"].delete(pending[:troop]) if record && record["state"] == "lost"
     log("the defeat by troop #{pending[:troop]} ended, but the journal lost the story at its start: put back nothing of the story" \
@@ -2260,14 +2274,6 @@ module MGQ_MpRaidFreeze
     site_parts(key)[2]
   end
 
-  # Reports whether a spot is one a transfer takes: map, x, y and direction.
-  #
-  # @param spot [Object] The spot.
-  # @return [Boolean] Whether it is.
-  def self.spot_valid?(spot)
-    spot.is_a?(Array) && spot.size == 4 && spot.all? { |value| value.is_a?(Integer) } && spot[0] > 0
-  end
-
   # Reports whether a map is a cutscene map, see the freeze's SCENE_MAPS.
   #
   # @param map [Integer] The map.
@@ -2278,8 +2284,7 @@ module MGQ_MpRaidFreeze
 
   # Reads a table of the freeze's data, see tables.
   #
-  # @param name [Symbol] The table: :SITES, :CALLERS, :ALTERNATIVES, :SCENES, :SCENE_MAPS,
-  #   :DEFEAT_EVENTS or :DEFEAT_WRITES.
+  # @param name [Symbol] The table: :SITES, :SCENES or :SCENE_MAPS.
   # @param default [Object] What stands in while the data is missing.
   # @return [Object] The table.
   def self.data(name, default)
@@ -2289,12 +2294,10 @@ module MGQ_MpRaidFreeze
 
   # Reads the freeze's tables from the DLL's events database once per session, for every raid boss
   # troop: where the story fights each one (SITES: site key, the battle command's index, its indent,
-  # where its preamble starts, whether its map is a cutscene map, and its battle number), the map
-  # pages that reach each common event of them (CALLERS), the fights each side plays in the other's
-  # stead (ALTERNATIVES), how the story enters the fights on cutscene maps (SCENES), the cutscene
-  # maps (SCENE_MAPS), and what the game's post-defeat processing writes itself (DEFEAT_EVENTS,
-  # DEFEAT_WRITES). A table the database does not tell is left out; while the DLL gives no answer,
-  # it is asked again every TABLES_FRAMES.
+  # where its preamble starts, whether its map is a cutscene map, and its battle number), how the
+  # story enters the fights on cutscene maps (SCENES) and the cutscene maps (SCENE_MAPS). A table
+  # the database does not tell is left out; while the DLL gives no answer, it is asked again every
+  # TABLES_FRAMES.
   #
   # @return [Hash{Symbol => Object}] The tables.
   def self.tables
@@ -2328,13 +2331,9 @@ module MGQ_MpRaidFreeze
   # @param answer [Hash] The answer of SITES_TOPIC.
   # @return [Hash{Symbol => Object}] The tables the answer holds rows of.
   def self.tables_of(answer)
-    defeat = answer["defeat"].is_a?(Hash) ? answer["defeat"] : {}
     found = {
-      :SITES => answer["sites"], :CALLERS => answer["callers"], :ALTERNATIVES => answer["alternatives"],
-      :SCENES => answer["scenes"].is_a?(Array) ? Hash[answer["scenes"]] : nil,
-      :SCENE_MAPS => answer["scene_maps"], :DEFEAT_EVENTS => defeat["events"],
+      :SITES => answer["sites"], :SCENES => answer["scenes"].is_a?(Array) ? Hash[answer["scenes"]] : nil, :SCENE_MAPS => answer["scene_maps"],
     }
-    found[:DEFEAT_WRITES] = { :switches => Array(defeat["switches"]), :variables => Array(defeat["variables"]) } unless Array(defeat["events"]).empty?
     found.reject { |_name, table| !(table.is_a?(Hash) || table.is_a?(Array)) || table.empty? }
   end
 

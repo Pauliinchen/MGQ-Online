@@ -2,6 +2,7 @@
 #  raid_freeze_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Answered the records check, the held values, the record's end, the tableau, the fresh start and the items given back with fixed values per case, and checked what the scripts hand the DLL
 #      Paulinchen  2026-11-06: Answered whether a page runs nothing as the DLL's events database and dropped the check of a Hades hall, which the DLL leaves out of the sites
 #      Paulinchen  2026-11-05: Answered the sites of an earlier release's save with fixed values and checked the texts handed
 #                            - Dropped the checks of the write journal against its golden cases, which StoryJournalTests walks
@@ -27,7 +28,9 @@
 # of a fight, its boss and the events only its scene shows while the map's own stay live, and of a
 # cutscene fight; the joiner's spot; and the save field. The interpreter runs real fibers as the
 # game's does; the raid pool, the freeze's tables (as the DLL's events database answers them), the
-# world's story and the world's entries are stand-ins; the DLL's write journal is the shared stand-in bridge's (rules_support.rb).
+# world's story and the world's entries are stand-ins; the DLL's write journal is the shared stand-in bridge's (rules_support.rb),
+# and the DLL's rules of the records, the tableau's place, the fresh start and the items answer with
+# fixed values per case (raid_support.rb), which MGQParadox.Multiplayer.Tests and MGQOnline.Game.Tests cover.
 
 require_relative "rules_support"
 
@@ -594,8 +597,6 @@ module FreezeTables
     868 => [[["map", 138, 13, 1], 7, 1, 4, false]],
     870 => [[["map", 728, 12, 1], 2, 0, 0, true], [["map", 749, 13, 1], 2, 0, 0, true]],
   }
-  # The map pages that reach a site's common event.
-  CALLERS = { 347 => [["map", 214, 42, 1]] }
   # How the story enters each cutscene site: its field sources, side switch and entry spot; the DLL
   # hands them as rows, since a Hash that crosses the bridge has no Array keys.
   SCENES = {
@@ -604,16 +605,9 @@ module FreezeTables
   }
   # The cutscene maps.
   SCENE_MAPS = [728, 746, 747, 749]
-  # The post-defeat processing's common events.
-  DEFEAT_EVENTS = [11, 112, 900, 902, 3000]
-  # The switches the post-defeat processing writes itself.
-  DEFEAT_SWITCHES = [22, 31, 32, 33, 34, 35, 36, 37]
-  # The variables it writes itself.
-  DEFEAT_VARIABLES = [11]
 end
 # Stands in for the world's entries of frozen fights: $entries by troop, notes kept in $noted, the
-# troops whose fight ended for the world in $final, why the DLL calls fights over in $over by troop,
-# and the battles won in $won.
+# troops whose fight ended for the world in $final, and the battles won in $won.
 module MGQ_MpWorldFreeze
   # Answers the world's entry of a troop.
   def self.entry(troop); $entries[troop.to_i]; end
@@ -621,8 +615,6 @@ module MGQ_MpWorldFreeze
   def self.note(entry); $noted << entry; true; end
   # Answers whether a troop's fight ended for the world.
   def self.final?(troop); ($final || []).include?(troop.to_i); end
-  # Answers why the DLL calls fights over: $over's reasons of those troops.
-  def self.over(troops); $over.select { |troop, _reason| troops.map(&:to_i).include?(troop) }; end
   # Notes a battle won.
   def self.won(troop); ($won ||= []) << troop.to_i; end
 end
@@ -678,9 +670,8 @@ open_rules_bridge
 freeze = MGQ_MpRaidFreeze
 $world_bridge.answer("raid.sites") do |request|
   $sites_asked = request["troops"]
-  { "sites" => FreezeTables::SITES, "callers" => FreezeTables::CALLERS, "alternatives" => {}, "scenes" => FreezeTables::SCENES.to_a,
-    "scene_maps" => FreezeTables::SCENE_MAPS,
-    "defeat" => { "events" => FreezeTables::DEFEAT_EVENTS, "switches" => FreezeTables::DEFEAT_SWITCHES, "variables" => FreezeTables::DEFEAT_VARIABLES } }
+  { "sites" => FreezeTables::SITES, "scenes" => FreezeTables::SCENES.to_a,
+    "scene_maps" => FreezeTables::SCENE_MAPS }
 end
 
 # Has the engine read the freeze's tables anew, as after a check changed them.
@@ -751,6 +742,19 @@ CHAIN = [c(121, 0, 22, 22, 1), c(121, 0, 31, 31, 1), c(122, 0, 11, 11, 0, 0, 3),
 # named by no id; the player's own and those the post-defeat processing writes itself it leaves out.
 UNDO = { [1, 1001] => "start", [1, 1075] => "start", [1, 1020] => "start", [0, 2307] => "was", [2, 0] => "was" }
 
+# What the DLL plans at a lost battle's end whose record the battle took: the record waits as lost.
+LOST = { "record" => "lost" }.freeze
+
+# What it plans at a lost battle's end that took no record: nothing.
+NO_RECORD = {}.freeze
+
+# What it plans at a won battle's end of a running record: the battle counts as won and the record
+# goes.
+WON = { "won" => true, "record" => "drop" }.freeze
+
+# What the DLL's records check answers while Sonya Mazda's frozen fight waits.
+SONYA_LISTED = { "listed" => [868], "dropped" => [] }.freeze
+
 # Starts the game's objects anew, on map 138 at 32,9 facing up, in world w1's story.
 def reset
   $game_switches = Game_Switches.new
@@ -778,7 +782,7 @@ def reset
   $refreshes = 0
   $bgm = nil
   $bgm_pos = 0
-  [$entries = {}, $noted = [], $notices = [], $ran = [], $executed = [], $played = [], $over = {}, $walls = []]
+  [$entries = {}, $noted = [], $notices = [], $ran = [], $executed = [], $played = [], $walls = []]
   $log.clear
   $raid_answers.clear
   $raid_answers.undo = UNDO
@@ -805,7 +809,10 @@ def fight_event(id)
 end
 
 # Wins the battle running and returns to the map.
-def win
+#
+# @param plan [Hash] What the DLL plans at the battle's end, see RaidAnswers#ending.
+def win(plan = WON)
+  $raid_answers.ending = plan
   BattleManager.battle_end(0)
   $scene = Scene_Map.new
 end
@@ -814,8 +821,10 @@ end
 # runs on the map until its chain ended.
 #
 # @param scene [Proc] What the defeat's scene changes.
+# @param plan [Hash] What the DLL plans at the battle's end, see RaidAnswers#ending.
 # @return [Array<Boolean>] Whether the writes were held right after the defeat, in its scene, and while the map's part ran.
-def lose(scene = nil)
+def lose(scene = nil, plan = LOST)
+  $raid_answers.ending = plan
   BattleManager.process_defeat
   held = [MGQ_MpRaidFreeze.holding_writes?]
   scene.call if scene
@@ -930,17 +939,24 @@ check("and names the world", [notes["world"], notes["records"].keys], ["w1", [86
 
 # Lost: the defeat's changes go back once its chain ended, except what the post-defeat processing
 # writes itself and the player's own values.
+$raid_answers.items = [["i", 557, 1]]
+$raid_answers.held = { "start" => [false, true, true], "undone" => [true, false, true] }
 held = lose(SONYA_DEFEAT)
 check("the writes are held from the defeat through its scene and the map's part, then let go", [held, freeze.holding_writes?], [[true, true, true], false])
 check("the post-defeat processing ran and moved the player to Hades", [$game_map.map_id, $game_switches[31], $game_variables[11]], [154, false, 3])
 check("a value the event set before the battle goes back to its start value, another to its value at the defeat",
       [$game_variables[1075], $game_switches[2307], $game_self_switches[[138, 13, "A"]]], [14, true, false])
 check("the player's own switch stays as the defeat set it", $game_switches[22], false)
-check("the item the defeat took comes back", $game_party.item_number($data_items[557]), 1)
+check("the DLL hears the party's items at the defeat's start and its end, and the item it names comes back",
+      [$raid_answers.asked("freeze.undo").last["items"], $game_party.item_number($data_items[557])], [{ "before" => [["i", 557, 1]], "after" => [] }, 1])
 check("each undone value and item is logged", $log.grep(/put back s2307 off -> on, v1075 12 -> 14, self switch 138\.13\.A on -> off, item 557 \+1\z/).size, 1)
 check("the fight waits frozen without a message, the stand-in telling enough", record["state"], "frozen")
+$raid_answers.checked = SONYA_LISTED
 check("no message tells of the frozen fight", $notices.grep(/waits/), [])
-check("the world hears of it, holding the event's start values that are not the player's own, then the undone ones",
+check("the DLL picks the held values of the event's start values, the player's own named, and of the undone ones",
+      $raid_answers.asked("freeze.records.held").last,
+      { "start" => [[0, 22, true], [0, 31, false], [1, 1075, false]], "undone" => [[0, 2307], [1, 1075], [2, [138, 13, "A"]]] })
+check("the world hears of it, holding the picked start values, then the picked undone ones",
       $noted.last && $noted.last["held"], [[0, 31, nil], [1, 1075, 14], [0, 2307, true], [2, [138, 13, "A"], nil]])
 check("the world's entry carries where the boss waits", [$noted.last["troop"], $noted.last["site"], $noted.last["outer"], $noted.last["scene"], $noted.last["spot"]],
       [868, ["map", 138, 13, 1], ["map", 138, 13, 1], false, [138, 32, 9, 8]])
@@ -1012,6 +1028,7 @@ $game_variables[1075] = 14
 fight_event(13)
 $memory = true
 $raid_answers.defeat = "a replay of the Library"
+$raid_answers.ending = { "record" => "drop" }
 BattleManager.process_defeat
 check("a lost replay of the Library tells the DLL so, puts nothing back as it answers, and its record goes",
       [$raid_answers.asked("freeze.defeat").last["library"], freeze.holding_writes?, freeze.record_for(868), $log.grep(/puts nothing back: a replay of the Library; its record goes/).size],
@@ -1067,7 +1084,7 @@ $game_switches[2307] = true
 $final = [868]
 fight_event(13)
 check("nor one whose fight ended for the world, which is final", [freeze.record_for(868), $log.grep(/troop 868 freezes nothing: its fight ended for the world, for good/).size], [nil, 1])
-lose(SONYA_DEFEAT)
+lose(SONYA_DEFEAT, NO_RECORD)
 $final = nil
 check("whose loss puts its defeat back as any raid boss loss does, but neither freezes nor tells the world",
       [$game_variables[1075], $game_switches[2307], freeze.record_for(868), $noted, $notices], [14, true, nil, [], []])
@@ -1081,7 +1098,7 @@ frames(3)
 check("nor one whose event's start values are unknown, as after a load", [freeze.record_for(868), $log.grep(/the story's values at its event's start are unknown/).size], [nil, 1])
 $game_variables[1075] = 16
 $raid_answers.defeat = "the story's values at its event's start are unknown"
-lose(SONYA_DEFEAT)
+lose(SONYA_DEFEAT, NO_RECORD)
 check("whose defeat then puts nothing back, as the DLL answers once told the start is unknown", [$game_variables[1075], $log.grep(/puts nothing back: the story's values at its event's start are unknown/).size], [12, 1])
 
 # The game's retry drops the undo; the retried battle's loss undoes with the first battle's values.
@@ -1090,6 +1107,7 @@ $game_switches[4] = true
 $game_variables[1075] = 14
 $game_switches[2307] = true
 fight_event(13)
+$raid_answers.ending = LOST
 BattleManager.process_defeat
 check("a defeat holds the writes", freeze.holding_writes?, true)
 SONYA_DEFEAT.call
@@ -1104,6 +1122,7 @@ reset
 $game_switches[4] = true
 $game_variables[1075] = 14
 fight_event(13)
+$raid_answers.ending = LOST
 BattleManager.process_defeat
 DataManager.extract_save_contents(DataManager.make_save_contents)
 check("a load drops the pending undo and the battle", [freeze.holding_writes?, freeze.instance_variable_get(:@battle)], [false, nil])
@@ -1117,6 +1136,7 @@ $game_variables[1075] = 14
 $game_party.gain_item($data_items[557], 1)
 fight_event(13)
 $world_bridge.answer("freeze.since") { |_mark| { "rows" => [], "overflow" => true } }
+$raid_answers.items = [["i", 557, 1]]
 lose(SONYA_DEFEAT)
 answer_journal($world_bridge)
 check("a defeat whose start the journal lost puts back nothing of the story", [$game_variables[1075], $game_switches[2307]], [12, false])
@@ -1128,7 +1148,7 @@ check("but the item it took, and the record goes, logged",
 reset
 $kind = nil
 fight_event(16)
-lose(lambda { $game_variables[1020] = 1 })
+lose(lambda { $game_variables[1020] = 1 }, NO_RECORD)
 check("an earlier phase's defeat goes back to the event's start, with no record or notice",
       [$game_variables[1020], freeze.record_for(607), $noted, $notices], [0, nil, [], []])
 [[:guest, nil], [:side, MGQ_MpRaidPool::Fight.new(868, true)]].each do |kind, fight|
@@ -1139,7 +1159,7 @@ check("an earlier phase's defeat goes back to the event's start, with no record 
   $raid_answers.undo = UNDO.merge([1, 1075] => "was")
   BattleManager.setup(868, false, false)
   $scene = Scene_Battle.new
-  lose(SONYA_DEFEAT)
+  lose(SONYA_DEFEAT, NO_RECORD)
   check("a #{kind} battle's defeat goes back to its values at the defeat, with no record", [$game_variables[1075], freeze.record_for(868), $noted], [14, nil, []])
 end
 
@@ -1149,9 +1169,11 @@ $kind = :guest
 $entries[868] = { "troop" => 868, "spot" => [138, 30, 10, 4] }
 BattleManager.setup(868, false, false)
 $scene = Scene_Battle.new
-win
+win("won" => true, "spot" => [138, 30, 10, 4], "whose" => "the starter's")
 frames(2)
-check("a won joined battle brings the player onto the starter's spot without a fade", [$game_player.x, $game_player.y, $game_player.direction, $game_temp.fade_type], [30, 10, 4, 2])
+check("a won joined battle hands the DLL the starter's spot", $raid_answers.asked("freeze.records.end").last.values_at("result", "kind", "state", "entry_spot"),
+      [0, "guest", nil, [138, 30, 10, 4]])
+check("and brings the player onto the spot it names without a fade", [$game_player.x, $game_player.y, $game_player.direction, $game_temp.fade_type], [30, 10, 4, 2])
 reset
 $kind = :side
 $fight = MGQ_MpRaidPool::Fight.new(868, true)
@@ -1159,7 +1181,7 @@ $entries[868] = { "troop" => 868, "spot" => [138, 30, 10, 4] }
 $game_map.setup(154)
 BattleManager.setup(868, false, false)
 $scene = Scene_Battle.new
-win
+win("won" => true, "spot" => [138, 30, 10, 4], "whose" => "the starter's")
 frames(2)
 check("but not from another map", [$game_player.x, $game_player.y, $log.grep(/did not bring the player onto the starter's spot of troop 868: map 154, not 138/).size], [32, 9, 1])
 
@@ -1168,23 +1190,31 @@ reset
 $game_switches[4] = true
 $game_variables[1075] = 14
 $entries[868] = { "troop" => 868, "outer" => ["map", 138, 13, 1], "scene" => false, "spot" => [138, 32, 9, 8] }
+$raid_answers.fresh = { "start" => "here", "site" => ["map", 138, 13, 1] }
 $game_map.refresh
 check("a world entry's field event starts from its first command as story", [freeze.resume(868), $as_story, $game_map.interpreter.instance_variable_get(:@index)], [true, 1, 0])
+check("as the DLL planned it from the page its event shows here and that page's trigger",
+      $raid_answers.asked("freeze.fresh").last.values_at("troop", "scene", "outer", "map", "shown", "trigger", "switches"), [868, false, ["map", 138, 13, 1], 138, 0, 3, []])
 check("the page of the entry", $game_map.interpreter.instance_variable_get(:@list).equal?(SONYA_PAGE.list), true)
 frames(3)
 check("its battle takes the player's own record", [freeze.record_for(868) && freeze.record_for(868)["state"], $scene.class], ["battle", Scene_Battle])
 reset
 $game_variables[1075] = 16
 $entries[868] = { "troop" => 868, "outer" => ["map", 138, 13, 1], "scene" => false }
+$raid_answers.fresh = { "start" => nil, "refusal" => "the page does not show" }
 $game_map.refresh
-check("refused while the event shows another page", [freeze.resume(868), $notices.last], [false, "Cannot fight Sonya Mazda here yet."])
+check("refused as the DLL answers, telling the page the event shows", [freeze.resume(868), $notices.last, $raid_answers.asked("freeze.fresh").last["shown"]],
+      [false, "Cannot fight Sonya Mazda here yet.", 1])
 $game_variables[1075] = 14
 $game_map.setup(154)
-check("and on another map", [freeze.resume(868), $log.grep(/\["map", 138, 13, 1\] is not the page that shows here \(map 154\)/).size], [false, 1])
+check("and on another map, where no page of the event shows",
+      [freeze.resume(868), $raid_answers.asked("freeze.fresh").last.values_at("map", "shown"), $log.grep(/refused the fight against troop 868: the page does not show/).size], [false, [154, nil], 2])
 reset
 $game_switches[5] = true
 $entries[870] = { "troop" => 870, "outer" => ["map", 728, 12, 1], "scene" => true }
-check("a cutscene entry takes the player's side's cutscene, its page probed before the transfer", freeze.resume(870), true)
+$raid_answers.fresh = { "start" => "scene", "site" => ["map", 749, 13, 1], "spot" => [749, 1, 0, 0] }
+check("a cutscene entry takes the cutscene the DLL picks, its page probed before the transfer", freeze.resume(870), true)
+check("which the DLL picked by the switches that are on", [$raid_answers.asked("freeze.fresh").last["scene"], $raid_answers.asked("freeze.fresh").last["switches"].include?(5)], [true, true])
 frames(1)
 check("and starts it on arrival from its first command", [$game_map.map_id, $game_player.x, $game_player.y, $game_map.interpreter.event_id, $game_map.interpreter.instance_variable_get(:@index)],
       [749, 1, 0, 13, 0])
@@ -1203,16 +1233,14 @@ $game_switches[4] = true
 $game_player.reserve_transfer(728, 0, 1, 8)
 frames(1)
 check("a transfer from a field map into a cutscene map notes where the player left", $game_system.instance_variable_get(MGQ_MpRaidFreeze::FIELD)["origin"], [138, 32, 9, 8])
+$raid_answers.tableau = { "map" => 138, "at" => [32, 9], "blocked" => [13], "callers" => 0 }
 fight_event(12)
 record = freeze.record_for(870)
-check("the cutscene fight's boss stands where the player left the field, its source event blocked",
+check("a cutscene fight hands the DLL its page and where the player left the field",
+      $raid_answers.asked("freeze.tableau").last.values_at("scene", "moved", "outer", "origin"), [true, false, ["map", 728, 12, 1], [138, 32, 9, 8]])
+check("its boss stands where the DLL places it, on the field map, the events it names blocked",
       [record["scene"], record["tableau"]], [true, [138, [[12, 32, 9, 2, 1, "$sonya_chaos", 0, 0, 255, 0, 1, 1, 0]], [13]]])
 check("and the teleport goes back into the cutscene", record["spot"], [728, 0, 1, 8])
-reset
-$game_system.instance_variable_set(MGQ_MpRaidFreeze::FIELD, { "world" => "w1", "origin" => [2, 5, 5, 2], "records" => {} })
-$game_map.setup(728)
-fight_event(12)
-check("without a way in from its sources, the boss stands at the first source", freeze.record_for(870)["tableau"][0..1], [138, [[12, 32, 8, 2, 1, "$sonya_chaos", 0, 0, 255, 0, 1, 1, 0]]])
 
 # Which events stand in for the scene and its boss.
 reset
@@ -1250,7 +1278,7 @@ check("ties go to the lower id", freeze.boss_event(outer, [figure(26, 35, "guard
 check("none fits when only people to talk to and objects show", freeze.boss_event(outer, [talker, chest], []), nil)
 check("the fight's own event when it shows", freeze.boss_event(talker, [talker, statue], []).id, 20)
 $game_map.events.each_value { |e| e.transparent = true }
-check("none showing, the boss is an invisible row at the fight's event", freeze.field_tableau(138, outer, before, [])[1], [[15, 20, 20, 2, 0, "", 0, 0, 255, 0, 1, 1, 1]])
+check("none showing, the boss is an invisible row at the fight's event", freeze.field_rows(outer, before, 138), [[15, 20, 20, 2, 0, "", 0, 0, 255, 0, 1, 1, 1]])
 
 # The events the scene changed in place: a page of a story value, a place.
 reset
@@ -1278,7 +1306,7 @@ $game_map.refresh
 scene = freeze.scene_events(freeze.visible_events, before).map(&:id) & [30, 31, 32, 33, 34]
 check("a quiet event the scene turned to another page of a story value, and one it moved, are the scene's", scene, [30, 32])
 check("one that walks by itself, one to talk to and one whose new page runs something, a shop, stay live", scene & [31, 33, 34], [])
-rows = freeze.field_tableau(138, beast, before, [])[1].select { |row| [30, 32].include?(row[0]) }
+rows = freeze.field_rows(beast, before, 138).select { |row| [30, 32].include?(row[0]) }
 check("their stand-ins show them as the battle had them", rows.map { |row| row[0, 3] + [row[5]] }, [[30, 30, 9, "$girl"], [32, 32, 12, "priest"]])
 
 # Another world's story reads the field as empty.
@@ -1287,12 +1315,11 @@ $game_switches[4] = true
 $game_variables[1075] = 14
 fight_event(13)
 lose(SONYA_DEFEAT)
-$over[868] = "the player's story beat it"
+$raid_answers.checked = { "listed" => [], "dropped" => [[868, "the player's story beat it"]] }
 check("a record of a boss the story beat is no record to show, though it stays until the next look", [freeze.records, freeze.record_for(868)["state"]], [[], "frozen"])
 $frame += MGQ_MpRaidFreeze::CHECK_FRAMES
 frames(1)
 check("which drops it", [freeze.record_for(868), $log.grep(/dropped the record of troop 868: the player's story beat it/).size], [nil, 1])
-$over.clear
 $game_map.setup(138)
 fight_event(13)
 lose(SONYA_DEFEAT)
@@ -1312,6 +1339,7 @@ check("a won battle against the pools is told to the world's list", [$won, $log.
 
 # A frozen fight the save keeps is told to the world once after the title, unless its list holds it.
 reset
+$raid_answers.checked = SONYA_LISTED
 $game_switches[4] = true
 $game_variables[1075] = 14
 fight_event(13)
@@ -1338,8 +1366,8 @@ check("nor when the world's list holds it", $noted, [])
 # interpreters on that map as at the battle.
 reset
 FreezeTables::SITES[2133] = [[["ce", 9062], 2, 0, 1, false]]
-FreezeTables::CALLERS[9062] = [["map", 138, 30, 1], ["map", 138, 31, 1], ["map", 777, 30, 1]]
 reread_tables
+$raid_answers.tableau = { "map" => 138, "at" => [40, 10], "blocked" => [30, 31], "callers" => 1 }
 $data_common_events[9062] = RPG::CommonEvent.new(9062, [
   c(201, 0, 0, 300, 4, 4, 8), c(132, 0), c(301, 0, 0, 2133, false, false), c(123, 0, "A", 0), c(900, 0, :ce9062_after), c(0, 0),
 ])
@@ -1359,7 +1387,10 @@ check("a fight whose event moved the player away first takes a record on the bat
 check("its frames name the page of the map the event started on, the common event's with its interpreter's map and event",
       record["frames"], [[["map", 138, 30, 1], 1, {}], [["ce", 9062], 2, {}, [138, 30]]])
 check("the story at the event's start is known", [record["start"], record["pre"]], [[[1, 1001, 39]], [[1, 1001, 40]]])
-check("its boss waits at the event on its own map, looking as the battle map's boss, the event and its sibling blocked",
+check("it hands the DLL the map the event started on, where it stood and the frames' sites",
+      $raid_answers.asked("freeze.tableau").last.values_at("scene", "moved", "map", "event", "place", "frames"),
+      [false, true, 138, 30, [40, 10], [["map", 138, 30, 1], ["ce", 9062]]])
+check("its boss waits where the DLL places it, looking as the battle map's boss, the events it names blocked",
       record["tableau"], [138, [[30, 40, 10, 2, 1, "$allknowing", 0, 0, 255, 0, 1, 1, 0]], [30, 31]])
 check("which is logged", $log.grep(/blocks the starts of events \[30, 31\] on map 138, 1 of them other callers of its common events/).size, 1)
 check("it is no cutscene, and its spot is on the battle's map", [record["scene"], record["spot"], record["map"]], [false, [300, 4, 4, 8], 300])
@@ -1381,21 +1412,7 @@ frames(3)
 check("won, both lists go on, the common event's self switch on the event of map 138 as at the battle",
       [$ran, $game_self_switches[[138, 30, "A"]], freeze.record_for(2133)], [[:ce9062_after, :after_9062], true, nil])
 FreezeTables::SITES.delete(2133)
-FreezeTables::CALLERS.delete(9062)
 reread_tables
-
-# A common event's fight on a field map blocks every page of that map that calls it.
-reset
-callers = FreezeTables::CALLERS[347]
-FreezeTables::CALLERS[347] = callers + [["map", 214, 43, 1], ["map", 999, 7, 1]]
-reread_tables
-$game_switches[50] = true
-$game_map.setup(214)
-$game_player.moveto(5, 6)
-fight_event(42)
-FreezeTables::CALLERS[347] = callers
-reread_tables
-check("a common event's fight blocks its event and the map's other callers of it, none of another map", freeze.record_for(807)["tableau"][2], [42, 43])
 
 # A resume given up before its battle puts back what it changed and brings the player back.
 reset
@@ -1467,9 +1484,11 @@ end
   $entries[868] = entry if entry
   BattleManager.setup(868, false, false)
   $scene = Scene_Battle.new
-  win
+  win(WON.merge("spot" => [138] + place, "whose" => whose))
   frames(2)
-  check("a won joined battle of a player with an own record brings them onto #{whose} spot", [$game_player.x, $game_player.y, $game_player.direction], place)
+  check("a won joined battle of a player with an own record hands the DLL both spots",
+        $raid_answers.asked("freeze.records.end").last.values_at("state", "entry_spot", "record_spot"), ["frozen", entry && entry["spot"], [138, 32, 9, 8]])
+  check("and brings them onto #{whose} spot as it names", [$game_player.x, $game_player.y, $game_player.direction], place)
   check("and their own record goes", [freeze.record_for(868), $log.grep(/the boss of troop 868 fell in the won guest battle: the player's own frozen record of it goes/).size], [nil, 1])
 end
 
@@ -1489,6 +1508,7 @@ def fresh_sonya(trigger)
   $game_switches[4] = true
   $game_variables[1075] = 14
   $entries[868] = { "troop" => 868, "outer" => ["map", 138, 13, 1], "scene" => false, "spot" => [138, 32, 9, 8], "tableau" => SONYA_TABLEAU }
+  $raid_answers.fresh = { "start" => { 0 => "action", 1 => "touch", 2 => "touch" }.fetch(trigger, "here"), "site" => ["map", 138, 13, 1] }
   $game_map.refresh
   $game_player.moveto(20, 20)
   $game_player.set_direction(2)
@@ -1587,6 +1607,7 @@ TRIGGER_PAGE.trigger = 1
 $game_map.events[30] = Game_Event.new(138, trigger)
 $entries[2133] = { "troop" => 2133, "outer" => ["map", 138, 30, 1], "scene" => false, "spot" => [300, 4, 4, 8],
                    "tableau" => [138, [[30, 40, 10, 2, 1, "$allknowing", 0, 0, 255, 0, 1, 1, 0]], [30, 31]] }
+$raid_answers.fresh = { "start" => "touch", "site" => ["map", 138, 30, 1] }
 check("a moved fight's touch goes onto its event's tile, nothing let through", [freeze.resume(2133), reserved_spot, through_of(30)], [true, [40, 10, 2], [false]])
 frames(1)
 check("and starts its page there", [$game_map.map_id, $game_player.x, $game_player.y, $game_map.interpreter.event_id,

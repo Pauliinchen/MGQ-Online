@@ -2,6 +2,7 @@
 //  PoolLedgerTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Checked that a pool keeps the relay's last word in place of the regeneration
 //      Paulinchen  2026-11-06: Dropped the checks that replayed recorded cases
 //      Paulinchen  2026-10-31: Checked the order the pools were told in
 //                            - Checked that a defeat pushed without a name takes the later answer's
@@ -31,34 +32,18 @@ public sealed class PoolLedgerTests
     private long _now = Start;
 
     /// <summary>
-    /// Asserts that a pool gains nothing back while the clock stalls or runs back, and fills up
-    /// once it runs on.
+    /// Asserts that a pool keeps the share the relay told last while time passes, since only the
+    /// relay counts what it gains back, and takes the player's own report at once.
     /// </summary>
     [Fact]
-    public void Regeneration_OverAStall_NeverTakesHpAway()
+    public void Share_BetweenRelayWords_KeepsTheLastWord()
     {
         var ledger = new PoolLedger(() => _now);
         ledger.Hear(new PoolWord("Sara", 0.5, 900, false, string.Empty), PoolSource.Pushed);
-        _now -= 60_000;
+        _now += 600_000;
         Assert.Equal(0.5, ledger.Pools().Single().Left);
-        _now += 120_000;
-        Assert.Equal(0.53, ledger.Pools().Single().Left, 12);
-    }
-
-    /// <summary>
-    /// Asserts that the relay's own share a minute counts once it names one, and the default for
-    /// one out of range.
-    /// </summary>
-    [Fact]
-    public void Regeneration_FollowsTheRelaysRate()
-    {
-        var ledger = new PoolLedger(() => _now);
-        ledger.TakeRegen(0.06);
-        ledger.Hear(new PoolWord("Sara", 0.5, 900, false, string.Empty), PoolSource.Fetched);
-        _now += 60_000;
-        Assert.Equal(0.56, ledger.Pools().Single().Left, 12);
-        ledger.TakeRegen(2);
-        Assert.Equal(PoolLedger.DefaultRegenPerMinute, ledger.RegenPerMinute);
+        ledger.Own("Sara", 0.1, 900, false);
+        Assert.Equal(0.4, ledger.Pool("Sara")!.Left, 12);
     }
 
     /// <summary>

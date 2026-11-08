@@ -2,6 +2,7 @@
 #  raid_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Answered the frozen fights' records, their check and end, tableau, fresh start and items given back with the values each test sets
 #      Paulinchen  2026-11-05: Took the noted requests from bridge_support.rb
 #                            - Answered the pools and the battle that fights them with the values each test sets
 #                            - Answered a lost battle's defeat and its undo with the values each test sets
@@ -70,6 +71,10 @@ class RaidAnswers
     "reads" => { "switches" => [87, 97], "variables" => [1001, 1011] },
   }
 
+  # What freeze.records.end answers while a test sets nothing: the battle was not won, the record
+  # stays as it is, and no spot or owner is named.
+  ENDING = { "won" => false, "record" => nil, "spot" => nil, "whose" => nil }.freeze
+
   # @return [Hash{Integer => Hash}] What raid.kind answers in a Raid World ("pools"), by troop.
   attr_accessor :pool_kinds
 
@@ -81,6 +86,26 @@ class RaidAnswers
 
   # @return [String, nil] What freeze.defeat answers: why the defeat puts nothing back, nil when it does.
   attr_accessor :defeat
+
+  # @return [Array<Array>] What freeze.undo answers of the items: [letter, id, change] each.
+  attr_accessor :items
+
+  # @return [Hash] What freeze.records.check answers: "listed" (the troops of the records that wait)
+  #   and "dropped" ([troop, why] of each record whose fight is over).
+  attr_accessor :checked
+
+  # @return [Hash, nil] What freeze.records.held answers ("start" and "undone"), nil for every row.
+  attr_accessor :held
+
+  # @return [Hash] What freeze.records.end answers over ENDING: "won", "record", "spot" and "whose".
+  attr_accessor :ending
+
+  # @return [Hash, nil] What freeze.tableau answers, nil for stand-ins in place that block the
+  #   fight's event alone.
+  attr_accessor :tableau
+
+  # @return [Hash] What freeze.fresh answers: "start", "site", "spot" and "refusal".
+  attr_accessor :fresh
 
   # @return [Hash{Array => String}] What freeze.undo answers of each changed key, by kind and key:
   #   "start" or "was"; a key it lacks keeps the value the defeat left.
@@ -97,7 +122,18 @@ class RaidAnswers
     fake.answer("raid.troops") { |request| note("raid.troops", request) && Array(request["troops"]).map { |troop| { "troop" => troop }.merge(@troops.fetch(troop, {})) } }
     fake.answer("raid.caps") { |request| note("raid.caps", request) && [] }
     fake.answer("freeze.defeat") { |request| note("freeze.defeat", request) && @defeat }
-    fake.answer("freeze.undo") { |request| note("freeze.undo", request) && Array(request["rows"]).map { |kind, key, _personal, _before| @undo[[kind, key]] } }
+    fake.answer("freeze.undo") do |request|
+      note("freeze.undo", request) && { "values" => Array(request["rows"]).map { |kind, key, _personal, _before| @undo[[kind, key]] }, "items" => @items }
+    end
+    fake.answer("freeze.records.check") { |request| note("freeze.records.check", request) && @checked }
+    fake.answer("freeze.records.held") do |request|
+      note("freeze.records.held", request) && (@held || { "start" => request["start"].map { true }, "undone" => request["undone"].map { true } })
+    end
+    fake.answer("freeze.records.end") { |request| note("freeze.records.end", request) && ENDING.merge(@ending) }
+    fake.answer("freeze.tableau") do |request|
+      note("freeze.tableau", request) && (@tableau || { "map" => request["map"], "at" => nil, "blocked" => [request["event"]], "callers" => 0 })
+    end
+    fake.answer("freeze.fresh") { |request| note("freeze.fresh", request) && @fresh }
   end
 
   # Forgets every answer and request, so each topic answers that the rules give nothing.
@@ -107,6 +143,12 @@ class RaidAnswers
     @troops = {}
     @defeat = nil
     @undo = {}
+    @items = []
+    @checked = { "listed" => [], "dropped" => [] }
+    @held = nil
+    @ending = {}
+    @tableau = nil
+    @fresh = { "start" => nil, "refusal" => "the test set no fresh start" }
     @asked.clear
   end
 end

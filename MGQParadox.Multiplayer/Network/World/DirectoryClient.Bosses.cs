@@ -2,6 +2,7 @@
 //  DirectoryClient.Bosses.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Read no share the pools gain back, which only the relay counts
 //      Paulinchen  2026-10-30: Left the share a pool gains back to the ledger
 //      Paulinchen  2026-10-10: Read boss pools as shares of a raid max HP with who defeated them, and reported turns by sequence number
 //      Paulinchen  2026-10-09: Sent boss requests with the usual timeout and logged pool fetches only when their outcome changes
@@ -28,7 +29,7 @@ internal sealed partial class DirectoryClient
     /// <param name="world">The world.</param>
     /// <param name="playerKey">The player's key.</param>
     /// <param name="authKey">The auth key made from the world's token.</param>
-    /// <returns>The pools, with the share of a raid max HP they fill up by per minute when the relay names it.</returns>
+    /// <returns>The pools.</returns>
     /// <exception cref="DirectoryException">The relay could not be reached, the world is no Raid World, or the player may not read it.</exception>
     public BossList GetBosses(string world, string playerKey, string authKey)
     {
@@ -37,9 +38,8 @@ internal sealed partial class DirectoryClient
         var pools = root.TryGetProperty("bosses", out var bosses) && bosses.ValueKind == JsonValueKind.Array
             ? bosses.EnumerateArray().Where(pool => pool.ValueKind == JsonValueKind.Object).Select(BossPool.Read).ToList()
             : [];
-        var regen = BossPool.Decimal(root, "regenPerMinute");
 
-        return new BossList(pools, regen is > 0 and <= 1 ? regen : null);
+        return new BossList(pools);
     }
 
     /// <summary>
@@ -83,8 +83,7 @@ internal sealed partial class DirectoryClient
 /// A Raid World's boss pools as the relay hands them out.
 /// </summary>
 /// <param name="Pools">The pools a report touched.</param>
-/// <param name="RegenPerMinute">The share of a raid max HP every pool fills up by per minute, <see langword="null"/> when the relay did not name it.</param>
-internal sealed record BossList(IReadOnlyList<BossPool> Pools, double? RegenPerMinute);
+internal sealed record BossList(IReadOnlyList<BossPool> Pools);
 
 /// <summary>
 /// What one turn of a battle did to a boss's pool, as the game script reports it.

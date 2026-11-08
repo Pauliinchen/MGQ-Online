@@ -2,6 +2,7 @@
 //  PoolLedger.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Kept the share the relay told last between its words, leaving the regeneration to the relay
 //      Paulinchen  2026-10-31: Listed the pools in the order they were told
 //                            - Named a defeat told without a name once a later word names it
 //      Paulinchen  2026-10-30: Told one pool as it stands now, and the time
@@ -18,8 +19,8 @@ namespace MGQOnline.Game.Raid;
 /// <summary>
 /// A Raid World's boss pools as the player's game knows them, for the mod DLL and the battle
 /// server alike: the newest word the relay told of each pool, the player's own reports counted at
-/// once, the share left now with what each pool gained back since, and the pools a push told
-/// defeated or standing again. The relay (Relay/core/bosses.js) keeps the pools; this only follows.
+/// once, and the pools a push told defeated or standing again. The relay (Relay/core/bosses.js)
+/// keeps the pools and counts what they gain back; this only follows its last word.
 /// </summary>
 /// <remarks>
 /// Network threads tell it what the relay said while the game reads it, so every member locks.
@@ -27,19 +28,9 @@ namespace MGQOnline.Game.Raid;
 public sealed class PoolLedger
 {
     /// <summary>
-    /// The share of a raid max HP a pool gains back per minute, unless the relay names another.
-    /// </summary>
-    public const double DefaultRegenPerMinute = 0.03;
-
-    /// <summary>
     /// The least share a pool that stands holds here, so its last HP never read as none.
     /// </summary>
     public const double MinLeft = 1e-9;
-
-    /// <summary>
-    /// A minute in milliseconds, as the relay counts the regeneration.
-    /// </summary>
-    private const double MinuteMs = 60_000;
 
     /// <summary>
     /// Guards every field below.
@@ -47,7 +38,7 @@ public sealed class PoolLedger
     private readonly object _gate = new();
 
     /// <summary>
-    /// Tells the time in milliseconds, which the pools fill up by.
+    /// Tells the time in milliseconds, which a fight's reports are stamped with.
     /// </summary>
     private readonly Func<long> _clock;
 
@@ -82,11 +73,6 @@ public sealed class PoolLedger
     private string? _world;
 
     /// <summary>
-    /// The share of a raid max HP every pool gains back per minute.
-    /// </summary>
-    private double _regen = DefaultRegenPerMinute;
-
-    /// <summary>
     /// Initializes a ledger that knows no pool yet.
     /// </summary>
     /// <param name="clock">Tells the time in milliseconds.</param>
@@ -110,20 +96,6 @@ public sealed class PoolLedger
     }
 
     /// <summary>
-    /// Gets the share of a raid max HP every pool gains back per minute.
-    /// </summary>
-    public double RegenPerMinute
-    {
-        get
-        {
-            lock (_gate)
-            {
-                return _regen;
-            }
-        }
-    }
-
-    /// <summary>
     /// Gets the stamp of the pool taken last, which a request notes as it is sent, see <see cref="Hear"/>.
     /// </summary>
     public long Stamp
@@ -138,7 +110,7 @@ public sealed class PoolLedger
     }
 
     /// <summary>
-    /// Gets the time in milliseconds, as the pools fill up by it.
+    /// Gets the time in milliseconds.
     /// </summary>
     public long Now => _clock();
 
@@ -161,19 +133,6 @@ public sealed class PoolLedger
             _pending.Clear();
             _toldDefeated.Clear();
             _changes.Clear();
-            _regen = DefaultRegenPerMinute;
-        }
-    }
-
-    /// <summary>
-    /// Takes the share a minute the relay names every pool gains back by.
-    /// </summary>
-    /// <param name="perMinute">The share, <see langword="null"/> or out of range for the default.</param>
-    public void TakeRegen(double? perMinute)
-    {
-        lock (_gate)
-        {
-            _regen = perMinute is > 0 and <= 1 ? perMinute.Value : DefaultRegenPerMinute;
         }
     }
 
@@ -192,7 +151,6 @@ public sealed class PoolLedger
         ArgumentNullException.ThrowIfNull(word);
         lock (_gate)
         {
-            long now = _clock();
             bool known = _pools.TryGetValue(word.Key, out Kept? was);
             if (known && sent is { } asked && was!.Stamp > asked)
             {
@@ -205,14 +163,14 @@ public sealed class PoolLedger
             }
 
             double left = word.Defeated ? 0 : Math.Min(Math.Max(word.Left, MinLeft), 1);
-            if (known && Behind(word.Key, was!, left, word.Defeated, now))
+            if (known && Behind(word.Key, was!, left, word.Defeated))
             {
                 return false;
             }
 
             string by = !word.Defeated ? string.Empty : word.By.Length > 0 ? word.By : known ? was!.By : string.Empty;
             double max = word.Max > 0 ? word.Max : known ? was!.Max : 0;
-            Keep(word.Key, new Kept(left, max, word.Defeated, by, now, ++_stamp));
+            Keep(word.Key, new Kept(left, max, word.Defeated, by, ++_stamp));
             if (source == PoolSource.Pushed)
             {
                 Tell(word.Key, word.Defeated, by);
@@ -259,11 +217,10 @@ public sealed class PoolLedger
         ArgumentNullException.ThrowIfNull(key);
         lock (_gate)
         {
-            long now = _clock();
             bool known = _pools.TryGetValue(key, out Kept? was);
-            double left = (known ? LeftAt(was!, now) : 1.0) - delta;
+            double left = (known ? LeftOf(was!) : 1.0) - delta;
             bool empty = dead || left <= 0 || (known && was!.Defeated);
-            _pools[key] = new Kept(empty ? 0 : Math.Min(left, 1), known && was!.Max > 0 ? was.Max : max, empty, known ? was!.By : string.Empty, now, ++_stamp);
+            _pools[key] = new Kept(empty ? 0 : Math.Min(left, 1), known && was!.Max > 0 ? was.Max : max, empty, known ? was!.By : string.Empty, ++_stamp);
             _pending[key] = _pending.GetValueOrDefault(key) + 1;
         }
     }
@@ -297,8 +254,7 @@ public sealed class PoolLedger
     {
         lock (_gate)
         {
-            long now = _clock();
-            return _pools.Select(pool => new PoolView(pool.Key, LeftAt(pool.Value, now), pool.Value.Max, pool.Value.Defeated, pool.Value.By)).ToList();
+            return _pools.Select(pool => new PoolView(pool.Key, LeftOf(pool.Value), pool.Value.Max, pool.Value.Defeated, pool.Value.By)).ToList();
         }
     }
 
@@ -324,7 +280,7 @@ public sealed class PoolLedger
         ArgumentNullException.ThrowIfNull(key);
         lock (_gate)
         {
-            return _pools.TryGetValue(key, out Kept? kept) ? new PoolView(key, LeftAt(kept, _clock()), kept.Max, kept.Defeated, kept.By) : null;
+            return _pools.TryGetValue(key, out Kept? kept) ? new PoolView(key, LeftOf(kept), kept.Max, kept.Defeated, kept.By) : null;
         }
     }
 
@@ -362,10 +318,9 @@ public sealed class PoolLedger
     /// <param name="was">The pool as known.</param>
     /// <param name="left">The share the word tells.</param>
     /// <param name="defeated">Whether the word tells it defeated.</param>
-    /// <param name="now">The time now.</param>
     /// <returns>Whether it is older.</returns>
-    private bool Behind(string key, Kept was, double left, bool defeated, long now) =>
-        _pending.ContainsKey(key) && !defeated && !was.Defeated && left < 1.0 && left > LeftAt(was, now);
+    private bool Behind(string key, Kept was, double left, bool defeated) =>
+        _pending.ContainsKey(key) && !defeated && !was.Defeated && left < 1.0 && left > LeftOf(was);
 
     /// <summary>
     /// Keeps a pool as known, and names the defeat of it a push told without a name and not taken
@@ -401,14 +356,15 @@ public sealed class PoolLedger
     }
 
     /// <summary>
-    /// Finds the share of a pool left at a moment, as the relay counts it (leftOf): what it held
-    /// when told, filled up since, at most full; never less for a moment before it was told.
+    /// Finds the share of a pool left: what the relay told last, with the player's own reports since.
     /// </summary>
+    /// <remarks>
+    /// Only the relay counts what a pool gains back (user 2026-11-08), so between its words the
+    /// share stays as the last word told it.
+    /// </remarks>
     /// <param name="pool">The pool.</param>
-    /// <param name="now">The moment.</param>
     /// <returns>The share, 0 to 1; 0 for a defeated pool.</returns>
-    private double LeftAt(Kept pool, long now) =>
-        pool.Defeated ? 0 : Math.Min(1, pool.Left + (_regen * Math.Max(0, now - pool.At)) / MinuteMs);
+    private static double LeftOf(Kept pool) => pool.Defeated ? 0 : pool.Left;
 
     /// <summary>
     /// A pool as it is known.
@@ -417,7 +373,6 @@ public sealed class PoolLedger
     /// <param name="Max">Its raid max HP, 0 while unknown.</param>
     /// <param name="Defeated">Whether it is empty.</param>
     /// <param name="By">Who defeated it.</param>
-    /// <param name="At">When it was told, in milliseconds, which it fills up from.</param>
     /// <param name="Stamp">Its place among the pools taken, see <see cref="_stamp"/>.</param>
-    private sealed record Kept(double Left, double Max, bool Defeated, string By, long At, long Stamp);
+    private sealed record Kept(double Left, double Max, bool Defeated, string By, long Stamp);
 }

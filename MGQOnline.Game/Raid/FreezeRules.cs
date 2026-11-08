@@ -2,6 +2,7 @@
 //  FreezeRules.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Decided which items a defeat's undo gives back
 //      Paulinchen  2026-11-05: Created
 //
 //----------------------------------------------------------------
@@ -15,8 +16,8 @@ namespace MGQOnline.Game.Raid;
 
 /// <summary>
 /// The rules of a lost raid boss battle's defeat, as battles_raid_freeze.rbx decided them: whether
-/// the defeat's changes of the story go back once it ended, and which value each changed key goes
-/// back to.
+/// the defeat's changes of the story go back once it ended, which value each changed key goes
+/// back to, and which items come back.
 /// </summary>
 public static class FreezeRules
 {
@@ -98,5 +99,26 @@ public static class FreezeRules
             };
             return defeatWrite || row.Personal ? null : row.ChangedBefore ? "start" : "was";
         })];
+    }
+
+    /// <summary>
+    /// Decides which items, weapons and armors a defeat's undo gives back: each whose count the
+    /// defeat changed, by what it changed.
+    /// </summary>
+    /// <param name="before">The party's counts as the defeat started: the kind's letter ("i", "w" or "a"), the id and the count.</param>
+    /// <param name="after">The party's counts once the defeat ended.</param>
+    /// <returns>Each item to give, by letter and then id, with how many; fewer than 0 takes some.</returns>
+    public static IReadOnlyList<(string Letter, int Id, int Change)> ItemsBack(IReadOnlyList<(string Letter, int Id, int Count)> before, IReadOnlyList<(string Letter, int Id, int Count)> after)
+    {
+        ArgumentNullException.ThrowIfNull(before);
+        ArgumentNullException.ThrowIfNull(after);
+        Dictionary<(string, int), int> counts = before.ToDictionary(item => (item.Letter, item.Id), item => item.Count);
+        foreach ((string letter, int id, int count) in after)
+        {
+            counts[(letter, id)] = counts.GetValueOrDefault((letter, id)) - count;
+        }
+
+        return [.. counts.Where(item => item.Value != 0).Select(item => (item.Key.Item1, item.Key.Item2, item.Value))
+            .OrderBy(item => item.Item1, StringComparer.Ordinal).ThenBy(item => item.Item2)];
     }
 }
