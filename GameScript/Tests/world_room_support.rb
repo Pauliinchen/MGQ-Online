@@ -2,6 +2,7 @@
 #  world_room_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Played the DLL telling who stands near the player
 #      Paulinchen  2026-11-05: Named each told player by the name the test wrote instead of by a copy of the DLL's naming
 #                            - Handed states and messages over with their fields as the test writes them instead of through a copy of the DLL's codec
 #                            - Read a message as the DLL reads it
@@ -80,6 +81,13 @@ def peer_told(seat, state, member = nil)
   name.empty? ? $peer_labels.delete(seat) : ($peer_labels[seat] = name)
   peers.take_labels($peer_labels.dup)
   peers.at(seat)
+end
+
+# Plays the DLL telling who stands near the player, as its Sessions counts them.
+#
+# @param seats [Array<Integer>] Their seats.
+def near_seats(*seats)
+  MGQ_MpOverworldSync::Peers.take_near(seats)
 end
 
 # Plays the DLL handing a message to the script registered for its field, past the gates; one

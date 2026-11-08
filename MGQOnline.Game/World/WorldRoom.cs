@@ -2,6 +2,7 @@
 //  WorldRoom.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Asked Sessions whether another player stands near
 //      Paulinchen  2026-11-05: Kept the players away for the grace of Sessions, the one owner of presence
 //      Paulinchen  2026-10-31: Took the party's own messages through the routes of the rules in C#
 //                            - Handed the world's mod settings the relay pushes to the scripts
@@ -485,13 +486,11 @@ public sealed class WorldRoom
     }
 
     /// <summary>
-    /// Reports whether another player stands near the player, on the same map.
+    /// Reports whether another player stands near the player, see <see cref="Sessions.Near"/>.
     /// </summary>
     /// <param name="state">What the other player last told.</param>
-    /// <returns>Whether they do.</returns>
-    internal bool Near(WorldFields state) =>
-        ownState is not null && WorldFields.ToI(state["map"]) == OwnMap
-        && Math.Max(Math.Abs(WorldFields.ToI(state["x"]) - WorldFields.ToI(ownState["x"])), Math.Abs(WorldFields.ToI(state["y"]) - WorldFields.ToI(ownState["y"]))) <= Party.NearTiles;
+    /// <returns>Whether they do; never while the player is on no map.</returns>
+    public bool Near(WorldFields state) => ownState is not null && Sessions.Near(ownState, state);
 
     /// <summary>
     /// Writes what changed between two states of a player, for the log.

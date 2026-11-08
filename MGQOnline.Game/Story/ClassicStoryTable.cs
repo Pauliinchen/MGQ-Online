@@ -2,6 +2,7 @@
 //  ClassicStoryTable.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Read the warp ban from StoryIds
 //      Paulinchen  2026-11-07: Kept the variables the game uses as a place each player's own, as in a Raid World
 //      Paulinchen  2026-11-05: Read the story's ids from StoryIds
 //      Paulinchen  2026-10-23: Created
@@ -24,11 +25,6 @@ namespace MGQOnline.Game.Story;
 public static class ClassicStoryTable
 {
     /// <summary>
-    /// The switch that bans warping (WARP_BAN), which tells of the place a player stands in.
-    /// </summary>
-    public const int WarpBan = 100;
-
-    /// <summary>
     /// The switch that bans the escape spell, which tells of the place a player stands in too.
     /// </summary>
     public const int EscapeBan = 94;
@@ -40,7 +36,7 @@ public static class ClassicStoryTable
     /// their awakening (6000-6999).
     /// </summary>
     public static readonly IReadOnlyList<(int From, int To)> PersonalSwitches =
-        [(0, 0), (22, 22), (73, 73), (EscapeBan, EscapeBan), (95, 95), (97, 97), (WarpBan, WarpBan), (445, 447), (502, 502), (StoryIds.FirstStorySwitch, StoryIds.LastStorySwitch), (6000, 6999)];
+        [(0, 0), (22, 22), (73, 73), (EscapeBan, EscapeBan), (95, 95), (97, 97), (StoryIds.WarpBan, StoryIds.WarpBan), (445, 447), (502, 502), (StoryIds.FirstStorySwitch, StoryIds.LastStorySwitch), (6000, 6999)];
 
     /// <summary>
     /// Variables each player keeps: 0, which no variable is, the last choice's answer (9), where the

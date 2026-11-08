@@ -2,6 +2,7 @@
 #  battles_join_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Expected the tiles of the bosses and the frozen fights in place of their steps
 #      Paulinchen  2026-11-07: Typed through a text box of the Mod Framework instead of the old typing flag
 #      Paulinchen  2026-11-06: Held the keys in $down down too, as the Mod Framework reads a hotkey's key
 #                            - Reached the Mod Framework's engine under its own name
@@ -300,7 +301,7 @@ $coop.set("coop.join_frame", "target" => [5, "b1"])
 map_frame
 check("a player near a battle the DLL finds sees the prompt", [offered, join.prompt_text], [[host, "b1"], "Press J to join battle"])
 check("each frame on the map tells the DLL the player's facts, that the hotkey is read and not pressed, and nothing keeps the player busy",
-      join_frame.values_at("reads", "pressed", "changing", "busy", "sides", "freeze") + [join_frame["facts"]["map"]], [true, false, false, [nil, nil], nil, nil, 5])
+      join_frame.values_at("reads", "pressed", "changing", "busy", "sides", "frozen") + [join_frame["facts"]["map"]], [true, false, false, [nil, nil], nil, [], 5])
 busy = []
 $game_map.interpreter.busy = true
 offered
@@ -487,12 +488,12 @@ MGQ_MpOverworldSync::Peers.all.replace([boss_host, player(6, { "rpb" => [71, [10
 $coop.set("coop.join_frame", "side" => [71, [100, 100, 0], "Queen Harpy"])
 map_frame
 check("each frame tells the DLL the side battles the raid boss battles on the player's map offer, by their hosts' states",
-      join_frame["sides"], [[5, 71, [100, 100, 0], nil, "Queen Harpy"]])
+      join_frame["sides"], [[5, 71, [100, 100, 0], [], "Queen Harpy"]])
 check("the side battle the DLL picks is offered in the prompt", [offered, join.prompt_text], [nil, "Press J to fight Queen Harpy alongside"])
-# The raid bar, whose boss of troop 71 stands one step from the player.
-module MGQ_MpRaidBar; def self.distance_to_boss(troop, _x, _y); troop == 71 ? 1 : 9999; end; end
+# The raid bar, whose boss of troop 71 stands on (3, 1).
+module MGQ_MpRaidBar; def self.boss_tiles(troop); troop == 71 ? [[3, 1]] : []; end; end
 map_frame
-check("with the steps to each boss's event", join_frame["sides"], [[5, 71, [100, 100, 0], 1, "Queen Harpy"]])
+check("with the tiles of each boss's events", join_frame["sides"], [[5, 71, [100, 100, 0], [[3, 1]], "Queen Harpy"]])
 $settings = { "key_overview" => "74" }
 map_frame
 check("a hotkey that turns Join Battle off hides the side battle's prompt too", [join.prompt_text, join_frame["sides"]], [nil, nil])
@@ -529,31 +530,26 @@ BattleManager.setup(72, false, true)
 check("battles_raid_pool.rbx's word that a battle is a side battle goes to the DLL", $coop.asked("coop.offer").last["side"], true)
 reset
 
-# A raid boss's frozen fight near the player, through ui_raid_freeze.rbx, which stands in here.
-# The frozen fights: Sonya Mazda's, whose boss's stand-in stands $freeze_steps from the player, each
-# fight the hotkey resumes noted in $freeze_joined.
+# A raid boss's frozen fight on the map, through ui_raid_freeze.rbx, which stands in here: Sonya
+# Mazda's, whose boss's stand-in stands on (2, 0), each fight the hotkey resumes noted in
+# $freeze_joined.
 module MGQ_MpRaidFreezeUi
-  # Sonya Mazda's frozen fight while her stand-in stands within the reach.
-  def self.join_target(_x, _y, reach); $freeze_steps && $freeze_steps <= reach ? [868, "Sonya Mazda"] : nil; end
+  # Sonya Mazda's frozen fight with her stand-in's tile.
+  def self.join_targets; [[868, "Sonya Mazda", 2, 0]]; end
   # Notes the fight resumed.
   def self.join(troop); ($freeze_joined ||= []) << troop; true; end
 end
 $freeze_joined = []
-$freeze_steps = 2
 $scene_now = Scene_Map.new
 MGQ_MpOverworldSync::Peers.all.replace([])
 $coop.set("coop.join_frame", "freeze" => [868, "Sonya Mazda"])
 map_frame
-check("near a frozen fight's boss the DLL hears of it, and the prompt offers to fight the one it picks",
-      [join_frame["freeze"], join.prompt_text], [[868, "Sonya Mazda"], "Press J to fight Sonya Mazda"])
+check("the DLL hears of the map's frozen fights with their bosses' tiles, and the prompt offers to fight the one it picks",
+      [join_frame["frozen"], join.prompt_text], [[[868, "Sonya Mazda", 2, 0]], "Press J to fight Sonya Mazda"])
 press
 check("the hotkey resumes it", $freeze_joined, [868])
-$freeze_steps = join::JOIN_DISTANCE + 1
-map_frame
-check("a fight further than #{join::JOIN_DISTANCE} steps is none the DLL hears of", join_frame["freeze"], nil)
 join.drop
 check("a reset forgets the frozen fight offered", join.instance_variable_get(:@freeze), nil)
-$freeze_steps = nil
 reset
 
 check("no hook of joining by choice failed", $log.grep(/join battle.*FAILED/), [])

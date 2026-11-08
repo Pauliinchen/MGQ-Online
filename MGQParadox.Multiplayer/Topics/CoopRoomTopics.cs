@@ -2,6 +2,7 @@
 //  CoopRoomTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Read the tiles of the side battles' bosses and the frozen fights the scripts tell
 //      Paulinchen  2026-11-05: Took the rates, the invite fields and the messages as values, written and read by their kinds
 //                            - Timed the matchmaking by the bridge's frame
 //                            - Turned down an invite the player stayed busy for every frame, in any scene
@@ -771,18 +772,22 @@ internal sealed class CoopRoomTopics : ICoopHost
     /// Reads what the scripts tell of a frame on the map for the join prompt.
     /// </summary>
     /// <param name="fields">{"reads", "pressed", "changing", "busy", "sides" ([host seat, troop, rates (numbers),
-    /// boss steps or nil, name] each, or nil), "freeze" ([troop, name] or nil)}.</param>
+    /// the boss's event tiles ([x, y] each), name] each, or nil), "frozen" ([troop, name, x, y] each, or nil)}.</param>
     /// <returns>The frame.</returns>
     private static JoinFrame FrameOf(RubyHash fields)
     {
         List<JoinSide>? sides = fields["sides"].IsNil ? null : [.. ListOf(fields["sides"]).Select(side =>
         {
             List<RubyValue> parts = [.. side.AsArray()];
-            return new JoinSide(parts[0].AsInt(), parts[1].AsInt(), MessageFields.Write("rates", parts[2]), parts[3].IsNil ? null : parts[3].AsLong(), TextOf(parts[4]) ?? string.Empty);
+            List<(long, long)> tiles = [.. ListOf(parts[3]).Select(tile => (tile.AsArray()[0].AsLong(), tile.AsArray()[1].AsLong()))];
+            return new JoinSide(parts[0].AsInt(), parts[1].AsInt(), MessageFields.Write("rates", parts[2]), tiles, TextOf(parts[4]) ?? string.Empty);
         })];
-        RubyValue freeze = fields["freeze"];
-        return new JoinFrame(IsTrue(fields["reads"]), IsTrue(fields["pressed"]), IsTrue(fields["changing"]), BusyOf(fields["busy"]), sides,
-            freeze.IsNil ? null : new JoinFreeze(freeze.AsArray()[0].AsInt(), TextOf(freeze.AsArray()[1]) ?? string.Empty));
+        List<JoinFreeze> frozen = [.. ListOf(fields["frozen"]).Select(fight =>
+        {
+            List<RubyValue> parts = [.. fight.AsArray()];
+            return new JoinFreeze(parts[0].AsInt(), TextOf(parts[1]) ?? string.Empty, parts[2].AsLong(), parts[3].AsLong());
+        })];
+        return new JoinFrame(IsTrue(fields["reads"]), IsTrue(fields["pressed"]), IsTrue(fields["changing"]), BusyOf(fields["busy"]), sides, frozen);
     }
 
     /// <summary>

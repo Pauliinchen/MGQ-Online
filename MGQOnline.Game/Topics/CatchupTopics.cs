@@ -2,6 +2,7 @@
 //  CatchupTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Told the scripts which classes of story keys are shared in a story
 //      Paulinchen  2026-11-05: Answered a Classic member's catch-up by the engine in its Classic settings
 //                            - Registered the topics of how a Classic member plays the leader's story: whether both play one story, who follows it, how the member keeps it and what their own story is once they leave
 //                            - Registered the topic of the side a player takes along in either world type
@@ -17,6 +18,7 @@
 
 using System;
 using MGQOnline.Bridge;
+using MGQOnline.Bridge.Ruby;
 using MGQOnline.Game.Catchup;
 
 namespace MGQOnline.Game.Topics;
@@ -74,6 +76,12 @@ public static class CatchupTopics
     public const string SideTopic = "catchup.side";
 
     /// <summary>
+    /// Which classes of story keys are shared in a story, see <see cref="SidePick.SharedClasses"/>:
+    /// the story ({"s", "v", "ss"}) in, a byte per class out, 1 for shared.
+    /// </summary>
+    public const string SharedTopic = "catchup.shared";
+
+    /// <summary>
     /// The key items a Classic party's leader lends a member, see <see cref="KeyItemLoan.Answer"/>.
     /// </summary>
     public const string LoanTopic = "catchup.key_loan";
@@ -126,6 +134,7 @@ public static class CatchupTopics
         context.Register(ScopeTopic, (_, request) => (tables() ?? CatchupTables.Empty).Scope.Answer(request.AsHash()));
         context.Register(ClassicTopic, (_, request) => CatchupEngine.Classic(tables() ?? CatchupTables.Empty, request.AsHash(), party?.Invoke() ?? ClassicParty.None));
         context.Register(SideTopic, (_, request) => SidePick.Answer(tables() ?? CatchupTables.Empty, request.AsHash()));
+        context.Register(SharedTopic, (_, request) => RubyString.Binary(SidePick.SharedClasses(CatchupLook.StoryOf(request) ?? new StoryValues([], [], []))));
         context.Register(LoanTopic, (_, request) => KeyItemLoan.Answer(request.AsHash()));
         context.Register(MedalKingTopic, (_, request) => MedalKingGift.Answer(tables() ?? CatchupTables.Empty, request.AsHash()));
         context.Register(SyncTopic, (_, request) => ClassicStory.Sync(request.AsHash()));

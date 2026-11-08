@@ -2,6 +2,7 @@
 //  CoopMatchmaking.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Counted the steps to another player through Sessions
 //      Paulinchen  2026-11-05: Asked Sessions who is free, busy or fights a battle
 //                            - Invited a busy party member too in a Classic world, who keeps the invite until free, and kept a battle nobody joined open for a member who missed it
 //      Paulinchen  2026-10-30: Told the facts it read last
@@ -539,31 +540,18 @@ public sealed partial class CoopMatchmaking
             .Where(peer => (Sessions.RaidFree(peer) && Near(peer)) || Watching(peer, viewers))
             .Where(peer => !staysOut.Contains(peer.Seat))
             .OrderBy(peer => members.Contains(peer) ? 0 : 1)
-            .ThenBy(peer => Distance(peer, x, y))
+            .ThenBy(peer => Sessions.Steps(peer, x, y))
             .ThenBy(peer => peer.Id, StringComparer.Ordinal)
             .Take(RaidPlayers - 1)];
     }
 
 
     /// <summary>
-    /// Counts the steps between another player and a tile, diagonal steps counted as one.
-    /// </summary>
-    /// <param name="peer">The player.</param>
-    /// <param name="x">The tile's x.</param>
-    /// <param name="y">The tile's y.</param>
-    /// <returns>The steps.</returns>
-    public static long Distance(Peer peer, long x, long y)
-    {
-        ArgumentNullException.ThrowIfNull(peer);
-        return Math.Max(Math.Abs(WorldFields.ToI(peer.State["x"]) - x), Math.Abs(WorldFields.ToI(peer.State["y"]) - y));
-    }
-
-    /// <summary>
     /// Reports whether another player stands within <see cref="NearbyTiles"/> of the player.
     /// </summary>
     /// <param name="peer">The player.</param>
     /// <returns>Whether they do.</returns>
-    public bool Near(Peer peer) => OnMap(peer) && Distance(peer, facts.X, facts.Y) <= NearbyTiles;
+    public bool Near(Peer peer) => OnMap(peer) && Sessions.Steps(peer, facts.X, facts.Y) <= NearbyTiles;
 
     /// <summary>
     /// Lists the other players on the player's map whose connection stands.

@@ -2,6 +2,7 @@
 //  SessionsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Checked that the Join Battle hotkey offers the nearest frozen fight within its reach
 //      Paulinchen  2026-11-05: Checked that a battle under the Library or Config is asked and offered, a player merely in the background not, and a Classic world's encounter asks none
 //                            - Checked the battle a host's state tells, open, full and ending, on the join prompt
 //                            - Dropped the check of a battle state between released and new games, which read alike no more
@@ -35,7 +36,7 @@ public sealed class SessionsTests
         var world = new TestWorld(raid: true);
         Peer boss = world.Add(5, "Host", member: false, ("scene", "battle"), ("rb", "hb1"), ("rbh", "5"), ("rbn", "4"), ("rbs", Sessions.Ending), ("x", "11"));
         JoinChoice join = world.Join;
-        List<JoinSide> sides = [new JoinSide(5, 81, "100", null, "Boss81")];
+        List<JoinSide> sides = [new JoinSide(5, 81, "100", [], "Boss81")];
 
         JoinPrompt shown = join.Frame(Frame(pressed: false, sides));
         JoinPrompt pressed = join.Frame(Frame(pressed: true, sides));
@@ -48,6 +49,22 @@ public sealed class SessionsTests
 
         boss.State.Set("rbs", Sessions.Full);
         Assert.Equal("Boss81", join.Frame(Frame(pressed: false, sides)).Side?.Label);
+    }
+
+    /// <summary>
+    /// Asserts that the Join Battle hotkey offers the frozen fight whose boss's stand-in stands
+    /// nearest the player within its reach, diagonal steps counted as one and ties going to the
+    /// lower troop, and none farther away.
+    /// </summary>
+    [Fact]
+    public void JoinPrompt_NearFrozenFights_OffersTheNearestWithinReach()
+    {
+        var world = new TestWorld(raid: true);
+        JoinFreeze sonya = new(868, "Sonya Mazda", 13, 13);
+
+        Assert.Equal(126, world.Join.Frame(Frozen(sonya, new JoinFreeze(126, "Morrigan", 7, 12))).Freeze?.Troop);
+        Assert.Equal(868, world.Join.Frame(Frozen(sonya, new JoinFreeze(126, "Morrigan", 6, 10))).Freeze?.Troop);
+        Assert.Null(world.Join.Frame(Frozen(new JoinFreeze(870, "Sonya Chaos", 10, 10 + Sessions.JoinTiles + 1))).Freeze);
     }
 
     /// <summary>
@@ -232,7 +249,14 @@ public sealed class SessionsTests
     /// <param name="pressed">Whether the hotkey went down.</param>
     /// <param name="sides">The side battles the scripts name.</param>
     /// <returns>The frame.</returns>
-    private static JoinFrame Frame(bool pressed, IReadOnlyList<JoinSide>? sides) => new(true, pressed, false, new JoinBusy(null, null), sides, null);
+    private static JoinFrame Frame(bool pressed, IReadOnlyList<JoinSide>? sides) => new(true, pressed, false, new JoinBusy(null, null), sides, []);
+
+    /// <summary>
+    /// Makes a frame on the map in which the join prompt reads the hotkey, with frozen fights on the map.
+    /// </summary>
+    /// <param name="frozen">The frozen fights the scripts name.</param>
+    /// <returns>The frame.</returns>
+    private static JoinFrame Frozen(params JoinFreeze[] frozen) => new(true, false, false, new JoinBusy(null, null), null, frozen);
 
     /// <summary>
     /// Makes a random encounter against troop 50 that asks a running battle.

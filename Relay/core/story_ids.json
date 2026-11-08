@@ -5,10 +5,14 @@
   "playthrough": 912,
   "decision_progress": 1140,
   "story_switches": [1001, 2000],
+  "side_step": 7,
   "part_two": 19,
+  "orbs_gathered": 32,
   "part_three": 34,
   "before_decision": 39,
   "great_decision": 40,
+  "chaos_free_order": 21,
+  "orb_event": 330,
   "decision_event": 380,
   "final_reset_event": 154,
   "reset_event": 265,
@@ -25,5 +29,7 @@
   "decision_maps": [430, 431],
   "decision_place": [407, 25, 25],
   "chaos_start": [437, 12, 12, 0],
-  "place_variables": [11, 21, 22, 23, 28, 53, 54, 57, 1002]
+  "place_variables": [11, 21, 22, 23, 28, 53, 54, 57, 1002],
+  "transfer_map": 57,
+  "warp_ban": 100
 }

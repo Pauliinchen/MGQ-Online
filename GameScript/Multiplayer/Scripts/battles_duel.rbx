@@ -2,6 +2,7 @@
 #  battles_duel.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Read standing near from the DLL
 #      Paulinchen  2026-11-05: Handed the DLL the player's team as values and took a team duel's sides as values
 #                            - Handed the players a challenge names to the DLL as a list, which it writes into the state
 #      Paulinchen  2026-10-31: Worded what the player reads plainly, leaving causes and internals to the log
@@ -434,7 +435,7 @@ module MGQ_MpBattlesDuel
       return UNAVAILABLE unless duel.available?
 
       option = MGQ_MpActions::Option
-      near = MGQ_MpOverworldSync::Peers.all.select { |peer| MGQ_MpCoop::Party.near?(peer.state) }
+      near = MGQ_MpOverworldSync::Peers.all.select { |peer| MGQ_MpOverworldSync::Peers.near?(peer) }
       challenger = near.find { |peer| duel.challenged_by?(peer, false) }
       return option.new("Accept #{challenger.state['name']}'s duel", lambda { duel.accept(challenger) }, nil) if challenger
       return own_options.first if duel.inviting?

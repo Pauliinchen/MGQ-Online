@@ -2,6 +2,7 @@
 #  ui_raid_bar.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Listed the tiles of a boss's events in place of counting the steps to them
 #      Paulinchen  2026-11-06: Read the room at the top through the Mod Framework's UI.room
 #                            - Drew the strip and the bars over the bosses as huds of the Mod Framework's UI layer, the strip docked at the top in battle too
 #      Paulinchen  2026-11-05: Asked the DLL in one call per scan which troops' battles show a bar, and read the titles and tiers from its table
@@ -83,9 +84,6 @@ module MGQ_MpRaidBar
 
   # The game's variable of the share of their own HP enemies have at the player's difficulty.
   DIFFICULTY_VARIABLE = 41
-
-  # Steps to a boss's event when the map shows none.
-  FAR = 9999
 
   # The steps of a gauge's value, so a gauge of any max fills smoothly.
   STEPS = 1000
@@ -433,19 +431,15 @@ module MGQ_MpRaidBar
     looks && !event.transparent && event.opacity > 0 && !sprite.nil? && sprite.visible
   end
 
-  # Counts the steps from a tile to the nearest event of the map that starts a troop's battle, see
-  # boss_events.
+  # Lists the tiles of the map's events that start a troop's battle, see boss_events.
   #
   # @param troop [Integer] The troop.
-  # @param x [Integer] The tile's x.
-  # @param y [Integer] The tile's y.
-  # @return [Integer] The steps, diagonal steps counted as one; FAR when the map has none.
-  def self.distance_to_boss(troop, x, y)
-    events = boss_events.select { |_event, id| id == troop }.map { |event, _id| event }
-    events.map { |event| [(event.x - x).abs, (event.y - y).abs].max }.min || FAR
+  # @return [Array<Array(Integer, Integer)>] Each event's x and y; none when the map has none.
+  def self.boss_tiles(troop)
+    boss_events.select { |_event, id| id == troop }.map { |event, _id| [event.x, event.y] }
   rescue => e
-    log_once(:distance, "finding the boss's event failed: #{e.class}: #{e.message}")
-    FAR
+    log_once(:boss_tiles, "finding the boss's event failed: #{e.class}: #{e.message}")
+    []
   end
 
   # The bars shown, as huds of the Mod Framework's UI layer: the strip's bar, the bar over each

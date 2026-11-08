@@ -2,14 +2,15 @@
 #  story_ids.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Read the transfer map, the warp ban and the story ids of the catch-up rules
 #      Paulinchen  2026-11-05: Created
 #
 #----------------------------------------------------------------
 
 # The story's ids as the DLL hands them from its one table (StoryIds in MGQOnline.Game, topic
 # story.ids): the variables and switches the story's progress, sides and routes are told by, the
-# steps of the parts and the Great Decision, the routes' events and places, and the variables the
-# game uses as a place. The scripts read every story id here and write none of their own.
+# steps of the parts and the Great Decision, the routes' events and places, the variables the game
+# uses as a place and the warp ban. The scripts read every story id here and write none of their own.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpStoryIds
@@ -18,8 +19,8 @@ module MGQ_MpStoryIds
 
   # The ids that are one whole number each, 0 while the DLL does not answer, which no switch,
   # variable or common event is.
-  NUMBERS = %w(main_progress game_over_return playthrough decision_progress part_two part_three before_decision great_decision
-               decision_event final_reset_event reset_event reaper_event)
+  NUMBERS = %w(main_progress game_over_return playthrough decision_progress side_step part_two orbs_gathered part_three before_decision
+               great_decision chaos_free_order orb_event decision_event final_reset_event reset_event reaper_event transfer_map warp_ban)
 
   # The ids that are a list each, empty while the DLL does not answer.
   LISTS = %w(story_switches side_switches routes route_variables clear_switches markers castle_bosses area_progress return_events

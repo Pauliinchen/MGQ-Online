@@ -2,6 +2,7 @@
 //  DuelHarness.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Counted standing near through Sessions
 //      Paulinchen  2026-10-30: Created
 //
 //----------------------------------------------------------------
@@ -341,7 +342,7 @@ internal sealed class DuelHarness : IDuelWorld, IDuelHost
 
     /// <inheritdoc />
     public bool Near(WorldFields state) =>
-        WorldFields.ToI(state["map"]) == OwnMap && Math.Max(Math.Abs(WorldFields.ToI(state["x"]) - OwnX), Math.Abs(WorldFields.ToI(state["y"]) - OwnY)) <= MGQOnline.Game.World.Party.NearTiles;
+        WorldFields.ToI(state["map"]) == OwnMap && MGQOnline.Game.World.Sessions.Steps(WorldFields.ToI(state["x"]), WorldFields.ToI(state["y"]), OwnX, OwnY) <= MGQOnline.Game.World.Sessions.NearTiles;
 
     /// <inheritdoc />
     public bool IsMember(WorldFields state) => PartyId is not null && state["party"] == PartyId && memberIds.Contains(state.Text("id"), StringComparer.Ordinal);

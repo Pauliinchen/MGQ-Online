@@ -2,6 +2,8 @@
 #  story_state.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Left whether the side switches are shared to the DLL, through story_keys.rbx
+#                            - Read the warp ban from the story ids
 #      Paulinchen  2026-11-06: Read the story's data past a replay's stand-in, which the catch-up reads before a companion joins
 #                            - Left the lists' place 0 out of the keys a Classic party member asks about, which the DLL refuses
 #      Paulinchen  2026-11-05: Left writing and reading the tracks' texts of a variable's value to the DLL
@@ -50,10 +52,6 @@
 # player's own, which every join of stories keeps; how a story is written for a message and read
 # back; and how the story's skills, companions and items are granted.
 module MGQ_MpStoryState
-  # The switch that bans warping and the Pocket Castle ("Warp OFF Switch"), which a world keeps
-  # off, see lift_warp_ban.
-  WARP_BAN = defined?(NWConst::Sw::WARP_BAN) ? NWConst::Sw::WARP_BAN : 100
-
   # The switch that bans the escape spell ("Riremito OFF Switch"), which a few scenes turn on and
   # the Head Priest of Ilias Temple turns off as he changes jobs: it tells of the player's place,
   # not of the story.
@@ -463,16 +461,6 @@ module MGQ_MpStoryState
   def self.all_chest_keys
     found = rewards
     found ? found.chests : []
-  end
-
-  # Reports whether the sides still get other rewards in a story: before the Great Decision, while
-  # no route has progress.
-  #
-  # @param variables [Array, nil] The story's variables, nil for those of the story played.
-  # @return [Boolean] Whether they do.
-  def self.sides_differ?(variables = nil)
-    variables ||= $game_variables ? data_of($game_variables) : []
-    MGQ_MpStoryIds.route_variables.all? { |id| variables[id].to_i == 0 }
   end
 
   # The side some switches tell.
@@ -937,9 +925,10 @@ module MGQ_MpStoryState
     return unless defined?(MGQ_MpOverworldSync) && MGQ_MpOverworldSync.in_world?
 
     data = data_of(switches)
-    return unless data[WARP_BAN]
+    ban = MGQ_MpStoryIds.warp_ban
+    return unless data[ban]
 
-    data[WARP_BAN] = false
+    data[ban] = false
     map = $game_map ? $game_map.map_id : 0
     log_once([:warp_ban, reason, map], "turned the warp ban off on map #{map}: #{reason}")
   end
@@ -984,7 +973,7 @@ end
 
 begin
   # A world never bans warping, whatever writes the ban, a replay's commit too.
-  MGQ_MpHooks.after(Game_Switches, :[]=, "story_state") { |id, _value| MGQ_MpStoryState.lift_warp_ban(self, "a write turned it on") if id == MGQ_MpStoryState::WARP_BAN }
+  MGQ_MpHooks.after(Game_Switches, :[]=, "story_state") { |id, _value| MGQ_MpStoryState.lift_warp_ban(self, "a write turned it on") if id == MGQ_MpStoryIds.warp_ban }
 rescue => e
   MGQ_MpStoryState.log("warp ban hook FAILED: #{e.class}: #{e.message}")
 end

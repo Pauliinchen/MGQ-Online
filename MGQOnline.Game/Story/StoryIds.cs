@@ -2,6 +2,7 @@
 //  StoryIds.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Held the transfer map, the warp ban and the story ids of the catch-up rules
 //      Paulinchen  2026-11-05: Created
 //
 //----------------------------------------------------------------
@@ -13,8 +14,8 @@ namespace MGQOnline.Game.Story;
 /// <summary>
 /// The one table of the story's ids: the variables and switches the story's progress, sides and
 /// routes are told by, the steps of the main story's progress the parts and the Great Decision lie
-/// at, the common events, maps and places of the routes' rules, and the variables the game uses as
-/// a place. The scripts read it through the bridge topic <c>story.ids</c>, the relay through
+/// at, the common events, maps and places of the routes' rules and the catch-up's rules, the
+/// variables the game uses as a place and the warp ban. The scripts read it through the bridge topic <c>story.ids</c>, the relay through
 /// Relay/core/story_ids.json, which the generator's <c>story-ids</c> command writes from
 /// <see cref="Entries"/>.
 /// </summary>
@@ -51,9 +52,19 @@ public static class StoryIds
     public const int LastStorySwitch = 2000;
 
     /// <summary>
+    /// The main story's progress the choice of a side in Iliasville leaves.
+    /// </summary>
+    public const int SideStep = 7;
+
+    /// <summary>
     /// The main story's progress from which Part 2 runs, set by Tartarus Escape.
     /// </summary>
     public const int PartTwo = 19;
+
+    /// <summary>
+    /// The main story's progress <see cref="OrbEvent"/> sets once the player holds every orb of Part 2.
+    /// </summary>
+    public const int OrbsGathered = 32;
 
     /// <summary>
     /// The main story's progress from which Part 3 runs, set by the Middle Chapter's epilogue.
@@ -69,6 +80,17 @@ public static class StoryIds
     /// The main story's progress the Great Decision sets, which every event that takes a route sets too.
     /// </summary>
     public const int GreatDecision = 40;
+
+    /// <summary>
+    /// The Chaos route's progress from the Pocket Castle's revival on, whose regions the world plays in
+    /// an order of its own.
+    /// </summary>
+    public const int ChaosFreeOrder = 21;
+
+    /// <summary>
+    /// The common event that moves the story on once the player holds every orb of Part 2.
+    /// </summary>
+    public const int OrbEvent = 330;
 
     /// <summary>
     /// The common event of the Great Decision.
@@ -89,6 +111,17 @@ public static class StoryIds
     /// The Reaper's offer in Hades to reset time, which calls <see cref="ResetEvent"/>.
     /// </summary>
     public const int ReaperEvent = 149;
+
+    /// <summary>
+    /// The variable the game's transfer script reads the next transfer's map from, as the game's own
+    /// returns use it.
+    /// </summary>
+    public const int TransferMap = 57;
+
+    /// <summary>
+    /// The switch that bans warping and the Pocket Castle ("Warp OFF Switch"), which a world keeps off.
+    /// </summary>
+    public const int WarpBan = 100;
 
     /// <summary>
     /// The switches of the side the player took along in Iliasville: Alice's, then Ilias's.
@@ -159,7 +192,7 @@ public static class StoryIds
     /// <remarks>
     /// The mapping check (MappingCheckTests) derives the same list from the events database.
     /// </remarks>
-    public static readonly IReadOnlyList<int> PlaceVariables = [11, 21, 22, 23, 28, 53, 54, 57, GameOverReturn];
+    public static readonly IReadOnlyList<int> PlaceVariables = [11, 21, 22, 23, 28, 53, 54, TransferMap, GameOverReturn];
 
     /// <summary>
     /// Lists the table by the names the scripts and the relay read it by, in a fixed order: each
@@ -172,10 +205,14 @@ public static class StoryIds
         new("playthrough", Playthrough),
         new("decision_progress", DecisionProgress),
         new("story_switches", new[] { FirstStorySwitch, LastStorySwitch }),
+        new("side_step", SideStep),
         new("part_two", PartTwo),
+        new("orbs_gathered", OrbsGathered),
         new("part_three", PartThree),
         new("before_decision", BeforeDecision),
         new("great_decision", GreatDecision),
+        new("chaos_free_order", ChaosFreeOrder),
+        new("orb_event", OrbEvent),
         new("decision_event", DecisionEvent),
         new("final_reset_event", FinalResetEvent),
         new("reset_event", ResetEvent),
@@ -193,5 +230,7 @@ public static class StoryIds
         new("decision_place", DecisionPlace),
         new("chaos_start", ChaosStart),
         new("place_variables", PlaceVariables),
+        new("transfer_map", TransferMap),
+        new("warp_ban", WarpBan),
     ];
 }

@@ -2,6 +2,7 @@
 #  world_story.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Read the transfer map and the warp ban from the story ids
 #      Paulinchen  2026-11-05: Handed the frozen fights the world's story it writes while the player plays it
 #                            - Took the relay's keys and values from the DLL as [kind, key] and values, and handed it the player's the same way, their sites as plain values
 #                            - Fetched and read the world's shared companions through topics
@@ -159,10 +160,8 @@ module MGQ_MpWorldStory
   # The part the Great Decision lies in, as part_of names it.
   DECISION_PART = "3"
 
-  # The variable a transfer to TRANSFER_RELAY_MAP goes on from, as the game's own returns use it.
-  TRANSFER_MAP = 57
-
-  # The map whose transfer goes on to the map in TRANSFER_MAP.
+  # The map whose transfer goes on to the map in the story ids' transfer_map, as the game's own
+  # returns use it.
   TRANSFER_RELAY_MAP = 544
 
   # The game's switch that refuses every recruit ("Ally Rejection"), on from the new game until Lime
@@ -182,8 +181,9 @@ module MGQ_MpWorldStory
   # The maps the collab scenario plays on, as the game's own collab reset lists them.
   COLLAB_MAPS = [845..936, 949, 953]
 
-  # The switches the collab's start turns on: Ally Rejection, Warp OFF and Hide Important Things.
-  COLLAB_SWITCHES = [ALLY_REJECTION, 100, 504]
+  # The switches the collab's start turns on besides the warp ban: Ally Rejection and Hide Important
+  # Things.
+  COLLAB_SWITCHES = [ALLY_REJECTION, 504]
 
   # The Pocket Castle's event that starts the collab scenario: the map and the event.
   COLLAB_START = [228, 52]
@@ -912,7 +912,7 @@ module MGQ_MpWorldStory
     interpreter.release_temp_actors if $game_party.respond_to?(:temp_actors_use?) && $game_party.temp_actors_use?
     MGQ_MpFlowGuard.leave("the world's story cleared the collab scenario", true, true) if defined?(MGQ_MpFlowGuard)
     interpreter.take_all_item
-    COLLAB_SWITCHES.each { |id| $game_switches[id] = false }
+    (COLLAB_SWITCHES + [MGQ_MpStoryIds.warp_ban]).each { |id| $game_switches[id] = false }
     $game_player.reserve_transfer(*COLLAB_RETURN)
     true
   end
@@ -954,7 +954,7 @@ module MGQ_MpWorldStory
     side = MGQ_MpStoryState.data_of($game_switches)[ids.ilias_chosen] ? 1 : 0
     place = ids.decision_place
     @queued = [command(117, [ids.final_reset_event]), command(122, [ids.game_over_return, ids.game_over_return, 0, 0, ids.return_points[side]]),
-               command(122, [TRANSFER_MAP, TRANSFER_MAP, 0, 0, place[0]]), command(201, [0, TRANSFER_RELAY_MAP, place[1], place[2], 8, 2]), command(0, [])]
+               command(122, [ids.transfer_map, ids.transfer_map, 0, 0, place[0]]), command(201, [0, TRANSFER_RELAY_MAP, place[1], place[2], 8, 2]), command(0, [])]
     log("the world went back to the Great Decision from the #{ROUTE_NAMES[route_index(before)]} route: the Final Chapter's reset waits to play once the player is free")
     MGQ_MpOverworldSync.notice("The world's story went back to the Great Decision.")
   end
@@ -1363,7 +1363,7 @@ module MGQ_MpWorldStory
     log("the game's return to the Great Decision differs from the one known, so the world goes back without its scene")
     place = ids.decision_place
     [command(117, [ids.final_reset_event]), command(122, [ids.game_over_return, ids.game_over_return, 0, 0, ids.return_points[side]]),
-     command(122, [ids.main_progress, ids.main_progress, 0, 0, ids.before_decision]), command(122, [TRANSFER_MAP, TRANSFER_MAP, 0, 0, place[0]]),
+     command(122, [ids.main_progress, ids.main_progress, 0, 0, ids.before_decision]), command(122, [ids.transfer_map, ids.transfer_map, 0, 0, place[0]]),
      command(201, [0, TRANSFER_RELAY_MAP, place[1], place[2], 8, 2])]
   end
 

@@ -2,6 +2,7 @@
 #  support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Handed the classes shared before the Great Decision as the DLL tells them
 #      Paulinchen  2026-11-06: Checked that every stand-in of the Mod Framework's engine patches the engine's own module
 #                            - Wrote a Classic party's table out instead of reading a recorded one
 #      Paulinchen  2026-11-05: Kept a message sent as the scripts hand it instead of writing and reading it as a copy of the DLL's codec
@@ -166,14 +167,20 @@ def load_story_ids
 end
 
 # Loads story_keys.rbx, which Multiplayer.rb loads right after story_state.rbx, with the
-# Classic party's table the DLL hands (see classic_table_hash), so no test needs the DLL to tell
-# what a party shares; the script's own fetch stays as bridge_classic_table for the test that
-# checks it.
+# Classic party's table the DLL hands (see classic_table_hash) and the classes it tells shared (see
+# SHARED_CLASSES), so no test needs the DLL to tell what a party shares; the script's own fetch
+# stays as bridge_classic_table for the test that checks it.
 def load_story_keys
   load File.join(SCRIPTS_DIR, "story_keys.rbx")
   MGQ_MpStoryKeys.singleton_class.send(:alias_method, :bridge_classic_table, :classic_table)
   MGQ_MpStoryKeys.define_singleton_method(:classic_table) { @classic ||= table_of(classic_table_hash) }
+  MGQ_MpStoryKeys.define_singleton_method(:shared_classes) { |_variables| SHARED_CLASSES }
 end
+
+# The first classes of what the DLL tells shared before the Great Decision (topic catchup.shared):
+# 1 kept and 3 kept one way are shared; a class past them, such as 8 a chest's or 129 a side
+# switch's, reads as each player's own.
+SHARED_CLASSES = [0, 1, 0, 1].pack("C*").freeze
 
 # The classes of a Classic party's switches as the DLL hands them, as runs [from, to, class]: 0
 # each player's own, 1 kept for the party, 129 the side switches, 8 the chest flags 7102 to 7104.

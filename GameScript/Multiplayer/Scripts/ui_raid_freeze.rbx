@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-08: Asked the DLL which frozen fight keeps an event from starting and whether the start resumes it
+#                            - Listed the frozen fights with their bosses' tiles in place of picking the one within reach
 #      Paulinchen  2026-11-06: Asked the freeze whether a page runs nothing, as the DLL tells it
 #                            - Logged each kept start once, without the frame in its key, and compared the sources by their hash instead of a deep copy
 #      Paulinchen  2026-11-05: Read whether the teller tells the story as true or false
@@ -369,23 +370,19 @@ module MGQ_MpRaidFreezeUi
     false
   end
 
-  # Finds the frozen fight the Join Battle hotkey offers: the one whose boss's stand-in stands
-  # nearest a tile within some steps, diagonal steps counted as one, ties going to the lower troop.
+  # Lists the frozen fights the Join Battle hotkey may offer, of which the DLL's JoinChoice picks the
+  # one within its reach: those whose boss's stand-in shows, only the boss counting, not the
+  # stand-ins around it.
   #
-  # @param x [Integer] The tile's x.
-  # @param y [Integer] The tile's y.
-  # @param reach [Integer] The most steps.
-  # @return [Array, nil] The troop and the boss's name, nil for none.
-  def self.join_target(x, y, reach)
-    near = tableaux.map do |tableau|
+  # @return [Array<Array>] Each fight's troop, its boss's name and its boss's stand-in's x and y.
+  def self.join_targets
+    tableaux.map do |tableau|
       boss = tableau.boss
-      boss ? [[(boss.x - x).abs, (boss.y - y).abs].max, tableau.troop, tableau.name] : nil
+      boss ? [tableau.troop, tableau.name, boss.x, boss.y] : nil
     end.compact
-    best = near.select { |steps, _troop, _name| steps <= reach }.min_by { |steps, troop, _name| [steps, troop] }
-    best ? best[1, 2] : nil
   rescue => e
-    log_once(:join_target, "finding the frozen fight near the player failed: #{e.class}: #{e.message}")
-    nil
+    log_once(:join_targets, "finding the frozen fights near the player failed: #{e.class}: #{e.message}")
+    []
   end
 
   # Resumes a frozen fight of the map on the Join Battle hotkey.

@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-08: Answered which frozen fight keeps an event from starting with fixed values per case, and checked what the scripts hand the DLL
+#                            - Expected the frozen fights with their bosses' tiles, the pick within reach being the DLL
 #      Paulinchen  2026-11-06: Told whether a page runs nothing through the engine's stand-in, as the DLL tells it
 #      Paulinchen  2026-11-05: Told the telling of the story as true or false
 #                            - Read the scripts' clock from $frame
@@ -607,10 +608,8 @@ check("an invisible boss row under the player takes it too", [$game_player.check
 reset
 $records = [frozen(868, 138, sonya_rows, [13])]
 $entries = [frozen(126, 138, [row(5, 33, 10, "$Morrigan", 1)], [5])]
-check("the nearest boss's stand-in within the reach, diagonal steps counted as one",
-      [ui.join_target(30, 10, 3), ui.join_target(33, 9, 3), ui.join_target(30, 4, 3)], [[868, "Sonya Mazda"], [126, "Morrigan"], nil])
-check("ties go to the lower troop", ui.join_target(31, 11, 3), [126, "Morrigan"])
-check("only bosses count, not the stand-ins around them", ui.join_target(28, 10, 1), nil)
+check("the hotkey's candidates are the bosses' stand-ins with their tiles, not the stand-ins around them, for the DLL to pick within its reach",
+      ui.join_targets, [[868, "Sonya Mazda", 30, 9], [126, "Morrigan", 33, 10]])
 check("joining resumes the fight", [ui.join(868), $resumed], [true, [868]])
 check("a troop the map shows no frozen fight of resumes nothing", [ui.join(870), $resumed], [false, [868]])
 check("the bosses' stand-ins carry the bars", ui.bar_targets.map { |standin, troop| [standin.event_id, troop] }, [[13, 868], [5, 126]])

@@ -2,6 +2,7 @@
 #  trade.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Read standing near from the DLL
 #      Paulinchen  2026-11-06: Asked the rules in C# which items may be traded, how many of one an offer holds and whether the game can take an offer
 #      Paulinchen  2026-11-05: Handed the DLL the offers and items as values and took them back so, the DLL writing and reading the offers and the items' tokens
 #                            - Told whether the player invites to a trade as true or false
@@ -238,7 +239,7 @@ module MGQ_MpTrade
   # @param anywhere [Boolean] Whether an offer naming the player counts wherever on the map they stand.
   # @return [Boolean] Whether it does.
   def self.offered_by?(peer, anywhere = true)
-    same_map?(peer) && MGQ_MpCoop::Invite.reaches_me?(peer.state, "trading", "trading_to", anywhere)
+    same_map?(peer) && MGQ_MpCoop::Invite.reaches_me?(peer, "trading", "trading_to", anywhere)
   end
 
   # Reports whether the player may open a trade: free on the map, with no battle of their own, no
@@ -1173,7 +1174,7 @@ module MGQ_MpTrade
       return unavailable unless trade.available?
 
       option = MGQ_MpActions::Option
-      near = MGQ_MpOverworldSync::Peers.all.select { |peer| trade.same_map?(peer) && MGQ_MpCoop::Party.near?(peer.state) }
+      near = MGQ_MpOverworldSync::Peers.all.select { |peer| trade.same_map?(peer) && MGQ_MpOverworldSync::Peers.near?(peer) }
       offerer = near.find { |peer| trade.offered_by?(peer, false) }
       return option.new("Accept #{offerer.state['name']}'s trade", lambda { trade.accept(offerer) }, nil) if offerer
       return own_options.first if trade.inviting?

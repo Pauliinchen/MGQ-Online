@@ -2,6 +2,7 @@
 #  trade_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Played the DLL telling who stands near the player
 #      Paulinchen  2026-11-06: Answered which items may be traded, how many an offer holds and why an offer cannot be taken with fixed values and checked what the script asks
 #      Paulinchen  2026-11-05: Answered an offer with a fixed view in place of a copy of the DLL's revision count
 #                            - Handed and took the offers and items as values, the DLL's stand-in naming the tokens
@@ -273,6 +274,7 @@ end
 friend = { "id" => "friend", "name" => "Friend", "sprite" => "Actor2", "index" => 0, "map" => 5, "x" => 4, "y" => 4, "d" => 2, "speed" => 4, "hidden" => 0, "scene" => "map" }
 $inbox << entry("seat", 0) << entry("in", 2) << entry("message", 2, told(friend))
 MGQ_MpOverworldSync.tick
+near_seats(2)
 peer = MGQ_MpOverworldSync::Peers.at(2)
 DataManager.load_game_without_rescue(2)
 

@@ -2,6 +2,7 @@
 #  overworld_sync.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Took the players who stand near the player from the DLL
 #      Paulinchen  2026-11-06: Asked the Mod Framework's UI.in_front? whether the game is in front
 #                            - Sent the lists and Hashes inside a message's fields whole, such as a whole story's lists
 #      Paulinchen  2026-11-05: Sent the fields and the body of a message to the DLL, which writes the message, and read the player's id through a topic
@@ -599,6 +600,9 @@ module MGQ_MpOverworldSync
     # The names that tell the players apart, by seat, see labeled.
     @labels = {}
 
+    # The seats of the players who stand near the player, as the DLL's Sessions counts them.
+    @near = []
+
     # Takes what a game told, and lets the scripts follow it. A player who was away is back.
     #
     # @param seat [Integer] The game's seat.
@@ -725,6 +729,22 @@ module MGQ_MpOverworldSync
       @labels = labels
     end
 
+    # Takes who stands near the player, as the DLL tells it.
+    #
+    # @param seats [Array<Integer>] Their seats.
+    def self.take_near(seats)
+      @near = Array(seats)
+    end
+
+    # Reports whether another player stands near the player, on the same map, as the DLL's Sessions
+    # counts it for the party's, the duels' and the trades' offers.
+    #
+    # @param peer [Peer] The player.
+    # @return [Boolean] Whether they do.
+    def self.near?(peer)
+      @near.include?(peer.seat)
+    end
+
     # Finds a game by its seat.
     #
     # @param seat [Integer] The seat.
@@ -756,6 +776,7 @@ module MGQ_MpOverworldSync
       @peers.clear
       @displaced.clear
       @labels = {}
+      @near = []
     end
 
     # Reports whether no other game is known.
@@ -935,6 +956,7 @@ begin
   bridge.on("world.peer_displaced") { |event| sync::Peers.displace(event["seat"]) }
   bridge.on("world.peer_left") { |event| sync::Peers.remove(event["seat"], "left", event["id"]) }
   bridge.on("world.labels") { |labels| sync::Peers.take_labels(labels) }
+  bridge.on("world.near") { |seats| sync::Peers.take_near(seats) }
   bridge.on("world.route") { |event| sync.take_route(event) }
   bridge.on("world.notice") { |text| sync::Status.show(text) }
   bridge.on("world.status") { |status| sync::Status.take(status) }

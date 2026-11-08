@@ -2,6 +2,7 @@
 //  JoinChoice.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Took the Join Battle hotkey's reach from Sessions and picked the nearest frozen fight from the tiles the scripts tell
 //      Paulinchen  2026-11-05: Asked Sessions whether a battle near takes the player in, offered a side battle only beside a full one and told the player why a battle near takes nobody in
 //                            - Offered a party member's battle in a Classic world too, which a member who missed it joins late
 //      Paulinchen  2026-10-30: Created
@@ -25,12 +26,6 @@ namespace MGQOnline.Game.Coop;
 /// </summary>
 public sealed class JoinChoice
 {
-    /// <summary>
-    /// Steps another player who fights a battle may be away from the player for its prompt to show,
-    /// diagonal steps counted as one.
-    /// </summary>
-    public const int JoinDistance = 3;
-
     /// <summary>
     /// Milliseconds the player waits for the host's answer.
     /// </summary>
@@ -129,7 +124,7 @@ public sealed class JoinChoice
         string? busy = BusyReason(frame.Busy);
         (Peer Host, string BattleId)? target = frame.Changing || busy is not null ? null : Target();
         JoinSide? side = frame.Changing || target is not null || busy is not null || !world.Raid ? null : SideTarget(frame.Sides);
-        JoinFreeze? freeze = frame.Changing || target is not null || side is not null || busy is not null ? null : frame.Freeze;
+        JoinFreeze? freeze = frame.Changing || target is not null || side is not null || busy is not null ? null : FreezeTarget(frame.Frozen);
         if (frame.Pressed && !frame.Changing && target is { } found)
         {
             Request(found.Host, found.BattleId, true);
@@ -265,15 +260,15 @@ public sealed class JoinChoice
 
     /// <summary>
     /// Finds the battle the prompt offers, as <c>target</c> did: of the other players within
-    /// <see cref="JoinDistance"/> who fight one, the nearest whose battle takes players in.
+    /// <see cref="Sessions.JoinTiles"/> who fight one, the nearest whose battle takes players in.
     /// </summary>
     /// <returns>The battle's host and its id, <see langword="null"/> for none.</returns>
     private (Peer Host, string BattleId)? Target()
     {
         CoopFacts facts = match.Facts;
         return OnMap()
-            .Where(peer => Sessions.Fights(peer) && CoopMatchmaking.Distance(peer, facts.X, facts.Y) <= JoinDistance)
-            .OrderBy(peer => CoopMatchmaking.Distance(peer, facts.X, facts.Y))
+            .Where(peer => Sessions.Fights(peer) && Sessions.Steps(peer, facts.X, facts.Y) <= Sessions.JoinTiles)
+            .OrderBy(peer => Sessions.Steps(peer, facts.X, facts.Y))
             .ThenBy(peer => peer.Id, StringComparer.Ordinal)
             .Select(OpenBattle)
             .FirstOrDefault(battle => battle is not null);
@@ -282,7 +277,7 @@ public sealed class JoinChoice
     /// <summary>
     /// Finds the raid boss battle near the player that the prompt offers a side battle against, as
     /// <c>side_target</c> did: of the full boss battles on the map whose host the scripts named a
-    /// side battle for, the nearest with a player in it, or its boss, within <see cref="JoinDistance"/>.
+    /// side battle for, the nearest with a player in it, or its boss, within <see cref="Sessions.JoinTiles"/>.
     /// </summary>
     /// <remarks>
     /// A boss battle that takes nobody in for another reason, such as one that ends, offers no side
@@ -307,15 +302,32 @@ public sealed class JoinChoice
                 continue;
             }
 
-            long steps = CoopMatchmaking.Distance(peer, facts.X, facts.Y);
-            near.Add((found.BossSteps is { } boss ? Math.Min(steps, boss) : steps, peer.Id, found));
+            long steps = Sessions.Steps(peer, facts.X, facts.Y);
+            near.Add((found.BossTiles.Select(tile => Sessions.Steps(tile.X, tile.Y, facts.X, facts.Y)).Append(steps).Min(), peer.Id, found));
         }
 
-        return near.Where(entry => entry.Steps <= JoinDistance).OrderBy(entry => entry.Steps).ThenBy(entry => entry.Id, StringComparer.Ordinal).Select(entry => entry.Side).FirstOrDefault();
+        return near.Where(entry => entry.Steps <= Sessions.JoinTiles).OrderBy(entry => entry.Steps).ThenBy(entry => entry.Id, StringComparer.Ordinal).Select(entry => entry.Side).FirstOrDefault();
     }
 
     /// <summary>
-    /// Tells the player why the battle of the nearest player within <see cref="JoinDistance"/> who
+    /// Finds the frozen fight the prompt offers: the one whose boss's stand-in stands nearest the
+    /// player within <see cref="Sessions.JoinTiles"/>, ties going to the lower troop.
+    /// </summary>
+    /// <param name="frozen">The frozen fights of the map, as the scripts tell them.</param>
+    /// <returns>The fight, <see langword="null"/> for none.</returns>
+    private JoinFreeze? FreezeTarget(IReadOnlyList<JoinFreeze> frozen)
+    {
+        CoopFacts facts = match.Facts;
+        return frozen.Select(fight => (Steps: Sessions.Steps(fight.X, fight.Y, facts.X, facts.Y), Fight: fight))
+            .Where(entry => entry.Steps <= Sessions.JoinTiles)
+            .OrderBy(entry => entry.Steps)
+            .ThenBy(entry => entry.Fight.Troop)
+            .Select(entry => entry.Fight)
+            .FirstOrDefault();
+    }
+
+    /// <summary>
+    /// Tells the player why the battle of the nearest player within <see cref="Sessions.JoinTiles"/> who
     /// fights one does not take them in, once they pressed the hotkey with nothing to join.
     /// </summary>
     /// <returns>The message shown, <see langword="null"/> while nobody near fights a battle.</returns>
@@ -323,8 +335,8 @@ public sealed class JoinChoice
     {
         CoopFacts facts = match.Facts;
         Peer? battleHost = OnMap()
-            .Where(peer => Sessions.Fights(peer) && CoopMatchmaking.Distance(peer, facts.X, facts.Y) <= JoinDistance)
-            .OrderBy(peer => CoopMatchmaking.Distance(peer, facts.X, facts.Y))
+            .Where(peer => Sessions.Fights(peer) && Sessions.Steps(peer, facts.X, facts.Y) <= Sessions.JoinTiles)
+            .OrderBy(peer => Sessions.Steps(peer, facts.X, facts.Y))
             .ThenBy(peer => peer.Id, StringComparer.Ordinal)
             .Select(HostOf)
             .FirstOrDefault(found => found is not null);
@@ -410,16 +422,18 @@ public sealed record JoinBusy(string? Before, string? After);
 /// <param name="Host">The boss battle's host seat.</param>
 /// <param name="Troop">The troop.</param>
 /// <param name="Rates">The host's enemy rates.</param>
-/// <param name="BossSteps">The steps between the player and the boss's event, <see langword="null"/> for none.</param>
+/// <param name="BossTiles">The tiles of the boss's events on the map, none for none.</param>
 /// <param name="Label">The boss's name.</param>
-public sealed record JoinSide(int Host, int Troop, string Rates, long? BossSteps, string Label);
+public sealed record JoinSide(int Host, int Troop, string Rates, IReadOnlyList<(long X, long Y)> BossTiles, string Label);
 
 /// <summary>
-/// A raid boss's frozen fight near the player.
+/// A raid boss's frozen fight on the player's map.
 /// </summary>
 /// <param name="Troop">The troop.</param>
 /// <param name="Name">The boss's name.</param>
-public sealed record JoinFreeze(int Troop, string Name);
+/// <param name="X">The x of the boss's stand-in.</param>
+/// <param name="Y">The y of the boss's stand-in.</param>
+public sealed record JoinFreeze(int Troop, string Name, long X, long Y);
 
 /// <summary>
 /// What the scripts tell of a frame on the map for the join prompt.
@@ -429,8 +443,8 @@ public sealed record JoinFreeze(int Troop, string Name);
 /// <param name="Changing">Whether the map's scene changes.</param>
 /// <param name="Busy">Why the player may not join a battle by choice now.</param>
 /// <param name="Sides">The side battles of the raid boss battles on the map, <see langword="null"/> without raid boss pools.</param>
-/// <param name="Freeze">The frozen fight near the player, <see langword="null"/> for none.</param>
-public sealed record JoinFrame(bool Reads, bool Pressed, bool Changing, JoinBusy Busy, IReadOnlyList<JoinSide>? Sides, JoinFreeze? Freeze);
+/// <param name="Frozen">The frozen fights of the map whose boss's stand-in shows, none for none.</param>
+public sealed record JoinFrame(bool Reads, bool Pressed, bool Changing, JoinBusy Busy, IReadOnlyList<JoinSide>? Sides, IReadOnlyList<JoinFreeze> Frozen);
 
 /// <summary>
 /// What the join prompt offers in a frame.

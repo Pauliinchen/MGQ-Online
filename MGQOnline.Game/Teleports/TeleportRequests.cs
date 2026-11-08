@@ -2,6 +2,7 @@
 //  TeleportRequests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Counted the steps to a member through Sessions
 //      Paulinchen  2026-10-31: Stopped carrying the warp ban of the member's place along
 //      Paulinchen  2026-10-30: Created
 //
@@ -486,7 +487,7 @@ public sealed class TeleportRequests
     /// <param name="y">Its y.</param>
     /// <returns>Whether they do; never before the scripts told the player's place.</returns>
     private bool NearPlace(long map, long x, long y) =>
-        Place is { } own && own.Map == map && Math.Max(Math.Abs(own.X - x), Math.Abs(own.Y - y)) <= GatherTiles;
+        Place is { } own && own.Map == map && Sessions.Steps(own.X, own.Y, x, y) <= GatherTiles;
 
     /// <summary>
     /// Writes a line of the teleports into the log.

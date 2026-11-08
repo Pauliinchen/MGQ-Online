@@ -2,6 +2,7 @@
 #  battles_coop_join.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Handed the DLL the tiles of the bosses and the frozen fights, which it picks within the hotkey's reach
 #      Paulinchen  2026-11-06: Turned the Join Battle hotkey off while the Mod Framework leaves it unbound
 #                            - Showed the prompt as a hud of the Mod Framework's UI layer under the player
 #                            - Told the DLL a side battle's enemy rates as the list of numbers they are
@@ -40,15 +41,11 @@
 # battle and a boss battle take them too, or refuses, which the player reads in the notification
 # box. Near a full raid boss battle in a Raid World the prompt offers a side battle against the
 # same boss instead (sides), which the player fights as their own (MGQ_MpRaidPool.start_side). Near
-# none of these, a raid boss's frozen fight near the player is offered (freeze_candidate), which
+# none of these, a raid boss's frozen fight near the player is offered (frozen_fights), which
 # the press resumes (MGQ_MpRaidFreezeUi.join). A press near a battle that takes nobody in tells why.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpBattlesJoin
-  # Steps a raid boss's frozen fight may be away from the player for its prompt to show, as the
-  # DLL's JoinChoice counts a battle's.
-  JOIN_DISTANCE = 3
-
   # Frames the notification box shows a message of this script, four seconds.
   NOTICE_FRAMES = 240
 
@@ -168,7 +165,7 @@ module MGQ_MpBattlesJoin
     @clicked = false
     pressed = reads && (MGQ_MpHotkeys.pressed?(:join_battle) || clicked) ? true : false
     request = { "facts" => MGQ_MpBattlesCoop.facts, "reads" => reads, "pressed" => pressed, "changing" => changing ? true : false,
-                "busy" => reads ? busy_reasons : [nil, nil], "sides" => reads ? sides : nil, "freeze" => reads ? freeze_candidate : nil }
+                "busy" => reads ? busy_reasons : [nil, nil], "sides" => reads ? sides : nil, "frozen" => reads ? frozen_fights : [] }
     answer = MGQ_Multiplayer::Bridge.call(FRAME_TOPIC, request)
     MGQ_MpBattlesCoop.take_status(answer)
     return unless reads && answer.is_a?(Hash)
@@ -189,31 +186,29 @@ module MGQ_MpBattlesJoin
   end
 
   # Lists the side battles the raid boss battles on the player's map offer, by their hosts' states
-  # (MGQ_MpRaidPool.side_of), with the steps to each boss's event, for the DLL to choose from.
+  # (MGQ_MpRaidPool.side_of), with the tiles of each boss's events, for the DLL to choose from.
   #
-  # @return [Array<Array>, nil] Each host's seat, the troop, the host's enemy rates, the steps to the
-  #   boss (nil unknown) and its name; nil without raid boss pools.
+  # @return [Array<Array>, nil] Each host's seat, the troop, the host's enemy rates, the tiles of the
+  #   boss's events ([x, y] each) and its name; nil without raid boss pools.
   def self.sides
     return nil unless defined?(MGQ_MpRaidPool)
 
-    x = $game_player.x
-    y = $game_player.y
     map = $game_map.map_id
     MGQ_MpOverworldSync::Peers.all.map do |host|
       side = host.state["map"].to_i == map ? MGQ_MpRaidPool.side_of(host) : nil
       next unless side
 
-      steps = defined?(MGQ_MpRaidBar) ? MGQ_MpRaidBar.distance_to_boss(side[0], x, y) : nil
-      [host.seat, side[0].to_i, side[1], steps, MGQ_MpRaidPool.troop_label(side[0]).to_s]
+      tiles = defined?(MGQ_MpRaidBar) ? MGQ_MpRaidBar.boss_tiles(side[0]) : []
+      [host.seat, side[0].to_i, side[1], tiles, MGQ_MpRaidPool.troop_label(side[0]).to_s]
     end.compact
   end
 
-  # Finds the frozen fight of a raid boss near the player, the one whose boss's stand-in stands
-  # within JOIN_DISTANCE, see ui_raid_freeze.rbx, which the prompt offers when nothing else.
+  # Lists the frozen fights of raid bosses on the map, see ui_raid_freeze.rbx, of which the DLL
+  # offers the one within the Join Battle hotkey's reach when nothing else.
   #
-  # @return [Array, nil] The troop and the boss's name, nil for none.
-  def self.freeze_candidate
-    defined?(MGQ_MpRaidFreezeUi) ? MGQ_MpRaidFreezeUi.join_target($game_player.x, $game_player.y, JOIN_DISTANCE) : nil
+  # @return [Array<Array>] Each fight's troop, its boss's name and the tile of its boss's stand-in.
+  def self.frozen_fights
+    defined?(MGQ_MpRaidFreezeUi) ? MGQ_MpRaidFreezeUi.join_targets : []
   end
 
   # Reports whether the Join Battle hotkey is read: only in a world, and only while it has a key.

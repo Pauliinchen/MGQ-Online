@@ -2,6 +2,7 @@
 #  ui_raid_bar_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Expected the tiles of a boss's events in place of the steps to them
 #      Paulinchen  2026-11-06: Read the bars the strip and the bars over the bosses show, leaving how they look to the in-game suite
 #                            - Named M as the party box size hotkey
 #      Paulinchen  2026-11-05: Answered the troops of the map's pages with fixed values in place of a copy of the DLL's command index
@@ -417,7 +418,7 @@ check("the DLL is asked once for the pages of the map's events, the Colosseum's 
 $frame += MGQ_MpRaidBar::SCAN_FRAMES
 bar.boss_events
 check("and not again while their pages stay", $troops_asked.size, 1)
-check("the steps to a boss's event", [bar.distance_to_boss(71, 12, 13), bar.distance_to_boss(2016, 0, 0)], [3, MGQ_MpRaidBar::FAR])
+check("the tiles of a boss's events, none for a troop the map shows none of", [bar.boss_tiles(71), bar.boss_tiles(2016)], [[[10, 10]], []])
 check("a Raid World asks the rules once for every troop of the map's events, by the pools' rules",
       $raid_answers.asked("raid.troops").first.values_at("mode", "active", "troops"), ["pools", false, [31, 71, 126, 1599]])
 $raid_answers.troops.delete(71)
@@ -540,7 +541,7 @@ standin_sprite = CharacterSprite.new(frozen_boss, 240, 320, 48, true, 255)
 $freeze_sprites = [standin_sprite]
 check("a frozen fight's boss stand-in counts as the boss's event, one whose troop shows no bar left out",
       bar.boss_events.map { |event, troop| [event.equal?(frozen_boss), troop] }, [[true, 71]])
-check("the steps to the boss count its stand-in", bar.distance_to_boss(71, 22, 21), 2)
+check("the boss's tiles count its stand-in", bar.boss_tiles(71), [[20, 20]])
 bar.update_map([], $freeze_sprites)
 check("the bar stands over the stand-in, following its sprite",
       MGQ_MpShown.keys_of(:raid_overhead).map { |key| [key[1].equal?(frozen_boss), MGQ_MpRaidBar.overhead_bar(key[1]).title] }, [[true, "Tier 9 Raid Boss"]])

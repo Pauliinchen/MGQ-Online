@@ -2,6 +2,7 @@
 #  duel_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Played the DLL telling who stands near the player
 #      Paulinchen  2026-11-05: Handed the team and took a team duel's sides as values, which the DLL writes and reads
 #                            - Expected the players a challenge names as a list
 #      Paulinchen  2026-10-30: Checked the script's side of the DLL's handshake on the fake bridge instead of the handshake
@@ -122,6 +123,7 @@ $open = false
 world_frame
 $open = true
 peer = peer_told(2, friend)
+near_seats(2)
 duel.on_map
 check("a duel waiting as the world closes is forgotten", $duels.requests("duel.begin").last["bid"], "g10")
 

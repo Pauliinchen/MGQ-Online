@@ -2,14 +2,18 @@
 //  SidePickTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Checked that the scripts hear a side switch shared only once a route has progress
 //      Paulinchen  2026-11-05: Created
 //
 //----------------------------------------------------------------
 
+using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using MGQOnline.Bridge.Ruby;
 using MGQOnline.Game.Catchup;
+using MGQOnline.Game.Story;
+using MGQOnline.Game.Topics;
 
 namespace MGQOnline.Game.Tests.Catchup;
 
@@ -63,6 +67,30 @@ public sealed class SidePickTests
         Assert.True(onRoute["companion"].IsNil);
         Assert.Equal("alice", onRoute["note"].AsText());
     }
+
+    /// <summary>
+    /// Asserts that the scripts hear a side switch is each player's own before the Great Decision,
+    /// so a Classic world's sides stay apart, and shared once a route has progress.
+    /// </summary>
+    [Fact]
+    public void Shared_AskedByTheScripts_SharesASideSwitchOnceARouteHasProgress()
+    {
+        var topics = new TopicContext();
+        CatchupTopics.Register(topics.Context, () => null);
+        const int sideSwitch = (int)(StoryClass.Kept | StoryClass.Side);
+
+        Assert.Equal(0, ClassesOf(topics, 0).Span[sideSwitch]);
+        Assert.Equal(1, ClassesOf(topics, 3).Span[sideSwitch]);
+    }
+
+    /// <summary>
+    /// Asks the topic which classes are shared in a story at step 30 of the main story.
+    /// </summary>
+    /// <param name="topics">The topics.</param>
+    /// <param name="angelicDominion">The Angelic Dominion's progress, 0 before the Great Decision.</param>
+    /// <returns>A byte per class, 1 for shared.</returns>
+    private static ReadOnlyMemory<byte> ClassesOf(TopicContext topics, long angelicDominion) =>
+        ((RubyString)topics.Value(CatchupTopics.SharedTopic, Chose("alice", angelicDominion)["own"])).Bytes;
 
     /// <summary>
     /// Makes a story at step 30 of the main story.

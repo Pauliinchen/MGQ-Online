@@ -2,6 +2,7 @@
 //  Party.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Left the steps of standing near to Sessions
 //      Paulinchen  2026-11-06: Logged what made the player leave the party
 //                            - Told the number of the player's latest invite
 //      Paulinchen  2026-11-01: Kept the invite standing for everyone it reached until it runs out or the party is full
@@ -48,11 +49,6 @@ public sealed class Party
     /// Players a party holds at most, one per place of the Frontline they share.
     /// </summary>
     public const int MaxPlayers = 4;
-
-    /// <summary>
-    /// Tiles another player may be away, on the same map, to be invited or to accept.
-    /// </summary>
-    public const int NearTiles = 2;
 
     /// <summary>
     /// The length of a party id's start, the id of the player who made it.

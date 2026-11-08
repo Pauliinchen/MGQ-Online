@@ -2,6 +2,7 @@
 #  overworld_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Played the DLL telling who stands near the player
 #      Paulinchen  2026-11-07: Read a greyed wheel choice from disabled:
 #      Paulinchen  2026-11-06: Expected the DLL to hear that the player chose to leave the party
 #                            - Drew the outline's frame in a color of its own
@@ -341,6 +342,7 @@ check("and see-through again in a Classic world", ghost.opacity, MGQ_MpOverworld
 
 $inbox << entry("message", 2, told(friend.merge("map" => "5", "x" => "21", "y" => "22")))
 MGQ_MpOverworldSync.tick
+near_seats(2)
 check("someone near: invite first", option(PARTY), ["Invite to a party", true])
 my_party = "mep1"
 invite_ends = MGQ_Multiplayer::Bridge.frame_number + MGQ_MpCoop::INVITE_FRAMES

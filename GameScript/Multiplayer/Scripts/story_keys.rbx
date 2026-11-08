@@ -2,6 +2,7 @@
 #  story_keys.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Asked the DLL which classes of keys are shared in a story, side switches included
 #      Paulinchen  2026-11-06: Logged a full batch once, without the frame in its key
 #      Paulinchen  2026-11-05: Handed the DLL every key as [kind, key], every value as itself and every site as [kind, ...], and looked self switches up in the rows of rules it hands, so only the DLL writes and reads the tracks' texts
 #                            - Read the story markers from story_ids.rbx
@@ -80,6 +81,10 @@ module MGQ_MpStoryKeys
   # The topic that builds a Classic party's table.
   CLASSIC_TOPIC = "story.classic_table"
 
+  # The topic that tells which classes of keys are shared in a story, see SidePick.SharedClasses in
+  # the DLL.
+  SHARED_TOPIC = "catchup.shared"
+
   # The topic a frame's writes go to the DLL by.
   WRITES_TOPIC = "story.writes"
 
@@ -142,6 +147,10 @@ module MGQ_MpStoryKeys
 
   # The story mapping's table, nil before it came.
   @raid = nil
+
+  # The routes' progress the DLL last told the shared classes at, and those classes, see
+  # shared_classes.
+  @shared = nil
 
   # A Classic party's table, built once it is first needed.
   @classic = nil
@@ -355,18 +364,30 @@ module MGQ_MpStoryKeys
     0
   end
 
-  # Reports whether a key is shared by the open world's table: kept on a track, a side switch only
-  # once the sides no longer differ.
+  # Reports whether a key is shared by the open world's table, as the DLL tells for its class.
   #
   # @param kind [Integer] 0 for a switch, 1 for a variable, 2 for a self switch.
   # @param key [Integer, Array] Its id or key.
   # @param variables [Array, nil] The variables of the story it belongs to, for the sides' rule.
   # @return [Boolean] Whether it is.
   def self.shared?(kind, key, variables = nil)
-    found = class_of(kind, key)
-    return false if found & KEPT == 0
+    shared_classes(variables).getbyte(class_of(kind, key)) == 1
+  end
 
-    found & SIDE == 0 || !MGQ_MpStoryState.sides_differ?(variables)
+  # Tells which classes of keys are shared in a story, as the DLL decides from the routes' progress
+  # (topic catchup.shared), asked again only once that progress changed.
+  #
+  # @param variables [Array, nil] The story's variables, nil for those of the story played.
+  # @return [String] A byte per class, 1 for shared; empty, so none is shared, while the DLL does not
+  #   answer.
+  def self.shared_classes(variables)
+    variables ||= $game_variables ? MGQ_MpStoryState.data_of($game_variables) : []
+    routes = MGQ_MpStoryIds.route_variables.map { |id| [id, variables[id].to_i] }
+    return @shared[1] if @shared && @shared[0] == routes
+
+    answer = MGQ_Multiplayer::Bridge.call(SHARED_TOPIC, "s" => [], "v" => routes, "ss" => [])
+    @shared = [routes, answer] if answer.is_a?(String)
+    answer.to_s
   end
 
   # Reports whether a key has a bit in the open world's table.

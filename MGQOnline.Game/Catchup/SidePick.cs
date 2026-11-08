@@ -2,6 +2,7 @@
 //  SidePick.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Decided which classes of story keys are shared in a story
 //      Paulinchen  2026-11-05: Created
 //
 //----------------------------------------------------------------
@@ -145,6 +146,28 @@ public static class SidePick
         long progress = played.Variable(StoryIds.MainProgress) ?? 0;
         return leaderSided || StoryParts.Routes.Contains(played.Part) || (SidedParts.Contains(played.Part) && progress >= at && progress <= StoryIds.BeforeDecision);
     }
+
+    /// <summary>
+    /// Tells for each class of story keys whether a key of it is shared in a story, see
+    /// <see cref="Shared"/>.
+    /// </summary>
+    /// <param name="story">The story.</param>
+    /// <returns>A byte per class, 1 for shared and 0 for each player's own.</returns>
+    public static byte[] SharedClasses(StoryValues story)
+    {
+        ArgumentNullException.ThrowIfNull(story);
+        return Enumerable.Range(0, byte.MaxValue + 1).Select(found => Shared((StoryClass)found, story) ? (byte)1 : (byte)0).ToArray();
+    }
+
+    /// <summary>
+    /// Reports whether a key of a class is shared in a story: kept on a track, a side switch only
+    /// once the sides no longer differ.
+    /// </summary>
+    /// <param name="found">The key's class.</param>
+    /// <param name="story">The story.</param>
+    /// <returns>Whether it is.</returns>
+    public static bool Shared(StoryClass found, StoryValues story) =>
+        found.HasFlag(StoryClass.Kept) && (!found.HasFlag(StoryClass.Side) || !SidesDiffer(story));
 
     /// <summary>
     /// Reports whether the sides still differ in a story: before the Great Decision, while no route

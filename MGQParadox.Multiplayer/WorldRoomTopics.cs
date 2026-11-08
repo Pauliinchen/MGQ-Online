@@ -2,6 +2,7 @@
 //  WorldRoomTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Posted the players who stand near the player
 //      Paulinchen  2026-11-06: Took what made the player leave the party
 //      Paulinchen  2026-11-05: Opened, closed and sent to the world room and told the player's id through topics, writing the messages from the fields the scripts hand over
 //      Paulinchen  2026-10-31: Registered the topics of the raid bars with the raid pools
@@ -45,7 +46,7 @@ namespace MGQParadox.Multiplayer;
 /// the topics of every area over the room are registered from, each area from a file of its own.
 /// </summary>
 /// <remarks>
-/// Every event is posted after the views it depends on (the party, the players' names, the
+/// Every event is posted after the views it depends on (the party, the players' names, who stands near, the
 /// connection), so a script that follows a player who told their state reads the party as it stands
 /// after that state.
 /// </remarks>
@@ -156,6 +157,11 @@ internal sealed class WorldRoomTopics : IWorldRoomHost
     /// The event of the names that tell the players apart: {seat => name}.
     /// </summary>
     public const string LabelsEvent = "world.labels";
+
+    /// <summary>
+    /// The event of the players who stand near the player (see <see cref="Sessions.Near"/>): their seats.
+    /// </summary>
+    public const string NearEvent = "world.near";
 
     /// <summary>
     /// The event of the party's view, see <see cref="ViewOf"/>.
@@ -500,7 +506,8 @@ internal sealed class WorldRoomTopics : IWorldRoomHost
     }
 
     /// <summary>
-    /// Posts the connection's, the names' and the party's views that changed since they were posted.
+    /// Posts the connection's, the names', the players near and the party's views that changed since
+    /// they were posted.
     /// </summary>
     private void FlushViews()
     {
@@ -519,6 +526,7 @@ internal sealed class WorldRoomTopics : IWorldRoomHost
         }
 
         PostChanged(LabelsEvent, labels);
+        PostChanged(NearEvent, ArrayOf(_room.Peers.Where(peer => _room.Near(peer.State)).Select(peer => (RubyValue)peer.Seat)));
         PostChanged(PartyEvent, ViewOf());
     }
 

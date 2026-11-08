@@ -2,6 +2,7 @@
 //  Sessions.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-08: Counted the steps between players and told who stands near or within the Join Battle hotkey's reach
 //      Paulinchen  2026-11-05: Read a battle's players and state as its host tells them, without a reading for games that tell no state
 //                            - Created
 //
@@ -16,8 +17,8 @@ namespace MGQOnline.Game.World;
 
 /// <summary>
 /// The one owner of presence and battle sessions, which every join and invite asks: whom a dropped
-/// connection keeps for the grace, whether another player is free or busy, and whether the battle a
-/// host tells takes players in, is full, ends or is closed.
+/// connection keeps for the grace, whether another player is free or busy, who stands near, and
+/// whether the battle a host tells takes players in, is full, ends or is closed.
 /// </summary>
 /// <remarks>
 /// The grace counts the frames <see cref="Tick"/> is called with, once a bridge frame, so a loaded
@@ -30,6 +31,18 @@ public sealed class Sessions
     /// connection after a while and the games connect again at once.
     /// </summary>
     public const int GraceFrames = 900;
+
+    /// <summary>
+    /// Steps another player may be away, on the same map, to stand near the player for the party's,
+    /// the duels' and the trades' offers.
+    /// </summary>
+    public const int NearTiles = 2;
+
+    /// <summary>
+    /// Steps a battle, a side battle's boss or a frozen fight's boss may be away from the player for
+    /// the Join Battle hotkey to reach it.
+    /// </summary>
+    public const int JoinTiles = 3;
 
     /// <summary>
     /// The state a host tells of a battle that takes players in.
@@ -157,6 +170,44 @@ public sealed class Sessions
     /// <param name="frames">The frames.</param>
     /// <returns>The seconds.</returns>
     public static string Seconds(long frames) => (frames / GameClock.FramesPerSecond).ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// Counts the steps between two tiles, diagonal steps counted as one.
+    /// </summary>
+    /// <param name="x">The one tile's x.</param>
+    /// <param name="y">The one tile's y.</param>
+    /// <param name="otherX">The other tile's x.</param>
+    /// <param name="otherY">The other tile's y.</param>
+    /// <returns>The steps.</returns>
+    public static long Steps(long x, long y, long otherX, long otherY) => Math.Max(Math.Abs(x - otherX), Math.Abs(y - otherY));
+
+    /// <summary>
+    /// Counts the steps between another player and a tile, see <see cref="Steps(long, long, long, long)"/>.
+    /// </summary>
+    /// <param name="peer">The player.</param>
+    /// <param name="x">The tile's x.</param>
+    /// <param name="y">The tile's y.</param>
+    /// <returns>The steps.</returns>
+    public static long Steps(Peer peer, long x, long y)
+    {
+        ArgumentNullException.ThrowIfNull(peer);
+        return Steps(WorldFields.ToI(peer.State["x"]), WorldFields.ToI(peer.State["y"]), x, y);
+    }
+
+    /// <summary>
+    /// Reports whether another player stands near the player: on the same map, within
+    /// <see cref="NearTiles"/>.
+    /// </summary>
+    /// <param name="own">What the player last told of themselves.</param>
+    /// <param name="other">What the other player last told.</param>
+    /// <returns>Whether they do.</returns>
+    public static bool Near(WorldFields own, WorldFields other)
+    {
+        ArgumentNullException.ThrowIfNull(own);
+        ArgumentNullException.ThrowIfNull(other);
+        return WorldFields.ToI(own["map"]) == WorldFields.ToI(other["map"])
+            && Steps(WorldFields.ToI(own["x"]), WorldFields.ToI(own["y"]), WorldFields.ToI(other["x"]), WorldFields.ToI(other["y"])) <= NearTiles;
+    }
 
     /// <summary>
     /// Reports whether another player fights a battle, as their state says: it names the battle and

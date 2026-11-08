@@ -2,6 +2,7 @@
 #  coop.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Read standing near from the DLL and dropped the unused invite check
 #      Paulinchen  2026-11-06: Told the DLL what made the player leave the party, for its log
 #                            - Marked a party invite by its party and its number, so a new invite shows after a decline
 #                            - Asked before removing a member or leaving the party through UI.confirm
@@ -60,9 +61,6 @@
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpCoop
-  # Tiles another player may be away, on the same map, to be invited or to accept.
-  NEAR_TILES = 2
-
   # Frames a trade offer stands, fifteen seconds at 60 frames per second, as long as the DLL lets a
   # party invite stand.
   INVITE_FRAMES = 900
@@ -241,15 +239,16 @@ module MGQ_MpCoop
     # Reports whether another player's invite reaches the player: one who invites, standing near
     # or naming the player.
     #
-    # @param state [Hash] What the other player last told.
+    # @param peer [MGQ_MpOverworldSync::Peers::Peer] The other player.
     # @param flag [String] The state field that says they invite, such as "invite".
     # @param named [String] The state field with the ids they invite from afar, such as "invite_to".
     # @param anywhere [Boolean] Whether an invite naming the player counts wherever the inviter stands.
     # @return [Boolean] Whether it does.
-    def self.reaches_me?(state, flag, named, anywhere = true)
+    def self.reaches_me?(peer, flag, named, anywhere = true)
+      state = peer.state
       return false unless state[flag]
 
-      Party.near?(state) || (anywhere && Array(state[named]).include?(MGQ_MpOverworldSync::Me.id))
+      MGQ_MpOverworldSync::Peers.near?(peer) || (anywhere && Array(state[named]).include?(MGQ_MpOverworldSync::Me.id))
     end
 
     # Reports whether the invite stands.
@@ -271,14 +270,6 @@ module MGQ_MpCoop
     # @return [Array<String>] The ids, none while no invite stands.
     def targets
       inviting? ? @targets : []
-    end
-
-    # Reports whether the invite reaches another player: standing near, or named.
-    #
-    # @param state [Hash] What the other player last told.
-    # @return [Boolean] Whether it does.
-    def covers?(state)
-      inviting? && (Party.near?(state) || @targets.include?(state["id"].to_s))
     end
 
     # Invites for INVITE_FRAMES from now, or NAMED_INVITE_FRAMES for a player named, keeping the
@@ -509,16 +500,6 @@ module MGQ_MpCoop
     def self.act(topic, request = nil)
       take_view(MGQ_Multiplayer::Bridge.call(topic, request))
     end
-
-    # Reports whether another player stands near the player, on the same map, as duels and trades
-    # count it; the party's own invites the DLL counts the same.
-    #
-    # @param state [Hash] What the other player last told.
-    # @return [Boolean] Whether they do.
-    def self.near?(state)
-      state["map"].to_i == $game_map.map_id &&
-        [(state["x"].to_i - $game_player.x).abs, (state["y"].to_i - $game_player.y).abs].max <= NEAR_TILES
-    end
   end
 
   # What the party offers between two players, through ui_actions.rbx: its choices on the action
@@ -533,7 +514,7 @@ module MGQ_MpCoop
       return teleport if teleport
 
       option = MGQ_MpActions::Option
-      near = MGQ_MpOverworldSync::Peers.all.select { |peer| Party.near?(peer.state) && !Party.member?(peer.state) }
+      near = MGQ_MpOverworldSync::Peers.all.select { |peer| MGQ_MpOverworldSync::Peers.near?(peer) && !Party.member?(peer.state) }
       inviter = near.find { |peer| peer.state["invite"] }
       if inviter
         full = Party.full?(inviter.state["party"])

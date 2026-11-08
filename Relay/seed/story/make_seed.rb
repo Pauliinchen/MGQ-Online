@@ -2,6 +2,7 @@
 #  make_seed.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Took the story ids of the rules from the relay's copy of the story id table
 #      Paulinchen  2026-10-28: Wrote only the tables kept by hand, since the game scripts the generated tables came from are deleted
 #                            - Wrote the steps of the story in free order as a rule
 #                            - Wrote every chest and the chest flags of a party member's own, and the rewards the DLL hands the scripts, for the tests
@@ -23,6 +24,9 @@ require "json"
 # Where the tables kept by hand go, which the relay seeds from.
 SEED_FOLDER = __dir__
 
+# The story's ids, from the relay's copy of the one table (MGQOnline.Game's StoryIds).
+IDS = JSON.parse(File.read(File.join(__dir__, "..", "..", "core", "story_ids.json")))
+
 # The rules of world_catchup.rbx, by the rule's name as the relay's `rules` table takes it: the
 # companions none of whose joins is temporary (Alice, and Ilias with her later selves), Part 2's
 # orbs, the common event that moves the story on once the player holds every orb, the main story's
@@ -33,11 +37,11 @@ SEED_FOLDER = __dir__
 RULES = {
   "lasting_companions" => [5, 26, 29, 30],
   "orbs" => [537, 538, 540, 541, 542],
-  "orb_event" => 330,
-  "orbs_gathered" => 32,
-  "side_step" => 7,
+  "orb_event" => IDS["orb_event"],
+  "orbs_gathered" => IDS["orbs_gathered"],
+  "side_step" => IDS["side_step"],
   "side_companions" => { "alice" => 5, "ilias" => 26 },
-  "free_order" => [{ "part" => "chaos", "step" => 21 }],
+  "free_order" => [{ "part" => "chaos", "step" => IDS["chaos_free_order"] }],
 }
 
 # The variables that count switches: the Randolphs found (1354), one switch each, and Alice's
