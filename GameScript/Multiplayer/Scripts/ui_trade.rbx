@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-08: Started the cursor on the bag's Items tab
+#                            - Gave its UI ids the mgq_online_ prefix
 #                            - Moved the cursor into the bag's tabs as the screen shows, since autofocus: never reaches tabs that take the focus one by one
 #      Paulinchen  2026-11-07: Left the way back from the bag to its tab to the framework and gave the gold box its unit as adornment:
 #      Paulinchen  2026-11-06: Took how many of an item an offer holds and why a step changed nothing from the rules in C#
@@ -51,8 +52,9 @@ module MGQ_MpTradeUi
   CANCEL_YES = "Cancel trade"
   CANCEL_NO = "Keep trading"
 
-  # The bag's categories, by the tab that shows them.
-  CATEGORIES = [[:item, "Items"], [:weapon, "Weapons"], [:armor, "Armor"], [:stone, "Stones"]]
+  # The bag's categories, each the id of the tab that shows it, with its title.
+  CATEGORIES = [[:mgq_online_trade_items, "Items"], [:mgq_online_trade_weapons, "Weapons"], [:mgq_online_trade_armor, "Armor"],
+                [:mgq_online_trade_stones, "Stones"]]
 
   # The window's title, with the other player's name.
   TITLE = "Trading with %s"
@@ -76,10 +78,10 @@ module MGQ_MpTradeUi
   # @return [Boolean] Whether it does.
   def self.in_category?(item, category)
     case category
-    when :item then item.is_a?(RPG::Item) && !MGQ_MpTrade::Items.stone?(item)
-    when :weapon then item.is_a?(RPG::Weapon)
-    when :armor then item.is_a?(RPG::Armor)
-    when :stone then MGQ_MpTrade::Items.stone?(item)
+    when :mgq_online_trade_items then item.is_a?(RPG::Item) && !MGQ_MpTrade::Items.stone?(item)
+    when :mgq_online_trade_weapons then item.is_a?(RPG::Weapon)
+    when :mgq_online_trade_armor then item.is_a?(RPG::Armor)
+    when :mgq_online_trade_stones then MGQ_MpTrade::Items.stone?(item)
     else false
     end
   end
@@ -160,7 +162,7 @@ module MGQ_MpTradeUi
     param :name
 
     # The category of the bag the tabs show.
-    state :category, :item
+    state :category, :mgq_online_trade_items
 
     # The item the bag's cursor is on.
     state :bag_item

@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-08: Listed the tiles of a boss's events in place of counting the steps to them
+#                            - Gave its UI ids the mgq_online_ prefix
 #      Paulinchen  2026-11-06: Read the room at the top through the Mod Framework's UI.room
 #                            - Drew the strip and the bars over the bosses as huds of the Mod Framework's UI layer, the strip docked at the top in battle too
 #      Paulinchen  2026-11-05: Asked the DLL in one call per scan which troops' battles show a bar, and read the titles and tiers from its table
@@ -71,7 +72,7 @@ module MGQ_MpRaidBar
   SMALL_STRIP_HEIGHT = 36
 
   # The strip's place id, which names its place in the Mod Framework's settings.
-  STRIP_BOX = :raid_bar
+  STRIP_BOX = :mgq_online_raid_bar
 
   # The strip's name while the player arranges the boxes.
   STRIP_BOX_NAME = "Raid boss bar"

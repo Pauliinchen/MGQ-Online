@@ -2,6 +2,7 @@
 #  overworld.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Gave its UI ids the mgq_online_ prefix
 #      Paulinchen  2026-11-06: Read the colors of a follower's outline in the player's look through UI.color_now
 #                            - Drew the ghosts' labels, the own ping, the own line and the world status as huds of the Mod Framework's UI layer
 #                            - Named a ping's color by its name in the player's look
@@ -600,7 +601,7 @@ module MGQ_MpOverworld
   # still finds it with Alt.
   class WorldStatus < UI::Component
     # The status's place id, which names its place in the Mod Framework's settings.
-    ID = :world_status
+    ID = :mgq_online_world_status
 
     # The status's name while the player arranges the boxes.
     PLACE_NAME = "World status"

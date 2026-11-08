@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-08: Closed the list box on a click outside while its Name field shows
+#                            - Gave its UI ids the mgq_online_ prefix
 #      Paulinchen  2026-11-07: Went back from the list box's Name field to its rows when cancel reaches the window
 #      Paulinchen  2026-11-06: Asked again for a HUD part the UI layer refused, a while later or in a new scene
 #                            - Read a player's color in the player's look through UI.color_now
@@ -261,8 +262,8 @@ end
 #
 #   UI.open(MGQ_MpListBox, title: "Iliasburg", source: MGQ_MpListBox::Source.new(rows, "Players")) { |_value, why| ... }
 class MGQ_MpListBox < Mod_Framework::UI::Component
-  # The window's place id, bare as before the framework, so the places players stored stay theirs.
-  ID = :list_box
+  # The window's place id.
+  ID = :mgq_online_list_box
 
   # The window's name while the player arranges the windows.
   NAME = "List box"
@@ -280,13 +281,13 @@ class MGQ_MpListBox < Mod_Framework::UI::Component
   MIN_SIZE = [460, 132]
 
   # The id of the list of rows.
-  LIST = :list_box_list
+  LIST = :mgq_online_list_box_list
 
   # The id of the Name field the picker adds a mod by.
-  FIELD = :list_box_field
+  FIELD = :mgq_online_list_box_field
 
   # The id of the button that removes a mod added by name.
-  REMOVE = :list_box_remove
+  REMOVE = :mgq_online_list_box_remove
 
   # The text of the Remove button and of its choice in the row's context menu.
   REMOVE_TEXT = "Remove"
@@ -359,7 +360,7 @@ class MGQ_MpListBox < Mod_Framework::UI::Component
   def render
     window title.to_s, id: ID, place_name: NAME, close_outside: true, resizable: true, at: [SIDE, TOP],
                        width: Graphics.width - 2 * SIDE, height: Graphics.height - TOP - BOTTOM, min_size: MIN_SIZE, on_cancel: -> { cancelled } do
-      text(source.note.to_s, color: note_color, typo: :subtitle1, id: :list_box_note) if source.note
+      text(source.note.to_s, color: note_color, typo: :subtitle1, id: :mgq_online_list_box_note) if source.note
       if description
         paper scroll: :vertical, focusable: true, height: :fill, autofocus: true do
           text description.to_s, wrap: true

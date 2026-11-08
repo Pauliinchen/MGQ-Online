@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-08: Scrolled a form inside the right box instead of letting it grow past the screen
+#                            - Gave its UI ids the mgq_online_ prefix
 #                            - Showed the details of the world under the cursor once the first worlds arrive
 #                            - Moved the focus onto a field of the form only once its last render made the field
 #      Paulinchen  2026-11-07: Left the form back to its list when cancel reaches the screen from a field, and greyed menu choices through disabled:
@@ -573,7 +574,8 @@ class Scene_MpWorlds < Scene_MenuBase
   end
 
   # Asks the window to put the focus on a part once it shows: :worlds_box or :commands_box as a
-  # whole, the rows of :worlds or :commands, or [:field, key] of the form entered.
+  # whole, the rows of :worlds or :commands, or [:field, key] of the form entered; a part's id is its
+  # name with the mgq_online_ prefix.
   #
   # @param target [Symbol, Array] Where.
   def request_focus(target)
@@ -1781,14 +1783,14 @@ class Scene_MpWorlds < Scene_MenuBase
         end
         stack row: true, height: :fill do
           stack width: LEFT_WIDTH, height: :fill do
-            paper enter: true, id: :worlds_box, height: :fill, help: MGQ_MpWorldScreen.text("enter_hint"),
+            paper enter: true, id: :mgq_online_worlds_box, height: :fill, help: MGQ_MpWorldScreen.text("enter_hint"),
                   on_enter: -> { scene.entered(:worlds) }, on_leave: -> { scene.left(:worlds) } do
-              list scene.entries, id: :worlds, bind_index: :world_index, rows_shown: :fill, height: :fill, row: ->(entry) { scene.world_row(entry) },
+              list scene.entries, id: :mgq_online_worlds, bind_index: :world_index, rows_shown: :fill, height: :fill, row: ->(entry) { scene.world_row(entry) },
                                   on_change: ->(entry) { scene.pointed_world(entry) }, on_submit: ->(entry) { scene.on_world(entry) }
             end
-            paper enter: true, id: :commands_box, help: MGQ_MpWorldScreen.text("hint"),
+            paper enter: true, id: :mgq_online_commands_box, help: MGQ_MpWorldScreen.text("hint"),
                   on_enter: -> { scene.entered(:commands) }, on_leave: -> { scene.left(:commands) } do
-              list COMMANDS, id: :commands, bind_index: :command_index, text: ->(command) { command[0] },
+              list COMMANDS, id: :mgq_online_commands, bind_index: :command_index, text: ->(command) { command[0] },
                              on_change: ->(command) { scene.pointed_command(command) }, on_submit: ->(command) { scene.on_command(command) }
             end
           end
@@ -1796,7 +1798,7 @@ class Scene_MpWorlds < Scene_MenuBase
           form = kind == :form || kind == :preview
           # A form scrolls, since its fields would push the screen past its height; the details keep
           # their description cut to the room left.
-          paper id: :right_box, key: form ? [:form, target] : :details, grow: 1, height: :fill, scroll: form ? :vertical : false do
+          paper id: :mgq_online_right_box, key: form ? [:form, target] : :details, grow: 1, height: :fill, scroll: form ? :vertical : false do
             case kind
             when :world then details(target)
             when :form then component(WorldFormView, scene: scene, page: scene.forms[target], key: [:form, target, scene.forms[target].object_id])
@@ -1834,7 +1836,7 @@ class Scene_MpWorlds < Scene_MenuBase
     def panel_of(panel, index)
       target = panel["target"]
       group panel["title"].to_s, { size: :tiny, key: index }.merge(panel["note"] ? { note: panel["note"].to_s } : {}) do
-        paper({ clickable: !target.nil?, on_click: target ? -> { scene.open_target(target.to_sym) } : nil }.merge(target ? { id: :"details_#{target}" } : {})) do
+        paper({ clickable: !target.nil?, on_click: target ? -> { scene.open_target(target.to_sym) } : nil }.merge(target ? { id: :"mgq_online_details_#{target}" } : {})) do
           Array(panel["rows"]).each_with_index do |cells, row|
             stack(row: true, key: row) { cells.each_with_index { |cell, column| cell_of(cell, column) } }
           end
@@ -1872,7 +1874,7 @@ class Scene_MpWorlds < Scene_MenuBase
     # @param description [String] The description, empty for none.
     def description_of(description)
       group DESCRIPTION_TITLE, size: :tiny, height: :fill do
-        paper clickable: !description.empty?, id: :details_description, height: :fill,
+        paper clickable: !description.empty?, id: :mgq_online_details_description, height: :fill,
               on_click: description.empty? ? nil : -> { scene.open_target(:description) } do
           text description.empty? ? NO_DESCRIPTION : description, { wrap: true, most_lines: :fill, typo: :body2 }.merge(description.empty? ? { color: :dim } : {})
         end
@@ -1888,7 +1890,7 @@ class Scene_MpWorlds < Scene_MenuBase
       self.command_index = scene.command_index unless command_index == scene.command_index
       request = scene.focus_request
       if request && request[1] != @focused && request[0].is_a?(Symbol)
-        part(request[0]).focus
+        part(:"mgq_online_#{request[0]}").focus
         @focused = request[1]
       end
       said = scene.said

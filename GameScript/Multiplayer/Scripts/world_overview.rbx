@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-08: Wrote the world's type and difficulty right after its name in the title
+#                            - Gave its UI ids the mgq_online_ prefix
 #                            - Left the quest walk's events and markers to the DLL
 #      Paulinchen  2026-11-07: Greyed a player menu choice that cannot be taken through disabled:
 #      Paulinchen  2026-11-06: Dropped the opacity of the picture behind the Quests page
@@ -89,10 +90,10 @@
 # online, grouped by where they are, with their formation's highest level, their place in the story
 # and their ping; a player picked opens a menu of what the scripts offer, such as party invites,
 # duels and trades. The other pages are page views, see world_overview_pages.rbx; other mods append
-# their own tabs to "#overview_tabs" through UI.patch "#overview". It also lists the player's party
-# for the party box of ui_party_box.rbx and, in a Raid World, everyone on the player's map for the
-# map box, and tells the others where the player is, their levels and their place in the story in
-# the state overworld_sync.rbx sends.
+# their own tabs to "#mgq_online_overview_tabs" through UI.patch "#mgq_online_overview". It also
+# lists the player's party for the party box of ui_party_box.rbx and, in a Raid World, everyone on
+# the player's map for the map box, and tells the others where the player is, their levels and
+# their place in the story in the state overworld_sync.rbx sends.
 module MGQ_MpWorldOverview
   # The framework's components, short.
   UI = Mod_Framework::UI
@@ -132,9 +133,10 @@ module MGQ_MpWorldOverview
   TEXTS_KEPT = 256
 
   # The overview's own pages in the order Left and Right pass through them, each with its tab's
-  # title: the players online, the world itself, the quests under way, and in a Raid World what
-  # the catch-up hands out by level. Other mods' tabs follow them.
-  PAGES = [[:players, "Players"], [:world, "World"], [:quests, "Quests"], [:unlocks, "Unlocks"]]
+  # title and id: the players online, the world itself, the quests under way, and in a Raid World
+  # what the catch-up hands out by level. Other mods' tabs follow them.
+  PAGES = [[:players, "Players", :mgq_online_players_tab], [:world, "World", :mgq_online_world_tab], [:quests, "Quests", :mgq_online_quests_tab],
+           [:unlocks, "Unlocks", :mgq_online_unlocks_tab]]
 
   # What the title says outside a world.
   SOLO_TITLE = "Single player"
@@ -214,15 +216,14 @@ module MGQ_MpWorldOverview
   #   and color, shown in place of their place in the story.
   Row = Struct.new(:player, :name, :place, :level, :story, :ping, :icon, :member, :badge, :call)
 
-  # The window's id, under which the place the player stored before stays theirs, and which other
-  # mods' UI.patch names.
-  ID = :overview
+  # The window's id, which other mods' UI.patch names.
+  ID = :mgq_online_overview
 
   # The id of the row of tabs, which other mods append their tabs to.
-  TABS_ID = :overview_tabs
+  TABS_ID = :mgq_online_overview_tabs
 
   # The id of the Players page's list.
-  PLAYERS_ID = :overview_players
+  PLAYERS_ID = :mgq_online_overview_players
 
   # The window's name while the player arranges the windows.
   PLACE_NAME = "World overview"
@@ -389,6 +390,24 @@ module MGQ_MpWorldOverview
     forget_model(page) if SPLIT_PAGES.include?(page)
     title = PAGES.assoc(page)
     log("turned to the #{title ? title[1] : page} page")
+  end
+
+  # Names the tab of a page.
+  #
+  # @param page [Symbol] The page, see page.
+  # @return [Symbol] The tab's id: an own page's from PAGES, else the page itself.
+  def self.tab_of(page)
+    own = PAGES.assoc(page)
+    own ? own[2] : page
+  end
+
+  # Names the page of a tab.
+  #
+  # @param tab [Symbol] The tab's id.
+  # @return [Symbol] The page, see page: an own tab's from PAGES, else the tab's id itself.
+  def self.page_of(tab)
+    own = PAGES.find { |each| each[2] == tab }
+    own ? own[0] : tab
   end
 
   # The open world's name, for the title and the World page.
@@ -784,13 +803,13 @@ module MGQ_MpWorldOverview
   end
 
   # The World overview's window: the world's title row, its pages as tabs, and the key help. Other
-  # mods append their pages to the tabs through UI.patch "#overview"; t.read(:in_world) and
-  # t.read(:raid) tell them whether a world is open and whether it is a Raid World.
+  # mods append their pages to the tabs through UI.patch "#mgq_online_overview"; t.read(:in_world)
+  # and t.read(:raid) tell them whether a world is open and whether it is a Raid World.
   class WorldOverview < UI::Component
     hotkey MGQ_MpHotkeys.action(:overview)
 
-    # The page shown: :players, :world, :quests, :unlocks or the id of a tab another mod appended.
-    state :page, nil
+    # The id of the tab shown, see MGQ_MpWorldOverview.tab_of.
+    state :picked_tab, nil
 
     watch(:every => WATCH_FRAMES) { MGQ_MpWorldOverview.signature }
 
@@ -799,7 +818,7 @@ module MGQ_MpWorldOverview
 
     # Opens on the Players page in a world, else on the Quests page.
     def setup
-      self.page = MGQ_MpWorldOverview.start_page
+      self.picked_tab = MGQ_MpWorldOverview.tab_of(MGQ_MpWorldOverview.start_page)
     end
 
     # Describes the window.
@@ -813,15 +832,15 @@ module MGQ_MpWorldOverview
           party = overview.party_text
           text(party, color: :mgq_online_member) if party
         end
-        tabs bind: :page, wrap: true, arrows: true, id: TABS_ID, height: :fill, on_change: ->(id) { overview.turned(id) } do
+        tabs bind: :picked_tab, wrap: true, arrows: true, id: TABS_ID, height: :fill, on_change: ->(id) { overview.turned(overview.page_of(id)) } do
           if overview.in_world?
-            tab(PAGES.assoc(:players)[1], id: :players, badge: -> { page != :players && overview.call_waiting? }) { players_page }
-            tab(PAGES.assoc(:world)[1], id: :world) { component(OverviewPage, kind: :world, key: :world) }
+            tab(PAGES.assoc(:players)[1], id: overview.tab_of(:players), badge: -> { picked_tab != overview.tab_of(:players) && overview.call_waiting? }) { players_page }
+            tab(PAGES.assoc(:world)[1], id: overview.tab_of(:world)) { component(OverviewPage, kind: :world, key: :world) }
           end
-          tab(PAGES.assoc(:quests)[1], id: :quests) { component(OverviewPage, kind: :quests, key: :quests) }
-          tab(PAGES.assoc(:unlocks)[1], id: :unlocks) { component(OverviewPage, kind: :unlocks, key: :unlocks) } if overview.raid?
+          tab(PAGES.assoc(:quests)[1], id: overview.tab_of(:quests)) { component(OverviewPage, kind: :quests, key: :quests) }
+          tab(PAGES.assoc(:unlocks)[1], id: overview.tab_of(:unlocks)) { component(OverviewPage, kind: :unlocks, key: :unlocks) } if overview.raid?
         end
-        key_help entries: overview.key_entries(page)
+        key_help entries: overview.key_entries(overview.page_of(picked_tab))
       end
     end
 

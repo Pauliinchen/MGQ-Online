@@ -2,6 +2,7 @@
 #  ui_chat_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Expected the chat places under their mgq_online_ ids
 #      Paulinchen  2026-11-06: Reached the Mod Framework's engine under its own name
 #                            - Left how the UI layer draws the chat to the in-game suite and kept the gates, the model's calls and the bubbles' players
 #      Paulinchen  2026-11-05: Handed the kept size as the width and lines the DLL reads
@@ -93,13 +94,13 @@ check("with nothing to show the log shows nowhere, so the player arranges it onl
 lines = [["[Party] ", "Friend: ", "wait at the inn", "member", "party", "friend", nil], ["", "* ", "Friend left the battle.", "system", nil, nil, 6]]
 view("lines" => lines)
 map_frame
-check("a line shows the log in the map's own place", [chat.root && chat.root.open?, chat.place], [true, :chat])
+check("a line shows the log in the map's own place", [chat.root && chat.root.open?, chat.place], [true, :mgq_online_chat])
 height = chat::TAB_ROW + chat::ROW * 6 + chat::BOX_ROW
-check("it starts at the bottom left, above the status line, 400 wide and 6 lines high", chat.default_place(:chat), [[8, 480 - 96 - height], [400, height]])
+check("it starts at the bottom left, above the status line, 400 wide and 6 lines high", chat.default_place(:mgq_online_chat), [[8, 480 - 96 - height], [400, height]])
 $player_ini["chat_size"] = [450, 8]
-check("a size kept in chat_size by earlier builds is its default", chat.default_place(:chat)[1], [450, chat::TAB_ROW + chat::ROW * 8 + chat::BOX_ROW])
+check("a size kept in chat_size by earlier builds is its default", chat.default_place(:mgq_online_chat)[1], [450, chat::TAB_ROW + chat::ROW * 8 + chat::BOX_ROW])
 $player_ini["chat_size"] = [300, 2]
-check("one smaller than the least size starts at the least", chat.default_place(:chat)[1], chat::MIN_SIZE)
+check("one smaller than the least size starts at the least", chat.default_place(:mgq_online_chat)[1], chat::MIN_SIZE)
 $player_ini.delete("chat_size")
 rows = chat.rows(false)
 check("a line shows its tag in the chat's color, the name in the sender's and the text plain, and no name takes a click while the box is closed",
@@ -190,7 +191,7 @@ check("while a question of a mod holds the buttons in a shop, the chat key waits
 engine::Capture.stop(:confirm)
 $pressed = MGQ_MpHotkeys.code(:chat)
 shop.update_basic
-check("without it the chat key opens the box in the shop's place", [chat.typing?, chat.place], [true, :menu_chat])
+check("without it the chat key opens the box in the shop's place", [chat.typing?, chat.place], [true, :mgq_online_menu_chat])
 chat.stop_typing
 staged = []
 $world_fake.answer("chat.scene") { |request| staged << request; nil }
@@ -201,7 +202,7 @@ check("a scene whose class has no name, such as one a mod makes, reaches the cha
 $world_fake.answer("chat.scene") { |_request| nil }
 SceneManager.scene = Scene_Map.new
 map_frame
-check("back on the map the log shows in the map's place again", chat.place, :chat)
+check("back on the map the log shows in the map's place again", chat.place, :mgq_online_chat)
 
 # The bubbles.
 view("bubbles" => { 2 => ["hello", "party"], chat::OWN_SEAT => ["hi", "global"] })

@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-08: Checked the quests looked up at the places the DLL's quest walk names, the walk itself left to the C# tests
+#                            - Expected the menu beside the players list under its mgq_online_ id
 #      Paulinchen  2026-11-07: Read a greyed menu choice from disabled:
 #      Paulinchen  2026-11-06: Dropped the check of the picture behind the Quests page
 #                            - Expected the DLL to hear that the player chose to leave the party
@@ -357,7 +358,7 @@ check("a player's row: what they do, their name, their party, their level, their
 submit.call(4)
 check("confirm on a player opens their menu beside the row, greying what cannot be taken now with why as its tooltip",
       [menu.call, $menu[0][1][:tooltip], $menu[1].values_at(:beside, :row)],
-      [[["Invite to party", true], ["Duel", false]], "Duels are not available right now.", ["#overview_players", 4]])
+      [[["Invite to party", true], ["Duel", false]], "Duels are not available right now.", ["#mgq_online_overview_players", 4]])
 refusing = logged_lines { pick.call(1, "refuse") }
 check("a greyed choice the player tries is logged with why", refusing.grep(/refused/), ["overview: Duel for Friend (seat 2) refused: Duels are not available right now."])
 $party_answer = party_view("me-p", [], -1, "inviting" => true, "invite_ends" => 900, "targets" => ["friend"])

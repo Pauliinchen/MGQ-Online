@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-08: Widened the crown's column to a whole icon so the leader's crown shows
+#                            - Gave its UI ids the mgq_online_ prefix
 #                            - Kept the box at its own or the player's width, a long place or name cut to fit
 #      Paulinchen  2026-11-06: Drew the box as a hud of the Mod Framework's UI layer, its players as rows of a list in columns
 #      Paulinchen  2026-11-05: Kept and read its switch in Player.ini as true or false, which the DLL writes as 1 or 0
@@ -346,7 +347,7 @@ module MGQ_MpPartyBox
   # name or place to fit; a wider box gives them more room.
   class PartyBox < UI::Component
     # The box's place id, which names its place in the Mod Framework's settings; the map box shares it.
-    ID = :party_box
+    ID = :mgq_online_party_box
 
     # The box's name while the player arranges the boxes.
     PLACE_NAME = "Party box"

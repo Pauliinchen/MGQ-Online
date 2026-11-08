@@ -2,6 +2,7 @@
 #  ui_chat.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Gave its UI ids the mgq_online_ prefix
 #      Paulinchen  2026-11-07: Greyed a player menu choice that cannot be taken through disabled:
 #      Paulinchen  2026-11-06: Asked the UI layer whether the player arranges the parts
 #                            - Drew the chat's log, box, player menu and bubbles through the UI layer
@@ -224,7 +225,7 @@ module MGQ_MpChat
   # The places of the log, each kept on its own under its id: its name while the player arranges,
   # the room kept below it, and the layer it rests in while closed: the map's under the game's
   # message, the battle's and the menus' above their scenes' windows.
-  PLACES = { :chat => ["Chat", 96, :hud], :battle_chat => ["Battle chat", 200, :over], :menu_chat => ["Menu chat", 8, :over] }
+  PLACES = { :mgq_online_chat => ["Chat", 96, :hud], :mgq_online_battle_chat => ["Battle chat", 200, :over], :mgq_online_menu_chat => ["Menu chat", 8, :over] }
 
   # Room between the log and the screen's left edge where it starts.
   MARGIN = 8
@@ -414,8 +415,8 @@ module MGQ_MpChat
   # @return [Array<Class>] The scenes.
   def self.scenes_of(place)
     case place
-    when :chat then [Scene_Map]
-    when :battle_chat then [Scene_Battle]
+    when :mgq_online_chat then [Scene_Map]
+    when :mgq_online_battle_chat then [Scene_Battle]
     else @menu_scenes.dup
     end
   end
@@ -754,7 +755,7 @@ module MGQ_MpChat
     elsif !typing? && chat_key
       MGQ_MpHotkeys.log_refusal(:chat, !available? ? 'the keyboard cannot reach the game' : MGQ_MpActions.wheel_open? ? 'the action wheel is open' : 'an event runs on the map')
     end
-    show_in(:chat)
+    show_in(:mgq_online_chat)
   rescue => e
     log("chat failed: #{e.class}: #{e.message}")
   end
@@ -779,13 +780,13 @@ module MGQ_MpChat
   # Shows the log above a battle of a world and opens the chat box with its key. Called by the
   # battle every frame, its waits included, so the player chats while the battle plays on.
   def self.on_battle
-    chat_anywhere(:battle_chat, "battle")
+    chat_anywhere(:mgq_online_battle_chat, "battle")
   end
 
   # Shows the log in a scene follow_scene names, such as a shop, and opens the chat box with its
   # key, as in a battle. Called by the scene every frame, its waits included.
   def self.on_menu
-    chat_anywhere(:menu_chat, scene_name(SceneManager.scene), true)
+    chat_anywhere(:mgq_online_menu_chat, scene_name(SceneManager.scene), true)
   end
 
   # Shows the log in a place and opens the chat box with its key, in a scene that holds no event the

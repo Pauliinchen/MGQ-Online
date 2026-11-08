@@ -2,6 +2,7 @@
 #  battles_sync.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Gave its UI ids the mgq_online_ prefix
 #      Paulinchen  2026-11-06: Showed the waiting box as a hud of the Mod Framework's UI layer above the battle's windows and asked to leave through UI.confirm
 #      Paulinchen  2026-11-05: Read a message's number as a number and sent the last number taken in its field
 #                            - Had C# write the names and the commands and read the commands
@@ -1591,7 +1592,7 @@ module MGQ_MpBattlesSync
     MIN_WIDTH = 260
 
     # The box's place id, which names its place in the Mod Framework's settings.
-    LAYOUT_ID = :waiting_box
+    LAYOUT_ID = :mgq_online_waiting_box
 
     # The box's name while the player arranges the boxes.
     LAYOUT_NAME = "Waiting box"

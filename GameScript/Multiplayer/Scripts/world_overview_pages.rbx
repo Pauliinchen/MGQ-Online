@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-08: Looked up the quests' texts and speakers at the places the DLL's quest walk names
+#                            - Gave its UI ids the mgq_online_ prefix
 #      Paulinchen  2026-11-06: Dropped the picture behind the Quests page, which page views no longer take
 #                            - Drew the icons of the heads and the pane's things with the icon part
 #                            - Renamed add_options to offer_row, which the Mod Framework's scan no longer takes for a call of the old UI
@@ -563,7 +564,7 @@ module MGQ_MpWorldOverview
       overview = MGQ_MpWorldOverview
       data = overview.model(kind)
       head = data.head
-      view = { id: :"overview_#{kind}", row: ->(item) { overview.entry_row(item) }, bind: :picked, height: :fill,
+      view = { id: :"mgq_online_overview_#{kind}", row: ->(item) { overview.entry_row(item) }, bind: :picked, height: :fill,
                on_fold: ->(group, open) { overview.fold(kind, group, open) } }
       page_view data.rows, view do
         page_head(head && head.entry ? { pick: :head } : {}) { head_of(head) } if head

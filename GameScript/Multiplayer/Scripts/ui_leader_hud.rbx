@@ -2,6 +2,7 @@
 #  ui_leader_hud.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-08: Gave its UI ids the mgq_online_ prefix
 #      Paulinchen  2026-11-06: Read the room at the top left through the Mod Framework's UI.room
 #                            - Renamed add_options to offer_rows, which the Mod Framework's scan no longer takes for a call of the old UI
 #                            - Drew the HUD as a hud of the Mod Framework's UI layer
@@ -318,7 +319,7 @@ module MGQ_MpLeaderHud
   # read the Formation Leader every frame; another leader, look or size renders it anew.
   class LeaderHud < UI::Component
     # The HUD's place id, which names its place in the Mod Framework's settings.
-    ID = :leader_hud
+    ID = :mgq_online_leader_hud
 
     # The HUD's name while the player arranges the boxes.
     PLACE_NAME = "Leader HUD"
