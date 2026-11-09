@@ -2746,7 +2746,7 @@ end
 
 begin
   # A random encounter when its steps ran out, held while party members on the map are busy (see
-  # MGQ_MpBattlesCoop.hold).
+  # MGQ_MpBattlesCoop.encounter).
   MGQ_MpHooks.around(Game_Player, :encounter, "battles_coop") { |_player, _args, original| MGQ_MpBattlesCoop.encounter { original.call } }
 rescue => e
   MGQ_MpBattlesCoop.log("encounter hook FAILED: #{e.class}: #{e.message}")

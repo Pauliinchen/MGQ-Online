@@ -44,7 +44,7 @@
 # and the rest are cut. Only the squad fights in co-op battles (battles_coop.rbx). The formation
 # screens show the squad's Frontline and Backline as the game shows its own, and the cut characters
 # grey under a line. On the map only each player's share of the Frontline follows them, or
-# nobody, as the leader chose in the Mod Config. A battle a player fights alone keeps their own
+# nobody, as the leader chose in Options > Mods. A battle a player fights alone keeps their own
 # full team, so nothing here changes the game's party itself, except in a Raid World: there the
 # world's squad rules (see rules) size every player's team and squad, in a party or not and in
 # every battle, the companions past the team wait on standby, Luka stays in the team unless the
@@ -366,7 +366,7 @@ module MGQ_MpCoopSquad
     value == LEADERS_ONLY ? LEADERS_ONLY : ACTIVE_FRONTLINE
   end
 
-  # Reads the player's own choice of followers in the Mod Config.
+  # Reads the player's own choice of followers in Options > Mods.
   #
   # @return [Integer] ACTIVE_FRONTLINE or LEADERS_ONLY.
   def self.own_mode

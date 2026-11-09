@@ -17,13 +17,13 @@
 #
 #----------------------------------------------------------------
 
-# The Mod Config group of single player, MGQ Online SP (MGQ_Multiplayer::SP_PREFIX): its rows in their
-# order, the interface first (the Leader HUD and the raid bosses' bars, see ui_leader_hud.rbx and
-# ui_raid_bar.rbx), then Raid Bosses (battles_raid_tiers.rbx), each kept by its own script. Once the
-# player changed one in a game of their own outside a world, the map offers to start the game
-# again: the game is first saved to RESUME_FILE through the game's own save, apart from every save
-# slot, and the game started again loads it at its title screen and goes on where the player was,
-# so nothing is lost. Inside a world the rows apply as they change, since a restart would leave it.
+# The Options > Mods group of single player, MGQ Online SP (MGQ_Multiplayer::SP_PREFIX): its rows
+# in their order, the interface first (the Leader HUD and the raid bosses' bars, see
+# ui_leader_hud.rbx and ui_raid_bar.rbx), then Raid Bosses (battles_raid_tiers.rbx), each kept by
+# its own script. Once the player changed one in a game of their own outside a world, the map
+# offers to start the game again: the game is first saved to RESUME_FILE through the game's own
+# save, apart from every save slot, and the game started again loads it at its title screen and
+# goes on where the player was, so nothing is lost. Inside a world the rows apply as they change, since a restart would leave it.
 #
 # It must work without any connection: the restart is the Mod Framework's alone.
 module MGQ_MpSinglePlayer
@@ -99,7 +99,7 @@ module MGQ_MpSinglePlayer
     ]
   end
 
-  # Offers the group's rows in the Mod Config, kept in Player.ini, each change noted for the offer
+  # Offers the group's rows in Options > Mods, kept in Player.ini, each change noted for the offer
   # to start the game again.
   def self.offer_rows
     added = rows.map do |key, name, help, read, write|
@@ -317,7 +317,7 @@ module MGQ_MpSinglePlayer
   end
 end
 
-# The Mod Config rows, through ui.rbx.
+# The Options > Mods rows, through ui.rbx.
 
 begin
   MGQ_MpSinglePlayer.offer_rows

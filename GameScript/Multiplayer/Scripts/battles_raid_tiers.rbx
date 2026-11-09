@@ -12,7 +12,7 @@
 #----------------------------------------------------------------
 
 # The raid bosses outside Raid Worlds: in a Classic world whose creator ticked Raid Bosses, and in
-# single player while the player turned Raid Bosses on in the Mod Config (MGQ Online SP), each story
+# single player while the player turned Raid Bosses on in Options > Mods (MGQ Online SP), each story
 # boss fights with the stat factors of its tier (MGQ_MpRaidBosses.tiers), in every battle anew: no
 # relay keeps its HP and nothing regenerates. The same fights count as in a Raid World, by the one
 # refusal chain of the DLL's rules (MGQOnline.Game's BossRules, topic raid.kind): the last phase of
@@ -27,14 +27,14 @@ module MGQ_MpRaidTiers
   # The setting in Player.ini that turns the raid bosses on in single player with 1.
   SETTING = "sp_raid_bosses"
 
-  # The key of the Mod Config row that turns the raid bosses on and off in single player, which
+  # The key of the Options > Mods row that turns the raid bosses on and off in single player, which
   # ui_single_player.rbx adds.
   OPTION = :mp_sp_raid_bosses
 
-  # The name of the Mod Config row that turns the raid bosses on and off in single player.
+  # The name of the Options > Mods row that turns the raid bosses on and off in single player.
   OPTION_NAME = "Raid Bosses"
 
-  # The help of the Mod Config row that turns the raid bosses on and off in single player.
+  # The help of the Options > Mods row that turns the raid bosses on and off in single player.
   OPTION_HELP = "On: outside a world, story bosses fight as raid bosses of their tier, with far more HP\n" \
                 "and defense, and show an HP bar. A Classic world decides this for itself."
 

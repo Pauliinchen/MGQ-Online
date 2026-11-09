@@ -451,7 +451,7 @@ module MGQ_MpWorldOverview
     log("keeping the Quests page's portraits FAILED: #{e.class}: #{e.message}")
   end
 
-  # Offers the Quests page's portraits as a row of the Mod Config, kept in Player.ini.
+  # Offers the Quests page's portraits as a row of Options > Mods, kept in Player.ini.
   def self.offer_row
     added = Mod_Framework::Options.keep(PORTRAIT_OPTION, MGQ_Multiplayer::OPTION_PREFIX + PORTRAIT_OPTION_NAME, PORTRAIT_OPTION_HELP, lambda { PORTRAITS },
                                         lambda { portraits }, lambda { |choice| choose_portraits(choice) })
@@ -651,7 +651,7 @@ module MGQ_MpWorldOverview
   end
 end
 
-# The Quest Portraits row of the Mod Config.
+# The Quest Portraits row of Options > Mods.
 
 begin
   MGQ_MpWorldOverview.offer_row

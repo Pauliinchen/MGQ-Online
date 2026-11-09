@@ -178,13 +178,13 @@ module MGQ_MpWorldOverview
   # The setting's choices, the first the one until the player picks another.
   PORTRAITS = [SPRITES, FACES]
 
-  # The key of the setting's Mod Config row.
+  # The key of the setting's Options > Mods row.
   PORTRAIT_OPTION = :mp_quest_portraits
 
-  # The name of the setting's Mod Config row.
+  # The name of the setting's Options > Mods row.
   PORTRAIT_OPTION_NAME = "Quest Portraits"
 
-  # The help of the setting's Mod Config row.
+  # The help of the setting's Options > Mods row.
   PORTRAIT_OPTION_HELP = "How the Quests page of the World overview shows Amira and the companions asking for help:\n" \
                          "Sprites by their map sprite, Faces by their face."
 

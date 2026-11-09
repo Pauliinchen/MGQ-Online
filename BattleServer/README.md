@@ -17,7 +17,7 @@ them.
 after checking it in sandboxed battle children. To build it on this PC (Docker running):
 
 ```powershell
-.\MGQOnline.ServerCore\build.ps1 -Version 0.6.9   # -> MGQOnline.ServerCore\bin\linux-x64\MGQOnline.ServerCore.so
+.\MGQOnline.ServerCore\build.ps1 -Version 0.7.0   # -> MGQOnline.ServerCore\bin\linux-x64\MGQOnline.ServerCore.so
 .\BattleServer\tools\core_check.ps1               # loads it in two sandboxed children and prints a table
 ```
 

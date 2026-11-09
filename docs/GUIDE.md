@@ -75,7 +75,9 @@ They are kept in `Patch\Multiplayer\Player.ini`, so they hold in every save.
 
 MGQ Online needs the [Mod Framework](https://github.com/Pauliinchen/MGQ-Mod-Framework), which you install first (see the [README](../README.md#install)). The framework installs, updates and removes the mods of the [website](https://mgqonline.org/mods), MGQ Online too, which has no updater of its own; its [guide](https://github.com/Pauliinchen/MGQ-Mod-Framework/blob/main/docs/GUIDE.md) tells how. MGQ Online's settings and hotkeys are in *Options → Mods*: *MGQ Online Settings*, *MGQ Online SP* and *MGQ Online Hotkeys*.
 
-When the server needs a newer release of MGQ Online, the mod asks the framework for it: on the title screen as you pick *Multiplayer*, and at the title after the server turned your version away in a world. *Update and restart* installs it and starts the game again in the Multiplayer menu. Until you update, worlds, duels and trades stay off.
+When the server needs a newer release of MGQ Online, the mod asks the framework for it: on the title screen as you pick *Multiplayer*, and at the title after the server turned your version away in a world. *Update and restart* installs it and starts the game again in the Multiplayer menu. Until you update, worlds, duels and trades stay off. This is checked on Windows; under Wine and Proton it should work too but is not checked yet: if the update does not move into place there, close the game and extract the release's zip into the game folder by hand.
+
+**Coming from 0.6:** install the Mod Framework 0.1.0 first, from the [website](https://mgqonline.org/mods) or its [GitHub release](https://github.com/Pauliinchen/MGQ-Mod-Framework/releases), then MGQ Online 0.7; 0.6 can no longer play online. On Windows, 0.6.9.2 offers the update itself as you pick *Multiplayer*, but it brings 0.7 without the framework: the game then says MGQ Online needs the Mod Framework, and the mod stays off until you install it. Under Wine and Proton, 0.6.9.2 cannot update itself: close the game, install the framework, extract the 0.7 zip into the game folder by hand and delete `Patch\0_ModConfigRemake.rb`, which 0.6 brought and the framework replaces.
 
 ## Worlds
 
@@ -111,7 +113,14 @@ The worlds box lists every public world, the hidden worlds you joined and the hi
 
 Worlds you played that are no longer listed, such as one its creator deleted, come last.
 
-With the cursor on a world, the right side shows its details: who made it, its password (*None*, *Needed*, or *Known* once this PC entered it with the password), its players, how new players start, the mods it needs, that your game data is compared with the creator's as you enter, and its description. The right arrow moves into the details; the arrows pick the world's facts, its game data, its players or its description, and confirm (or a click) opens it in full: every fact of the world, its mods with the mod settings and other mods, every player, or the whole description. Every player who ever joined is listed, those online first. The left arrow or cancel goes back to the list.
+With the cursor on a world, the right side shows its details in four parts:
+
+- **World**, its heading marked *Raid World* or *featured*: *Creator*, *Players* (online of its seats), *Password* (*None*, *Needed*, or *Known* once this PC entered it with the password), *Listed* (*Public* or *Hidden*) and *Start* (where new players start). A Raid World adds *Difficulty*, *Sharing* and *Squad*, its squad rules in one line such as "4, front 1, Luka fixed"; a Classic world with raid bosses adds *Raid Bosses*.
+- **Game data:** the mods it needs, its mod settings and whether it turns other mods off, with the note that your game data is compared with the creator's as you enter (for your own world, that yours becomes the world's).
+- **Players:** every player who ever joined, those online first.
+- **Description.**
+
+A world that is only on this PC shows its *Status* alone: deleted or you were removed, or not in the list right now. The right arrow moves into the details; the arrows pick the World part, the Game data, the players or the description, and confirm (or a click) opens it in full: every fact of the world, its mods with the mod settings and other mods, every player, or the whole description. The left arrow or cancel goes back to the list.
 
 ### Entering a world
 
@@ -277,7 +286,7 @@ Press **F11** or pick the middle of the action wheel; **F11**, **B**, cancel, nu
 
 **The Players page:**
 
-- **Every player online**, grouped by where they are, yours first: their name in their color, the highest level in their formation, where they are in the story ("Part 2: Alice side") and their ping.
+- **Every player online**, grouped by where they are, yours first: the map sprite of the character who leads their team, as on the map, then their name in their color, the highest level in their formation, where they are in the story ("Part 2: Alice side") and their ping.
 - Party leaders have a crown, a party's size shows as "2 / 4", and your party's members are green, you yellow. A player whose invite or challenge reaches you shows "Invites you to a party" or "Challenges you to a duel" in their row.
 - **Pick a player** with the arrow keys and confirm, or click them, to invite them to your party or accept their invite, and to challenge them to a duel or accept theirs, wherever in the world they are. A party invite from afar stands for a minute; "Inviting to a party (58 s) . . ." above your head counts it down. As your party's leader you also remove members here, after a question ("Remove \<name> from the party?"). On your own row you can leave your party, after a question too, or stop inviting.
 
@@ -312,7 +321,7 @@ The mod's invites and messages show among the Mod Framework's notices, in the co
 
 ## Parties
 
-![A party of three at the casino, with the party box at the top right](images/party-casino.png)
+![A party of two at the casino, with the party box at the top right](images/party-casino.png)
 
 A party holds up to four players. Its leader is the player who made it: only they invite more and remove members (in the World overview). In a [Classic World](CLASSIC_WORLDS.md) the party plays its leader's story together; in a [Raid World](RAID_WORLDS.md) everyone plays the world's story, and a party gets the first places in each other's battles.
 
@@ -353,7 +362,7 @@ Everyone goes where they like. In a Classic World the leader's story scenes brin
 
 ## Co-op battles
 
-![A co-op battle: each player's characters carry their name](images/coop-battle.png)
+![A co-op battle: each character in its player's color](images/coop-battle.png)
 
 When a battle starts for a party member, whether a random encounter, a wandering monster or a story boss, the party members playing on the same map join it; in a Raid World the players nearby join too. Who runs the battle and whose levels count depend on the world type: see [Classic Worlds](CLASSIC_WORLDS.md#co-op-battles) and [Raid Worlds](RAID_WORLDS.md#battles), whose page also explains the [raid bosses](RAID_WORLDS.md#raid-bosses).
 

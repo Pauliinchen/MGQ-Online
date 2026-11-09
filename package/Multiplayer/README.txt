@@ -77,13 +77,26 @@ once on the title or in the Multiplayer menu, and in a world at the next
 title. Until you update, worlds, duels and trades stay off.
 
 "Update and restart" installs the release and starts the game again in
-the Multiplayer menu. This works under Wine and Proton too. Your player
-name, hotkeys, favourites and worlds are kept. If the game cannot start
-after an update, update by hand as below.
+the Multiplayer menu. Your player name, hotkeys, favourites and worlds
+are kept. If the game cannot start after an update, update by hand as
+below. This is checked on Windows; under Wine and Proton it should work
+too but is not checked yet: if the update does not move into place
+there, update by hand.
 
 To update by hand, close the game and extract the new download over the
 old one; then delete any Patch\Multiplayer\Scripts\*.rbx file the new
 release's Manifest.txt no longer lists.
+
+Coming from 0.6: install the Mod Framework 0.1.0 first, from
+https://mgqonline.org/mods or its GitHub release, then MGQ Online 0.7;
+0.6 can no longer play online. On Windows, 0.6.9.2 offers the update
+itself as you pick "Multiplayer", but it brings 0.7 without the
+framework: the game then says MGQ Online needs the Mod Framework, and
+the mod stays off until you install it. Under Wine and Proton, 0.6.9.2
+cannot update itself: close the game, install the framework, extract
+the 0.7 zip into the game folder by hand and delete
+Patch\0_ModConfigRemake.rb, which 0.6 brought and the framework
+replaces.
 
 
 UNINSTALL
@@ -98,8 +111,9 @@ QUICK START
 -----------
 1. Pick "Multiplayer" below "Continue" on the title screen and type the
    name the others see.
-2. One of you picks "Create new world", gives it a name and, if you
-   like, a password.
+2. One of you picks "Create new world", gives it a name, picks
+   "Classic" or "Raid" (fixed once created) and, if you like, a
+   password.
 3. Everyone confirms on that world and picks "Enter the world".
 4. On the map, stand next to a friend, press B and pick "Invite to a
    party"; they accept in their own wheel. You now play the leader's

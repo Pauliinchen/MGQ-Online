@@ -48,7 +48,7 @@
 #
 # The raid bosses of a Classic world or of single player (see battles_raid_tiers.rbx) show the same
 # bars: in battle each enemy's own HP, on the map the boss's full HP, since nothing keeps it between
-# battles. The player turns either bar off for them in the Mod Config (MGQ Online SP); a Raid World
+# battles. The player turns either bar off for them in Options > Mods (MGQ Online SP); a Raid World
 # always shows both.
 #
 # It must never interrupt the game, so every entry point rescues.
@@ -100,14 +100,14 @@ module MGQ_MpRaidBar
   # the map and in battle.
   SHOWN_SETTINGS = { :map => "raid_bar_map", :battle => "raid_bar_battle" }
 
-  # The keys of the Mod Config rows that turn the bars outside Raid Worlds on and off, which
+  # The keys of the Options > Mods rows that turn the bars outside Raid Worlds on and off, which
   # ui_single_player.rbx adds.
   OPTIONS = { :map => :mp_sp_raid_bar_map, :battle => :mp_sp_raid_bar_battle }
 
-  # The names of the Mod Config rows that turn the bars outside Raid Worlds on and off.
+  # The names of the Options > Mods rows that turn the bars outside Raid Worlds on and off.
   OPTION_NAMES = { :map => "Raid Bar on Map", :battle => "Raid Bar in Battle" }
 
-  # The help of the Mod Config rows that turn the bars outside Raid Worlds on and off.
+  # The help of the Options > Mods rows that turn the bars outside Raid Worlds on and off.
   OPTION_HELPS = {
     :map => "Shows a raid boss's HP bar above it on the map, or at the top while it stands out of sight.\n" \
             "Outside Raid Worlds only: single player and Classic worlds with raid bosses.",

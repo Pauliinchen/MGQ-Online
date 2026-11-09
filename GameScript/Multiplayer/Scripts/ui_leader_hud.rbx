@@ -28,7 +28,7 @@
 # it, with their name and base level, their HP and MP, and how far they are to their next base, job
 # and race level. The Large size shows their face and writes the numbers into the HP and MP bars,
 # the Small size shows their map sprite and the bars alone. The player turns it on and off and
-# picks its size in the Mod Config, or switches the size with its hotkey (H unless the player binds
+# picks its size in Options > Mods, or switches the size with its hotkey (H unless the player binds
 # another, see core_hotkeys.rbx), kept in Player.ini, so it shows in single player too. It is a hud
 # of the Mod Framework's UI layer at the top left, under the game's windows (see LeaderHud).
 #
@@ -52,37 +52,37 @@ module MGQ_MpLeaderHud
   # The sizes, the first the one until the player picks another.
   SIZES = [LARGE, SMALL]
 
-  # The Mod Config row's value that turns the HUD on.
+  # The Options > Mods row's value that turns the HUD on.
   ON = "On"
 
-  # The Mod Config row's value that turns the HUD off.
+  # The Options > Mods row's value that turns the HUD off.
   OFF = "Off"
 
-  # The key of the Mod Config row that turns the HUD on and off.
+  # The key of the Options > Mods row that turns the HUD on and off.
   SHOWN_OPTION = :mp_leader_hud
 
-  # The name of the Mod Config row that turns the HUD on and off.
+  # The name of the Options > Mods row that turns the HUD on and off.
   SHOWN_OPTION_NAME = "Leader HUD"
 
-  # The help of the Mod Config row that turns the HUD on and off.
+  # The help of the Options > Mods row that turns the HUD on and off.
   SHOWN_OPTION_HELP = "Inside worlds, shows the Formation Leader at the top left of the map with their HP, MP and how\n" \
                       "far they are to their next levels; MGQ Online SP decides outside. Alt and drag moves it."
 
-  # The key of the Mod Config row that turns the HUD on and off outside a world, which
+  # The key of the Options > Mods row that turns the HUD on and off outside a world, which
   # ui_single_player.rbx adds.
   SP_SHOWN_OPTION = :mp_sp_leader_hud
 
-  # The help of the Mod Config row that turns the HUD on and off outside a world.
+  # The help of the Options > Mods row that turns the HUD on and off outside a world.
   SP_SHOWN_OPTION_HELP = "Shows the Formation Leader at the top left of the map in single player, outside a world.\n" \
                          "Inside a world, MGQ Online Settings decides."
 
-  # The key of the Mod Config row that picks the HUD's size.
+  # The key of the Options > Mods row that picks the HUD's size.
   SIZE_OPTION = :mp_leader_hud_size
 
-  # The name of the Mod Config row that picks the HUD's size.
+  # The name of the Options > Mods row that picks the HUD's size.
   SIZE_OPTION_NAME = "Leader HUD Size"
 
-  # The help of the Mod Config row that picks the HUD's size.
+  # The help of the Options > Mods row that picks the HUD's size.
   SIZE_OPTION_HELP = "Large shows the face and the numbers in the HP and MP bars, Small the map sprite\n" \
                      "and the bars alone. The Leader HUD Size hotkey switches them on the map."
 
@@ -266,7 +266,7 @@ module MGQ_MpLeaderHud
     0.0
   end
 
-  # Offers turning the HUD on and off and its size as rows of the Mod Config, kept in Player.ini.
+  # Offers turning the HUD on and off and its size as rows of Options > Mods, kept in Player.ini.
   def self.offer_rows
     prefix = MGQ_Multiplayer::OPTION_PREFIX
     shown = Mod_Framework::Options.keep(SHOWN_OPTION, prefix + SHOWN_OPTION_NAME, SHOWN_OPTION_HELP, lambda { [ON, OFF] },
@@ -421,7 +421,7 @@ module MGQ_MpLeaderHud
   end
 end
 
-# The Mod Config rows.
+# The Options > Mods rows.
 
 begin
   MGQ_MpLeaderHud.offer_rows
