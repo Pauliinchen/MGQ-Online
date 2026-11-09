@@ -2,6 +2,7 @@
 //  OverviewEntry.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-09: Dropped the marks of a group's row, which the scripts never show
 //      Paulinchen  2026-10-31: Created
 //
 //----------------------------------------------------------------
@@ -50,18 +51,8 @@ public abstract record OverviewEntry
 /// <param name="Open">Whether it is open.</param>
 public sealed record OverviewFold(string Key, string Title, bool Open) : OverviewEntry
 {
-    /// <summary>
-    /// The mark of a folded group.
-    /// </summary>
-    public const string Folded = "▸ ";
-
-    /// <summary>
-    /// The mark of an opened group.
-    /// </summary>
-    public const string Unfolded = "▾ ";
-
     /// <inheritdoc />
-    public override OverviewRowView Row() => new(null, (Open ? Unfolded : Folded) + Title, null, false, null);
+    public override OverviewRowView Row() => new(null, Title, null, false, null);
 }
 
 /// <summary>

@@ -2,6 +2,8 @@
 #  world_overview_pages.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-09: Lined the Unlocks page's grid up in a grid of the Mod Framework
+#                            - Showed the head's values with their captions as fields of the Mod Framework
 #      Paulinchen  2026-11-08: Showed the characters of the heads and the reading pane as avatars of the Mod Framework
 #                            - Looked up the quests' texts and speakers at the places the DLL's quest walk names
 #                            - Gave its UI ids the mgq_online_ prefix
@@ -77,8 +79,9 @@ module MGQ_MpWorldOverview
   COMPANION = "companion"
 
   # A page's head: a character's picture or an icon in a framed box, its title with a note at the
-  # right, and under it lines or a grid of columns; the entry picking the head shows, if any.
-  Head = Struct.new(:actor, :icon, :title, :note, :lines, :grid, :entry)
+  # right, and under it values with their captions ([caption, value] each), lines or a grid of
+  # columns; the entry picking the head shows, if any.
+  Head = Struct.new(:actor, :icon, :title, :note, :fields, :lines, :grid, :entry)
 
   # A page's model as the DLL laid it out: its head, the rows of its list ([:none, text], [:fold,
   # Entry] or [:entry, Entry]) and what can be picked, the head's entry first.
@@ -281,15 +284,15 @@ module MGQ_MpWorldOverview
 
   # Reads a page the DLL laid out.
   #
-  # @param answer [Hash, nil] "head" ("title", "note", "lines", "entry"), "rows" (["none", text], or
+  # @param answer [Hash, nil] "head" ("title", "note", "fields", "lines", "entry"), "rows" (["none", text], or
   #   ["fold"] or ["entry"] with the row's view [label, text, note, dim, gauge in GAUGE_PARTS] and
   #   the entry, see Entry) and "picks" (each pick's place among the rows, -1 for the head's entry).
   # @return [Model] The model; an empty one while the DLL did not answer.
   def self.model_of(answer)
-    return Model.new(Head.new(nil, nil, "", nil, [], nil, nil), [], []) unless answer
+    return Model.new(Head.new(nil, nil, "", nil, [], [], nil, nil), [], []) unless answer
 
     told = answer["head"]
-    head = Head.new(nil, nil, told["title"].to_s, told["note"], Array(told["lines"]), nil, told["entry"] ? Entry.new(told["entry"][0], nil, told["entry"]) : nil)
+    head = Head.new(nil, nil, told["title"].to_s, told["note"], Array(told["fields"]), Array(told["lines"]), nil, told["entry"] ? Entry.new(told["entry"][0], nil, told["entry"]) : nil)
     rows = answer["rows"].map do |kind, view, value|
       next [:none, view.to_s] if kind == "none"
 
@@ -564,7 +567,8 @@ module MGQ_MpWorldOverview
 
     private
 
-    # Describes the head: a portrait or an icon, the title with its note, and its lines or a grid.
+    # Describes the head: a portrait or an icon, the title with its note, and its values, its lines
+    # or a grid.
     #
     # @param head [Head] The head.
     def head_of(head)
@@ -579,22 +583,28 @@ module MGQ_MpWorldOverview
             text head.title.to_s, typo: :subtitle1, most_lines: 1, grow: 1
             text(head.note.to_s, color: :dim) if head.note
           end
-          Array(head.lines).each { |line| text line.to_s, typo: :body2, wrap: true }
-          Array(head.grid).each do |name, level, factor|
-            stack(row: true) { [[name, nil], [level, nil], [factor, :title]].each { |cell, color| grid_cell(cell, color) } }
+          captions = head.fields.map { |caption, _value| caption.to_s }
+          head.fields.each do |caption, value|
+            field(caption.to_s, caption_width: captions, key: caption.to_s) { text value.to_s, typo: :body2 }
           end
+          Array(head.lines).each { |line| text line.to_s, typo: :body2, wrap: true }
+          head_grid(head.grid) unless Array(head.grid).empty?
         end
       end
     end
 
-    # Describes a cell of the head's grid.
+    # Describes the head's grid: each member's name, level and catch-up factor in columns that line
+    # up from member to member.
     #
-    # @param cell [String] Its text.
-    # @param color [Symbol, nil] Its color, nil for the plain one.
-    def grid_cell(cell, color)
-      params = { typo: :body2, grow: 1 }
-      params[:color] = color if color
-      text cell.to_s, params
+    # @param cells [Array<Array<String>>] Each member's [name, level, factor].
+    def head_grid(cells)
+      grid spacing: 1 do
+        cells.each_with_index do |(name, level, factor), index|
+          grid_item(xs: 6, key: :"name_#{index}") { text name.to_s, typo: :body2 }
+          grid_item(xs: 3, key: :"level_#{index}") { text level.to_s, typo: :body2 }
+          grid_item(xs: 3, key: :"factor_#{index}") { text factor.to_s, typo: :body2, color: :title }
+        end
+      end
     end
 
     # Describes the pane: its title beside a portrait, then its lines.

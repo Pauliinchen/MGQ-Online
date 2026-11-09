@@ -2,6 +2,7 @@
 //  OverviewTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-09: Handed the head's values with their captions apart from its lines
 //      Paulinchen  2026-11-08: Walked the quests over the game's events and took their messages as the scripts look them up
 //                            - Moved to the MGQOnline.Multiplayer namespace
 //      Paulinchen  2026-11-01: Dropped the story topics no script calls, since the rows and pages write the story
@@ -246,7 +247,7 @@ internal static class OverviewTopics
     /// Describes a page for the scripts.
     /// </summary>
     /// <param name="model">The page.</param>
-    /// <returns><c>head</c> (<c>title</c>, <c>note</c>, <c>lines</c> and <c>entry</c>, see <see cref="EntryValue"/>),
+    /// <returns><c>head</c> (<c>title</c>, <c>note</c>, <c>fields</c> ([caption, value] each), <c>lines</c> and <c>entry</c>, see <see cref="EntryValue"/>),
     /// <c>rows</c> (["none", text], or ["fold"] or ["entry"] with the row's view, see <see cref="ViewValue"/>,
     /// and its entry) and <c>picks</c> (each pick's place among the rows, -1 for the head's entry).</returns>
     private static RubyHash ModelValue(OverviewModel model)
@@ -275,6 +276,7 @@ internal static class OverviewTopics
         {
             { "title", model.Head.Title },
             { "note", model.Head.Note },
+            { "fields", new RubyArray(model.Head.Fields.Select(field => (RubyValue)new RubyArray { field.Caption, field.Value })) },
             { "lines", Texts(model.Head.Lines) },
             { "entry", model.Head.Entry is { } shown ? EntryValue(shown) : RubyNil.Value },
         };

@@ -2,6 +2,7 @@
 #  world_overview.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-09: Let another mod's tab set the key help through its id and the tab showing
 #      Paulinchen  2026-11-08: Removed the Looks struct, the pages showing characters as avatars
 #                            - Showed each player's leader before their name on the Players page
 #                            - Showed a stand-in for a leader whose sprite this game lacks, as the map does
@@ -94,10 +95,11 @@
 # formation's highest level, their place in the story and their ping; a player picked opens a menu
 # of what the scripts offer, such as party invites, duels and trades. The other pages are page
 # views, see world_overview_pages.rbx; other mods append their own tabs to
-# "#mgq_online_overview_tabs" through UI.patch "#mgq_online_overview". It also lists the player's
-# party for the party box of ui_party_box.rbx and, in a Raid World, everyone on the player's map for
-# the map box, and tells the others where the player is, their levels and their place in the story
-# in the state overworld_sync.rbx sends.
+# "#mgq_online_overview_tabs" through UI.patch "#mgq_online_overview" and, while their tab shows
+# (t.read(:tab)), set the entries of the key help "#mgq_online_overview_keys". It also lists the
+# player's party for the party box of ui_party_box.rbx and, in a Raid World, everyone on the
+# player's map for the map box, and tells the others where the player is, their levels and their
+# place in the story in the state overworld_sync.rbx sends.
 module MGQ_MpWorldOverview
   # The framework's components, short.
   UI = Mod_Framework::UI
@@ -222,6 +224,9 @@ module MGQ_MpWorldOverview
 
   # The id of the row of tabs, which other mods append their tabs to.
   TABS_ID = :mgq_online_overview_tabs
+
+  # The id of the key help, whose entries another mod's tab sets while it shows.
+  KEYS_ID = :mgq_online_overview_keys
 
   # The id of the Players page's list.
   PLAYERS_ID = :mgq_online_overview_players
@@ -823,7 +828,8 @@ module MGQ_MpWorldOverview
 
   # The World overview's window: the world's title row, its pages as tabs, and the key help. Other
   # mods append their pages to the tabs through UI.patch "#mgq_online_overview"; t.read(:in_world)
-  # and t.read(:raid) tell them whether a world is open and whether it is a Raid World.
+  # and t.read(:raid) tell them whether a world is open and whether it is a Raid World, and
+  # t.read(:tab) the id of the tab showing, while which their own tab sets the key help's entries.
   class WorldOverview < UI::Component
     hotkey MGQ_MpHotkeys.action(:overview)
 
@@ -834,6 +840,7 @@ module MGQ_MpWorldOverview
 
     expose(:in_world) { MGQ_MpWorldOverview.in_world? }
     expose(:raid) { MGQ_MpWorldOverview.raid? }
+    expose(:tab) { picked_tab }
 
     # Opens on the Players page in a world, else on the Quests page.
     def setup
@@ -859,7 +866,7 @@ module MGQ_MpWorldOverview
           tab(PAGES.assoc(:quests)[1], id: overview.tab_of(:quests)) { component(OverviewPage, kind: :quests, key: :quests) }
           tab(PAGES.assoc(:unlocks)[1], id: overview.tab_of(:unlocks)) { component(OverviewPage, kind: :unlocks, key: :unlocks) } if overview.raid?
         end
-        key_help entries: overview.key_entries(overview.page_of(picked_tab))
+        key_help id: KEYS_ID, entries: overview.key_entries(overview.page_of(picked_tab))
       end
     end
 

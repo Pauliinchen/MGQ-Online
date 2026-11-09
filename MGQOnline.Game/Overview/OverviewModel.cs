@@ -2,6 +2,7 @@
 //  OverviewModel.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-09: Handed the head's captioned values over apart from its lines
 //      Paulinchen  2026-10-31: Created
 //
 //----------------------------------------------------------------
@@ -11,14 +12,23 @@ using System.Collections.Generic;
 namespace MGQOnline.Game.Overview;
 
 /// <summary>
-/// A page's head: its title with a note at the right, the lines under it, and the entry picking
-/// the head shows, if any. The scripts add how a character looks or an icon, and a grid.
+/// A page's head: its title with a note at the right, the values with their captions under it,
+/// then its lines, and the entry picking the head shows, if any. The scripts add how a character
+/// looks or an icon, and a grid.
 /// </summary>
 /// <param name="Title">The title, <see langword="null"/> where the scripts write it.</param>
 /// <param name="Note">The note, <see langword="null"/> for none or where the scripts write it.</param>
+/// <param name="Fields">The values with their captions.</param>
 /// <param name="Lines">The lines.</param>
 /// <param name="Entry">The entry picking the head shows, <see langword="null"/> for none.</param>
-public sealed record OverviewHead(string? Title, string? Note, IReadOnlyList<string> Lines, OverviewEntry? Entry);
+public sealed record OverviewHead(string? Title, string? Note, IReadOnlyList<OverviewField> Fields, IReadOnlyList<string> Lines, OverviewEntry? Entry);
+
+/// <summary>
+/// A value of a page's head with its caption before it, such as the players online.
+/// </summary>
+/// <param name="Caption">The caption.</param>
+/// <param name="Value">The value.</param>
+public sealed record OverviewField(string Caption, string Value);
 
 /// <summary>
 /// A row of a page's list: a text alone, a group's row or an entry.

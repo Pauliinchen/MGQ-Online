@@ -2,6 +2,7 @@
 //  OverviewPages.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-09: Handed the World page's players online and story over as values with their captions
 //      Paulinchen  2026-11-08: Took over the quests' text rules from the scripts
 //      Paulinchen  2026-10-31: Created
 //
@@ -63,9 +64,9 @@ public static class OverviewPages
     public const string ObjectiveLabel = "Objective";
 
     /// <summary>
-    /// What the World page says of the players online.
+    /// The World page's caption of the players online.
     /// </summary>
-    public const string PlayersLine = "Players online: {0}";
+    public const string PlayersCaption = "Players online";
 
     /// <summary>
     /// How the World page writes the players online and the world's seats.
@@ -73,9 +74,9 @@ public static class OverviewPages
     public const string PlayersOf = "{0} / {1}";
 
     /// <summary>
-    /// What the World page says of a Raid World's story.
+    /// The World page's caption of a Raid World's story.
     /// </summary>
-    public const string StoryLine = "Story: {0}";
+    public const string StoryCaption = "Story";
 
     /// <summary>
     /// What the World page says of a Classic world's story.
@@ -207,7 +208,6 @@ public static class OverviewPages
     {
         ArgumentNullException.ThrowIfNull(facts);
         string online = facts.Seats > 0 ? Format(PlayersOf, facts.Online, facts.Seats) : facts.Online.ToString(CultureInfo.InvariantCulture);
-        string story = facts.Raid ? Format(StoryLine, OverviewText.WorldStoryText(facts.Story?.Part)) : ClassicStory;
         var list = new List<OverviewItem>();
         if (facts.Main is { } main)
         {
@@ -226,7 +226,11 @@ public static class OverviewPages
             list.Add(new OverviewItem(facts.Raid ? NoBosses : ClassicBosses, null));
         }
 
-        return new OverviewModel(new OverviewHead(null, null, [Format(PlayersLine, online), story], null), list, PicksOf(list));
+        var players = new OverviewField(PlayersCaption, online);
+        OverviewHead head = facts.Raid
+            ? new(null, null, [players, new OverviewField(StoryCaption, OverviewText.WorldStoryText(facts.Story?.Part))], [], null)
+            : new(null, null, [players], [ClassicStory], null);
+        return new OverviewModel(head, list, PicksOf(list));
     }
 
     /// <summary>
@@ -246,7 +250,7 @@ public static class OverviewPages
         List<OverviewQuestText> sideQuests = [.. sides.Select(quest => Told(quest, true)).OfType<OverviewQuestText>()];
         List<OverviewQuestText> requests = [.. companions.Select(quest => Told(quest, true)).OfType<OverviewQuestText>()];
         OverviewQuest? told = Told(main, false) is { } objective ? new OverviewQuest(MainKind, objective.Speaker, objective.Texts, null) : null;
-        var head = new OverviewHead(QuestTitles[MainKind], null, [told?.First ?? NoQuests], told);
+        var head = new OverviewHead(QuestTitles[MainKind], null, [], [told?.First ?? NoQuests], told);
         var list = new List<OverviewItem>();
         AddGroup(list, folds, QuestsPage, SideKind, Format(QuestHeadings[SideKind], sideQuests.Count), true,
             [.. sideQuests.Select((quest, index) => new OverviewQuest(SideKind, quest.Speaker, quest.Texts, index + 1))], NoQuests);
@@ -287,7 +291,7 @@ public static class OverviewPages
     public static OverviewModel Unlocks(int? target, int? level, IReadOnlyList<OverviewUnlock> unlocks, OverviewFolds folds)
     {
         ArgumentNullException.ThrowIfNull(unlocks);
-        var head = new OverviewHead(target is { } to ? Format(ExpHeading, to) : ExpHeadingNone, level is { } at ? Format(YourLevelNote, at) : null,
+        var head = new OverviewHead(target is { } to ? Format(ExpHeading, to) : ExpHeadingNone, level is { } at ? Format(YourLevelNote, at) : null, [],
             target is null ? [NoCatchUp] : [], null);
         List<OverviewLevel> levels = [.. unlocks.Select((unlock, index) => (unlock, index)).GroupBy(pair => pair.unlock.Level).OrderBy(group => group.Key)
             .Select(group => new OverviewLevel(group.Key, [.. group.Select(pair => pair.index)], [.. group.Select(pair => pair.unlock.Name)],

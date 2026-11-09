@@ -2,6 +2,7 @@
 //  OverviewRoomTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-09: Checked the World page's head values with their captions
 //      Paulinchen  2026-11-08: Walked the quests through their topic and handed the pages each quest's messages
 //                            - Moved to the MGQOnline.Multiplayer namespace
 //      Paulinchen  2026-11-06: Walked the World overview's title through its topic
@@ -77,7 +78,7 @@ public sealed class OverviewRoomTopicsTests
 
         RubyHash page = Call(OverviewTopics.WorldPage, request)!.AsHash();
 
-        Assert.Equal(new RubyArray { "Players online: 1 / 8", "Story: Part 1" }, page["head"].AsHash()["lines"]);
+        Assert.Equal(new RubyArray { new RubyArray { "Players online", "1 / 8" }, new RubyArray { "Story", "Part 1" } }, page["head"].AsHash()["fields"]);
         Assert.Equal(new RubyArray { RubyNil.Value, "Alma Elma", "25%", false, 250_000 }, page["rows"].AsArray()[1].AsArray()[1]);
     }
 

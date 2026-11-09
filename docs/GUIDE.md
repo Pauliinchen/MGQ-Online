@@ -283,7 +283,7 @@ Press **F11** or pick the middle of the action wheel; **F11**, **B**, cancel, nu
 
 **The World page:**
 
-- **The head:** the world's name, its type and difficulty ("Raid | Hard", *Per player* in a Classic world), its players online of its seats ("Players online: 3 / 8") and where the world's story stands.
+- **The head:** the world's name, its type and difficulty ("Raid | Hard", *Per player* in a Classic world), its players online of its seats (Players online 3 / 8) and where the world's story stands.
 - **The list:** the **objective**, what to do next in the story, then in a Raid World every **raid boss** under a heading per part of the story, each with a thin gauge of the HP the world left it. The pane shows a boss's part, its tier and what the tier gives its enemies, a larger gauge and who last hurt it. See [World overview](RAID_WORLDS.md#world-overview) of the Raid World page.
 - While you look at another page, a gold dot on the *Players* tab tells you an invite, challenge or trade offer waits there; **Y** and **N** answer it once you're back on the Players page or have closed the overview.
 
