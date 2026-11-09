@@ -2,6 +2,9 @@
 //  StoryTopics.Replay.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-09: Dropped the steps the save passed before writing its log
+//                            - Logged no step of a Raid World run whose page no player hands over
+//                            - Named the player's own drops in a Raid World by their track's stream, so a save drops them once passed
 //      Paulinchen  2026-11-08: Moved to the MGQOnline.Multiplayer namespace
 //      Paulinchen  2026-11-06: Never asked the player the answers of a run that gave or used up a found item, which reaches every player
 //      Paulinchen  2026-11-05: Took and handed the keys, values, sites and things a replay reads as plain values, see StoryPlain
@@ -161,7 +164,8 @@ internal sealed partial class StoryTopics
     public const string ReplayLogTopic = "story.replay_log";
 
     /// <summary>
-    /// The topic that answers the log for the save, see <see cref="RunLog.Write"/>.
+    /// The topic that answers the log for the save, see <see cref="RunLog.Write"/>, without the steps
+    /// the save passed, see <see cref="RunLog.DropPassed"/>.
     /// </summary>
     public const string ReplayLogSaveTopic = "story.replay_log_save";
 
@@ -222,7 +226,7 @@ internal sealed partial class StoryTopics
             return null;
         });
         context.Register(ReplayLogTopic, (_, request) => topics.LoadLog(request.AsHash()));
-        context.Register(ReplayLogSaveTopic, (_, _) => topics._log.Write());
+        context.Register(ReplayLogSaveTopic, (_, _) => topics.SaveLog());
         context.Register(ReplayWireTopic, (_, request) => ReplayWire.Write(ReplayEntry.Read(request)));
         context.Register(ReplayUnwireTopic, (_, request) => ReplayWire.Read(request.AsText()).Write());
         context.Register(ReplayDeriveTopic, (_, request) => topics.ReplayDerive(request.AsHash()));
@@ -445,7 +449,8 @@ internal sealed partial class StoryTopics
     /// a party key wrote a key a player keeps, so it gives; any other gives when its page does. A run
     /// that gave or used up a found item is handed over too, one that changed no shared key into a
     /// Raid World's story or a Classic party's stream (user decision 2026-11-04). The entry is in a
-    /// party's stream at once, and in a story's when the player owns it.
+    /// party's stream at once, and in a story's when the player owns it. A Raid World's run of a page
+    /// no player hands over leaves no step, since no entry ever asks for it.
     /// </summary>
     /// <param name="request">The run.</param>
     /// <returns>The entry, nil, or {"unknown"=>true}.</returns>
@@ -486,13 +491,24 @@ internal sealed partial class StoryTopics
         string? stream = streamOf.IsNil ? null : streamOf.AsText();
         bool pick = IsPickSite(site);
         bool medalKing = IsMedalKing(site);
-        bool sent = stream is not null && !pick && !medalKing && (party.Count > 0 || found.Length > 0 || PageGives(site, scopes));
+        bool gives = !pick && !medalKing && (party.Count > 0 || found.Length > 0 || PageGives(site, scopes));
+        bool sent = stream is not null && gives;
         bool kept = sent && (!world || request["owner"] is RubyBool { Flag: true });
+        string why = pick ? ": every player takes their own side along" : medalKing ? ": the Medal King's gift reaches every player by its own rule" : string.Empty;
+
+        // In a Classic world another member's run of the same page may change a party key, so its
+        // entry needs this step to find the page done.
+        if (!gives && !classic)
+        {
+            Log.Write($"replay: the run of {site} changed {keys.Count} shared keys and hands nothing over, as no player's run of it does, so the save keeps no step of it{why}");
+            return RubyNil.Value;
+        }
+
         string id = NewEntryId();
         _log.Ran(site, keys, kept ? stream : null, kept ? id : null);
         if (!sent)
         {
-            Log.Write($"replay: logged the run of {site}, which changed {keys.Count} shared keys and hands nothing over{(pick ? ": every player takes their own side along" : medalKing ? ": the Medal King's gift reaches every player by its own rule" : string.Empty)}");
+            Log.Write($"replay: logged the run of {site}, which changed {keys.Count} shared keys and hands nothing over{why}");
             return RubyNil.Value;
         }
 
@@ -526,7 +542,7 @@ internal sealed partial class StoryTopics
 
         string stream = streamOf.AsText();
         string id = NewEntryId();
-        _log.Ran(ReplaySite.Drop, new Dictionary<StoryKey, string>(), stream, id);
+        _log.Ran(ReplaySite.Drop, new Dictionary<StoryKey, string>(), classic ? stream : _track.StreamOf(stream), id);
         var entry = new ReplayEntry(id, ReplaySite.Drop, stream, classic ? StoryScope.Party : StoryScope.World, request["opener"].IsNil ? null : request["opener"].AsText(),
             new Dictionary<StoryKey, string>(), null, new Dictionary<StoryKey, string>(), [], false)
         {
@@ -811,6 +827,21 @@ internal sealed partial class StoryTopics
         }
 
         return new RubyArray(_log.Queued.Select(entry => (RubyValue)entry.Write()));
+    }
+
+    /// <summary>
+    /// Answers <see cref="ReplayLogSaveTopic"/>: drops the steps the save passed, then writes the log.
+    /// </summary>
+    /// <returns>The log, see <see cref="RunLog.Write"/>.</returns>
+    private RubyHash SaveLog()
+    {
+        int dropped = _log.DropPassed();
+        if (dropped > 0)
+        {
+            Log.Write($"replay: dropped {dropped} steps the save passed on the world's track, {_log.Steps.Count} stay in its log");
+        }
+
+        return _log.Write();
     }
 
     /// <summary>

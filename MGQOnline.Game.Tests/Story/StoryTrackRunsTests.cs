@@ -2,6 +2,7 @@
 //  StoryTrackRunsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-09: Checked that an entry handed before the player fell behind is done when they come back
 //      Paulinchen  2026-10-31: Created
 //
 //----------------------------------------------------------------
@@ -130,6 +131,29 @@ public sealed class StoryTrackRunsTests
 
         Assert.Equal("""{"t2":1,"world":3}""", sync.RootElement.GetProperty("cursors").GetRawText());
         Assert.Equal(4, track.NextRun(true, [])?.Number);
+    }
+
+    /// <summary>
+    /// Asserts that an entry handed just before the player fell behind to their own track, which the
+    /// game ran and the save took, is done when the player comes back to the world's track: never
+    /// handed again, and the relay hears it was taken.
+    /// </summary>
+    [Fact]
+    public void NextRun_TakesAnEntryHandedBeforeThePlayerFellBehindAsDone()
+    {
+        var host = new Host();
+        StoryTrack track = Placed(host, last: 1);
+        track.Receive(Page("world", false, Run(1, "gift")));
+        ReplayEntry? handed = track.NextRun(true, []);
+        host.Saved["raid:w1:world"] = 1;
+        track.Receive(State("t5", cursor: 0, last: 0));
+        track.Receive(State("world", cursor: 0, last: 1));
+        track.Receive(Page("world", false, Run(1, "gift")));
+        ReplayEntry? again = track.NextRun(true, []);
+
+        Assert.Equal("gift", handed?.Id);
+        Assert.Null(again);
+        Assert.Contains("""{"t":"took","track":"world","n":1}""", host.Sent);
     }
 
     /// <summary>

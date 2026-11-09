@@ -2,6 +2,9 @@
 //  StoryTrack.Runs.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-09: Told which streams are a Raid World's tracks and which is the world's own
+//                            - Started the walk of another track from the save's cursor when the game took more of it than the relay knows
+//                            - Named a track's stream for the replay's own drops
 //      Paulinchen  2026-11-05: Sent a run that gave or used up a found item without a key, and named each entry received as a stream of the track it came on
 //      Paulinchen  2026-10-31: Created
 //
@@ -28,6 +31,11 @@ public sealed partial class StoryTrack
     /// The most characters of a run entry's JSON the relay keeps (story_tracks.js <c>maxRunLength</c>).
     /// </summary>
     public const int MaxRunLength = 32_768;
+
+    /// <summary>
+    /// The start of the name of every stream of a Raid World's tracks.
+    /// </summary>
+    private const string TrackStreamStart = "raid:";
 
     /// <summary>
     /// The runs handed over that wait for the writes queued before them.
@@ -170,7 +178,21 @@ public sealed partial class StoryTrack
     /// </summary>
     /// <param name="track">The track.</param>
     /// <returns>Such as "raid:&lt;world&gt;:world" or "raid:&lt;world&gt;:t3".</returns>
-    private string StreamOf(string track) => $"raid:{world}:{track}";
+    public string StreamOf(string track) => $"{TrackStreamStart}{world}:{track}";
+
+    /// <summary>
+    /// Tells whether a stream is one of a Raid World's tracks, whose entries carry their numbers.
+    /// </summary>
+    /// <param name="stream">The stream.</param>
+    /// <returns>Whether it is.</returns>
+    public static bool IsTrackStream(string stream) => stream.StartsWith(TrackStreamStart, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Tells whether a stream is the world's own track, see <see cref="WorldTrack"/>.
+    /// </summary>
+    /// <param name="stream">The stream.</param>
+    /// <returns>Whether it is.</returns>
+    public static bool IsWorldStream(string stream) => IsTrackStream(stream) && stream.EndsWith($":{WorldTrack}", StringComparison.Ordinal);
 
     /// <summary>
     /// Forgets the walk, as the player's story starts anew.
@@ -188,9 +210,14 @@ public sealed partial class StoryTrack
     }
 
     /// <summary>
-    /// Takes the cursor of a state: on another track the walk starts there; on the same track an
-    /// entry the game took since stays taken, and the relay hears of it again.
+    /// Takes the cursor of a state: on another track the walk starts there, or at the save's cursor
+    /// of that track when the game took more of it; on the same track an entry the game took since
+    /// stays taken. The relay hears of what the game took past its cursor.
     /// </summary>
+    /// <remarks>
+    /// An entry handed just before the player left its track is never noted as taken on it, though
+    /// the game still runs it.
+    /// </remarks>
     /// <param name="track">The track.</param>
     /// <param name="cursor">The player's cursor the relay keeps.</param>
     /// <param name="last">The number of the track's last entry.</param>
@@ -201,7 +228,11 @@ public sealed partial class StoryTrack
             runQueue.Clear();
             handedRun = null;
             runsTrack = track;
-            runsTaken = cursor;
+            runsTaken = Math.Max(cursor, host.Cursors().GetValueOrDefault(StreamOf(track)));
+            if (runsTaken > cursor)
+            {
+                SendTook(runsTaken);
+            }
         }
         else if (runsTaken > cursor)
         {

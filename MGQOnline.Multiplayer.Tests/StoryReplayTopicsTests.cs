@@ -2,6 +2,7 @@
 //  StoryReplayTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-09: Covered a Raid World save that keeps no step of the own drops it passed nor of a run no player hands over
 //      Paulinchen  2026-11-08: Moved to the MGQOnline.Multiplayer namespace
 //      Paulinchen  2026-11-06: Covered a number replayed with the opener's answer beside a choice the receiver is asked
 //                            - Covered another member's trade that gave a found item replayed the opener's way
@@ -534,6 +535,31 @@ public sealed class StoryReplayTopicsTests
     }
 
     /// <summary>
+    /// Asserts that a Raid World save keeps no step of a run of a page no player hands over, nor of
+    /// the player's own drops on the world's track once the track handed them back at or below the
+    /// save's cursor; those drops still come back as done until then.
+    /// </summary>
+    [Fact]
+    public void LogSave_KeepsNoStepOfARaidRunNobodyHandsOverNorOfOwnDropsPassed()
+    {
+        Call(StoryTopics.EnterTopic, new RubyHash { { "world", "w1" }, { "fresh", false }, { "level", RubyNil.Value } });
+        RubyValue plainPage = RaidRan([], [Change(Switch(301), false, true)], "world");
+        RubyHash drop = Call(StoryTopics.ReplayDropTopic, Drop(false, [new RubyArray { 613, 1 }], "world")).AsHash();
+        RubyHash back = OtherMembers(drop);
+        back["id"] = drop["id"];
+        back["stream"] = "raid:w1:world";
+        back["n"] = 3;
+        Call(StoryTopics.ReplayQueueTopic, back);
+        string taken = Take(back, [])["do"].AsText();
+
+        RubyHash saved = Call(StoryTopics.ReplayLogSaveTopic, RubyNil.Value).AsHash();
+
+        Assert.True(plainPage.IsNil);
+        Assert.Equal("done", taken);
+        Assert.Equal(new RubyArray(), saved["steps"]);
+    }
+
+    /// <summary>
     /// Makes the entry of a run another member's game made of the chest.
     /// </summary>
     /// <returns>The entry.</returns>
@@ -561,13 +587,15 @@ public sealed class StoryReplayTopicsTests
     });
 
     /// <summary>
-    /// Ends a run of a Raid World player's talk on their own track that changed no shared key.
+    /// Ends a run of a Raid World player's talk, on their own track and changing no shared key unless given.
     /// </summary>
     /// <param name="found">The found items it gave: [[item, change], ...].</param>
+    /// <param name="changed">The keys it changed, see <see cref="Change"/>.</param>
+    /// <param name="track">The track the player plays.</param>
     /// <returns>The answer.</returns>
-    private RubyValue RaidRan(RubyArray found) => Call(StoryTopics.ReplayRanTopic, new RubyHash
+    private RubyValue RaidRan(RubyArray found, RubyArray? changed = null, string track = "t2") => Call(StoryTopics.ReplayRanTopic, new RubyHash
     {
-        { "site", Page(1, 9, 1) }, { "party", false }, { "stream", "t2" }, { "party_stream", RubyNil.Value }, { "owner", false }, { "changed", new RubyArray() },
+        { "site", Page(1, 9, 1) }, { "party", false }, { "stream", track }, { "party_stream", RubyNil.Value }, { "owner", false }, { "changed", changed ?? [] },
         { "found", found }, { "start", new RubyArray() }, { "place", new RubyArray { 5, 0, 0, 0 } }, { "inputs", new RubyArray() }, { "opener", "Ana" },
     });
 
@@ -577,10 +605,11 @@ public sealed class StoryReplayTopicsTests
     /// </summary>
     /// <param name="classic">Whether the world is a Classic world.</param>
     /// <param name="found">The found items the drops gave: [[item, change], ...].</param>
+    /// <param name="track">The track the player plays in a Raid World.</param>
     /// <returns>The request.</returns>
-    private static RubyHash Drop(bool classic, RubyArray found) => new()
+    private static RubyHash Drop(bool classic, RubyArray found, string track = "t2") => new()
     {
-        { "party", classic }, { "stream", classic ? RubyNil.Value : "t2" }, { "party_stream", classic ? "party:1" : RubyNil.Value }, { "found", found }, { "opener", RubyNil.Value },
+        { "party", classic }, { "stream", classic ? RubyNil.Value : track }, { "party_stream", classic ? "party:1" : RubyNil.Value }, { "found", found }, { "opener", RubyNil.Value },
     };
 
     /// <summary>
