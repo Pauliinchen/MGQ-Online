@@ -2,6 +2,7 @@
 #  trade_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-09: Checked that only enchanted copies are counted for room, as the game counts no other copies
 #      Paulinchen  2026-11-08: Played the DLL telling who stands near the player
 #      Paulinchen  2026-11-06: Answered which items may be traded, how many an offer holds and why an offer cannot be taken with fixed values and checked what the script asks
 #      Paulinchen  2026-11-05: Answered an offer with a fixed view in place of a copy of the DLL's revision count
@@ -112,10 +113,15 @@ class Game_Party
   def lose_gold(amount); gain_gold(-amount); end
   # Records a copy added as an item of its own.
   def add_item_data(item, number); @added << item; end
-  # The party holds at most two copies of each kind.
-  def uniq_max_item_number(item); 2; end
-  # How many copies of an item's kind the party holds.
-  def uniq_item_number(item); @counts.keys.count { |held| held.uniq_item? && held.class == item.class }; end
+  # The party holds at most two enchanted copies of each kind and no most of other kinds, as the game.
+  def uniq_max_item_number(item); item.enchant_item? ? 2 : Float::INFINITY; end
+  # How many copies of an item's kind the party holds; the game keeps no copies of an item of the
+  # database and fails on one.
+  def uniq_item_number(item)
+    raise NoMethodError, "private method 'select' called for nil:NilClass" if item.is_a?(RPG::Item)
+
+    @counts.keys.count { |held| held.uniq_item? && held.class == item.class }
+  end
   # Everything the party holds.
   def held; @counts.keys; end
   # The items held.
@@ -414,7 +420,7 @@ $refusal = "You cannot carry more Potion."
 check("an offer the DLL refuses cannot be taken", MGQ_MpTrade::Items.receive_refusal(offer, "Friend", MGQ_MpTrade::Items.read_offer(offer(10, listed("item", 1, 1)))), $refusal)
 check("asked with each item's facts, how many the bag holds and the own offer gives, an unknown item without facts, and the gold",
       $limits_asked.last, { "name" => "Friend", "gold" => $game_party.gold, "max_gold" => $game_party.max_gold, "gold_given" => 10, "gold_taken" => 50,
-                            "entries" => [{ "facts" => ["item", false, false, false], "amount" => 98, "held" => 2, "given" => 1, "room" => 2, "copies_given" => 0, "name" => "Potion" },
+                            "entries" => [{ "facts" => ["item", false, false, false], "amount" => 98, "held" => 2, "given" => 1, "room" => nil, "copies_given" => 0, "name" => "Potion" },
                                           { "facts" => nil, "amount" => 1, "held" => 0, "given" => 0, "room" => nil, "copies_given" => 0, "name" => "" }] })
 $refusal = nil
 check("enchant stones may be traded, asked with their facts", MGQ_MpTrade::Items.tradeable?(ruby), true)
@@ -428,6 +434,9 @@ token = MGQ_MpTrade::Items.token(sword)
 check("an enchanted copy goes to the DLL with its facts and its prefix's enchantment and place", plain, { "copy" => { "rolls" => 7 }, "prefix" => [5, "p", 1] })
 copy = MGQ_MpTrade::Items.item_from(plain)
 check("and read back as a new copy with the same prefix", [copy.class, copy.rolls, copy.prefix], [EnchantedSword, 7, "Sharp"])
+MGQ_MpTrade::Items.receive_refusal(MGQ_MpTrade::Items.read_offer(offer(0, listed("item", 1, 3), listed("weapon", 1, 1), ["uew9.6~Sharp", plain, 1])), "Friend")
+check("an offer of herbs, a plain weapon and an enchanted copy counts room only for the copy, as the game counts no others",
+      $limits_asked.last["entries"].map { |entry| entry["room"] }, [nil, nil, 1])
 $data_classes[5] = Enchantment.new(["Nibui", "Surudoi"], ["Densetsu"])
 check("which a game in another language names in its own", MGQ_MpTrade::Items.item_from(plain).prefix, "Surudoi")
 $data_classes[5] = Enchantment.new(["Dull", "Sharp"], ["Legendary"])

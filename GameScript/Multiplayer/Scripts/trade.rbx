@@ -2,6 +2,7 @@
 #  trade.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-09: Counted room only for the copies the game caps, so an offer of plain items no longer crashes
 #      Paulinchen  2026-11-08: Read standing near from the DLL
 #      Paulinchen  2026-11-06: Asked the rules in C# which items may be traded, how many of one an offer holds and whether the game can take an offer
 #      Paulinchen  2026-11-05: Handed the DLL the offers and items as values and took them back so, the DLL writing and reading the offers and the items' tokens
@@ -891,13 +892,17 @@ module MGQ_MpTrade
 
     # Counts the copies of a kind the party can still take.
     #
+    # The game caps only enchanted copies; it names no most for other kinds and fails to count the
+    # copies of an item of the database.
+    #
     # @param item [RPG::BaseItem] A copy of the kind.
     # @return [Integer, nil] How many, nil when the game keeps no count of copies.
     def self.room_for_copies(item)
       party = $game_party
       return nil unless party.respond_to?(:uniq_max_item_number) && party.respond_to?(:uniq_item_number)
 
-      party.uniq_max_item_number(item) - party.uniq_item_number(item)
+      most = party.uniq_max_item_number(item)
+      most.is_a?(Integer) ? most - party.uniq_item_number(item) : nil
     end
 
     # Moves the trade's items in the player's game: takes the player's offer out of the bag, as much
