@@ -2,6 +2,7 @@
 #  overworld.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-09: Freed an outline drawn in an earlier look once no follower shows it
 #      Paulinchen  2026-11-08: Gave its UI ids the mgq_online_ prefix
 #      Paulinchen  2026-11-06: Read the colors of a follower's outline in the player's look through UI.color_now
 #                            - Drew the ghosts' labels, the own ping, the own line and the world status as huds of the Mod Framework's UI layer
@@ -276,20 +277,58 @@ module MGQ_MpOverworld
     @stand_in = ["", 0]
   end
 
+  # Gives a follower's sprite the outline of Luka's sprite in its color now, counting the sprite as
+  # one that shows it.
+  #
+  # @param kind [Symbol] The color's key of OUTLINE_COLORS, :member or :stranger.
+  # @return [Bitmap, nil] The outline, nil when it cannot be drawn.
+  def self.take_outline(kind)
+    taken = outline(kind)
+    outline_shown[taken] += 1 if taken
+    taken
+  end
+
+  # Counts a follower's sprite as no longer showing an outline, and frees the outline once no
+  # follower shows it and the look has another color for it.
+  #
+  # @param outline [Bitmap] The outline the sprite showed.
+  def self.release_outline(outline)
+    outline_shown[outline] -= 1
+    free_stale_outline(outline)
+  end
+
+  # Tells how many follower sprites show each outline.
+  #
+  # @return [Hash{Bitmap => Integer}] The count per outline.
+  def self.outline_shown
+    @outline_shown ||= Hash.new(0)
+  end
+
+  # Frees an outline no follower shows any more, unless it is the one drawn in the look now.
+  #
+  # @param outline [Bitmap] The outline.
+  def self.free_stale_outline(outline)
+    return if outline_shown[outline] > 0
+    return if (@outlines || {}).values.any? { |current| current[1].equal?(outline) }
+
+    outline_shown.delete(outline)
+    outline.dispose unless outline.disposed?
+  end
+
   # Draws the outline of Luka's sprite once per color: a sheet the size of Luka's, transparent but
   # for the visible pixels on the edge of each of Luka's frames.
   #
-  # The outline drawn in an earlier look stays kept, since a follower shown before the look changed
-  # still holds it as its bitmap.
+  # A follower shown before the look changed keeps the outline drawn in the earlier look until it
+  # takes another, so that outline is freed only then.
   #
   # @param kind [Symbol] The color's key of OUTLINE_COLORS, :member or :stranger.
   # @return [Bitmap, nil] The outline, nil when it cannot be drawn.
   def self.outline(kind)
     @outlines ||= {}
     color = Mod_Framework::UI.color_now(OUTLINE_COLORS.fetch(kind))
-    key = [kind, color.red, color.green, color.blue, color.alpha]
-    known = @outlines[key]
-    return known if known && !known.disposed?
+    key = [color.red, color.green, color.blue, color.alpha]
+    known = @outlines[kind]
+    return known[1] if known && known[0] == key && !known[1].disposed?
 
     name, index = stand_in
     sheet = Cache.character(name)
@@ -300,7 +339,9 @@ module MGQ_MpOverworld
     top = index / 4 * 4 * height
     outline = Bitmap.new(sheet.width, sheet.height)
     12.times { |frame| outline_frame(sheet, outline, Rect.new(left + frame % 3 * width, top + frame / 3 * height, width, height), color) }
-    @outlines[key] = outline
+    @outlines[kind] = [key, outline]
+    free_stale_outline(known[1]) if known
+    outline
   rescue => e
     log_once([:outline, kind], "drawing the #{kind} outline of Luka's sprite failed: #{e.class}: #{e.message}")
     nil
@@ -511,9 +552,22 @@ class Sprite_MpGhostFollower < Sprite_Character
   # shows only that, which keeps the frames' size, since it is drawn on a sheet the size of Luka's.
   def set_character_bitmap
     super
+    release_outline
     @mgq_mp_outline = @character.outline
-    outline = @mgq_mp_outline ? MGQ_MpOverworld.outline(@mgq_mp_outline) : nil
-    self.bitmap = outline if outline
+    @mgq_mp_shown_outline = @mgq_mp_outline ? MGQ_MpOverworld.take_outline(@mgq_mp_outline) : nil
+    self.bitmap = @mgq_mp_shown_outline if @mgq_mp_shown_outline
+  end
+
+  # Gives the outline back as the sprite is freed.
+  def dispose
+    release_outline
+    super
+  end
+
+  # Gives back the outline the sprite showed, if any.
+  def release_outline
+    MGQ_MpOverworld.release_outline(@mgq_mp_shown_outline) if @mgq_mp_shown_outline
+    @mgq_mp_shown_outline = nil
   end
 end
 

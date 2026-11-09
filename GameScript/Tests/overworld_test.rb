@@ -2,6 +2,7 @@
 #  overworld_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-09: Checked that an outline drawn in an earlier look is freed once no follower shows it
 #      Paulinchen  2026-11-08: Played the DLL telling who stands near the player
 #      Paulinchen  2026-11-07: Read a greyed wheel choice from disabled:
 #      Paulinchen  2026-11-06: Expected the DLL to hear that the player chose to leave the party
@@ -448,6 +449,42 @@ check("a follower whose sprite this game lacks shows only the outline of Luka's"
 outlined = ghost.followers.last
 outlined.look_like("$missing", 2, Struct.new(:member, :move_speed, :opacity, :transparent).new(false, 4, 255, false))
 check("in white once its player is no longer in the party", outlined.outline, :stranger)
+
+# An outline drawn in an earlier look is freed once no follower shows it; the one of the look now stays.
+# Stands in for Luka's sheet, every pixel of it visible, and for the outlines, noting when they are freed.
+class Bitmap
+  def get_pixel(*); Pixel.new(255); end
+  def set_pixel(*); end
+  def dispose; @disposed = true; end
+  def disposed?; @disposed ? true : false; end
+end
+# Stands in for the game's character sprite, taking its character's picture as it is made.
+class Sprite_Character
+  def initialize(_viewport, character); @character = character; set_character_bitmap; end
+  def set_character_bitmap; end
+end
+luka_sheet = Bitmap.new(96, 128)
+Cache.define_singleton_method(:character) { |name| name == "$missing" ? raise(Errno::ENOENT, name) : luka_sheet }
+UI_LOOK = Mod_Framework::UI.singleton_class
+UI_LOOK.send(:alias_method, :color_in_look, :color_now)
+$ally_color = nil
+UI_LOOK.send(:define_method, :color_now) { |name, *rest| name == :ally && $ally_color ? $ally_color : color_in_look(name, *rest) }
+member_follower = Struct.new(:outline).new(:member)
+$ally_color = Color.new(0, 200, 0, 255)
+before = Sprite_MpGhostFollower.new(nil, member_follower)
+earlier = before.bitmap
+$ally_color = Color.new(200, 0, 0, 255)
+after = Sprite_MpGhostFollower.new(nil, member_follower)
+check("a follower shown after the look changed takes an outline in the new color, the one shown before keeps its own",
+      [after.bitmap.equal?(earlier), earlier.disposed?], [false, false])
+before.dispose
+check("the earlier outline is freed once no follower shows it", earlier.disposed?, true)
+current = after.bitmap
+after.dispose
+again = Sprite_MpGhostFollower.new(nil, member_follower)
+check("the outline of the look now stays for the next follower", [current.disposed?, again.bitmap.equal?(current)], [false, true])
+again.dispose
+UI_LOOK.send(:alias_method, :color_now, :color_in_look)
 check("each a step behind the one before", [ghost.x, ghost.followers.map(&:x)], [24, [23, 22]])
 $inbox << entry("message", 2, told(friend.merge("map" => "5", "x" => "24", "y" => "40", "party" => my_party, "trail" => [["Actor5", 1]])))
 MGQ_MpOverworldSync.tick
