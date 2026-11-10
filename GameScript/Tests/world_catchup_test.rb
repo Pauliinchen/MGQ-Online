@@ -2,6 +2,7 @@
 #  world_catchup_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-10: Checked that a look whose question a quiet look answered asks the DLL nothing until the story changes
 #      Paulinchen  2026-11-05: Answered the DLL's catch-up topics with fixed values per case instead of from the catch-up engine of engine.rb, and checked what the scripts send and what they do with each action, leaving the engine's decisions to the C# tests
 #                            - Answered the story's part with fixed values per progress
 #                            - Built the story chest without the flags only older games needed
@@ -201,6 +202,16 @@ frames(40)
 looks = answers.asked("catchup.check")[seen..-1]
 check("the next look is no audit and hands the DLL the growth it answered", [looks[1]["audit"], looks[1]["growth"]], [false, { "seen" => 3 }])
 $derived = nil
+answers.set("catchup.check", "actions" => [["gifts"], ["teach", 16, 544]], "growth" => { "count" => 0, "roster" => [1, 16, 77, 80] })
+frames(40)
+seen = answers.asked("catchup.check").size
+frames(120)
+held = answers.asked("catchup.check").size - seen
+$game_variables[1032] = 6
+frames(40)
+check("a look whose question a quiet look after the roster's growth answered, teaching a skill held, asks the DLL nothing; a story changed since asks again",
+      [held, answers.asked("catchup.check").size - seen], [0, 1])
+$game_variables[1032] = 5
 
 # The relay moves the player on by their level: the notice, the gate noted, and the world's story
 # written into theirs, which the DLL looks at as a story laid over the player's.

@@ -2,6 +2,7 @@
 #  world_catchup.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-10: Left out the DLL's look while its question stays the one a quiet look last answered after a look at the roster's growth, and found the counted items once per revision of the mapping
 #      Paulinchen  2026-11-05: Named and read sites as plain values
 #                            - Added the world's shared companions through a topic, their ids as numbers
 #                            - Took the side switches and the companion of the side the player answered from the DLL's one rule of the side
@@ -135,6 +136,10 @@ module MGQ_MpWorldCatchup
   # Frames between two looks at the player's story, half a second.
   CHECK_FRAMES = 30
 
+  # The actions that change nothing when they give nothing: the end of a tell of gifts, and a skill,
+  # class or race the DLL names again for each look at the roster's growth, which the game holds.
+  QUIET_ACTIONS = ["gifts", "teach", "class"]
+
   # Frames between two reads of the DLL's state while an addition of shared companions runs, a
   # quarter of a second.
   STATE_FRAMES = 15
@@ -239,6 +244,7 @@ module MGQ_MpWorldCatchup
     @watched = nil
     @visiting = []
     @ledger_sent = false
+    @quiet_look = nil
     @checked = MGQ_Multiplayer::Bridge.frame_number
     @state_read = MGQ_Multiplayer::Bridge.frame_number
   end
@@ -262,6 +268,7 @@ module MGQ_MpWorldCatchup
     @keys = found
     @keys_rev = table.rev
     @tested = nil
+    @counted = nil
     log("read what the catch-up reads at revision #{table.rev}: #{found['switches'].size} switch(es), #{found['variables'].size} variable(s), " \
         "#{found['selves'].size} self switch(es), #{found['items'].size} item(s)")
     @keys
@@ -351,21 +358,41 @@ module MGQ_MpWorldCatchup
   # owes once when an audit is due (on entering, after a load, on a level up), the vehicles after a
   # story written into the player's, else the rows new since, the rewards waiting for their gate,
   # the roster's skills, classes and races, the shared companions, the Makina, the missed companions
-  # and the counts.
+  # and the counts. Left out while the question stays the one kept (see keep_quiet).
   def self.look
     note_held_items if @audit_due
     audit = @audit_due
     vehicles = !audit && @vehicles_due
-    answer = call(CHECK_TOPIC, snapshot.merge("look" => "tick", "audit" => audit, "vehicles" => vehicles, "growth" => @growth))
+    request = snapshot.merge("look" => "tick", "audit" => audit, "vehicles" => vehicles)
+    stamp = [MGQ_MpWorldStory.world_id, @keys_rev, request]
+    return if @ledger_sent && @quiet_look == stamp
+
+    answer = call(CHECK_TOPIC, request.merge("growth" => @growth))
     return unless answer
 
     @audit_due = false
     @vehicles_due = false if audit || vehicles
     @growth = answer["growth"]
-    apply(answer)
+    gave = apply(answer)
     ask_side(answer["ask_side"])
     note_roster(Array(answer["sharable"]))
     note_orbs(answer["orbs"])
+    keep_quiet(stamp, answer, gave)
+  end
+
+  # Keeps a look's question when its answer changed nothing in the game (see QUIET_ACTIONS) and
+  # came from a look at the roster's growth too, so the same question would bring the same answer
+  # again: the DLL decides by the question, its tables and the save's notes alone, and every other
+  # call of the catch-up forgets the question kept (see call).
+  #
+  # @param stamp [Array] The world, the mapping's revision and the question without the growth.
+  # @param answer [Hash] The look's answer.
+  # @param gave [Boolean] Whether its actions gave anything.
+  def self.keep_quiet(stamp, answer, gave)
+    growth = answer["growth"]
+    quiet = !gave && Array(answer["actions"]).all? { |action| QUIET_ACTIONS.include?(action[0]) } && !answer["ask_side"] && !answer["orbs"] &&
+            answer["ledger"].nil?
+    @quiet_look = quiet && growth.is_a?(Hash) && growth["count"] == 0 ? stamp : nil
   end
 
   # Forgets the world's catch-up once the world closed or is no Raid World.
@@ -629,13 +656,23 @@ module MGQ_MpWorldCatchup
   # @return [Hash{String => Integer}] The counts by "i<id>", "w<id>" or "a<id>".
   def self.item_counts
     counts = {}
-    ((keys ? keys["items"] : []) + unlock_ids.map { |id| "i#{id}" }).each do |key|
-      next if counts.key?(key)
-
-      item = MGQ_MpGame.item(key[0, 1], key[1..-1].to_i)
-      counts[key] = $game_party.item_number(item) if item
-    end
+    counted_items.each { |key, item| counts[key] = $game_party.item_number(item) }
     counts
+  end
+
+  # Finds the items item_counts counts, once per revision of the mapping.
+  #
+  # @return [Array<Array(String, RPG::BaseItem)>] Each key, frozen, with its item.
+  def self.counted_items
+    return @counted if @counted && @counted_rev == @keys_rev
+
+    found = {}
+    ((keys ? keys["items"] : []) + unlock_ids.map { |id| "i#{id}" }).each do |key|
+      item = found.key?(key) ? nil : MGQ_MpGame.item(key[0, 1], key[1..-1].to_i)
+      found[key.dup.freeze] = item if item
+    end
+    @counted_rev = @keys_rev
+    @counted = found.to_a
   end
 
   # Lists the weapons and armors the party wears.
@@ -666,12 +703,14 @@ module MGQ_MpWorldCatchup
   end
 
   # Calls a catch-up topic of the DLL with the open world and, once after a load, the save's notes,
-  # and keeps the notes it answers.
+  # and keeps the notes it answers; forgets the question a quiet look kept, since the call may change
+  # the notes the DLL decides by (see keep_quiet).
   #
   # @param topic [String] The topic.
   # @param request [Hash] The request.
   # @return [Hash, nil] The answer; nil when the DLL failed.
   def self.call(topic, request)
+    @quiet_look = nil
     request = request.merge("world" => MGQ_MpWorldStory.world_id)
     request["ledger"] = $game_system.instance_variable_get(LEDGER) unless @ledger_sent
     answer = MGQ_Multiplayer::Bridge.call(topic, request)
@@ -693,28 +732,35 @@ module MGQ_MpWorldCatchup
   # Carries out what a look answered and keeps the companions on a visit it names.
   #
   # @param answer [Hash] The answer.
+  # @return [Boolean] Whether its actions gave anything, see run.
   def self.apply(answer)
-    run(answer["actions"])
+    gave = run(answer["actions"])
     @visiting = Array(answer["visiting"]) if answer.key?("visiting")
+    gave
   end
 
   # Carries out the actions the DLL answered, in their order, each with the game's own grant.
   #
   # @param actions [Array<Array>] The actions, see CatchupTopics in the DLL.
+  # @return [Boolean] Whether any gave something the gifts tell.
   def self.run(actions)
     gifts = []
+    gave = false
     Array(actions).each do |action|
       begin
         gift = act(action)
         gifts << gift if gift.is_a?(String)
+        gave ||= gift.is_a?(String)
         if action[0] == "gifts"
           tell_gifts(gifts)
           gifts = []
         end
       rescue => e
+        gave = true
         log_once([:act, action[0], e.class], "carrying out #{action[0]} failed: #{e.class}: #{e.message}")
       end
     end
+    gave
   end
 
   # Carries out one action.
