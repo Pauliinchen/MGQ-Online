@@ -2,6 +2,7 @@
 #  ui_raid_bar_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-10: Checked that the map's frames ask the DLL for a boss's bar only once it is due
 #      Paulinchen  2026-11-08: Expected the tiles of a boss's events in place of the steps to them
 #      Paulinchen  2026-11-06: Read the bars the strip and the bars over the bosses show, leaving how they look to the in-game suite
 #                            - Named M as the party box size hotkey
@@ -441,6 +442,13 @@ sprites = [CharacterSprite.new(harpy, 200, 300, 48, true, 255), CharacterSprite.
 bar.update_map(sprites)
 check("a bar over the boss whose event shows, with its title and its enemy's name, and no strip while one shows",
       [overhead_events.map { |event| event.x }, bar.overhead_shape(harpy), bar.strip_bar], [[10], ["Tier 9 Raid Boss", ["Queen Harpy"]], nil])
+asked = [$bar_requests.size, $raid_answers.asked("raid.troops").size]
+2.times { bar.update_map(sprites) }
+held = [$bar_requests.size, $raid_answers.asked("raid.troops").size]
+$frame += MGQ_MpRaidBar::REDRAW_FRAMES
+bar.update_map(sprites)
+check("the map's frames keep the bar shown without asking the DLL anything, and ask for the boss's bar again once it is due, its pools kept",
+      [held, [$bar_requests.size, $raid_answers.asked("raid.troops").size]], [asked, [asked[0] + 1, asked[1]]])
 bar.update_map(sprites.map { |sprite| sprite.dup })
 check("once the map rebuilds its sprites after a transfer, the same bar stays over the event", overhead_events.map { |event| event.x }, [10])
 $game_map.events.delete(1)

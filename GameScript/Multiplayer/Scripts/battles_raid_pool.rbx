@@ -2,6 +2,7 @@
 #  battles_raid_pool.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-10: Kept the pools' keys of each troop once the DLL told them, which stay the same while the game runs
 #      Paulinchen  2026-11-06: Dropped hp_of, a copy of the DLL's rule, and rounded a scaled enemy's HP up in place
 #      Paulinchen  2026-11-05: Left the Hades rematch's check to the DLL's rules, which a lost battle's defeat asks too
 #                            - Left the share a pool gained back to the DLL's ledger, which alone counts it
@@ -146,6 +147,9 @@ module MGQ_MpRaidPool
   # The bosses already told defeated for the whole world, by their key.
   @announced = {}
 
+  # The pools' keys of each troop's own enemies, by the troop, see troop_keys.
+  @troop_keys = {}
+
   extend MGQ_MpLog
 
   # What starts this script's lines in the log.
@@ -278,6 +282,7 @@ module MGQ_MpRaidPool
     @tried_at = 0
     @world = nil
     @pools = {}
+    @troop_keys = {}
     Stats.forget
     @announced = {}
     MGQ_Multiplayer::Bridge.call(FIGHT_CLOSE_TOPIC)
@@ -551,12 +556,17 @@ module MGQ_MpRaidPool
     MGQ_MpRaidBosses.key(troop_id)
   end
 
-  # Finds the pools' keys of a troop's own enemies, as its setup makes them.
+  # Finds the pools' keys of a troop's own enemies, as its setup makes them, kept once the DLL told
+  # them, since they follow from the bosses' table alone.
   #
   # @param troop_id [Integer, String] The troop.
-  # @return [Array<String>] The keys, none for a troop without a key.
+  # @return [Array<String>] The keys, none for a troop without a key or while the DLL does not answer.
   def self.troop_keys(troop_id)
-    Array(troop_facts([troop_id]).fetch(troop_id.to_i, {})["keys"])
+    troop = troop_id.to_i
+    return @troop_keys[troop] if @troop_keys.key?(troop)
+
+    row = troop_facts([troop])[troop]
+    row ? @troop_keys[troop] = Array(row["keys"]) : []
   end
 
   # Counts the enemies the setup of the troop just set up made, which come first in the troop.

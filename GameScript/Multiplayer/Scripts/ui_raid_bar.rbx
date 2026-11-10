@@ -2,6 +2,7 @@
 #  ui_raid_bar.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-10: Asked the DLL for a boss's bar on the map only when the bar shown is due again, and looked at the frozen fights' bosses every SCAN_FRAMES, instead of every frame
 #      Paulinchen  2026-11-09: Framed the gauges by the Mod Framework's border: :theme two pixels thick, which replaced framed:
 #      Paulinchen  2026-11-08: Listed the tiles of a boss's events in place of counting the steps to them
 #                            - Gave its UI ids the mgq_online_ prefix
@@ -133,6 +134,10 @@ module MGQ_MpRaidBar
   # The last look at the map's events: its map id and SCAN_FRAMES step, and the events found.
   @scanned = nil
 
+  # The last look at the troops of the frozen fights' bosses: its map id, SCAN_FRAMES step and the
+  # troops, and those whose battles show a bar.
+  @freeze_shown = nil
+
   # Each event's command list with the troops it starts, by the event, see troops_of.
   @event_troops = {}
 
@@ -142,10 +147,10 @@ module MGQ_MpRaidBar
   # Whether the strip shows in battle.
   @battle_shown = false
 
-  # The strip's bar and the frame it was set, nil while it shows none.
+  # The strip's bar, the frame it was set and the troop of a map's bar, nil while it shows none.
   @strip = nil
 
-  # The bar over each boss's event and the frame it was set, by the event.
+  # The bar over each boss's event, the frame it was set and its troop, by the event.
   @overhead = {}
 
   # What renders each bar over an event anew, by the event, see overhead_shape.
@@ -308,15 +313,20 @@ module MGQ_MpRaidBar
     scanned_events + freeze_targets
   end
 
-  # Lists the stand-ins of the bosses of the map's frozen fights whose battles show a bar.
+  # Lists the stand-ins of the bosses of the map's frozen fights whose battles show a bar, asking
+  # the rules anew every SCAN_FRAMES, on another map and for other troops.
   #
   # @return [Array<Array>] Each stand-in with its troop.
   def self.freeze_targets
     return [] unless defined?(MGQ_MpRaidFreezeUi)
 
     targets = MGQ_MpRaidFreezeUi.bar_targets
-    shown = shown_troops(targets.map { |_standin, troop| troop })
-    targets.select { |_standin, troop| shown.include?(troop) }
+    return [] if targets.empty?
+
+    troops = targets.map { |_standin, troop| troop }.uniq
+    stamp = [$game_map.map_id, MGQ_Multiplayer::Bridge.frame_number / SCAN_FRAMES, troops]
+    @freeze_shown = [stamp, shown_troops(troops)] unless @freeze_shown && @freeze_shown[0] == stamp
+    targets.select { |_standin, troop| @freeze_shown[1].include?(troop) }
   end
 
   # Lists the events of the map whose page starts a raid boss's battle that shows a bar, see
@@ -481,12 +491,23 @@ module MGQ_MpRaidBar
     !strip_bar.nil? && !top_message?
   end
 
-  # Notes the bar over a boss's event, or none.
+  # Notes the bar over a boss's event, see due_bar.
   #
   # @param event [Game_Event] The event.
-  # @param bar [Bar, nil] The bar.
-  def self.set_overhead(event, bar)
-    @overhead[event] = settled(@overhead[event], bar)
+  # @param troop [Integer] The boss's troop.
+  def self.set_overhead(event, troop)
+    @overhead[event] = settled(@overhead[event], due_bar(@overhead[event], troop), troop)
+  end
+
+  # Finds a troop's bar on the map in place of one shown: the one shown while it is the troop's and
+  # was set less than REDRAW_FRAMES ago, which settled keeps anyway, else the DLL's (see map_bar).
+  #
+  # @param kept [Array, nil] The bar shown, the frame it was set and its troop; nil for none.
+  # @param troop [Integer] The troop.
+  # @return [Bar, nil] The bar, nil for none.
+  def self.due_bar(kept, troop)
+    now = MGQ_Multiplayer::Bridge.frame_number
+    kept && kept[2] == troop && now - kept[1] < REDRAW_FRAMES && now >= kept[1] ? kept[0] : map_bar(troop)
   end
 
   # Tells the bar over a boss's event.
@@ -512,10 +533,11 @@ module MGQ_MpRaidBar
   # Takes the place of a bar shown with a new one: at once for another boss or title, else at most
   # every REDRAW_FRAMES.
   #
-  # @param kept [Array, nil] The bar shown and the frame it was set, nil for none.
+  # @param kept [Array, nil] The bar shown, the frame it was set and its troop; nil for none.
   # @param bar [Bar, nil] The new bar.
-  # @return [Array, nil] The bar to show and the frame it was set.
-  def self.settled(kept, bar)
+  # @param troop [Integer, nil] The troop of a map's bar, nil for the battle's.
+  # @return [Array, nil] The bar to show, the frame it was set and its troop.
+  def self.settled(kept, bar, troop = nil)
     return nil unless bar
 
     now = MGQ_Multiplayer::Bridge.frame_number
@@ -523,7 +545,7 @@ module MGQ_MpRaidBar
     same = shown && shown.title == bar.title && shown.gauges.map { |gauge| gauge.name } == bar.gauges.map { |gauge| gauge.name }
     return kept if same && now - kept[1] < REDRAW_FRAMES && now >= kept[1]
 
-    [bar, now]
+    [bar, now, troop]
   end
 
   # Tells how full a gauge of a bar is.
@@ -583,7 +605,8 @@ module MGQ_MpRaidBar
     end.compact
     update_overhead(shown)
     keep_strip
-    self.strip_bar = shown.empty? && !pairs.empty? ? map_bar(pairs.first[1]) : nil
+    troop = shown.empty? && !pairs.empty? ? pairs.first[1] : nil
+    @strip = troop ? settled(@strip, due_bar(@strip, troop), troop) : nil
   rescue => e
     log_once(:map, "showing the boss bars failed: #{e.class}: #{e.message}")
   end
@@ -601,7 +624,7 @@ module MGQ_MpRaidBar
       @overhead_shapes.delete(key[1])
     end
     shown.each do |event, troop, target|
-      set_overhead(event, map_bar(troop))
+      set_overhead(event, troop)
       MGQ_MpShown.keep([:raid_overhead, event], BossBar, event: event, target: target) if overhead_bar(event)
     end
   end
