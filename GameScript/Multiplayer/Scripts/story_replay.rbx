@@ -2,6 +2,7 @@
 #  story_replay.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-10: Handed over no run of the player's history again while it waits for the player's own things
 #      Paulinchen  2026-11-06: Answered a number, a key item and a present the record lacks as the game's window starts, asking only choices
 #                            - Handed the DLL each companion's base level, as the game keeps every kind of level in one Hash
 #      Paulinchen  2026-11-05: Handed the DLL the keys and the player's own things as [kind, key] with their values, sites and commands' places as plain values, and what the player holds whole for the DLL to sum up
@@ -691,7 +692,8 @@ module MGQ_MpStoryReplay
 
   # Hands the player a run of their own history: a page a catch-up names, or the page that closes a
   # chest it names, played from their own values with the keys that close it read as shut where a
-  # replay reads the run's start values, as a run handed to them; once while it waits.
+  # replay reads the run's start values, as a run handed to them; once while it waits to be taken
+  # or for the player's own things.
   #
   # @param fields [Hash] "site", such as ["map", 215, 23, 1], or "chest", such as [2, [588, 9, "A"]].
   # @param why [String] What names it, for the log.
@@ -699,7 +701,7 @@ module MGQ_MpStoryReplay
     raid = defined?(MGQ_MpCoop::Scope) && MGQ_MpCoop::Scope.raid?
     entry = MGQ_Multiplayer::Bridge.call(DERIVE_TOPIC, fields.merge("party" => !raid))
     return log("no entry of #{fields.values.first} for #{why}: the DLL derived none") unless entry.is_a?(Hash)
-    return if @waiting.any? { |waiting| waiting["id"] == entry["id"] }
+    return if entry["waits"] || @waiting.any? { |waiting| waiting["id"] == entry["id"] }
 
     log("#{why}: #{entry['site']} is played in the player's own game")
     receive(entry)

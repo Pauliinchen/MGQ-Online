@@ -2,6 +2,7 @@
 //  StoryReplayTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-10: Covered a page of the player's history that waits being derived once
 //      Paulinchen  2026-11-09: Covered a Raid World save that keeps no step of the own drops it passed nor of a run no player hands over
 //      Paulinchen  2026-11-08: Moved to the MGQOnline.Multiplayer namespace
 //      Paulinchen  2026-11-06: Covered a number replayed with the opener's answer beside a choice the receiver is asked
@@ -408,6 +409,28 @@ public sealed class StoryReplayTopicsTests
         Assert.Equal(("derived:map:1:7:1", "derived", true), (derived["id"].AsText(), derived["stream"].AsText(), derived["derived"] is RubyBool { Flag: true }));
         Assert.Equal((new RubyArray { Row(Self(1, 7, "A"), false) }, new RubyArray()), (derived["keys"], derived["start"]));
         Assert.Equal("replay", Take(derived, [Row(Self(1, 7, "A"), false), Row(Variable(1001), 5)])["do"].AsText());
+    }
+
+    /// <summary>
+    /// Asserts that a page of the player's history the catch-up names at every look, whose replay did
+    /// not reach its step, is derived once and waits until what it read changes (issue 81: a Makina
+    /// chest the player could not unlock yet was derived and queued twice a second).
+    /// </summary>
+    [Fact]
+    public void Derive_LeavesAPageThatDidNotCloseWaitingUntilWhatItReadChanges()
+    {
+        RubyHash request = new() { { "site", Page(1, 7, 1) }, { "closes", new RubyArray { Self(1, 7, "A") } }, { "party", true } };
+        RubyHash derived = Call(StoryTopics.ReplayDeriveTopic, request).AsHash();
+        Call(StoryTopics.ReplayQueueTopic, derived);
+        Take(derived, [Row(Self(1, 7, "A"), false), Row(Variable(1001), 3)]);
+        Call(StoryTopics.ReplayDoneTopic, new RubyHash
+        {
+            { "entry", derived }, { "reached", false }, { "before", new RubyArray() }, { "reads", new RubyArray { Row(Variable(1001), 3) } },
+            { "had", new RubyArray() }, { "has", new RubyArray() },
+        });
+
+        Assert.Equal(new RubyHash { { "waits", "derived:map:1:7:1" } }, Call(StoryTopics.ReplayDeriveTopic, request));
+        Assert.Equal(new RubyArray { derived }, Call(StoryTopics.ReplayDueTopic, new RubyHash { { "values", new RubyArray { Row(Variable(1001), 5) } } }));
     }
 
     /// <summary>

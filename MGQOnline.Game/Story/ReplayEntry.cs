@@ -2,6 +2,7 @@
 //  ReplayEntry.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-10: Named the entry derived for a page apart from deriving it
 //      Paulinchen  2026-11-05: Wrote an entry's keys, start values, site and inputs' places as plain values, and read the texts of a save's entry once
 //                            - Read the story markers from StoryIds
 //                            - Noted whether a run gave or used up a found item
@@ -247,6 +248,13 @@ public sealed record ReplayEntry(
     public IReadOnlyList<KeyValuePair<int, int>> Drops { get; init; } = [];
 
     /// <summary>
+    /// Names the entry derived for a page.
+    /// </summary>
+    /// <param name="site">The page.</param>
+    /// <returns>The id, such as "derived:map:112:7:1".</returns>
+    public static string DerivedId(ReplaySite site) => $"{DerivedStream}:{site}";
+
+    /// <summary>
     /// Makes the entry of a page the player's own history or a feature names, which has no opener
     /// run: it starts from the player's current values, with the keys that close the page read as
     /// off where a replay reads them at its start values, and its step is those keys.
@@ -261,7 +269,7 @@ public sealed record ReplayEntry(
         ArgumentNullException.ThrowIfNull(inView);
         var keys = closes.Distinct().ToDictionary(key => key, _ => "0");
         var start = keys.Keys.Where(inView).ToDictionary(key => key, _ => "0");
-        return new ReplayEntry($"{DerivedStream}:{site}", site, DerivedStream, start.Count > 0 ? StoryScope.World : StoryScope.Party, null, keys, null, start, [], true);
+        return new ReplayEntry(DerivedId(site), site, DerivedStream, start.Count > 0 ? StoryScope.World : StoryScope.Party, null, keys, null, start, [], true);
     }
 
     /// <summary>

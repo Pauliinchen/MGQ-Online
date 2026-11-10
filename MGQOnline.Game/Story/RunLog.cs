@@ -2,6 +2,7 @@
 //  RunLog.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-10: Told whether a run waits to be taken or for the player's own things
 //      Paulinchen  2026-11-09: Kept the track number of each claim and dropped the steps the save passed on the world's track
 //      Paulinchen  2026-11-05: Counted a battle's drops done only once their own entry claimed them
 //      Paulinchen  2026-10-31: Kept the cursor of each stream of a track
@@ -292,6 +293,13 @@ public sealed class RunLog
         _pending.RemoveAll(run => run.Entry.Id == entry.Id);
         _pending.Add(new PendingRun(entry, new Dictionary<string, string>(reads, StringComparer.Ordinal)));
     }
+
+    /// <summary>
+    /// Reports whether a run waits: to be taken, or for one of the player's own things.
+    /// </summary>
+    /// <param name="id">The run's entry id.</param>
+    /// <returns>Whether it waits.</returns>
+    public bool Waits(string id) => _queued.Exists(queued => queued.Id == id) || _pending.Exists(run => run.Entry.Id == id);
 
     /// <summary>
     /// Lists the player's own things the waiting runs read.

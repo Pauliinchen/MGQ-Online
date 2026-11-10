@@ -2,6 +2,7 @@
 //  StoryTopics.Replay.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-10: Derived no entry of a page whose entry waits in the log already
 //      Paulinchen  2026-11-09: Dropped the steps the save passed before writing its log
 //                            - Logged no step of a Raid World run whose page no player hands over
 //                            - Named the player's own drops in a Raid World by their track's stream, so a save drops them once passed
@@ -67,7 +68,8 @@ internal sealed partial class StoryTopics
     /// is meant), "closes" ([key, ...]), "party", "letters" (the letters of the event the source
     /// holds on, which answer its choices, see <see cref="DerivedAnswers"/>; nil for none)}, the keys
     /// as <see cref="StoryPlain"/> names them; answers
-    /// the entry, nil before the list came or without an events database for a chest.
+    /// the entry, {"waits" => id} while its entry waits in the log, nil before the list came or
+    /// without an events database for a chest.
     /// </summary>
     public const string ReplayDeriveTopic = "story.replay_derive";
 
@@ -307,7 +309,7 @@ internal sealed partial class StoryTopics
     /// <param name="request">{"site" or "chest", "closes" (the keys that close it; for a chest its
     /// key, for a site the self switches its page turns on, when missing), "party"}, each key as
     /// [kind, key].</param>
-    /// <returns>The entry, nil when it cannot be made yet.</returns>
+    /// <returns>The entry, {"waits" => id} while its entry waits in the log, nil when it cannot be made yet.</returns>
     private RubyValue ReplayDerive(RubyHash request)
     {
         EventStore store = Events().Store;
@@ -323,6 +325,14 @@ internal sealed partial class StoryTopics
         {
             Log.Write($"replay: no page closes the chest {chest}, so it is not played");
             return RubyNil.Value;
+        }
+
+        // The catch-up names a page at every look until its keys close, and a page that cannot close
+        // yet waits in the log until what it read changes; deriving it again would queue it anew.
+        string id = ReplayEntry.DerivedId(found);
+        if (_log.Waits(id))
+        {
+            return new RubyHash { { "waits", id } };
         }
 
         StoryKey[] closes = !request["closes"].IsNil
