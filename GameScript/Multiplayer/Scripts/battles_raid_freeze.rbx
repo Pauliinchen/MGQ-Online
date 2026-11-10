@@ -2,6 +2,7 @@
 #  battles_raid_freeze.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-10: Waited longer and longer between hand-overs of the journal the DLL refuses, instead of handing it over again every frame
 #      Paulinchen  2026-11-08: Asked the DLL which records wait, what a record's world entry holds, what becomes of a record as its battle ends, where a tableau stands and what it blocks, how a fresh start begins and which items a defeat gives back
 #                            - Dropped the scene switches assumed when the DLL tells nothing of a page, and the tables nothing reads
 #      Paulinchen  2026-11-06: Read the preamble's start and whether a page runs nothing from the DLL, and left the Hades halls to its sites
@@ -95,9 +96,12 @@ module MGQ_MpRaidFreeze
   # first, and a mark before them reads as lost.
   MAX_HELD = 4 * MAX_PENDING
 
-  # Refused hand-overs between two log lines while the DLL keeps refusing the journal's writes, about
-  # ten seconds at one a frame.
-  REFUSALS_PER_LOG = 600
+  # Frames after a refused hand-over of the journal before the next, doubled with each refusal in a
+  # row up to RETRY_MOST_FRAMES; a refused hand-over carries up to MAX_HELD writes each time.
+  RETRY_FRAMES = 60
+
+  # The most frames between two hand-overs of the journal while the DLL refuses it, half a minute.
+  RETRY_MOST_FRAMES = 1800
 
   # The DLL's topic that tells where the story fights troops, see EventTableTopics.Sites.
   SITES_TOPIC = "raid.sites"
@@ -139,6 +143,9 @@ module MGQ_MpRaidFreeze
 
   # How many hand-overs of the journal failed in a row.
   @refusals = 0
+
+  # The frame from which a hand-over of the journal the DLL refused is tried again.
+  @retry_at = 0
 
   # How deep the blocks whose writes the journal leaves out nest, see unjournaled.
   @unjournaled = 0
@@ -2093,7 +2100,8 @@ module MGQ_MpRaidFreeze
 
   # Hands the writes noted to the DLL's journal with the oldest live mark, which drops the writes no
   # mark needs, every one once no mark lives. Called before every frame's Graphics.update and before
-  # the journal is asked. Writes the DLL refuses stay for the next hand-over (see held_back).
+  # the journal is asked. Writes the DLL refuses stay for the next hand-over (see held_back), which
+  # the frames wait for unless the journal is asked.
   #
   # @param asked [Integer, nil] A mark about to be asked, which stays though its run or defeat just
   #   ended.
@@ -2101,6 +2109,7 @@ module MGQ_MpRaidFreeze
   def self.hand_journal(asked = nil)
     keep = [@run && @run[:mark], @pending && @pending[:mark], asked].compact.min
     return true if @journal.empty? && keep == @kept
+    return false if asked.nil? && @refusals > 0 && MGQ_Multiplayer::Bridge.frame_number < @retry_at
 
     MGQ_Multiplayer::Bridge.call!(JOURNAL_TOPIC, "entries" => @journal, "keep" => keep)
     log("the DLL took the journal's #{@journal.size} write(s) after #{@refusals} refusal(s)") if @refusals > 0
@@ -2115,7 +2124,8 @@ module MGQ_MpRaidFreeze
   end
 
   # Keeps the writes the DLL refused for the next hand-over, but those no live mark needs, and at
-  # most MAX_HELD (see trim_journal). Logs the first refusal and then every REFUSALS_PER_LOG.
+  # most MAX_HELD (see trim_journal), and sets when the frames try again (see RETRY_FRAMES). Logs
+  # the first refusal in a row.
   #
   # @param keep [Integer, nil] The oldest live mark, nil for none.
   # @param error [Exception] Why the hand-over failed.
@@ -2124,7 +2134,8 @@ module MGQ_MpRaidFreeze
     drop_objects(keep)
     trim_journal(MAX_HELD)
     @refusals += 1
-    return unless @refusals == 1 || @refusals % REFUSALS_PER_LOG == 0
+    @retry_at = MGQ_Multiplayer::Bridge.frame_number + [RETRY_FRAMES << [@refusals - 1, 5].min, RETRY_MOST_FRAMES].min
+    return unless @refusals == 1
 
     log("the DLL refused the journal's writes #{@refusals} time(s) in a row (#{error.class}: #{error.message}): " \
         "#{@journal.size} write(s) wait to go again#{@lost_through > 0 ? ", every write up to #{@lost_through} is lost" : ''}")

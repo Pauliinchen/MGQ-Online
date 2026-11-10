@@ -2,6 +2,7 @@
 #  raid_freeze_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-10: Checked that the frames wait between hand-overs of a journal the DLL refuses
 #      Paulinchen  2026-11-08: Answered the records check, the held values, the record's end, the tableau, the fresh start and the items given back with fixed values per case, and checked what the scripts hand the DLL
 #      Paulinchen  2026-11-06: Answered whether a page runs nothing as the DLL's events database and dropped the check of a Hades hall, which the DLL leaves out of the sites
 #      Paulinchen  2026-11-05: Answered the sites of an earlier release's save with fixed values and checked the texts handed
@@ -881,6 +882,13 @@ $game_variables[1075] = 3
 freeze.hand_journal
 check("writes the DLL refuses stay with the scripts, which know nothing since the mark meanwhile, logged once",
       [freeze.changed_since(mark), $log.grep(/the DLL refused the journal's writes 1 time\(s\) in a row/).size], [nil, 1])
+handed = lambda { $world_bridge.calls.count { |topic, _| topic == "freeze.journal" } }
+calls = handed.call
+freeze.hand_journal
+$frame += MGQ_MpRaidFreeze::RETRY_FRAMES * 2
+freeze.hand_journal
+check("the frames hand a refused journal over again only after a wait that grows with each refusal, logging no more",
+      [handed.call - calls, $log.grep(/the DLL refused the journal's writes/).size], [1, 1])
 answer_journal($world_bridge)
 $game_variables[1076] = 4
 check("and go once the DLL takes them again", freeze.changed_since(mark), [[1, 1075, nil, 3], [1, 1076, nil, 4]])
