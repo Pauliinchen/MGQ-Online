@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-10: Handed over no run of the player's history again while it waits for the player's own things
+#                            - Opened every chest's lock in a replay, so a chest handed to a player gives what it holds
 #      Paulinchen  2026-11-06: Answered a number, a key item and a present the record lacks as the game's window starts, asking only choices
 #                            - Handed the DLL each companion's base level, as the game keeps every kind of level in one Hash
 #      Paulinchen  2026-11-05: Handed the DLL the keys and the player's own things as [kind, key] with their values, sites and commands' places as plain values, and what the player holds whole for the DLL to sum up
@@ -126,6 +127,10 @@ module MGQ_MpStoryReplay
   CLOSED_CODES = [105, 124, 132, 133, 134, 135, 136, 137, 138, 201, 203, 204, 206, 211, 212, 213, 214, 216, 217,
                   221, 222, 223, 224, 225, 230, 231, 232, 233, 234, 235, 236, 241, 242, 243, 244, 245, 246, 249, 250,
                   251, 261, 281, 282, 283, 284, 302, 303, 337, 340, 351, 352, 353, 354].freeze
+
+  # The party's unlock level a replay reads: a chest handed to a player opens whatever lock it
+  # checks (user decision 2026-11-10).
+  OPEN_LOCK = 99
 
   # The interpreter's script functions the replay leaves out, those the gate classes as the
   # presentation or the opener's play alone: battle graphics and skill names, music, the title
@@ -1411,6 +1416,13 @@ module MGQ_MpStoryReplay
     end
 
     CLOSED_CODES.each { |code| define_method("command_#{code}") {} }
+
+    # Reads the party's unlock level as open, see OPEN_LOCK.
+    #
+    # @return [Integer] OPEN_LOCK.
+    def unlock_level
+      OPEN_LOCK
+    end
     CLOSED_FUNCTIONS.each { |name| define_method(name) { |*_args| nil } }
 
     # Makes an interpreter of a replay.

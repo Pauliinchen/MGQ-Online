@@ -2,6 +2,8 @@
 #  story_replay_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-10: Checked that a locked chest opens in a replay
+#                            - Cut a page by a check of the party's gold, since a lock no longer cuts a replay
 #      Paulinchen  2026-11-06: Checked that a number takes the opener's answer, and one the record lacks the game's start, without asking
 #                            - Checked that a join in a replay reads the receiver's own story
 #                            - Gave the party a member whose levels the game keeps per kind in one Hash
@@ -347,15 +349,14 @@ replay(["map", 36, 24, 1], "start" => [[1, 1020, 2]])
 check("a gift page that branches on a world key it writes goes the opener's way, and the save keeps its own value",
       [$game_party.item_number(511), $game_variables[1020]], [1, 3])
 
-# A locked chest: the receiver's own party cannot unlock it, so it writes nothing and gives nothing.
+# A locked chest the receiver's own party cannot unlock still opens in a replay and gives what it
+# holds (issue 81: a Makina chest owed by level waited at its lock for good).
 new_game
 page(419, 24, [c(111, 12, "unlock_level < 1"), c(101, "", 0, 0, 2, indent: 1), c(401, "It is locked.", indent: 1), c(115, indent: 1), c(412),
                c(126, 606, 0, 0, 1), c(123, "A", 0)])
 done = replay(["map", 419, 24, 1])
-check("a chest the receiver's party cannot unlock writes and gives nothing", [done.state, done.writes, $game_party.item_number(606)], [:done, [], 0])
-$game_party.unlock_level = 1
-replay(["map", 419, 24, 1])
-check("once the party can unlock, the same replay gives it", [$game_party.item_number(606), $game_self_switches[[419, 24, "A"]]], [1, true])
+check("a chest the receiver's party cannot unlock opens in a replay and gives",
+      [done.state, $game_party.item_number(606), $game_self_switches[[419, 24, "A"]]], [:done, 1, true])
 
 # A page off the receiver's map calls a common event whose Control Self Switch belongs to the
 # calling event (CE 106).
@@ -461,15 +462,15 @@ replay(["map", 140, 2, 1])
 check("a page that takes back what it gave leaves the receiver what they held", $game_party.item_number(26), 1)
 
 # A page that gives an item, a companion's affection and the receiver's own switch and variable,
-# then stops at a lock before its step's key: nothing of it stays, and once the lock opens the
-# replay from the start gives each once.
+# then stops at a check of the party's gold before its step's key: nothing of it stays, and once
+# the party holds the gold the replay from the start gives each once.
 new_game
 page(419, 40, [c(126, 606, 0, 0, 1), c(355, "$game_actors[5].love += 3"), c(121, 2046, 2046, 0), c(122, 300, 300, 0, 0, 4),
-               c(111, 12, "unlock_level < 1"), c(115, indent: 1), c(412), c(123, "A", 0)])
+               c(111, 12, "$game_party.gold < 500"), c(115, indent: 1), c(412), c(123, "A", 0)])
 cut = replay(["map", 419, 40, 1], "keys" => [[2, [419, 40, "A"], false]])
 check("a page cut by a check that fails before its step writes and gives nothing",
       [cut.state, cut.committed?, $game_party.item_number(606), $game_actors[5].love, $game_switches[2046], $game_variables[300]], [:done, false, 0, 0, false, 0])
-$game_party.unlock_level = 1
+$game_party.gain_gold(500)
 replay(["map", 419, 40, 1], "keys" => [[2, [419, 40, "A"], false]])
 check("its retry gives each once", [$game_party.item_number(606), $game_actors[5].love, $game_switches[2046], $game_variables[300], $game_self_switches[[419, 40, "A"]]],
       [1, 3, true, 4, true])
