@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-11-10: Handed over no run of the player's history again while it waits for the player's own things
 #                            - Opened every chest's lock in a replay, so a chest handed to a player gives what it holds
+#                            - Read what the player holds from the bag's own lists instead of every item of the game
 #      Paulinchen  2026-11-06: Answered a number, a key item and a present the record lacks as the game's window starts, asking only choices
 #                            - Handed the DLL each companion's base level, as the game keeps every kind of level in one Hash
 #      Paulinchen  2026-11-05: Handed the DLL the keys and the player's own things as [kind, key] with their values, sites and commands' places as plain values, and what the player holds whole for the DLL to sum up
@@ -627,13 +628,19 @@ module MGQ_MpStoryReplay
   end
 
   # Lists what the player holds, for the notice of a replay: items, weapons and armors in the bag,
-  # gold, the companions and the skills of the party.
+  # gold, the companions and the skills of the party. The bag's own lists are read, not every item
+  # of the game, with the database's items alone, as the game's unique copies are no story's.
   #
   # @return [Array<Array>] Each [key, amount, name, sum].
   def self.holdings
     held = []
-    { "i" => $data_items, "w" => $data_weapons, "a" => $data_armors }.each do |letter, data|
-      data.each { |item| held << ["#{letter}#{item.id}", $game_party.item_number(item), item.name.to_s, false] if item && $game_party.item_number(item) > 0 }
+    [["i", $game_party.items, $data_items], ["w", $game_party.weapons, $data_weapons], ["a", $game_party.armors, $data_armors]].each do |letter, items, data|
+      items.each do |item|
+        next unless item && data[item.id].equal?(item)
+
+        count = $game_party.item_number(item)
+        held << ["#{letter}#{item.id}", count, item.name.to_s, false] if count > 0
+      end
     end
     held << ["g", $game_party.gold, Vocab.currency_unit.to_s, true]
     $game_party.all_members.each do |actor|

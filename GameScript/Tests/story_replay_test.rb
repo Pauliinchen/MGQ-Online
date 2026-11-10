@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-11-10: Checked that a locked chest opens in a replay
 #                            - Cut a page by a check of the party's gold, since a lock no longer cuts a replay
+#                            - Gave the party's stand-in the bag's lists of what it holds
 #      Paulinchen  2026-11-06: Checked that a number takes the opener's answer, and one the record lacks the game's start, without asking
 #                            - Checked that a join in a replay reads the receiver's own story
 #                            - Gave the party a member whose levels the game keeps per kind in one Hash
@@ -528,10 +529,14 @@ $data_weapons = []
 $data_armors = []
 # A member of the party, whose level the game keeps per kind in one Hash.
 Member = Struct.new(:id, :name, :base_level, :skills, :equips) { def level; { :base => base_level, :class => 1, :tribe => 1 }; end }
-# The party's gold and members, and its items read by the item as the game reads them.
+# The party's gold and members, its items read by the item as the game reads them, and the bag's
+# lists of what it holds.
 class Game_Party
   def members; [Member.new(1, "Luka", 12, [], [nil])]; end
   def all_members; members; end
+  def items; @items.keys.sort.map { |id| $data_items[id] }.compact; end
+  def weapons; []; end
+  def armors; []; end
   def has_item?(item); item_number(item) > 0; end
   alias_method :item_number_by_id, :item_number
   def item_number(item); item_number_by_id(item.respond_to?(:id) ? item.id : item); end
