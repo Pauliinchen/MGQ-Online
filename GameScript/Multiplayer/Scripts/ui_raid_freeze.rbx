@@ -2,6 +2,7 @@
 #  ui_raid_freeze.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-10: Answered at once that a character sprite hides nothing while no frozen fight shows, without making objects
 #      Paulinchen  2026-11-08: Asked the DLL which frozen fight keeps an event from starting and whether the start resumes it
 #                            - Listed the frozen fights with their bosses' tiles in place of picking the one within reach
 #      Paulinchen  2026-11-06: Asked the freeze whether a page runs nothing, as the DLL tells it
@@ -460,8 +461,11 @@ module MGQ_MpRaidFreezeUi
   def self.hidden?(character)
     return false unless character.is_a?(Game_Event)
 
+    shown = tableaux
+    return false if shown.empty?
+
     id = character.id
-    rows = tableaux.map { |tableau| tableau.hidden[id] }.compact
+    rows = shown.map { |tableau| tableau.hidden[id] }.compact
     return false if rows.empty?
 
     rows.any? { |row| row.boss == 1 } || MGQ_MpRaidFreeze.runs_nothing?(character)
