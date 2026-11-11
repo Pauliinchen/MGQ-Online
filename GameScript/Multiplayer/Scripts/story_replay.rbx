@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-11: Handed the DLL what the player holds only after a replay read it, and without the gear worn
+#                            - Merged no holdings a replay left unchanged, and logged that it left them so
 #      Paulinchen  2026-11-10: Handed over no run of the player's history again while it waits for the player's own things
 #                            - Opened every chest's lock in a replay, so a chest handed to a player gives what it holds
 #                            - Read what the player holds from the bag's own lists instead of every item of the game
@@ -1208,10 +1209,21 @@ module MGQ_MpStoryReplay
       [$game_party, $game_actors, $game_library, $game_map ? $game_map.vehicles : nil]
     end
 
-    # Merges what the replay changed into the receiver's holdings as they are now.
+    # Merges what the replay changed into the receiver's holdings as they are now, nothing when the
+    # copy is as it was staged.
     def commit
+      @unchanged = (Marshal.dump(@objects) == @base rescue false)
+      return if @unchanged
+
       base = Marshal.load(@base)
       Stage.real.each_with_index { |real, index| Merge.into(base[index], @objects[index], real) }
+    end
+
+    # Reports whether the commit found the copy as it was staged and merged nothing.
+    #
+    # @return [Boolean] Whether it did.
+    def unchanged?
+      @unchanged == true
     end
   end
 
@@ -2070,14 +2082,22 @@ module MGQ_MpStoryReplay
       commit if reached?
       @seconds = @seconds.to_f + (Time.now - began)
       if @state == :done
-        MGQ_MpStoryReplay.log(format("replayed %s: %d writes, %d reads in %.1f ms, %s", @site, @writes.size, @reads.size, @seconds * 1000,
-                                     @committed ? "kept" : "its step not reached, nothing kept"))
+        MGQ_MpStoryReplay.log(format("replayed %s: %d writes, %d reads in %.1f ms, %s", @site, @writes.size, @reads.size, @seconds * 1000, outcome))
       end
       self
     rescue => e
       @state = :failed
       MGQ_MpStoryReplay.log("the replay of #{@site} failed#{@committed ? '' : ', nothing kept'}: #{e.class}: #{e.message}")
       self
+    end
+
+    # Names what the replay kept, for its log line.
+    #
+    # @return [String] The outcome.
+    def outcome
+      return "its step not reached, nothing kept" unless @committed
+
+      @stage.unchanged? ? "kept, holdings unchanged" : "kept"
     end
 
     # Resumes the fiber, answering the message as the message window would, until the list ends or
