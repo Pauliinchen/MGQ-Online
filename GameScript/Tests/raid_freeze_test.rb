@@ -2,6 +2,7 @@
 #  raid_freeze_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Gave the sites their battle numbers and covered a fight whose battle sits at another index than the data's
 #      Paulinchen  2026-11-10: Checked that the frames wait between hand-overs of a journal the DLL refuses
 #      Paulinchen  2026-11-08: Answered the records check, the held values, the record's end, the tableau, the fresh start and the items given back with fixed values per case, and checked what the scripts hand the DLL
 #      Paulinchen  2026-11-06: Answered whether a page runs nothing as the DLL's events database and dropped the check of a Hades hall, which the DLL leaves out of the sites
@@ -591,12 +592,13 @@ end
 # Stands in for the DLL's events database: the freeze's tables of a few fights, which the checks
 # change and then have the engine read anew (reread_tables).
 module FreezeTables
-  # The fights' sites: key, index, indent, preamble's start and whether on a cutscene map.
+  # The fights' sites: key, index, indent, preamble's start, whether on a cutscene map and battle
+  # number.
   SITES = {
-    607 => [[["map", 138, 16, 1], 1, 0, 1, false]],
-    807 => [[["ce", 347], 11, 2, 9, false]],
-    868 => [[["map", 138, 13, 1], 7, 1, 4, false]],
-    870 => [[["map", 728, 12, 1], 2, 0, 0, true], [["map", 749, 13, 1], 2, 0, 0, true]],
+    607 => [[["map", 138, 16, 1], 1, 0, 1, false, 0]],
+    807 => [[["ce", 347], 11, 2, 9, false, 0]],
+    868 => [[["map", 138, 13, 1], 7, 1, 4, false, 0]],
+    870 => [[["map", 728, 12, 1], 2, 0, 0, true, 0], [["map", 749, 13, 1], 2, 0, 0, true, 0]],
   }
   # How the story enters each cutscene site: its field sources, side switch and entry spot; the DLL
   # hands them as rows, since a Hash that crosses the bridge has no Array keys.
@@ -1088,6 +1090,27 @@ check("nor one whose site the data lacks", [freeze.record_for(868), $log.grep(/i
 reset
 $game_variables[1075] = 14
 $game_switches[4] = true
+FreezeTables::SITES[868] = [[["map", 138, 13, 1], 7, 1, 4, false, 1]]
+reread_tables
+fight_event(13)
+check("nor one whose battle number at its site the data lacks",
+      [freeze.record_for(868), $log.grep(/its battle number 0 at \["map", 138, 13, 1\] is not in the data/).size], [nil, 1])
+# The events database is the untranslated game's: on a translated one the battle sits at another
+# index, with as many commands of the preamble before it.
+reset
+$game_variables[1075] = 14
+$game_switches[4] = true
+FreezeTables::SITES[868] = [[["map", 138, 13, 1], 5, 1, 2, false, 0]]
+reread_tables
+fight_event(13)
+FreezeTables::SITES[868] = kept
+reread_tables
+record = freeze.record_for(868)
+check("a fight whose battle sits at another index than the data's takes its record, resuming at the live preamble's start",
+      [record && record["state"], record && record["resume"]], ["battle", 4])
+reset
+$game_variables[1075] = 14
+$game_switches[4] = true
 $game_switches[2307] = true
 $final = [868]
 fight_event(13)
@@ -1373,7 +1396,7 @@ check("nor when the world's list holds it", $noted, [])
 # that call the common event are blocked, and the resume runs the page from that map's data, its
 # interpreters on that map as at the battle.
 reset
-FreezeTables::SITES[2133] = [[["ce", 9062], 2, 0, 1, false]]
+FreezeTables::SITES[2133] = [[["ce", 9062], 2, 0, 1, false, 0]]
 reread_tables
 $raid_answers.tableau = { "map" => 138, "at" => [40, 10], "blocked" => [30, 31], "callers" => 1 }
 $data_common_events[9062] = RPG::CommonEvent.new(9062, [

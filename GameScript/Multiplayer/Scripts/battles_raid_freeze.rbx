@@ -2,6 +2,7 @@
 #  battles_raid_freeze.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Found a fight's site row by its battle number in the live list, so fights of a translated game freeze too
 #      Paulinchen  2026-11-10: Waited longer and longer between hand-overs of the journal the DLL refuses, instead of handing it over again every frame
 #      Paulinchen  2026-11-08: Asked the DLL which records wait, what a record's world entry holds, what becomes of a record as its battle ends, where a tableau stands and what it blocks, how a fresh start begins and which items a defeat gives back
 #                            - Dropped the scene switches assumed when the DLL tells nothing of a page, and the tables nothing reads
@@ -581,7 +582,10 @@ module MGQ_MpRaidFreeze
 
     site = chain[:frames].last[0]
     rows = data(:SITES, {})[troop] || []
-    return "its site #{site} is not in the data" unless rows.any? { |row| row[0] == site && row[1] == at[1] }
+    return "its site #{site} is not in the data" unless rows.any? { |row| row[0] == site }
+
+    list = MGQ_MpGame.get(at[0], :list)
+    return "its battle number #{battle_number(list, at[1])} at #{site} is not in the data" unless site_row(troop, site, list, at[1])
 
     map = $game_map.map_id
     return "its event moved the player away from the cutscene map #{chain[:map]}, where no stand-in can wait" if chain[:moved] && scene_map?(chain[:map])
@@ -636,7 +640,7 @@ module MGQ_MpRaidFreeze
       "troop" => troop, "site" => frames.last[0], "outer" => outer, "scene" => scene, "tableau" => tableau,
       "spot" => [map, $game_player.x, $game_player.y, $game_player.direction],
       "state" => "battle", "boss" => MGQ_MpRaidPool.key_of(troop).to_s, "frames" => frames,
-      "resume" => preamble_start(troop, frames.last[0], at[1]), "indent" => at[2], "event_id" => chain[:event_id], "map" => map,
+      "resume" => preamble_start(troop, frames.last[0], MGQ_MpGame.get(at[0], :list), at[1]), "indent" => at[2], "event_id" => chain[:event_id], "map" => map,
       "player" => player_row, "followers" => followers_row, "camera" => [$game_map.display_x, $game_map.display_y],
       "screen" => dumped($game_map.screen, "the screen"), "look" => look_row, "audio" => audio_row, "events" => event_rows,
       "party" => party_dump, "vehicles" => vehicles_row,
@@ -648,14 +652,39 @@ module MGQ_MpRaidFreeze
         "#{scene || moved ? "#{scene ? 'a cutscene' : "its event moved the player here from map #{chain[:map]}"}, its boss waits on map #{tableau[0]}" : 'its boss waits here'}")
   end
 
-  # Finds where a battle command's preamble starts, as its row of the freeze's SITES tells it.
+  # Finds where a battle command's preamble starts in the live list: as far before it as its row of
+  # the freeze's SITES puts the preamble before the battle.
   #
   # @param troop [Integer] The troop.
   # @param site [Array] The site key of the list that holds the battle command.
+  # @param list [Array<RPG::EventCommand>] The list that holds it.
   # @param index [Integer] The battle command's index.
   # @return [Integer] The preamble's first index, the battle command's when there is none.
-  def self.preamble_start(troop, site, index)
-    data(:SITES, {})[troop].find { |row| row[0] == site && row[1] == index }[3]
+  def self.preamble_start(troop, site, list, index)
+    row = site_row(troop, site, list, index)
+    index - (row[1] - row[3])
+  end
+
+  # Finds the row of the freeze's SITES of a battle command: by its site and its battle number, since
+  # the events database's indexes are the untranslated game's, which a translation shifts.
+  #
+  # @param troop [Integer] The troop.
+  # @param site [Array] The site key of the list that holds the battle command.
+  # @param list [Array<RPG::EventCommand>] The list that holds it.
+  # @param index [Integer] The battle command's index.
+  # @return [Array, nil] The row, nil for none.
+  def self.site_row(troop, site, list, index)
+    number = battle_number(list, index)
+    (data(:SITES, {})[troop] || []).find { |row| row[0] == site && row[5] == number }
+  end
+
+  # Counts the battle commands of a list before an index, which is the battle number of the one there.
+  #
+  # @param list [Array<RPG::EventCommand>] The list.
+  # @param index [Integer] The index.
+  # @return [Integer] The count.
+  def self.battle_number(list, index)
+    Array(list)[0, index].to_a.count { |command| command.code == 301 }
   end
 
   # Builds a fight's tableau: the DLL tells where it stands and which events it blocks
