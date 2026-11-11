@@ -2,7 +2,8 @@
 #  async_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-11: Weighed the live map by the Mod Framework's reading of the memory and dropped the largest free block
+#      Paulinchen  2026-11-11: Gave the map's sprites a parallax and picture sprites, which a hidden live map lets go of
+#                            - Weighed the live map by the Mod Framework's reading of the memory and dropped the largest free block
 #      Paulinchen  2026-11-09: Checked that the next menu shows the live map kept while the player was on the map, until a map is set up
 #                            - Checked that a live map is neither built nor kept while little address space is free
 #                            - Checked that the map frees the live map it keeps once free address space falls short
@@ -112,7 +113,7 @@ end
 # Stands in for the map's sprites, counting their updates.
 class Spriteset_Map
   attr_reader :viewport1, :viewport2, :viewport3, :updates
-  def initialize; create_viewports; create_characters; @updates = 0; end
+  def initialize; create_viewports; create_characters; @parallax = Sprite.new; @parallax_name = ""; @picture_sprites = []; @updates = 0; end
   def create_viewports; @viewport1, @viewport2, @viewport3 = Viewport.new, Viewport.new, Viewport.new; end
   def create_characters; end
   def refresh_characters; create_characters; end

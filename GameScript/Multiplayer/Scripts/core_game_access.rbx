@@ -2,7 +2,8 @@
 #  core_game_access.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-11: Named the party's gold
+#      Paulinchen  2026-11-11: Named the map spriteset's parallax, its name and its picture sprites
+#                            - Named the party's gold
 #      Paulinchen  2026-11-06: Named the battle's target windows
 #      Paulinchen  2026-11-05: Dropped the counters of a state, which the game's own reset and erase give
 #                            - Named the frames left of the screen's fade in
@@ -112,11 +113,15 @@ module MGQ_MpGame
     :command_window => :@command_window,
 
     # Spriteset_Map: its viewports, of the map with its characters, of the weather and pictures, and
-    # the topmost; and the characters' sprites.
+    # the topmost; the characters' sprites; and its parallax, the parallax's name and the pictures'
+    # sprites.
     :viewport1 => :@viewport1,
     :viewport2 => :@viewport2,
     :viewport3 => :@viewport3,
     :character_sprites => :@character_sprites,
+    :parallax => :@parallax,
+    :parallax_name => :@parallax_name,
+    :picture_sprites => :@picture_sprites,
 
     # $game_troop, $game_party and $game_temp.
     :enemies => :@enemies,

@@ -2,7 +2,8 @@
 #  core_async.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-11: Weighed a live map by the free address space the Mod Framework reads, dropping the largest free block
+#      Paulinchen  2026-11-11: Let the live map kept for the next menu give up the parallax and pictures it shares with the map, so neither frees them under the other
+#                            - Weighed a live map by the free address space the Mod Framework reads, dropping the largest free block
 #      Paulinchen  2026-11-09: Kept the live map hidden while the player is on the map, for the next menu to show again
 #                            - Weighed a live map by the free address space too, keeping none for the next menu while it is short
 #                            - Freed the live map kept for the next menu once the free address space falls short
@@ -455,9 +456,19 @@ class Spriteset_MpLiveMap < Spriteset_Map
     @mgq_mp_cast = MGQ_MpAsync.map_cast
   end
 
-  # Hides it while the player is on the map, which shows sprites of its own.
+  # Hides it while the player is on the map, which shows sprites of its own, and lets go of the
+  # parallax and pictures' bitmaps, which come_back takes anew.
+  #
+  # The map's own sprites take the same bitmaps from the game's Cache, and a dispose on either side
+  # would free them under the other.
   def hide
     each_viewport { |viewport| viewport.visible = false }
+    parallax = MGQ_MpGame.get(self, :parallax)
+    # The Cache keeps no bitmap of an empty parallax name, so that one is this map's alone.
+    parallax.bitmap.dispose if parallax.bitmap && MGQ_MpGame.get(self, :parallax_name).to_s.empty?
+    parallax.bitmap = nil
+    MGQ_MpGame.set(self, :parallax_name, nil)
+    MGQ_MpGame.get(self, :picture_sprites).compact.each { |sprite| sprite.bitmap = nil }
   end
 
   # Shows it again behind a menu after the map, at the map's state now: with new sprites for the
