@@ -2,6 +2,7 @@
 #  world_screen_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Checked that a world picked before its mods were read starts with the mods and settings the start step carries
 #      Paulinchen  2026-11-09: Checked that the description takes the whole height of its box
 #                            - Checked that the World and Game data panels of the details open list boxes of their own
 #                            - Checked that the search and the filters lie in a box of their own above the worlds, whose list wraps at its ends
@@ -302,6 +303,26 @@ run_later(scene)
 check("mods the Mod Framework finds ready at once while the DLL found them differing refuse the entry instead of going on",
       [said(scene), screen_requests("screen.answer").drop(answers), scene.idle?],
       ["Sunset needs mods that differ here, which the Mod Framework cannot change: Level Cap. Check the Patch folder, then try again.", [{ "answer" => "back" }], true])
+
+# A world picked before its mods were read starts with the world the start step carries (issue 87).
+entered = []
+kept = [:enter_world, :note_session].map { |name| [name, MGQ_MpWorldMods.method(name)] }
+world_start = MGQ_MpWorld.method(:start)
+MGQ_MpWorldMods.define_singleton_method(:enter_world) { |listed, _me, _fresh = true| entered << [:enter_world, listed.mods, listed.settings] }
+MGQ_MpWorldMods.define_singleton_method(:note_session) { |listed| entered << [:note_session, listed.mods, listed.settings] }
+MGQ_MpWorld.define_singleton_method(:start) { |_world, _scene| nil }
+screen_list([listed_row(LISTED[0].merge("mods" => "", "mods_unread" => true)), ROWS[0]])
+scene.look_at_list
+scene.on_world(scene.entries.find { |each| each.name == "Sunset" })
+$screen_steps = [["start", $locals.keep("f1", "name" => "Sunset", "world" => "w1"), false,
+                  LISTED[0].merge("mods" => "!Level Cap", "settings" => "Level Cap/cap=int:99"), true]]
+pick_menu(scene, menu_texts.index("Enter the world"))
+check("the session takes the mods and settings the start step carries, not the picked row without them",
+      entered, [[:enter_world, "!Level Cap", "Level Cap/cap=int:99"], [:note_session, "!Level Cap", "Level Cap/cap=int:99"]])
+kept.each { |name, method| MGQ_MpWorldMods.define_singleton_method(name, method) }
+MGQ_MpWorld.define_singleton_method(:start, world_start)
+screen_list(ROWS)
+scene.look_at_list
 
 # Busy.
 $sounds = []

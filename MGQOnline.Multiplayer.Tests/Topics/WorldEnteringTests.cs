@@ -2,6 +2,7 @@
 //  WorldEnteringTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-11: Checked that the start step carries the world as the list holds it, with the mods read after the player picked it
 //      Paulinchen  2026-11-08: Answered the mods check with the website catalog's state and asked the Mod Framework to install again only a copy that differs
 //                            - Wrote the creator's versions of a world's required mods beside their hashes
 //                            - Moved to the MGQOnline.Multiplayer namespace
@@ -357,6 +358,25 @@ public sealed class WorldEnteringTests : IDisposable
     }
 
     /// <summary>
+    /// Asserts that a world whose mods were read after the player picked it starts with the mods and
+    /// settings the list holds now, not the ones of the row the player picked (issue 87).
+    /// </summary>
+    [Fact]
+    public void Enter_StartsWithTheModsAndSettingsTheListHoldsNow()
+    {
+        LocalWorld folder = Folder();
+        ListedWorld read = World("w1", mods: "!Level Cap");
+        _directory.List(read with { About = read.About with { Settings = "Level Cap/cap=int:99" } });
+
+        RubyValue? reply = _topics.Call(WorldEntering.EnterTopic, new RubyHash { { "id", "w1" }, { "folder", folder.Id }, { "name", "Plain" }, { "gone", false }, { "me", Me } });
+
+        Assert.Equal(["start fresh !Level Cap"], Steps(reply));
+        RubyHash row = reply!.AsHash()["steps"].AsArray()[0].AsArray()[3].AsHash();
+        Assert.Equal("Level Cap/cap=int:99", row["settings"].AsText());
+        Assert.False(row["mods_unread"].AsBool());
+    }
+
+    /// <summary>
     /// Asserts that the world the game started again for is entered once the list holds it, not while
     /// the list is not fetched yet.
     /// </summary>
@@ -381,9 +401,9 @@ public sealed class WorldEnteringTests : IDisposable
     {
         LocalWorld folder = Folder();
         _topics.Call(WorldEntering.DoTopic, new RubyHash { { "do", "open" }, { "me", Me }, { "rejoin", "w1" } });
-        _directory.List(World("w1"));
+        _directory.List(World("w1", mods: "!Level Cap"));
 
-        Assert.Equal(["entry w1", "start fresh"], Look("ready", ["w1", folder.Id, "Plain", false]));
+        Assert.Equal(["entry w1", "start fresh !Level Cap"], Look("ready", ["w1", folder.Id, "Plain", false]));
     }
 
     /// <summary>
@@ -645,7 +665,8 @@ public sealed class WorldEnteringTests : IDisposable
         }));
 
     /// <summary>
-    /// Writes steps as short lines: the kind, then what tells them apart.
+    /// Writes steps as short lines: the kind, then what tells them apart; a start ends with the
+    /// mods of the world it carries, or "unlisted".
     /// </summary>
     /// <param name="reply">The answer of a step topic.</param>
     /// <returns>One line per step.</returns>
@@ -659,7 +680,7 @@ public sealed class WorldEnteringTests : IDisposable
             "confirm" => $"confirm {parts[1].AsText()} {string.Join(",", parts[2].AsArray().Select(choice => choice.AsArray()[1].AsText()))}",
             "choices" => $"choices {string.Join(",", parts[1].AsArray().Select(choice => choice.AsArray()[1].AsText()))}",
             "copy_own" => $"copy_own {parts[2].AsInt()}",
-            "start" => parts[2].AsBool() ? "start placed" : "start fresh",
+            "start" => $"start {(parts[2].AsBool() ? "placed" : "fresh")}{(parts[3].IsNil ? " unlisted" : parts[3].AsHash()["mods"].AsText() is { Length: > 0 } mods ? $" {mods}" : "")}",
             _ => kind,
         };
     })];

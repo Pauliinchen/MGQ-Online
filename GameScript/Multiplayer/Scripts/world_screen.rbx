@@ -2,6 +2,7 @@
 #  world_screen.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Started a world with the row the DLL hands with the start step instead of the row picked before its mods were read
 #      Paulinchen  2026-11-09: Gave the details' boxes a little room at their sides
 #                            - Wrapped the description to as many lines as its box holds, where it showed one
 #                            - Drew a thin box around each part of the details the player can pick, at one height for every world
@@ -1929,12 +1930,13 @@ class Scene_MpWorlds < Scene_MenuBase
   #
   # @param world [MGQ_MpWorld::World] The world.
   # @param placed [Boolean] Whether its save was just placed there, which is checked first.
-  # @param listed [Boolean] Whether the list holds the world, the chosen one, whose settings apply.
+  # @param listed [Hash, nil] The world as the list holds it now, whose mods and settings apply; nil
+  #   when the list lacks it.
   # @param fresh [Boolean] Whether the list had arrived as the world began to open.
   def start_world(world, placed, listed, fresh)
     error = placed && MGQ_MpSaveDistribution.check(world)
     unless error
-      known = listed ? @entry.listed : nil
+      known = listed.is_a?(Hash) ? MGQ_MpWorldScreen.listed_of(listed) : nil
       MGQ_MpWorld::Directory.open(known.id) if known
       MGQ_MpWorldMods.enter_world(known, @me, fresh ? true : false)
       MGQ_MpWorldMods.note_session(known)

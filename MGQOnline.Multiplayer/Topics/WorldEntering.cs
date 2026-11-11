@@ -2,6 +2,7 @@
 //  WorldEntering.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-11: Handed the world as the list holds it with the start step, so a world picked before its mods were read starts with them
 //      Paulinchen  2026-11-08: Checked a world's mods by the creator's versions too, and waited for the website's catalog
 //                            - Moved to the MGQOnline.Multiplayer namespace
 //      Paulinchen  2026-11-06: Asked for a world's differing mods through the Mod Framework's dialog of the mods it needs, which installs them and starts the game again where it must
@@ -1002,8 +1003,13 @@ internal sealed partial class WorldEntering
     }
 
     /// <summary>
-    /// Has the scripts start a world from its latest save, or at the beginning without one.
+    /// Has the scripts start a world from its latest save, or at the beginning without one, with the
+    /// world as the list holds it now, whose mods and settings the session takes.
     /// </summary>
+    /// <remarks>
+    /// The list's row travels with the step because the row the scripts picked may predate the read of
+    /// the world's mods.
+    /// </remarks>
     /// <param name="folder">The world's folder.</param>
     /// <param name="placed">Whether its save was just placed there, which the scripts check first.</param>
     /// <param name="othersSave">Whether the save placed is another player's starting save, which the scripts note first.</param>
@@ -1017,13 +1023,15 @@ internal sealed partial class WorldEntering
             return;
         }
 
-        bool listed = _directory.Listed(_entry!.Id).World != null;
+        ListedWorld? listed = _directory.Listed(_entry!.Id).World;
         if (othersSave)
         {
             _steps.Add(new RubyArray { "other_start", LocalWorldTopics.WorldOf(world) });
         }
 
-        _steps.Add(new RubyArray { "start", LocalWorldTopics.WorldOf(world), placed, listed, _fresh });
+        Log(listed == null ? $"starting {EntryText} unlisted, without its mods and settings"
+            : $"starting {EntryText} with the mods \"{listed.About.Mods}\" and {listed.About.Settings.Length} characters of settings");
+        _steps.Add(new RubyArray { "start", LocalWorldTopics.WorldOf(world), placed, listed == null ? RubyNil.Value : ScreenTopics.ListedValue(listed), _fresh });
     }
 
     /// <summary>
