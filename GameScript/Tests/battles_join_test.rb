@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-11: Dropped the check of the late guest's wait limit, which only restated the request
+#                            - Expected what keeps the player from a duel or a trade too before the player's own request
 #      Paulinchen  2026-11-08: Expected the tiles of the bosses and the frozen fights in place of their steps
 #      Paulinchen  2026-11-07: Typed through a text box of the Mod Framework instead of the old typing flag
 #      Paulinchen  2026-11-06: Held the keys in $down down too, as the Mod Framework reads a hotkey's key
@@ -309,20 +310,16 @@ offered
 busy << join_frame["busy"]
 check("the prompt hides while an event or a message holds the map", join.prompt_text, nil)
 $game_map.interpreter.busy = false
-# Each turns on or off what keeps the player busy: the chat box, the action wheel, a trade.
-[lambda { |on| $typing = on }, lambda { |on| $wheel = on }, lambda { |on| $trading = on && :session }].each do |turn|
+# Each turns on or off what keeps the player busy: the chat box, the action wheel, and what keeps
+# them from a duel and a trade too, such as a battle.
+[lambda { |on| $typing = on }, lambda { |on| $wheel = on }, lambda { |on| $busy_reason = on ? "in a battle" : nil }].each do |turn|
   turn.call(true)
   offered
   busy << join_frame["busy"]
   turn.call(false)
 end
-sync.join_world(:guest, "x1", [9], "P9")
-offered
-busy << join_frame["busy"]
-sync.finish
-check("it tells the DLL what keeps the player from joining: an event, the chat box, the action wheel, a trade, a battle",
-      busy, [["the map is not free: an event, a message or a transfer", nil], [nil, "the chat box is open"], [nil, "the action wheel is open"],
-             [nil, "the player trades or is about to teleport"], ["the player is in a multiplayer battle", nil]])
+check("it tells the DLL what keeps the player from joining: an event, the chat box, the action wheel, and before the player's own request what keeps them from a duel or a trade too",
+      busy, [["the map is not free: an event, a message or a transfer", nil], [nil, "the chat box is open"], [nil, "the action wheel is open"], ["in a battle", nil]])
 $settings = { "key_overview" => "74" }
 map_frame
 check("a hotkey with the same key turns Join Battle off, its prompt hidden and nothing read",

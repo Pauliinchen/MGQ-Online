@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-11-11: Stood in for the gold a co-op turn sends, which none of the battle tests use
 #                            - Told the level the battle began with
+#                            - Told what keeps the player busy, which coop.rbx tells
 #      Paulinchen  2026-11-08: Dropped the status window's name drawing, which the scripts no longer hook
 #      Paulinchen  2026-11-06: Stood in for UI.confirm and read the waiting box's lines from the wait
 #      Paulinchen  2026-11-05: Kept each message sent as the scripts hand it instead of as a copy of the DLL's codec writes it
@@ -138,8 +139,10 @@ unless defined?(MGQ_MpChat)
     def self.typing?; $typing ? true : false; end
   end
 end
-# Stands in for coop.rbx: the party of the players marked member, led by $leader.
+# Stands in for coop.rbx: the party of the players marked member, led by $leader, and what keeps
+# the player busy in $busy_reason.
 module MGQ_MpCoop
+  def self.busy_reason; $busy_reason; end
   module Party
     def self.id; "p1"; end
     def self.members; MGQ_MpOverworldSync::Peers.all.select(&:member); end

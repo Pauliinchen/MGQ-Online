@@ -2,6 +2,7 @@
 #  trade.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Took why the player is busy from the reason duels and joins share, which a teleport due counts in
 #      Paulinchen  2026-11-09: Counted room only for the copies the game caps, so an offer of plain items no longer crashes
 #      Paulinchen  2026-11-08: Read standing near from the DLL
 #      Paulinchen  2026-11-06: Asked the rules in C# which items may be traded, how many of one an offer holds and whether the game can take an offer
@@ -243,8 +244,8 @@ module MGQ_MpTrade
     same_map?(peer) && MGQ_MpCoop::Invite.reaches_me?(peer, "trading", "trading_to", anywhere)
   end
 
-  # Reports whether the player may open a trade: free on the map, with no battle of their own, no
-  # story holding them and no other trade.
+  # Reports whether the player may open a trade: free on the map, with no other trade and nothing
+  # of MGQ_MpCoop.busy_reason holding them.
   #
   # @return [Boolean] Whether they may.
   def self.free?
@@ -258,18 +259,7 @@ module MGQ_MpTrade
     return MAP_NOT_FREE unless MGQ_MpOverworldSync.map_free?
     return "already in trade #{short(@session.id)}" if @session
 
-    held_reason
-  end
-
-  # Tells why the player may not open a trade besides the map and the trade itself.
-  #
-  # @return [String, nil] The reason, nil while nothing else holds them.
-  def self.held_reason
-    return "held by the story" if MGQ_MpHooks.player_held?
-    return "in a battle (#{MGQ_MpBattlesSync.role})" if defined?(MGQ_MpBattlesSync) && !MGQ_MpBattlesSync.role.nil?
-    return "in a battle" if defined?(MGQ_MpBattles) && MGQ_MpBattles.running?
-
-    nil
+    MGQ_MpCoop.busy_reason
   end
 
   # Shortens a trade's id for the log, enough to tell trades apart.
@@ -375,14 +365,14 @@ module MGQ_MpTrade
     tell_frame
   end
 
-  # Hands the DLL, once it changed, why the player is busy (the trade itself aside), the player's
-  # own offer and the world's id, which the DLL decides on as the other player's messages come,
-  # and whether the map is the scene and which save is loaded, by which it asks the relay for the
-  # trades to recover.
+  # Hands the DLL, once it changed, why the player is busy (see MGQ_MpCoop.busy_reason), the
+  # player's own offer and the world's id, which the DLL decides on as the other player's messages
+  # come, and whether the map is the scene and which save is loaded, by which it asks the relay for
+  # the trades to recover.
   def self.tell_frame
     return unless dll_ready?
 
-    busy = MGQ_MpOverworldSync.map_free? ? held_reason : MAP_NOT_FREE
+    busy = MGQ_MpOverworldSync.map_free? ? MGQ_MpCoop.busy_reason : MAP_NOT_FREE
     frame = { "busy" => busy, "inviting" => inviting?, "targets" => targets.dup, "world" => world_id,
               "on_map" => SceneManager.scene.is_a?(Scene_Map), "save" => Recovery.save_key }
     return if frame == @told

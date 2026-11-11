@@ -2,6 +2,7 @@
 #  battles_coop_join.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Took why the player is busy from the reason duels and trades share, before the player's own request
 #      Paulinchen  2026-11-08: Handed the DLL the tiles of the bosses and the frozen fights, which it picks within the hotkey's reach
 #      Paulinchen  2026-11-06: Turned the Join Battle hotkey off while the Mod Framework leaves it unbound
 #                            - Showed the prompt as a hud of the Mod Framework's UI layer under the player
@@ -135,14 +136,12 @@ module MGQ_MpBattlesJoin
   def self.busy_reasons
     before = if !MGQ_MpOverworldSync.in_world? then "no world is open"
              elsif !MGQ_MpOverworldSync.map_free? then "the map is not free: an event, a message or a transfer"
-             elsif MGQ_MpBattlesSync.role || MGQ_MpBattles.running? then "the player is in a multiplayer battle"
+             else MGQ_MpCoop.busy_reason
              end
-    after = if MGQ_MpHooks.player_held? then "the player stands still for a battle or the story"
-            elsif MGQ_MpChat.typing? then "the chat box is open"
+    after = if MGQ_MpChat.typing? then "the chat box is open"
             elsif MGQ_MpActions.wheel.open? then "the action wheel is open"
             elsif MGQ_MpEmotes.wheel.open? then "the emote wheel is open"
             elsif defined?(MGQ_MpWorldOverview) && MGQ_MpWorldOverview.open? then "the World overview is open"
-            elsif MGQ_MpBattlesCoop.trading? || MGQ_MpCoopGather.coming? then "the player trades or is about to teleport"
             end
     [before, after]
   end

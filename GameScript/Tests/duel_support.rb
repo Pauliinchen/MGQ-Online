@@ -2,6 +2,7 @@
 #  duel_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Answered that the player trades with nobody
 #      Paulinchen  2026-11-05: Dropped the stand-in of the battle line codec, which the duel no longer calls
 #      Paulinchen  2026-10-30: Created
 #
@@ -94,6 +95,8 @@ module MGQ_MpBattlesCoop
   end
   # Answers the player's Frontline and party_member_max.
   def self.team_build; ["member=a\nmember=b", 8]; end
+  # Answers that the player trades with nobody.
+  def self.trading?; false; end
 end
 
 # Stands in for the team battles, noting the sides prepared in $prepared.

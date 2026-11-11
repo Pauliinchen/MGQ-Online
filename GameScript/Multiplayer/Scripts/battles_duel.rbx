@@ -2,6 +2,8 @@
 #  battles_duel.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Took whether the player is free from the reason trades and joins share, which a story hold and a teleport due count in
+#                            - Logged why the player could not accept a challenge
 #      Paulinchen  2026-11-08: Read standing near from the DLL
 #      Paulinchen  2026-11-05: Handed the DLL the player's team as values and took a team duel's sides as values
 #                            - Handed the players a challenge names to the DLL as a list, which it writes into the state
@@ -168,12 +170,12 @@ module MGQ_MpBattlesDuel
     (@view["challengers"] || {})[peer.seat] || [false, false, false]
   end
 
-  # Reports whether the player may start a duel: on the map, with no event, message, transfer,
-  # menu or other multiplayer battle of their own.
+  # Reports whether the player may start a duel: on the map, with no event, message, transfer or
+  # menu, and nothing of MGQ_MpCoop.busy_reason holding them.
   #
   # @return [Boolean] Whether they may.
   def self.free?
-    MGQ_MpOverworldSync.map_free? && MGQ_MpBattlesSync.role.nil? && !MGQ_MpBattles.running? && !MGQ_MpBattlesPvp::Battle.running?
+    MGQ_MpOverworldSync.map_free? && MGQ_MpCoop.busy_reason.nil?
   end
 
   # Challenges the players nearby, and a player anywhere in the world when named.
@@ -193,6 +195,7 @@ module MGQ_MpBattlesDuel
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The challenger.
   def self.accept(peer)
     free = free?
+    log("could not accept #{peer.state['name']}'s challenge: #{MGQ_MpCoop.busy_reason || 'the map is not free'}") unless free
     act(ACCEPT_TOPIC, "seat" => peer.seat, "free" => free, "team" => free ? team_values : nil)
   end
 

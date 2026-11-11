@@ -2,6 +2,7 @@
 #  coop.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Told why the player is not free for a duel, a trade or joining a battle, in one place for all three
 #      Paulinchen  2026-11-08: Read standing near from the DLL and dropped the unused invite check
 #      Paulinchen  2026-11-06: Told the DLL what made the player leave the party, for its log
 #                            - Marked a party invite by its party and its number, so a new invite shows after a decline
@@ -148,6 +149,21 @@ module MGQ_MpCoop
   def self.tell(seat, field, value, fields = {})
     message = { field => value, "party" => Party.id }.merge(fields)
     MGQ_MpOverworldSync.tell(seat, message)
+  end
+
+  # Tells why the player is not free for a duel, a trade or joining a battle, besides the map and
+  # what only one of them checks: held by the story or a battle, in a battle, trading, or about to
+  # teleport to the leader's story.
+  #
+  # @return [String, nil] The first reason that holds, nil while the player is free.
+  def self.busy_reason
+    return "held by the story or a battle" if MGQ_MpHooks.player_held?
+    return "in a battle" if (defined?(MGQ_MpBattlesSync) && MGQ_MpBattlesSync.role) || (defined?(MGQ_MpBattles) && MGQ_MpBattles.running?) ||
+                            (defined?(MGQ_MpBattlesPvp) && MGQ_MpBattlesPvp::Battle.running?)
+    return "trading" if defined?(MGQ_MpBattlesCoop) && MGQ_MpBattlesCoop.trading?
+    return "about to teleport to the leader's story" if defined?(MGQ_MpCoopGather) && MGQ_MpCoopGather.coming?
+
+    nil
   end
 
   # Reports whether the player plays in a party of an open world with someone else in it.
