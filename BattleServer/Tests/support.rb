@@ -2,6 +2,7 @@
 #  support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Wrote mod zips and served them from a stand-in website for the mod and framework tests
 #      Paulinchen  2026-10-23: Loaded MGQ Online's bridge to C# out of Multiplayer.rb for the core's tests
 #      Paulinchen  2026-10-15: Created
 #
@@ -9,6 +10,11 @@
 
 # What every test file of the battle server shares: checks that count and report. Each test file
 # runs in a Ruby process of its own (see run.rb), since the server's libraries change Ruby itself.
+
+require "digest"
+require "json"
+require "socket"
+require "zlib"
 
 # The battle server's libraries.
 LIB_DIR = File.expand_path("../lib", __dir__)
@@ -100,6 +106,66 @@ def load_mgq_bridge
   source = File.read(MULTIPLAYER_RB, encoding: "UTF-8")
   MGQ_Multiplayer.module_eval(source[/  module Bridge\n.*?\n  end\n/m])
   lines
+end
+
+# Writes a zip of files, the deflated ones as zip tools write them.
+#
+# @param files [Hash] Each file's bytes by its name in the zip.
+# @param deflate [Boolean] Whether the files are deflated.
+# @return [String] The zip.
+def zip_of(files, deflate: true)
+  out = +"".b
+  central = +"".b
+  files.each do |name, bytes|
+    data = deflate ? Zlib::Deflate.new(Zlib::DEFAULT_COMPRESSION, -Zlib::MAX_WBITS).then { |d| d.deflate(bytes.b, Zlib::FINISH).tap { d.close } } : bytes.b
+    method = deflate ? 8 : 0
+    crc = Zlib.crc32(bytes.b)
+    offset = out.bytesize
+    out << ["PK\x03\x04".b, 20, 0, method, 0, 0, crc, data.bytesize, bytes.bytesize, name.bytesize, 0].pack("a4vvvvvVVVvv") << name.b << data
+    central << ["PK\x01\x02".b, 20, 20, 0, method, 0, 0, crc, data.bytesize, bytes.bytesize, name.bytesize, 0, 0, 0, 0, 0, offset].pack("a4vvvvvvVVVvvvvvVV") << name.b
+  end
+  out + central + ["PK\x05\x06".b, 0, 0, files.size, files.size, central.bytesize, out.bytesize, 0].pack("a4vvvvVVv")
+end
+
+# Starts a stand-in of the website on a free local port that answers each path from a table the
+# test may change meanwhile, and 404 for any other.
+#
+# @param routes [Hash{String => String}] Each answer's body by its path with its query.
+# @return [Array(String, Array<String>)] The website's address and the paths asked for so far.
+def stand_in_site(routes)
+  site = TCPServer.new("127.0.0.1", 0)
+  requests = []
+  Thread.new do
+    loop do
+      client = site.accept
+      path = client.gets.to_s.split(" ")[1]
+      requests << path
+      nil while (line = client.gets) && line != "\r\n"
+      body = routes[path]
+      client.write("HTTP/1.1 #{body ? '200 OK' : '404 Not Found'}\r\nContent-Length: #{body.to_s.bytesize}\r\nConnection: close\r\n\r\n#{body}")
+      client.close
+    end
+  end
+  ["http://127.0.0.1:#{site.addr[1]}", requests]
+end
+
+# Lists one version of a mod as the website's details do, with a package per platform, and puts
+# them and its PC package on a stand-in website.
+#
+# @param routes [Hash] The stand-in website's answers, see stand_in_site.
+# @param address [String] The stand-in website's address.
+# @param slug [String] The mod's slug.
+# @param version [String] Its version.
+# @param files [Hash] Its files' bytes by their paths inside Patch.
+# @return [String] The PC package, which the website serves at /files/<slug>/pc.zip.
+def list_on_site(routes, address, slug, version, files)
+  package = zip_of(files.transform_keys { |path| "Patch/#{path}" })
+  listed = files.map { |path, bytes| { "path" => "Patch/#{path}", "sha256" => Digest::SHA256.hexdigest(bytes.b).upcase } }
+  routes["/api/mods/#{slug}?schema=3"] = JSON.generate("mod" => { "slug" => slug, "versions" => [{ "version" => version, "packages" => [
+    { "platform" => "android", "url" => "#{address}/files/#{slug}/android.zip", "sha256" => "0" * 64, "files" => [] },
+    { "platform" => "pc", "url" => "#{address}/files/#{slug}/pc.zip", "sha256" => Digest::SHA256.hexdigest(package), "files" => listed },
+  ] }] })
+  routes["/files/#{slug}/pc.zip"] = package
 end
 
 at_exit { Checks.finish($!) }

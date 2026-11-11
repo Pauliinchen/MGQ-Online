@@ -2,6 +2,7 @@
 #  mods.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Loaded a battle's mods through the Mod Framework's late load, which sets up their run wrappers and reads the database again
 #      Paulinchen  2026-11-08: Downloaded a world's mods from the website's catalog and checked the package and each file against its hashes
 #                            - Read the files of a version the starter names without them from the website's details of the mod
 #      Paulinchen  2026-11-05: Read the mods a setup names without the core, moved from battles_served.rbx
@@ -126,9 +127,13 @@ module ServedMods
 
     # Loads a battle's mods into the game, as Patch.rb loads the Patch folder's scripts: each
     # script in the order of its path, at the top level; the mods' other files read from memory.
+    # They load through the Mod Framework's Mods.load_late, as the game loads mods on entering.
+    #
+    # Mods such as Invasions install their battle hooks only in a SceneManager.run wrapper, and the
+    # server's SceneManager.run ran once at boot, before any world mod.
     #
     # @param mods [Array<Array(String, Hash)>] The mods, see fetch.
-    # @param log [IO] Where a script that fails is noted.
+    # @param log [IO] Where a script or a run wrapper that fails is noted.
     # @return [Integer] How many scripts loaded.
     def load(mods, log = $stderr)
       # A process that hosts one battle after another (thread mode) keeps the mods it loaded.
@@ -140,13 +145,10 @@ module ServedMods
       mods.each { |_, mod_files| mod_files.each { |path, bytes| files["#{Boot::PATCH_DIR}/#{path}"] = bytes } }
       overlay(files)
       scripts = files.keys.select { |path| path.downcase.end_with?(".rb") }.sort
-      scripts.each do |path|
-        source = files[path].dup.force_encoding("UTF-8").delete_prefix("﻿")
-        begin
-          eval(source, TOPLEVEL_BINDING, path, 1)
-        rescue ScriptError, StandardError => e
-          log.puts("mod script #{path}: #{e.class}: #{e.message.lines.first&.strip}")
-        end
+      Mod_Framework::Mods.load_late("the served battle") do
+        run = SceneManager.singleton_class.instance_method(:run)
+        scripts.each { |path| evaluate(path, files[path], log) }
+        note_run_failures(run, log)
       end
       scripts.size
     end
@@ -194,6 +196,38 @@ module ServedMods
     end
 
     private
+
+    # Evaluates one script of a mod at the top level, as Patch.rb does.
+    #
+    # @param path [String] The script's path from the game folder.
+    # @param bytes [String] The script.
+    # @param log [IO] Where a script that fails is noted.
+    def evaluate(path, bytes, log)
+      eval(bytes.dup.force_encoding("UTF-8").delete_prefix("﻿"), TOPLEVEL_BINDING, path, 1)
+    rescue ScriptError, StandardError => e
+      log.puts("mod script #{path}: #{e.class}: #{e.message.lines.first&.strip}")
+    end
+
+    # Puts one outermost wrapper on SceneManager.run once the mods wrapped it, which notes a
+    # failure of their wrappers as the framework sets them up and raises it again.
+    #
+    # The framework logs that failure only to its own log file, which a sandboxed child may not
+    # write; the wrapper goes when the framework restores the real run.
+    #
+    # @param run [UnboundMethod] SceneManager.run before the mods loaded.
+    # @param log [IO] Where the failure is noted.
+    def note_run_failures(run, log)
+      owner = SceneManager.singleton_class
+      wrapped = owner.instance_method(:run)
+      return if wrapped == run
+
+      owner.send(:define_method, :run) do |*args, &block|
+        wrapped.bind(self).call(*args, &block)
+      rescue StandardError => e
+        log.puts("mod run setup: #{e.class}: #{e.message.lines.first&.strip}")
+        raise
+      end
+    end
 
     # Reads a setup's values: tab-separated tokens, lists between "[" and "]".
     #

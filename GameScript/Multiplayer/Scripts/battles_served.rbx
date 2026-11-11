@@ -2,6 +2,7 @@
 #  battles_served.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Counted the battle server's wait for the players from when it took the battle, its setup included
 #      Paulinchen  2026-11-05: Handed the starter's mod options as values
 #                            - Passed a request on with its fields as values and read one passed on through the DLL, and handed the enemy rates as numbers
 #                            - Had C# write and read the battle's messages and moved reading a setup's mods without C# to the battle server
@@ -68,7 +69,11 @@ module MGQ_MpBattlesServed
   SQUAD_DEFAULT_TOPIC = "squad.default"
 
   # Frames the battle server waits for every player to come onto the battle channel before the
-  # battle starts without those who did not.
+  # battle starts without those who did not, counted from when it took the battle, its setup
+  # included.
+  #
+  # The players count from then too, so MGQ_MpBattlesCoop::ROSTER_MARGIN_FRAMES has to cover only
+  # the battle scene's start and the roster's way to them, however long the setup takes.
   ARRIVE_FRAMES = 600
 
   # The topic that writes a message from its fields and body, which the battle server's core
@@ -618,9 +623,12 @@ module MGQ_MpBattlesServed
   #
   # @param battle_id [String] The battle's id.
   # @param setup [Hash] The setup, see read_setup.
-  def self.host(battle_id, setup)
+  # @param setup_frames [Integer] The frames that passed since the server took the battle, which
+  #   count toward its wait for the players.
+  def self.host(battle_id, setup, setup_frames = 0)
     @server = true
     @setup = setup
+    @setup_frames = setup_frames.to_i
     MGQ_MpOverworldSync::Me.take_seat(SERVER_SEAT)
     setup[:players].each { |player| remember_peer(player.seat, "name" => player.name) }
     setup[:switches].each { |id| $game_switches[id] = true }
@@ -647,7 +655,7 @@ module MGQ_MpBattlesServed
   # @return [Symbol, nil] An ending of battles_sync's Channel.ending, nil once the battle may start.
   def self.host_gather(scene)
     seats = @setup[:players].map(&:seat)
-    frames = 0
+    frames = @setup_frames
     answer = MGQ_MpBattlesSync::Waiting.wait_for(scene, "Waiting for the players...") do
       frames += 1
       drain

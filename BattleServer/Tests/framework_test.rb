@@ -2,7 +2,9 @@
 #  framework_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-11: Hosted a served Raid World battle against a pooled boss in the server's order, up to its report
+#      Paulinchen  2026-11-11: Checked that the server's wait for an invited player who never comes counts from the serve
+#                            - Loaded a world's mods from a stand-in website into the served battle, their run wrappers set up and the database read again
+#                            - Hosted a served Raid World battle against a pooled boss in the server's order, up to its report
 #                            - Checked that the server leaves the game folder's saves alone and reads the game's database
 #      Paulinchen  2026-11-06: Expected the Mod Framework in its own folder, Patch/Mod_Framework, since MGQ Online no longer ships it
 #      Paulinchen  2026-10-31: Created
@@ -14,9 +16,11 @@
 # (Patch/Mod_Framework), installed from the framework's own release: the framework boots without its
 # DLL, MGQ Online counts as available and loads every script, the database is the game's, nothing
 # reaches the game folder's saves, and with BATTLE_CORE_LIBRARY a served Raid World battle against a
-# pooled boss fights its pool at its tier and reports the kill. Skipped without such a game folder,
-# since the game's files never go into the repository.
+# pooled boss fights its pool at its tier and reports the kill, with world mods from a stand-in
+# website whose SceneManager.run wrappers set up their battle hooks. Skipped without such a game
+# folder, since the game's files never go into the repository.
 
+require "tmpdir"
 require_relative "support"
 
 dir = game_dir
@@ -25,6 +29,8 @@ unless dir && File.file?(File.join(dir, "Patch", "!Mod_Framework.rb")) && File.d
   exit
 end
 
+cache = Dir.mktmpdir("battle-mods")
+ENV["BATTLE_MOD_CACHE"] = cache
 require_relative File.join(LIB_DIR, "boot")
 require_relative File.join(LIB_DIR, "served")
 require_relative File.join(LIB_DIR, "core")
@@ -68,7 +74,7 @@ if library
   battle_id = "b0000000000000001"
 
   # The starter's game writes the setup of its Raid World battle against Adramelech on map 619,
-  # with the pool as its ledger knows it.
+  # with the pool as its ledger knows it, for itself and an invited player who never comes.
   DataManager.create_game_objects
   $game_party.setup_starting_members
   $game_map.setup(619)
@@ -76,9 +82,10 @@ if library
   MGQ_MpOverworldSync::Me.take_seat(1)
   build = MGQ_MpBattlesCoop.own_build
   player = MGQ_MpBattlesCoop::Player.new(1, "Starter", build[0], build[1], build[2], [0, 1, 2, 3], 4, 0)
+  absent = MGQ_MpBattlesCoop::Player.new(2, "Absent", build[0], build[1], build[2], [0, 1, 2, 3], 4, 0)
   MGQ_MpRaidPool.define_singleton_method(:served_fields) { [1, 0, [["Adramelech", "1.0000000000", 0, 0, ""]]] }
   ServedBattle.instance_variable_set(:@raid, true)
-  setup = MGQ_MpBattlesServed.setup_text([player], nil)
+  setup = MGQ_MpBattlesServed.setup_text([player, absent], nil)
   ServedBattle.instance_variable_set(:@raid, nil)
   MGQ_MpRaidPool.singleton_class.send(:remove_method, :served_fields)
 
@@ -92,6 +99,23 @@ if library
     bridge.push("message", player.seat, ready) if args[1] == "ready"
     sent
   end
+  # Frames run unpaced here, so the frames since the serve are the seconds up to hosting, the
+  # database read again among them, plus the frames drawn after it.
+  served_at = hosted_at = roster_frames = nil
+  drawn = 0
+  Boot::Wrap.around(MGQ_MpBattlesServed.singleton_class, :host, :test) do |_served, original, args, _block|
+    hosted_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    drawn = 0
+    original.call(*args)
+  end
+  Boot::Wrap.around(Graphics.singleton_class, :update, :test) do |_graphics, original, args, _block|
+    drawn += 1
+    original.call(*args)
+  end
+  Boot::Wrap.around(MGQ_MpBattlesCoop.singleton_class, :start_battle, :test) do |_coop, original, args, _block|
+    roster_frames ||= ((hosted_at - served_at) / ServedBattle::FRAME_SECONDS + drawn).round
+    original.call(*args)
+  end
   stats = nil
   Boot::Wrap.around(Scene_Battle, :start_party_command_selection, :test) do |_scene, _original, _args, _block|
     boss = $game_troop.members[0]
@@ -100,8 +124,65 @@ if library
     BattleManager.judge_win_loss
   end
 
-  outcome = ServedBattle.run(bridge, battle_id, setup)
+  # The world runs two mods of the website. Raider sets up its battle hook in a SceneManager.run
+  # wrapper, as Invasions does, wraps the database's read, as the Unified Bugfix Module does, and
+  # reads a file of its own; Broken's run wrapper fails.
+  raider = { "Raider/Raider.rb" => <<~RAIDER, "Raider/data.txt" => "アリス\r\n" }
+    RAIDER_DATA = File.read("Patch/Raider/data.txt")
+    $raider_battles = 0
+    class << DataManager
+      alias raider_load_normal_database load_normal_database
+      def load_normal_database
+        raider_load_normal_database
+        $data_skills[1].instance_variable_set(:@raider, true)
+      end
+    end
+    class << SceneManager
+      alias raider_run run
+      def run
+        Scene_Battle.class_eval do
+          alias_method :raider_start, :start
+          def start
+            $raider_battles += 1
+            raider_start
+          end
+        end
+        raider_run
+      end
+    end
+  RAIDER
+  broken = { "Broken/Broken.rb" => "class << SceneManager\n  alias broken_run run\n  def run\n    raise 'Broken cannot set up'\n  end\nend\n" }
+  routes = {}
+  address, _requests = stand_in_site(routes)
+  wanted = { "raider" => raider, "broken" => broken }.map do |slug, files|
+    list_on_site(routes, address, slug, "1.0", files)
+    [slug, "site", "1.0", files.transform_values { |bytes| ServedMods.hash_of(bytes) }]
+  end
+  mods = ServedMods.fetch(wanted, address, StringIO.new)
+
+  # The child's errors are the lines the server's log takes from it.
+  child_errors = StringIO.new
+  $stderr = child_errors
+  begin
+    served_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    outcome = ServedBattle.run(bridge, battle_id, setup, mods)
+  ensure
+    $stderr = STDERR
+  end
+  check("the world's mods load and read their other files from memory as if they lay in Patch",
+        [RAIDER_DATA.force_encoding("UTF-8"), File.exist?("Patch/Raider/data.txt"), File.open("Patch\\Raider\\data.txt", &:read).force_encoding("UTF-8"),
+         File.size("Patch/Raider/data.txt"), File.exist?("Patch/Raider/none.txt")],
+        ["アリス\r\n", true, "アリス\r\n", 11, false])
+  check("the battle hook a mod sets up in its SceneManager.run wrapper runs in the served battle", $raider_battles, 1)
+  check("the database is read again through a mod's wrapper of its read", $data_skills[1].instance_variable_get(:@raider), true)
+  check("a mod's run wrapper that fails is written to the server's log",
+        child_errors.string.lines.grep(/\Amod run setup: RuntimeError: Broken cannot set up/).size, 1)
+  check("the same mods load once in a process that hosts one battle after another", ServedMods.load(mods, StringIO.new), 0)
   lines = online_log.string.lines
+  # The players count their wait for the roster from the serve, so the server's wait for one who
+  # never comes counts the seconds its setup took.
+  check("the roster goes out within the server's wait for the players, counted from the serve, while one never comes",
+        [lines.grep(/1 of 2 players came onto the battle channel, not seats 2/).size, roster_frames <= MGQ_MpBattlesServed::ARRIVE_FRAMES], [1, true])
   check("the served battle against the pooled boss is won", outcome[:result], :victory)
   check("it fights the boss's pool, whose key the boss table gives once the bridge opened",
         [lines.grep(/against Adramelech \(troop 327, tier \d+\) fights the pool\(s\) Adramelech/).size, lines.grep(/key is none/)], [1, []])
@@ -116,3 +197,4 @@ end
 
 check("the database is the game's", [$data_actors.size > 1000, $data_troops.size > 1000], [true, true])
 check("nothing the game writes reaches the game folder's saves", save_files, saves_before)
+FileUtils.rm_rf(cache)

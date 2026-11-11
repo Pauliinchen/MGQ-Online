@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-11: Took the message skip key and the battle's result over from the removed battles by request
+#                            - Counted the frames the setup took into the wait for the players
 #      Paulinchen  2026-11-05: Took the starter's mod options as the values the core read from the setup
 #      Paulinchen  2026-10-30: Checked a setup through the core
 #                            - Handed the core's ledger what the relay told of the boss pools before the scripts read them
@@ -178,6 +179,7 @@ module ServedBattle
     #   :turns and :frames.
     # @raise [Refused] For a setup the server cannot read.
     def run(bridge, battle_id, setup_text, mods = [])
+      served_at = clock
       setup = check(setup_text)
       Online.connect(bridge)
       ServedMods.load(mods) unless mods.empty?
@@ -186,7 +188,7 @@ module ServedBattle
       BOSS_SCRIPTS.each { |name| Object.const_get(name).forget if Object.const_defined?(name) }
       DataManager.create_game_objects
       apply_settings(setup[:settings])
-      MGQ_MpBattlesServed.host(battle_id, setup)
+      MGQ_MpBattlesServed.host(battle_id, setup, ((clock - served_at) / FRAME_SECONDS).floor)
       # The map saves its music before a battle, and the battle's end plays it again.
       BattleManager.save_bgm_and_bgs
       Graphics.frame_count = 0

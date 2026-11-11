@@ -52,6 +52,11 @@ the Mod Framework) and keeps it only when the package matches the website's hash
 starter's. A mod the website does not have, or a download that differs, refuses the battle with
 the code `mods`.
 
+The battle's child loads them through the Mod Framework's `Mods.load_late`, as the game loads mods
+on entering: their `SceneManager.run` wrappers set up once, and the database is read again when one
+wrapped its read. A script or a run wrapper that fails is written to the server log
+(`mod script <path>: ...`, `mod run setup: ...`), and the battle goes on without it.
+
 ## The story mapping's index
 
 The relay asks the server for the derived index of the story mapping (see "Story mapping" in
