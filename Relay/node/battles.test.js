@@ -2,6 +2,7 @@
 //  battles.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-11: Covered the log of a served boss report the relay refuses and of the pool defeats
 //      Paulinchen  2026-11-06: Ran over SQLite stores in memory
 //                            - Read the derived index from the mapping's summary
 //                            - Sent the player's key in the X-MGQ-Player header only
@@ -109,6 +110,11 @@ let bareBase;
 
 let wsBase;
 
+/**
+ * The lines the relay logged, oldest first.
+ */
+const relayLog = [];
+
 before(async () => {
   battleServer = net.createServer((socket) => {
     const connection = { lines: [], waiting: [], send: (fields) => socket.write(`${JSON.stringify(fields)}\n`), socket, closed: false };
@@ -146,7 +152,7 @@ before(async () => {
   });
   await new Promise((resolve) => battleServer.listen(0, "127.0.0.1", resolve));
   const directory = new Directory(openStores().directory, { clock: () => now, rates: TEST_RATES, admins: [await playerIdOf(ADMIN)] });
-  relay = createRelay({ clock: () => now, checkEveryMs: 3_600_000, sweepEveryMs: 3_600_000, directory, log: { info: () => {}, error: () => {} },
+  relay = createRelay({ clock: () => now, checkEveryMs: 3_600_000, sweepEveryMs: 3_600_000, directory, log: { info: (line) => relayLog.push(line), error: () => {} },
                         battleServer: { host: "127.0.0.1", port: battleServer.address().port }, battleLimits: TEST_BATTLE_LIMITS });
   bare = createRelay({ checkEveryMs: 3_600_000, sweepEveryMs: 3_600_000, log: { info: () => {}, error: () => {} } });
   await new Promise((resolve) => relay.server.listen(0, "127.0.0.1", resolve));
@@ -488,10 +494,14 @@ test("the battle server reports a Raid World's boss pool as the starter, and hea
   });
   assert.equal(response.status, 200);
   assert.deepEqual(await nextLine(server), { op: "boss", key: "Alma Elma", left: 0, max: 90000, defeated: true, by: "", answer: false });
+  assert.ok(relayLog.some((line) => line.endsWith(`Alma Elma of world ${world} defeated by Player 2`)));
 
-  server.send({ op: "boss_report", key: "", battle: "rp1", seq: 2, delta: 0.1, max: 90000, killed: false });
-  assert.deepEqual(await nextLine(server), { op: "boss", key: "", answer: true });
-  server.send({ op: "end", result: "victory" });
+  server.send({ op: "boss_report", key: "Granberia", battle: "rp1", seq: 2, delta: 2, max: 90000, killed: false });
+  assert.deepEqual(await nextLine(server), { op: "boss", key: "Granberia", answer: true });
+  assert.ok(relayLog.some((line) => line.includes(`battle e6 of world ${world}: the report of Granberia was refused: 400 `)));
+
+  server.socket.write(`${JSON.stringify({ op: "boss_report", key: "Granberia", battle: "rp1", seq: 3, delta: 1, max: 90000, killed: true })}\n${JSON.stringify({ op: "end", result: "victory" })}\n`);
+  await until(() => relayLog.some((line) => line.endsWith(`Granberia of world ${world} defeated by Player 1 in battle e6 on the battle server`)));
   first.connection.socket.close();
   second.connection.socket.close();
 });

@@ -2,6 +2,7 @@
 //  server.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-11: Logged every served boss report the relay drops or refuses, and every pool defeat
 //      Paulinchen  2026-11-08: Dropped the mod catalog and the check of its links, whose routes answer the update refusal
 //                            - Started a world's tracks from its keyed story's route lock and part checkpoints too
 //      Paulinchen  2026-11-06: Named the lowest version the relay serves beside a refusal of a game too old for it
@@ -1267,6 +1268,7 @@ export function createRelay({
     const link = battleLinks.get(`${world}/${battle}`);
 
     if (!link) {
+      log.info(`${new Date().toISOString()} battle ${battle} of world ${world}: the battle server's report of ${line.key} was dropped: the battle is no longer linked`);
       return;
     }
 
@@ -1279,8 +1281,27 @@ export function createRelay({
     await tidyDeleted(world);
     link.server.write(`${bossLine(line.key, answer.status === 200 ? answer.body.boss : null, true)}\n`);
 
+    if (answer.status !== 200) {
+      log.info(`${new Date().toISOString()} battle ${battle} of world ${world}: the report of ${line.key} was refused: ${answer.status} ${answer.body?.code ?? answer.body?.error}`);
+    }
+
     if (answer.boss) {
+      noteDefeat(world, answer.boss, link.starterName, battle);
       tellBosses(world, answer.boss, link);
+    }
+  }
+
+  /**
+   * Logs a boss pool a report emptied.
+   *
+   * @param {string} world The world.
+   * @param {{key: string, defeated: boolean}} boss The pool as the report left it.
+   * @param {string | null} by The name of the player the defeat counts for.
+   * @param {string} [battle] The battle on the battle server that reported it, none for a game's report.
+   */
+  function noteDefeat(world, boss, by, battle) {
+    if (boss.defeated) {
+      log.info(`${new Date().toISOString()} ${boss.key} of world ${world} defeated by ${by}${battle ? ` in battle ${battle} on the battle server` : ""}`);
     }
   }
 
@@ -1363,6 +1384,7 @@ export function createRelay({
     await tidyDeleted(route.id);
 
     if (answer.boss) {
+      noteDefeat(route.id, answer.boss, access.name);
       tellBosses(route.id, answer.boss);
     }
 
