@@ -2,6 +2,7 @@
 //  StoryTrackRelayTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-11: Told the level after entering, as the catch-up's look does
 //      Paulinchen  2026-11-06: Ran the harness next to it
 //      Paulinchen  2026-11-05: Checked the keys and values one game's scripts hand over reaching the other game's scripts as the same values, in the track and in a run
 //      Paulinchen  2026-10-31: Checked a run one game hands over reaching the other through the relay's walk, once
@@ -230,7 +231,8 @@ public sealed class StoryTrackRelayTests : IDisposable
         var track = new StoryTrack(host, () => $"{player}t");
         games[player] = (track, host);
         Step(new { op = "enter", player, seat });
-        track.Enter(fresh, new StoryLevel(10, null), "w1");
+        track.Enter(fresh, "w1");
+        track.TakeLevel(new StoryLevel(10, null));
         track.Connection(true);
         Pump();
         Assert.True(track.NeedsSeed);

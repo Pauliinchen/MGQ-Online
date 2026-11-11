@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-11-11: Checked that a Raid look owes the untranslated game's job items by the events database
+//                            - Checked that the relay hears the level of the catch-up's look, a visiting companion and the cap as the catch-up counts them
 //      Paulinchen  2026-11-08: Moved to the MGQOnline.Multiplayer namespace
 //      Paulinchen  2026-11-06: Wrote the story mapping out instead of reading a recorded one
 //      Paulinchen  2026-11-05: Expected the self switch rules as rows, refused a write the tracks' texts name and read the sites of an earlier release's save
@@ -30,6 +31,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
 using MGQOnline.Bridge;
 using MGQOnline.Bridge.Ruby;
 using MGQOnline.Data.Events;
@@ -37,6 +39,8 @@ using MGQOnline.Game.Events;
 using MGQOnline.Game.Events.Data;
 using MGQOnline.Game.Tests.Events;
 using MGQOnline.Game.Topics;
+using MGQOnline.Multiplayer.Network.Relay;
+using MGQOnline.Multiplayer.Network.Transport;
 using MGQOnline.Multiplayer.Network.World;
 using MGQOnline.Multiplayer.Tests.Network.World;
 using MGQOnline.Multiplayer.Tests.Topics;
@@ -90,7 +94,7 @@ public sealed class StoryTopicsTests
     [Fact]
     public void Classes_HandTheScriptsTheMappingsTable()
     {
-        Call(StoryTopics.EnterTopic, new RubyHash { { "world", "w1" }, { "fresh", false }, { "level", RubyNil.Value } });
+        Call(StoryTopics.EnterTopic, new RubyHash { { "world", "w1" }, { "fresh", false } });
         Drain(1);
         Drain(2);
         RubyHash table = Call(StoryTopics.ClassesTopic, RubyNil.Value).AsHash();
@@ -121,10 +125,10 @@ public sealed class StoryTopicsTests
     [Fact]
     public void Status_TellsTheMappingAndThatNothingWaits()
     {
-        Call(StoryTopics.EnterTopic, new RubyHash { { "world", "elsewhere" }, { "fresh", true }, { "level", RubyNil.Value } });
+        Call(StoryTopics.EnterTopic, new RubyHash { { "world", "elsewhere" }, { "fresh", true } });
         Drain(1);
         int before = _fetches.Count;
-        Call(StoryTopics.EnterTopic, new RubyHash { { "world", "w1" }, { "fresh", false }, { "level", new RubyHash { { "best", 30 }, { "cap", RubyNil.Value } } } });
+        Call(StoryTopics.EnterTopic, new RubyHash { { "world", "w1" }, { "fresh", false } });
         Drain(2);
         RubyHash status = Drain(3).Last(entry => entry.Topic == StoryTopics.StatusEvent).Payload.AsHash();
 
@@ -145,7 +149,7 @@ public sealed class StoryTopicsTests
             """);
         Assert.True(Call(CatchupTopics.KeysTopic, RubyNil.Value).IsNil);
 
-        Call(StoryTopics.EnterTopic, new RubyHash { { "world", "w1" }, { "fresh", false }, { "level", RubyNil.Value } });
+        Call(StoryTopics.EnterTopic, new RubyHash { { "world", "w1" }, { "fresh", false } });
         Drain(1);
         Drain(2);
         RubyHash keys = Call(CatchupTopics.KeysTopic, RubyNil.Value).AsHash();
@@ -171,7 +175,7 @@ public sealed class StoryTopicsTests
               {"kind": "item", "id": 601, "amount": 1, "site": "map:36:18:1", "part": null, "step": null, "side": null, "marks": [["ss", 36, 18, "A"]], "ran": true},
               {"kind": "item", "id": 602, "amount": 1, "site": "map:36:19:1", "part": null, "step": null, "side": null, "marks": [["ss", 36, 19, "A"]], "ran": true}]}, "index": null}
             """);
-        Call(StoryTopics.EnterTopic, new RubyHash { { "world", "w1" }, { "fresh", false }, { "level", RubyNil.Value } });
+        Call(StoryTopics.EnterTopic, new RubyHash { { "world", "w1" }, { "fresh", false } });
         Drain(1);
         Drain(2);
         RubyArray Gives(long held)
@@ -187,6 +191,61 @@ public sealed class StoryTopicsTests
 
         Assert.Equal(new RubyArray { new RubyArray { "give", "i", 601, 1, "g:map:36:18:1:i601:owed", true } }, Gives(0));
         Assert.Empty(Gives(1));
+    }
+
+    /// <summary>
+    /// Asserts that the relay hears the level the catch-up's look counts, over a relay inside this
+    /// process: a player inside the visit of companion 19 in Part 2 (the shipped mapping's rows) is
+    /// at the hero's level while the visitor stands higher, the visitor counts again once the
+    /// removal passed, and a cap of another mod reaches the relay as it is.
+    /// </summary>
+    [Fact]
+    public void Catchup_HandsTheRelayTheLevelItCounts()
+    {
+        using var relay = new TestRelay();
+        WorldCode code = WorldCode.Parse(WorldDirectoryTests.Act(WorldDirectoryTests.NewDirectory(relay, WorldDirectoryTests.CreatorKey, "Creator"),
+            directory => directory.Create("Raid", "secret", 4, false, false, [], null, WorldType.Raid))["code"])!;
+        string world = Relays.WorldRoomOf(code.Token);
+        var session = new WorldSession { RelayAddress = _ => relay.Address, Playing = () => (WorldDirectoryTests.CreatorKey, "Creator") };
+        var context = new BridgeContext(1, new QuietLog());
+        StoryTopics topics = StoryTopics.Register(context, session);
+        topics.RelayOf = id => id == world ? relay.Address : null;
+        topics.Run = work => work();
+        topics.FetchMapping = (_, _) => JsonDocument.Parse("""
+            {"rev": 9, "tables": {
+             "joins": [{"actor": 19, "persona": 19, "site": "map:735:18:1", "part": "2", "step": 24, "side": null, "marks": [["v", 1001, 24], ["v", 1063, 2]], "gate": 60, "rule": "kept", "index": 20, "ran": true}],
+             "removals": [{"actor": 19, "persona": 19, "site": "map:713:10:1", "part": "2", "step": 24, "side": null, "marks": [["v", 1001, 24], ["v", 1063, 3]], "first": false, "index": 16}]}, "index": null}
+            """);
+        CatchupTopics.Register(context, () => topics.Catchup, () => topics.ClassicParty, topics.TakeLevel);
+        session.Open(code.ToText());
+        WaitFor(() => Message.Decode(session.Describe())["state"] == "open", "the world open");
+        Call(context, StoryTopics.EnterTopic, new RubyHash { { "world", world }, { "fresh", false } });
+        Drain(context, 1);
+        Drain(context, 2);
+        WaitFor(() => relay.TrackFrames.Length == 1, "the sync at the relay");
+        relay.Tell(world, """track {"t":"state","why":"sync","track":"world","rev":5,"part":"2","gate":null,"world":{"rev":5,"part":"2","route":"none","done":[],"checkpoints":[]},"mapping":9,"seq":0,"keys":{},"chests":{},"tellings":[]}""");
+        long frame = 3;
+        WaitFor(() => Drain(context, frame++).Any(entry => entry.Topic == StoryTopics.StatusEvent && entry.Payload.AsHash()["synced"].AsBool()), "the player placed");
+        string Heard(long step, long heroCap)
+        {
+            int before = relay.TrackFrames.Length;
+            Call(context, CatchupTopics.CheckTopic, new RubyHash
+            {
+                { "world", world }, { "mode", "world" }, { "look", "tick" }, { "items", new RubyHash() },
+                { "roster", new RubyArray { new RubyArray { 1, 1, 40, heroCap }, new RubyArray { 19, 19, 60, 9999 } } },
+                { "own", new RubyHash { { "s", new RubyArray() }, { "v", new RubyArray { new RubyArray { 1001, 24 }, new RubyArray { 1063, step } } }, { "ss", new RubyArray() } } },
+            });
+            WaitFor(() => relay.TrackFrames.Length > before, "the level at the relay");
+            return relay.TrackFrames[^1].Json;
+        }
+
+        string visit = Heard(2, 9999);
+        string after = Heard(3, 9999);
+        string capped = Heard(2, 40);
+        session.Close();
+
+        Assert.Equal("""{"t":"sync"}""", relay.TrackFrames[0].Json);
+        Assert.Equal(("""{"t":"level","best":40,"cap":9999}""", """{"t":"level","best":60,"cap":9999}""", """{"t":"level","best":40,"cap":40}"""), (visit, after, capped));
     }
 
     /// <summary>
@@ -518,7 +577,7 @@ public sealed class StoryTopicsTests
     /// <param name="frame">The first frame.</param>
     private static void Start(BridgeContext context, long frame)
     {
-        Call(context, StoryTopics.EnterTopic, new RubyHash { { "world", "w1" }, { "fresh", false }, { "level", RubyNil.Value } });
+        Call(context, StoryTopics.EnterTopic, new RubyHash { { "world", "w1" }, { "fresh", false } });
         Drain(context, frame);
         Drain(context, frame + 1);
     }
@@ -594,6 +653,25 @@ public sealed class StoryTopicsTests
         byte[] buffer = new byte[256 * 1024];
         int length = context.Drain(frame, buffer);
         return length == 0 ? [] : [.. RubyMarshal.Read(buffer.AsSpan(0, length)).AsArray().Select(entry => (entry.AsArray()[0].AsText(), entry.AsArray()[1]))];
+    }
+
+    /// <summary>
+    /// Waits until a condition holds, twenty seconds at most.
+    /// </summary>
+    /// <param name="condition">The condition.</param>
+    /// <param name="what">What is awaited, for the timeout's message.</param>
+    private static void WaitFor(Func<bool> condition, string what)
+    {
+        DateTime deadline = DateTime.UtcNow + TimeSpan.FromSeconds(20);
+        while (!condition())
+        {
+            if (DateTime.UtcNow > deadline)
+            {
+                throw new TimeoutException($"Never reached {what}.");
+            }
+
+            Thread.Sleep(20);
+        }
     }
 
     /// <summary>

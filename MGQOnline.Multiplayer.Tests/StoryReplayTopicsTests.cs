@@ -2,6 +2,7 @@
 //  StoryReplayTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-11: Entered the story without a level, as the scripts now do
 //      Paulinchen  2026-11-10: Covered a page of the player's history that waits being derived once
 //      Paulinchen  2026-11-09: Covered a Raid World save that keeps no step of the own drops it passed nor of a run no player hands over
 //      Paulinchen  2026-11-08: Moved to the MGQOnline.Multiplayer namespace
@@ -565,7 +566,7 @@ public sealed class StoryReplayTopicsTests
     [Fact]
     public void LogSave_KeepsNoStepOfARaidRunNobodyHandsOverNorOfOwnDropsPassed()
     {
-        Call(StoryTopics.EnterTopic, new RubyHash { { "world", "w1" }, { "fresh", false }, { "level", RubyNil.Value } });
+        Call(StoryTopics.EnterTopic, new RubyHash { { "world", "w1" }, { "fresh", false } });
         RubyValue plainPage = RaidRan([], [Change(Switch(301), false, true)], "world");
         RubyHash drop = Call(StoryTopics.ReplayDropTopic, Drop(false, [new RubyArray { 613, 1 }], "world")).AsHash();
         RubyHash back = OtherMembers(drop);

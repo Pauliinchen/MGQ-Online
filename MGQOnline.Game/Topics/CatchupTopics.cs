@@ -2,6 +2,7 @@
 //  CatchupTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-11: Handed the player's level after each look to the story track the relay's gates read
 //      Paulinchen  2026-11-08: Told the scripts which classes of story keys are shared in a story
 //      Paulinchen  2026-11-05: Answered a Classic member's catch-up by the engine in its Classic settings
 //                            - Registered the topics of how a Classic member plays the leader's story: whether both play one story, who follows it, how the member keeps it and what their own story is once they leave
@@ -20,6 +21,7 @@ using System;
 using MGQOnline.Bridge;
 using MGQOnline.Bridge.Ruby;
 using MGQOnline.Game.Catchup;
+using MGQOnline.Game.Story;
 
 namespace MGQOnline.Game.Topics;
 
@@ -120,12 +122,13 @@ public static class CatchupTopics
     /// <param name="context">The context the handshake opened.</param>
     /// <param name="tables">Reads the catch-up's tables of the story mapping held, <see langword="null"/> before it came.</param>
     /// <param name="party">Reads what a Classic member's catch-up reads of the party beyond its tables, <see langword="null"/> for <see cref="ClassicParty.None"/>.</param>
+    /// <param name="level">Hears the player's level after each look, see <see cref="CatchupEngine.LevelTaken"/>.</param>
     /// <returns>The engine, for tests.</returns>
-    public static CatchupEngine Register(BridgeContext context, Func<CatchupTables?> tables, Func<ClassicParty>? party = null)
+    public static CatchupEngine Register(BridgeContext context, Func<CatchupTables?> tables, Func<ClassicParty>? party = null, Action<StoryLevel>? level = null)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(tables);
-        CatchupEngine engine = new();
+        CatchupEngine engine = new() { LevelTaken = level };
         context.Register(KeysTopic, (_, _) => tables() is { } held ? CatchupEngine.Keys(held) : null);
         context.Register(CheckTopic, (_, request) => engine.Check(tables() ?? CatchupTables.Empty, request.AsHash()));
         context.Register(NoteTopic, (_, request) => engine.Note(tables() ?? CatchupTables.Empty, request.AsHash()));

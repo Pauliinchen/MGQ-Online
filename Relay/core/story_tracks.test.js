@@ -2,6 +2,7 @@
 //  story_tracks.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-11: Checked that a sync without a level keeps the gate shut whatever level the game named before
 //      Paulinchen  2026-11-08: Checked that a world's track keeps the route lock and the part checkpoints of the keyed story it starts from
 //      Paulinchen  2026-11-07: Checked that a found item's run that changed keys reaches a player behind on their own track at once
 //      Paulinchen  2026-11-06: Dropped the checks of a world never on tracks
@@ -351,6 +352,18 @@ test("a player behind plays a track of their own from their part's checkpoint, h
   const moved = world.heard(CARA).find((frame) => frame.t === "state");
   assert.deepEqual([moved.why, moved.track, moved.move], ["moved", WORLD_TRACK, { from: "1", to: WORLD_TRACK, gate: 25, by: "level" }]);
   assert.equal(moved.keys.v60, "n1");
+});
+
+test("a sync without a level, as after another save loads, keeps the gate shut though the game named a higher level before", async () => {
+  const world = await startedWorld(10);
+  await write(world, ALICE, 1, [["v1001", "n19"]]);
+  await world.enter(CARA, 1);
+  await world.say(CARA, { t: "sync", level: { best: 40, cap: null }, seed: { v1001: "n19" } });
+  world.heard(CARA);
+
+  await world.say(CARA, { t: "sync", fresh: true, seed: { v1001: "n2" } });
+  const [placed] = world.heard(CARA);
+  assert.deepEqual([placed.why, placed.track, placed.part], ["behind", "t1", "1"]);
 });
 
 test("crossing a gate moves into the next part's checkpoint while the world is past that part, and a cap below the gate opens it too", async () => {

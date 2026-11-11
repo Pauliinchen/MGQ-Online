@@ -2,6 +2,7 @@
 //  StoryTrackRunsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-11: Entered the story without a level, as the track now does
 //      Paulinchen  2026-11-09: Checked that an entry handed before the player fell behind is done when they come back
 //      Paulinchen  2026-10-31: Created
 //
@@ -34,7 +35,7 @@ public sealed class StoryTrackRunsTests
     {
         var host = new Host();
         var track = new StoryTrack(host, () => "t1");
-        track.Enter(false, null, "w1");
+        track.Enter(false, "w1");
         track.Connection(true);
         track.Write([new StoryWrite("v50", "n1", "map:7:39:1")]);
         track.Hand(Entry("gift", "story"), "Ana");
@@ -123,7 +124,7 @@ public sealed class StoryTrackRunsTests
     {
         var host = new Host { Saved = new Dictionary<string, long> { ["raid:w1:world"] = 3, ["raid:w1:t2"] = 1, ["raid:w9:world"] = 7, ["party:1"] = 2 } };
         var track = new StoryTrack(host, () => "t1");
-        track.Enter(false, null, "w1");
+        track.Enter(false, "w1");
         track.Connection(true);
         using JsonDocument sync = JsonDocument.Parse(host.Sent.Single(frame => frame.Contains("\"sync\"")));
         track.Receive(State("world", cursor: 3, last: 4));
@@ -221,7 +222,7 @@ public sealed class StoryTrackRunsTests
     private static StoryTrack Placed(Host host, long last, string on = "world")
     {
         var track = new StoryTrack(host, () => "t1");
-        track.Enter(false, null, "w1");
+        track.Enter(false, "w1");
         track.Connection(true);
         track.Receive(State(on, 0, last));
         return track;

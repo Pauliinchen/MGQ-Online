@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-11-11: Took the items unlocking a job or race from the events database instead of the snapshot
+//                            - Read the player's level as the relay's gates read it, visiting companions left out
 //      Paulinchen  2026-11-07: Gave a Classic member following a leader past the Great Decision the rows of the leader's side
 //      Paulinchen  2026-11-05: Named the chest a replay plays as [kind, key], and the site of a join, a setting and a replay as plain values
 //                            - Ran the catch-up of a Classic party's member as one look in the engine's Classic settings
@@ -69,6 +70,11 @@ internal sealed class CatchupLook
     /// Luka, who never joins nor leaves.
     /// </summary>
     public const int Hero = 1;
+
+    /// <summary>
+    /// The highest level the relay's gates take.
+    /// </summary>
+    private const long MaxLevel = 99_999;
 
 
     /// <summary>
@@ -841,6 +847,18 @@ internal sealed class CatchupLook
 
         RosterView view = RosterNow();
         return view.Best is { } best && view.Cap is { } cap && cap < level && best >= cap;
+    }
+
+    /// <summary>
+    /// Reads the player's level as the relay's gates read it: the highest base level among the
+    /// characters not on a visit and that character's cap, each bounded to what the gates take.
+    /// </summary>
+    /// <returns>The level, <see langword="null"/> while the roster is empty.</returns>
+    public StoryLevel? Level()
+    {
+        RosterView view = RosterNow();
+        static int Bounded(long level) => (int)Math.Clamp(level, 1, MaxLevel);
+        return view.Best is { } best ? new StoryLevel(Bounded(best), view.Cap is { } cap ? Bounded(cap) : null) : null;
     }
 
     /// <summary>

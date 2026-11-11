@@ -2,6 +2,7 @@
 #  world_story_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Entered the world without a level and dropped the level check, which the DLL's catch-up tells the relay now
 #      Paulinchen  2026-11-06: Dropped the stand-in of the base form, which no screen builds
 #      Paulinchen  2026-11-05: Answered the runs handed to the replay with fixed values per case
 #                            - Answered the rewards tables with fixed fields instead of a stand-in of their constants
@@ -392,8 +393,7 @@ new_story({ 1001 => 5, 3001 => 40 }, [4, 7096], 12)
 
 # Entering a Raid World: the relay places the player, the mapping comes, the player's story events wait.
 frames(1)
-check("entering the world asks the DLL to place the player, with their level", staged("story.enter"),
-      [{ "world" => "w1", "fresh" => false, "level" => { "best" => 12, "cap" => 9999 } }])
+check("entering the world asks the DLL to place the player", staged("story.enter"), [{ "world" => "w1", "fresh" => false }])
 check("whose story events wait for the world's story", story.awaits_world?, true)
 $classes = mapping
 tell_status(fake, "synced" => false, "need_seed" => true, "world" => nil)
@@ -504,10 +504,6 @@ frames(1)
 $story_staged.clear
 check("the player's state tells their track", story.state_fields, { "trk" => "world" })
 
-# The player's level, which the relay's level gates read.
-$game_actors[1].base_level = 14
-frames(story::CHECK_FRAMES)
-check("the relay hears the player's level once it changed", staged("story.level"), [{ "best" => 14, "cap" => 9999 }])
 
 # A route the world took first: the relay keeps the world's value of the player's route variable.
 $notices.clear

@@ -2,6 +2,7 @@
 //  StoryTrack.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-11: Forgot the level on entering, so a sync after a save loads names none until the catch-up's look
 //      Paulinchen  2026-10-31: Read the routes the Great Decision offers from the world's summary
 //                            - Sent the player's runs after their writes and walked the entries of the player's track from the cursor of the save's log
 //                            - Read where the world's log starts from its summary, and the world's story there from a whole track
@@ -220,7 +221,8 @@ public sealed partial class StoryTrack : ITellingLock
     public long MappingRev { get; private set; }
 
     /// <summary>
-    /// Gets the level the player stands at, <see langword="null"/> before the scripts told it.
+    /// Gets the level the player stands at, <see langword="null"/> after entering until the
+    /// catch-up's look told it.
     /// </summary>
     public StoryLevel? Level { get; private set; }
 
@@ -282,18 +284,21 @@ public sealed partial class StoryTrack : ITellingLock
     /// <summary>
     /// Starts the player's story in a Raid World on tracks, as the world opens, a save loads or a
     /// new game starts: what waited of the story before is dropped, and the relay places the player
-    /// again.
+    /// again with no level until the catch-up's look tells it.
     /// </summary>
+    /// <remarks>
+    /// The level of the save before must not reach the relay, whose gates would move a save loaded
+    /// behind on by it.
+    /// </remarks>
     /// <param name="startsAfresh">Whether the relay places the player anew by their story, as after a new game.</param>
-    /// <param name="level">The player's level, <see langword="null"/> while unknown.</param>
     /// <param name="worldId">The world's id, which names the streams of its tracks.</param>
-    public void Enter(bool startsAfresh, StoryLevel? level, string worldId = "")
+    public void Enter(bool startsAfresh, string worldId = "")
     {
         entered = true;
         fresh = startsAfresh;
         seed = null;
         NeedsSeed = false;
-        Level = level ?? Level;
+        Level = null;
         pendingState = null;
         pendingKeys.Clear();
         // Writes of the story before belong to it; the relay answers those already sent.
@@ -393,7 +398,8 @@ public sealed partial class StoryTrack : ITellingLock
     }
 
     /// <summary>
-    /// Takes the player's level, which the relay hears whenever it changed.
+    /// Takes the player's level, which the relay hears whenever it changed once the player is placed,
+    /// and every sync after.
     /// </summary>
     /// <param name="level">The level.</param>
     public void TakeLevel(StoryLevel level)

@@ -2,6 +2,7 @@
 #  story_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Dropped the level topic, which the DLL's catch-up feeds now
 #      Paulinchen  2026-11-06: Named the story mapping's table and dropped the readers of recorded key names
 #      Paulinchen  2026-11-05: Handed the self switch rules and the takes' keys as the DLL's rows, and read a fixture's key names and sites into plain values
 #                            - Handed the scripts no rule of used up items' marks, which the story replay hands over
@@ -45,7 +46,7 @@ def answer_story(fake)
   $story_staged = []
   $takes = []
   $classes = nil
-  %w(story.enter story.close story.writes story.level story.seed story.watch).each do |topic|
+  %w(story.enter story.close story.writes story.seed story.watch).each do |topic|
     fake.answer(topic) do |payload|
       $story_staged << [topic, payload]
       nil

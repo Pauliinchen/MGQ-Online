@@ -2,6 +2,7 @@
 //  StoryTrackTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-11: Expected the sync on entering without a level, and the later syncs with the level the catch-up told
 //      Paulinchen  2026-10-31: Checked the routes the Great Decision offers
 //                            - Checked the place where the world's log starts
 //      Paulinchen  2026-10-28: Checked whose ended telling the game waits for the take of
@@ -23,22 +24,25 @@ namespace MGQOnline.Game.Tests.Story;
 public sealed class StoryTrackTests
 {
     /// <summary>
-    /// Asserts that entering syncs with the level, that the relay's need of a seed waits for the
-    /// scripts' story, and that a new game's sync places the player anew by it.
+    /// Asserts that entering syncs without a level, though one was told before, that the relay's
+    /// need of a seed waits for the scripts' story, and that a new game's sync places the player
+    /// anew by it with the level told since.
     /// </summary>
     [Fact]
     public void Enter_SyncsAndHandsTheSeedTheRelayNeeds()
     {
         var host = new Host();
         var track = new StoryTrack(host, () => "t1");
-        track.Enter(true, new StoryLevel(12, null));
+        track.TakeLevel(new StoryLevel(40, null));
+        track.Enter(true);
         track.Connection(true);
         track.Receive("""{"t":"need","what":"seed"}""");
         bool needed = track.NeedsSeed;
+        track.TakeLevel(new StoryLevel(12, null));
         track.Seed(new Dictionary<string, string> { ["v1001"] = "n0" });
 
         Assert.True(needed);
-        Assert.Equal("""{"t":"sync","level":{"best":12,"cap":null},"fresh":true}""", host.Sent[0]);
+        Assert.Equal("""{"t":"sync","fresh":true}""", host.Sent[0]);
         Assert.Equal("""{"t":"sync","level":{"best":12,"cap":null},"fresh":true,"seed":{"v1001":"n0"}}""", host.Sent[1]);
     }
 
@@ -107,7 +111,7 @@ public sealed class StoryTrackTests
         StoryTrack Told(string start)
         {
             var track = new StoryTrack(new Host(), () => "t1");
-            track.Enter(false, null);
+            track.Enter(false);
             track.Connection(true);
             track.Receive($$"""{"t":"state","why":"sync","track":"world","rev":2,"part":"1","gate":null,"world":{"rev":2,"part":"1","route":"none","done":[],"checkpoints":[]{{start}}},"mapping":7,"seq":0,"keys":{},"chests":{},"tellings":[]}""");
             return track;
@@ -124,7 +128,7 @@ public sealed class StoryTrackTests
     public void State_TellsTheRoutesTheGreatDecisionOffers()
     {
         var track = new StoryTrack(new Host(), () => "t1");
-        track.Enter(false, null);
+        track.Enter(false);
         track.Connection(true);
         track.Receive("""{"t":"state","why":"sync","track":"world","rev":2,"part":"3","gate":null,"world":{"rev":2,"part":"3","route":"none","done":["ad"],"open":["mr"],"checkpoints":[]},"mapping":7,"seq":0,"keys":{},"chests":{},"tellings":[]}""");
 
@@ -144,7 +148,7 @@ public sealed class StoryTrackTests
         host.Sent.Clear();
         track.Receive("""{"t":"push","track":"world","rev":9,"prev":8,"keys":{"v50":"n2"}}""");
         var behind = new StoryTrack(new Host(), () => "t1");
-        behind.Enter(false, null);
+        behind.Enter(false);
         behind.Connection(true);
         behind.Receive("""{"t":"state","why":"behind","track":"t3","rev":2,"part":"1","gate":25,"world":{"rev":40,"part":"2","route":"none","done":[],"checkpoints":["1"]},"mapping":7,"seq":0,"keys":{},"chests":{},"tellings":[]}""");
         behind.Take();
@@ -274,7 +278,7 @@ public sealed class StoryTrackTests
     private static StoryTrack Synced(Host host, long seq = 0)
     {
         var track = new StoryTrack(host, () => "t1");
-        track.Enter(false, null);
+        track.Enter(false);
         track.Connection(true);
         track.Write([new StoryWrite("s7096", "1", "map:7:39:1")]);
         Sync(track, seq);

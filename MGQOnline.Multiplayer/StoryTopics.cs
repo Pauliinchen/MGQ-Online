@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-11-11: Handed the catch-up the items unlocking a job or race from the events database
+//                            - Took the player's level from the catch-up's look instead of the scripts, and entered the story without one
 //      Paulinchen  2026-11-08: Moved to the MGQOnline.Multiplayer namespace
 //      Paulinchen  2026-11-05: Left reading a frozen fight back to the frozen fights' own topics, which read every fight they take
 //                            - Handed the game's events to the list lookup, which reads the maps that differ from the game's own data
@@ -64,7 +65,8 @@ namespace MGQOnline.Multiplayer;
 internal sealed partial class StoryTopics : IStoryTrackHost
 {
     /// <summary>
-    /// The topic that starts the player's story on tracks: {"world" (the directory's id), "fresh", "level" ({"best", "cap"} or nil)}.
+    /// The topic that starts the player's story on tracks, its level unknown until the catch-up's
+    /// first look: {"world" (the directory's id), "fresh"}.
     /// </summary>
     public const string EnterTopic = "story.enter";
 
@@ -79,10 +81,6 @@ internal sealed partial class StoryTopics : IStoryTrackHost
     /// </summary>
     public const string WritesTopic = "story.writes";
 
-    /// <summary>
-    /// The topic the scripts stage the player's level with: {"best", "cap"}.
-    /// </summary>
-    public const string LevelTopic = "story.level";
 
     /// <summary>
     /// The topic that hands the player's story the relay asked for: its keys' rows, see <see cref="StoryPlain"/>.
@@ -162,6 +160,12 @@ internal sealed partial class StoryTopics : IStoryTrackHost
             return tables;
         }
     }
+
+    /// <summary>
+    /// Takes the player's level the catch-up's look read, which the relay's level gates hear.
+    /// </summary>
+    /// <param name="level">The level.</param>
+    internal void TakeLevel(StoryLevel level) => _track.TakeLevel(level);
 
     /// <summary>
     /// Gets what a Classic member's catch-up reads of the party beyond its tables: who keeps each self
@@ -419,11 +423,7 @@ internal sealed partial class StoryTopics : IStoryTrackHost
             topics._track.Write(StoryPlain.WritesOf(request.AsArray()));
             return null;
         });
-        context.Register(LevelTopic, (_, request) =>
-        {
-            topics._track.TakeLevel(LevelOf(request));
-            return null;
-        });
+
         context.Register(SeedTopic, (_, request) =>
         {
             topics._track.Seed(StoryPlain.TextsOf(request).ToDictionary(pair => pair.Key.ToString(), pair => pair.Value, StringComparer.Ordinal));
@@ -756,21 +756,11 @@ internal sealed partial class StoryTopics : IStoryTrackHost
         return ClassicStoryTable.Build(Count("switches"), Count("variables"), Count("actors"), chestFlags);
     }
 
-    /// <summary>
-    /// Reads the player's level.
-    /// </summary>
-    /// <param name="request">{"best", "cap"}, the cap nil without one.</param>
-    /// <returns>The level.</returns>
-    private static StoryLevel LevelOf(RubyValue request)
-    {
-        RubyHash level = request.AsHash();
-        return new StoryLevel(level["best"].AsInt(), level["cap"].IsNil ? null : level["cap"].AsInt());
-    }
 
     /// <summary>
     /// Starts the player's story on tracks in the open world.
     /// </summary>
-    /// <param name="request">{"world", "fresh", "level"}.</param>
+    /// <param name="request">{"world", "fresh"}.</param>
     /// <returns><see langword="null"/>, no reply.</returns>
     private RubyValue? Enter(RubyHash request)
     {
@@ -781,7 +771,7 @@ internal sealed partial class StoryTopics : IStoryTrackHost
             return null;
         }
 
-        _track.Enter(request["fresh"] is RubyBool { Flag: true }, request["level"].IsNil ? null : LevelOf(request["level"]), request["world"].AsText());
+        _track.Enter(request["fresh"] is RubyBool { Flag: true }, request["world"].AsText());
         _connections = _session.Connections;
         _track.Connection(_session.IsOpen());
         return null;

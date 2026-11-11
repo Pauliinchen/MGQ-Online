@@ -2,6 +2,7 @@
 //  RaidStoryStreamTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-11: Entered the story without a level, as the scripts now do
 //      Paulinchen  2026-11-08: Moved to the MGQOnline.Multiplayer namespace
 //      Paulinchen  2026-10-31: Created
 //
@@ -38,7 +39,7 @@ public sealed class RaidStoryStreamTests
         var entry = new ReplayEntry("gift", ReplaySite.Page(7, 39, 0), "story", StoryScope.World, null, new Dictionary<StoryKey, string> { [key] = "n0" },
             new RunPlace([10, 0, 0, 0]), new Dictionary<StoryKey, string>(), [], false);
 
-        Call(context, StoryTopics.EnterTopic, new RubyHash { { "world", "w1" }, { "fresh", false }, { "level", RubyNil.Value } });
+        Call(context, StoryTopics.EnterTopic, new RubyHash { { "world", "w1" }, { "fresh", false } });
         RubyValue handed = Call(context, StoryTopics.HandEntryTopic, entry.Write());
         RubyValue next = Call(context, StoryTopics.StreamTopic, new RubyHash { { "free", true }, { "waiting", new RubyArray() } });
 

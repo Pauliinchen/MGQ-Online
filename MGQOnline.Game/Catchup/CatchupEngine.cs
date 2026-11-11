@@ -2,6 +2,7 @@
 //  CatchupEngine.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-11: Handed the player's level after each look to the one that hears it
 //      Paulinchen  2026-11-05: Answered the catch-up of a Classic party's member as one look in the Classic settings, with the closures of their own keys and the party chests that gave their key items
 //                            - Left out of what the scripts read the companion each side brings, which the side's rule answers
 //                            - Read the story's ids from StoryIds
@@ -48,6 +49,12 @@ public sealed class CatchupEngine
     /// the first.
     /// </summary>
     public RubyValue Ledger { get; set; } = RubyNil.Value;
+
+    /// <summary>
+    /// Gets what hears the player's level after each look, as the relay's gates read it (see
+    /// <see cref="Check"/>); <see langword="null"/> for none.
+    /// </summary>
+    public Action<StoryLevel>? LevelTaken { get; init; }
 
     /// <summary>
     /// Lists what the scripts hand the engine of the game: every switch, variable and self switch a
@@ -136,12 +143,27 @@ public sealed class CatchupEngine
     /// <summary>
     /// Answers one look at the player's story: <c>look</c> "carried" with the story <c>before</c> a
     /// story was laid over theirs, else a look every half second (<c>audit</c>, <c>vehicles</c> and
-    /// <c>growth</c> telling what else is due).
+    /// <c>growth</c> telling what else is due), handing the player's level after it to
+    /// <see cref="LevelTaken"/>.
     /// </summary>
+    /// <remarks>
+    /// The relay's level gates hear the level from here alone, so they count the roster as the
+    /// catch-up's own gates do and leave a companion on a visit out.
+    /// </remarks>
     /// <param name="tables">The tables.</param>
     /// <param name="request">The snapshot, see <see cref="CatchupLook"/>.</param>
     /// <returns>"actions", "ledger" (nil while unchanged), "visiting", and for a look every half second "ask_side", "growth", "sharable", "orbs", "got" (every item the save has held), "given" (the found items given, whose next gain adds nothing), "take" (the items another player's event used up, a copy each) and "spent" (every use of an item the save counted).</returns>
-    public RubyHash Check(CatchupTables tables, RubyHash request) => new CatchupLook(this, tables, request).Check();
+    public RubyHash Check(CatchupTables tables, RubyHash request)
+    {
+        var look = new CatchupLook(this, tables, request);
+        RubyHash answer = look.Check();
+        if (look.Level() is { } level)
+        {
+            LevelTaken?.Invoke(level);
+        }
+
+        return answer;
+    }
 
     /// <summary>
     /// Answers the one catch-up of a Classic party's member who starts keeping the leader's story from

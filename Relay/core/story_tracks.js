@@ -2,6 +2,7 @@
 //  story_tracks.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-11: Took a sync without a level as an unknown level, so a save loaded is never moved on by the level of the save before
 //      Paulinchen  2026-11-08: Kept the route lock and the part checkpoints of the keyed story a world's track starts from
 //      Paulinchen  2026-11-07: Put every run that gave or used up a found item on every other player's own track, keyed runs too
 //      Paulinchen  2026-11-06: Ran one piece of work at a time through one shared queue
@@ -537,7 +538,7 @@ export class StoryTracks {
    * world's track behind once the world left the part they last saw; then the level gate.
    *
    * @param {string} player The player's id.
-   * @param {any} frame `level`, `cursors` (the cursors of the game's saved log by track) and, when the relay asks or the game starts afresh, `seed` (the story's keys and values) and `fresh`.
+   * @param {any} frame `level` (left out while the game does not know it), `cursors` (the cursors of the game's saved log by track) and, when the relay asks or the game starts afresh, `seed` (the story's keys and values) and `fresh`.
    * @returns {Promise<void>} Completes once answered.
    */
   async sync(player, frame) {
@@ -549,7 +550,7 @@ export class StoryTracks {
       return;
     }
 
-    online.level = level ?? online.level;
+    online.level = level;
     let record = await this.record(player);
     const placed = !this.meta.rev || !record || frame.fresh === true;
 

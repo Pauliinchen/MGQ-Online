@@ -2,6 +2,7 @@
 #  world_story.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Left telling the relay the player's level to the DLL's catch-up, which leaves visiting companions out as its own gates do
 #      Paulinchen  2026-11-08: Read the transfer map and the warp ban from the story ids
 #      Paulinchen  2026-11-05: Handed the frozen fights the world's story it writes while the player plays it
 #                            - Took the relay's keys and values from the DLL as [kind, key] and values, and handed it the player's the same way, their sites as plain values
@@ -106,7 +107,7 @@ module MGQ_MpWorldStory
   # Frames between two reads of the DLL's state of the shared companions while a request runs.
   STATE_FRAMES = 15
 
-  # Frames between two looks at the player's level and what the world's story left.
+  # Frames between two looks at what the world's story left.
   CHECK_FRAMES = 30
 
   # Frames the player's story events wait at most for the world's story after the world opened, a
@@ -120,14 +121,12 @@ module MGQ_MpWorldStory
   # Frames before the player's story is handed again while the relay still asks for it, a second.
   SEED_FRAMES = 60
 
-  # The highest level the relay's gates take.
-  MAX_LEVEL = 99_999
 
   # The topics of the story on tracks, see StoryTopics in the DLL; the player's own telling goes to
   # the DLL from coop_events.rbx.
   ENTER_TOPIC = "story.enter"
   CLOSE_TOPIC = "story.close"
-  LEVEL_TOPIC = "story.level"
+
   SEED_TOPIC = "story.seed"
   WATCH_TOPIC = "story.watch"
   TAKE_TOPIC = "story.take"
@@ -211,7 +210,7 @@ module MGQ_MpWorldStory
     @mode = nil
     @waiting = nil
     @watching = nil
-    @level_sent = nil
+
     @seeded_at = nil
     @queued = nil
     @returned_route = nil
@@ -420,7 +419,7 @@ module MGQ_MpWorldStory
   end
 
   # Follows the world's story for one frame: the mapping, the story the relay asks for, the teller
-  # the player watches and their level, and what the relay handed back once the player is free.
+  # the player watches, and what the relay handed back once the player is free.
   # Called after the map's update.
   def self.tick
     follow_classic
@@ -436,7 +435,6 @@ module MGQ_MpWorldStory
     walk_stream
     if MGQ_Multiplayer::Bridge.frame_number - @checked >= CHECK_FRAMES
       @checked = MGQ_Multiplayer::Bridge.frame_number
-      send_level
       restore if quiet?
     end
     follow_comps
@@ -475,7 +473,7 @@ module MGQ_MpWorldStory
   #
   # @param fresh [Boolean] Whether the relay places the player anew by their story, as a new game.
   def self.enter(fresh)
-    MGQ_Multiplayer::Bridge.stage(ENTER_TOPIC, "world" => world_id, "fresh" => fresh, "level" => level_now)
+    MGQ_Multiplayer::Bridge.stage(ENTER_TOPIC, "world" => world_id, "fresh" => fresh)
   end
 
   # Takes the story mapping's table once the DLL holds another revision than this script.
@@ -1084,36 +1082,6 @@ module MGQ_MpWorldStory
     name && !name.empty? ? name : nil
   end
 
-  # Tells the relay the player's level once it changed, which its level gates read.
-  def self.send_level
-    level = level_now
-    return if level.nil? || level == @level_sent
-
-    @level_sent = level
-    MGQ_Multiplayer::Bridge.stage(LEVEL_TOPIC, level)
-  end
-
-  # Reads the player's level as the relay's gates read it: the highest base level among their
-  # characters, and the highest level the game lets that character reach.
-  #
-  # @return [Hash, nil] "best" and "cap" (nil without one), nil before the party has members.
-  def self.level_now
-    best = MGQ_MpStoryState.roster.max_by { |actor| actor.base_level }
-    return nil unless best
-
-    cap = best.respond_to?(:max_level) ? best.max_level(:base) : nil
-    { "best" => bounded_level(best.base_level), "cap" => cap.is_a?(Integer) ? bounded_level(cap) : nil }
-  rescue
-    nil
-  end
-
-  # Bounds a level to what the relay's gates take.
-  #
-  # @param level [Integer] The level.
-  # @return [Integer] The level, 1 to MAX_LEVEL.
-  def self.bounded_level(level)
-    [[level.to_i, 1].max, MAX_LEVEL].min
-  end
 
   # Fetches the world's shared companions when due: on entering the world, once a minute and on the
   # relay's push; and takes them once a fetch ended.

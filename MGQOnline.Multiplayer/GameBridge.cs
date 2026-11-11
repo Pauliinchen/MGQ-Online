@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-11-11: Registered the mod topics without the Patch folder scripts, whose topic went
+//                            - Handed the catch-up's level to the story track
 //      Paulinchen  2026-11-08: Handed the overview topics the game's events for the quest walk
 //                            - Registered the mod topics without the world directory, whose relay catalog went
 //                            - Moved to the MGQOnline.Multiplayer namespace
@@ -180,7 +181,7 @@ internal static unsafe class GameBridge
         EnteringTopics.Register(context, services, local.Worlds, local.Lists, forms);
         WorldRoomTopics.Register(context);
         StoryTopics story = StoryTopics.Register(context);
-        CatchupTopics.Register(context, () => story.Catchup, () => story.ClassicParty);
+        CatchupTopics.Register(context, () => story.Catchup, () => story.ClassicParty, story.TakeLevel);
         ServedTopics.Register(context, BattleSession.Current);
         context.Register(SnapTopic, (_, request) => Snap(request.AsArray()));
         ReportTopics.Register(context, BugReports.Current);

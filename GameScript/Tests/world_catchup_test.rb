@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-11: Expected no job or race items in the snapshot, which the DLL reads from the events database, and listed a job item among the key items
+#                            - Dropped the checks of the level the relay hears, which the DLL's catch-up tells it now
 #      Paulinchen  2026-11-10: Checked that a look whose question a quiet look answered asks the DLL nothing until the story changes
 #      Paulinchen  2026-11-05: Answered the DLL's catch-up topics with fixed values per case instead of from the catch-up engine of engine.rb, and checked what the scripts send and what they do with each action, leaving the engine's decisions to the C# tests
 #                            - Answered the story's part with fixed values per progress
@@ -220,7 +221,7 @@ $game_actors[1].level = 25
 $messages.clear
 answers.clear
 frames(40)
-check("the relay hears the level that opens the gate", staged("story.level").last, { "best" => 30, "cap" => 9999 })
+
 seen = answers.asked("catchup.check").size
 moved("1", "world", packed({ 1001 => 26 }, [2300]), "rev" => 2)
 frames(40)
@@ -246,7 +247,7 @@ check("a player capped below the gate is told to reach the cap",
       ["Reach level 20 to continue the story.", "The world's story is further than yours. You see the world as it was before the end of Part 1; reach level 20 to move on."])
 $game_actors[1].level = 20
 frames(40)
-check("and tells the relay their cap with their level", staged("story.level").last, { "best" => 20, "cap" => 20 })
+
 moved("1", "2", packed({ 1001 => 33 }), { "part" => "3", "checkpoints" => "1,2" }, "cap")
 frames(70)
 check("moved on by the cap, the notice names the cap", [$messages.last, story.mode, catchup.refusal_text], ["Level 20 reached: catching up to Part 2.", :behind, "Reach level 20 to continue the story."])
