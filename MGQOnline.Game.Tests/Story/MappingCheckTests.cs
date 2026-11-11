@@ -2,6 +2,7 @@
 //  MappingCheckTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-11: Held the Great Decision's third-way switches and route arrivals to its common event
 //      Paulinchen  2026-11-06: Read the relay's seed through TableFiles
 //      Paulinchen  2026-11-05: Dropped the check of a world chest's flags, which the table keeps no more
 //                            - Created
@@ -345,7 +346,9 @@ public sealed partial class MappingCheckTests : IDisposable
 
     /// <summary>
     /// Checks the rows that name switches, variables, items or common events alone: the parts'
-    /// endings, the counts, the chest flags, the prizes, the companions' values and the rules.
+    /// endings, the counts, the chest flags, the prizes, the companions' values and the rules; and
+    /// the Great Decision's common event against the switches its third way turns on and the places
+    /// its outcomes take the player to.
     /// </summary>
     /// <returns>The mismatches.</returns>
     private IEnumerable<string> IdRows()
@@ -381,6 +384,18 @@ public sealed partial class MappingCheckTests : IDisposable
         foreach (JsonElement rule in Rows("rules").Where(rule => Text(rule, "rule") == "orb_event" && SiteList($"ce:{rule.GetProperty("value").GetInt32()}") is null))
         {
             yield return $"rules orb_event: no common event {rule.GetProperty("value").GetInt32()}";
+        }
+
+        long? decision = CommonList(StoryIds.DecisionEvent);
+        foreach (int id in StoryIds.ThirdWaySwitches.Where(id => Number($"SELECT count(*) FROM list_writes WHERE list_id = {decision ?? 0} AND kind = 0 AND from_id <= {id} AND to_id >= {id} AND turns_on = 1") == 0))
+        {
+            yield return $"third_way_switches: common event {StoryIds.DecisionEvent} never turns on s{id}";
+        }
+
+        IEnumerable<int[]> places = [[.. StoryIds.ChaosStart], .. StoryIds.DecisionMaps.Select(map => (int[])[map, .. StoryIds.DecisionArrival])];
+        foreach (int[] place in places.Where(place => Number($"SELECT count(*) FROM list_transfers WHERE list_id = {decision ?? 0} AND map_id = {place[0]} AND x = {place[1]} AND y = {place[2]} AND direction = {place[3]}") == 0))
+        {
+            yield return $"decision places: common event {StoryIds.DecisionEvent} never takes the player to {string.Join(",", place)}";
         }
     }
 

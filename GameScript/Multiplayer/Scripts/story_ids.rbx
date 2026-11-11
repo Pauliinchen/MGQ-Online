@@ -2,6 +2,7 @@
 #  story_ids.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Read the switches of the Great Decision's third way and where its route maps take the player
 #      Paulinchen  2026-11-08: Read the transfer map, the warp ban and the story ids of the catch-up rules
 #      Paulinchen  2026-11-05: Created
 #
@@ -24,7 +25,7 @@ module MGQ_MpStoryIds
 
   # The ids that are a list each, empty while the DLL does not answer.
   LISTS = %w(story_switches side_switches routes route_variables clear_switches markers castle_bosses area_progress return_events
-             return_points decision_maps decision_place chaos_start place_variables)
+             return_points decision_maps decision_place decision_arrival third_way_switches chaos_start place_variables)
 
   extend MGQ_MpLog
 

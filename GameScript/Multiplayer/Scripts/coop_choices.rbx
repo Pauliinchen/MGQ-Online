@@ -2,6 +2,8 @@
 #  coop_choices.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Took the third way's switches and the route's transfer of the Great Decision's outcome from the story's id table
+#                            - Moved the player to the route's map also when the game's Great Decision event differs
 #      Paulinchen  2026-11-08: Showed the hint of the cursor's choice and of the replay's question in the help line
 #      Paulinchen  2026-11-06: Asked only choices on the replay's question, as a replay answers numbers, key items and presents the opener's way
 #                            - Headed the replay's question with the opener's name alone, without why it is asked or the place
@@ -568,7 +570,8 @@ module MGQ_MpCoopChoices
 
   # Builds the commands that play the Great Decision's outcome: the Final Chapter put back as the
   # game's own reset does, the outcome's part of the Great Decision's common event, which changes
-  # the party and takes the player to its map, with the side and the route set on the way.
+  # the party, then the side and the route, and the transfer to the outcome's map from the story's
+  # id table.
   #
   # @param index [Integer] The outcome: 0 the Dark Goddess, 1 the Goddess Ilias, 2 the third way.
   # @return [Array<RPG::EventCommand>] The commands.
@@ -578,19 +581,17 @@ module MGQ_MpCoopChoices
     outcome = table["decision"][index] || {}
     routes = ids.route_variables
     if index == 2
-      [7091, 7092, 92].each { |id| commands << RPG::EventCommand.new(121, 0, [id, id, 0]) }
+      ids.third_way_switches.each { |id| commands << RPG::EventCommand.new(121, 0, [id, id, 0]) }
       commands << RPG::EventCommand.new(122, 0, [ids.main_progress, ids.main_progress, 0, 0, ids.great_decision])
       commands << RPG::EventCommand.new(122, 0, [routes[2], routes[2], 0, 0, 1])
       commands << RPG::EventCommand.new(201, 0, [0] + ids.chaos_start + [2])
       return commands << RPG::EventCommand.new(0, 0, [])
     end
 
-    part = decision_part(outcome)
-    transfer = part.pop || RPG::EventCommand.new(201, 0, [0, outcome["map"], 25, 19, 8, 2])
-    commands.concat(part)
+    commands.concat(decision_part(outcome))
     ids.side_switches.each { |id| commands << RPG::EventCommand.new(121, 0, [id, id, id == outcome["side"] ? 0 : 1]) }
     commands << RPG::EventCommand.new(122, 0, [routes[index], routes[index], 0, 0, 1])
-    commands << transfer
+    commands << RPG::EventCommand.new(201, 0, [0, outcome["map"]] + ids.decision_arrival + [2])
     commands << RPG::EventCommand.new(0, 0, [])
   end
 
@@ -607,19 +608,18 @@ module MGQ_MpCoopChoices
     return [] unless outcome["return"]
 
     commands = decision_part(outcome)
-    commands.pop if commands.last && commands.last.code == 201
     MGQ_MpStoryIds.side_switches.each { |id| commands << RPG::EventCommand.new(121, 0, [id, id, id == outcome["side"] ? 0 : 1]) }
     commands << RPG::EventCommand.new(222, 0, [])
     commands << RPG::EventCommand.new(0, 0, [])
   end
 
   # Copies the part of the Great Decision's common event that plays an outcome: from where it notes
-  # where a game over returns the player to the transfer to the outcome's map, moved to the left so
+  # where a game over returns the player up to the transfer to the outcome's map, moved to the left so
   # it runs on its own.
   #
   # @param outcome [Hash] The outcome: "return" and "map".
-  # @return [Array<RPG::EventCommand>] The commands, the transfer last; none when the game's event
-  #   differs.
+  # @return [Array<RPG::EventCommand>] The commands up to the outcome's transfer, which they leave
+  #   out; the return-point write alone when the game's event differs.
   def self.decision_part(outcome)
     event = $data_common_events[MGQ_MpStoryIds.decision_event]
     list = (event && event.list) || []
@@ -632,7 +632,7 @@ module MGQ_MpCoopChoices
     end
 
     base = list[first].indent
-    list[first..last].map { |command| RPG::EventCommand.new(command.code, [command.indent - base, 0].max, command.parameters) }
+    list[first...last].map { |command| RPG::EventCommand.new(command.code, [command.indent - base, 0].max, command.parameters) }
   end
 
   # Lists the choices a part of the leader's story the player plays carries them past, which they

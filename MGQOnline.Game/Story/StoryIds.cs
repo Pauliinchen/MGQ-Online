@@ -2,6 +2,7 @@
 //  StoryIds.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-11: Held the switches of the Great Decision's third way and where its two route maps take the player
 //      Paulinchen  2026-11-08: Held the transfer map, the warp ban and the story ids of the catch-up rules
 //      Paulinchen  2026-11-05: Created
 //
@@ -180,6 +181,17 @@ public static class StoryIds
     public static readonly IReadOnlyList<int> DecisionPlace = [407, 25, 25];
 
     /// <summary>
+    /// Where both maps of <see cref="DecisionMaps"/> take the player: x, y and direction.
+    /// </summary>
+    public static readonly IReadOnlyList<int> DecisionArrival = [25, 19, 8];
+
+    /// <summary>
+    /// The switches the Great Decision's third way turns on: the gems menu, the Chaos elements on the
+    /// status screen and the sealed jobs.
+    /// </summary>
+    public static readonly IReadOnlyList<int> ThirdWaySwitches = [7091, 7092, 92];
+
+    /// <summary>
     /// Where the Great Decision's third way takes the player: map, x, y and direction.
     /// </summary>
     public static readonly IReadOnlyList<int> ChaosStart = [437, 12, 12, 0];
@@ -228,6 +240,8 @@ public static class StoryIds
         new("return_points", ReturnPoints),
         new("decision_maps", DecisionMaps),
         new("decision_place", DecisionPlace),
+        new("decision_arrival", DecisionArrival),
+        new("third_way_switches", ThirdWaySwitches),
         new("chaos_start", ChaosStart),
         new("place_variables", PlaceVariables),
         new("transfer_map", TransferMap),

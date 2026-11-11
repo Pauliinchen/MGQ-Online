@@ -2,6 +2,7 @@
 #  story_choices_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Checked the Great Decision's outcome a member plays on another route than the leader's
 #      Paulinchen  2026-11-08: Checked that the help line shows the hint of the choice under the cursor
 #      Paulinchen  2026-11-06: Read the screen of choices from its component of the UI layer
 #      Paulinchen  2026-11-05: Answered the outcomes offered and their notes with fixed values instead of the stand-in's rules
@@ -14,8 +15,9 @@
 # the Great Decision, turns them and shows the note of the cursor's choice, takes every outcome on
 # "Bring me there", leaves the story on cancel and closes with a notice once the offer is gone; a
 # choice of the player's own closed with cancel opens again only after they were busy and stand
-# free, or at once when its menu scene never started or the framework refused it. The DLL offers
-# fixed outcomes and notes that name the outcome asked (telling_support.rb).
+# free, or at once when its menu scene never started or the framework refused it. A member who
+# took another route than the leader's plays the Great Decision's outcome on their own. The DLL
+# offers fixed outcomes and notes that name the outcome asked (telling_support.rb).
 
 require_relative "support"
 require_relative "story_screens_support"
@@ -145,3 +147,42 @@ choices.update
 check("and opens on the next free frame", [$scenes.size, choices.screen && choices.screen[:title]], [1, "Your own outcome"])
 choices.forget("a save was loaded")
 check("and a load forgets its screen", [choices.screen, choices.instance_variable_get(:@prompts)], [nil, []])
+
+# Another route than the leader's: the member plays the Great Decision's outcome from the commands
+# start_route queues and play_queued sets up, with the ids of the real story_ids.json.
+module RPG; EventCommand = Struct.new(:code, :indent, :parameters); end unless defined?(RPG::EventCommand)
+MGQ_MpCoopStory.define_singleton_method(:keep_and_leave) { |_why| }
+played = nil
+$game_map = Game_Map.new
+interpreter = Object.new
+interpreter.define_singleton_method(:setup) { |list, _event| played = list }
+$game_map.define_singleton_method(:interpreter) { interpreter }
+$data_common_events = []
+$free = true
+# Plays an outcome of the Great Decision on another route than the leader's.
+#
+# @param index [Integer] The outcome.
+# @return [Array<Array>] The commands played, each as code, indent and parameters.
+play_route = lambda do |index|
+  choices.start_route(index, leader)
+  choices.play_queued
+  played.map { |command| [command.code, command.indent, command.parameters] }
+end
+# The Great Decision's common event as the game has it, in short: each outcome under its side's
+# switch notes the game over's return point, changes the party and moves the player to its map.
+command = lambda { |code, indent, parameters| RPG::EventCommand.new(code, indent, parameters) }
+$data_common_events[380] = Struct.new(:list).new([command.call(111, 0, [0, 4, 0]), command.call(122, 1, [1002, 1002, 0, 0, 111]), command.call(129, 1, [3, 1, 0]),
+                                                  command.call(201, 1, [0, 430, 25, 19, 8, 2]), command.call(412, 0, []),
+                                                  command.call(111, 0, [0, 5, 0]), command.call(122, 1, [1002, 1002, 0, 0, 112]),
+                                                  command.call(201, 1, [0, 431, 25, 19, 8, 2]), command.call(412, 0, []), command.call(0, 0, [])])
+
+third = play_route.call(2)
+check("the third way turns on its switches and moves the player to the Chaos route's start",
+      [third.select { |each| each[0] == 121 }.map { |each| each[2] }, third.last(2)],
+      [[[7091, 7091, 0], [7092, 7092, 0], [92, 92, 0]], [[201, 0, [0, 437, 12, 12, 0, 2]], [0, 0, []]]])
+dark = play_route.call(0)
+check("the Dark Goddess route changes the party once and moves the player to its map once",
+      [dark.map { |each| each[0] }, dark[-2]], [[117, 122, 122, 129, 121, 121, 122, 201, 0], [201, 0, [0, 430, 25, 19, 8, 2]]])
+$data_common_events[380] = Struct.new(:list).new([command.call(0, 0, [])])
+check("the Dark Goddess route still moves the player to its map when the game's event differs", play_route.call(0).last(2),
+      [[201, 0, [0, 430, 25, 19, 8, 2]], [0, 0, []]])
