@@ -2,7 +2,8 @@
 #  world_story_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-11: Entered the world without a level and dropped the level check, which the DLL's catch-up tells the relay now
+#      Paulinchen  2026-11-11: Checked what the scripts hand the DLL to lay a take and that they write what it laid, and nothing of a take it did not lay
+#                            - Entered the world without a level and dropped the level check, which the DLL's catch-up tells the relay now
 #      Paulinchen  2026-11-06: Dropped the stand-in of the base form, which no screen builds
 #      Paulinchen  2026-11-05: Answered the runs handed to the replay with fixed values per case
 #                            - Answered the rewards tables with fixed fields instead of a stand-in of their constants
@@ -410,24 +411,28 @@ check("once", staged("story.seed").size, 1)
 module MGQ_MpWorldFreeze
   # Holds no key.
   def self.held_value(_kind, _key); nil; end
+  # Has no fight to drop.
+  def self.refresh; end
   # Takes no fight of the world's story.
   def self.take_keys(_keys); end
   # Keeps the world's story told.
   def self.world_told(told); ($freeze_told ||= []) << told; end
 end
 
-# The relay's track is written straight into the player's story.
+# The relay's track is written into the player's story as the DLL lays it, which hears the player's
+# values of every key the mapping keeps and of the chest flags, and where the player stands.
 $game_variables[1062] = 3
-$game_switches[600] = true
 frames(1)
 $story_staged.clear
-$takes << track_take([[1, 1001, 9], [0, 500, true], [2, [12, 3, "A"], true], [1, 1062, 4]], "held" => [[1, 1062]], "chests" => [[0, 7102, true]])
+$takes << track_take([[1, 1001, 9], [0, 500, true], [2, [12, 3, "A"], true], [0, 7096, false]], "chests" => [[0, 7102, true]])
 tell_status(fake, "pending" => true)
 frames(2)
-check("a whole track is written over every key the mapping keeps, those it never wrote off",
-      [$game_variables[1001], $game_switches[500], $game_self_switches[[12, 3, "A"]], $game_switches[7096], $game_switches[600]], [9, true, true, false, false])
-check("each player's own keys and those the player's own unanswered requests wrote stay, the chest flags are the player's",
-      [$game_switches[4], $game_variables[3001], $game_variables[1062], $game_switches[7102]], [true, 40, 3, true])
+values = $lay_requests.last["values"]
+check("the DLL hears the player's values of the keys the mapping keeps and of the chest flags, and where the player stands",
+      [[[0, 7096, true], [1, 1062, 3], [0, 7102, false]].map { |row| values.include?(row) }, $lay_requests.last.reject { |field, _| field == "values" }],
+      [[true, true, true], { "map" => 3, "x" => 1, "unlocks" => [445] }])
+check("what the DLL laid is written into the player's story",
+      [$game_variables[1001], $game_switches[500], $game_self_switches[[12, 3, "A"]], $game_switches[7096], $game_switches[7102]], [9, true, true, false, true])
 check("the player plays the world's story now, told so, and their story events no longer wait",
       [story.mode, $notices, story.awaits_world?], [:world, ["You play the world's story."], false])
 check("none of it goes to the relay as the player's", staged("story.writes"), [])
@@ -445,35 +450,24 @@ $game_map.interpreter.busy = false
 frames(1)
 check("and is written once they are free", [$game_variables[1001], $game_switches[501]], [11, true])
 
-# The Queen's Cup's tournament steps stay the player's where it plays; the companions' affection
-# the whole world keeps never goes below the player's own, which goes to the relay again.
+# A push hands the DLL the player's values of its own keys alone, read as the game reads them.
 $game_map.map_id = 484
 $game_player.instance_variable_set(:@x, 31)
-$game_variables[1052] = 3
 $game_variables[3005] = 40
-$story_staged.clear
-frames(1)
-$story_staged.clear
-$takes << keys_take([[1, 1052, 2], [1, 3005, 30]], 3)
-tell_status(fake, "pending" => true)
-frames(2)
-check("a Queen's Cup step stays the player's in its waiting room", $game_variables[1052], 3)
-check("the affection the world keeps stays at the player's higher value, which goes to the relay again", [$game_variables[3005], staged("story.writes")], [40, [[[1, 3005, 40, ["game"]]]]])
-$game_map.map_id = 3
-$takes << keys_take([[1, 1052, 2]], 4)
-tell_status(fake, "pending" => true)
-frames(2)
-check("elsewhere the world's value of it comes", $game_variables[1052], 2)
-
-# The second accessory slot (445), which the game turns on for good, stays on when the relay hands
-# it off, as in a world an earlier build kept it each player's own, and goes to the relay.
 $game_switches[445] = true
-frames(1)
-$story_staged.clear
-$takes << keys_take([[0, 445, false]], 5)
+$takes << keys_take([[1, 3005, 30], [0, 445, false]], 3)
 tell_status(fake, "pending" => true)
 frames(2)
-check("an unlock the player holds that the relay hands off stays on and goes to the relay", [$game_switches[445], staged("story.writes")], [true, [[[0, 445, true, ["game"]]]]])
+check("a push hands the DLL the player's values of its keys alone", $lay_requests.last,
+      { "values" => [[1, 3005, 40], [0, 445, true]], "map" => 484, "x" => 31, "unlocks" => [445] })
+$game_map.map_id = 3
+
+# A take the DLL does not lay writes nothing, and the player stays on the track they played.
+$lay_answers << nil
+$takes << track_take([[1, 1001, 20]], { "track" => "own" }, 4)
+tell_status(fake, "pending" => true)
+frames(2)
+check("a take the DLL does not lay writes nothing and moves the player to no other track", [$game_variables[1001], story.mode], [11, :world])
 
 # The teller the player watches: the relay hears of them, and the player's story events wait until
 # the track's revision the telling ended at was written into their story.

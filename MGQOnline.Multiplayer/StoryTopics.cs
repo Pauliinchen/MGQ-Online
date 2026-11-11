@@ -2,7 +2,9 @@
 //  StoryTopics.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-11: Handed the catch-up the items unlocking a job or race from the events database
+//      Paulinchen  2026-11-11: Laid the relay's take over the player's story and asked the relay again for the values the player keeps
+//                            - Told the main story's progress of the whole track waiting, which the opening reads before it is taken
+//                            - Handed the catch-up the items unlocking a job or race from the events database
 //                            - Took the player's level from the catch-up's look instead of the scripts, and entered the story without one
 //      Paulinchen  2026-11-08: Moved to the MGQOnline.Multiplayer namespace
 //      Paulinchen  2026-11-05: Left reading a frozen fight back to the frozen fights' own topics, which read every fight they take
@@ -96,6 +98,14 @@ internal sealed partial class StoryTopics : IStoryTrackHost
     /// The topic that takes what waits to be written into the game's story, see <see cref="StoryPlain.TakeOf"/>.
     /// </summary>
     public const string TakeTopic = "story.take";
+
+    /// <summary>
+    /// The topic that lays the take handed out last over the player's story (<see cref="TakeLay"/>):
+    /// {"values" (rows of the player's values of the keys the take covers, see <see cref="TakeLay.Lay"/>),
+    /// "map", "x" (nil without a player), "unlocks" (the switches the game turns on for good)} in;
+    /// {"writes" (rows in order), "freezes" ([troop, fight or false] each)} out, nil without a take.
+    /// </summary>
+    public const string LayTopic = "story.lay";
 
     /// <summary>
     /// The topic that hands out the story mapping's table, see <see cref="TableOf"/>; nil before it came.
@@ -307,6 +317,11 @@ internal sealed partial class StoryTopics : IStoryTrackHost
     private RubyValue? _posted;
 
     /// <summary>
+    /// The take handed out last, which <see cref="LayTopic"/> lays; <see langword="null"/> once laid.
+    /// </summary>
+    private StoryTake? _taken;
+
+    /// <summary>
     /// The story mapping's table, <see langword="null"/> before it came.
     /// </summary>
     private StoryTable? _table;
@@ -401,6 +416,12 @@ internal sealed partial class StoryTopics : IStoryTrackHost
     internal Func<string?> OpenerName { get; set; } = () => Player.Current()?.Name;
 
     /// <summary>
+    /// Gets or sets how the values the frozen raid boss fights hold their keys at are read
+    /// (<see cref="Game.Raid.FrozenFights.Held"/>), which a lay writes instead of the relay's.
+    /// </summary>
+    internal Func<IReadOnlyList<RubyArray>> FrozenHeld { get; set; } = () => [];
+
+    /// <summary>
     /// Registers the topics and the frame step on a context, over the game's world connection.
     /// </summary>
     /// <param name="context">The context the handshake opened.</param>
@@ -434,7 +455,8 @@ internal sealed partial class StoryTopics : IStoryTrackHost
             topics._track.Watch(request.IsNil ? null : request.AsInt());
             return null;
         });
-        context.Register(TakeTopic, (_, _) => topics._track.Take() is { } take ? StoryPlain.TakeOf(take) : null);
+        context.Register(TakeTopic, (_, _) => (topics._taken = topics._track.Take()) is { } take ? StoryPlain.TakeOf(take) : null);
+        context.Register(LayTopic, (_, request) => topics.Lay(request.AsHash()));
         context.Register(ClassesTopic, (_, _) => topics._table is { } table ? TableOf(table) : null);
         context.Register(ClassicTopic, (_, _) => topics.ClassicOf());
         context.Register(ClassicMergeTopic, (_, request) => topics.ClassicMergeOf(request.AsHash()));
@@ -778,6 +800,54 @@ internal sealed partial class StoryTopics : IStoryTrackHost
     }
 
     /// <summary>
+    /// Answers <see cref="LayTopic"/> by <see cref="TakeLay"/>, and asks the relay again for the
+    /// values the player keeps.
+    /// </summary>
+    /// <param name="request">{"values", "map", "x", "unlocks"}.</param>
+    /// <returns>{"writes", "freezes"}, nil without a take or a mapping.</returns>
+    private RubyValue Lay(RubyHash request)
+    {
+        StoryTake? take = _taken;
+        _taken = null;
+        if (take is null || _table is not { } table)
+        {
+            Log.Write($"story track: laid nothing over the player's story: {(take is null ? "no take was handed out" : "the story mapping has not come")}");
+            return RubyNil.Value;
+        }
+
+        var story = new Dictionary<StoryKey, string?>();
+        foreach (RubyValue row in request["values"].AsArray())
+        {
+            (StoryKey key, RubyValue value) = StoryPlain.RowOf(row);
+            story[key] = StoryPlain.TextOf(key, value);
+        }
+
+        var frozen = new Dictionary<StoryKey, string>();
+        foreach (RubyArray held in FrozenHeld())
+        {
+            StoryKey key = StoryPlain.KeyOf(held[0], held[1]);
+            if (StoryPlain.TextOf(key, held[2]) is { } text)
+            {
+                frozen.TryAdd(key, text);
+            }
+        }
+
+        HashSet<int> unlocks = [.. request["unlocks"].AsArray().Select(id => id.AsInt())];
+        LaidTake laid = TakeLay.Lay(take, table, story, frozen, request["map"].AsInt(), request["x"] is RubyInteger x ? x.AsInt() : null, unlocks);
+        if (laid.Requests.Count > 0)
+        {
+            Log.Write($"story track: kept the player's {string.Join(", ", laid.Requests.Select(write => write.Key))} over the relay's lower value and asked the relay for it again");
+            _track.Write(laid.Requests);
+        }
+
+        return new RubyHash
+        {
+            { "writes", new RubyArray(laid.Writes.Select(write => (RubyValue)StoryPlain.Row(write.Key, write.Value))) },
+            { "freezes", new RubyArray(laid.Freezes.Select(fight => (RubyValue)new RubyArray { fight.Key.Id, StoryPlain.ValueOf(fight.Key, fight.Value) })) },
+        };
+    }
+
+    /// <summary>
     /// Answers <see cref="StreamTopic"/>.
     /// </summary>
     /// <param name="request">{"free", "waiting"}.</param>
@@ -1003,7 +1073,7 @@ internal sealed partial class StoryTopics : IStoryTrackHost
     /// <summary>
     /// Describes how the story on tracks stands, as the scripts read it each frame.
     /// </summary>
-    /// <returns>{"synced", "track", "part", "gate", "rev", "taken", "world" ({"rev", "part", "route", "done", "open", "checkpoints", "start" (the story markers where the world's log starts, or nil)} or nil), "pending", "need_seed", "classes" (the mapping's revision held, nil before), "tellings" (seat => [telling, map, site], see <see cref="StoryPlain"/>), "told" (seat => revision), "await" (the seat whose ended telling the game has yet to take the track of, or nil), "telling" (true, false or nil), "holder", "unanswered"}.</returns>
+    /// <returns>{"synced", "track", "part", "gate", "rev", "taken", "world" ({"rev", "part", "route", "done", "open", "checkpoints", "start" (the story markers where the world's log starts, or nil)} or nil), "pending", "pending_progress" (the main story's progress of the whole track waiting, 0 for one without it, nil while none waits), "need_seed", "classes" (the mapping's revision held, nil before), "tellings" (seat => [telling, map, site], see <see cref="StoryPlain"/>), "told" (seat => revision), "await" (the seat whose ended telling the game has yet to take the track of, or nil), "telling" (true, false or nil), "holder", "unanswered"}.</returns>
     private RubyHash StatusOf()
     {
         var tellings = new RubyHash();
@@ -1040,6 +1110,7 @@ internal sealed partial class StoryTopics : IStoryTrackHost
             { "taken", _track.TakenRev },
             { "world", world },
             { "pending", _track.Pending },
+            { "pending_progress", _track.PendingState is { } whole ? ProgressOf(whole) : RubyNil.Value },
             { "need_seed", _track.NeedsSeed },
             { "classes", _table is { } table ? table.Rev : RubyNil.Value },
             { "tellings", tellings },
@@ -1050,4 +1121,13 @@ internal sealed partial class StoryTopics : IStoryTrackHost
             { "unanswered", _track.Unanswered },
         };
     }
+
+    /// <summary>
+    /// Reads the main story's progress of a whole track, which a new game's opening reads before the
+    /// track is taken.
+    /// </summary>
+    /// <param name="state">The track.</param>
+    /// <returns>The progress, 0 for a track without it.</returns>
+    private static long ProgressOf(TrackState state) =>
+        state.Keys.TryGetValue(StoryKey.Variable(StoryIds.MainProgress).ToString(), out string? text) && StoryPlain.VariableOf(text) is RubyInteger number ? number.AsLong() : 0;
 }

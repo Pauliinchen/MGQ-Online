@@ -2,6 +2,7 @@
 //  FreezeTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-11: Handed out the frozen fights, whose held values the story's lay reads
 //      Paulinchen  2026-11-08: Answered the records, the tableau, the fresh start and the blocker of the frozen fights, and the items a defeat gives back
 //                            - Moved to the MGQOnline.Multiplayer namespace
 //      Paulinchen  2026-11-05: Created
@@ -146,7 +147,8 @@ internal static class FreezeTopics
     /// <param name="ledger">Gives the pools.</param>
     /// <param name="roster">The troops' sizes.</param>
     /// <param name="events">Gives the game's events once a topic is called.</param>
-    public static void Register(BridgeContext context, Func<PoolLedger> ledger, RaidRoster roster, Func<GameEvents> events)
+    /// <returns>The frozen fights, whose held values the story's lay reads.</returns>
+    public static FrozenFights Register(BridgeContext context, Func<PoolLedger> ledger, RaidRoster roster, Func<GameEvents> events)
     {
         RubyHash? kept = null;
         RubyHash Tables()
@@ -231,6 +233,7 @@ internal static class FreezeTopics
         context.Register(Tableau, (_, request) => TableauOf(Tables(), request.AsHash()));
         context.Register(Fresh, (_, request) => FreshOf(Tables(), request.AsHash()));
         context.Register(Blocker, (_, request) => BlockerOf(Tables(), request.AsHash()));
+        return fights;
     }
 
     /// <summary>

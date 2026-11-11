@@ -2,7 +2,8 @@
 #  world_story.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-11: Left telling the relay the player's level to the DLL's catch-up, which leaves visiting companions out as its own gates do
+#      Paulinchen  2026-11-11: Left laying the relay's take over the player's story to the DLL, which also keeps joining what waits while the opening runs
+#                            - Left telling the relay the player's level to the DLL's catch-up, which leaves visiting companions out as its own gates do
 #      Paulinchen  2026-11-08: Read the transfer map and the warp ban from the story ids
 #      Paulinchen  2026-11-05: Handed the frozen fights the world's story it writes while the player plays it
 #                            - Took the relay's keys and values from the DLL as [kind, key] and values, and handed it the player's the same way, their sites as plain values
@@ -130,6 +131,7 @@ module MGQ_MpWorldStory
   SEED_TOPIC = "story.seed"
   WATCH_TOPIC = "story.watch"
   TAKE_TOPIC = "story.take"
+  LAY_TOPIC = "story.lay"
   HAND_TOPIC = "story.hand_entry"
   STREAM_TOPIC = "story.stream"
 
@@ -208,7 +210,6 @@ module MGQ_MpWorldStory
   # @param reason [Symbol, nil] Why the story starts anew, nil when the world closed.
   def self.forget(reason = nil)
     @mode = nil
-    @waiting = nil
     @watching = nil
 
     @seeded_at = nil
@@ -534,61 +535,45 @@ module MGQ_MpWorldStory
   end
 
   # Writes what the relay handed into the player's story once the story mapping's table came: a new
-  # game's opening that the world's story is past runs its setup first (world_opening.rbx). Nothing
-  # is written while a lost raid boss battle's defeat runs (see holding?).
+  # game's opening that the world's story is past runs its setup first (world_opening.rbx), and the
+  # DLL keeps joining what the relay hands meanwhile. Nothing is written while a lost raid boss
+  # battle's defeat runs (see holding?).
   def self.take_pending
-    return unless MGQ_MpStoryKeys.raid_table
+    return unless MGQ_MpStoryKeys.raid_table && @status && @status["pending"]
     return if holding?
 
-    take = @status && @status["pending"] ? MGQ_Multiplayer::Bridge.call(TAKE_TOPIC) : nil
-    @waiting = merge_takes(@waiting, take) if take
-    return unless @waiting
+    progress = @status["pending_progress"]
+    return if progress && defined?(MGQ_MpWorldOpening) && MGQ_MpWorldOpening.before_take("p" => progress) == :wait
 
-    state = @waiting["state"]
-    if state && defined?(MGQ_MpWorldOpening)
-      progress = state["keys"].find { |kind, key, _value| kind == 1 && key == MGQ_MpStoryIds.main_progress }
-      return if MGQ_MpWorldOpening.before_take("p" => progress ? MGQ_MpStoryState.variable_value(progress[2]).to_i : 0) == :wait
-    end
-
-    waiting = @waiting
-    @waiting = nil
-    apply(waiting)
+    take = MGQ_Multiplayer::Bridge.call(TAKE_TOPIC)
+    apply(take) if take
   rescue => e
     log("writing the world's story into the player's failed: #{e.class}: #{e.message}")
   end
 
-  # Joins a take with the one that waits: a whole track replaces everything before it, keys follow.
-  #
-  # @param waiting [Hash, nil] The take that waits.
-  # @param take [Hash] The new take, see StoryTopics.TakeOf in the DLL.
-  # @return [Hash] The joined take.
-  def self.merge_takes(waiting, take)
-    return take if waiting.nil? || take["state"]
-
-    waiting.merge("keys" => waiting["keys"] + take["keys"], "rev" => take["rev"])
-  end
-
-  # Writes what the relay handed into the player's story: a whole track over every key the mapping
-  # keeps, then the keys pushed or answered; then follows what it brought: the player's track, the
-  # world's story where its log starts, the frozen fights, the scene switches left on, the catch-up,
-  # the choices and routes it carried them past. The frozen fights' write journal leaves every kind
-  # of these writes out.
+  # Writes what the relay handed into the player's story as the DLL lays it (StoryTopics.Lay in the
+  # DLL); then follows what it brought: the player's track, the world's story where its log starts,
+  # the frozen fights, the scene switches left on, the catch-up, the choices and routes it carried
+  # them past. The frozen fights' write journal leaves every kind of these writes out.
   #
   # @param take [Hash] The take, see StoryTopics.TakeOf in the DLL.
   def self.apply(take)
     state = take["state"]
+    MGQ_MpWorldFreeze.refresh if defined?(MGQ_MpWorldFreeze)
+    laid = MGQ_Multiplayer::Bridge.call(LAY_TOPIC, lay_request(take))
+    return log("wrote nothing of the relay's story at revision #{take['rev']}: the DLL did not lay it") unless laid.is_a?(Hash)
+
     @log_story = story_of_keys(state["log"]) if state
     before = MGQ_MpStoryState.deep_copy(MGQ_MpStoryState.raw_state)
     own = local_counters(before)
     first = @mode.nil?
-    freezes = {}
     written = 0
     unjournaled do
       MGQ_MpStoryKeys.applying do
-        written += lay_over(state, freezes) if state
-        take["keys"].each { |kind, key, value| written += 1 if put_key(kind, key, value, freezes) }
+        laid["writes"].each { |kind, key, value| written += 1 if put(kind, key, MGQ_MpStoryKeys.game_value(kind, value)) }
       end
     end
+    freezes = laid["freezes"]
     MGQ_MpWorldFreeze.take_keys(freezes) if defined?(MGQ_MpWorldFreeze) && !freezes.empty?
     $game_map.need_refresh = true if written > 0
     @caps = nil
@@ -635,63 +620,44 @@ module MGQ_MpWorldStory
     story
   end
 
-  # Writes a whole track into the player's story: every key the mapping keeps at the track's value,
-  # one the track never wrote off, but those the player's own unanswered requests wrote, and the
-  # player's chest flags.
+  # Names what the DLL lays a take over: the player's values of every key the take covers, as put
+  # compares them, the place they stand and the switches the game turns on for good. A whole track
+  # covers every key the mapping keeps, the player's self switches and the chest flags; a kept
+  # switch that is off and a kept variable at 0 are left out.
   #
-  # @param state [Hash] The track, see StoryTopics.TakeOf in the DLL.
-  # @param freezes [Hash{Integer => String}] Takes the frozen fights by troop.
-  # @return [Integer] How many keys changed.
-  def self.lay_over(state, freezes)
-    table = MGQ_MpStoryKeys.raid_table
-    keys = {}
-    state["keys"].each { |kind, key, value| keys[[kind, key]] = value }
-    held = {}
-    state["held"].each { |key| held[key] = true }
-    written = 0
-    table.kept_switches.each do |id|
-      written += 1 if !held[[0, id]] && put_key(0, id, keys.fetch([0, id], false), freezes)
+  # @param take [Hash] The take, see StoryTopics.TakeOf in the DLL.
+  # @return [Hash] "values" (each key's kind, key and value), "map", "x" and "unlocks".
+  def self.lay_request(take)
+    state = take["state"]
+    values = []
+    if state
+      table = MGQ_MpStoryKeys.raid_table
+      switches = MGQ_MpStoryState.data_of($game_switches)
+      table.kept_switches.each { |id| values << [0, id, true] if switches[id] }
+      table.kept_variables.each do |id|
+        value = $game_variables[id]
+        values << [1, id, MGQ_MpStoryKeys.plain_of(1, value)] unless value == 0
+      end
+      MGQ_MpStoryState.data_of($game_self_switches).each { |key, value| values << [2, key, value ? true : false] }
+      state["chests"].each { |kind, key, _value| values << [kind, key, own_plain(kind, key)] if kind < 3 }
     end
-    table.kept_variables.each do |id|
-      written += 1 if !held[[1, id]] && put_key(1, id, keys.fetch([1, id], 0), freezes)
-    end
-    selves = MGQ_MpStoryState.data_of($game_self_switches).keys | keys.keys.select { |kind, _key| kind == 2 }.map { |_kind, key| key }
-    selves.each do |key|
-      next unless !held[[2, key]] && MGQ_MpStoryKeys.class_of(2, key, nil, table) & MGQ_MpStoryKeys::KEPT != 0
-
-      written += 1 if put_key(2, key, keys.fetch([2, key], false), freezes)
-    end
-    keys.each { |(kind, key), value| freezes[key] = value if kind == 3 }
-    state["chests"].each { |kind, key, value| written += 1 if put_key(kind, key, value, freezes) }
-    written
+    take["keys"].each { |kind, key, _value| values << [kind, key, own_plain(kind, key)] if kind < 3 }
+    { "values" => values, "map" => $game_map.map_id, "x" => $game_player ? $game_player.x : nil, "unlocks" => MGQ_MpStoryState::UNLOCK_SWITCHES }
   end
 
-  # Writes one key the relay handed into the player's story: a switch or self switch past the
-  # game's own handling, a variable through it (the game keeps some in its global system); a frozen
-  # fight goes to world_freeze.rbx. A key a frozen raid boss fight holds takes its held value; a
-  # local step the player plays where it stays theirs, a value below the player's own of a key the
-  # whole world keeps going only up, such as affection, and an unlock the player holds, such as the
-  # second accessory slot, stay the player's (the latter two asked of the relay again).
+  # Reads the player's value of a key as put compares it, as the DLL takes it.
   #
-  # @param kind [Integer] 0 for a switch, 1 for a variable, 2 for a self switch, 3 for a frozen fight.
-  # @param id [Integer, Array] Its id, a self switch's map, event and letter, or a frozen fight's troop.
-  # @param plain [Object] Its value as the DLL hands it, see StoryPlain in the DLL.
-  # @param freezes [Hash{Integer => String}] Takes the frozen fights by troop.
-  # @return [Boolean] Whether the player's story changed.
-  def self.put_key(kind, id, plain, freezes)
-    return (freezes[id] = plain) && false if kind == 3
-    return false unless kind.is_a?(Integer) && kind < 3
+  # @param kind [Integer] 0 for a switch, 1 for a variable, 2 for a self switch.
+  # @param key [Integer, Array] Its id or key.
+  # @return [Object] The value, see MGQ_MpStoryKeys.plain_of.
+  def self.own_plain(kind, key)
+    return MGQ_MpStoryKeys.plain_of(1, $game_variables[key]) if kind == 1
 
-    value = MGQ_MpStoryKeys.game_value(kind, plain)
-    held = defined?(MGQ_MpWorldFreeze) ? MGQ_MpWorldFreeze.held_value(kind, id) : nil
-    value = held[1] if held
-    return false if kind == 1 && (local_step?(id) || kept_higher?(id, value))
-    return false if kind == 0 && kept_unlock?(id, value)
-
-    put(kind, id, value)
+    MGQ_MpStoryState.data_of(kind == 0 ? $game_switches : $game_self_switches)[key] ? true : false
   end
 
-  # Writes a value into the player's story when it differs.
+  # Writes a value into the player's story when it differs: a switch or self switch past the game's
+  # own handling, a variable through it (the game keeps some in its global system).
   #
   # @param kind [Integer] 0 for a switch, 1 for a variable, 2 for a self switch.
   # @param key [Integer, Array] Its id or key.
@@ -709,50 +675,6 @@ module MGQ_MpWorldStory
     return false if same?(kind, data[key], value)
 
     data[key] = value ? true : false
-    true
-  end
-
-  # Reports whether a variable's step stays the player's own where they stand, as the Queen's Cup's
-  # tournament steps where it plays (the story mapping's local steps).
-  #
-  # @param id [Integer] The variable.
-  # @return [Boolean] Whether it does.
-  def self.local_step?(id)
-    steps, _shared_as, places = MGQ_MpStoryKeys.raid_table.local_steps[id]
-    return false unless steps && steps.include?($game_variables[id].to_i) && $game_player
-
-    places.any? { |map, from_x| $game_map.map_id == map && $game_player.x >= from_x }
-  end
-
-  # Reports whether a variable the whole world keeps going only up, such as affection, holds a
-  # higher value in the player's story than the relay handed, which stays and is asked of the relay
-  # again: the relay keeps the highest.
-  #
-  # @param id [Integer] The variable.
-  # @param value [Object] The value the relay handed.
-  # @return [Boolean] Whether it does.
-  def self.kept_higher?(id, value)
-    found = MGQ_MpStoryKeys.class_of(1, id, nil, MGQ_MpStoryKeys.raid_table)
-    whole_one_way = MGQ_MpStoryKeys::ONE_WAY | MGQ_MpStoryKeys::WHOLE_WORLD
-    own = $game_variables[id]
-    return false unless found & whole_one_way == whole_one_way && own.is_a?(Integer) && value.is_a?(Integer) && own > value
-
-    MGQ_MpStoryKeys.request(1, id, own, ["game"])
-    true
-  end
-
-  # Reports whether a switch the game turns on for good and never off, such as the second accessory
-  # slot (MGQ_MpStoryState::UNLOCK_SWITCHES), is on in the player's story while the relay handed it
-  # off, which stays and goes to the relay: an earlier build kept it each player's own and never
-  # wrote it for the world.
-  #
-  # @param id [Integer] The switch.
-  # @param value [Boolean] The value the relay handed.
-  # @return [Boolean] Whether it does.
-  def self.kept_unlock?(id, value)
-    return false if value || !MGQ_MpStoryState::UNLOCK_SWITCHES.include?(id) || !$game_switches[id]
-
-    MGQ_MpStoryKeys.request(0, id, true, ["game"])
     true
   end
 

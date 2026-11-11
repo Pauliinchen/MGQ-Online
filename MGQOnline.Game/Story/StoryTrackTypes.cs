@@ -75,7 +75,7 @@ public sealed record WorldSummary(long Rev, string Part, string Route, IReadOnly
 public sealed record StoryMove(string From, string To, int? Gate, string By);
 
 /// <summary>
-/// A whole track the relay handed the game, which the scripts lay over every key the mapping keeps.
+/// A whole track the relay handed the game, which <see cref="TakeLay"/> lays over every key the mapping keeps.
 /// </summary>
 /// <param name="Why">"started", "sync", "behind" or "moved".</param>
 /// <param name="Track">"world" or the player's own track.</param>

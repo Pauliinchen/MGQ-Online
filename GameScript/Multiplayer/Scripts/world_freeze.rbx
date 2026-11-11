@@ -2,7 +2,8 @@
 #  world_freeze.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-11: Told the version of the list it keeps
+#      Paulinchen  2026-11-11: Had the DLL drop the fights that are over before a take of the relay is laid by their held values
+#                            - Told the version of the list it keeps
 #      Paulinchen  2026-11-05: Left the world's list of frozen fights and when a fight is over to the DLL, which keeps both, and sent the story keys it asks for
 #                            - Asked the DLL whether the player's story or the world's beat a frozen fight's boss
 #                            - Left writing and reading a frozen fight's text to the DLL, handing it the fight as values
@@ -176,6 +177,14 @@ module MGQ_MpWorldFreeze
     nil
   end
 
+  # Has the DLL drop the fights that are over before it reads the held values itself, as
+  # held_value asks before it reads, so a fight that ended holds nothing of what the relay hands.
+  def self.refresh
+    check unless @entries.empty?
+  rescue => e
+    log_once(:refresh, "looking which frozen fights are over failed: #{e.class}: #{e.message}")
+  end
+
   # Lists every held key of the frozen fights, the oldest fight's value for a key two hold, asked
   # anew, since the caller puts these values into a story.
   #
@@ -242,7 +251,7 @@ module MGQ_MpWorldFreeze
 
   # Takes the frozen fights of the world's story the relay handed.
   #
-  # @param keys [Hash{Integer => Object}] Each fight's key by troop: the fight as the DLL reads it
+  # @param keys [Array<Array>] Each fight's troop and key: the fight as the DLL reads it
   #   (FrozenFightText), ENDED, or nil for a fight it cannot read.
   def self.take_keys(keys)
     answer = MGQ_Multiplayer::Bridge.call(TAKE_TOPIC, base.merge("keys" => keys.map { |troop, value| [troop.to_i, value] }))

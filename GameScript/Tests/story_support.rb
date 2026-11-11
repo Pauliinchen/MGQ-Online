@@ -2,7 +2,8 @@
 #  story_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-11: Dropped the level topic, which the DLL's catch-up feeds now
+#      Paulinchen  2026-11-11: Answered the lay of a take with its rows, which the DLL lays by its rules
+#                            - Dropped the level topic, which the DLL's catch-up feeds now
 #      Paulinchen  2026-11-06: Named the story mapping's table and dropped the readers of recorded key names
 #      Paulinchen  2026-11-05: Handed the self switch rules and the takes' keys as the DLL's rows, and read a fixture's key names and sites into plain values
 #                            - Handed the scripts no rule of used up items' marks, which the story replay hands over
@@ -39,12 +40,16 @@ def mapping_table
 end
 
 # Answers the story topics of the DLL on a FakeBridge: the staged ones kept in $story_staged as
-# [topic, payload], story.take from $takes (oldest first), story.classes from $classes.
+# [topic, payload], story.take from $takes (oldest first), story.classes from $classes, and
+# story.lay, its requests kept in $lay_requests, from $lay_answers while it holds one, else with
+# every row of the take handed last as a write and its frozen fights as they came.
 #
 # @param fake [FakeBridge] The bridge.
 def answer_story(fake)
   $story_staged = []
   $takes = []
+  $lay_requests = []
+  $lay_answers = []
   $classes = nil
   %w(story.enter story.close story.writes story.seed story.watch).each do |topic|
     fake.answer(topic) do |payload|
@@ -52,7 +57,15 @@ def answer_story(fake)
       nil
     end
   end
-  fake.answer("story.take") { $takes.shift }
+  fake.answer("story.take") { $taken = $takes.shift }
+  fake.answer("story.lay") do |request|
+    $lay_requests << request
+    next $lay_answers.shift unless $lay_answers.empty?
+
+    state = $taken["state"]
+    rows = (state ? state["keys"] + state["chests"] : []) + $taken["keys"]
+    { "writes" => rows.reject { |kind, _key, _value| kind == 3 }, "freezes" => rows.select { |kind, _key, _value| kind == 3 }.map { |_kind, troop, value| [troop, value] } }
+  end
   fake.answer("story.classes") { $classes }
 end
 
@@ -70,11 +83,12 @@ end
 # @return [Hash] The status.
 def story_status(fields = {})
   { "synced" => true, "track" => "world", "part" => "1", "gate" => nil, "rev" => 1, "taken" => 0,
-    "world" => { "rev" => 1, "part" => "1", "route" => "none", "done" => [], "checkpoints" => [] }, "pending" => false, "need_seed" => false,
+    "world" => { "rev" => 1, "part" => "1", "route" => "none", "done" => [], "checkpoints" => [] }, "pending" => false, "pending_progress" => nil, "need_seed" => false,
     "classes" => 1, "tellings" => {}, "told" => {}, "await" => nil, "telling" => nil, "holder" => nil, "unanswered" => 0 }.merge(fields)
 end
 
-# Makes a whole track as the DLL hands it in a take, see StoryTopics.TakeOf.
+# Makes a whole track as the DLL hands it in a take, see StoryTopics.TakeOf, with the track's keys
+# the DLL keeps for its lay, which the stand-in of story.lay writes.
 #
 # @param keys [Array<Array>] The track's keys, each [kind, key, value].
 # @param fields [Hash] The state's fields that differ from the world's track in Part 1.

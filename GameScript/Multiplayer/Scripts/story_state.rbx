@@ -65,7 +65,7 @@ module MGQ_MpStoryState
   EXTRA_ACCESSORY_SLOT = defined?(NWConst::Sw::EXTRA_ACCESSORY_SLOT) ? NWConst::Sw::EXTRA_ACCESSORY_SLOT : 445
 
   # Switches the game turns on for good and never off, which a track written over the player's
-  # story keeps on (see MGQ_MpWorldStory.kept_unlock?).
+  # story keeps on (see MGQ_MpWorldStory.lay_request and TakeLay in the DLL).
   UNLOCK_SWITCHES = [EXTRA_ACCESSORY_SLOT]
 
   # First variable that holds a companion's affection, one per companion.

@@ -37,6 +37,7 @@ using MGQOnline.Bridge.Ruby;
 using MGQOnline.Data.Events;
 using MGQOnline.Game.Events;
 using MGQOnline.Game.Events.Data;
+using MGQOnline.Game.Raid;
 using MGQOnline.Game.Tests.Events;
 using MGQOnline.Game.Topics;
 using MGQOnline.Multiplayer.Network.Relay;
@@ -246,6 +247,95 @@ public sealed class StoryTopicsTests
 
         Assert.Equal("""{"t":"sync"}""", relay.TrackFrames[0].Json);
         Assert.Equal(("""{"t":"level","best":40,"cap":9999}""", """{"t":"level","best":60,"cap":9999}""", """{"t":"level","best":40,"cap":40}"""), (visit, after, capped));
+    }
+
+    /// <summary>
+    /// Asserts that a whole track and the pushes after it are laid over the player's story in the
+    /// game's order: a kept key the track never wrote goes to its default, a key the player's own
+    /// unanswered write held keeps their value while a later push of it comes, the chest flags are
+    /// the player's, a Queen's Cup step the track just wrote stays where it plays, a frozen fight's
+    /// held value wins until the fight is won, and the affection kept higher and the unlock held
+    /// stay and go to the relay again. Only writes that change the player's story come back.
+    /// </summary>
+    [Fact]
+    public void Lay_LaysTheRelaysTakeOverThePlayersStoryInTheGamesOrder()
+    {
+        using var relay = new TestRelay();
+        WorldCode code = WorldCode.Parse(WorldDirectoryTests.Act(WorldDirectoryTests.NewDirectory(relay, WorldDirectoryTests.CreatorKey, "Creator"),
+            directory => directory.Create("Raid", "secret", 4, false, false, [], null, WorldType.Raid))["code"])!;
+        string world = Relays.WorldRoomOf(code.Token);
+        var session = new WorldSession { RelayAddress = _ => relay.Address, Playing = () => (WorldDirectoryTests.CreatorKey, "Creator") };
+        var context = new BridgeContext(1, new QuietLog());
+        StoryTopics topics = StoryTopics.Register(context, session);
+        topics.RelayOf = id => id == world ? relay.Address : null;
+        topics.Run = work => work();
+        topics.FetchMapping = (_, _) => JsonDocument.Parse(Mapping().GetRawText());
+        FrozenFights fights = FreezeTopics.Register(context, () => new PoolLedger(() => 0), new RaidRoster(), () => TinyEvents.Of(new TinyGame()));
+        topics.FrozenHeld = () => fights.Held;
+        var player = new RubyHash { { "world", world }, { "facts", RubyNil.Value } };
+        Call(context, FreezeTopics.Note, new RubyHash
+        {
+            { "world", world }, { "facts", RubyNil.Value },
+            { "entry", new RubyHash
+                {
+                    { "troop", 870 }, { "site", new RubyArray { "map", 138, 13, 1 } }, { "outer", new RubyArray { "map", 138, 13, 1 } }, { "scene", false },
+                    { "tableau", new RubyArray { 138, new RubyArray { new RubyArray { 13, 32, 8, 2, 1, "$sonya", 0, 0, 255, 0, 1, 1, 1 } }, new RubyArray { 13 } } },
+                    { "spot", new RubyArray { 138, 32, 9, 8 } }, { "held", new RubyArray { new RubyArray { 1, 1075, 16 } } },
+                }
+            },
+        });
+        session.Open(code.ToText());
+        WaitFor(() => Message.Decode(session.Describe())["state"] == "open", "the world open");
+        Call(context, StoryTopics.EnterTopic, new RubyHash { { "world", world }, { "fresh", false } });
+        Drain(context, 1);
+        Drain(context, 2);
+        WaitFor(() => relay.TrackFrames.Length == 1, "the sync at the relay");
+        Call(context, StoryTopics.WritesTopic, new RubyArray { new RubyArray { 1, 1062, 3, new RubyArray { "game" } } });
+        relay.Tell(world, """track {"t":"state","why":"sync","track":"world","rev":5,"part":"1","gate":null,"world":{"rev":5,"part":"1","route":"none","done":[],"checkpoints":[]},"mapping":7,"seq":0,"keys":{"v1001":"n9","v1052":"n3","v1062":"n4","v3005":"n30"},"chests":{"s7102":"1"},"tellings":[]}""");
+        long frame = 3;
+        WaitFor(() => Drain(context, frame++).Any(entry => entry.Topic == StoryTopics.StatusEvent && entry.Payload.AsHash()["synced"].AsBool()), "the player placed");
+        WaitFor(() => relay.TrackFrames.Any(sent => sent.Json.Contains("\"v1062\"", StringComparison.Ordinal)), "the player's write at the relay");
+        long seq = JsonDocument.Parse(relay.TrackFrames.Last(sent => sent.Json.Contains("\"v1062\"", StringComparison.Ordinal)).Json).RootElement.GetProperty("seq").GetInt64();
+        relay.Tell(world, $$"""track {"t":"answer","seq":{{seq}},"mapping":7}""");
+        relay.Tell(world, """track {"t":"push","track":"world","rev":6,"prev":5,"keys":{"v1052":"n2","v1062":"n5","v1075":"n20","s445":"0"}}""");
+        RubyHash? waiting = null;
+        WaitFor(() => (waiting = Drain(context, frame++).LastOrDefault(entry => entry.Topic == StoryTopics.StatusEvent).Payload as RubyHash) is { } status && status["pending_progress"] is RubyInteger,
+            "the take waiting");
+        Call(context, StoryTopics.TakeTopic, RubyNil.Value);
+        RubyHash laid = Call(context, StoryTopics.LayTopic, new RubyHash
+        {
+            { "values", new RubyArray
+                {
+                    new RubyArray { 0, 7096, true }, new RubyArray { 1, 1062, 3 }, new RubyArray { 1, 3005, 40 }, new RubyArray { 2, new RubyArray { 231, 1, "A" }, true },
+                    new RubyArray { 2, new RubyArray { 231, 4, "A" }, true }, new RubyArray { 0, 7102, false }, new RubyArray { 0, 445, true },
+                }
+            },
+            { "map", 484 }, { "x", 31 }, { "unlocks", new RubyArray { 445 } },
+        }).AsHash();
+        WaitFor(() => relay.TrackFrames.Any(sent => sent.Json.Contains("\"v3005\"", StringComparison.Ordinal)), "the kept values at the relay");
+        string asked = relay.TrackFrames.Last(sent => sent.Json.Contains("\"v3005\"", StringComparison.Ordinal)).Json;
+
+        Call(context, FreezeTopics.Won, new RubyHash { { "troop", 870 } });
+        Call(context, FreezeTopics.State, player);
+        relay.Tell(world, """track {"t":"push","track":"world","rev":7,"prev":6,"keys":{"v1075":"n20"}}""");
+        WaitFor(() => Drain(context, frame++).Any(entry => entry.Topic == StoryTopics.StatusEvent && entry.Payload.AsHash()["pending"].AsBool()), "the push after the win");
+        Call(context, StoryTopics.TakeTopic, RubyNil.Value);
+        RubyHash won = Call(context, StoryTopics.LayTopic, new RubyHash
+        {
+            { "values", new RubyArray { new RubyArray { 1, 1075, 16 } } }, { "map", 484 }, { "x", 31 }, { "unlocks", new RubyArray { 445 } },
+        }).AsHash();
+        session.Close();
+
+        Assert.Equal(9, waiting!["pending_progress"].AsLong());
+        Assert.Equal(
+            new RubyArray
+            {
+                new RubyArray { 0, 7096, false }, new RubyArray { 1, 1001, 9 }, new RubyArray { 1, 1052, 3 }, new RubyArray { 2, new RubyArray { 231, 1, "A" }, false },
+                new RubyArray { 0, 7102, true }, new RubyArray { 1, 1062, 5 }, new RubyArray { 1, 1075, 16 },
+            },
+            laid["writes"]);
+        Assert.Contains("""["v3005","n40","game"],["s445","1","game"]""", asked, StringComparison.Ordinal);
+        Assert.Equal(new RubyArray { new RubyArray { 1, 1075, 20 } }, won["writes"]);
     }
 
     /// <summary>

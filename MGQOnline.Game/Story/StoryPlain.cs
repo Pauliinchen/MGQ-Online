@@ -2,7 +2,8 @@
 //  StoryPlain.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-11: Named a command's place by its code and its number among its list's commands of that code
+//      Paulinchen  2026-11-11: Left a whole track's keys and held keys out of a take, which the DLL lays itself
+//                            - Named a command's place by its code and its number among its list's commands of that code
 //                            - Read the place an earlier release named an input by, its place among its list's kept commands
 //      Paulinchen  2026-11-05: Created
 //
@@ -311,25 +312,17 @@ public static class StoryPlain
     }
 
     /// <summary>
-    /// Writes what waits to be written into the game's story as the scripts apply it.
+    /// Writes what waits to be written into the game's story as the scripts follow it; the track's
+    /// own keys stay here, since the DLL lays them (see <see cref="TakeLay"/>).
     /// </summary>
     /// <param name="take">The take.</param>
-    /// <returns>{"state" (nil, or {"why", "track", "part", "gate", "move" ({"from", "to", "gate", "by"} or nil), "keys" and "chests" (rows), "held" ([[kind, key], ...]), "log" (the rows of the world's story where its log starts, nil for none)}), "keys" (rows in order), "rev"}.</returns>
+    /// <returns>{"state" (nil, or {"why", "track", "part", "gate", "move" ({"from", "to", "gate", "by"} or nil), "chests" (rows), "log" (the rows of the world's story where its log starts, nil for none)}), "keys" (rows in order), "rev"}.</returns>
     public static RubyHash TakeOf(StoryTake take)
     {
         ArgumentNullException.ThrowIfNull(take);
         RubyValue state = RubyNil.Value;
         if (take.State is { } whole)
         {
-            var held = new List<StoryKey>();
-            foreach (string name in whole.Held)
-            {
-                if (StoryKey.TryParse(name, out StoryKey key))
-                {
-                    held.Add(key);
-                }
-            }
-
             state = new RubyHash
             {
                 { "why", whole.Why },
@@ -337,9 +330,7 @@ public static class StoryPlain
                 { "part", whole.Part },
                 { "gate", whole.Gate is { } gate ? gate : RubyNil.Value },
                 { "move", whole.Move is { } move ? new RubyHash { { "from", move.From }, { "to", move.To }, { "gate", move.Gate is { } level ? level : RubyNil.Value }, { "by", move.By } } : RubyNil.Value },
-                { "keys", Rows(whole.Keys) },
                 { "chests", Rows(whole.Chests) },
-                { "held", new RubyArray(held.OrderBy(key => key.ToString(), StringComparer.Ordinal).Select(key => (RubyValue)Plain(key))) },
                 { "log", whole.Log is { } log ? Rows(log) : RubyNil.Value },
             };
         }

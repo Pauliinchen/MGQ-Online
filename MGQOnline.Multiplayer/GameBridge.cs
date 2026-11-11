@@ -2,7 +2,8 @@
 //  GameBridge.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-11: Registered the mod topics without the Patch folder scripts, whose topic went
+//      Paulinchen  2026-11-11: Handed the story's lay the values the frozen fights hold
+//                            - Registered the mod topics without the Patch folder scripts, whose topic went
 //                            - Handed the catch-up's level to the story track
 //      Paulinchen  2026-11-08: Handed the overview topics the game's events for the quest walk
 //                            - Registered the mod topics without the world directory, whose relay catalog went
@@ -161,7 +162,7 @@ internal static unsafe class GameBridge
         RuleTopics.Register(context);
         var roster = new RaidRoster();
         SharedTopics.Register(context, RaidBosses.Current, roster);
-        FreezeTopics.Register(context, () => RaidBosses.Current.Ledger, roster, () => GameEvents.Current);
+        FrozenFights fights = FreezeTopics.Register(context, () => RaidBosses.Current.Ledger, roster, () => GameEvents.Current);
         ModTopics.Register(context);
         EventTopics.Register(context, () => GameEvents.Current);
         EventTableTopics.Register(context, () => GameEvents.Current);
@@ -181,6 +182,7 @@ internal static unsafe class GameBridge
         EnteringTopics.Register(context, services, local.Worlds, local.Lists, forms);
         WorldRoomTopics.Register(context);
         StoryTopics story = StoryTopics.Register(context);
+        story.FrozenHeld = () => fights.Held;
         CatchupTopics.Register(context, () => story.Catchup, () => story.ClassicParty, story.TakeLevel);
         ServedTopics.Register(context, BattleSession.Current);
         context.Register(SnapTopic, (_, request) => Snap(request.AsArray()));

@@ -2,7 +2,8 @@
 //  StoryTrack.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-11: Forgot the level on entering, so a sync after a save loads names none until the catch-up's look
+//      Paulinchen  2026-11-11: Told the whole track waiting to be taken
+//                            - Forgot the level on entering, so a sync after a save loads names none until the catch-up's look
 //      Paulinchen  2026-10-31: Read the routes the Great Decision offers from the world's summary
 //                            - Sent the player's runs after their writes and walked the entries of the player's track from the cursor of the save's log
 //                            - Read where the world's log starts from its summary, and the world's story there from a whole track
@@ -230,6 +231,11 @@ public sealed partial class StoryTrack : ITellingLock
     /// Gets whether something waits to be taken, see <see cref="Take"/>.
     /// </summary>
     public bool Pending => pendingState is not null || pendingKeys.Count > 0;
+
+    /// <summary>
+    /// Gets the whole track waiting to be taken, <see langword="null"/> for none.
+    /// </summary>
+    public TrackState? PendingState => pendingState;
 
     /// <summary>
     /// Gets the tellings on the player's track by their teller's seat.

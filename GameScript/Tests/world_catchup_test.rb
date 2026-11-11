@@ -2,7 +2,8 @@
 #  world_catchup_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-11: Expected no job or race items in the snapshot, which the DLL reads from the events database, and listed a job item among the key items
+#      Paulinchen  2026-11-11: Handed the world's track with the keys the DLL lays at their defaults
+#                            - Expected no job or race items in the snapshot, which the DLL reads from the events database, and listed a job item among the key items
 #                            - Dropped the checks of the level the relay hears, which the DLL's catch-up tells it now
 #      Paulinchen  2026-11-10: Checked that a look whose question a quiet look answered asks the DLL nothing until the story changes
 #      Paulinchen  2026-11-05: Answered the DLL's catch-up topics with fixed values per case instead of from the catch-up engine of engine.rb, and checked what the scripts send and what they do with each action, leaving the engine's decisions to the C# tests
@@ -223,7 +224,8 @@ answers.clear
 frames(40)
 
 seen = answers.asked("catchup.check").size
-moved("1", "world", packed({ 1001 => 26 }, [2300]), "rev" => 2)
+# The world's track as the DLL lays it, the keys it never wrote at their defaults.
+moved("1", "world", packed({ 1001 => 26, 1009 => 0, 1032 => 0 }, [2300]) + [[0, 500, false]], "rev" => 2)
 frames(40)
 looks = answers.asked("catchup.check")[seen..-1]
 carried = looks.find { |request| request["look"] == "carried" }
