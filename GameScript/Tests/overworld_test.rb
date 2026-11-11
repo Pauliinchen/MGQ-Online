@@ -2,6 +2,7 @@
 #  overworld_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Checked that a state field changed in place and a Float each reach the DLL once
 #      Paulinchen  2026-11-09: Checked that an outline drawn in an earlier look is freed once no follower shows it
 #      Paulinchen  2026-11-08: Played the DLL telling who stands near the player
 #      Paulinchen  2026-11-07: Read a greyed wheel choice from disabled:
@@ -144,6 +145,24 @@ $game_player.x = 4
 world_frame
 world_frame
 check("a step is handed over once", $staged_world.map { |_, frame| frame["state"]["x"] }, [4])
+$staged_world.clear
+
+# A script's field changed in place, as a trade invite names one more player, and a Float, which
+# the bridge carries as text, are each handed over once.
+named = []
+rate = 1.0
+MGQ_MpOverworldSync.state_fields { { "trading_to" => named, "rate" => rate } }
+world_frame
+named << "friend"
+world_frame
+world_frame
+rate = 1.5
+world_frame
+world_frame
+check("a field changed in place and a Float go over once each",
+      $staged_world.map { |_, frame| frame["state"].values_at("trading_to", "rate") }, [[[], "1.0"], [["friend"], "1.0"], [["friend"], "1.5"]])
+MGQ_MpOverworldSync.instance_variable_get(:@handlers)[:state_fields].pop
+world_frame
 $staged_world.clear
 
 # The DLL's events of a player make a peer and a ghost on the same map; the notices are the DLL's.

@@ -2,6 +2,7 @@
 #  overworld_sync.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Copied the player's state for the DLL only once it differs from the state handed over last
 #      Paulinchen  2026-11-08: Took the players who stand near the player from the DLL
 #      Paulinchen  2026-11-06: Asked the Mod Framework's UI.in_front? whether the game is in front
 #                            - Sent the lists and Hashes inside a message's fields whole, such as a whole story's lists
@@ -129,6 +130,12 @@ module MGQ_MpOverworldSync
   # The blocks the scripts registered, by kind: :tick, :state_fields, :busy_scene, :observe, :leave,
   # :presence and :label_line.
   @handlers = Hash.new { |handlers, kind| handlers[kind] = [] }
+
+  # The player's frame staged last: whether a world is open, the state as the bridge carries it,
+  # whether a Raid World is open and the story's map; nil before the first.
+  #
+  # Its state is a copy, so a field a script changes in place still differs from it.
+  @staged = nil
 
   extend MGQ_MpLog
 
@@ -327,14 +334,29 @@ module MGQ_MpOverworldSync
     tell_routes unless @routes_told
     in_world = in_world?
     state = in_world ? Me.current : nil
-    state = Port.plain(state) if state
-    frame = { "in_world" => in_world, "state" => state, "raid" => raid?, "story_map" => in_world ? story_map : nil }
-    return if frame == @staged
+    raid = raid?
+    story_map = in_world ? self.story_map : nil
+    return if staged?(in_world, state, raid, story_map)
 
-    @staged = frame
-    MGQ_Multiplayer::Bridge.stage(ME_TOPIC, frame)
+    state = Port.plain(state) if state
+    return if staged?(in_world, state, raid, story_map)
+
+    @staged = [in_world, state, raid, story_map]
+    MGQ_Multiplayer::Bridge.stage(ME_TOPIC, "in_world" => in_world, "state" => state, "raid" => raid, "story_map" => story_map)
   rescue => e
     log_once(:before_frame, "handing the DLL the player's frame failed: #{e.class}: #{e.message}")
+  end
+
+  # Reports whether the player's frame equals the one staged last, see before_frame.
+  #
+  # @param in_world [Boolean] Whether a world is open.
+  # @param state [Hash, nil] The player's state.
+  # @param raid [Boolean] Whether a Raid World is open.
+  # @param story_map [Integer, nil] The map the story takes the player to.
+  # @return [Boolean] Whether it does.
+  def self.staged?(in_world, state, raid, story_map)
+    told = @staged
+    told ? told[0] == in_world && told[2] == raid && told[3] == story_map && told[1] == state : false
   end
 
   # Hands the DLL every route with its gate, in the order the scripts registered them.
