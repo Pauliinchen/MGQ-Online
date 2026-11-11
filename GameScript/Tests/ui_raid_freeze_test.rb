@@ -2,6 +2,7 @@
 #  ui_raid_freeze_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Covered that a start looks at the frozen fights afresh only once the world's list or the own records changed
 #      Paulinchen  2026-11-08: Answered which frozen fight keeps an event from starting with fixed values per case, and checked what the scripts hand the DLL
 #                            - Expected the frozen fights with their bosses' tiles, the pick within reach being the DLL
 #      Paulinchen  2026-11-06: Told whether a page runs nothing through the engine's stand-in, as the DLL tells it
@@ -155,12 +156,15 @@ module MGQ_MpRaidPool
   # The boss's name.
   def self.troop_label(troop); ($names || {})[troop] || "troop #{troop}"; end
 end
-# The engine: the player's frozen records in $records, any state in $any_records, the resumes
-# running in $resuming, each resume asked for noted in $resumed and starting while $resume_ok; the
-# events whose page the DLL tells runs nothing in $quiet.
+# The engine: the player's frozen records in $records, any state in $any_records, the times the
+# frozen records were checked in $records_checks, the resumes running in $resuming, each resume
+# asked for noted in $resumed and starting while $resume_ok; the events whose page the DLL tells runs
+# nothing in $quiet.
 module MGQ_MpRaidFreeze
-  # The player's frozen records.
-  def self.records; $records; end
+  # The player's frozen records, as the DLL checks them.
+  def self.records; $records_checks += 1; $records; end
+  # The troop and state of each record.
+  def self.record_states; ($records + ($any_records || [])).map { |record| [record["troop"], record["state"].to_s] }; end
   # A record of any state.
   def self.record_for(troop); ($records + ($any_records || [])).find { |record| record["troop"] == troop }; end
   # Whether a troop's resume runs.
@@ -170,10 +174,12 @@ module MGQ_MpRaidFreeze
   # Whether an event's page runs nothing.
   def self.runs_nothing?(event); ($quiet || []).include?(event.id); end
 end
-# The world's frozen fights, its active entries in $entries.
+# The world's frozen fights, its active entries in $entries and their list's version in $version.
 module MGQ_MpWorldFreeze
   # The active entries.
   def self.entries; $entries; end
+  # The list's version.
+  def self.version; $version; end
 end
 # The DLL's command index of a page: what its commands write, through the common events of
 # $data_common_events it calls.
@@ -244,7 +250,9 @@ def reset
   $game_party = Game_Party.new
   $records = []
   $any_records = []
+  $records_checks = 0
   $entries = []
+  $version = 1
   $resuming = []
   $resumed = []
   $resume_ok = true
@@ -462,10 +470,37 @@ sonya = Game_Event.new(13, 30, 8, 3)
 $game_map.events = { 13 => sonya }
 check("nothing frozen yet", ui.tableaux, [])
 $entries = [frozen(868, 138, sonya_rows, [13]).merge("held" => [[1, 1075, 14]])]
+$version = 2
 $blocker[13] = [868, "it is the fight's own event", false]
 sonya.update
 check("an entry that arrived this very frame keeps the autorun its held values turned on from starting",
       [sonya.starting, ui.tableaux.map { |each| each.troop }], [false, [868]])
+
+# An autorun page kept from starting starts every frame, which looks at the frozen fights afresh only
+# once the world's list or the player's own records changed.
+reset
+$records = [frozen(868, 138, sonya_rows, [13]).merge("state" => "frozen")]
+sonya = Game_Event.new(13, 30, 8, 3)
+$game_map.events = { 13 => sonya }
+$blocker[13] = [868, "it is the fight's own event", false]
+120.times do
+  $frame += 1
+  sonya.update
+end
+check("a refused autorun started over 120 frames checks the frozen records at most once a scan",
+      [sonya.starting, $records_checks <= 120 / MGQ_MpRaidFreezeUi::SCAN_FRAMES + 1], [false, true])
+reset
+$frame += 1
+morrigan = Game_Event.new(5, 10, 6, 3)
+$game_map.events = { 5 => morrigan }
+$blocker[5] = [126, "it is the fight's own event", false]
+morrigan.update
+check("an autorun of a fight not frozen yet starts", morrigan.starting, true)
+morrigan.clear_starting_flag
+$frame += 1
+$records = [frozen(126, 138, [row(5, 10, 6, "$Morrigan", 1)], [5]).merge("state" => "frozen")]
+morrigan.update
+check("an own record frozen while the world was not told keeps it from starting in that same frame", morrigan.starting, false)
 
 # Events whose page writes a story value the fight holds cannot start; the others stay live.
 reset

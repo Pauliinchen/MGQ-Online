@@ -2,6 +2,7 @@
 #  world_freeze.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Told the version of the list it keeps
 #      Paulinchen  2026-11-05: Left the world's list of frozen fights and when a fight is over to the DLL, which keeps both, and sent the story keys it asks for
 #                            - Asked the DLL whether the player's story or the world's beat a frozen fight's boss
 #                            - Left writing and reading a frozen fight's text to the DLL, handing it the fight as values
@@ -129,6 +130,13 @@ module MGQ_MpWorldFreeze
       asked = defined?(MGQ_MpWorldStory) && MGQ_MpWorldStory.write_freeze(troop, value)
       log("the frozen fight against troop #{troop} #{value == ENDED ? 'ends for the world' : 'goes to the world'}#{asked ? '' : ', in this game alone: no Raid World story takes it'}")
     end
+  end
+
+  # Tells the version of the list kept here, which changes with the list.
+  #
+  # @return [Object, nil] The version the DLL named, nil before the first list.
+  def self.version
+    @version
   end
 
   # Lists the open world's frozen fights that have not ended, oldest first.

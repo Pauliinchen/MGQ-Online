@@ -2,6 +2,7 @@
 #  ui_raid_freeze.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Looked at the frozen fights afresh for a start only once the world's list or the player's own records changed
 #      Paulinchen  2026-11-10: Answered at once that a character sprite hides nothing while no frozen fight shows, without making objects
 #      Paulinchen  2026-11-08: Asked the DLL which frozen fight keeps an event from starting and whether the start resumes it
 #                            - Listed the frozen fights with their bosses' tiles in place of picking the one within reach
@@ -93,6 +94,9 @@ module MGQ_MpRaidFreezeUi
   # The frame whose starts looked at the sources afresh.
   @fresh_at = nil
 
+  # What the last look afresh saw, see fresh_marks.
+  @fresh_seen = nil
+
   # Why each frozen fight steps aside, by troop, see played_reason.
   @played = {}
 
@@ -137,24 +141,38 @@ module MGQ_MpRaidFreezeUi
   # while the player plays a Raid World's story, no battle runs and the fight's own resume does not
   # run.
   #
-  # A start looks at the sources afresh, once a frame, since a world's entry arrives together with
-  # the held values that turn the frozen event's page back on.
+  # A start looks at the sources afresh once the world's list or the player's own records changed,
+  # since a world's entry arrives together with the held values that turn the frozen event's page
+  # back on, and a fight just frozen turns its event's page back on as its defeat is undone.
   #
-  # @param fresh [Boolean] Whether to look at the sources afresh rather than every SCAN_FRAMES.
+  # @param fresh [Boolean] Whether to look at the sources afresh on such a change rather than every
+  #   SCAN_FRAMES.
   # @return [Array<Tableau>] The tableaux.
   def self.blocking(fresh = false)
     now = MGQ_Multiplayer::Bridge.frame_number
     if fresh && @fresh_at != now
       @fresh_at = now
-      @checked = nil
-      @blocking = nil
-      @shown = nil
+      seen = fresh_marks
+      unless seen == @fresh_seen
+        @fresh_seen = seen
+        @checked = nil
+        @blocking = nil
+        @shown = nil
+      end
     end
     return @blocking[1] if @blocking && @blocking[0] == now
 
     found = showing? ? built.reject { |tableau| resuming?(tableau.troop) } : []
     @blocking = [now, found]
     found
+  end
+
+  # Tells what a start's look afresh compares, read without asking the DLL: the version of the
+  # world's list and the troop and state of each of the player's own records.
+  #
+  # @return [Array] The version and the records' rows.
+  def self.fresh_marks
+    [defined?(MGQ_MpWorldFreeze) ? MGQ_MpWorldFreeze.version : nil, defined?(MGQ_MpRaidFreeze) ? MGQ_MpRaidFreeze.record_states : []]
   end
 
   # Finds why the scenes of the frozen fights play live on the map: the player watches another
@@ -620,6 +638,7 @@ module MGQ_MpRaidFreezeUi
     @shown = nil
     @blocking = nil
     @fresh_at = nil
+    @fresh_seen = nil
     @played = {}
     @writes = {}
     @refused = {}

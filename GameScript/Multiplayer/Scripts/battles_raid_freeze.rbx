@@ -2,7 +2,8 @@
 #  battles_raid_freeze.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-11: Found a fight's site row by its battle number in the live list, so fights of a translated game freeze too
+#      Paulinchen  2026-11-11: Told the troop and state of each of the player's own records without asking the DLL
+#                            - Found a fight's site row by its battle number in the live list, so fights of a translated game freeze too
 #      Paulinchen  2026-11-10: Waited longer and longer between hand-overs of the journal the DLL refuses, instead of handing it over again every frame
 #      Paulinchen  2026-11-08: Asked the DLL which records wait, what a record's world entry holds, what becomes of a record as its battle ends, where a tableau stands and what it blocks, how a fresh start begins and which items a defeat gives back
 #                            - Dropped the scene switches assumed when the DLL tells nothing of a page, and the tables nothing reads
@@ -192,11 +193,20 @@ module MGQ_MpRaidFreeze
   # @return [Hash] "listed" (the troops of the records that wait) and "dropped" ([troop, why] of each
   #   record whose fight is over); empty without records or an answer.
   def self.checked(notes)
-    rows = notes["records"].values.map { |record| [record["troop"].to_i, record["state"].to_s] }
+    rows = record_states(notes)
     return {} if rows.empty?
 
     answer = MGQ_Multiplayer::Bridge.call(RECORDS_TOPIC, "world" => MGQ_MpWorldStory.world_id.to_s, "facts" => MGQ_MpRaidBosses.facts, "records" => rows)
     answer.is_a?(Hash) ? answer : {}
+  end
+
+  # Lists the troop and state of each of the player's own records of the open world, as the save's
+  # notes keep them.
+  #
+  # @param notes [Hash, nil] The save's notes, see field.
+  # @return [Array<Array(Integer, String)>] The rows, none outside a world.
+  def self.record_states(notes = field)
+    notes ? notes["records"].values.map { |record| [record["troop"].to_i, record["state"].to_s] } : []
   end
 
   # Finds the player's own record of a troop's fight in the open world, in any state.
