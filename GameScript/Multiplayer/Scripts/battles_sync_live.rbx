@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-11-11: Handed every change of the gold and items of another player's character in a co-op battle to its owner's bag
 #                            - Forgot the gold the players sent as a command phase opens
+#                            - Had the owner play the Slots and Poker of their character in a co-op battle and took their result
 #      Paulinchen  2026-11-06: Kept the target windows on the battlers left and closed one that lists nobody
 #      Paulinchen  2026-11-05: Started a guest's party and troop as the game starts them, through MGQ_MpBattlers
 #      Paulinchen  2026-10-30: Kept the host's waits for its guests and the battle's endings in the DLL
@@ -108,7 +109,7 @@ module MGQ_MpBattlesSync
       return if @installed
       @installed = true
 
-      installed = [:battle_log, :messages, :pictures, :audio, :battlers, :bag, :course, :ending, :live, :calls, :targets].select do |group|
+      installed = [:battle_log, :messages, :pictures, :audio, :battlers, :bag, :course, :ending, :live, :calls, :targets, :minigames].select do |group|
         begin
           send(group)
           true
@@ -362,6 +363,17 @@ module MGQ_MpBattlesSync
       MGQ_MpHooks.before(Scene_Battle, :update_basic, "battles_sync_live targets") { Targets.keep(self) }
     end
 
+    # Has the owner play the Slots and Poker of their character in a co-op battle, see Minigames.
+    def self.minigames
+      Minigames::KINDS.each do |name, kind|
+        next unless Scene_Battle.method_defined?(name) || Scene_Battle.private_method_defined?(name)
+
+        MGQ_MpHooks.around(Scene_Battle, name, "battles_sync_live minigames") do |scene, _args, original|
+          Minigames.play(scene, kind) { original.call }
+        end
+      end
+    end
+
     # Records an event before the original runs.
     #
     # @param owner [Module] The class that has the method.
@@ -376,6 +388,119 @@ module MGQ_MpBattlesSync
           Recorder.event(*fields) if fields
         end
         original.call
+      end
+    end
+  end
+
+  # The Slots and Poker of another player's character in a co-op battle: the game running the battle
+  # asks the owner through the stream and waits for them as it waits for commands, and the owner's
+  # game plays the game's own minigame with the owner's keys, luck and medals and sends the result
+  # back. Without the owner, or without a result the minigame gives, the running game takes one
+  # itself.
+  module Minigames
+    # The kind of the stream's ask and of the owner's answer.
+    KIND = "minigame"
+
+    # The scene's minigames, each with the name the ask carries.
+    KINDS = { :process_slot => "slot", :process_poker => "poker" }
+
+    # What the waiting box and the log call each minigame.
+    NAMES = { "slot" => "Slots", "poker" => "Poker" }
+
+    # As the game running a co-op battle, gets the result of another player's character's
+    # minigame from its owner; the game's own minigame runs for every other character and battle.
+    #
+    # @param scene [Scene_Battle] The battle.
+    # @param kind [String] "slot" or "poker".
+    # @yield The game's own minigame.
+    # @return [Integer] The skill the result invokes.
+    def self.play(scene, kind, &own)
+      subject = MGQ_MpGame.get(scene, :subject)
+      return yield unless MGQ_MpBattlesSync.coop? && MGQ_MpBattlesSync.host? && subject.is_a?(Game_MpActor)
+
+      seat = subject.mp_seat
+      who = MGQ_MpBattlesSync.who(seat)
+      return fallback(kind, subject, "#{who} is not in the battle", &own) unless MGQ_MpBattlesSync.guests_in.include?(seat)
+
+      Recorder.event(KIND, subject, kind)
+      Recorder.flush
+      MGQ_MpBattlesSync.log("#{MGQ_MpBattlesSync.named(subject)} plays #{NAMES[kind]}: waiting for #{who} to play it")
+      action = subject.current_action
+      answer = Live.wait_telling(scene, "Waiting for #{subject.owner}'s #{NAMES[kind]}...", Live::STILL_CHOOSING, lambda { [seat] }) do
+        body = Channel.take_from(KIND, seat)
+        next [body] if body
+
+        MGQ_MpBattlesSync.guests_in.include?(seat) ? nil : [nil]
+      end
+      # A departure during the wait clears the character's actions, which the game reads right after.
+      MGQ_MpGame.set(subject, :actions, [action]) if action && subject.current_action.nil?
+      if answer.is_a?(Symbol)
+        Live.keep_ending(answer)
+        return fallback(kind, subject, "the battle ends (#{answer})", &own)
+      end
+      return fallback(kind, subject, "#{who} left the battle", &own) unless answer[0]
+
+      values = Wire.read(answer[0])
+      id = values.is_a?(Array) ? values[0] : nil
+      return fallback(kind, subject, "#{who} sent #{id.inspect[0, 40]}, no result of #{NAMES[kind]}", &own) unless result?(kind, id)
+
+      MGQ_MpBattlesSync.log("took #{who}'s #{NAMES[kind]} result for #{MGQ_MpBattlesSync.named(subject)}: skill #{id}")
+      id
+    end
+
+    # Reports whether a skill is one a minigame of the game gives.
+    #
+    # @param kind [String] "slot" or "poker".
+    # @param id [Object] The skill the owner sent.
+    # @return [Boolean] Whether it is.
+    def self.result?(kind, id)
+      return false unless id.is_a?(Integer)
+      return CAO::Poker::BATTLE_SKILL.include?(id) if kind == "poker"
+
+      id == 1 || NWConst::Slot::BONUS.values.any? { |bonus| bonus[:skill_id] == id }
+    rescue => e
+      MGQ_MpBattlesSync.log_once([:minigame_results, kind], "could not read the results of #{NAMES[kind]}: #{e.class}: #{e.message}")
+      false
+    end
+
+    # Takes a result of the minigame without its owner: Poker deals a hand and scores it without a
+    # window, Slots runs the game's own machine, as for a character the computer plays.
+    #
+    # @param kind [String] "slot" or "poker".
+    # @param subject [Game_MpActor] The character.
+    # @param why [String] Why the owner gave no result, for the log.
+    # @yield The game's own minigame.
+    # @return [Integer] The skill the result invokes.
+    def self.fallback(kind, subject, why)
+      id = kind == "poker" ? CAO::Poker::BATTLE_SKILL[CAO::Poker::Hand.new.final] : yield
+      MGQ_MpBattlesSync.log("played #{NAMES[kind]} for #{MGQ_MpBattlesSync.named(subject)} here: #{why}; skill #{id}")
+      id
+    end
+
+    # As the owner, plays the minigame the game running the battle asks for of one of this game's
+    # own characters, and sends the result back; the other players' games only log it. A minigame
+    # that fails sends 0, which the running game replaces with a result of its own.
+    #
+    # @param scene [Scene_Battle] The battle.
+    # @param subject [Game_Battler, nil] The character who plays.
+    # @param kind [String] "slot" or "poker".
+    def self.play_own(scene, subject, kind)
+      name = KINDS.key(kind)
+      unless name && subject && subject.actor? && !subject.is_a?(Game_MpActor)
+        return MGQ_MpBattlesSync.log("#{subject ? MGQ_MpBattlesSync.named(subject) : 'a character'} plays #{NAMES[kind] || kind.to_s[0, 40]} on its owner's game")
+      end
+
+      id = 0
+      earlier = MGQ_MpGame.get(scene, :subject)
+      begin
+        MGQ_MpGame.set(scene, :subject, subject)
+        id = scene.send(name)
+        MGQ_MpBattlesSync.log("played #{NAMES[kind]} for #{MGQ_MpBattlesSync.named(subject)}: skill #{id}")
+      rescue => e
+        MGQ_MpBattlesSync.log("playing #{NAMES[kind]} for #{MGQ_MpBattlesSync.named(subject)} failed: #{e.class}: #{e.message}")
+      ensure
+        MGQ_MpGame.set(scene, :subject, earlier)
+        Channel.post(KIND, Wire.write([id.is_a?(Integer) ? id : 0]))
       end
     end
   end
@@ -877,7 +1002,16 @@ module MGQ_MpBattlesSync
     # the players chose, so the next battle's first phase opens anew. Called as the battle ends and
     # as the live battle finishes, which a reset ends it with.
     def self.end_phase
+      @kept_ending = nil
       MGQ_MpBattlesSync.log("command phase of turn #{MGQ_MpBattlesSync.turn + 1} closed: the battle ended in it") if phase("close")
+    end
+
+    # Keeps an ending a wait inside an action answered, which watch passes on once the action is
+    # done, so no battle ends in the middle of one.
+    #
+    # @param ending [Symbol] :left, or an ending of Channel.ending.
+    def self.keep_ending(ending)
+      @kept_ending = ending
     end
 
     # Names the guests still in the live battle for the log.
@@ -992,13 +1126,15 @@ module MGQ_MpBattlesSync
     end
 
     # Ends the battle when it ended early while this game is not waiting for the friend, such as
-    # while its player chooses commands. Called by the battle's every frame.
+    # while its player chooses commands, or in a wait inside an action (see keep_ending). Called by
+    # the battle's every frame.
     #
     # @param scene [Scene_Battle] The battle.
     def self.watch(scene)
       return if MGQ_MpBattlesSync.solo? || scene.scene_changing? || BattleManager.battle_end?
 
-      ending = Channel.ending
+      ending = @kept_ending || Channel.ending
+      @kept_ending = nil
       end_early(scene, ending) if ending
     end
 

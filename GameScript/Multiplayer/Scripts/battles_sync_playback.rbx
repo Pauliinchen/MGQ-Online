@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-11: Changed the party's gold and items as the host's battle changed them for the player's own characters
+#                            - Played the Slots and Poker the host's battle asks of the player's own characters
 #      Paulinchen  2026-11-05: Made the game's objects of the values the DLL read of the host's stream, and left out a send the DLL did not check
 #                            - Gave a state the host added or took away its counters through the game's own reset and erase
 #      Paulinchen  2026-10-30: Read whether the guest fell behind the host's stream from the DLL
@@ -270,6 +271,8 @@ module MGQ_MpBattlesSync
         emerge(scene, *args)
       when "bag"
         bag(*args)
+      when Minigames::KIND
+        Minigames.play_own(scene, *args)
       when /\Alog\./
         log_window(scene).send(method, *args)
       when "popup"

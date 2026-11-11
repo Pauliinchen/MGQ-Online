@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-11-11: Let the host's changes of a guest's gold and items through as the bag event
+//                            - Let the host's ask for a guest's Slots or Poker through
 //      Paulinchen  2026-10-30: Created
 //
 //----------------------------------------------------------------
@@ -62,7 +63,7 @@ public sealed class GuestStream
     /// The kinds the guest plays as they come, which the intake leaves as they are.
     /// </summary>
     private static readonly HashSet<string> PlainKinds = new(
-        ["commands", "end", "emerge", "bag", "values", "time_stop", "turn", "battler.sprite_effect_type", "battler.animation_mirror"],
+        ["commands", "end", "emerge", "bag", "minigame", "values", "time_stop", "turn", "battler.sprite_effect_type", "battler.animation_mirror"],
         StringComparer.Ordinal);
 
     /// <summary>
