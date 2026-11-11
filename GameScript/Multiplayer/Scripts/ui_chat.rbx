@@ -2,6 +2,7 @@
 #  ui_chat.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Staged the scene for the chat's model only when it changes
 #      Paulinchen  2026-11-08: Gave its UI ids the mgq_online_ prefix
 #      Paulinchen  2026-11-07: Greyed a player menu choice that cannot be taken through disabled:
 #      Paulinchen  2026-11-06: Asked the UI layer whether the player arranges the parts
@@ -277,6 +278,9 @@ module MGQ_MpChat
 
   # The scenes besides the map and battles where the chat box opens, see follow_scene.
   @menu_scenes = []
+
+  # The scene last staged for the chat's model, nil before the first.
+  @told_scene = nil
 
   extend MGQ_MpLog
 
@@ -708,14 +712,18 @@ module MGQ_MpChat
     named.name
   end
 
-  # Stages the scene in front for the chat's model, which closes the box where the chat does not
-  # open, and closes the log and the bubbles once no world is open. Called by overworld_sync.rbx
-  # every frame in every scene.
+  # Stages the scene in front for the chat's model once it changed, which closes the box where the
+  # chat does not open, and closes the log and the bubbles once no world is open. Called by
+  # overworld_sync.rbx every frame in every scene.
   #
   # @param in_world [Boolean] Whether a world is open.
   def self.tick(in_world)
     scene = SceneManager.scene
-    MGQ_Multiplayer::Bridge.stage(SCENE_TOPIC, "scene" => scene_name(scene), "chat_scene" => chat_scene?(scene) ? true : false)
+    unless scene.equal?(@told_scene)
+      MGQ_Multiplayer::Bridge.stage(SCENE_TOPIC, "scene" => scene_name(scene), "chat_scene" => chat_scene?(scene) ? true : false)
+      # The bridge drops what is staged while it is closed, so the scene counts as told only once it is open.
+      @told_scene = scene if MGQ_Multiplayer::Bridge.open?
+    end
     return if in_world
 
     drop_root

@@ -2,6 +2,7 @@
 #  ui_chat_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Checked that a scene reaches the chat's model once, and a new one again
 #      Paulinchen  2026-11-08: Expected the chat places under their mgq_online_ ids
 #      Paulinchen  2026-11-06: Reached the Mod Framework's engine under its own name
 #                            - Left how the UI layer draws the chat to the in-game suite and kept the gates, the model's calls and the bubbles' players
@@ -199,6 +200,13 @@ SceneManager.scene = Class.new(Scene_TestShop).new
 MGQ_MpOverworldSync.tick
 MGQ_Multiplayer::Bridge.frame
 check("a scene whose class has no name, such as one a mod makes, reaches the chat's model by the class it builds on", staged.last["scene"], "Scene_TestShop")
+MGQ_MpOverworldSync.tick
+MGQ_Multiplayer::Bridge.frame
+told = staged.size
+SceneManager.scene = Scene_TestShop.new
+MGQ_MpOverworldSync.tick
+MGQ_Multiplayer::Bridge.frame
+check("the same scene a frame later reaches the chat's model no more, a new scene again with its name", [told, staged.size, staged.last["scene"]], [1, 2, "Scene_TestShop"])
 $world_fake.answer("chat.scene") { |_request| nil }
 SceneManager.scene = Scene_Map.new
 map_frame
