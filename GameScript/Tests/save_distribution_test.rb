@@ -2,18 +2,17 @@
 #  save_distribution_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Held the client's check to its own verdicts, since the battle server no longer checks saves
 #      Paulinchen  2026-10-30: Created
 #
 #----------------------------------------------------------------
 
 # Checks a fetched starting save before the game loads it (world_save_distribution.rbx): a save
-# from another player may name only the game's classes and Ruby's plain values, as on the battle
-# server, whose SaveCheck the client's check must agree with.
+# from another player may name only the game's classes and Ruby's plain values.
 
 require_relative "support"
 require "set"
 require "tmpdir"
-require File.expand_path("../../BattleServer/lib/save_check", __dir__)
 
 # Stands in for the mod's log: records each line in $log.
 module MGQ_Multiplayer; module Log; def self.write(message); $log << message; end; end; end
@@ -90,33 +89,28 @@ check("a save naming a class this game lacks still names the mod it needs",
       fetched("\x04\x08o:\x12Unknown_Thing\x00".force_encoding("ASCII-8BIT"))[0],
       "The starting save needs a mod you do not have.")
 
-# Tells what the client's check and the battle server's say of the same bytes, the server's with the
-# client's rule of which classes are admitted, so only the walking may differ.
+# Tells what the client's check says of a stream.
 #
 # @param bytes [String] One or more Marshal streams.
-# @return [Array<String>] Each one's refusal, "passed" when it passed.
-def verdicts(bytes)
-  admitted = Object.new
-  admitted.define_singleton_method(:include?) { |name| MGQ_MpSaveDistribution::ClassCheck.admitted?(name) }
-  [[MGQ_MpSaveDistribution::ClassCheck, MGQ_MpSaveDistribution::ClassCheck::Refused, []], [SaveCheck, SaveCheck::Refused, [admitted]]].map do |kind, refused, args|
-    kind.new(bytes).check(*args)
-    "passed"
-  rescue refused => e
-    e.message
-  end
+# @return [String] Its refusal, "passed" when it passed.
+def verdict(bytes)
+  MGQ_MpSaveDistribution::ClassCheck.new(bytes).check
+  "passed"
+rescue MGQ_MpSaveDistribution::ClassCheck::Refused => e
+  e.message
 end
 
+refused = "the save was refused: "
 [
-  ["a save", save],
-  ["a known gadget", gadget],
-  ["Ruby's Set", Marshal.dump(Set.new([1]))],
-  ["a new class inside Kernel", "\x04\x08o:\x11Kernel::Evil\x00"],
-  ["a cut save", save[0, save.bytesize / 2]],
-  ["bytes that are not Marshal", "not a save at all"],
-  ["nesting 2000 deep", "\x04\x08" + "[\x06" * 2000 + "0"],
-  ["a length past the end", "\x04\x08\"\x7f"],
-  ["a link to a symbol that does not exist", "\x04\x08o;\x09\x00"],
-].each do |label, bytes|
-  both = verdicts(bytes.dup.force_encoding("ASCII-8BIT"))
-  check("the client's check and the battle server's agree on #{label}", both.uniq.size, 1)
+  ["a save", save, "passed"],
+  ["a known gadget", gadget, "#{refused}marshal_load of Gem::Requirement, which is not the game's (at byte 21)"],
+  ["Ruby's Set", Marshal.dump(Set.new([1])), "#{refused}object of Set, which is not the game's (at byte 8)"],
+  ["a new class inside Kernel", "\x04\x08o:\x11Kernel::Evil\x00", "#{refused}object of Kernel::Evil, which is not the game's (at byte 17)"],
+  ["a cut save", save[0, save.bytesize / 2], "#{refused}the stream ends early (at byte 83)"],
+  ["bytes that are not Marshal", "not a save at all", "#{refused}not a Marshal stream (at byte 0)"],
+  ["nesting 2000 deep", "\x04\x08" + "[\x06" * 2000 + "0", "#{refused}nested too deep (at byte 1004)"],
+  ["a length past the end", "\x04\x08\"\x7f", "#{refused}a length past the end (at byte 4)"],
+  ["a link to a symbol that does not exist", "\x04\x08o;\x09\x00", "#{refused}a link to symbol 4, which does not exist (at byte 5)"],
+].each do |label, bytes, expected|
+  check("the check's verdict on #{label}", verdict(bytes.dup.force_encoding("ASCII-8BIT")), expected)
 end

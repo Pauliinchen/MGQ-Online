@@ -205,11 +205,9 @@ module MGQ_MpSaveDistribution
 
   # Walks Marshal streams without building anything and refuses one that names a class of Ruby's
   # own, so a starting save from another player cannot make the objects Marshal.load runs code of.
-  # It follows the battle server's SaveCheck entry for entry; save_distribution_test.rb holds the
-  # two to the same verdicts.
   #
   # The game's Ruby (1.9.2) has no byteslice, and the client cannot note Ruby's own classes before
-  # the game's scripts load, as the server does, so RUBY_OWN names them.
+  # the game's scripts load, so RUBY_OWN names them.
   class ClassCheck
     # Raised for a stream that is not Marshal or names a class that is not the game's.
     class Refused < StandardError; end

@@ -2,6 +2,7 @@
 #  served.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Took the message skip key and the battle's result over from the removed battles by request
 #      Paulinchen  2026-11-05: Took the starter's mod options as the values the core read from the setup
 #      Paulinchen  2026-10-30: Checked a setup through the core
 #                            - Handed the core's ledger what the relay told of the boss pools before the scripts read them
@@ -18,7 +19,6 @@
 #
 #----------------------------------------------------------------
 
-require_relative "battle"
 require_relative "online"
 require_relative "mods"
 
@@ -30,6 +30,12 @@ module ServedBattle
   # Seconds a frame takes while a battle is hosted: the players play the stream back in real
   # time and skip ahead once the host runs far ahead, so the host keeps the game's pace.
   FRAME_SECONDS = 1.0 / 60
+
+  # The key the game skips messages with while it is held.
+  SKIP_KEY = :X
+
+  # The battle's results by the code BattleManager.battle_end gets.
+  RESULTS = { 0 => :victory, 1 => :escape, 2 => :defeat }.freeze
 
   # Frames between two reads of the boss pools the relay told, as the game reads the DLL's.
   POOL_FRAMES = 10
@@ -73,7 +79,7 @@ module ServedBattle
       %i[trigger? press?].each do |name|
         wrap.around(Input.singleton_class, name, :served) do |_input, original, args, _block|
           key = args[0]
-          next true if key == HeadlessBattle::SKIP_KEY
+          next true if key == SKIP_KEY
           next Graphics.frame_count.odd? if key == :C
 
           original.call(*args)
@@ -96,7 +102,7 @@ module ServedBattle
         wrap.around(BattleManager.singleton_class, :process_follow, :served) { nil }
       end
       wrap.around(BattleManager.singleton_class, :battle_end, :served) do |_manager, original, args, _block|
-        HeadlessBattle.take_result(args[0])
+        ServedBattle.take_result(args[0])
         original.call(*args)
       end
       wrap.around(Graphics.singleton_class, :update, :served) do |_graphics, original, args, _block|
@@ -188,17 +194,24 @@ module ServedBattle
       @next_frame = clock
       SceneManager.instance_variable_set(:@stack, [])
       SceneManager.instance_variable_set(:@scene, Scene_Battle.new)
-      HeadlessBattle.instance_variable_set(:@result, nil)
+      @result = nil
       while (scene = SceneManager.scene).is_a?(Scene_Battle)
         scene.main
       end
       MGQ_MpBattlesSync.finish
-      result = HeadlessBattle.instance_variable_get(:@result) || (scene ? scene.class.name.to_sym : :ended)
+      result = @result || (scene ? scene.class.name.to_sym : :ended)
       { result: result, turns: $game_troop.turn_count, frames: Graphics.frame_count }
     ensure
       @raid = nil
       @squad = nil
       bridge&.close
+    end
+
+    # Keeps how the battle ended, as BattleManager.battle_end tells it.
+    #
+    # @param result [Integer] 0 for a victory, 1 for an escape, 2 for a defeat.
+    def take_result(result)
+      @result = RESULTS[result] || result
     end
 
     # Reads a setup and refuses one the server cannot host, as the core checks it

@@ -2,6 +2,7 @@
 #  server.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Removed the battles by request, which no client sends, and ended at once in a game folder without MGQ Online
 #      Paulinchen  2026-11-08: Downloaded a co-op battle's mods from the website's catalog instead of the relay's
 #      Paulinchen  2026-11-05: Read a co-op battle's mods through ServedMods, which reads them without the game's scripts
 #                            - Had the core write the lines of a hosted battle to the relay, and wrote the line of a battle out of CPU time before it can run out
@@ -24,7 +25,6 @@
 require "json"
 require "socket"
 require_relative "lib/boot"
-require_relative "lib/session"
 require_relative "lib/sandbox"
 require_relative "lib/served"
 require_relative "lib/relay_bridge"
@@ -32,40 +32,30 @@ require_relative "lib/mods"
 require_relative "lib/core"
 require_relative "lib/story_index"
 
-# The battle server: it loads the game once and then plays battles for its clients over TCP, one
-# JSON object per line each way. Requests:
-#   {"op":"ping"}
-#   {"op":"battle", "troop":1, "party":[[1,10]], "seed":1, "switches":{}, "variables":{}}
-#       plays the battle to its end with the game's auto battle and answers the outcome; "save"
-#       (a save file in base64) in place of "party" fights with the save's party and state.
-#   {"op":"start", ...the same fields}
-#       starts a battle played turn by turn and answers its first event.
-#   {"op":"answer", "commands":{"1":[{"skill":23,"target":0}]}} or {"op":"answer", "choice":0}
-#       answers the event the battle waits on and answers its next event.
+# The battle server: it loads the game with MGQ Online once and then hosts the co-op battles the
+# relay hands over, over TCP, one JSON object per line each way. Requests:
+#   {"op":"serve", "bid":"<battle id>", "setup":"<base64>"}
+#       hosts a co-op battle over the relay's connection to its end, see host.
 #   {"op":"story_index", "rowsRev":3, "keys":[...], "events":[...]}
 #       derives the story mapping's index for the relay, see StoryIndex.
-# Every answer holds "ok", and "error" when it is false. These requests and answers stay Ruby's
-# own JSON, since a server of battles by request runs without MGQ Online and its core. The game's
-# globals hold one battle per process: where the system can fork (Linux), each connection gets a
-# child process of its own, which shares the loaded game with the others, is sandboxed when the
-# server runs as root, and ends with the connection; elsewhere (Windows) the server plays one
-# battle at a time and turns others away as busy. Saves from clients are checked before they are
-# read (SaveCheck).
+#   {"op":"ping"}
+# Every answer holds "ok", and "error" when it is false. The game's globals hold one battle per
+# process: where the system can fork (Linux), each connection gets a child process of its own,
+# which shares the loaded game with the others, is sandboxed when the server runs as root, and
+# ends with the connection; elsewhere (Windows) the server hosts one battle at a time and turns
+# others away as busy.
 module BattleServer
   # The port the server listens on unless BATTLE_PORT names another.
   DEFAULT_PORT = 8095
 
-  # How long each request may be, in bytes: a late game's save is about 3 MB, 4 MB in base64.
+  # How long each request may be, in bytes.
   MAX_REQUEST = 8 * 1024 * 1024
 
   # Child processes at once unless BATTLE_CHILDREN names another number.
   DEFAULT_CHILDREN = 64
 
-  # CPU seconds a child may use, so a battle caught in a loop ends instead of taking a core.
-  CHILD_CPU_SECONDS = 120
-
-  # CPU seconds a child that hosts an MGQ Online co-op battle may use: as long as the relay keeps
-  # such a battle (BATTLE_LIMITS.lifetimeMs in Relay/core/battles.js), since it runs at the game's
+  # CPU seconds a child that hosts an MGQ Online co-op battle may use, so a battle caught in a loop
+  # ends instead of taking a core: as long as the relay keeps such a battle (BATTLE_LIMITS.lifetimeMs in Relay/core/battles.js), since it runs at the game's
   # pace while its players choose.
   SERVED_CPU_SECONDS = 2 * 60 * 60
 
@@ -83,23 +73,24 @@ module BattleServer
   @battles = 0
 
   class << self
-    # Loads the game, then serves clients until stopped.
+    # Loads the game, then serves clients until stopped; ends at once when the game folder holds no
+    # MGQ Online, whose battles are all the server hosts.
     def run
+      # The Mod Framework loads MGQ Online only as the game runs, so its file tells.
+      unless Boot.served_game?
+        $stderr.puts("the game folder holds no MGQ Online (Patch/Multiplayer.rb): this server serves nothing")
+        return
+      end
+
       boot_seconds = Boot.run
-      # MGQ Online in the game folder makes this a server of its co-op battles; without it the
-      # server plays the battles its requests describe. Their hooks never meet in one process. The
-      # Mod Framework loads MGQ Online only as the game runs, so its file tells.
-      @served = Boot.served_game?
-      @served ? ServedBattle.install : HeadlessBattle.install
-      @core_library = @served ? Core.library : nil
+      ServedBattle.install
+      @core_library = Core.library
       # Forked children each load the core themselves; it must never run before a fork.
       Core.open(Core.load(@core_library)) unless forking?
       @boot_seconds = boot_seconds
       port = (ENV["BATTLE_PORT"] || DEFAULT_PORT).to_i
       server = TCPServer.new("127.0.0.1", port)
-      # Worked out once here, so the children share it instead of each walking every class.
-      SaveCheck.game_names
-      @mode = (@served ? "MGQ Online co-op battles, " : "battles by request, ") + (forking? ? "fork" : "thread")
+      @mode = "MGQ Online co-op battles, " + (forking? ? "fork" : "thread")
       @mode += Sandbox.available? ? ", sandboxed" : ", NOT sandboxed: for tests only" if forking?
       $stderr.puts(format("battle server ready on 127.0.0.1:%d after %.1f s (%s)", port, boot_seconds, @mode))
       if Sandbox.available? && !(open = Sandbox.writable_by_others(Boot::GAME_DIR)).empty?
@@ -150,7 +141,7 @@ module BattleServer
           # through a pipe the parent copies into the log.
           $stdout.reopen(child_output)
           $stderr.reopen(child_output)
-          limit_cpu(@served ? SERVED_CPU_SECONDS : CHILD_CPU_SECONDS)
+          limit_cpu(SERVED_CPU_SECONDS)
           # A co-op battle's mods come before the sandbox, which reaches neither the network nor
           # the cache.
           first = client.gets(MAX_REQUEST)
@@ -269,7 +260,6 @@ module BattleServer
     # @param mods [Array, ServedMods::Unavailable, nil] The mods of a co-op battle in the first
     #   request, see mods_for; nil to get them as the battle starts.
     def serve(client, first = nil, mods = nil)
-      session = nil
       while (line = first || client.gets(MAX_REQUEST))
         first = nil
         reply = begin
@@ -277,8 +267,7 @@ module BattleServer
           # A co-op battle takes the relay's connection over to its end.
           return host(client, request, mods) if request["op"] == "serve"
 
-          reply, session = handle(request, session)
-          reply
+          handle(request)
         rescue JSON::ParserError => e
           { ok: false, error: "not JSON: #{e.message}" }
         end
@@ -287,7 +276,6 @@ module BattleServer
     rescue IOError, SystemCallError
       nil
     ensure
-      release(session) if session
       client.close unless client.closed?
     end
 
@@ -307,7 +295,6 @@ module BattleServer
         by_core ? bridge.tell("op" => "refused", "code" => code, "error" => error) : bridge.refuse_without_core(code, error)
         $stderr.puts("refused battle #{request['bid'].to_s[0, 32]}: #{code}: #{error}")
       end
-      return refused.call("no_mgq_online", "this battle server hosts no MGQ Online battles", false) unless @served
       return refused.call("core", Core.why_missing, false) unless Core.ready?
 
       slotted = !forking? && take_slot
@@ -351,7 +338,7 @@ module BattleServer
     #   not be had; nil for a request that is no co-op battle's or a setup the server cannot read.
     def mods_for(line)
       request = line && JSON.parse(line)
-      return nil unless @served && request.is_a?(Hash) && request["op"] == "serve"
+      return nil unless request.is_a?(Hash) && request["op"] == "serve"
 
       # The core's runtime must start under the sandbox's limits (see enter_child), and the sandbox
       # reaches neither the network nor the cache the mods come from, so the request and the
@@ -393,88 +380,19 @@ module BattleServer
       times.utime + times.stime
     end
 
-    # Answers one request.
+    # Answers one request but a co-op battle's.
     #
     # @param request [Hash] The request.
-    # @param session [BattleSession, nil] The client's battle played turn by turn.
-    # @return [Array(Hash, BattleSession)] The answer and the client's battle afterwards.
-    def handle(request, session)
-      # With MGQ Online loaded, a battle by request waits for players' commands that never come,
-      # spinning until the child's CPU limit ends it.
-      if @served && %w[battle start].include?(request["op"])
-        return [{ ok: false, error: "this battle server hosts MGQ Online's co-op battles only, which the relay hands over" }, session]
-      end
-
+    # @return [Hash] The answer.
+    def handle(request)
       case request["op"]
       when "story_index"
-        [StoryIndex.answer(request), session]
+        StoryIndex.answer(request)
       when "ping"
-        [{ ok: true, boot_seconds: @boot_seconds.round(1), battles: @battles, busy: @busy,
-           mode: @mode, pid: Process.pid }, session]
-      when "battle"
-        timed { play_to_end(request) }.then { |reply| [reply, session] }
-      when "start"
-        return [{ ok: false, error: "a battle is already running for this client" }, session] if session
-        return [busy, nil] unless take_slot
-
-        @battles += 1
-        session = BattleSession.new(request)
-        settle(timed { { ok: true }.merge(session.next_event) }, session)
-      when "answer"
-        return [{ ok: false, error: "no battle is running for this client" }, nil] unless session
-
-        session.answer(request.key?("choice") ? request["choice"].to_i : request["commands"] || {})
-        settle(timed { { ok: true }.merge(session.next_event) }, session)
+        { ok: true, boot_seconds: @boot_seconds.round(1), battles: @battles, busy: @busy, mode: @mode, pid: Process.pid }
       else
-        [{ ok: false, error: "unknown op #{request["op"].inspect}" }, session]
+        { ok: false, error: "unknown op #{request["op"].inspect}" }
       end
-    end
-
-    # Plays a battle to its end with the game's auto battle.
-    #
-    # @param request [Hash] The battle's request.
-    # @return [Hash] The answer.
-    def play_to_end(request)
-      return busy unless take_slot
-
-      begin
-        @battles += 1
-        session = BattleSession.new(request)
-        events = []
-        loop do
-          event = session.next_event
-          events << event
-          case event[:event]
-          when "commands" then session.answer({})
-          when "choice" then session.answer(0)
-          else break
-          end
-        end
-        last = events.last
-        { ok: last[:event] == "end" }.merge(last).merge(log: events.flat_map { |e| e[:log] })
-      ensure
-        free_slot
-      end
-    end
-
-    # Keeps a battle played turn by turn while it runs, and frees the server once it ended.
-    #
-    # @param reply [Hash] The answer to the client.
-    # @param session [BattleSession] The battle.
-    # @return [Array(Hash, BattleSession)] The answer and the battle, nil once it ended.
-    def settle(reply, session)
-      return [reply, session] unless %w[end error].include?(reply[:event])
-
-      free_slot
-      [reply, nil]
-    end
-
-    # Gives a client's running battle up and frees the server.
-    #
-    # @param session [BattleSession] The battle.
-    def release(session)
-      session.give_up
-      free_slot
     end
 
     # Takes the server for a battle, unless another battle has it.
@@ -494,15 +412,6 @@ module BattleServer
     # @return [Hash] The answer.
     def busy
       { ok: false, error: "busy: another battle is running" }
-    end
-
-    # Runs a block and adds how long it took to its answer.
-    #
-    # @return [Hash] The block's answer with ms.
-    def timed
-      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-      reply = yield
-      reply.merge(ms: ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round)
     end
   end
 end

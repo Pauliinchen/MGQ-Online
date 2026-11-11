@@ -2,6 +2,7 @@
 #  boot.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Took no snapshot of Ruby's own classes for the removed save check
 #      Paulinchen  2026-11-07: Loaded no other mod of the Patch folder with MGQ Online and the Mod Framework
 #      Paulinchen  2026-10-31: Booted the Mod Framework's entry file with MGQ Online
 #      Paulinchen  2026-10-15: Wrapped the game's methods with alias_method instead of prepended modules
@@ -15,10 +16,6 @@
 require "set"
 require "stringio"
 require "zlib"
-require_relative "save_check"
-# Everything defined after this point comes from the game or the RGSS stand-ins, which a save
-# may hold; everything before is Ruby's own.
-SaveCheck.snapshot
 require_relative "compat"
 require_relative "rgss"
 require_relative "rpg"

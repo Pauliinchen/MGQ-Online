@@ -2,6 +2,7 @@
 #  core_check.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Gave each child the CPU seconds of a co-op battle's child, the server's only kind
 #      Paulinchen  2026-10-28: Required and showed the SQLite version each child runs
 #      Paulinchen  2026-10-23: Made up an id inside the sandbox
 #                            - Created
@@ -93,7 +94,7 @@ module CoreCheck
   BATCH_ENTRIES = 1000
 
   # The battle server's CPU seconds for each child (server.rb).
-  CHILD_CPU_SECONDS = BattleServer::CHILD_CPU_SECONDS
+  CHILD_CPU_SECONDS = BattleServer::SERVED_CPU_SECONDS
 
   # Seconds the parent waits on a child before it kills it.
   CHILD_SECONDS = 60
