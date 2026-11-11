@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-11: Stood in for the gold a co-op turn sends, which none of the battle tests use
+#                            - Told the level the battle began with
 #      Paulinchen  2026-11-08: Dropped the status window's name drawing, which the scripts no longer hook
 #      Paulinchen  2026-11-06: Stood in for UI.confirm and read the waiting box's lines from the wait
 #      Paulinchen  2026-11-05: Kept each message sent as the scripts hand it instead of as a copy of the DLL's codec writes it
@@ -126,6 +127,7 @@ module MGQ_MpCoopScene; MAX_PICTURE = 100; end
 module MGQ_MpCoopLevelSync
   def self.level_for(_players); $sync_level; end
   def self.begin(level); $sync_began = level; end
+  def self.level; $sync_began; end
   def self.sync(actor); ($synced ||= []) << actor; end
   def self.finish; $sync_finished = true; end
 end

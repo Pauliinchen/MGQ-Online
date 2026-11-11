@@ -2,6 +2,7 @@
 #  battles_coop_hotjoin.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Synced a battle that turns live to the battle's level and sent that level to every player who joins it late
 #      Paulinchen  2026-11-05: Wrote the invite's flags as true or false and its enemy rates as numbers, and read them so
 #                            - Had C# read the joins taken in
 #                            - Handed the seats of a taken-in request and an invite to the DLL as a list, which it writes
@@ -858,7 +859,8 @@ module MGQ_MpBattlesHotjoin
     MGQ_MpBattlesSync.finish
   end
 
-  # Makes the battle the player fights alone a live co-op battle they host, see before_phase.
+  # Makes the battle the player fights alone a live co-op battle they host, at the battle's level
+  # as the battle begins, which every player who joins later takes, see before_phase and take_in.
   #
   # @param scene [Scene_Battle] The battle.
   def self.go_live(scene)
@@ -867,7 +869,9 @@ module MGQ_MpBattlesHotjoin
     sync.battle_started
     MGQ_MpBattles.begin(:coop)
     sync.show_everything
-    coop.form(scene, coop.arrange([[MGQ_MpBattlesSync.own_seat, MGQ_Multiplayer::Player.name.to_s] + coop.own_build]))
+    players = coop.arrange([[MGQ_MpBattlesSync.own_seat, MGQ_Multiplayer::Player.name.to_s] + coop.own_build])
+    MGQ_MpCoopLevelSync.begin(MGQ_MpCoopLevelSync.level_for(players))
+    coop.form(scene, players)
     coop.note_troop
     sync::Recorder.start
     log("battle #{sync.battle_id} turns live for the players who join it, the player hosting")
@@ -958,7 +962,7 @@ module MGQ_MpBattlesHotjoin
     coop.share_troop(guests)
     sync.keep_seats(Array(sync.seats) | joined.keys)
     sync.unexpect(joined.keys)
-    roster = { "enemies" => late_entries, "players" => players.map(&:to_a), "level" => nil, "turn" => $game_troop.turn_count.to_i }
+    roster = { "enemies" => late_entries, "players" => players.map(&:to_a), "level" => MGQ_MpCoopLevelSync.level, "turn" => $game_troop.turn_count.to_i }
     send_to(joined.keys, "roster", MGQ_Multiplayer::Bridge.call(coop::WRITE_ROSTER_TOPIC, roster).to_s)
     send_to(joined.keys, "ready", sync.names)
     @readied = Array(@readied) | joined.keys

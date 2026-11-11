@@ -2,6 +2,7 @@
 #  battles_coop_level_sync.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Told the running battle's level
 #      Paulinchen  2026-11-06: Asked the rules in C# whether a character fights at the battle's level and what its equipment keeps
 #      Paulinchen  2026-10-30: Worked the battle's level out through the rules in C#
 #      Paulinchen  2026-10-23: Deleted the switch that never turned the level sync off
@@ -74,6 +75,13 @@ module MGQ_MpCoopLevelSync
   rescue => e
     log("working the level out failed: #{e.class}: #{e.message}")
     nil
+  end
+
+  # Tells the running battle's level, which a player who joins it late takes.
+  #
+  # @return [Integer, nil] The level, nil while no level sync runs.
+  def self.level
+    @level
   end
 
   # Starts the level sync of a co-op battle, giving back what a battle before kept synced.
