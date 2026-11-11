@@ -2,6 +2,7 @@
 //  BattleSession.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-11: Refused at once a battle whose world runs a mod copy the website does not serve, which the battle server would refuse
 //      Paulinchen  2026-11-08: Moved to the MGQOnline.Multiplayer namespace
 //      Paulinchen  2026-11-05: Took the players' seats as numbers and handed out the inbox's entries and the state as values, for the bridge's topics
 //                            - Told the served battle's state as the starter's own, whether it takes players in too
@@ -20,6 +21,8 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
+using MGQOnline.Bridge.Ruby;
+using MGQOnline.Game.Battles.Served;
 using MGQOnline.Game.Battles.Wire;
 using MGQOnline.Game.World;
 using MGQOnline.Multiplayer.Network.Relay;
@@ -336,7 +339,8 @@ internal sealed partial class BattleSession
     /// <param name="battle">The battle's id.</param>
     /// <param name="seats">The world seats of the battle's players.</param>
     /// <param name="setup">What the server needs to host the battle.</param>
-    /// <returns><see langword="false"/> outside that world, without a player, or for an id, seats or a setup that are not as they should be.</returns>
+    /// <returns><see langword="false"/> outside that world, without a player, for an id, seats or a setup that are not as they should be, or for a
+    /// setup naming a mod the battle server cannot get.</returns>
     public bool Serve(string world, string battle, IReadOnlyList<long> seats, string setup)
     {
         if (WorldOf(world) is not { } code || Playing() is not { } player)
@@ -348,6 +352,12 @@ internal sealed partial class BattleSession
         if (!BattleIdPattern().IsMatch(battle) || SeatsOf(seats) is not { } players || setup.Length == 0 || (Encoding.UTF8.GetByteCount(setup) + 2) / 3 * 4 > MaxSetupBase64)
         {
             Log.Write($"battle {battle} not served: the id, the seats {string.Join(",", seats)} or the setup ({setup.Length} characters) are not as they should be");
+            return false;
+        }
+
+        if (UnservedMod(setup) is { } mod)
+        {
+            Log.Write($"battle {battle} not served: the world's mod {mod} runs a copy the website does not serve (mods)");
             return false;
         }
 
@@ -378,6 +388,15 @@ internal sealed partial class BattleSession
         Threads.Start("MultiplayerBattleServe", () => RunServe(generation, relay, world, code, player.Key, battle, players, setup));
         return true;
     }
+
+    /// <summary>
+    /// Finds a mod a setup names that the battle server cannot get from the website: one the starter's
+    /// game gave no kind, see ModCheck.Served.
+    /// </summary>
+    /// <param name="setup">The setup.</param>
+    /// <returns>The mod's key; <see langword="null"/> for none, or for a setup that does not read.</returns>
+    private static string? UnservedMod(string setup) =>
+        ServedSetup.Read(setup)?["mods"] is RubyArray mods ? mods.Select(mod => mod.AsArray()).FirstOrDefault(mod => mod[1].AsText().Length == 0)?[0].AsText() : null;
 
     /// <summary>
     /// Opens the channel of a battle the relay started. Returns at once; the channel comes as the

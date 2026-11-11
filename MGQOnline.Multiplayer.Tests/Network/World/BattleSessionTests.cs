@@ -2,6 +2,7 @@
 //  BattleSessionTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-11: Covered a battle whose world runs a mod copy the website does not serve, which the game refuses itself
 //      Paulinchen  2026-11-08: Moved to the MGQOnline.Multiplayer namespace
 //      Paulinchen  2026-11-07: Picked the relay overload of a new battle by name
 //      Paulinchen  2026-11-06: Dropped the checks that replayed recorded cases
@@ -17,11 +18,14 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
 using MGQOnline.Bridge.Ruby;
+using MGQOnline.Game.Battles.Served;
+using MGQOnline.Game.Mods;
 using MGQOnline.Game.Topics;
 using MGQOnline.Multiplayer.Network.Relay;
 using MGQOnline.Multiplayer.Network.Transport;
@@ -135,6 +139,33 @@ public sealed class BattleSessionTests
         Assert.False(battle.Serve(world.Id, Battle, world.Seats, new string('a', 750_001)));
 
         Assert.Equal(("idle", string.Empty), StateOf(battle));
+    }
+
+    /// <summary>
+    /// Asserts that a battle whose world runs a copy of a mod the website does not serve never reaches the relay, the mod logged, while
+    /// the session's next battle, whose mods come from the website, is served.
+    /// </summary>
+    [Fact]
+    public void Serve_ModCopyTheWebsiteDoesNotServe_IsRefusedAtOnce()
+    {
+        using var world = new TwoPlayers();
+        var battle = world.NewBattle(CreatorKey);
+        string mark = Guid.NewGuid().ToString("N")[..12];
+
+        Assert.False(battle.Serve(world.Id, Battle, world.Seats, SetupWithMod($"own{mark}", string.Empty)));
+
+        Assert.Null(world.Relay.BattleSetup(world.Id, Battle));
+        Log.Flush();
+        using (var file = new FileStream(Log.FilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+        using (var reader = new StreamReader(file))
+        {
+            Assert.Contains($"battle {Battle} not served: the world's mod own{mark} runs a copy the website does not serve (mods)", reader.ReadToEnd(), StringComparison.Ordinal);
+        }
+
+        string served = SetupWithMod("teamboostfix", ModCheck.SiteKind);
+        Assert.True(battle.Serve(world.Id, Battle, world.Seats, served));
+        Assert.Equal(("served", string.Empty), AwaitState(battle, "served"));
+        Assert.Equal(served, world.Relay.BattleSetup(world.Id, Battle));
     }
 
     /// <summary>
@@ -454,6 +485,18 @@ public sealed class BattleSessionTests
         var status = battle.Status();
         return (status.State, status.Code ?? string.Empty);
     }
+
+    /// <summary>
+    /// Writes a setup as the starter's game writes it, naming one mod of the world.
+    /// </summary>
+    /// <param name="key">The mod's key.</param>
+    /// <param name="kind">Its kind, empty for a copy the website does not serve.</param>
+    /// <returns>The setup.</returns>
+    private static string SetupWithMod(string key, string kind) => ServedSetup.Write(new RubyHash
+    {
+        { "troop", 1 }, { "map", 1 }, { "rates", new RubyArray() }, { "settings", new RubyArray() },
+        { "mods", new RubyArray { new RubyArray { key, kind, kind.Length == 0 ? string.Empty : "1.0", new RubyArray { new RubyArray { "Team_Boost_Fix.rb", new string('a', 64) } } } } },
+    });
 
     /// <summary>
     /// Waits until a battle reaches a state.
