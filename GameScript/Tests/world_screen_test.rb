@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-11: Checked that a world picked before its mods were read starts with the mods and settings the start step carries
+#                            - Checked that mods the Mod Framework finds ready at once go to the DLL as ready
 #      Paulinchen  2026-11-09: Checked that the description takes the whole height of its box
 #                            - Checked that the World and Game data panels of the details open list boxes of their own
 #                            - Checked that the search and the filters lie in a box of their own above the worlds, whose list wraps at its ends
@@ -298,11 +299,14 @@ run_later(scene)
 check("going back from the dialog gives the entry up", screen_requests("screen.answer").last, { "answer" => "back" })
 Mod_Framework::Mods.define_singleton_method(:ask_needed) { |place, mods, options = {}, &block| block.call(:ready); :ready }
 answers = screen_requests("screen.answer").size
+handed = 0
+hand_framework = MGQ_MpWorldMods.method(:hand_framework)
+MGQ_MpWorldMods.define_singleton_method(:hand_framework) { handed += 1 }
 scene.play("steps" => [["needed_mods", "Sunset", [{ "name" => "Level Cap", "version" => "1.4.0", "differs" => true }]]])
 run_later(scene)
-check("mods the Mod Framework finds ready at once while the DLL found them differing refuse the entry instead of going on",
-      [said(scene), screen_requests("screen.answer").drop(answers), scene.idle?],
-      ["Sunset needs mods that differ here, which the Mod Framework cannot change: Level Cap. Check the Patch folder, then try again.", [{ "answer" => "back" }], true])
+MGQ_MpWorldMods.define_singleton_method(:hand_framework, hand_framework)
+check("mods the Mod Framework finds ready at once go to the DLL as ready with the framework's mods, and the DLL decides the entry",
+      [handed, screen_requests("screen.answer").drop(answers)], [1, [{ "answer" => "mods_ready" }]])
 
 # A world picked before its mods were read starts with the world the start step carries (issue 87).
 entered = []

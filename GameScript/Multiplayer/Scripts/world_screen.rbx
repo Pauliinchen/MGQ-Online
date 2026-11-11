@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-11: Started a world with the row the DLL hands with the start step instead of the row picked before its mods were read
+#                            - Handed the DLL mods the Mod Framework finds ready at once, which it refuses itself while they still differ
 #      Paulinchen  2026-11-09: Gave the details' boxes a little room at their sides
 #                            - Wrapped the description to as many lines as its box holds, where it showed one
 #                            - Drew a thin box around each part of the details the player can pick, at one height for every world
@@ -1187,10 +1188,8 @@ class Scene_MpWorlds < Scene_MenuBase
   # Asks the Mod Framework to make ready the mods a world needs in its dialog "Mods for <world>":
   # each to install, update, change or turn on, each only its author has; its first button does
   # what can be done and enters, which starts the game again into the world where a mod that runs
-  # already changes. The DLL hears whether the mods are ready, or the player went back.
-  #
-  # A :ready at once means the framework found nothing to change where the DLL found mods that
-  # differ; going on would have the DLL ask again forever, so the entry is refused.
+  # already changes. The DLL hears whether the mods are ready, at once or later, or the player went
+  # back.
   #
   # @param name [String] The world's name.
   # @param mods [Array<Hash>] Each mod "name", "version" (the world's, nil for any) and "differs".
@@ -1203,16 +1202,12 @@ class Scene_MpWorlds < Scene_MenuBase
     asking = true
     handle = Mod_Framework::Mods.ask_needed(name, needed, :restart => restart) { |result| later { mods_answered(result) } unless asking }
     asking = false
-    return if handle && handle != :ready
+    return mods_answered(:ready) if handle == :ready
+    return if handle
 
     @mods_asked = nil
-    if handle == :ready
-      log_screen("the mods #{name} needs differ by MGQ Online's check, yet the Mod Framework finds nothing to change: #{needed.map { |mod| mod[:name] }.join(', ')}")
-      refuse("#{name} needs mods that differ here, which the Mod Framework cannot change: #{needed.map { |mod| mod[:name] }.join(', ')}. Check the Patch folder, then try again.")
-    else
-      log_screen("the mods #{name} needs could not be compared")
-      refuse("The mods #{name} needs could not be checked. Try again in a moment.")
-    end
+    log_screen("the mods #{name} needs could not be compared")
+    refuse("The mods #{name} needs could not be checked. Try again in a moment.")
     answer("back")
   end
 
