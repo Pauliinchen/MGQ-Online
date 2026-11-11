@@ -2,6 +2,7 @@
 #  coop_squad_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Checked that the squad read last holds while the DLL answers none
 #      Paulinchen  2026-11-08: Checked the looks the party edit screen's rows take through the Mod Framework's row patch
 #                            - Checked the looks of the formation list's rows in place of its drawing
 #      Paulinchen  2026-11-05: Answered the player's squad with a fixed view per case and checked the followers' choice that goes to the DLL
@@ -293,6 +294,15 @@ check("of three, a member who does not lead has one and one", squad.own_share, [
 check("and so walks alone", $game_player.followers.map { |f| f.visible? }, [false, false, false])
 check("places of a member of three", actors.first(3).map { |a| squad.place_of(a) }, [:front, :bench, :cut])
 check("Discord hears of the party's size", MGQ_MpCoop.status_fields, { "mp_party" => "friend-p", "mp_party_size" => 3, "mp_party_max" => 4 })
+
+# The DLL answers nothing while the squad is unchanged; the squad read last holds until the world closes.
+rules_bridge.answer("squad.view") { |request| $squad_view_asks << request; nil }
+MGQ_MpOverworldSync.tick(true)
+check("an unchanged squad keeps the share read last", [squad.own_share, squad.squads?], [[1, 1], true])
+squad.read_view(false)
+check("outside a world no share is kept", [squad.own_share, squad.squads?], [nil, false])
+answer_squad_view(rules_bridge)
+MGQ_MpOverworldSync.tick(true)
 
 # The formation screens.
 formation_looks = lambda { squad.formation_rows(Array.new(4) { |index| { :index => index } }).map { |row| [row[:grey], row[:line_above]] } }

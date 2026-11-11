@@ -2,6 +2,7 @@
 //  WorldRoomTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-11: Checked that the squad and the NPCs' frame answer only once the scripts have something to read
 //      Paulinchen  2026-11-08: Moved to the MGQOnline.Multiplayer namespace
 //      Paulinchen  2026-11-01: Sent the chat line from the chat box, as the chat script does
 //      Paulinchen  2026-10-31: Sent the chat line through ChatTopics
@@ -23,8 +24,9 @@ namespace MGQOnline.Multiplayer.Tests;
 
 /// <summary>
 /// Covers the open world's bridge topics over a world connection that never connects: what the
-/// scripts hand over, a party action answering the party's view, the views the drain posts, a
-/// chat line that cannot go out, and the event data read ahead.
+/// scripts hand over, a party action answering the party's view, the views the drain posts, the
+/// squad and the NPCs' frame answered only when there is something to read, a chat line that
+/// cannot go out, and the event data read ahead.
 /// </summary>
 public sealed class WorldRoomTopicsTests
 {
@@ -95,6 +97,34 @@ public sealed class WorldRoomTopicsTests
     }
 
     /// <summary>
+    /// Asserts that the squad answers only once it changed and again in a world opened anew, and that
+    /// the NPCs' frame answers only when the Map Owner's events are needed or the revision changed.
+    /// </summary>
+    [Fact]
+    public void SquadAndNpcs_AnswerOnlyOnceTheScriptsHaveSomethingToRead()
+    {
+        TellMe(true, "5");
+        Drain(1);
+        Assert.False(Call(SquadViewTopics.ViewTopic, SquadRequest(0)).IsNil);
+        Assert.True(Call(SquadViewTopics.ViewTopic, SquadRequest(0)).IsNil);
+        Assert.Equal(1, Call(SquadViewTopics.ViewTopic, SquadRequest(1)).AsHash()["mode"].AsInt());
+        TellMe(false, null);
+        Drain(2);
+        TellMe(true, "5");
+        Drain(3);
+        Assert.False(Call(SquadViewTopics.ViewTopic, SquadRequest(1)).IsNil);
+
+        var nobody = new RubyHash { { "map", 5 }, { "owner", RubyNil.Value }, { "arrivals", RubyNil.Value } };
+        Assert.Equal(0, Call(NpcTopics.UpdateTopic, nobody).AsHash()["revision"].AsInt());
+        Assert.True(Call(NpcTopics.UpdateTopic, nobody).IsNil);
+        var owner = new RubyHash { { "map", 5 }, { "owner", -1 }, { "arrivals", new RubyHash { { 2, "100" } } } };
+        Assert.Equal(RubyBool.True, Call(NpcTopics.UpdateTopic, owner).AsHash()["snapshot"]);
+        Assert.Equal(RubyBool.True, Call(NpcTopics.UpdateTopic, owner).AsHash()["snapshot"]);
+        Call(NpcTopics.SnapshotTopic, new RubyHash { { "map", 5 }, { "events", new RubyArray() } });
+        Assert.True(Call(NpcTopics.UpdateTopic, owner).IsNil);
+    }
+
+    /// <summary>
     /// Asserts that a global chat line typed without a connection is not sent and the player is told.
     /// </summary>
     [Fact]
@@ -119,6 +149,20 @@ public sealed class WorldRoomTopicsTests
         { "raid", false },
         { "story_map", RubyNil.Value },
     });
+
+    /// <summary>
+    /// Writes the squad request the scripts send for a player outside a Raid World.
+    /// </summary>
+    /// <param name="ownMode">The player's choice of followers.</param>
+    /// <returns>The request.</returns>
+    private static RubyHash SquadRequest(int ownMode) => new()
+    {
+        { "max", 8 },
+        { "own_mode", ownMode },
+        { "raid", false },
+        { "raid_fight", false },
+        { "rules", RubyNil.Value },
+    };
 
     /// <summary>
     /// Calls a topic and reads the value it answers.

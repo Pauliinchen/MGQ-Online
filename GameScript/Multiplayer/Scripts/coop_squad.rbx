@@ -2,6 +2,7 @@
 #  coop_squad.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Kept the squad read last while the DLL answers that it is unchanged
 #      Paulinchen  2026-11-08: Colored the party edit screen's rows through the Mod Framework's row patch instead of drawing them
 #                            - Greyed the formation list's rows past the squad through the row patch instead of drawing them
 #      Paulinchen  2026-11-07: Greyed the Party Followers row for members through disabled:
@@ -111,8 +112,8 @@ module MGQ_MpCoopSquad
   # them, nil outside a world.
   @shown = nil
 
-  # The player's squad as the DLL read it this frame: "share", "mode" and "squads"; nil outside a
-  # world and while the DLL does not answer.
+  # The player's squad as the DLL read it last: "share", "mode" and "squads"; nil outside a world
+  # and before the DLL answered.
   @view = nil
 
   # The party fitted to a Raid World, which party_member_max caps, nil while no cap holds.
@@ -286,13 +287,13 @@ module MGQ_MpCoopSquad
     @view && @view["squads"] ? true : false
   end
 
-  # Reads the player's squad from the DLL, once a frame while a world is open: their share, how
-  # followers show and whether squads split, over the party and the world's squad rules.
+  # Reads the player's squad from the DLL once it changed, asked once a frame while a world is open:
+  # their share, how followers show and whether squads split, over the party and the world's squad
+  # rules. Keeps the squad read last while the DLL answers none.
   #
   # @param in_world [Boolean] Whether a world is open.
   def self.read_view(in_world)
-    @view = nil
-    return unless in_world && $game_party
+    return @view = nil unless in_world && $game_party
 
     raid = raid?
     request = { "max" => $game_party.party_member_max, "own_mode" => own_mode, "raid" => raid, "raid_fight" => raid && raid_fight?,
