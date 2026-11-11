@@ -2,6 +2,7 @@
 #  coop_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Answered the limit of a wait for the roster, a late guest's as the DLL sets it
 #      Paulinchen  2026-11-05: Answered the co-op topics with the values each test sets instead of a copy of the C# rules
 #                            - Handed a co-op message's fields as the test writes them instead of through a copy of the DLL's codec
 #                            - Wrote and read the roster's lines as fake lines and checked the stand-in's level alone against its golden cases, the lines' cases being C#'s
@@ -51,6 +52,10 @@ class CoopAnswers
   # The status of a matchmaking with nothing going on.
   QUIET = { "holding" => false, "frozen" => false, "busy" => false, "waiting" => nil, "rival" => false, "asking" => false, "requested" => false,
             "waits" => nil, "ask" => false, "ask_party" => false, "join_waits" => false }.freeze
+
+  # The frames the wait for the roster of a player who joins a running battle lasts, as the DLL sets
+  # them unless a test sets other.
+  LATE_ROSTER_FRAMES = 4500
 
   # What a frame of the join prompt answers besides the status unless a test sets it.
   PROMPT = { "target" => nil, "side" => nil, "freeze" => nil, "busy_reason" => nil, "asked" => false, "not_taken" => nil }.freeze
@@ -164,6 +169,7 @@ class CoopAnswers
     when "coop.read_troop" then read_troop(request["line"])
     when "coop.repair" then { "enemies" => request["enemies"], "enemy_dropped" => [], "lacking" => [] }
     when "coop.settle" then { "staying" => request["players"], "left" => [], "outcome" => "none" }
+    when "coop.roster_wait" then step == "start" ? request["limit"] || LATE_ROSTER_FRAMES : DEFAULTS["coop.roster_wait frame"]
     else DEFAULTS.fetch(step ? "#{topic} #{step}" : topic, DEFAULTS[topic])
     end
   end

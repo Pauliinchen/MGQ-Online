@@ -2,6 +2,7 @@
 //  CoopJoins.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-11: Kept how long a player who joins a running battle waits for its roster
 //      Paulinchen  2026-10-30: Created
 //
 //----------------------------------------------------------------
@@ -11,6 +12,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using MGQOnline.Game.Battles.Live;
+using MGQOnline.Game.World;
 
 namespace MGQOnline.Game.Coop;
 
@@ -26,6 +28,12 @@ public sealed class CoopJoins
     /// Milliseconds the host keeps the players it took in waiting for them to join.
     /// </summary>
     public const long WaitMilliseconds = 60_000;
+
+    /// <summary>
+    /// Frames a player who joins a running battle waits for its roster, which comes only at the
+    /// host's next command phase: <see cref="WaitMilliseconds"/> and 15 seconds more.
+    /// </summary>
+    public const int LateRosterFrames = (int)((WaitMilliseconds + 15_000) * GameClock.FramesPerSecond / 1000);
 
     /// <summary>
     /// The kind of a guest's join.

@@ -2,6 +2,7 @@
 #  battles_join_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Dropped the check of the late guest's wait limit, which only restated the request
 #      Paulinchen  2026-11-08: Expected the tiles of the bosses and the frozen fights in place of their steps
 #      Paulinchen  2026-11-07: Typed through a text box of the Mod Framework instead of the old typing flag
 #      Paulinchen  2026-11-06: Held the keys in $down down too, as the Mod Framework reads a hotkey's key
@@ -442,7 +443,6 @@ check("which stays a boss battle should the player take it over", hotjoin.boss_b
 $scene_now = scene
 $coop.roster(wire_line([[[29, 320, 300, 0]], [[5, "P5", "1,2,3", [], 4, [0, 1, 2], 1, 2], [0, "Me", "1,2,3", [], 4, [0, 1, 2], 1, 2]], nil, 4]))
 check("and takes the roster at the host's next turn", [coop.join(scene), $game_troop.instance_variable_get(:@turn_count)], [nil, 4])
-check("having waited for it as long as a late guest waits", $coop.asked("coop.roster_wait").first, { "op" => "start", "limit" => hotjoin::ROSTER_FRAMES })
 check("with the host's troop alone", $game_troop.members.map(&:enemy_id), [29])
 reset
 

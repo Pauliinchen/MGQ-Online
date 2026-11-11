@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-11: Synced a battle that turns live to the battle's level and sent that level to every player who joins it late
+#                            - Dropped the copy of how long the host keeps the players it took in waiting, which the DLL keeps
 #      Paulinchen  2026-11-05: Wrote the invite's flags as true or false and its enemy rates as numbers, and read them so
 #                            - Had C# read the joins taken in
 #                            - Handed the seats of a taken-in request and an invite to the DLL as a list, which it writes
@@ -72,13 +73,6 @@ module MGQ_MpBattlesHotjoin
 
   # The reason of an "off" whose battle takes no more players, such as one going on alone.
   OFF_CLOSED = "closed"
-
-  # Seconds the host keeps the players it took in waiting for them to join, at its command phases.
-  WAIT_SECONDS = 60
-
-  # Frames a player who joins a running battle waits for its roster, which comes only at the host's
-  # next command phase: longer than the host keeps them waiting.
-  ROSTER_FRAMES = (WAIT_SECONDS + 15) * 60
 
   # Width of an enemy's picture when this game cannot measure it.
   DEFAULT_WIDTH = 160
@@ -917,8 +911,8 @@ module MGQ_MpBattlesHotjoin
   end
 
   # Forgets the players taken in who turned their invite down or stopped waiting, left the battle
-  # or the world, or did not join within WAIT_SECONDS, as the DLL finds them; those who waited too
-  # long are told it is off.
+  # or the world, or did not join within CoopJoins.WaitMilliseconds, as the DLL finds them; those
+  # who waited too long are told it is off.
   def self.expire
     MGQ_MpBattlesSync::Channel.poll
     gone = pending_seats.select { |seat| MGQ_MpBattlesSync.peer_at(seat).nil? }

@@ -2,6 +2,7 @@
 //  CoopTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-11: Set how long a late guest waits for the roster and answered the limit of every wait for it
 //      Paulinchen  2026-11-06: Answered whether a character fights at the battle's level and what its equipment keeps
 //      Paulinchen  2026-11-05: Took the seats an encounter brings along as numbers
 //                            - Took the widths every request to join a battle carries
@@ -161,9 +162,10 @@ public static class CoopTopics
 
     /// <summary>
     /// A guest's wait for the host's roster, see <see cref="CoopJoins.RosterFrame"/>: <c>op</c>
-    /// "start" with <c>limit</c>, or "frame" with <c>restart</c> (the new limit once the battle went to
-    /// the battle server, nil otherwise) in; nil, or <c>roster</c> (nil before it came), <c>late</c>
-    /// and <c>frames</c> out.
+    /// "start" with <c>limit</c>, or with <c>late</c> true for a player who joins a running battle
+    /// (<see cref="CoopJoins.LateRosterFrames"/>), or "frame" with <c>restart</c> (the new limit once
+    /// the battle went to the battle server, nil otherwise) in; the limit set, or <c>roster</c> (nil
+    /// before it came), <c>late</c> and <c>frames</c> out.
     /// </summary>
     public const string RosterWait = "coop.roster_wait";
 
@@ -442,8 +444,9 @@ public static class CoopTopics
     {
         if (request["op"].AsText() == "start")
         {
-            joins.StartRoster(request["limit"].AsInt());
-            return RubyNil.Value;
+            int limit = IsTrue(request["late"]) ? CoopJoins.LateRosterFrames : request["limit"].AsInt();
+            joins.StartRoster(limit);
+            return limit;
         }
 
         RosterWait wait = joins.RosterFrame(request["restart"].IsNil ? null : request["restart"].AsInt());

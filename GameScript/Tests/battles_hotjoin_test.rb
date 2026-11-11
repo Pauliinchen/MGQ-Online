@@ -2,6 +2,7 @@
 #  battles_hotjoin_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Dropped the check of the late guest's wait limit, which only restated the request, and read the box's seconds from the DLL's answer
 #      Paulinchen  2026-11-05: Answered the squad math with fixed values per case
 #                            - Read the messages sent as the scripts hand them and handed those of other games as the DLL reads them
 #                            - Answered the co-op topics with the values each case sets and checked what the scripts ask and do with the answers
@@ -302,8 +303,7 @@ check("the DLL calling it off for the host before the roster starts the encounte
       [coop.join(scene), $notices], [:gone, [told]])
 check("having handed the host's word to the DLL", $coop.asked("coop.take_off").last.values_at("seat", "fields"), [5, { "coop" => "off", "bid" => "hb1", "why" => "over" }])
 check("with its own escape and lose back", [MGQ_MpGame.get(BattleManager, :can_escape), MGQ_MpGame.get(BattleManager, :can_lose)], [true, false])
-check("having waited for the roster as a late guest, as long as a late guest waits",
-      [battle_sent("join").map(&:first), $coop.asked("coop.roster_wait").first], [[5], { "op" => "start", "limit" => hotjoin::ROSTER_FRAMES }])
+check("having sent its join to the host", battle_sent("join").map(&:first), [5])
 reset
 
 ask_running
@@ -318,7 +318,7 @@ $inject = lambda { |frame| box_lines = waiting_lines if frame == 2 }
 check("a late guest whose roster runs late fights its encounter alone, telling the host", [coop.join(scene), battle_sent("decline").map(&:first)], [:gone, [5]])
 $inject = nil
 check("having read how long the wait may last, and the seconds, in its box",
-      box_lines, { 0 => "Joining P5's battle at its next turn...", 1 => "Up to #{hotjoin::ROSTER_FRAMES / 60} s", 2 => "0 s" })
+      box_lines, { 0 => "Joining P5's battle at its next turn...", 1 => "Up to #{CoopAnswers::LATE_ROSTER_FRAMES / 60} s", 2 => "0 s" })
 reset
 
 ask_running

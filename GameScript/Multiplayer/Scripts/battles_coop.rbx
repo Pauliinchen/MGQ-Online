@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-11: Put what another player's character steals or gets into its owner's bag
+#                            - Took how long a late guest waits for the roster from the DLL
 #      Paulinchen  2026-11-08: Named the characters in the battle's status window through the Mod Framework's row patch instead of drawing them
 #      Paulinchen  2026-11-06: Read the player's own color in the status window through the Mod Framework's UI.color_now
 #                            - Dropped RAID_PLAYERS, which the DLL's CoopMatchmaking keeps
@@ -1294,20 +1295,23 @@ module MGQ_MpBattlesCoop
 
   # As guest, tells the host who joins and builds the party the host sends, which the DLL takes from
   # the live battle's session (topic coop.roster_wait). Called at the battle's start. A player who
-  # joins a running battle late (MGQ_MpBattlesHotjoin.late?) waits for its next command phase, and
-  # takes its turn count; one whose encounter it took in fights that encounter alone when the roster
-  # never comes (see own_ending?). A player who follows to another battle meanwhile (see follow)
-  # joins that one, and one whose roster came turns a kept invite down.
+  # joins a running battle late (MGQ_MpBattlesHotjoin.late?) waits for its next command phase, as
+  # long as the DLL says (CoopJoins.LateRosterFrames), and takes its turn count; one whose encounter
+  # it took in fights that encounter alone when the roster never comes (see own_ending?). A player
+  # who follows to another battle meanwhile (see follow) joins that one, and one whose roster came
+  # turns a kept invite down.
   #
   # @param scene [Scene_Battle] The battle.
   # @return [Symbol, nil] An ending of battles_sync's Channel.ending, nil once the battle may start.
   def self.join(scene)
     hotjoin = MGQ_MpBattlesHotjoin
     served = defined?(MGQ_MpBattlesServed)
-    limit = hotjoin.late? ? hotjoin::ROSTER_FRAMES : roster_frames
-    if served && MGQ_MpBattlesServed.starter?
-      # The starter's characters went to the battle server with the battle.
-      limit = served_roster_frames
+    starter = served && MGQ_MpBattlesServed.starter?
+    # The starter's characters went to the battle server with the battle.
+    start = starter ? { "limit" => served_roster_frames } : hotjoin.late? ? { "late" => true } : { "limit" => roster_frames }
+    bridge = MGQ_Multiplayer::Bridge
+    limit = bridge.call(ROSTER_WAIT_TOPIC, { "op" => "start" }.merge(start)).to_i
+    if starter
       log("waits up to #{limit / 60} s for the server's roster of battle #{MGQ_MpBattlesSync.battle_id}")
     else
       # The host's party says how many of them fight and how many wait on the Backline.
@@ -1315,8 +1319,6 @@ module MGQ_MpBattlesCoop
       MGQ_MpBattlesSync::Channel.post("join", MGQ_MpBattlesSync::Wire.write(build))
       log("sent join for battle #{MGQ_MpBattlesSync.battle_id} with #{Array(build[1]).size} characters, party_member_max #{build[2]}, waiting up to #{limit / 60} s for the roster")
     end
-    bridge = MGQ_Multiplayer::Bridge
-    bridge.call(ROSTER_WAIT_TOPIC, "op" => "start", "limit" => limit)
     text = hotjoin.late? ? "Joining #{MGQ_MpBattlesSync.player}'s battle at its next turn..." : "Joining #{MGQ_MpBattlesSync.player}'s battle..."
     # A late join may last a whole turn, which the box's names line tells, since the text line
     # would clip with that note and the wait names nobody.
