@@ -2,6 +2,7 @@
 #  coop_events.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Handed a sort the values the DLL names until it names no new one, and logged why an ask gave no answer
 #      Paulinchen  2026-11-05: Took the self switches a sort needs as the game keys them
 #                            - Told whether the player's story scene plays as true or false
 #                            - Asked the DLL's one decision whether a list is the player's own, a Pocket Castle resident's or a resumed raid fight's, and whether a telling moves the world's story on
@@ -171,9 +172,9 @@ module MGQ_MpCoopEvents
   # call, see EventTopics.Index.
   INDEX_TOPIC = "events.index"
 
-  # How often a sort hands over the values the DLL names it needs, at most: a branch the values
-  # open may read more.
-  MAX_SORT_ROUNDS = 8
+  # Rounds of values handed over past which an answer is logged with its count, since each round
+  # sorts the list again.
+  LONG_ASK_ROUNDS = 8
 
   # Sorts kept with the values they read, at most, before they are all forgotten.
   MAX_KEPT_SORTS = 4000
@@ -465,7 +466,8 @@ module MGQ_MpCoopEvents
     @common_ids[list]
   end
 
-  # Asks a topic of the sorter, handing over the values it names it needs until it has them all.
+  # Asks a topic of the sorter, handing over the values it names it needs until it has them all,
+  # and logs why it gave no answer.
   #
   # @param topic [String] SORT_TOPIC, KINDS_TOPIC, LEAVES_PART_TOPIC or MOVES_TOPIC.
   # @param request [Hash] The request, which takes the values.
@@ -473,14 +475,21 @@ module MGQ_MpCoopEvents
   # @return [Hash, nil] The answer, nil when the DLL did not give one.
   def self.ask(topic, request, needs)
     open_events
-    MAX_SORT_ROUNDS.times do
+    rounds = 0
+    loop do
+      rounds += 1
       request["values"] = values_of(needs)
       answer = MGQ_Multiplayer::Bridge.call(topic, request)
-      return nil unless answer.is_a?(Hash)
-      return answer unless answer["needs"]
-      return nil unless add_needs(needs, answer["needs"])
+      return log("the DLL answered no Hash for #{topic}") unless answer.is_a?(Hash)
+
+      unless answer["needs"]
+        log("the DLL answered #{topic} after #{rounds} rounds of values") if rounds > LONG_ASK_ROUNDS
+        return answer
+      end
+      next if add_needs(needs, answer["needs"])
+
+      return log("the DLL named only values it already has for #{topic} after #{rounds} rounds: #{answer['needs'].inspect}")
     end
-    nil
   end
 
   # Hands the DLL the game data's fingerprint once per session, before its first question about

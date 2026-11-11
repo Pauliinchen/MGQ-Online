@@ -2,6 +2,7 @@
 #  coop_events_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Checked that a sort whose values the DLL names over many rounds still sorts the list
 #      Paulinchen  2026-11-06: Kept the screen of choices open through the script's open_screen
 #                            - Set the sorts of its own lists, answered a Classic member's play with fixed values and dropped the Classic catch-up checks that replayed recorded answers
 #      Paulinchen  2026-11-05: Answered the scopes of a Classic party and the companion filter with fixed values instead of from copies of the C# rules
@@ -588,6 +589,19 @@ choice_travel = [[101, 0, ["", 0, 0, 2]], [102, 0, [["Not yet", "Decided"], 2]],
 sorted_as(choice_travel, TRAVEL.merge("may_tell" => true, "marks" => ["choice_story", "says", "travel"]))
 sorted_as(choice_travel, { "story" => false }, 2)
 sorted_as(choice_travel, { "story" => true }, 5)
+# A list whose sort names one more switch it reads each round, as the Reaper scene's page needed up
+# to 15 rounds, still sorts once the DLL has them all instead of playing as a talk.
+deep_scene = [c(101, "", 0, 0, 2), c(121, 61, 61, 0)]
+sorted_as(deep_scene, SCENE)
+sort_rounds = 0
+$world_bridge.answer("events.sort") do |request|
+  sort_rounds += 1
+  named = request["values"]["s"] || {}
+  named.size < 12 ? { "needs" => { "s" => [2100 + named.size] } } : set_sort(request)
+end
+check("a sort that names a new switch each round for 12 rounds sorts the list as story",
+      [MGQ_MpCoopEvents.sorting(deep_scene)[:kind], sort_rounds], [:story, 13])
+$world_bridge.answer("events.sort") { |request| set_sort(request) }
 story = MGQ_MpStoryState
 check("the awakening switches are the player's own, the story's boss flags from 7000 are not", [6500, 6999, 7015].map { |id| story.personal_switch?(id) }, [true, true, false])
 
