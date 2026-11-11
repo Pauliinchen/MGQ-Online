@@ -2,6 +2,7 @@
 //  SharedSettingsSyncTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-11: Read the details line of shared settings straight from the sync, whose topic is gone
 //      Paulinchen  2026-11-08: Moved to the MGQOnline.Multiplayer namespace
 //      Paulinchen  2026-11-05: Checked the world entered and the details' text
 //                            - Handed the creator's options and the Mod Config groups as values, expected the settings to apply as values, and covered every type as released games wrote it
@@ -80,10 +81,8 @@ public sealed class SharedSettingsSyncTests
         Assert.Equal((Values(("mod_level_cap", 0)), false, true), (member["values"], member["own"].AsBool(), member["shared"].AsBool()));
         Assert.Equal((Values(("mod_level_cap", 1)), true), (creator["values"], creator["own"].AsBool()));
         Assert.Equal((false, false), (loose["own"].AsBool(), loose["shared"].AsBool()));
-        RubyHash details = new() { { "settings", On }, { "creator_id", "creator" }, { "creator_name", "Creator" }, { "me", "creator" } };
-        Assert.Equal("Mod settings: shared by you (Level Cap)", Call(SharedSettingsSync.DetailsTopic, details)!.AsText());
-        details["me"] = "member";
-        Assert.Equal("Mod settings: shared by Creator (Level Cap)", Call(SharedSettingsSync.DetailsTopic, details)!.AsText());
+        Assert.Equal("Mod settings: shared by you (Level Cap)", _sync.DetailsText(On, "creator", "Creator", "creator"));
+        Assert.Equal("Mod settings: shared by Creator (Level Cap)", _sync.DetailsText(On, "creator", "Creator", "member"));
     }
 
     /// <summary>

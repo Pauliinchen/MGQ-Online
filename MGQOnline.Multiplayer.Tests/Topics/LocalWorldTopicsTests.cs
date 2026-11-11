@@ -2,6 +2,7 @@
 //  LocalWorldTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-11: Dropped the check of the game data topics, which the DLL no longer has
 //      Paulinchen  2026-11-08: Named no other mod among the scripts every player has
 //                            - Moved to the MGQOnline.Multiplayer namespace
 //      Paulinchen  2026-11-05: Covered a world found, changed and played, its latest save, and the picker's scripts in subfolders
@@ -145,20 +146,6 @@ public sealed class LocalWorldTopicsTests : IDisposable
 
         Assert.Equal(new RubyArray([taken["world"], Code]), _topics.Call(LocalWorldTopics.InviteTake));
         Assert.Null(_topics.Call(LocalWorldTopics.InviteTake));
-    }
-
-    /// <summary>
-    /// Asserts that the game data compares only once this game's fingerprint is known.
-    /// </summary>
-    [Fact]
-    public void DataDiffering_ComparesWithTheFingerprintHanded()
-    {
-        string mine = "1:" + string.Join(".", Enumerable.Range(1, 11).Select(part => part.ToString("x8", System.Globalization.CultureInfo.InvariantCulture)));
-        string theirs = mine.Replace("00000003", "00000000", StringComparison.Ordinal);
-        Assert.Null(_topics.Call(LocalWorldTopics.DataDiffering, theirs));
-
-        _topics.Call(LocalWorldTopics.GameData, mine);
-        Assert.Equal(new RubyArray(["skills"]), _topics.Call(LocalWorldTopics.DataDiffering, theirs));
     }
 
     /// <summary>

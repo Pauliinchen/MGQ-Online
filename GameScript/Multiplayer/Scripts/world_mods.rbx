@@ -2,6 +2,8 @@
 #  world_mods.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Dropped the details text of a world's settings, which the DLL writes for the world screen
+#                            - Stopped having the world script forget the Patch folder's scripts, which it no longer reads
 #      Paulinchen  2026-11-08: Handed the DLL the installed mods as the Mod Framework lists them, for the check of a world's mods
 #                            - Sent the Mod Config options of each website mod's version, which the website keeps
 #                            - Dropped the relay's mod catalog, which the website's replaced
@@ -196,9 +198,6 @@ module MGQ_MpWorldMods
   # The topic that tells whether settings are shared.
   SHARED_TOPIC = "settings.shared"
 
-  # The topic that says what the details say about a world's settings.
-  DETAILS_TOPIC = "settings.details"
-
   # The keys of the options the world sets, which Options > Mods greys.
   @locked = []
 
@@ -215,7 +214,6 @@ module MGQ_MpWorldMods
   # the world screen opens or after an install.
   def self.forget_installed
     MGQ_Multiplayer::Bridge.call(FORGET_INSTALLED_TOPIC)
-    MGQ_MpWorld.forget_installed
     hand_framework
   end
 
@@ -936,17 +934,6 @@ module MGQ_MpWorldMods
 
     NOTICE_LINES.times { |index| MGQ_MpNotices.drop([NOTICE_KEY, index], "a newer one replaces it") }
     (lines.size - 1).downto(0) { |index| MGQ_MpNotices.message([NOTICE_KEY, index], lines[index], NOTICE_FRAMES) }
-  end
-
-  # What the world screen's details say about a world's mod settings.
-  #
-  # @param listed [MGQ_MpWorld::Directory::ListedWorld] The world.
-  # @param me [String] The player's id.
-  # @return [String] Such as "Mod settings: shared by Creator (Level Cap)", naming the mods whose
-  #   options the settings hold as this game's Mod Config groups them.
-  def self.details_text(listed, me)
-    hand_options
-    MGQ_Multiplayer::Bridge.call(DETAILS_TOPIC, "settings" => listed.settings.to_s, "creator_id" => listed.creator_id.to_s, "creator_name" => listed.creator_name.to_s, "me" => me.to_s).to_s
   end
 
   # Takes the DLL's steps whenever it has some, and sends the creator's changed options once they

@@ -2,6 +2,7 @@
 //  ModTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-11: Dropped the installed scripts topic, which no script asks any more
 //      Paulinchen  2026-11-08: Dropped the relay's mod catalog, which the website's replaced
 //                            - Moved to the MGQOnline.Multiplayer namespace
 //      Paulinchen  2026-10-30: Listed the scripts of the Patch folder without the parking
@@ -13,14 +14,11 @@
 //
 //----------------------------------------------------------------
 
-using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using MGQOnline.Bridge;
 using MGQOnline.Bridge.Ruby;
 using MGQOnline.Game.Mods;
-using MGQOnline.Multiplayer.Mods;
 
 namespace MGQOnline.Multiplayer.Topics;
 
@@ -29,12 +27,6 @@ namespace MGQOnline.Multiplayer.Topics;
 /// </summary>
 internal static class ModTopics
 {
-    /// <summary>
-    /// Lists every script in Patch, see <see cref="PatchScripts.List"/>: nothing in; an Array of
-    /// [key, path relative to the game folder, name without ".rb"] out, nil when Patch could not be read.
-    /// </summary>
-    public const string Installed = "mods.installed";
-
     /// <summary>
     /// Reads a world's mods as written, see <see cref="ModsText"/>: the text in; <c>names</c> (every mod
     /// without its mark, required ones first, then essential ones), <c>required</c> and <c>essential</c> out.
@@ -45,10 +37,8 @@ internal static class ModTopics
     /// Registers the topics on a context.
     /// </summary>
     /// <param name="context">The context the handshake opened.</param>
-    /// <param name="scripts">Lists the scripts of the Patch folder once a topic is called.</param>
-    public static void Register(BridgeContext context, Func<IReadOnlyList<string>?> scripts)
+    public static void Register(BridgeContext context)
     {
-        context.Register(Installed, (_, _) => scripts() is { } found ? new RubyArray(found.Select(ScriptOf)) : null);
         context.Register(Text, (_, request) => TextOf(request.IsNil ? null : request.AsText()));
     }
 
@@ -70,12 +60,4 @@ internal static class ModTopics
     /// <param name="texts">The texts.</param>
     /// <returns>The Array.</returns>
     internal static RubyArray Texts(IEnumerable<string> texts) => new(texts.Select(text => (RubyValue)text));
-
-    /// <summary>
-    /// Describes an installed script for the game script.
-    /// </summary>
-    /// <param name="path">Its path relative to the game folder.</param>
-    /// <returns>Its key, path and name.</returns>
-    private static RubyValue ScriptOf(string path) =>
-        new RubyArray([ModKey.Of(Path.GetFileName(path)), path, Path.GetFileNameWithoutExtension(path)]);
 }

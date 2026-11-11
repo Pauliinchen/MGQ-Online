@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-11-11: Started a world with the row the DLL hands with the start step instead of the row picked before its mods were read
 #                            - Handed the DLL mods the Mod Framework finds ready at once, which it refuses itself while they still differ
+#                            - Dropped the DLL's confirmation step, which no rule asks for
 #      Paulinchen  2026-11-09: Gave the details' boxes a little room at their sides
 #                            - Wrapped the description to as many lines as its box holds, where it showed one
 #                            - Drew a thin box around each part of the details the player can pick, at one height for every world
@@ -1054,7 +1055,7 @@ class Scene_MpWorlds < Scene_MenuBase
   # Hands the DLL the player's answer or what a step's effect did (topic screen.answer), and plays
   # the steps that follow.
   #
-  # @param answer [String] The answer, such as "yes".
+  # @param answer [String] The answer, such as "back".
   # @param request [Hash] What it needs, such as "text".
   def answer(answer, request = {})
     play(MGQ_Multiplayer::Bridge.call(ANSWER_TOPIC, { "answer" => answer }.merge(request)))
@@ -1087,8 +1088,7 @@ class Scene_MpWorlds < Scene_MenuBase
     when "say" then say(first)
     when "buzz" then Sound.play_buzzer
     when "back" then back_to_list
-    when "confirm" then ask_dll(first, second)
-    when "choices" then ask_dll(nil, first)
+    when "choices" then ask_dll(first)
     when "password" then ask_password(first)
     when "leave_form" then leave_form if @form_symbol == :password
     when "busy" then hold_for(first)
@@ -1113,21 +1113,15 @@ class Scene_MpWorlds < Scene_MenuBase
     end
   end
 
-  # Asks the DLL's question: one doing command and the cancel answer in the question box, any
-  # other in a menu, both with what the steps said last as the question. Cancel answers back.
+  # Asks the DLL's question of where to start in a menu, with what the steps said last as the
+  # question. Cancel answers back.
   #
-  # @param what [String, nil] What the question is about, nil for where to start.
   # @param offered [Array<Array>] Each command's label and answer.
-  def ask_dll(what, offered)
+  def ask_dll(offered)
     close_popups
     choices = offered.map { |label, symbol| [label.to_s, symbol.to_s] }
-    question = @said && @said[0]
-    log_screen("asking #{what || 'where to start'}: #{choices.map { |_label, symbol| symbol }.join(', ')}")
-    if what && choices.size == 2 && choices[1][1] == "cancel"
-      ask_confirm(question, choices[0][0], choices[1][0]) { |yes| yes ? answer(choices[0][1]) : on_back(true) }
-    else
-      ask_menu(question, choices.map { |label, symbol| [label, symbol, true] }) { |symbol| symbol.to_s == "cancel" ? on_back(true) : answer(symbol.to_s) }
-    end
+    log_screen("asking where to start: #{choices.map { |_label, symbol| symbol }.join(', ')}")
+    ask_menu(@said && @said[0], choices.map { |label, symbol| [label, symbol, true] }) { |symbol| symbol.to_s == "cancel" ? on_back(true) : answer(symbol.to_s) }
   end
 
   # Opens a menu of choices in the middle of the screen. Its answer runs in the frame after, once

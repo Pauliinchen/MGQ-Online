@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-11-11: Handed the world as the list holds it with the start step, so a world picked before its mods were read starts with them
+//                            - Dropped the confirmation step, which no rule asks for
 //      Paulinchen  2026-11-08: Checked a world's mods by the creator's versions too, and waited for the website's catalog
 //                            - Moved to the MGQOnline.Multiplayer namespace
 //      Paulinchen  2026-11-06: Asked for a world's differing mods through the Mod Framework's dialog of the mods it needs, which installs them and starts the game again where it must
@@ -301,11 +302,6 @@ internal sealed partial class WorldEntering
     /// The world the game started again to enter, entered once the list holds it.
     /// </summary>
     private string? _rejoin;
-
-    /// <summary>
-    /// What the question being asked is about, such as "mods".
-    /// </summary>
-    private string? _confirming;
 
     /// <summary>
     /// What waits for the world's mods to be read: "enter" or "edit".
@@ -842,9 +838,6 @@ internal sealed partial class WorldEntering
         string answer = request["answer"].AsText();
         switch (answer)
         {
-            case "yes":
-                Confirmed();
-                break;
             case EnterRules.Cancel:
             case "back":
                 Log($"backed out for {EntryText}");
@@ -903,21 +896,6 @@ internal sealed partial class WorldEntering
                 }
 
                 break;
-        }
-    }
-
-    /// <summary>
-    /// Does what the player confirmed.
-    /// </summary>
-    private void Confirmed()
-    {
-        string? what = _confirming;
-        _confirming = null;
-        Log($"confirmed {what} for {EntryText}");
-        switch (what)
-        {
-            default:
-                throw new BridgeRequestException($"Nothing waits for a confirmation of {what}.");
         }
     }
 
@@ -1205,10 +1183,6 @@ internal sealed partial class WorldEntering
                 case EnterRules.Back:
                     Back();
                     break;
-                case EnterRules.Confirm:
-                    Say(done.Text!);
-                    Confirm(done.What!, (done.Yes!, "yes"), ("Back", EnterRules.Cancel));
-                    break;
                 case EnterRules.Choices:
                     _steps.Add(new RubyArray { "choices", Offered(done.Offered!) });
                     break;
@@ -1244,17 +1218,6 @@ internal sealed partial class WorldEntering
     {
         Buzz();
         Say(text);
-    }
-
-    /// <summary>
-    /// Asks the question said last, with its commands.
-    /// </summary>
-    /// <param name="what">What it is about.</param>
-    /// <param name="offered">Each command's label and answer.</param>
-    private void Confirm(string what, params (string Label, string Answer)[] offered)
-    {
-        _confirming = what;
-        _steps.Add(new RubyArray { "confirm", what, Offered(offered) });
     }
 
     /// <summary>

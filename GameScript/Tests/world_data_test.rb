@@ -2,6 +2,7 @@
 #  world_data_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Dropped the checks of the game data comparison, the installed scripts and the picker's set, which no script calls
 #      Paulinchen  2026-11-06: Acted on the world screen as its window of the UI layer hands over what the player does, leaving the list box and the mod picker's look to the in-game suite
 #      Paulinchen  2026-11-05: Answered the mods text, the mod keys and the scripts in Patch with fixed values and checked what goes to the DLL instead of the rules
 #                            - Checked the ids the fingerprint is made of and what goes to the DLL to compare, instead of what its stand-ins compared
@@ -246,11 +247,6 @@ untranslated = measured.call
 check("the fingerprint is the DLL's of the ids in use of each part, an entry holding a note, features or effects, the maps sorted",
       [plain, untranslated.values_at(0, 2, 8, 9, 10)], [$world_bridge.instance_variable_get(:@handlers)["worlds.fingerprint"].call(untranslated), [[1, 2], [1, 3], [1], [1], [1, 2, 1001]]])
 $locals.clear
-$locals.set("worlds.data_differing", [])
-check("comparing it with another game's hands the DLL this game's fingerprint once, then the other's, each asked once",
-      [MGQ_MpWorld::GameData.differing("2:other"), MGQ_MpWorld::GameData.differing("2:other"), $locals.asked("worlds.game_data"), $locals.asked("worlds.data_differing")],
-      [[], [], [plain], ["2:other"]])
-$locals.set("worlds.data_differing")
 measuring = $world_bridge.instance_variable_get(:@handlers)["worlds.fingerprint"]
 $world_bridge.answer("worlds.fingerprint") { nil }
 MGQ_MpWorld::GameData.instance_variable_set(:@fingerprint, nil)
@@ -267,22 +263,13 @@ game_data([DataUsable.new("Slash", "<power 2>"), DataUsable.new(""), DataUsable.
 check("the maps of a further map folder count on from a thousand", MGQ_MpWorld::GameData.map_ids, [1, 2, 1001, 1005])
 game_data([DataUsable.new("Slash", "<power 2>"), DataUsable.new("Mod Skill", "", [:feature]), DataUsable.new("Fire", "", [], [:damage])], [1, 2, 488])
 $locals.clear
-check("a world without game data is not compared, the DLL not asked", [MGQ_MpWorld::GameData.differing(""), MGQ_MpWorld::GameData.differing(nil), $locals.asked("worlds.data_differing")],
-      [nil, nil, []])
-$locals.set("worlds.data_text", "skills, maps and 2 more")
-check("the parts that differ are named as the DLL writes them, four at most unless asked otherwise",
-      [MGQ_MpWorld::GameData.text(%w[skills maps]), MGQ_MpWorld::GameData.text(%w[skills], 2), $locals.asked("worlds.data_text")],
-      ["skills, maps and 2 more", "skills, maps and 2 more", [{ "parts" => %w[skills maps], "named" => 4 }, { "parts" => %w[skills], "named" => 2 }]])
-$locals.set("worlds.data_text")
 modded = MGQ_MpWorld::GameData.fingerprint
 
 # The measure once a world's mods loaded, which the battle server, measuring without them, never takes.
 $data_items << DataEntry.new("Mod Potion", "<Mod Potion>")
 entered = MGQ_MpWorld::GameData.measure_entered
 check("a world's mod that adds an item shows in the measure taken once the world's mods loaded", [measured.call[3], entered == modded], [[1, 2], false])
-MGQ_MpWorld::GameData.differing(entered)
-check("while the fingerprint the DLL keeps and served battles carry stays the title's, so the server still hosts them",
-      [MGQ_MpWorld::GameData.fingerprint, $locals.asked("worlds.game_data").last], [modded, modded])
+check("while the fingerprint served battles carry stays the title's, so the server still hosts them", MGQ_MpWorld::GameData.fingerprint, modded)
 $data_items.pop
 
 # GameData.ini, which the title screen writes once per session for the World Admin tool.
@@ -361,12 +348,7 @@ check("their creators' game data", listed.map { |world| world.data }, [plain, pl
 check("the mods they need and their descriptions", [listed[1].mods, listed[0].description, listed[3].mods, listed[3].description], ["Some Mod", "Unmodded only.", "", ""])
 entries = DATA_WORLDS.map { |values| screen_entry(listed_row(values)) }
 screen_list(entries.map { |entry| entry.row })
-MGQ_MpWorld::GameData.instance_variable_set(:@handed, nil)
 $locals.clear
-$locals.set("worlds.data_differing") { |other| other == plain ? %w[skills maps] : [] }
-check("an entry tells what the DLL finds differs from its creator's game data, each fingerprint asked once, none without one",
-      [entries.map { |entry| entry.differing }, $locals.asked("worlds.data_differing")], [[["skills", "maps"], ["skills", "maps"], [], nil], [plain, modded]])
-$locals.set("worlds.data_differing")
 
 # Adding a hidden world by its id.
 added = []
@@ -456,10 +438,6 @@ $rule_answers.set("mods.text", { "names" => ["Mod B", "Mod C", "Mod D", "Mod A"]
 check("a world's mods are named as the DLL reads its mods text",
       [MGQ_MpWorld.mods_of("Mod A; ?Mod D; !Mod B;! Mod C; !; ?"), $rule_answers.asked("mods.text").last], [["Mod B", "Mod C", "Mod D", "Mod A"], "Mod A; ?Mod D; !Mod B;! Mod C; !; ?"])
 $rule_answers.set("mods.text", nil)
-mod_keys = { "Mod B" => "modb", "Mod C" => "modc", "Deep Mod" => "deepmod", "Other" => "other" }
-$rule_answers.set("mods.keys") { |names| names.map { |name| mod_keys.fetch(name) } }
-MGQ_MpWorld.instance_variable_set(:@installed, [["modb", "Patch/Mod_B.rb", "Mod_B"], ["maskofenvy", "Patch/Mask_of_Envy.rb", "Mask_of_Envy"]])
-check("a mod is installed when the DLL's key of its name is a script's in Patch", ["Mod B", "Mod C"].map { |mod| MGQ_MpWorld.installed_mod?(mod) }, [true, false])
 
 # A world the list names without its mods, as the relay lists it for this version.
 unread_world = listed[1].dup
@@ -475,10 +453,6 @@ $screen_steps = [["read"]]
 scene.on_enter
 check("once the DLL read its mods, the read step takes the world anew from the DLL's list", [$screens.asked("screen.world").last, unread_entry.listed.mods], ["w2", "!Mod C"])
 $screens.list = list_before
-$rule_answers.set("mods.installed", [["deepmod", "Patch/Sub/Deep Mod.rb", "Deep Mod"]])
-MGQ_MpWorld.instance_variable_set(:@installed, nil)
-check("the scripts in Patch are those the DLL lists", ["Deep Mod", "Other"].map { |mod| MGQ_MpWorld.installed_mod?(mod) }, [true, false])
-MGQ_MpWorld.instance_variable_set(:@installed, [["modb", "Patch/Mod_B.rb", "Mod_B"]])
 modded_world = listed[1].dup
 modded_world.mods = "Mod A; Mod B"
 member = MGQ_MpWorld::Directory::Member
@@ -517,11 +491,10 @@ pick.toggle(0)
 check("a change goes to the DLL, and a mod read before it tells its new state", [$locals.asked("modpick.act").last, first.state, pick.text, pick.all_listed?],
       [{ "do" => "toggle", "index" => 0 }, :listed, "Battle_Dialogue; !Level_Cap; ?Data Pack", true])
 pick.mark(1, :essential)
-pick.set(1, :unlisted)
 pick.list_all
 pick.unlist_all
-check("marks, states and the whole list go to the DLL by name", $locals.asked("modpick.act").last(4),
-      [{ "do" => "mark", "index" => 1, "state" => "essential" }, { "do" => "set", "index" => 1, "state" => "unlisted" }, { "do" => "list_all" }, { "do" => "unlist_all" }])
+check("marks and the whole list go to the DLL by name", $locals.asked("modpick.act").last(3),
+      [{ "do" => "mark", "index" => 1, "state" => "essential" }, { "do" => "list_all" }, { "do" => "unlist_all" }])
 $locals.set("modpick.act", "answer" => "Level_Cap is in the list already.", "pick" => pick_view.call([["Battle_Dialogue", "listed", true]], "Battle_Dialogue"))
 check("a refusal comes back as the DLL says it, the picker made anew of the mods it tells", [pick.add("level_cap"), pick.entries.map { |entry| entry.name }],
       ["Level_Cap is in the list already.", ["Battle_Dialogue"]])

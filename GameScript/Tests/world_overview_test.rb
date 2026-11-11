@@ -2,6 +2,7 @@
 #  world_overview_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Dropped the checks of the shortening of places, which no box calls any more
 #      Paulinchen  2026-11-09: Read the World page's head values with their captions apart from its lines
 #                            - Dropped the marks of the groups' rows, which the DLL no longer writes
 #      Paulinchen  2026-11-08: Checked the characters the Quests page shows as avatars, by the game's actors themselves
@@ -470,16 +471,6 @@ $pressed = MGQ_MpHotkeys.code(:party_box)
 MGQ_MpPartyBox.on_map
 check("then makes it full again", [MGQ_MpPartyBox.small?, $player_ini["party_box_small"]], [false, false])
 
-# Places are shortened to fit the party box, measured at 10 pixels a letter in 300 pixels.
-ruler = Object.new
-ruler.define_singleton_method(:text_size) { |text| Struct.new(:width).new(text.length * 10) }
-# Fits a place into 300 pixels.
-fit = lambda { |place| overview.fit_place(place, 300, ruler) }
-check("a short place stays", fit.call("Iliasville"), "Iliasville")
-check("the Pocket Castle takes its short name", fit.call("Pocket Monster Lord's Castle Conference Room"), "Pocket Castle Conference Room")
-check("then the part in brackets goes", fit.call("Tartarus (Western Hellgondo Continent)"), "Tartarus")
-check("then the name is cut before its floor", fit.call("Alliance of Wisdom Laboratory B2F"), "Alliance of Wisdom Labo... B2F")
-check("and a name without a floor is cut at its end", fit.call("A Very Long Place Name Without Any Floor"), "A Very Long Place Name With...")
 # The action wheel's middle opens the overview, and a choice that leaves closes it.
 MGQ_MpActions.wheel_options[:CENTER].run.call
 check("the action wheel's middle opens the overview on the Players page, no menu open", [overview.open?, overview.page, $menu], [true, :players, nil])

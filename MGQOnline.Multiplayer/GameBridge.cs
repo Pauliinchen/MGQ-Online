@@ -2,6 +2,7 @@
 //  GameBridge.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-11: Registered the mod topics without the Patch folder scripts, whose topic went
 //      Paulinchen  2026-11-08: Handed the overview topics the game's events for the quest walk
 //                            - Registered the mod topics without the world directory, whose relay catalog went
 //                            - Moved to the MGQOnline.Multiplayer namespace
@@ -160,7 +161,7 @@ internal static unsafe class GameBridge
         var roster = new RaidRoster();
         SharedTopics.Register(context, RaidBosses.Current, roster);
         FreezeTopics.Register(context, () => RaidBosses.Current.Ledger, roster, () => GameEvents.Current);
-        ModTopics.Register(context, services.Scripts);
+        ModTopics.Register(context);
         EventTopics.Register(context, () => GameEvents.Current);
         EventTableTopics.Register(context, () => GameEvents.Current);
         WorldTopics.Register(context);

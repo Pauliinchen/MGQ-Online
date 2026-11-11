@@ -2,6 +2,7 @@
 //  LocalWorldTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-11: Dropped the topics of this game's data and its comparison, which no script asks any more
 //      Paulinchen  2026-11-08: Moved to the MGQOnline.Multiplayer namespace
 //      Paulinchen  2026-10-30: Stopped handing the world screen this game's data, which entering compares once the world's mods loaded
 //      Paulinchen  2026-10-23: Dropped the topics of deleting, adding, removing and favouring worlds, which the screen steps do in the DLL
@@ -17,7 +18,6 @@ using System.Linq;
 using MGQOnline.Bridge;
 using MGQOnline.Bridge.Ruby;
 using MGQOnline.Game.Topics;
-using MGQOnline.Game.Worlds;
 using MGQOnline.Multiplayer.Network.Relay;
 using MGQOnline.Multiplayer.Network.World;
 
@@ -25,8 +25,8 @@ namespace MGQOnline.Multiplayer.Topics;
 
 /// <summary>
 /// The bridge topics of the worlds on this PC and of the player's lists of worlds: the folders and
-/// their world.ini, the world screen's entries, the favourites and the hidden worlds added, a
-/// Discord invite into a world, and the game data compared with a world creator's.
+/// their world.ini, the world screen's entries, the favourites and the hidden worlds added, and a
+/// Discord invite into a world.
 /// </summary>
 /// <remarks>
 /// A world goes to the scripts as <see cref="WorldOf"/> describes it; the scripts keep the open
@@ -93,23 +93,6 @@ internal static class LocalWorldTopics
     public const string InviteTake = "worlds.invite_take";
 
     /// <summary>
-    /// Keeps this game's data fingerprint, which the scripts make once a session: the fingerprint in; nothing out.
-    /// </summary>
-    public const string GameData = "worlds.game_data";
-
-    /// <summary>
-    /// Compares this game's data with a world creator's, see <see cref="GameDataCompare.Differing"/>:
-    /// the creator's fingerprint in; the parts that differ out, nil when they cannot be compared.
-    /// </summary>
-    public const string DataDiffering = "worlds.data_differing";
-
-    /// <summary>
-    /// Names parts of the game data in a sentence, see <see cref="GameDataCompare.Text"/>: <c>parts</c>
-    /// and <c>named</c> in; the text out.
-    /// </summary>
-    public const string DataText = "worlds.data_text";
-
-    /// <summary>
     /// The folder of the worlds on this PC, relative to the game folder, as the scripts name it.
     /// </summary>
     public const string WorldsFolder = "Patch/Multiplayer/Worlds";
@@ -137,7 +120,6 @@ internal static class LocalWorldTopics
     internal static Kept Register(BridgeContext context, WorldServices services, LocalWorlds worlds, WorldLists lists)
     {
         (string Id, string Code)? invite = null;
-        string fingerprint = "";
 
         context.Register(Local, (_, _) => new RubyArray(worlds.All().Select(world => (RubyValue)WorldOf(world))));
         context.Register(Found, (_, request) => Changed(services, worlds.Found(request.AsHash()["code"].AsText(), AboutOf(request.AsHash(), null)) is { } world ? WorldOf(world) : null));
@@ -168,13 +150,6 @@ internal static class LocalWorldTopics
             invite = null;
             return taken is { } pending ? new RubyArray([pending.Id, pending.Code]) : null;
         });
-        context.Register(GameData, (_, request) =>
-        {
-            fingerprint = request.AsText();
-            return null;
-        });
-        context.Register(DataDiffering, (_, request) => GameDataCompare.Differing(fingerprint, request.IsNil ? null : request.AsText()) is { } parts ? Texts(parts) : null);
-        context.Register(DataText, (_, request) => GameDataCompare.Text([.. request.AsHash()["parts"].AsArray().Select(part => part.AsText())], request.AsHash()["named"].AsInt()));
         return new Kept(worlds, lists);
     }
 

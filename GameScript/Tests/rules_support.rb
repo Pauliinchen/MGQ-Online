@@ -2,6 +2,7 @@
 #  rules_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Dropped the stand-ins of the installed scripts and the settings details topics the DLL no longer has
 #      Paulinchen  2026-11-08: Answered the installed mods the scripts hand over in place of the relay's mod catalog, and dropped the check the scripts no longer call
 #      Paulinchen  2026-11-06: Answered the sorts each test sets and wrote the world's rules out instead of reading recorded cases
 #      Paulinchen  2026-11-05: Answered the rewards a party member catches up with by the fields each test sets instead of from a stand-in of their constants
@@ -85,7 +86,7 @@ class RuleAnswers
 
   # The topics answered.
   TOPICS = %w(world.rules world.code squad.default squad.read squad.write squad.served squad.shares squad.rank squad.raid squad.arrange squad.past_cap
-              story.part overview.title mods.keys mods.text mods.installed).freeze
+              story.part overview.title mods.keys mods.text).freeze
 
   # What a topic answers while a test sets nothing: the recorded rules, else nothing.
   DEFAULTS = { "world.rules" => WORLD_RULES, "squad.default" => WORLD_RULES["squad"] }.freeze
@@ -309,10 +310,8 @@ $settings_calls = []
 $settings_steps = []
 
 # What the shared mod settings' topics answer, which a test sets: whether settings are shared
-# (settings.shared), the details' text (settings.details) and the world entered as the DLL
-# describes it (settings.enter), nil for none.
+# (settings.shared) and the world entered as the DLL describes it (settings.enter), nil for none.
 $settings_shared = false
-$settings_details = ""
 $settings_world = nil
 
 # Answers the shared mod settings' topics with the values a test set and the steps it queued,
@@ -323,7 +322,6 @@ def answer_settings(fake)
   world = nil
   reply = lambda { |topic, request| $settings_calls << [topic, request]; { "world" => world, "steps" => $settings_steps.shift || [] } }
   fake.answer("settings.shared") { |_text| $settings_shared }
-  fake.answer("settings.details") { |request| $settings_calls << ["settings.details", request]; $settings_details }
   fake.answer("settings.enter") { |request| world = $settings_world; reply.call("settings.enter", request) }
   fake.answer("settings.forget") { |request| world = nil; reply.call("settings.forget", request) }
   %w(settings.options settings.loaded settings.want settings.step settings.applied settings.live settings.observe settings.mods).each do |topic|

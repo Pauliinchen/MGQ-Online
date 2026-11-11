@@ -2,6 +2,7 @@
 #  local_worlds_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Dropped the stand-ins of the game data topics the DLL no longer has
 #      Paulinchen  2026-11-05: Answered the worlds on this PC, the lists, the invite, the game data and the mod picker with the values each test sets instead of a copy of the C# rules
 #      Paulinchen  2026-10-23: Dropped the stand-ins of the topics the DLL no longer has
 #                            - Handed out each mod's label and colour in the picker and left the entries to the screen's stand-in
@@ -25,7 +26,7 @@ class LocalWorldAnswers
 
   # The topics answered.
   TOPICS = %w(worlds.local worlds.found worlds.describe worlds.update worlds.latest_save worlds.added worlds.invite worlds.invite_take
-              worlds.game_data worlds.data_differing worlds.data_text modpick.open modpick.act modpick.close).freeze
+              modpick.open modpick.act modpick.close).freeze
 
   # When the DLL writes a world played, in seconds since 1970.
   PLAYED_AT = 1_800_000_000
@@ -91,7 +92,6 @@ class LocalWorldAnswers
     when "worlds.describe" then written(request)
     when "worlds.update" then (world = written(request)) && { "world" => world, "written" => true }
     when "worlds.added" then []
-    when "worlds.data_text" then ""
     end
   end
 

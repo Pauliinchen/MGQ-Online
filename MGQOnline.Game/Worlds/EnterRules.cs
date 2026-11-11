@@ -2,6 +2,7 @@
 //  EnterRules.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-11: Dropped the confirmation, which no rule asks for
 //      Paulinchen  2026-10-30: Warned of a game whose data differs once the world's mods loaded instead of asking or keeping it out
 //                            - Stopped asking the creator of a world entered with mods parked, since none are parked any more
 //                            - Decided entering a world whose data scan has another format
@@ -15,17 +16,14 @@ namespace MGQOnline.Game.Worlds;
 
 /// <summary>
 /// One thing the world screen does while a world is entered, as the rules decide it: say a text,
-/// buzz, go back to the list, ask to confirm, offer choices, fetch the starting save or start the
-/// world.
+/// buzz, go back to the list, offer choices, fetch the starting save or start the world.
 /// </summary>
 /// <param name="Kind">What: <see cref="EnterRules.Say"/>, <see cref="EnterRules.Buzz"/>,
-/// <see cref="EnterRules.Back"/>, <see cref="EnterRules.Confirm"/>, <see cref="EnterRules.Choices"/>,
-/// <see cref="EnterRules.Fetch"/> or <see cref="EnterRules.Start"/>.</param>
+/// <see cref="EnterRules.Back"/>, <see cref="EnterRules.Choices"/>, <see cref="EnterRules.Fetch"/>
+/// or <see cref="EnterRules.Start"/>.</param>
 /// <param name="Text">What is said or asked, <see langword="null"/> when nothing is.</param>
-/// <param name="What">What a confirmation is about, such as "mods".</param>
-/// <param name="Yes">The command that confirms.</param>
 /// <param name="Offered">The choices offered, each label with its answer.</param>
-public sealed record EnterDone(string Kind, string? Text = null, string? What = null, string? Yes = null, IReadOnlyList<(string Label, string Answer)>? Offered = null);
+public sealed record EnterDone(string Kind, string? Text = null, IReadOnlyList<(string Label, string Answer)>? Offered = null);
 
 /// <summary>
 /// The rules the world screen enters a world by, as world_screen.rbx and world_save_distribution.rbx
@@ -48,11 +46,6 @@ public static class EnterRules
     /// Goes back to the list.
     /// </summary>
     public const string Back = "back";
-
-    /// <summary>
-    /// Asks to confirm.
-    /// </summary>
-    public const string Confirm = "confirm";
 
     /// <summary>
     /// Offers where to start.

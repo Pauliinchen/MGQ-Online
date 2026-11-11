@@ -2,6 +2,8 @@
 #  world_open_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Dropped the checks of the entry's members no script calls
+#                            - Opened the screen's own question of deleting a world before a refusal of this version, in place of the DLL's confirmation step
 #      Paulinchen  2026-11-06: Dropped the stand-ins of the mouse and the held buttons, which no check reads
 #                            - Dropped the check of the base form, which no screen builds
 #                            - Checked that a refusal of this version on the world screen waits for its question to close instead of leaving
@@ -243,9 +245,9 @@ $locals.worlds.clear
 # The list's entries, made of the rows the DLL orders (WorldEntriesTests), Old a favourite.
 rows = [listed_row(DIRECTORY[2], "favourite" => true, "color" => "favourite"), listed_row(DIRECTORY[1], "color" => "featured"), listed_row(DIRECTORY[0])]
 entries = rows.map { |row| screen_entry(row) }
-check("an entry tells whether it is featured or open", [entries[1].featured?, entries[1].open?, entries[2].featured?], [true, true, false])
+check("an entry tells whether it is open", [entries[1].open?, entries[2].open?], [true, false])
 gone = MGQ_MpWorld::Entry.new("w9", "Gone", nil, nil, false, true)
-check("a world the directory no longer lists is neither", [gone.featured?, gone.open?], [false, false])
+check("a world the directory no longer lists is not", gone.open?, false)
 
 # Entering, whose steps the DLL decides (WorldEnteringTests); the screen plays them.
 scene = new_scene
@@ -284,8 +286,6 @@ check("the list reads each world's type and companion sharing",
 check("and a Raid World's difficulty", typed.map { |world| world.difficulty }, [1, nil, nil, nil])
 check("and a Raid World's squad rules", typed.map { |world| world.squad },
       [{ :luka => true, :formation => 6, :front => 2, :raid_front => 1 }, nil, nil, nil])
-raid_local = local_world("abcdef012345", "code" => "x", "name" => "Kept", "type" => "raid", "share" => "story")
-check("a Raid World the directory no longer lists stays one by its world.ini", [MGQ_MpWorld::Entry.new("r9", "Kept", nil, raid_local, false, true).raid?, gone.raid?], [true, false])
 $locals.worlds.clear
 
 # The colour the DLL names for a row in the list and for the details' title (WorldScreenModelTests).
@@ -502,7 +502,7 @@ Mod_Framework::Mods.define_singleton_method(:require) do |name, version, options
   $required << [name, version, options, done]
   :asking
 end
-screen.play("steps" => [["say", "Turn your other mods off to enter?"], ["confirm", "other_mods", [["Turn them off", "yes"], ["Back", "cancel"]]]])
+screen.confirm(:delete_world, "Delete Plain for everyone? Saves stay on each PC.", "Delete it")
 update.needed("version" => "9.9.9", "have" => "0.7.0")
 screen.update
 check("a refusal while a question of the world screen is open keeps the screen and asks nothing yet", [$returned, $required.size, screen.popup_open?], [false, 0, true])
@@ -737,8 +737,3 @@ $calls.clear
 type_in("x\r")
 check("a form with more text boxes keeps the text with Enter and moves down, sent from its button", [scene.form.sends_on_enter?, scene.form[:name], focused(scene), $calls, scene.busy],
       [false, "x", :password, [], nil])
-# The details say Known once this PC's folder holds the world code, which entering reads.
-plain = entries[2]
-held = local_world("abcdef012345", "code" => "x", "name" => "Plain")
-known = MGQ_MpWorld::Entry.new("w1", "Plain", plain.listed, held, false, false)
-check("a world's password is known with its folder on this PC, which holds the world code, not without", [known.password_known?, plain.password_known?], [true, false])

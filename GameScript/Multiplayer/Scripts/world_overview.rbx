@@ -2,6 +2,7 @@
 #  world_overview.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Dropped the shortening of places, which no box calls any more
 #      Paulinchen  2026-11-09: Let another mod's tab set the key help through its id and the tab showing
 #      Paulinchen  2026-11-08: Removed the Looks struct, the pages showing characters as avatars
 #                            - Showed each player's leader before their name on the Players page
@@ -195,12 +196,6 @@ module MGQ_MpWorldOverview
   # The text codes of a message, which the World page leaves out: a code with its argument, such as
   # "\C[3]", one of letters, such as "\fb", and one of a sign, such as "\*".
   TEXT_CODES = [/\\[A-Za-z]+\[[^\]]*\]/, /\\[A-Za-z]+/, /\\./]
-
-  # Parts of places' names the party box writes shorter: the game's own name for the Pocket Castle.
-  SHORT_PLACES = { "Pocket Monster Lord's Castle" => "Pocket Castle" }
-
-  # A floor, layer or area that ends a place's name, which a shortened name keeps.
-  PLACE_FLOOR = /\s+(B?\d+F\S*|(?:Layer|Area)\s+\d+)\z/
 
   # A player of the list.
   #
@@ -505,24 +500,6 @@ module MGQ_MpWorldOverview
   # @return [String] The name.
   def self.place
     $game_map.display_name.to_s
-  end
-
-  # Shortens a place's name to fit a width: the Pocket Castle's short name first, then without the
-  # part in brackets, then cut before its floor with "...".
-  #
-  # @param place [String] The name.
-  # @param width [Integer] The room for it.
-  # @param measure [Bitmap, Window_Base] What measures a text with the font it is drawn in.
-  # @return [String] The name as it fits.
-  def self.fit_place(place, width, measure)
-    text = SHORT_PLACES.inject(place.to_s) { |name, (long, short)| name.sub(long, short) }
-    return text if measure.text_size(text).width <= width
-
-    text = text.sub(/\s*\([^)]*\)/, "")
-    return text if measure.text_size(text).width <= width
-
-    floor = text[PLACE_FLOOR].to_s
-    Mod_Framework::UI.cut(measure, text[0, text.length - floor.length], width, floor)
   end
 
   # Reads the highest base level of the player's formation, Luka included; during a co-op battle

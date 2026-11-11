@@ -2,6 +2,7 @@
 #  world_mods_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Dropped the check of the details text of a world's settings, which the DLL writes for the world screen
 #      Paulinchen  2026-11-08: Named no other mod in a check
 #                            - Covered the installed mods handed to the DLL as the Mod Framework lists them, again while it fetches the website
 #                            - Sent the options of a website mod by its slug, found by its name in Patch
@@ -449,11 +450,9 @@ end
 $settings_world = entered.call("w1", "Modded", "creator", "!Level Cap; Party Sheet",
                                [["mod_level_cap", 0], ["mod_party_sheet_theme", { "symbol" => "dark" }], ["mod_party_sheet_hotkey", 7], ["global_thing", 9], ["mod_level_cap_look", 3],
                                 ["mod_missing", 7], ["mgq_mp_shared_mod_settings", 1]], true)
-$settings_details = "Mod settings: shared"
 
-check("the details say what the DLL says of a world's settings", [mods.details_text(world.call("creator", "@shared=o:1"), "me"), asked.call("settings.details")],
-      ["Mod settings: shared", { "settings" => "@shared=o:1", "creator_id" => "creator", "creator_name" => "Creator", "me" => "me" }])
-check("handing it this game's Mod Config groups once, each option's key, its name as its row shows it and the names of its values",
+mods.hand_options
+check("the DLL is handed this game's Mod Config groups once, each option's key, its name as its row shows it and the names of its values",
       asked.call("settings.options").map { |name, options| [name, options.first] },
       [["Level Cap", ["mod_level_cap", "Level Cap", [[1, "On"], [0, "Off"]]]], ["Party Sheet", ["mod_party_sheet_hotkey", "Hotkey", []]], ["Tab\tMod", ["tab_opt", "Opt\tion", []]],
        ["MGQ Online Settings", ["mod_mp_backline", "PvP Backline", []]], ["MGQ Online Hotkeys", ["mf_key_mgq_online_chat", "Chat", []]]])

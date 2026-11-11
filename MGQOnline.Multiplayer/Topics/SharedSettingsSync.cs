@@ -2,6 +2,7 @@
 //  SharedSettingsSync.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-11: Dropped the details topic, whose line the world screen reads in the DLL
 //      Paulinchen  2026-11-08: Moved to the MGQOnline.Multiplayer namespace
 //      Paulinchen  2026-11-05: Took the creator's options and the Mod Config groups as values, and handed the settings to apply as values
 //      Paulinchen  2026-11-01: Dropped the topic that marks settings shared, which no script calls
@@ -138,12 +139,6 @@ internal sealed class SharedSettingsSync
     /// Tells whether settings are shared: the settings in; true or false out.
     /// </summary>
     public const string SharedTopic = "settings.shared";
-
-    /// <summary>
-    /// Says what the details say about a world's settings: <c>settings</c>, <c>creator_id</c>,
-    /// <c>creator_name</c> and <c>me</c> in; the text out.
-    /// </summary>
-    public const string DetailsTopic = "settings.details";
 
     /// <summary>
     /// The kind of directory action that sends the settings.
@@ -356,7 +351,6 @@ internal sealed class SharedSettingsSync
             return null;
         });
         context.Register(SharedTopic, (_, request) => SharedSettings.IsShared(Text(request)));
-        context.Register(DetailsTopic, (_, request) => Details(request.AsHash()));
     }
 
     /// <summary>
@@ -1034,13 +1028,6 @@ internal sealed class SharedSettingsSync
         Log($"the list of world {Short(id)} may be older than the mod settings the relay took from this game last, which count");
         return confirmed;
     }
-
-    /// <summary>
-    /// Answers <see cref="DetailsTopic"/>.
-    /// </summary>
-    /// <param name="request">The world's settings, creator and the player's id.</param>
-    /// <returns>The text.</returns>
-    private RubyValue Details(RubyHash request) => DetailsText(Text(request["settings"]), Text(request["creator_id"]), Text(request["creator_name"]), Text(request["me"]));
 
     /// <summary>
     /// Writes the details' line of a world's shared mod settings.

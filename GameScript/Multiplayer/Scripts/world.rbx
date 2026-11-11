@@ -2,6 +2,7 @@
 #  world.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Dropped the entry's, the game data's, the installed scripts' and the mod picker's members no script calls
 #      Paulinchen  2026-11-09: Read whether a field's caption is narrow in place of its width
 #      Paulinchen  2026-11-07: Dropped the check for a Mod Framework call older versions lacked
 #      Paulinchen  2026-11-06: Kept a refusal of this version on the world screen whose question could not open, asking again once none of the screen's questions is open
@@ -172,9 +173,6 @@ module MGQ_MpWorld
   # list.
   MAX_MODS_CHARS = 16_000
 
-
-  # The topic that lists the scripts in the Patch folder with their keys.
-  INSTALLED_TOPIC = "mods.installed"
 
   # The topic that makes the keys of mods' names.
   KEYS_TOPIC = "mods.keys"
@@ -895,44 +893,11 @@ module MGQ_MpWorld
   # @!attribute key [String, nil] Its row's key in the DLL's model of the world screen (WorldScreen), which names its details.
   # @!attribute row [Hash, nil] Its row as that model draws it: "text", "count", "color" and "dim".
   Entry = Struct.new(:id, :name, :listed, :local, :favourite, :gone, :key, :row) do
-    # Tells whether the directory lists the world as one of the relay's own, which an admin made.
-    #
-    # @return [Boolean] Whether it does.
-    def featured?
-      !listed.nil? && listed.featured
-    end
-
-    # Tells whether the world is a Raid World: as the directory lists it, or as world.ini keeps it
-    # once the directory no longer lists it.
-    #
-    # @return [Boolean] Whether it is.
-    def raid?
-      listed ? listed.raid? : (!local.nil? && local.raid?)
-    end
-
     # Tells whether the directory lists the world as one without a password.
     #
     # @return [Boolean] Whether it does.
     def open?
       !listed.nil? && listed.open
-    end
-
-    # Tells whether the world's password is known: this PC's folder of the world holds the world
-    # code the relay handed out when the password was typed once, which entering reads instead
-    # of asking for the password again. True for a world without a password too, once entered.
-    #
-    # World.read drops a folder without its code, so a folder listed here holds it.
-    #
-    # @return [Boolean] Whether it is.
-    def password_known?
-      !local.nil?
-    end
-
-    # Lists what of the player's game data differs from that of the world's creator.
-    #
-    # @return [Array<String>, nil] The parts that differ, none when the games match, nil when the directory does not tell.
-    def differing
-      listed.nil? ? nil : GameData.differing(listed.data)
     end
   end
 
@@ -1038,22 +1003,10 @@ module MGQ_MpWorld
     # The topic that writes the fingerprint of the ids in use of each part, which C# compares.
     MEASURE_TOPIC = "worlds.fingerprint"
 
-    # Most parts a text names before it counts the rest.
-    NAMED_PARTS = 4
-
     # The file in the mod folder the fingerprint is written to at each start, from which the World
     # Admin tool reads an installation's game data: its "fingerprint" and when it was "written", in
     # seconds since 1970.
     FILE = "#{MGQ_Multiplayer::MOD_DIR}\\GameData.ini"
-
-    # The topic that keeps this game's fingerprint in the DLL.
-    FINGERPRINT_TOPIC = "worlds.game_data"
-
-    # The topic that compares it with another game's.
-    DIFFERING_TOPIC = "worlds.data_differing"
-
-    # The topic that names parts in a sentence.
-    TEXT_TOPIC = "worlds.data_text"
 
     # Finds the fingerprint of this game's data, once per session.
     #
@@ -1154,41 +1107,6 @@ module MGQ_MpWorld
     # @return [Array<Integer>] The ids.
     def self.existing(entries)
       (0...entries.size).select { |id| entries[id] && yield(entries[id]) }
-    end
-
-    # Lists what of this game's data differs from another game's, through the DLL (GameDataCompare
-    # in MGQOnline.Game), each fingerprint asked once.
-    #
-    # @param other [String, nil] The other game's fingerprint.
-    # @return [Array<String>, nil] The parts that differ, none when the games match, nil when they cannot be compared.
-    def self.differing(other)
-      return nil if other.to_s.empty?
-
-      hand_fingerprint
-      key = other.to_s
-      return @differing[key] if @differing.key?(key)
-
-      @differing[key] = MGQ_Multiplayer::Bridge.call(DIFFERING_TOPIC, key)
-    end
-
-    # Hands this game's fingerprint to the DLL, once per session, and forgets the comparisons made
-    # with another.
-    def self.hand_fingerprint
-      mine = fingerprint
-      return if @handed == mine
-
-      @handed = mine
-      @differing = {}
-      MGQ_Multiplayer::Bridge.call(FINGERPRINT_TOPIC, mine)
-    end
-
-    # Names parts in a sentence, the first few by name, as the DLL writes it.
-    #
-    # @param parts [Array<String>] The parts.
-    # @param named [Integer] Most parts named before the rest is counted.
-    # @return [String] The text, such as "skills, items and 3 more"; empty when the DLL did not answer.
-    def self.text(parts, named = NAMED_PARTS)
-      MGQ_Multiplayer::Bridge.call(TEXT_TOPIC, "parts" => parts, "named" => named) || ""
     end
   end
 
@@ -1319,39 +1237,6 @@ module MGQ_MpWorld
 
     @mods_texts.clear if @mods_texts.size >= MODS_TEXTS_KEPT
     @mods_texts[key] = read
-  end
-
-  # Tells whether a mod's script is installed: a .rb file of the mod's name anywhere in the Patch
-  # folder, whatever its case and whether it writes spaces, underscores or hyphens.
-  #
-  # @param name [String] The mod's name, with or without ".rb".
-  # @return [Boolean] Whether it is; also when the folder cannot be read, so nobody is kept out by mistake.
-  def self.installed_mod?(name)
-    scripts = installed_scripts
-    return true unless scripts
-
-    key = mod_key(name)
-    scripts.any? { |script| script[0] == key }
-  end
-
-  # Lists the scripts the Patch folder holds, as the DLL reads them, since the game's Ruby reads file
-  # names in the system's code page.
-  #
-  # @return [Array<Array>, nil] Each script's key (see mod_key), path relative to the game's folder
-  #   and name without ".rb"; nil when the folder cannot be read.
-  def self.installed_scripts
-    return @installed if @installed
-
-    @installed = MGQ_Multiplayer::Bridge.call(INSTALLED_TOPIC)
-    return log_once(:installed, "reading the Patch folder failed, so every required mod counts as installed") unless @installed
-
-    log("the Patch folder holds #{@installed.size} script(s): #{@installed.map { |script| script[0] }.join(', ')}")
-    @installed
-  end
-
-  # Forgets which scripts the Patch folder holds, so the next look reads it anew.
-  def self.forget_installed
-    @installed = nil
   end
 
   # Turns a mod's name or its script's file name into what the two are compared by, as the DLL and
@@ -2269,15 +2154,6 @@ module MGQ_MpWorld
     # @return [Boolean] Whether it is; also when none is installed.
     def all_listed?
       @all_listed == true
-    end
-
-    # Names a mod another way. An added mod unlisted stays in the picker, but out of the text.
-    #
-    # @param index [Integer] The mod's index in entries.
-    # @param state [Symbol] One of STATES.
-    # @return [String, nil] Why it cannot, nil when it was done.
-    def set(index, state)
-      act("do" => "set", "index" => index, "state" => state.to_s)
     end
 
     # Takes a mod added by name out of the picker. An installed mod stays, since the Patch folder

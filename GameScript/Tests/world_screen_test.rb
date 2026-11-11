@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-11-11: Checked that a world picked before its mods were read starts with the mods and settings the start step carries
 #                            - Checked that mods the Mod Framework finds ready at once go to the DLL as ready
+#                            - Dropped the check of the DLL's confirmation step, which no rule asks for
 #      Paulinchen  2026-11-09: Checked that the description takes the whole height of its box
 #                            - Checked that the World and Game data panels of the details open list boxes of their own
 #                            - Checked that the search and the filters lie in a box of their own above the worlds, whose list wraps at its ends
@@ -272,13 +273,8 @@ check("Remove them hands the DLL the player", screen_requests("screen.do").last.
 
 # The DLL's questions.
 scene.instance_variable_set(:@entry, entry)
-scene.play("steps" => [["say", "Turn your other mods off to enter?"], ["confirm", "other_mods", [["Turn them off", "yes"], ["Back", "cancel"]]]])
-check("a question of one doing command and Back goes to the question box with what the steps said",
-      $asked.last, ["Turn your other mods off to enter?", ["Turn them off", "Back"]])
-answer_question(scene, false)
-check("its Back answers back", screen_requests("screen.answer").last, { "answer" => "back" })
 scene.play("steps" => [["choices", [["At the beginning", "from_beginning"], ["From one of my saves", "from_own"], ["Back", "cancel"]]]])
-check("a question of more commands goes to the menu", menu_texts, ["At the beginning", "From one of my saves", "Back"])
+check("the choices of where to start go to the menu", menu_texts, ["At the beginning", "From one of my saves", "Back"])
 cancel_menu(scene)
 check("cancel on the choices of where to start answers back", screen_requests("screen.answer").last, { "answer" => "back" })
 
