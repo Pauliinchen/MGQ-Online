@@ -17,7 +17,7 @@ them.
 after checking it in sandboxed battle children. To build it on this PC (Docker running):
 
 ```powershell
-.\MGQOnline.ServerCore\build.ps1 -Version 0.7.0   # -> MGQOnline.ServerCore\bin\linux-x64\MGQOnline.ServerCore.so
+.\MGQOnline.ServerCore\build.ps1 -Version 0.7.1   # -> MGQOnline.ServerCore\bin\linux-x64\MGQOnline.ServerCore.so
 .\BattleServer\tools\core_check.ps1               # loads it in two sandboxed children and prints a table
 ```
 
@@ -87,7 +87,7 @@ events database the release ships. Copy the release zip's `Patch` folder to the 
 tarball, for example), unpack it, and run as root:
 
 ```
-sudo bash deploy_release.sh /tmp/mgq-0.7.0 0.7.0   # the folder holding the release's Patch folder, and its version
+sudo bash deploy_release.sh /tmp/mgq-0.7.1 0.7.1   # the folder holding the release's Patch folder, and its version
 ```
 
 `tools/deploy_release.sh` backs the game folder's `Patch` up to
@@ -108,7 +108,7 @@ scripts load or run. Then copy the `Patch` folder of the framework release's zip
 (`MGQ-Mod-Framework-<version>.zip`) to the server as well and name its folder third:
 
 ```
-sudo bash deploy_release.sh /tmp/mgq-0.7.0 0.7.0 /tmp/framework-0.1.0
+sudo bash deploy_release.sh /tmp/mgq-0.7.1 0.7.1 /tmp/framework-0.1.1
 ```
 
 The script then installs the framework's entry file and folder the same way, keeping the `*.ini`

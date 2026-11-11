@@ -30,7 +30,7 @@ which loads the mod too: keep it and skip the wiki one.
 
    https://mgq.miraheze.org/wiki/Paradox_mods#Patch.rb_(enable_Type_1_mods)
 
-The mod runs on the Mod Framework 0.1.0 or later, which you install
+The mod runs on the Mod Framework 0.1.1 or later, which you install
 first: download it from the website and extract it into the same folder
 as this mod (see INSTALL). It installs and updates this mod, which has
 no updater of its own. The mod's settings and hotkeys are in
@@ -87,7 +87,7 @@ To update by hand, close the game and extract the new download over the
 old one; then delete any Patch\Multiplayer\Scripts\*.rbx file the new
 release's Manifest.txt no longer lists.
 
-Coming from 0.6: install the Mod Framework 0.1.0 first, from
+Coming from 0.6: install the Mod Framework 0.1.1 first, from
 https://mgqonline.org/mods or its GitHub release, then MGQ Online 0.7;
 0.6 can no longer play online. On Windows, 0.6.9.2 offers the update
 itself as you pick "Multiplayer", but it brings 0.7 without the
