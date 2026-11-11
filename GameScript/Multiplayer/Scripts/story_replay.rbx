@@ -2,6 +2,7 @@
 #  story_replay.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Handed the DLL what the player holds only after a replay read it, and without the gear worn
 #      Paulinchen  2026-11-10: Handed over no run of the player's history again while it waits for the player's own things
 #                            - Opened every chest's lock in a replay, so a chest handed to a player gives what it holds
 #                            - Read what the player holds from the bag's own lists instead of every item of the game
@@ -156,6 +157,14 @@ module MGQ_MpStoryReplay
   # armors the party holds.
   BRANCH_INPUTS = { 2 => "branch", 7 => "branch", 8 => "branch", 9 => "branch", 10 => "branch", 11 => "key" }.freeze
 
+  # The conditional branches among BRANCH_INPUTS that check what the party holds: gold, items,
+  # weapons and armors.
+  HOLDING_BRANCHES = [7, 8, 9, 10].freeze
+
+  # The conditional branches the game answers from the receiver's own party: a companion's state and
+  # a script.
+  PARTY_BRANCHES = [4, 12].freeze
+
   # The game data a Control Variables command reads whose value is an input: the counts of an item,
   # a weapon and an armor the party holds.
   HOLDING_DATA = [0, 1, 2].freeze
@@ -165,6 +174,9 @@ module MGQ_MpStoryReplay
 
   # The party's gold among the game data of another kind, whose value is an input too.
   GOLD_DATA = 2
+
+  # The game data of a companion a Control Variables command reads, from the receiver's own actors.
+  ACTOR_DATA = 3
 
   # The map's methods that change its display, which the replay leaves out, and its refresh, which
   # would read the replay's view into the receiver's events.
@@ -532,7 +544,8 @@ module MGQ_MpStoryReplay
   # @param state [Hash] The replay, its entry, and what committing measured.
   def self.finish(state)
     replay = state[:replay]
-    reads = replay.reads.map { |(kind, key), value| [kind, key, value] } << [HOLDINGS, nil, holdings_read]
+    reads = replay.reads.map { |(kind, key), value| [kind, key, value] }
+    reads << [HOLDINGS, nil, holdings_read] if replay.own_holdings?
     answer = MGQ_Multiplayer::Bridge.call(DONE_TOPIC, "entry" => state[:entry], "reached" => replay.committed?, "before" => state[:before] || [],
                                                       "reads" => reads, "had" => state[:had] || [], "has" => state[:has] || [])
     notice(answer, state[:had])
@@ -662,12 +675,11 @@ module MGQ_MpStoryReplay
   end
 
   # Lists what the player holds as a waiting run's read of their holdings compares it, which the DLL
-  # sums up: a script's check of the party, such as a chest's lock, reads no key.
+  # sums up: a script's check of the party reads no key.
   #
-  # @return [Array] Each thing's key and amount, then each companion's id, level and equipment.
+  # @return [Array] Each thing's key and amount, then each companion's id and level.
   def self.holdings_read
-    party = $game_party.members.map { |actor| [actor.id, actor.base_level, actor.equips.map { |equip| equip ? equip.id : 0 }] }
-    holdings.map { |key, amount| [key, amount] } + [party]
+    holdings.map { |key, amount| [key, amount] } + [$game_party.members.map { |actor| [actor.id, actor.base_level] }]
   end
 
   # Finds the icon of the first item a replay gave, for its notice.
@@ -1495,13 +1507,19 @@ module MGQ_MpStoryReplay
     # Reads a key press from the record, and the checks the replay follows the opener through: what
     # the party holds and the event's own self switches, so the receiver gets what the opener got.
     # A self switch of the run's step reads the receiver's own, which tells whether they took the
-    # step already. Any other branch as the game does.
+    # step already. Any other branch as the game does, noting a check of the receiver's own party.
     def command_111
       kind = BRANCH_INPUTS[@params[0]]
-      return game(:command_111) unless kind
+      unless kind
+        @replay.read_own_holdings if PARTY_BRANCHES.include?(@params[0])
+        return game(:command_111)
+      end
 
       own = own_branch
-      opener = @replay.flag(kind) { own }
+      opener = @replay.flag(kind) do
+        @replay.read_own_holdings if HOLDING_BRANCHES.include?(@params[0])
+        own
+      end
       @branch[@indent] = step_switch? ? own : opener
       command_skip unless @branch[@indent]
     end
@@ -1512,7 +1530,7 @@ module MGQ_MpStoryReplay
     end
 
     # Reads what the party holds as the opener's record holds it, and any other game data as the
-    # game does.
+    # game does, noting a read of the receiver's own holdings or companions.
     #
     # @param type [Integer] The kind of game data.
     # @param param1 [Integer] Its first parameter.
@@ -1520,7 +1538,13 @@ module MGQ_MpStoryReplay
     # @return [Numeric] The value.
     def game_data_operand(type, param1, param2)
       own = game(:game_data_operand, type, param1, param2)
-      MGQ_MpStoryReplay.holding_read?(type, param1) ? @replay.input("holding") { own } : own
+      @replay.read_own_holdings if type == ACTOR_DATA
+      return own unless MGQ_MpStoryReplay.holding_read?(type, param1)
+
+      @replay.input("holding") do
+        @replay.read_own_holdings
+        own
+      end
     end
 
     # Reads the map at a place from the record, or from the receiver's own map without one.
@@ -1685,6 +1709,7 @@ module MGQ_MpStoryReplay
       @reset = []
       @gained = {}
       @own_way = false
+      @own_holdings = false
       @committed = false
       @state = :running
       @list = bind(entry)
@@ -1734,6 +1759,19 @@ module MGQ_MpStoryReplay
       @record.add(@question["at"], "choice", value)
       @question = nil
       step
+    end
+
+    # Notes that the replay read the receiver's own holdings or companions, which a waiting run's read
+    # of their holdings stands for.
+    def read_own_holdings
+      @own_holdings = true
+    end
+
+    # Reports whether the replay read the receiver's own holdings or companions.
+    #
+    # @return [Boolean] Whether it did.
+    def own_holdings?
+      @own_holdings
     end
 
     # Reports whether the receiver answered a question of the replay otherwise than the opener did,

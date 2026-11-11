@@ -2,6 +2,7 @@
 #  story_replay_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Dressed the party's member in socketed gear, and checked that the DLL hears what the player holds only after a replay read it
 #      Paulinchen  2026-11-10: Checked that a locked chest opens in a replay
 #                            - Cut a page by a check of the party's gold, since a lock no longer cuts a replay
 #                            - Gave the party's stand-in the bag's lists of what it holds
@@ -529,10 +530,13 @@ $data_weapons = []
 $data_armors = []
 # A member of the party, whose level the game keeps per kind in one Hash.
 Member = Struct.new(:id, :name, :base_level, :skills, :equips) { def level; { :base => base_level, :class => 1, :tribe => 1 }; end }
+# A piece of gear a member wears.
+Equip = Struct.new(:id)
 # The party's gold and members, its items read by the item as the game reads them, and the bag's
-# lists of what it holds.
+# lists of what it holds. The member wears socketed gear, whose id the game makes a Rational
+# (socket_equip.rb), which cannot cross the bridge.
 class Game_Party
-  def members; [Member.new(1, "Luka", 12, [], [nil])]; end
+  def members; [Member.new(1, "Luka", 12, [], [Equip.new(Rational(1005003, 1000))])]; end
   def all_members; members; end
   def items; @items.keys.sort.map { |id| $data_items[id] }.compact; end
   def weapons; []; end
@@ -680,15 +684,20 @@ check("a guest keeps the chest's A and 2045 a replay wrote in their own story", 
 module MGQ_MpCoopStory; def self.guest?; false; end; end
 
 # A receiver asked the Fortune Teller's trade who answers Decline is done with their own answer, so
-# the question does not come back.
+# the question does not come back. Their record lacks the opener's check of the wrist, so their own
+# wrist decides, and the DLL hears what they hold, which a run that waits on it compares.
 new_game
 $notices = []
 done.clear
-MGQ_MpStoryReplay.receive(entry.merge("id" => "e7", "site" => ["map", 51, 23, 1], "keys" => [[2, [51, 23, "B"], false]], "inputs" => TRADED.first(2)))
+$game_party.gain_item(1734, 1)
+MGQ_MpStoryReplay.receive(entry.merge("id" => "e7", "site" => ["map", 51, 23, 1], "keys" => [[2, [51, 23, "B"], false]], "inputs" => TRADED.first(1)))
 MGQ_MpStoryReplay.update
 $asked[3].call(1)
 check("a receiver who declines the trade they are asked is done with their answer, which gave nothing",
-      [done.last["reached"], $game_party.item_number(610), $game_self_switches[[51, 23, "B"]], MGQ_MpStoryReplay.waiting], [true, 0, false, []])
+      [done.last["reached"], $game_party.item_number(610), $game_party.item_number(1734), $game_self_switches[[51, 23, "B"]], MGQ_MpStoryReplay.waiting],
+      [true, 0, 1, false, []])
+check("a check of an item the record lacks hands the DLL what the receiver holds, with each companion's id and level",
+      done.last["reads"].assoc("holdings"), ["holdings", nil, [["g", 0], ["c1", 1], [[1, 12]]]])
 
 # A receiver asked the trade who answers Trade, as the opener did, goes the opener's way: a later
 # check of their own that fails leaves the run waiting instead of done.
@@ -701,6 +710,7 @@ MGQ_MpStoryReplay.update
 $asked[3].call(0)
 check("a receiver who answers as the opener did and fails a later check of their own is not done",
       [done.last["reached"], $game_party.item_number(612), $game_self_switches[[51, 25, "B"]]], [false, 0, false])
+check("and a replay that read only a switch of the receiver hands the DLL no read of what they hold", done.last["reads"].assoc("holdings"), nil)
 fake.answer("story.replay_take") { |_request| { "do" => "replay", "page" => 1 } }
 
 # A replay of a run that used up a key item takes the receiver's too, though a replay costs nothing
