@@ -231,8 +231,8 @@ module MGQ_MpWorldOverview
     messages.map { |site, place| message_at(site, place) }.compact
   end
 
-  # Looks a message up by its list and its place among the commands the events database keeps,
-  # which a translation leaves where it was (see MGQ_MpStoryReplay.kept_place).
+  # Looks a message up by its list and its place among the commands the events database keeps
+  # (see MGQ_MpStoryReplay.kept_code?).
   #
   # @param site [Array] The list: ["ce", id] or ["map", map, event, page from 1].
   # @param place [Integer] The message's place among the list's kept commands.

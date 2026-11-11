@@ -2,6 +2,8 @@
 //  PageMatch.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-11: Found a choice by its code and its number among its list's commands of that code, in a list of any shape
+//                            - Named an input of an earlier release's entry by its command's code and number
 //      Paulinchen  2026-11-05: Told whether a run's page calls a common event
 //      Paulinchen  2026-11-01: Left what a choice's answers take out of whether the choice is the receiver's, since a replay takes nothing
 //                            - Told whether an extended choice is the receiver's too, each answer by all the branches it runs
@@ -191,14 +193,13 @@ public sealed class PageMatch(EventStore store)
     /// what each branch it runs does.
     /// </summary>
     /// <param name="run">Where the run started, whose event a self switch the choice writes is of.</param>
-    /// <param name="at">The choice's command, as the run's inputs name it: such as "map:1:9:1@0" or "ce:20@3".</param>
-    /// <param name="shapes">The <see cref="ListShape"/> of each of the receiver's lists, by site such as "map:1:9:1".</param>
+    /// <param name="at">The choice's command, as the run's inputs name it: such as "map:1:9:1@102:0" or "ce:20@355:3".</param>
     /// <param name="own">Tells whether a player keeps a key: a player's or a party's key, by the live scopes.</param>
     /// <returns>Whether it is; false for a command <see cref="ChoiceOf"/> finds no choice at.</returns>
-    public bool IsReceivers(ReplaySite run, string at, IReadOnlyDictionary<string, int> shapes, Func<StoryKey, bool> own)
+    public bool IsReceivers(ReplaySite run, string at, Func<StoryKey, bool> own)
     {
         ArgumentNullException.ThrowIfNull(own);
-        if (ChoiceOf(at, shapes) is not { } choice)
+        if (ChoiceOf(at) is not { } choice)
         {
             return false;
         }
@@ -210,28 +211,93 @@ public sealed class PageMatch(EventStore store)
 
     /// <summary>
     /// Finds the choice an input names in the events database: the Show Choices command or the
-    /// script command of an extended choice at the input's place among its list's kept commands.
+    /// script command of an extended choice of the input's code and number in its list.
     /// </summary>
     /// <remarks>
-    /// The database counts the places of the untranslated game, whose text lines a translation
-    /// changes; the kept commands stay where they were while the receiver's list has the same shape.
+    /// The database holds the untranslated game's lists, whose texts, branches and scripts a
+    /// translation changes; a choice keeps its number among its list's choices through that.
     /// </remarks>
-    /// <param name="at">The input's command, such as "map:6:30:2@1": its list, then its place among the kept commands.</param>
-    /// <param name="shapes">The <see cref="ListShape"/> of each of the receiver's lists, by site such as "map:6:30:2".</param>
-    /// <returns>The list and the command's place in it; <see langword="null"/> when the database lacks the list or holds it in another shape, or neither command stands there.</returns>
-    public (int ListId, int Idx)? ChoiceOf(string at, IReadOnlyDictionary<string, int> shapes)
+    /// <param name="at">The input's command, such as "map:6:30:2@102:1", see <see cref="StoryPlain.PlaceText(string, int, long)"/>.</param>
+    /// <returns>The list and the command's place in it; <see langword="null"/> when the database lacks the list or neither command stands there.</returns>
+    public (int ListId, int Idx)? ChoiceOf(string at)
     {
         ArgumentNullException.ThrowIfNull(at);
-        ArgumentNullException.ThrowIfNull(shapes);
-        int mark = at.LastIndexOf('@');
-        if (mark < 0 || !int.TryParse(at.AsSpan(mark + 1), NumberStyles.None, CultureInfo.InvariantCulture, out int ord)
-            || !TryParseSite(at[..mark], out ReplaySite site) || ListOf(site) is not { } listId
-            || !shapes.TryGetValue(at[..mark], out int shape) || store.List(listId)?.Shape != shape)
+        if (!StoryPlain.TryParsePlace(at, out string text, out int code, out long number) || code is not (EventCodes.ShowChoices or EventCodes.Script)
+            || !TryParseSite(text, out ReplaySite site) || ListOf(site) is not { } listId)
         {
             return null;
         }
 
-        return store.Commands(listId).FirstOrDefault(command => command.Ord == ord) is { Code: EventCodes.ShowChoices or EventCodes.Script } choice ? (listId, choice.Idx) : null;
+        return CommandOf(store.Commands(listId), code, number) is { } choice ? (listId, choice.Idx) : null;
+    }
+
+    /// <summary>
+    /// Finds a list's command of a code by its number among the list's commands of that code.
+    /// </summary>
+    /// <param name="commands">The list's commands in their order.</param>
+    /// <param name="code">The code.</param>
+    /// <param name="number">The number, from 0.</param>
+    /// <returns>The command, <see langword="null"/> when the list has fewer of that code.</returns>
+    internal static CommandRow? CommandOf(IReadOnlyList<CommandRow> commands, int code, long number)
+    {
+        ArgumentNullException.ThrowIfNull(commands);
+        long seen = 0;
+        foreach (CommandRow command in commands)
+        {
+            if (command.Code == code && seen++ == number)
+            {
+                return command;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Counts a list's commands of a command's code before it, its number as the inputs name it.
+    /// </summary>
+    /// <param name="commands">The list's commands in their order.</param>
+    /// <param name="index">The command's place among them.</param>
+    /// <returns>The number, from 0.</returns>
+    internal static int NumberOf(IReadOnlyList<CommandRow> commands, int index)
+    {
+        ArgumentNullException.ThrowIfNull(commands);
+        int code = commands[index].Code;
+        int number = 0;
+        for (int before = 0; before < index; before++)
+        {
+            number += commands[before].Code == code ? 1 : 0;
+        }
+
+        return number;
+    }
+
+    /// <summary>
+    /// Names an input of an entry of an earlier release as the inputs name it now: the database's
+    /// command at the input's place among its list's kept commands, by its code and number. A number
+    /// or item input an earlier release named by the text before it goes by the text's first Input
+    /// Number or Select Key Item after it.
+    /// </summary>
+    /// <param name="at">The input's place as the earlier release named it, such as "map:215:23:1@4".</param>
+    /// <param name="kind">What the input read, such as "choice" or "number".</param>
+    /// <returns>The place, such as "map:215:23:1@102:0"; <see langword="null"/> when the database lacks the list or the command.</returns>
+    public string? RenamedEarlierInput(string at, string kind)
+    {
+        ArgumentNullException.ThrowIfNull(at);
+        if (!StoryPlain.TryParseEarlierPlace(at, out string text, out int ord) || !TryParseSite(text, out ReplaySite site) || ListOf(site) is not { } listId)
+        {
+            return null;
+        }
+
+        IReadOnlyList<CommandRow> commands = store.Commands(listId);
+        int index = IndexOf(commands, 0, command => command.Ord == ord);
+        if (index >= 0 && commands[index].Code == EventCodes.ShowText && kind is "number" or "item")
+        {
+            int input = kind == "number" ? EventCodes.InputNumber : EventCodes.SelectKeyItem;
+            index = IndexOf(commands, index + 1, command => command.Code == input);
+        }
+
+        return index < 0 ? null : StoryPlain.PlaceText(text, commands[index].Code, NumberOf(commands, index));
     }
 
     /// <summary>
@@ -533,6 +599,26 @@ public sealed class PageMatch(EventStore store)
     private int? ListOf(ReplaySite site) => site.IsCommon
         ? store.Common(site.CommonId) is { } common ? common.ListId : null
         : store.Page(site.MapId, site.EventId, site.PageNo) is { } page ? page.ListId : null;
+
+    /// <summary>
+    /// Finds the first command from a place on that matches.
+    /// </summary>
+    /// <param name="commands">The list's commands in their order.</param>
+    /// <param name="from">The place to start at.</param>
+    /// <param name="match">Tells whether a command matches.</param>
+    /// <returns>Its place, -1 for none.</returns>
+    private static int IndexOf(IReadOnlyList<CommandRow> commands, int from, Func<CommandRow, bool> match)
+    {
+        for (int place = from; place < commands.Count; place++)
+        {
+            if (match(commands[place]))
+            {
+                return place;
+            }
+        }
+
+        return -1;
+    }
 
     /// <summary>
     /// Reads a site as the inputs name it.

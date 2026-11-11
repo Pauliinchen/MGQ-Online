@@ -3,6 +3,9 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-11: Dressed the party's member in socketed gear, and checked that the DLL hears what the player holds only after a replay read it
+#                            - Named the inputs by their commands' codes and numbers, a number at its Input Number, and dropped the shapes a take handed over
+#                            - Checked that a receiver whose translation merged two text boxes takes the opener's number, choice, draw and battle
+#                            - Answered a take with the whole record, as the DLL does
 #      Paulinchen  2026-11-10: Checked that a locked chest opens in a replay
 #                            - Cut a page by a check of the party's gold, since a lock no longer cuts a replay
 #                            - Gave the party's stand-in the bag's lists of what it holds
@@ -388,7 +391,7 @@ check("nothing shows, the player neither moves nor transfers, and no scene opens
 check("a move route's switch still turns on, and the medal goes to the notice instead of the popup",
       [$game_switches[31], $game_library.medals, done.medals, MGQ_MpGame.get($game_temp, :gain_medals)], [true, [104], [104], []])
 check("a battle with no record counts as won", [$game_party.item_number(3317), $game_party.item_number(1)], [1, 0])
-replay(["map", 1502, 30, 1], "inputs" => [[[["map", 1502, 30, 1], 4], 0, "battle", 2]])
+replay(["map", 1502, 30, 1], "inputs" => [[[["map", 1502, 30, 1], 301, 0], 0, "battle", 2]])
 check("a recorded loss takes the loss's branch", $game_party.item_number(1), 1)
 
 # A stage pay-out (CE 129) sets the transfer's map v57 before the transfer the replay never makes,
@@ -413,11 +416,11 @@ page(78, 36, [c(117, 310)])
 replay(["map", 78, 36, 1], "start" => [[1, 1103, 5]])
 check("a called common event reads the run's start value of a key only it reads", $game_party.item_number(900), 1)
 
-# The opener's choice and random draw are used, the record naming each by its command's place.
+# The opener's choice and random draw are used, the record naming each by its command's code and number.
 new_game
 page(1994, 42, [c(102, ["Give", "Keep"], 2), c(402, 0, "Give"), c(126, 10, 0, 0, 1, indent: 1), c(402, 1, "Keep"), c(126, 11, 0, 0, 1, indent: 1), c(404),
                 c(122, 200, 200, 0, 2, 1, 100)])
-replay(["map", 1994, 42, 1], "inputs" => [[[["map", 1994, 42, 1], 0], 0, "choice", 1], [[["map", 1994, 42, 1], 6], 0, "rand", 41]])
+replay(["map", 1994, 42, 1], "inputs" => [[[["map", 1994, 42, 1], 102, 0], 0, "choice", 1], [[["map", 1994, 42, 1], 122, 0], 0, "rand", 41]])
 check("a recorded choice and random draw are used", [$game_party.item_number(10), $game_party.item_number(11), $game_variables[200]], [0, 1, 42])
 
 # The Fortune Teller (51:23): her intro behind self switch A, then the trade of a wrist for a job
@@ -427,7 +430,7 @@ check("a recorded choice and random draw are used", [$game_party.item_number(10)
 FORTUNE_TELLER = [c(111, 2, "A", 1), c(123, "A", 0, indent: 1), c(115, indent: 1), c(411), c(111, 8, 1734, indent: 1),
                   c(102, ["Trade", "Decline"], 1, indent: 2), c(402, 0, "Trade", indent: 2), c(126, 1734, 1, 0, 1, indent: 3),
                   c(126, 610, 0, 0, 1, indent: 3), c(123, "B", 0, indent: 3), c(402, 1, "Decline", indent: 2), c(404, indent: 2), c(412, indent: 1), c(412)]
-TRADED = [[[["map", 51, 23, 1], 0], 0, "branch", 0], [[["map", 51, 23, 1], 3], 0, "branch", 1], [[["map", 51, 23, 1], 4], 0, "choice", 0]]
+TRADED = [[[["map", 51, 23, 1], 111, 0], 0, "branch", 0], [[["map", 51, 23, 1], 111, 1], 0, "branch", 1], [[["map", 51, 23, 1], 102, 0], 0, "choice", 0]]
 new_game
 page(51, 23, FORTUNE_TELLER)
 traded = replay(["map", 51, 23, 1], "keys" => [[2, [51, 23, "B"], false]], "inputs" => TRADED)
@@ -444,7 +447,7 @@ check("a receiver who holds a wrist keeps it", [$game_party.item_number(610), $g
 new_game
 $game_self_switches[[51, 24, "B"]] = true
 page(51, 24, [c(111, 2, "B", 1), c(126, 611, 0, 0, 1, indent: 1), c(123, "B", 0, indent: 1), c(412)])
-again = replay(["map", 51, 24, 1], "keys" => [[2, [51, 24, "B"], false]], "inputs" => [[[["map", 51, 24, 1], 0], 0, "branch", 1]])
+again = replay(["map", 51, 24, 1], "keys" => [[2, [51, 24, "B"], false]], "inputs" => [[[["map", 51, 24, 1], 111, 0], 0, "branch", 1]])
 check("a check of the step's own self switch reads the receiver's, so a chest they opened gives nothing again", [again.committed?, $game_party.item_number(611)], [false, 0])
 
 # The Medal King (CE 140): the medals held read into a variable, a prize for two of them, and a
@@ -452,7 +455,7 @@ check("a check of the step's own self switch reads the receiver's, so a chest th
 new_game
 page(140, 1, [c(122, 300, 300, 0, 3, 0, 32, 0), c(111, 1, 300, 0, 50, 0), c(126, 32, 1, 0, 2, indent: 1), c(126, 24, 0, 0, 1, indent: 1), c(412),
               c(111, 7, 180, 0), c(125, 1, 0, 180, indent: 1), c(126, 25, 0, 0, 1, indent: 1), c(412), c(123, "A", 0)])
-replay(["map", 140, 1, 1], "inputs" => [[[["map", 140, 1, 1], 0], 0, "holding", 50], [[["map", 140, 1, 1], 5], 0, "branch", 1]])
+replay(["map", 140, 1, 1], "inputs" => [[[["map", 140, 1, 1], 122, 0], 0, "holding", 50], [[["map", 140, 1, 1], 111, 1], 0, "branch", 1]])
 check("a count and gold the opener held decide, and the receiver gets the prizes without paying medals or gold",
       [$game_variables[300], $game_party.item_number(24), $game_party.item_number(25), $game_party.item_number(32), $game_party.gold], [50, 1, 1, 0, 0])
 
@@ -583,7 +586,7 @@ check("a run of the player's own chest names the party keys it changed, their va
       [request["site"], request["changed"], request["owner"], request["party_stream"], request["place"]],
       [["map", 215, 23, 1], [[0, 2045, false, true], [2, [215, 23, "A"], false, true]], true, "party:p1", [5, 0, 0, 0]])
 check("it carries the start values of the world keys its event reads, and the choice and draw of its player by their commands",
-      [request["start"], request["inputs"]], [[[1, 1001, 5]], [[[["map", 215, 23, 1], 4], 0, "choice", 0], [[["map", 215, 23, 1], 6], 0, "rand", drawn - 1]]])
+      [request["start"], request["inputs"]], [[[1, 1001, 5]], [[[["map", 215, 23, 1], 102, 0], 0, "choice", 0], [[["map", 215, 23, 1], 122, 0], 0, "rand", drawn - 1]]])
 check("its range of switches went to the DLL as a reset, and its entry to the party", [$resets, $handed.map { |entry| entry["id"] }], [[[0, 40, 45, false]], ["e1"]])
 
 # The receiver's game takes the chest's entry: it names the value the DLL asks for, replays the
@@ -703,9 +706,9 @@ check("a check of an item the record lacks hands the DLL what the receiver holds
 # check of their own that fails leaves the run waiting instead of done.
 page(51, 25, [c(102, ["Trade", "Decline"], 1), c(402, 0, "Trade"), c(111, 0, 900, 0, indent: 1), c(126, 612, 0, 0, 1, indent: 2), c(123, "B", 0, indent: 2),
               c(412, indent: 1), c(402, 1, "Decline"), c(404)])
-fake.answer("story.replay_take") { |_request| { "do" => "replay", "page" => 1, "inputs" => [] } }
+fake.answer("story.replay_take") { |request| { "do" => "replay", "page" => 1, "inputs" => [], "recorded" => request["entry"]["inputs"] } }
 new_game
-MGQ_MpStoryReplay.receive(entry.merge("id" => "e8", "site" => ["map", 51, 25, 1], "keys" => [[2, [51, 25, "B"], false]], "inputs" => [[[["map", 51, 25, 1], 0], 0, "choice", 0]]))
+MGQ_MpStoryReplay.receive(entry.merge("id" => "e8", "site" => ["map", 51, 25, 1], "keys" => [[2, [51, 25, "B"], false]], "inputs" => [[[["map", 51, 25, 1], 102, 0], 0, "choice", 0]]))
 MGQ_MpStoryReplay.update
 $asked[3].call(0)
 check("a receiver who answers as the opener did and fails a later check of their own is not done",
@@ -771,8 +774,8 @@ check("a run that waits to be taken waits in the save's log too, comes back with
 def MGQ_MpOverworldSync.map_free?; true; end
 
 # A battle the opener's run fought is noted by the command that started it once the battle ended,
-# which happens while the run waits inside that command; a number asked after a text is noted by the
-# text's command, which sets it up.
+# which happens while the run waits inside that command; a number asked after a text is noted by its
+# Input Number command, which the text sets up.
 new_game
 $game_map.map_id = 215
 opener = Game_Interpreter.new
@@ -783,8 +786,8 @@ opener.update until $game_message.num_input?
 $game_variables[300] = 12
 $game_message.clear
 opener.update while opener.running?
-check("a battle's outcome and a number asked after a text are noted by the commands that started them",
-      $ran.last["inputs"], [[[["map", 215, 23, 1], 0], 0, "battle", 1], [[["map", 215, 23, 1], 1], 0, "number", 12]])
+check("a battle's outcome is noted by the command that started it, and a number asked after a text by its Input Number",
+      $ran.last["inputs"], [[[["map", 215, 23, 1], 301, 0], 0, "battle", 1], [[["map", 215, 23, 1], 103, 0], 0, "number", 12]])
 
 # The opener's checks of the event's own self switch and of what the party holds, and a count of
 # what it holds read into a variable, are noted by their commands.
@@ -796,14 +799,14 @@ opener = Game_Interpreter.new
 opener.setup([c(111, 2, "B", 1), c(111, 8, 1734, indent: 1), c(412, indent: 1), c(412), c(122, 300, 300, 0, 3, 0, 32, 0), c(123, "A", 0), c(0)], 23)
 opener.update while opener.running?
 check("the opener's checks of its self switch and of what the party holds and a count it read are noted by their commands",
-      $ran.last["inputs"], [[[["map", 215, 23, 1], 0], 0, "branch", 1], [[["map", 215, 23, 1], 1], 0, "branch", 1], [[["map", 215, 23, 1], 4], 0, "holding", 5]])
+      $ran.last["inputs"], [[[["map", 215, 23, 1], 111, 0], 0, "branch", 1], [[["map", 215, 23, 1], 111, 1], 0, "branch", 1], [[["map", 215, 23, 1], 122, 0], 0, "holding", 5]])
 
 # A number takes the opener's answer, such as the coins they put in, and the receiver is asked
 # nothing (user decision 2026-11-06).
 new_game
 page(215, 30, [c(126, 606, 0, 0, 1), c(101, "", 0, 0, 2), c(401, "How many coins do you put in?"), c(103, 300, 2), c(123, "A", 0)])
 $game_variables[300] = 4
-coins = replay(["map", 215, 30, 1], "inputs" => [[[["map", 215, 30, 1], 1], 0, "number", 50]])
+coins = replay(["map", 215, 30, 1], "inputs" => [[[["map", 215, 30, 1], 103, 0], 0, "number", 50]])
 check("a recorded number takes the opener's answer without asking, and the page goes on",
       [coins.state, coins.question, $game_variables[300], $game_party.item_number(606)], [:done, nil, 50, 1])
 
@@ -837,9 +840,9 @@ $game_map.update
 check("a run whose interpreter the map let go closes, and the map's own run stays",
       [open, MGQ_MpStoryKeys.instance_variable_get(:@runs).keys, MGQ_MpStoryKeys.instance_variable_get(:@stacks).keys], [2, [own.object_id], [own.object_id]])
 
-# A choice a text sets up is noted at its Show Choices, by its place among the commands the events
-# database keeps, so a receiver whose translation gives the text another number of lines finds the
-# opener's answer at the same place.
+# A choice a text sets up is noted at its Show Choices, by its number among the list's Show Choices,
+# so a receiver whose translation gives the text another number of lines finds the opener's answer
+# at the same choice.
 new_game
 $game_map.map_id = 215
 opener = Game_Interpreter.new
@@ -850,12 +853,46 @@ $game_message.choice_proc.call(1)
 $game_message.clear
 opener.update while opener.running?
 recorded = $ran.last["inputs"]
-check("a choice after a text is noted at its Show Choices, counted among the commands the events database keeps", recorded, [[[["map", 215, 23, 1], 1], 0, "choice", 1]])
+check("a choice after a text is noted at its Show Choices, counted among the list's Show Choices", recorded, [[[["map", 215, 23, 1], 102, 0], 0, "choice", 1]])
 new_game
 page(215, 23, [c(101, "", 0, 0, 2), c(401, "Take her along? She waits."), c(102, ["Reconsider", "Take her along"], 1), c(402, 0, "Reconsider"),
                c(402, 1, "Take her along"), c(126, 77, 0, 0, 1, indent: 1), c(404), c(123, "A", 0)])
 replay(["map", 215, 23, 1], "inputs" => recorded)
 check("a receiver whose text has a line less takes the opener's answer at the same place", $game_party.item_number(77), 1)
+
+# A translation that merges two text boxes into one with a face leaves every input's code and
+# number where it was: the receiver's replay takes the opener's number, choice, draw and battle
+# outcome and asks nothing.
+OPENED = [c(101, "", 0, 0, 2), c(401, "A chest lies here."), c(101, "", 0, 0, 2), c(401, "How many coins?"), c(103, 300, 2),
+          c(102, ["Take", "Leave"], 1), c(402, 0, "Take"), c(126, 77, 0, 0, 1, indent: 1), c(402, 1, "Leave"), c(404), c(122, 301, 301, 0, 2, 1, 6),
+          c(301, 0, 12, false, true), c(601), c(126, 78, 0, 0, 1, indent: 1), c(603), c(126, 79, 0, 0, 1, indent: 1), c(604), c(123, "A", 0)]
+new_game
+$game_map.map_id = 215
+opener = Game_Interpreter.new
+opener.setup(OPENED + [c(0)], 23)
+until $game_message.num_input?
+  opener.update
+  $game_message.clear unless $game_message.num_input?
+end
+$game_variables[300] = 12
+$game_message.clear
+opener.update until $game_message.choice?
+$game_message.choice_proc.call(0)
+$game_message.clear
+opener.update
+BattleManager.battle_end(2)
+opener.update while opener.running?
+drawn = $game_variables[301]
+recorded = $ran.last["inputs"]
+site = ["map", 215, 23, 1]
+check("the opener's number, choice, draw and battle are noted by their commands' codes and numbers",
+      recorded, [[[site, 103, 0], 0, "number", 12], [[site, 102, 0], 0, "choice", 0], [[site, 122, 0], 0, "rand", drawn - 1], [[site, 301, 0], 0, "battle", 2]])
+new_game
+page(215, 23, [c(101, "Luka", 0, 0, 2), c(401, "A chest lies here. How many coins?")] + OPENED[4..-1])
+merged = replay(site, "inputs" => recorded)
+check("a receiver whose translation merged the two text boxes takes them all and is asked nothing",
+      [merged.state, merged.question, $game_variables[300], $game_variables[301], $game_party.item_number(77), $game_party.item_number(79), $game_party.item_number(78)],
+      [:done, nil, 12, drawn, 1, 1, 0])
 
 # A cup of the Colosseum's extended choice (CE 161), its answers added by the script that shows it,
 # is noted at that script command; a receiver is asked only the cups the game shows them.
@@ -870,26 +907,16 @@ opener.update until $game_message.ex_choice?
 $game_variables[15] = 4
 $game_message.ex_choice_clear
 opener.update while opener.running?
-check("an extended choice is noted at the script command that shows it", $ran.last["inputs"], [[[["map", 215, 23, 1], 0], 0, "choice", 4]])
+check("an extended choice is noted at the script command that shows it", $ran.last["inputs"], [[[["map", 215, 23, 1], 355, 0], 0, "choice", 4]])
 new_game
 page(215, 23, CUPS)
 waiting = replay(["map", 215, 23, 1])
 asked = [waiting.state, waiting.question && waiting.question["at"], waiting.question && waiting.question["labels"], waiting.question && waiting.question["values"],
          waiting.question && waiting.question["cancel"]]
 waiting.answer(1)
-check("a receiver is asked an extended choice with the answers the game shows them, and what its cancel answers after them", asked, [:asking, [["map", 215, 23, 1], 0], ["Demon Cup"], [1, 0], 1])
+check("a receiver is asked an extended choice with the answers the game shows them, and what its cancel answers after them", asked, [:asking, [["map", 215, 23, 1], 355, 0], ["Demon Cup"], [1, 0], 1])
 check("and their answer plays on", [waiting.state, $game_party.item_number(81), $game_party.item_number(84)], [:done, 1, 0])
 
-# Taking a run, the player's game hands the DLL the shapes of its own lists of the run's choices, by
-# which the DLL finds them in its events database; a list the game lacks is left out.
-shapes = []
-fake.answer("story.replay_take") { |request| shapes << request["shapes"]; { "do" => "pending", "why" => "page 2 shows" } }
-page(217, 5, [c(102, ["Yes", "No"], 1), c(402, 0, "Yes"), c(126, 78, 0, 0, 1, indent: 1), c(404)])
-new_game
-MGQ_MpStoryReplay.receive(entry.merge("id" => "e10", "inputs" => [[[["map", 217, 5, 1], 0], 0, "choice", 1], [[["ce", 900], 0], 0, "choice", 0], [[["map", 215, 23, 1], 3], 0, "rand", 4]]))
-MGQ_MpStoryReplay.update
-check("a run's take names the shapes of the player's lists of its choices",
-      shapes.last, [[["map", 217, 5, 1], MGQ_MpStoryReplay.list_shape($maps[217].events[5].pages[0].list)]])
 
 # Another player's battle drop of a key item gives the receiver the item, with no event to replay,
 # and the DLL tells the notice from what they held before and after (user decision 2026-11-05).

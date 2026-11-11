@@ -2,7 +2,9 @@
 //  StoryReplayTopicsTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-11: Entered the story without a level, as the scripts now do
+//      Paulinchen  2026-11-11: Named the inputs by their commands' codes and numbers, and took runs without the shapes of the player's lists
+//                            - Checked that an earlier release's entry takes the opener's answers by their new names, a number at its Input Number
+//                            - Entered the story without a level, as the scripts now do
 //      Paulinchen  2026-11-10: Covered a page of the player's history that waits being derived once
 //      Paulinchen  2026-11-09: Covered a Raid World save that keeps no step of the own drops it passed nor of a run no player hands over
 //      Paulinchen  2026-11-08: Moved to the MGQOnline.Multiplayer namespace
@@ -57,10 +59,6 @@ public sealed class StoryReplayTopicsTests
     /// </summary>
     private readonly BridgeContext _context = new(1, new QuietLog());
 
-    /// <summary>
-    /// The shapes of the receiver's lists of the choices a take names, as the scripts hand them over.
-    /// </summary>
-    private readonly RubyArray _shapes;
 
     /// <summary>
     /// Initializes the topics over a Makina-shaped chest on map 1: page 1 reads the story's progress,
@@ -69,8 +67,9 @@ public sealed class StoryReplayTopicsTests
     /// with two choices: the first one's answers turn on the player's own switch 1001 or 1002, the
     /// second one's the world's 303 or 304, each with the player's own 1003; and where the player
     /// takes a side along, which turns 300 on and gives a potion; the Medal King, whose common event
-    /// 140 turns 300 on and gives a potion; and a trade like the Fortune Teller's, whose first
-    /// answer takes a wrist, gives the permit and turns B on.
+    /// 140 turns 300 on and gives a potion; a trade like the Fortune Teller's, whose first answer
+    /// takes a wrist, gives the permit and turns B on; and a text that asks a number, then a choice
+    /// between the world's 303 and 304, a draw and the world's 305.
     /// </summary>
     public StoryReplayTopicsTests()
     {
@@ -96,10 +95,12 @@ public sealed class StoryReplayTopicsTests
             .Common(140, C(121, 300, 300, 0), C(126, 1, 0, 0, 1))
             .MapEvent(1, 12, 5, 0, new TinyPage([C(117, 140)]))
             .MapEvent(1, 13, 6, 0, new TinyPage([
-                C(102, "Trade", 2), C(402, 0, "Trade"), At(126, 1, 1734, 1, 0, 1), At(126, 1, 610, 0, 0, 1), At(123, 1, "B", 0), At(0, 1), C(402, 1, "Decline"), At(0, 1), C(404)])));
+                C(102, "Trade", 2), C(402, 0, "Trade"), At(126, 1, 1734, 1, 0, 1), At(126, 1, 610, 0, 0, 1), At(123, 1, "B", 0), At(0, 1), C(402, 1, "Decline"), At(0, 1), C(404)]))
+            .MapEvent(1, 14, 7, 0, new TinyPage([
+                C(101, "", 0, 0, 2), C(401, "How many?"), C(103, 200, 2),
+                C(102, "Yes", 2), C(402, 0, "Yes"), At(121, 1, 303, 303, 0), At(0, 1), C(402, 1, "No"), At(121, 1, 304, 304, 0), At(0, 1), C(404),
+                C(122, 201, 201, 0, 2, 1, 6), C(121, 305, 305, 0)])));
         topics.Events = () => events;
-        _shapes = [new RubyArray { Page(1, 10, 1), events.Store.List(events.Store.Page(1, 10, 0)!.Value.ListId)!.Value.Shape },
-                   new RubyArray { Page(1, 13, 1), events.Store.List(events.Store.Page(1, 13, 0)!.Value.ListId)!.Value.Shape }];
         Call(StoryTopics.MappingTopic, "w1");
         Drain(1);
         Drain(2);
@@ -200,9 +201,9 @@ public sealed class StoryReplayTopicsTests
     [Fact]
     public void Take_AsksTheReceiverAChoiceWhoseAnswersDifferInTheirOwnKeys()
     {
-        RubyArray asked = [new RubyArray { new RubyArray { Page(1, 10, 1), 0 }, 0, "choice", 1 }];
-        RubyArray kept = [new RubyArray { new RubyArray { Page(1, 10, 1), 6 }, 0, "choice", 0 }, new RubyArray { new RubyArray { Page(1, 10, 1), 10 }, 0, "number", 50 },
-            new RubyArray { new RubyArray { Page(1, 10, 1), 14 }, 0, "rand", 3 }];
+        RubyArray asked = [new RubyArray { new RubyArray { Page(1, 10, 1), 102, 0 }, 0, "choice", 1 }];
+        RubyArray kept = [new RubyArray { new RubyArray { Page(1, 10, 1), 102, 1 }, 0, "choice", 0 }, new RubyArray { new RubyArray { Page(1, 10, 1), 103, 0 }, 0, "number", 50 },
+            new RubyArray { new RubyArray { Page(1, 10, 1), 122, 0 }, 0, "rand", 3 }];
         RubyHash entry = Entry();
         entry["site"] = Page(1, 10, 1);
         entry["stream"] = "story:lead";
@@ -213,6 +214,35 @@ public sealed class StoryReplayTopicsTests
         Call(StoryTopics.ReplayScopesTopic, new RubyHash { { "party", true } });
 
         Assert.Equal(kept, Take(entry, [])["inputs"]);
+    }
+
+    /// <summary>
+    /// Asserts that an entry an earlier release handed over, its inputs named by their commands'
+    /// places among the kept commands, takes the opener's choice, draw and number by their new
+    /// names, the number at its Input Number though the earlier release named it by the text.
+    /// </summary>
+    [Fact]
+    public void Take_NamesAnEarlierReleasesInputsAnew()
+    {
+        RubyHash entry = Entry();
+        entry["site"] = Page(1, 14, 1);
+        entry["stream"] = "story:lead";
+        entry["scope"] = "world";
+        entry["keys"] = new RubyArray { Row(Switch(305), false) };
+        entry["inputs"] = new RubyArray
+        {
+            new RubyArray { "map:1:14:1@0", 0, "number", 12 }, new RubyArray { "map:1:14:1@2", 0, "choice", 1 }, new RubyArray { "map:1:14:1@8", 0, "rand", 3 },
+        };
+        Call(StoryTopics.ReplayScopesTopic, new RubyHash { { "party", true } });
+
+        RubyHash taken = Take(entry, []);
+
+        RubyArray renamed =
+        [
+            new RubyArray { new RubyArray { Page(1, 14, 1), 103, 0 }, 0, "number", 12 }, new RubyArray { new RubyArray { Page(1, 14, 1), 102, 0 }, 0, "choice", 1 },
+            new RubyArray { new RubyArray { Page(1, 14, 1), 122, 0 }, 0, "rand", 3 },
+        ];
+        Assert.Equal(("replay", renamed, renamed), (taken["do"].AsText(), taken["inputs"], taken["recorded"]));
     }
 
     /// <summary>
@@ -279,7 +309,7 @@ public sealed class StoryReplayTopicsTests
         RubyHash entry = Entry();
 
         Assert.Equal(new RubyHash { { "needs", new RubyArray { Self(1, 7, "A") } } }, Take(entry, []));
-        Assert.Equal(new RubyHash { { "do", "replay" }, { "page", 1 }, { "sibling", false }, { "inputs", new RubyArray() } }, Take(entry, [Row(Self(1, 7, "A"), false)]));
+        Assert.Equal(new RubyHash { { "do", "replay" }, { "page", 1 }, { "sibling", false }, { "inputs", new RubyArray() }, { "recorded", new RubyArray() } }, Take(entry, [Row(Self(1, 7, "A"), false)]));
         Assert.Equal("pending", Take(entry, [Row(Self(1, 7, "A"), true)])["do"].AsText());
         Assert.Equal(new RubyArray(), Call(StoryTopics.ReplayDueTopic, new RubyHash { { "values", new RubyArray { Row(Self(1, 7, "A"), true) } } }));
         Assert.Equal(new RubyArray { entry }, Call(StoryTopics.ReplayDueTopic, new RubyHash { { "values", new RubyArray { Row(Self(1, 7, "A"), false) } } }));
@@ -442,7 +472,7 @@ public sealed class StoryReplayTopicsTests
     [Fact]
     public void Derive_AnswersAChestsTradeTheWayItsLetterShutIt()
     {
-        RubyArray traded = [new RubyArray { new RubyArray { Page(1, 13, 1), 0 }, 0, "choice", 0 }];
+        RubyArray traded = [new RubyArray { new RubyArray { Page(1, 13, 1), 102, 0 }, 0, "choice", 0 }];
         Call(StoryTopics.ReplayScopesTopic, new RubyHash { { "party", true } });
 
         RubyHash derived = Call(StoryTopics.ReplayDeriveTopic, new RubyHash { { "chest", Self(1, 13, "B") }, { "party", true } }).AsHash();
@@ -460,7 +490,7 @@ public sealed class StoryReplayTopicsTests
     [Fact]
     public void Take_AnswersTheTradeOfARunThatGaveAFoundItemTheOpenersWay()
     {
-        RubyArray traded = [new RubyArray { new RubyArray { Page(1, 13, 1), 0 }, 0, "choice", 0 }];
+        RubyArray traded = [new RubyArray { new RubyArray { Page(1, 13, 1), 102, 0 }, 0, "choice", 0 }];
         Call(StoryTopics.ReplayScopesTopic, new RubyHash { { "party", true } });
         RubyHash entry = OtherMembers(Ran([Change(Self(1, 13, "B"), false, true)], site: Page(1, 13, 1), found: [new RubyArray { 610, 1 }]).AsHash());
         entry["inputs"] = traded;
@@ -659,7 +689,7 @@ public sealed class StoryReplayTopicsTests
     /// <param name="entry">The entry.</param>
     /// <param name="values">The rows of the receiver's values the request holds.</param>
     /// <returns>The answer.</returns>
-    private RubyHash Take(RubyHash entry, RubyArray values) => Call(StoryTopics.ReplayTakeTopic, new RubyHash { { "entry", entry }, { "values", values }, { "shapes", _shapes } }).AsHash();
+    private RubyHash Take(RubyHash entry, RubyArray values) => Call(StoryTopics.ReplayTakeTopic, new RubyHash { { "entry", entry }, { "values", values } }).AsHash();
 
     /// <summary>
     /// Names a map event's page as the scripts hand a site over.

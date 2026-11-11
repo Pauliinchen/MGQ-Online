@@ -2,7 +2,8 @@
 #  battles_raid_freeze.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-11: Told the troop and state of each of the player's own records without asking the DLL
+#      Paulinchen  2026-11-11: Counted a fight's battle number by the replay's one count of a list's commands of a code
+#                            - Told the troop and state of each of the player's own records without asking the DLL
 #                            - Found a fight's site row by its battle number in the live list, so fights of a translated game freeze too
 #      Paulinchen  2026-11-10: Waited longer and longer between hand-overs of the journal the DLL refuses, instead of handing it over again every frame
 #      Paulinchen  2026-11-08: Asked the DLL which records wait, what a record's world entry holds, what becomes of a record as its battle ends, where a tableau stands and what it blocks, how a fresh start begins and which items a defeat gives back
@@ -694,7 +695,7 @@ module MGQ_MpRaidFreeze
   # @param index [Integer] The index.
   # @return [Integer] The count.
   def self.battle_number(list, index)
-    Array(list)[0, index].to_a.count { |command| command.code == 301 }
+    MGQ_MpStoryReplay.command_number(list, index)
   end
 
   # Builds a fight's tableau: the DLL tells where it stands and which events it blocks

@@ -420,7 +420,8 @@ A Raid World's story is the relay's, key by key, on its story tracks (protocol i
 - A frame can write about 1,900 keys (common event 154, the Final Chapter's reset), so the hook looks keys up in a byte table the DLL handed and makes no call per write.
 - The site of each write is tracked per interpreter, swapped in around its update, since a wait inside a command leaves the update with the command still running.
 - **Never recorded:** the mod's own writes (the relay's values, a teller's values a viewer takes, the opening's setup, the difficulty) and writes while a lost battle's defeat runs.
-- Inputs are noted by the command that read them, counted among the database's kept commands so a translation leaves the place. A battle's outcome is noted at `BattleManager.event_proc=`, since command 301 waits for the battle inside itself.
+- Inputs are noted by the command that read them: its code and its number among its list's commands of that code (`"map:215:23:1@102:0"`), which stays the same where a translation merges, splits or adds texts, so players of different game languages name the same choice, number, draw and battle. A choice, number or item input goes by the command the interpreter stands at as the message waits, not by the text before it. An entry of 0.7.0.x names its inputs by their place among the kept commands (`"map:215:23:1@4"`); a take names them anew by the database's command there. A battle's outcome is noted at `BattleManager.event_proc=`, since command 301 waits for the battle inside itself.
+- **Trap:** where a translation changed the logic itself (an added choice, a rewritten branch), the games really differ and no name is right; `TranslatedListsRealGameTests` checks the installed game's choices, number and item inputs and battles against the shipped database when `BATTLE_GAME_DIR` is set.
 
 ### Runs handed over by replay
 

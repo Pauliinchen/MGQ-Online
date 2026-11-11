@@ -2,6 +2,7 @@
 //  DerivedAnswersTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-11: Named a choice's answer by its number among the page's Show Choices
 //      Paulinchen  2026-11-01: Named a choice's answer by its Show Choices command's place among the kept commands
 //      Paulinchen  2026-10-31: Created
 //
@@ -49,14 +50,14 @@ public sealed class DerivedAnswersTests
 
     /// <summary>
     /// Asserts that a choice takes the branch that ends with the source's letters, named by its
-    /// place among the commands the database keeps, as the opener's run names a choice's answer.
+    /// number among the page's Show Choices, as the opener's run names a choice's answer.
     /// </summary>
     [Fact]
     public void Of_TakesTheBranchThatEndsWithTheSourcesLetters()
     {
         IReadOnlyList<ReplayInput> answers = DerivedAnswers.Of(_store, ReplaySite.Page(1, 47, 0), ["A", "C"]);
 
-        Assert.Equal([new ReplayInput("map:1:47:1@1", 0, "choice", 0)], answers);
+        Assert.Equal([new ReplayInput("map:1:47:1@102:0", 0, "choice", 0)], answers);
     }
 
     /// <summary>
@@ -65,7 +66,7 @@ public sealed class DerivedAnswersTests
     [Fact]
     public void Of_TakesTheOtherBranchForTheOtherLetter()
     {
-        Assert.Equal([new ReplayInput("map:1:47:1@1", 0, "choice", 1)], DerivedAnswers.Of(_store, ReplaySite.Page(1, 47, 0), ["B"]));
+        Assert.Equal([new ReplayInput("map:1:47:1@102:0", 0, "choice", 1)], DerivedAnswers.Of(_store, ReplaySite.Page(1, 47, 0), ["B"]));
     }
 
     /// <summary>

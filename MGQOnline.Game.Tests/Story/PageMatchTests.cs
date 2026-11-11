@@ -2,6 +2,7 @@
 //  PageMatchTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-11: Named the choices by their code and number, without the shapes of the receiver's lists
 //      Paulinchen  2026-11-01: Covered a choice whose answers differ only in what they take
 //                            - Covered finding a choice by its place among the kept commands, after a text and in a list of another shape, and answers that jump
 //      Paulinchen  2026-10-31: Covered whether a page gives and which choices the receiver is asked
@@ -127,8 +128,8 @@ public sealed class PageMatchTests
         Func<StoryKey, bool> own = key => key.Kind == StoryKeyKind.Switch && key.Id < 1000;
         ReplaySite site = ReplaySite.Page(1, 9, 0);
 
-        Assert.True(_match.IsReceivers(site, "map:1:9:1@0", Shapes(site), own));
-        Assert.False(_match.IsReceivers(site, "map:1:9:1@6", Shapes(site), own));
+        Assert.True(_match.IsReceivers(site, "map:1:9:1@102:0", own));
+        Assert.False(_match.IsReceivers(site, "map:1:9:1@102:1", own));
     }
 
     /// <summary>
@@ -140,25 +141,23 @@ public sealed class PageMatchTests
     {
         ReplaySite site = ReplaySite.Page(1, 10, 0);
 
-        Assert.False(_match.IsReceivers(site, "map:1:10:1@0", Shapes(site), _ => false));
-        Assert.True(_match.IsReceivers(site, "map:1:10:1@6", Shapes(site), _ => false));
+        Assert.False(_match.IsReceivers(site, "map:1:10:1@102:0", _ => false));
+        Assert.True(_match.IsReceivers(site, "map:1:10:1@102:1", _ => false));
     }
 
     /// <summary>
-    /// Asserts that a choice a text sets up is found by the Show Choices' place among the commands
-    /// the database keeps, which the text's lines leave out, and asked; while the receiver's list has
-    /// another shape, or the place holds no choice, nothing is found and the opener's answer stands.
+    /// Asserts that a choice a text sets up is found by its number among the list's Show Choices,
+    /// and asked; a command that is no choice finds nothing, so the opener's answer stands.
     /// </summary>
     [Fact]
-    public void ChoiceOf_FindsTheChoiceByItsPlaceAmongTheKeptCommands()
+    public void ChoiceOf_FindsTheChoiceByItsNumberAmongTheShowChoices()
     {
         ReplaySite site = ReplaySite.Page(1, 11, 0);
         Func<StoryKey, bool> own = key => key == StoryKey.Switch(4);
 
-        Assert.Equal((Store.Page(1, 11, 0)!.Value.ListId, 3), _match.ChoiceOf("map:1:11:1@1", Shapes(site)));
-        Assert.True(_match.IsReceivers(site, "map:1:11:1@1", Shapes(site), own));
-        Assert.Null(_match.ChoiceOf("map:1:11:1@0", Shapes(site)));
-        Assert.False(_match.IsReceivers(site, "map:1:11:1@1", new Dictionary<string, int> { ["map:1:11:1"] = 1 }, own));
+        Assert.Equal((Store.Page(1, 11, 0)!.Value.ListId, 3), _match.ChoiceOf("map:1:11:1@102:0"));
+        Assert.True(_match.IsReceivers(site, "map:1:11:1@102:0", own));
+        Assert.Null(_match.ChoiceOf("map:1:11:1@101:0"));
     }
 
     /// <summary>
@@ -170,24 +169,8 @@ public sealed class PageMatchTests
     {
         ReplaySite site = ReplaySite.Page(1, 12, 0);
 
-        Assert.True(_match.IsReceivers(site, "map:1:12:1@0", Shapes(site), key => key == StoryKey.Switch(2090)));
-        Assert.False(_match.IsReceivers(site, "map:1:12:1@0", Shapes(site), _ => false));
-    }
-
-    /// <summary>
-    /// Names the shapes of pages, as the receiver's game of the same data hands them over.
-    /// </summary>
-    /// <param name="sites">The pages.</param>
-    /// <returns>Each page's shape by its name.</returns>
-    private static Dictionary<string, int> Shapes(params ReplaySite[] sites)
-    {
-        var shapes = new Dictionary<string, int>(StringComparer.Ordinal);
-        foreach (ReplaySite site in sites)
-        {
-            shapes[site.ToString()] = Store.List(Store.Page(site.MapId, site.EventId, site.PageNo)!.Value.ListId)!.Value.Shape;
-        }
-
-        return shapes;
+        Assert.True(_match.IsReceivers(site, "map:1:12:1@102:0", key => key == StoryKey.Switch(2090)));
+        Assert.False(_match.IsReceivers(site, "map:1:12:1@102:0", _ => false));
     }
 
     /// <summary>

@@ -2,6 +2,8 @@
 //  StoryTopics.Replay.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-11: Found the choices of a run by their code and number, without the shapes of the player's lists
+//                            - Named the inputs of an earlier release's entry anew as it is taken, and handed the whole record along
 //      Paulinchen  2026-11-10: Derived no entry of a page whose entry waits in the log already
 //      Paulinchen  2026-11-09: Dropped the steps the save passed before writing its log
 //                            - Logged no step of a Raid World run whose page no player hands over
@@ -104,7 +106,7 @@ internal sealed partial class StoryTopics
     /// "owner" (whether the player owns their story's stream, as a Classic leader does, so its entry
     /// is in it at once),
     /// "changed" ([kind, key, before, after] each, see <see cref="StoryPlain"/>), "found" ([[item, change], ...] of the found items, key items
-    /// and items unlocking a job or a race, it gave or used up; nil for none), "start" (rows), "place" ([markers]), "inputs" ([[at, occurrence, kind, value], ...]), "opener" (the
+    /// and items unlocking a job or a race, it gave or used up; nil for none), "start" (rows), "place" ([markers]), "inputs" ([[at, occurrence, kind, value], ...], at as <see cref="StoryPlain.PlaceText(RubyValue)"/> reads it), "opener" (the
     /// player's name)}. Logs its step and
     /// answers its entry to hand over (see <see cref="ReplayEntry.Write"/>), nil when it hands
     /// nothing over, or {"unknown"=>true} before the list came.
@@ -126,14 +128,13 @@ internal sealed partial class StoryTopics
 
     /// <summary>
     /// The topic that takes a run handed to the player: {"entry", "values" (the rows of the player's
-    /// own things asked for: keys, items, companions and holdings, see <see cref="StoryPlain"/>),
-    /// "shapes" ([site, the
-    /// <see cref="MGQOnline.Data.Events.ListShape"/>] of the player's list of each choice the entry's
-    /// inputs name)}. Answers {"do"=>"done"},
+    /// own things asked for: keys, items, companions and holdings, see <see cref="StoryPlain"/>)}.
+    /// Answers {"do"=>"done"},
     /// {"needs"=>[[kind, key], ...]}, {"do"=>"pending", "why"}, {"do"=>"replay", "page" (from 1, nil for
     /// a common event), "sibling", "inputs" (the entry's, less the answers of the choices that are
-    /// the receiver's, whom the replay asks them)}, {"do"=>"gain", "items" ([[item, count], ...] of
-    /// another player's battle drops)} or {"unknown"=>true} without an events database
+    /// the receiver's, whom the replay asks them), "recorded" (the entry's every input, those an
+    /// earlier release named by their place among the kept commands named anew)}, {"do"=>"gain",
+    /// "items" ([[item, count], ...] of another player's battle drops)} or {"unknown"=>true} without an events database
     /// or, for a run with a choice, before the scopes were read.
     /// </summary>
     public const string ReplayTakeTopic = "story.replay_take";
@@ -635,12 +636,12 @@ internal sealed partial class StoryTopics
     /// <summary>
     /// Answers <see cref="ReplayTakeTopic"/>, and drops a run it decides from the queue.
     /// </summary>
-    /// <param name="request">{"entry", "values", "shapes"}.</param>
+    /// <param name="request">{"entry", "values"}.</param>
     /// <returns>The answer.</returns>
     private RubyHash ReplayTake(RubyHash request)
     {
         ReplayEntry entry = ReplayEntry.Read(request["entry"]);
-        RubyHash answer = Decide(entry, StoryPlain.ThingTextsOf(request["values"]), ShapesOf(request["shapes"]));
+        RubyHash answer = Decide(entry, StoryPlain.ThingTextsOf(request["values"]));
         if (answer.ContainsKey("do"))
         {
             _log.Taken(entry);
@@ -655,9 +656,8 @@ internal sealed partial class StoryTopics
     /// </summary>
     /// <param name="entry">The run's entry.</param>
     /// <param name="values">The player's own values the request holds, by name as the save's log keeps them.</param>
-    /// <param name="shapes">The shapes of the player's lists of the choices the entry's inputs name, by site.</param>
     /// <returns>The answer.</returns>
-    private RubyHash Decide(ReplayEntry entry, IReadOnlyDictionary<string, string> values, IReadOnlyDictionary<string, int> shapes)
+    private RubyHash Decide(ReplayEntry entry, IReadOnlyDictionary<string, string> values)
     {
         if (_log.Claims(entry))
         {
@@ -699,7 +699,8 @@ internal sealed partial class StoryTopics
 
         if (pick.Replays)
         {
-            if (OpenersInputs(entry, match, shapes) is not { } inputs)
+            IReadOnlyList<ReplayInput> recorded = Renamed(entry, match);
+            if (OpenersInputs(entry, recorded, match) is not { } inputs)
             {
                 Log.Write($"replay: entry {entry.Id} of {entry.Site} waits, who keeps each key has not been read yet");
                 return new RubyHash { { "unknown", true } };
@@ -709,7 +710,7 @@ internal sealed partial class StoryTopics
             return new RubyHash
             {
                 { "do", "replay" }, { "page", entry.Site.IsCommon ? RubyNil.Value : pick.PageNo + 1 }, { "sibling", pick.Result == PickResult.Sibling },
-                { "inputs", ReplayEntry.InputsArray(inputs) },
+                { "inputs", ReplayEntry.InputsArray(inputs) }, { "recorded", ReplayEntry.InputsArray(recorded) },
             };
         }
 
@@ -731,15 +732,15 @@ internal sealed partial class StoryTopics
     /// 2026-11-05).
     /// </remarks>
     /// <param name="entry">The run's entry.</param>
+    /// <param name="recorded">The entry's inputs, see <see cref="Renamed"/>.</param>
     /// <param name="match">The events database's pages.</param>
-    /// <param name="shapes">The shapes of the player's lists of the choices, by site.</param>
     /// <returns>The inputs, <see langword="null"/> while the run holds a choice and no scopes were read.</returns>
-    private IReadOnlyList<ReplayInput>? OpenersInputs(ReplayEntry entry, PageMatch match, IReadOnlyDictionary<string, int> shapes)
+    private IReadOnlyList<ReplayInput>? OpenersInputs(ReplayEntry entry, IReadOnlyList<ReplayInput> recorded, PageMatch match)
     {
-        string[] choices = [.. entry.Inputs.Where(input => input.Kind == ChoiceInput).Select(input => input.At).Distinct(StringComparer.Ordinal)];
+        string[] choices = [.. recorded.Where(input => input.Kind == ChoiceInput).Select(input => input.At).Distinct(StringComparer.Ordinal)];
         if (choices.Length == 0 || entry.Derived || entry.Found)
         {
-            return entry.Inputs;
+            return recorded;
         }
 
         if (_scopes is not { } held)
@@ -748,19 +749,59 @@ internal sealed partial class StoryTopics
         }
 
         string site = entry.Site.ToString();
-        string[] unknown = [.. choices.Where(at => match.ChoiceOf(at, shapes) is null)];
+        string[] unknown = [.. choices.Where(at => match.ChoiceOf(at) is null)];
         if (unknown.Length > 0)
         {
-            Log.Write($"replay: entry {entry.Id} of {entry.Site} takes the opener's answers at {string.Join(", ", unknown)}, which the events database holds no choice of as this game shows it");
+            Log.Write($"replay: entry {entry.Id} of {entry.Site} takes the opener's answers at {string.Join(", ", unknown)}, which the events database holds no choice of");
         }
 
-        HashSet<string> asked = new(choices.Where(at => match.IsReceivers(entry.Site, at, shapes, key => IsOwn(held.Scopes.ScopeOf(key, site)))), StringComparer.Ordinal);
+        HashSet<string> asked = new(choices.Where(at => match.IsReceivers(entry.Site, at, key => IsOwn(held.Scopes.ScopeOf(key, site)))), StringComparer.Ordinal);
         if (asked.Count > 0)
         {
             Log.Write($"replay: entry {entry.Id} of {entry.Site} asks the player the choices at {string.Join(", ", asked)}, whose answers differ in their own things");
         }
 
-        return [.. entry.Inputs.Where(input => input.Kind != ChoiceInput || !asked.Contains(input.At))];
+        return [.. recorded.Where(input => input.Kind != ChoiceInput || !asked.Contains(input.At))];
+    }
+
+    /// <summary>
+    /// Names the inputs of an entry as the inputs name them now: one an earlier release named by its
+    /// command's place among the kept commands by the database's command there (see
+    /// <see cref="PageMatch.RenamedEarlierInput"/>); one the database holds no command of is dropped.
+    /// </summary>
+    /// <remarks>
+    /// Saves and the relay keep the entries of earlier releases waiting, whose replays would otherwise
+    /// ask every choice, draw anew and win every battle.
+    /// </remarks>
+    /// <param name="entry">The run's entry.</param>
+    /// <param name="match">The events database's pages.</param>
+    /// <returns>The inputs, in their order.</returns>
+    private IReadOnlyList<ReplayInput> Renamed(ReplayEntry entry, PageMatch match)
+    {
+        var inputs = new List<ReplayInput>();
+        var dropped = new List<string>();
+        foreach (ReplayInput input in entry.Inputs)
+        {
+            if (StoryPlain.TryParsePlace(input.At, out _, out _, out _) || !StoryPlain.TryParseEarlierPlace(input.At, out _, out _))
+            {
+                inputs.Add(input);
+            }
+            else if (match.RenamedEarlierInput(input.At, input.Kind) is { } at)
+            {
+                inputs.Add(input with { At = at });
+            }
+            else
+            {
+                dropped.Add(input.At);
+            }
+        }
+
+        if (dropped.Count > 0)
+        {
+            Log.Write($"replay: entry {entry.Id} of {entry.Site} drops the opener's inputs at {string.Join(", ", dropped)}, an earlier release's places the events database holds no command at");
+        }
+
+        return inputs;
     }
 
     /// <summary>
@@ -876,23 +917,6 @@ internal sealed partial class StoryTopics
     /// <param name="names">Their names, as the save's log keeps them.</param>
     /// <returns><c>{"needs"=>[[kind, key], ...]}</c>.</returns>
     private static RubyHash NeedsOf(IEnumerable<string> names) => new() { { "needs", new RubyArray(names.Select(name => (RubyValue)StoryPlain.ThingOf(name))) } };
-
-    /// <summary>
-    /// Reads the shapes of the player's lists by site.
-    /// </summary>
-    /// <param name="value">[[site, shape], ...], the site as <see cref="StoryPlain"/> names it; nil for none.</param>
-    /// <returns>The shapes by the site's text.</returns>
-    private static Dictionary<string, int> ShapesOf(RubyValue value)
-    {
-        var shapes = new Dictionary<string, int>(StringComparer.Ordinal);
-        foreach (RubyValue pair in value.IsNil ? [] : value.AsArray())
-        {
-            RubyArray fields = pair.AsArray();
-            shapes[StoryPlain.SiteText(fields[0])] = fields[1].AsInt();
-        }
-
-        return shapes;
-    }
 
     /// <summary>
     /// The player's own values a request holds, noting those read and those it lacks.

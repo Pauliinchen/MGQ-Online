@@ -2,7 +2,11 @@
 #  story_replay.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-11: Handed the DLL what the player holds only after a replay read it, and without the gear worn
+#      Paulinchen  2026-11-11: Named each input by its command's code and number among its list's commands of that code, so games of different languages name the same command
+#                            - Named a number or item input by the command the interpreter stands at, as a choice
+#                            - Handed the DLL no shapes of the player's lists, which a choice's name no longer needs
+#                            - Replayed with the whole record the DLL answers, which names an earlier release's inputs anew
+#                            - Handed the DLL what the player holds only after a replay read it, and without the gear worn
 #                            - Merged no holdings a replay left unchanged, and logged that it left them so
 #      Paulinchen  2026-11-10: Handed over no run of the player's history again while it waits for the player's own things
 #                            - Opened every chest's lock in a replay, so a chest handed to a player gives what it holds
@@ -100,8 +104,8 @@ module MGQ_MpStoryReplay
   # The frame of the last ask whether a waiting run is due again.
   @due_at = 0
 
-  # The codes of the commands the events database keeps, as MGQOnline.Data's EventSchema.KeptCodes:
-  # a list's shape covers them, and an input's place counts them.
+  # The codes of the commands the events database keeps, as MGQOnline.Data's EventSchema.KeptCodes,
+  # which a list's shape covers.
   KEPT_CODES = [
     101, 102, 103, 104, 105, 111, 117, 118, 119, 121, 122, 123, 125, 126, 127, 128, 129, 132, 133, 136, 201, 202, 203,
     206, 222, 282, 283, 285, 301, 303, 353, 354, 355, 402, 403, 404, 411, 412, 999
@@ -110,7 +114,7 @@ module MGQ_MpStoryReplay
   # The bits a list's shape keeps: 24, so every step stays a Fixnum on the game's 32-bit Ruby.
   SHAPE_MASK = 0xFFFFFF
 
-  # How many lists' counts of kept commands and shapes stay kept at most.
+  # How many lists' numbers of their commands stay kept at most, see command_number.
   MAX_KEPT_LISTS = 256
 
   # The code of a script's continuation line.
@@ -250,11 +254,12 @@ module MGQ_MpStoryReplay
     !@current.nil?
   end
 
-  # Names the command an input belongs to: its list and its place among the list's commands the
-  # events database keeps (kept_place), which a translation leaves where it was. A command that reads
-  # the following lines keeps the place it started at, such as a text with the number it asks; a
-  # choice goes by the Show Choices command a text sets up, where the database finds its answers. A
-  # command that runs again (a loop) counts its runs as the input's occurrence.
+  # Names the command an input belongs to: its list, its code and its number among the list's
+  # commands of that code (command_number), which stays the same where a translation merges, splits
+  # or adds texts or adds commands of other codes. A choice, a number and an item go by the command
+  # the interpreter stands at as the message waits, the Show Choices, Input Number or Select Key
+  # Item a text sets up, where the database finds a choice's answers. A command that runs again (a
+  # loop) counts its runs as the input's occurrence.
   #
   # What an input reads is its kind: a message's answer ("choice", a choice's place or an extended
   # choice's id; "number"; "item"; "present"), a random draw ("rand"), a key held ("key"), each key
@@ -268,9 +273,11 @@ module MGQ_MpStoryReplay
   # @param site [Array] The list: ["map", map, event, page from 1] or ["ce", id].
   # @param list [Array<RPG::EventCommand>, nil] The list's commands, nil for none known.
   # @param index [Integer] The command's place in the list.
-  # @return [Array] The site and the place, such as [["map", 1994, 42, 1], 12].
+  # @return [Array] The site, the code and the number, such as [["map", 1994, 42, 1], 102, 0];
+  #   [site, 0, index] for no list or no command there.
   def self.input_at(site, list, index)
-    [site, kept_place(list, index)]
+    command = list.is_a?(Array) ? list[index.to_i] : nil
+    command ? [site, command.code, command_number(list, index.to_i)] : [site, 0, index.to_i]
   end
 
   # Names a choice as input_at names an input's command: the Show Choices, or the script command
@@ -279,7 +286,7 @@ module MGQ_MpStoryReplay
   # @param site [Array] The list, see input_at.
   # @param list [Array<RPG::EventCommand>, nil] The list's commands, nil for none known.
   # @param index [Integer] The place the interpreter stands at.
-  # @return [Array] Such as [["map", 6, 30, 2], 1].
+  # @return [Array] Such as [["map", 6, 30, 2], 355, 1].
   def self.choice_at(site, list, index)
     index = index.to_i
     index -= 1 while list.is_a?(Array) && index > 0 && list[index] && list[index].code == SCRIPT_LINE
@@ -301,24 +308,26 @@ module MGQ_MpStoryReplay
     true
   end
 
-  # Counts the commands of a list before a place that the events database keeps, which is the place
-  # the database gives the command there; a command it does not keep, such as a text's line, shares
-  # the count of the next one it keeps.
+  # Counts the commands of a list before a place that have the code of the command there, which the
+  # battle freeze reads as a battle's number too.
   #
-  # @param list [Array<RPG::EventCommand>, nil] The commands, nil for none known.
-  # @param index [Integer] The place.
-  # @return [Integer] The count; the place itself for no list.
-  def self.kept_place(list, index)
-    return index.to_i unless list.is_a?(Array)
-
-    counts = (@kept_counts ||= {}.compare_by_identity)[list]
-    unless counts && counts.size == list.size + 1
-      @kept_counts.clear if @kept_counts.size >= MAX_KEPT_LISTS
-      kept = 0
-      counts = [0] + list.map { |command| kept += 1 if command && kept_code?(command.code); kept }
-      @kept_counts[list] = counts
+  # @param list [Array<RPG::EventCommand>] The commands.
+  # @param index [Integer] The command's place.
+  # @return [Integer] The count.
+  def self.command_number(list, index)
+    numbers = (@command_numbers ||= {}.compare_by_identity)[list]
+    unless numbers && numbers.size == list.size
+      @command_numbers.clear if @command_numbers.size >= MAX_KEPT_LISTS
+      seen = Hash.new(0)
+      numbers = list.map do |command|
+        code = command ? command.code : nil
+        number = seen[code]
+        seen[code] += 1
+        number
+      end
+      @command_numbers[list] = numbers
     end
-    counts[[[index.to_i, 0].max, list.size].min]
+    numbers[index] || 0
   end
 
   # Hashes a list's commands the events database keeps as MGQOnline.Data's ListShape does: code,
@@ -427,10 +436,10 @@ module MGQ_MpStoryReplay
   # @param entry [Hash] The run's entry.
   # @return [Boolean] Whether it was taken; false while the DLL cannot decide yet.
   def self.take(entry)
-    answer = ask_with_values(TAKE_TOPIC, "entry" => entry, "shapes" => choice_shapes(entry).to_a)
+    answer = ask_with_values(TAKE_TOPIC, "entry" => entry)
     return false unless answer.is_a?(Hash) && answer["do"]
 
-    start(answer["inputs"] ? entry.merge("inputs" => answer["inputs"]) : entry, answer["page"], entry["inputs"]) if answer["do"] == "replay"
+    start(answer["inputs"] ? entry.merge("inputs" => answer["inputs"]) : entry, answer["page"], answer["recorded"]) if answer["do"] == "replay"
     gain(entry, answer["items"]) if answer["do"] == "gain"
     true
   end
@@ -452,27 +461,6 @@ module MGQ_MpStoryReplay
     notice(answer, had)
   end
 
-  # Hashes the player's own lists of the choices a run's inputs name, by site, by which the DLL
-  # finds the choices in its events database.
-  #
-  # @param entry [Hash] The run's entry.
-  # @return [Hash] Site => shape, of the lists the player's game has.
-  def self.choice_shapes(entry)
-    @site_shapes ||= {}
-    shapes = {}
-    Array(entry["inputs"]).each do |at, _occurrence, kind, _value|
-      site = at.is_a?(Array) ? at[0] : nil
-      next unless site && kind == "choice" && !shapes.key?(site)
-
-      @site_shapes.clear if @site_shapes.size >= MAX_KEPT_LISTS
-      unless @site_shapes.key?(site)
-        list = list_at(site)
-        @site_shapes[site] = list ? list_shape(list) : nil
-      end
-      shapes[site] = @site_shapes[site] if @site_shapes[site]
-    end
-    shapes
-  end
 
   # Reads the commands of a list of the player's game: a map event's page or a common event.
   #
@@ -1829,11 +1817,12 @@ module MGQ_MpStoryReplay
       MGQ_MpStoryReplay.input_at(site, list, index)
     end
 
-    # Names the choice the message waits for: the Show Choices the deepest command running stands
-    # at, which a text sets up after its lines, or the script command of an extended choice.
+    # Names the input the message waits for: the Show Choices, Input Number or Select Key Item the
+    # deepest command running stands at, which a text sets up after its lines, or the script
+    # command of an extended choice.
     #
     # @return [Array] The command, see MGQ_MpStoryReplay.choice_at.
-    def choice_now
+    def message_now
       site, list, index, interpreter = @places.last || [@site, @list, 0, nil]
       MGQ_MpStoryReplay.choice_at(site, list, interpreter ? interpreter.place : index)
     end
@@ -2126,7 +2115,7 @@ module MGQ_MpStoryReplay
         return true
       end
 
-      at = kind == "choice" ? choice_now : at_now
+      at = %w(choice number item).include?(kind) ? message_now : at_now
       value = @record.take(at, kind)
       value = window_start(at, kind, message) if value.nil? && kind != "choice"
       return ask(at, message, lines) if value.nil?

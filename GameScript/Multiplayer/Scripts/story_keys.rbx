@@ -2,7 +2,8 @@
 #  story_keys.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-11: Found the items unlocking a job or race as the key items the game makes them, without a tag of their own
+#      Paulinchen  2026-11-11: Named a number or item input by the command the interpreter stands at, as the replay names it
+#                            - Found the items unlocking a job or race as the key items the game makes them, without a tag of their own
 #      Paulinchen  2026-11-08: Asked the DLL which classes of keys are shared in a story, side switches included
 #      Paulinchen  2026-11-06: Logged a full batch once, without the frame in its key
 #      Paulinchen  2026-11-05: Handed the DLL every key as [kind, key], every value as itself and every site as [kind, ...], and looked self switches up in the rows of rules it hands, so only the DLL writes and reads the tracks' texts
@@ -888,16 +889,17 @@ module MGQ_MpStoryKeys
 
   # Names the command running now, as the replay names an input's command.
   #
-  # @return [Array, nil] Such as [["map", 1994, 42, 1], 12], nil outside every command.
+  # @return [Array, nil] Such as [["map", 1994, 42, 1], 301, 0], nil outside every command.
   def self.input_place
     @running.empty? ? nil : place_of(@running.last, @indexes.last)
   end
 
-  # Names the choice the command running now sets up, as the replay names it: the Show Choices its
-  # interpreter stands at, after a text's lines too, or the script command of an extended choice.
+  # Names the input a message of the command running now waits for, as the replay names it: the
+  # Show Choices, Input Number or Select Key Item its interpreter stands at, after a text's lines
+  # too, or the script command of an extended choice.
   #
-  # @return [Array, nil] Such as [["map", 6, 30, 2], 1], nil outside every command.
-  def self.choice_place
+  # @return [Array, nil] Such as [["map", 6, 30, 2], 102, 1], nil outside every command.
+  def self.message_place
     return nil if @running.empty?
 
     interpreter = @running.last
@@ -939,7 +941,7 @@ module MGQ_MpStoryKeys
   #
   # @param interpreter [Game_Interpreter] The interpreter.
   # @param index [Integer] The command's place in its list.
-  # @return [Array] Such as [["map", 1994, 42, 1], 12].
+  # @return [Array] Such as [["map", 1994, 42, 1], 301, 0].
   def self.place_of(interpreter, index)
     MGQ_MpStoryReplay.input_at(site_of(interpreter), MGQ_MpGame.get(interpreter, :list), index)
   end
@@ -952,7 +954,7 @@ module MGQ_MpStoryKeys
     run = replaying? ? nil : current_run
     return handler unless run && handler
 
-    at = choice_place
+    at = message_place
     lambda do |answer|
       MGQ_MpStoryKeys.input("choice", answer, at, run)
       handler.call(answer)
@@ -975,14 +977,14 @@ module MGQ_MpStoryKeys
     end
   end
 
-  # Notes the number or item input a message waits for, by the command that set it up: the input
-  # itself, or the text it follows.
+  # Notes the number or item input a message waits for, by the input's command the interpreter
+  # stands at, after the text it follows too.
   #
   # @param kind [String] "number" or "item".
   # @param variable [Integer] The variable the answer goes to, 0 for none.
   def self.message_input(kind, variable)
     run = replaying? ? nil : current_run
-    @message_input = run && variable.to_i > 0 ? [run, input_place, kind, variable.to_i] : nil
+    @message_input = run && variable.to_i > 0 ? [run, message_place, kind, variable.to_i] : nil
   end
 
   # Notes the answer of the number or item input the message waited for, which the input's window
@@ -1387,7 +1389,7 @@ begin
     MGQ_MpHooks.around(Game_Message, :choice_proc=, "story_keys") { |_message, args, original| original.call(MGQ_MpStoryKeys.noted_choice(args[0])) }
   end
   if has.call(Game_Interpreter, :ex_choice_show) && defined?(NWConst::Var::EX_CHOICE_RESULT)
-    MGQ_MpHooks.after(Game_Interpreter, :ex_choice_show, "story_keys") { MGQ_MpStoryKeys.input("choice", $game_variables[NWConst::Var::EX_CHOICE_RESULT], MGQ_MpStoryKeys.choice_place) }
+    MGQ_MpHooks.after(Game_Interpreter, :ex_choice_show, "story_keys") { MGQ_MpStoryKeys.input("choice", $game_variables[NWConst::Var::EX_CHOICE_RESULT], MGQ_MpStoryKeys.message_place) }
   end
   if has.call(Game_Interpreter, :input_keys)
     MGQ_MpHooks.after(Game_Interpreter, :input_keys, "story_keys") { MGQ_MpStoryKeys.keys_pressed(Array($game_temp.keys_stack)) }

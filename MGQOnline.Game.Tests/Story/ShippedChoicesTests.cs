@@ -2,6 +2,7 @@
 //  ShippedChoicesTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-11: Named the choices by their number among their list's commands of their code, without the list's shape
 //      Paulinchen  2026-11-06: Read the relay's seed through TableFiles
 //      Paulinchen  2026-11-01: Created
 //
@@ -52,8 +53,8 @@ public sealed class ShippedChoicesTests : IDisposable
     [Fact]
     public void Plansect_AsksEveryChoiceOnTheWayToEachOutcome()
     {
-        Assert.Equal([2, 6, 120, 144], Asked(ReplaySite.Page(134, 34, 0)));
-        Assert.Equal([46, 49], Asked(ReplaySite.Page(132, 23, 0)));
+        Assert.Equal([0, 1, 2, 3], Asked(ReplaySite.Page(134, 34, 0)));
+        Assert.Equal([0, 1], Asked(ReplaySite.Page(132, 23, 0)));
     }
 
     /// <summary>
@@ -63,7 +64,7 @@ public sealed class ShippedChoicesTests : IDisposable
     [Fact]
     public void Sphinx_AsksTheChallengesThatJumpToTheBattle()
     {
-        Assert.Equal([3, 20, 99, 123, 134], Asked(ReplaySite.Page(117, 6, 0)));
+        Assert.Equal([0, 1, 2, 3, 4], Asked(ReplaySite.Page(117, 6, 0)));
     }
 
     /// <summary>
@@ -73,7 +74,7 @@ public sealed class ShippedChoicesTests : IDisposable
     [Fact]
     public void Colosseum_AsksTheCupToEnter()
     {
-        Assert.Equal([2], Asked(ReplaySite.Parse("ce:161")));
+        Assert.Equal([1], Asked(ReplaySite.Parse("ce:161")));
     }
 
     /// <inheritdoc />
@@ -85,14 +86,14 @@ public sealed class ShippedChoicesTests : IDisposable
     /// extended choices.
     /// </summary>
     /// <param name="site">The page or common event.</param>
-    /// <returns>Each choice's place among the list's kept commands.</returns>
+    /// <returns>Each choice's number among the list's commands of its code.</returns>
     private int[] Asked(ReplaySite site)
     {
         int listId = site.IsCommon ? _store.CommonList(site.CommonId)!.Value.ListId : _store.Page(site.MapId, site.EventId, site.PageNo)!.Value.ListId;
-        var shapes = new Dictionary<string, int> { [site.ToString()] = _store.List(listId)!.Value.Shape };
         var match = new PageMatch(_store);
-        return [.. _store.Commands(listId).Where(command => command.Code is EventCodes.ShowChoices or EventCodes.Script).Select(command => command.Ord)
-            .Where(ord => match.IsReceivers(site, $"{site}@{ord}", shapes, _personal.Contains))];
+        CommandRow[] choices = [.. _store.Commands(listId).Where(command => command.Code is EventCodes.ShowChoices or EventCodes.Script)];
+        return [.. choices.Select(command => choices.Count(before => before.Code == command.Code && before.Idx < command.Idx))
+            .Where((number, index) => match.IsReceivers(site, StoryPlain.PlaceText(site.ToString(), choices[index].Code, number), _personal.Contains))];
     }
 
     /// <summary>

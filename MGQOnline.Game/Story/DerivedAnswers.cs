@@ -2,6 +2,7 @@
 //  DerivedAnswers.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-11: Named each answer by its choice's number among the page's Show Choices
 //      Paulinchen  2026-11-01: Named each answer by its choice's place among the kept commands
 //      Paulinchen  2026-10-31: Created
 //
@@ -70,12 +71,20 @@ public static class DerivedAnswers
 
         IReadOnlyList<CommandRow> commands = store.Commands(page.ListId);
         var answers = new List<ReplayInput>();
+        int choices = 0;
         for (int index = 0; index < commands.Count; index++)
         {
-            if (commands[index].Code == ShowChoices && BranchOf(commands, index, letters) is { } branch)
+            if (commands[index].Code != ShowChoices)
             {
-                answers.Add(new ReplayInput($"{site}@{commands[index].Ord}", 0, "choice", branch));
+                continue;
             }
+
+            if (BranchOf(commands, index, letters) is { } branch)
+            {
+                answers.Add(new ReplayInput(StoryPlain.PlaceText(site.ToString(), ShowChoices, choices), 0, "choice", branch));
+            }
+
+            choices++;
         }
 
         return answers;

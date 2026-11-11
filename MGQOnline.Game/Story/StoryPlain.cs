@@ -2,6 +2,8 @@
 //  StoryPlain.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-11: Named a command's place by its code and its number among its list's commands of that code
+//                            - Read the place an earlier release named an input by, its place among its list's kept commands
 //      Paulinchen  2026-11-05: Created
 //
 //----------------------------------------------------------------
@@ -36,8 +38,8 @@ namespace MGQOnline.Game.Story;
 /// site, where a write or a run came from, is <c>["map", map, event, page from 1]</c>,
 /// <c>["ce", common event]</c>, <c>["game"]</c> or <c>["game", what]</c> (a part of the game, such
 /// as "troop" or "catchup"), or <c>["list"]</c> for a list of no site; a command's place, where an
-/// input was read, is <c>[site, place]</c>, the place counted among the commands the events
-/// database keeps.
+/// input was read, is <c>[site, code, number]</c>, the number counted among the list's commands of
+/// that code (<c>[site, 0, index]</c> for a list the game does not know).
 /// </remarks>
 public static class StoryPlain
 {
@@ -420,28 +422,69 @@ public static class StoryPlain
     /// <summary>
     /// Writes a command's place as the save's log and the messages name it.
     /// </summary>
-    /// <param name="at">[site, place], see <see cref="StoryPlain"/>.</param>
-    /// <returns>Such as "map:1994:42:1@12".</returns>
+    /// <param name="at">[site, code, number], see <see cref="StoryPlain"/>.</param>
+    /// <returns>Such as "map:215:23:1@102:0".</returns>
     /// <exception cref="RubyValueException">The value is no place.</exception>
     public static string PlaceText(RubyValue at)
     {
         ArgumentNullException.ThrowIfNull(at);
-        return at is RubyArray { Count: 2 } parts && Whole(parts[1])
-            ? string.Create(CultureInfo.InvariantCulture, $"{SiteText(parts[0])}@{parts[1].AsLong()}")
-            : throw new RubyValueException($"{at} is no command's place, which is [site, place].");
+        return at is RubyArray { Count: 3 } parts && Whole(parts[1]) && Whole(parts[2])
+            ? PlaceText(SiteText(parts[0]), parts[1].AsInt(), parts[2].AsLong())
+            : throw new RubyValueException($"{at} is no command's place, which is [site, code, number].");
     }
 
     /// <summary>
-    /// Reads a command's place, see <see cref="PlaceText"/>.
+    /// Writes a command's place as the save's log and the messages name it.
+    /// </summary>
+    /// <param name="site">The list, as <see cref="SiteText"/> writes it.</param>
+    /// <param name="code">The command's code.</param>
+    /// <param name="number">Its number among the list's commands of that code, from 0.</param>
+    /// <returns>Such as "map:215:23:1@102:0".</returns>
+    public static string PlaceText(string site, int code, long number) => string.Create(CultureInfo.InvariantCulture, $"{site}@{code}:{number}");
+
+    /// <summary>
+    /// Reads a command's place as <see cref="PlaceText(string, int, long)"/> writes it.
     /// </summary>
     /// <param name="text">The text.</param>
-    /// <returns>[site, place], nil for a text that names none.</returns>
-    public static RubyValue PlaceOf(string text)
+    /// <param name="site">The list's text.</param>
+    /// <param name="code">The command's code.</param>
+    /// <param name="number">Its number among the list's commands of that code.</param>
+    /// <returns>Whether the text names a place.</returns>
+    public static bool TryParsePlace(string text, out string site, out int code, out long number)
     {
         ArgumentNullException.ThrowIfNull(text);
         int mark = text.LastIndexOf('@');
-        return mark > 0 && SiteOf(text[..mark]) is RubyArray site && Number(text[(mark + 1)..]) is { } place ? new RubyArray { site, place } : RubyNil.Value;
+        string[] parts = mark > 0 ? text[(mark + 1)..].Split(':') : [];
+        site = mark > 0 ? text[..mark] : string.Empty;
+        code = parts.Length == 2 && Number(parts[0]) is >= 0 and <= int.MaxValue and var found ? (int)found : -1;
+        number = parts.Length == 2 && Number(parts[1]) is >= 0 and var count ? count : -1;
+        return code >= 0 && number >= 0;
     }
+
+    /// <summary>
+    /// Reads the place an entry of an earlier release names an input by: its list, then its
+    /// command's place among the list's commands the events database keeps, such as "map:215:23:1@4".
+    /// </summary>
+    /// <param name="text">The text.</param>
+    /// <param name="site">The list's text.</param>
+    /// <param name="ord">The command's place among the kept commands.</param>
+    /// <returns>Whether the text names such a place.</returns>
+    public static bool TryParseEarlierPlace(string text, out string site, out int ord)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        int mark = text.LastIndexOf('@');
+        site = mark > 0 ? text[..mark] : string.Empty;
+        ord = mark > 0 && int.TryParse(text.AsSpan(mark + 1), NumberStyles.None, CultureInfo.InvariantCulture, out int found) ? found : -1;
+        return ord >= 0;
+    }
+
+    /// <summary>
+    /// Reads a command's place, see <see cref="PlaceText(RubyValue)"/>.
+    /// </summary>
+    /// <param name="text">The text.</param>
+    /// <returns>[site, code, number], nil for a text that names none.</returns>
+    public static RubyValue PlaceOf(string text) =>
+        TryParsePlace(text, out string site, out int code, out long number) && SiteOf(site) is RubyArray list ? new RubyArray { list, code, number } : RubyNil.Value;
 
     /// <summary>
     /// Writes a thing a replay reads of the player's own as the scripts name it.

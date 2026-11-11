@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-11: Gave the sites their battle numbers and covered a fight whose battle sits at another index than the data's
+#                            - Loaded story_replay.rbx, whose count of a list's commands gives the battle number
 #      Paulinchen  2026-11-10: Checked that the frames wait between hand-overs of a journal the DLL refuses
 #      Paulinchen  2026-11-08: Answered the records check, the held values, the record's end, the tableau, the fresh start and the items given back with fixed values per case, and checked what the scripts hand the DLL
 #      Paulinchen  2026-11-06: Answered whether a page runs nothing as the DLL's events database and dropped the check of a Hades hall, which the DLL leaves out of the sites
@@ -667,6 +668,7 @@ module MGQ_MpNotices; def self.message(_key, text, _frames); $notices << text; e
 # Stands in for the hotkeys, the join hotkey being J.
 module MGQ_MpHotkeys; def self.label(_action); "J"; end; end
 
+load_script "story_replay"
 load_script "battles_raid_bosses"
 load_script "battles_raid_freeze"
 open_rules_bridge
