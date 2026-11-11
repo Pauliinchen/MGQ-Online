@@ -2,6 +2,7 @@
 #  battles_raid_pool.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Wrapped the stats of a battle's tier as the battle takes it, so the battle server's battles raise them too
 #      Paulinchen  2026-11-10: Kept the pools' keys of each troop once the DLL told them, which stay the same while the game runs
 #      Paulinchen  2026-11-06: Dropped hp_of, a copy of the DLL's rule, and rounded a scaled enemy's HP up in place
 #      Paulinchen  2026-11-05: Left the Hades rematch's check to the DLL's rules, which a lost battle's defeat asks too
@@ -200,6 +201,9 @@ module MGQ_MpRaidPool
     # The tier the factors are of, nil before any battle.
     @tier = nil
 
+    # The stats of Game_Enemy wrapped so far, which stay wrapped while the game runs.
+    @wrapped = []
+
     # Forgets the battle's enemies, as a new battle is set up and at the title screen.
     def self.forget
       @enemies = {}
@@ -229,6 +233,7 @@ module MGQ_MpRaidPool
 
       @tier = tier
       @factors = MGQ_MpRaidBosses.tiers.fetch(tier, {}).reject { |_stat, factor| factor == 1 }
+      wrap(@factors.keys)
     end
 
     # Reports whether an enemy has its tier's stats.
@@ -253,12 +258,19 @@ module MGQ_MpRaidPool
       factor ? (own * factor).round : own
     end
 
-    # Wraps each stat any tier changes as the game starts running, see MGQ_MpRaidBosses.tier_stats.
+    # Wraps max HP as the game starts running; the other stats a tier changes are wrapped as a battle
+    # takes its tier, since the tiers come from the DLL, see take_tier.
+    def self.install
+      wrap([:mhp])
+    end
+
+    # Wraps each of the stats not wrapped yet, so it takes the battle's factor, see stat.
     #
-    # @param log [#log] Who logs a stat the game's enemies lack.
-    def self.install(log)
-      ([:mhp] + MGQ_MpRaidBosses.tier_stats).each do |stat|
-        next log.log("tiers change #{stat}, which the game's enemies lack") unless Game_Enemy.method_defined?(stat)
+    # @param stats [Array<Symbol>] The stats.
+    def self.wrap(stats)
+      (stats - @wrapped).each do |stat|
+        @wrapped << stat
+        next MGQ_MpRaidPool.log("tiers change #{stat}, which the game's enemies lack") unless Game_Enemy.method_defined?(stat)
 
         MGQ_MpHooks.around(Game_Enemy, stat, "battles_raid_pool") { |enemy, _args, original| Stats.stat(enemy, stat, original.call) }
       end
@@ -1256,7 +1268,7 @@ module MGQ_MpRaidPool
   #
   # It installs after battles_sync_live.rbx's hooks, so its command phase wrap runs before theirs.
   def self.install
-    Stats.install(self)
+    Stats.install
 
     MGQ_MpHooks.around(Scene_Battle, :start_party_command_selection, "battles_raid_pool") do |scene, _args, original|
       MGQ_MpRaidPool.command_phase unless scene.scene_changing?

@@ -2,6 +2,7 @@
 #  battles_raid_bosses.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Answered no table while the bridge is closed without counting it as a failed read, and removed tier_stats
 #      Paulinchen  2026-11-05: Read the bosses' table from the DLL, which keeps it and decides by it, and handed it the story values its rules read
 #      Paulinchen  2026-10-11: Counted 22 more story bosses as raid bosses
 #                            - Moved Adramelech to tier 5 and Sonya Chaos to tier 4
@@ -54,14 +55,18 @@ module MGQ_MpRaidBosses
   # Reads the table once the DLL hands it, handing it how many enemies each troop's setup makes;
   # while the DLL gives none, it is asked again every RETRY_FRAMES.
   #
+  # A read while the bridge is closed is no failed one: the battle server reads the table before
+  # each battle's child opens the bridge, and every child would inherit the failure.
+  #
   # @return [Hash] :troops (Boss by troop), :order (the troops in story order), :tiers ({stat =>
   #   factor} by tier), :stats, :titles, :sections, :reads ([switches, variables]) and :key_troops
   #   (the last phase of each pool key's boss); empty while the DLL does not answer.
   def self.table
     return @table if @table && (@sized || $data_troops.nil?)
+    return {} unless MGQ_Multiplayer::Bridge.open?
     return {} if @failed_at && MGQ_Multiplayer::Bridge.frame_number - @failed_at < RETRY_FRAMES
 
-    answer = MGQ_Multiplayer::Bridge.open? ? MGQ_Multiplayer::Bridge.call(TOPIC, "sizes" => sizes) : nil
+    answer = MGQ_Multiplayer::Bridge.call(TOPIC, "sizes" => sizes)
     unless answer.is_a?(Hash) && answer["troops"].is_a?(Array)
       @failed_at = MGQ_Multiplayer::Bridge.frame_number
       log_once(:none, "the DLL hands no table of the raid bosses yet")
@@ -232,13 +237,6 @@ module MGQ_MpRaidBosses
   def self.factor(troop_id, stat)
     tier = tier(troop_id)
     tier ? tiers.fetch(tier, {}).fetch(stat, 1) : 1
-  end
-
-  # Lists the stats any tier changes besides max HP, whose methods the raid pool then wraps.
-  #
-  # @return [Array<Symbol>] The stats.
-  def self.tier_stats
-    table[:stats] || []
   end
 
   # Reports whether a troop is one of the story's bosses or a one-time boss.

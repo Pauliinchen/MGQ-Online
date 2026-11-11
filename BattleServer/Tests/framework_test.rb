@@ -2,7 +2,8 @@
 #  framework_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-11: Checked that the server leaves the game folder's saves alone and reads the game's database
+#      Paulinchen  2026-11-11: Hosted a served Raid World battle against a pooled boss in the server's order, up to its report
+#                            - Checked that the server leaves the game folder's saves alone and reads the game's database
 #      Paulinchen  2026-11-06: Expected the Mod Framework in its own folder, Patch/Mod_Framework, since MGQ Online no longer ships it
 #      Paulinchen  2026-10-31: Created
 #
@@ -12,8 +13,9 @@
 # names, whose Patch folder holds MGQ Online and the framework's entry file and folder
 # (Patch/Mod_Framework), installed from the framework's own release: the framework boots without its
 # DLL, MGQ Online counts as available and loads every script, the database is the game's, nothing
-# reaches the game folder's saves, and with BATTLE_CORE_LIBRARY a served battle's setup is read. Skipped without such a game folder, since the game's files never go into
-# the repository.
+# reaches the game folder's saves, and with BATTLE_CORE_LIBRARY a served Raid World battle against a
+# pooled boss fights its pool at its tier and reports the kill. Skipped without such a game folder,
+# since the game's files never go into the repository.
 
 require_relative "support"
 
@@ -59,13 +61,57 @@ check("entering through the framework loads every script and installs the battle
 
 library = Core.library(StringIO.new)
 if library
+  # As a forked child: the scripts installed with the bridge closed, which opens at frame 0.
   Core.open(Core.load(library))
+  ServedBattle.paced = false
+  troop = 327
+  battle_id = "b0000000000000001"
+
+  # The starter's game writes the setup of its Raid World battle against Adramelech on map 619,
+  # with the pool as its ledger knows it.
   DataManager.create_game_objects
-  $game_troop.setup(1)
-  MGQ_MpOverworldSync::Me.define_singleton_method(:seat) { 0 }
-  text = MGQ_MpBattlesServed.setup_text([MGQ_MpBattlesCoop::Player.new(0, "Me", "1,2,3", [], 8)], nil)
-  setup = ServedBattle.check(text)
-  check("with the core, a served battle's setup is written and read as the server hosts it", [setup[:troop], setup[:players].size], [1, 1])
+  $game_party.setup_starting_members
+  $game_map.setup(619)
+  $game_troop.setup(troop)
+  MGQ_MpOverworldSync::Me.take_seat(1)
+  build = MGQ_MpBattlesCoop.own_build
+  player = MGQ_MpBattlesCoop::Player.new(1, "Starter", build[0], build[1], build[2], [0, 1, 2, 3], 4, 0)
+  MGQ_MpRaidPool.define_singleton_method(:served_fields) { [1, 0, [["Adramelech", "1.0000000000", 0, 0, ""]]] }
+  ServedBattle.instance_variable_set(:@raid, true)
+  setup = MGQ_MpBattlesServed.setup_text([player], nil)
+  ServedBattle.instance_variable_set(:@raid, nil)
+  MGQ_MpRaidPool.singleton_class.send(:remove_method, :served_fields)
+
+  # The player's game comes onto the battle channel and answers ready; at the first command phase
+  # the player's blow kills the boss.
+  bridge = Online::Bridge.new
+  bridge.push("in", player.seat)
+  ready = MGQ_Multiplayer::Bridge.call("message.write", "fields" => { "battle" => "ready", "bid" => battle_id }, "body" => "")
+  Boot::Wrap.around(Online.singleton_class, :send_to, :test) do |_online, original, args, _block|
+    sent = original.call(*args)
+    bridge.push("message", player.seat, ready) if args[1] == "ready"
+    sent
+  end
+  stats = nil
+  Boot::Wrap.around(Scene_Battle, :start_party_command_selection, :test) do |_scene, _original, _args, _block|
+    boss = $game_troop.members[0]
+    stats = %i[def mdf mhp].map { |stat| [boss.send(stat), boss.send(MGQ_MpHooks.plain(Game_Enemy, stat))] }
+    boss.hp = 0
+    BattleManager.judge_win_loss
+  end
+
+  outcome = ServedBattle.run(bridge, battle_id, setup)
+  lines = online_log.string.lines
+  check("the served battle against the pooled boss is won", outcome[:result], :victory)
+  check("it fights the boss's pool, whose key the boss table gives once the bridge opened",
+        [lines.grep(/against Adramelech \(troop 327, tier \d+\) fights the pool\(s\) Adramelech/).size, lines.grep(/key is none/)], [1, []])
+  check("the boss has its tier's defense, magic defense and max HP",
+        stats, %i[def mdf mhp].map.with_index { |stat, index| [(stats[index][1] * MGQ_MpRaidBosses.factor(troop, stat)).round, stats[index][1]] })
+  check("the tier raises defense and magic defense", %i[def mdf].map { |stat| MGQ_MpRaidBosses.factor(troop, stat) > 1 }, [true, true])
+  reports = []
+  reports << bridge.reports.pop until bridge.reports.empty?
+  check("the battle reports the kill of the pool through the relay's connection",
+        reports.map { |key, _battle, text| [key, text.split("\t")[3]] }.last, ["Adramelech", "1"])
 end
 
 check("the database is the game's", [$data_actors.size > 1000, $data_troops.size > 1000], [true, true])
