@@ -2,7 +2,8 @@
 #  trade.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-11: Took why the player is busy from the reason duels and joins share, which a teleport due counts in
+#      Paulinchen  2026-11-11: Emptied the sockets of a copy given away, so its gems no longer come back into the bag
+#                            - Took why the player is busy from the reason duels and joins share, which a teleport due counts in
 #      Paulinchen  2026-11-09: Counted room only for the copies the game caps, so an offer of plain items no longer crashes
 #      Paulinchen  2026-11-08: Read standing near from the DLL
 #      Paulinchen  2026-11-06: Asked the rules in C# which items may be traded, how many of one an offer holds and whether the game can take an offer
@@ -922,6 +923,9 @@ module MGQ_MpTrade
         copy = bag.find { |item| unique?(item) && token(item) == entry.token }
         return MGQ_MpTrade.log("gave nothing for #{label(entry.item)}: the copy is no longer in the bag") unless copy
 
+        # The game hands the gems of a copy leaving the bag back to the party, but the receiver's
+        # copy already carries them.
+        MGQ_MpGame.set(copy, :stones, [nil] * copy.socket_num.to_i)
         $game_party.lose_item(copy, 1)
         MGQ_MpTrade.log("gave #{label(copy)}")
       elsif entry.item

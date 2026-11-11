@@ -2,6 +2,7 @@
 #  trade_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Checked that a copy given away keeps its gems, none coming back into the bag
 #      Paulinchen  2026-11-09: Checked that only enchanted copies are counted for room, as the game counts no other copies
 #      Paulinchen  2026-11-08: Played the DLL telling who stands near the player
 #      Paulinchen  2026-11-06: Answered which items may be traded, how many an offer holds and why an offer cannot be taken with fixed values and checked what the script asks
@@ -74,12 +75,17 @@ end
 # An enchantment of the database, with the name prefixes it rolls.
 Enchantment = Struct.new(:prefix, :rare_prefix)
 
-# An enchanted sword, which only one game has, with enchantment 5.
+# An enchanted sword, which only one game has, with enchantment 5 and a socket per gem it is made
+# with.
 class EnchantedSword < RPG::Weapon
   # The name prefix its enchantment rolled.
   attr_accessor :prefix
-  # Creates the sword with its rolls.
-  def initialize(rolls); super(9, "Sword"); @rolls = rolls; @prefix = ""; @enchants = [5]; end
+  # Creates the sword with its rolls and the item ids of the gems in its sockets.
+  def initialize(rolls, gems = []); super(9, "Sword"); @rolls = rolls; @prefix = ""; @enchants = [5]; @stones = gems.dup; end
+  # How many sockets it has.
+  def socket_num; @stones.size; end
+  # Empties its sockets, each gem going back into the bag, as the game does.
+  def clear_stones; @stones.each { |gem| $game_party.gain_item($data_items[gem], 1, false, true) if gem }; @stones = [nil] * socket_num; end
   # Each copy is an item of its own.
   def uniq_item?; true; end
   # It carries enchantments.
@@ -103,10 +109,17 @@ class Game_Party
   def max_gold; 999_999_999; end
   # How many of an item the party holds.
   def item_number(item); @counts[item]; end
-  # Adds or removes copies of an item, between 0 and 99.
-  def gain_item(item, amount, *); @counts[item] = [[@counts[item] + amount, 0].max, 99].min; @counts.delete(item) if @counts[item] == 0; end
+  # Adds or removes copies of an item, between 0 and 99; a copy leaving the bag empties its sockets
+  # unless kept, as the game deletes it.
+  def gain_item(item, amount, include_equip = false, keep_flag = false)
+    @counts[item] = [[@counts[item] + amount, 0].max, 99].min
+    return unless @counts[item] == 0
+
+    @counts.delete(item)
+    item.clear_stones if item.uniq_item? && !keep_flag
+  end
   # Removes copies of an item.
-  def lose_item(item, amount, *); gain_item(item, -amount); end
+  def lose_item(item, amount, include_equip = false, keep_flag = false); gain_item(item, -amount, include_equip, keep_flag); end
   # Adds or removes gold, between 0 and the most.
   def gain_gold(amount); @gold = [[@gold + amount, 0].max, max_gold].min; end
   # Removes gold.
@@ -446,6 +459,13 @@ sword.prefix = "Sharp"
 MGQ_MpTrade::Items.apply(MGQ_MpTrade::Items.read_offer(offer(0, [token, plain, 1])), MGQ_MpTrade::Items.read_offer(offer(0, ["uew9.8~", { "copy" => { "rolls" => 8 }, "prefix" => nil }, 1])))
 check("applying gives the own copy away and keeps the other's as the party's own",
       [$game_party.item_number(sword), $game_party.added.map(&:rolls), $game_party.weapons.select(&:uniq_item?).map(&:rolls)], [0, [8], [8]])
+gemmed = EnchantedSword.new(4, [3, nil])
+$game_party.gain_item(gemmed, 1)
+rubies = $game_party.item_number(ruby)
+MGQ_MpTrade::Items.apply(MGQ_MpTrade::Items.read_offer(offer(0, [MGQ_MpTrade::Items.token(gemmed), MGQ_MpTrade::Items.plain(gemmed), 1])),
+                         MGQ_MpTrade::Items.read_offer(offer(0)))
+check("a copy given away keeps the gem in its socket, which does not come back into the bag",
+      [$game_party.item_number(gemmed), $game_party.item_number(ruby)], [0, rubies])
 
 
 # Recovering a trade the relay committed, after a save was loaded that has the first trade.
