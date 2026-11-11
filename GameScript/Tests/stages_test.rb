@@ -2,6 +2,7 @@
 #  stages_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Expected the Mod Framework version the mod requires, whichever it is, in the line without the framework
 #      Paulinchen  2026-11-07: Checked that the title's Multiplayer command is greyed through disabled: only while the mod cannot run
 #      Paulinchen  2026-11-06: Checked that a script that did not load keeps the mod off, its hooks asleep, and tells the player once
 #                            - Checked that the game's message box tells where to get a Mod Framework that is not installed
@@ -88,7 +89,7 @@ Dir.mktmpdir do |game|
     MGQ_Multiplayer::Stages.boot
     check("without the framework no script loads and the mod stays off, saying why in one line and where to get it in the game's message box",
           [$calls, $loaded, MGQ_Multiplayer::Stages.staged?, $log, $msgboxes],
-          [[[:settled, false]], [], false, ["Monster Girl Quest! Online needs the Mod Framework 0.1.0 or newer, which is not installed"],
+          [[[:settled, false]], [], false, ["Monster Girl Quest! Online needs the Mod Framework #{MGQ_Multiplayer::MOD_FRAMEWORK_REQUIRED} or newer, which is not installed"],
            ["Monster Girl Quest! Online needs the Mod Framework, which is not installed. Get it from https://mgqonline.org/mods, then start the game again."]])
     check("and no world enters", MGQ_Multiplayer::Stages.enter("the world W"), false)
     Mod_Framework.const_set(:Mods, framework_mods)

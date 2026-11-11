@@ -2,6 +2,7 @@
 #  async_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Weighed the live map by the Mod Framework's reading of the memory and dropped the largest free block
 #      Paulinchen  2026-11-09: Checked that the next menu shows the live map kept while the player was on the map, until a map is set up
 #                            - Checked that a live map is neither built nor kept while little address space is free
 #                            - Checked that the map frees the live map it keeps once free address space falls short
@@ -51,13 +52,16 @@ end
 $screen = []
 # Stands in for the loader's log, printing its lines.
 module MGQ_Multiplayer; module Log; def self.write(m); puts "  log: #{m}"; end; end; end
-# Stands in for the DLL, which tells the memory the game uses as $memory_usage says (topic dll.memory).
+# Stands in for the DLL, which describes the memory the game uses as $memory_usage says (topic dll.memory).
 require_relative "bridge_support"
 load_bridge
 $memory_fake = FakeBridge.new
 $memory_fake.answer("dll.memory") { $memory_usage }
 MGQ_Multiplayer::Bridge.open($memory_fake)
 $memory_usage = nil
+# Stands in for the Mod Framework's reading of the memory, as $memory_reading says.
+Mod_Framework.define_singleton_method(:memory) { $memory_reading }
+$memory_reading = nil
 # Stands in for world.rbx, a world open while $open is.
 module MGQ_MpWorld; def self.open?; $open; end; end
 
@@ -278,50 +282,46 @@ status.dispose_background
 SceneManager.scene.post_start
 check("a live map the next screen leaves is freed once it started", left.disposed?, true)
 
-# Tells the DLL's reading of the memory with this much address space free and this largest free block.
+# Tells the Mod Framework's reading of the memory with this much address space free.
 #
 # @param free [Integer] The free megabytes.
-# @param largest [Integer] The largest free block's megabytes.
 # @return [Hash] The reading.
-def memory(free, largest)
-  { "line" => "address space #{2047 - free} of 2047 MB", "free_mb" => free, "largest_free_mb" => largest }
+def memory(free)
+  { "used" => 2047 - free, "free" => free, "private" => 812 }
 end
 SceneManager.scene = menu
-$memory_usage = memory(1200, 40)
-check("a small largest free block keeps the picture, however much space is free", logged_lines { menu.create_background },
-      ["async: kept the picture of the map behind Scene_Menu: the largest free block of the address space is 40 MB, a live map needs 64"])
-$memory_usage = memory(600, 140)
-check("little free address space keeps the picture, however large its largest block (issue 60)", logged_lines { menu.create_background },
+$memory_reading = memory(600)
+check("little free address space keeps the picture (issue 60)", logged_lines { menu.create_background },
       ["async: kept the picture of the map behind Scene_Menu: 600 MB of address space is free, a live map needs 768"])
 check("and builds no live map", [menu.instance_variable_get(:@mgq_mp_live_map), menu.background_sprite.visible], [nil, true])
-$memory_usage = memory(1200, 140)
+$memory_reading = memory(1200)
 menu.create_background
 shown = menu.instance_variable_get(:@mgq_mp_live_map)
 check("enough free address space builds it", shown.is_a?(Spriteset_MpLiveMap), true)
 next_menu = Scene_Menu.new
 SceneManager.scene = next_menu
 menu.dispose_background
-$memory_usage = memory(600, 140)
+$memory_reading = memory(600)
 next_menu.create_background
 check("once space is tight, the next menu frees the live map the menu before left and shows its picture",
       [shown.disposed?, next_menu.instance_variable_get(:@mgq_mp_live_map), next_menu.background_sprite.visible], [true, nil, true])
-$memory_usage = memory(1200, 140)
+$memory_reading = memory(1200)
 next_menu.create_background
 shown = next_menu.instance_variable_get(:@mgq_mp_live_map)
 SceneManager.scene = map_scene
-$memory_usage = memory(600, 140)
+$memory_reading = memory(600)
 check("closing for the map while space is tight frees the live map instead of keeping it", logged_lines { next_menu.dispose_background },
       ["async: freed the live map instead of keeping it for the next menu: 600 MB of address space is free, a live map needs 768"])
 check("so nothing waits for the next menu", [shown.disposed?, MGQ_MpAsync.instance_variable_get(:@kept_live_map)], [true, nil])
-$memory_usage = memory(1200, 140)
+$memory_reading = memory(1200)
 next_menu.create_background
 kept = next_menu.instance_variable_get(:@mgq_mp_live_map)
 next_menu.dispose_background
-$memory_usage = memory(600, 140)
+$memory_reading = memory(600)
 dropped = logged_lines { MGQ_MpAsync::KEPT_CHECK_FRAMES.times { map_scene.update_basic } }
 check("the map frees the live map it keeps once space falls short",
       [dropped.last, kept.disposed?], ["async: freed the live map kept for the next menu: 600 MB of address space is free, a live map needs 768", true])
-$memory_usage = nil
+$memory_reading = nil
 menu.create_background
 broken = menu.instance_variable_get(:@mgq_mp_live_map)
 def broken.update; raise "broken"; end
@@ -362,7 +362,7 @@ check("the map to a battle keeps its fade", switch(map_scene, Scene_Battle.new, 
 check("a menu to the title keeps its fade", switch(menu_scene, Scene_Title.new, [map_scene]), [:freeze, :transition])
 $open = false
 check("outside a world everything fades as ever", switch(map_scene, menu_scene, [map_scene]), [:freeze, :transition])
-$memory_usage = { "line" => "private 812 MB, 320 GDI and 150 USER handles", "free_mb" => nil }
+$memory_usage = "private 812 MB, 320 GDI and 150 USER handles"
 check("every switch logs the memory the game uses", logged_lines { switch(menu_scene, Scene_Battle.new, [map_scene]) },
       ["async: switching from Scene_Menu to Scene_Battle; private 812 MB, 320 GDI and 150 USER handles"])
 $memory_usage = nil

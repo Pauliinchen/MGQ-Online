@@ -2,6 +2,7 @@
 //  DllTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-11: Told the memory the game uses as the log line alone, without the free address space and the largest free block
 //      Paulinchen  2026-11-08: Moved to the MGQOnline.Multiplayer namespace
 //      Paulinchen  2026-11-06: Told the largest free block of the address space and the DLL's heap
 //                            - Posted the relay's refusals of this version as the event update.needed
@@ -50,10 +51,10 @@ internal static class DllTopics
     public const string NeededEvent = "update.needed";
 
     /// <summary>
-    /// Tells the memory and the handles the game uses now: nothing in; <c>line</c> (the description
-    /// for the scripts' log), <c>free_mb</c> (the address space left), <c>largest_free_mb</c> (its
-    /// largest free block), both nil when Windows cannot tell, and <c>heap_mb</c> (this DLL's heap) out.
+    /// Describes the memory and the handles the game uses now, for the scripts' log: nothing in; the
+    /// line out, see <see cref="ProcessUsage.Describe"/>.
     /// </summary>
+    /// <remarks>The live map weighs the free address space by the Mod Framework's reading, so this topic tells no number.</remarks>
     public const string Memory = "dll.memory";
 
     /// <summary>
@@ -85,12 +86,6 @@ internal static class DllTopics
                 });
             }
         });
-        context.Register(Memory, (_, _) => new RubyHash
-        {
-            { "line", ProcessUsage.Describe() },
-            { "free_mb", ProcessUsage.FreeAddressSpace() is { } free ? free : RubyNil.Value },
-            { "largest_free_mb", ProcessUsage.LargestFreeBlock() is { } largest ? largest : RubyNil.Value },
-            { "heap_mb", ProcessUsage.DllHeap() },
-        });
+        context.Register(Memory, (_, _) => ProcessUsage.Describe());
     }
 }

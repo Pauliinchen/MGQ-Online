@@ -2,7 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-11: Dropped the action after a restart that went on from the game kept for the single player settings
+#      Paulinchen  2026-11-11: Required the Mod Framework 0.1.1, whose memory reading the live map weighs by
+#                            - Dropped the action after a restart that went on from the game kept for the single player settings
 #      Paulinchen  2026-11-07: Greyed the title's Multiplayer command while the mod cannot run, through the Mod Framework's disabled:
 #                            - Dropped the hand-over of the 0.6.9 settings to the Mod Framework, which players pick again once
 #      Paulinchen  2026-11-06: Told the player in the game's message box where to get the Mod Framework when it is not installed
@@ -193,7 +194,7 @@
 # Framework, which the player installs on its own.
 module MGQ_Multiplayer
   # The lowest Mod Framework the mod runs with, defined before any script loads.
-  MOD_FRAMEWORK_REQUIRED = "0.1.0"
+  MOD_FRAMEWORK_REQUIRED = "0.1.1"
 
   # Folder inside the game's Patch folder that holds the DLL, the other scripts and everything the
   # mod writes but its logs.

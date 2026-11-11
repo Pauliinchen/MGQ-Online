@@ -2,6 +2,7 @@
 #  framework_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Stood in for the Mod Framework at the version MGQ Online requires
 #      Paulinchen  2026-11-07: Named the cancel keys that leave a text field, as the Mod Framework asks the DLL
 #      Paulinchen  2026-11-06: Judged every key one a hotkey may take, as the Mod Framework asks the DLL
 #                            - Reached the Mod Framework's engine under its own name
@@ -24,6 +25,9 @@ FRAMEWORK_DIR = FRAMEWORK_PLACE && File.file?(File.join(FRAMEWORK_PLACE, "loader
 # The line a run without the framework fails with, naming where it looked.
 FRAMEWORK_MISSING = "The Mod Framework's scripts are missing: none in #{FRAMEWORK_PLACE || 'MGQ_MOD_FRAMEWORK_DIR, which is not set'}. " \
                     "Set MGQ_MOD_FRAMEWORK_DIR to a copy's folder, such as Patch/Mod_Framework of its release or GameScript/Mod_Framework of its checkout."
+
+# The version the stand-in of the framework's loader names: the one Multiplayer.rb requires.
+FRAMEWORK_VERSION = File.read(File.expand_path("../Multiplayer.rb", __dir__), :encoding => "BOM|UTF-8")[/MOD_FRAMEWORK_REQUIRED = "([^"]+)"/, 1]
 
 # The lines the framework's log took, which its tests read.
 $framework_log = []
@@ -87,7 +91,7 @@ def load_framework
   abort(FRAMEWORK_MISSING) unless FRAMEWORK_DIR
   Object.class_eval <<-RUBY
     module Mod_Framework
-      VERSION = "0.1.0"
+      VERSION = "#{FRAMEWORK_VERSION}"
       FOLDER = "Patch/Mod_Framework"
       WINDOWS = "windows"
       WINE = "wine"

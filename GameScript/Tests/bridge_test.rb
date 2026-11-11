@@ -2,6 +2,7 @@
 #  bridge_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Checked the mod off beside an older Mod Framework without naming the version it requires
 #      Paulinchen  2026-11-06: Took half_loaded? along with available?, which asks it
 #                            - Checked the bytes that cross against Marshal's own instead of recorded dumps
 #                            - Cleared the request it refuses on purpose, which would fail the file at its end
@@ -121,7 +122,7 @@ Dir.mktmpdir do |game|
     Mod_Framework.available = true
     at_least = Mod_Framework.method(:at_least?)
     Mod_Framework.define_singleton_method(:at_least?) { |version| version.to_s == "0.0.9" }
-    check("so it does beside a Mod Framework older than the one it requires", [MGQ_Multiplayer::MOD_FRAMEWORK_REQUIRED, MGQ_Multiplayer.available?], ["0.1.0", false])
+    check("so it does beside a Mod Framework older than the one it requires", MGQ_Multiplayer.available?, false)
     Mod_Framework.define_singleton_method(:at_least?, at_least)
     Mod_Framework.available = false
   end

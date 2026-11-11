@@ -2,6 +2,7 @@
 #  core_async.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Weighed a live map by the free address space the Mod Framework reads, dropping the largest free block
 #      Paulinchen  2026-11-09: Kept the live map hidden while the player is on the map, for the next menu to show again
 #                            - Weighed a live map by the free address space too, keeping none for the next menu while it is short
 #                            - Freed the live map kept for the next menu once the free address space falls short
@@ -51,18 +52,12 @@ module MGQ_MpAsync
   # live map behind them.
   PICTURE_SCENES = [:Scene_File]
 
-  # The topic that tells the memory and the handles the game uses.
+  # The topic that describes the memory and the handles the game uses, for the log.
   MEMORY_USAGE_TOPIC = "dll.memory"
 
-  # Megabytes of the largest free block of the address space below which a menu keeps its picture
-  # of the map instead of a live map, and frees the live map the menu before left.
-  #
-  # The game makes pictures of up to 16 MB in one block, larger ones another way, so this keeps room
-  # for a few of them.
-  LIVE_MAP_BLOCK_MB = 64
-
-  # Megabytes of free address space below which a menu keeps its picture of the map instead of a
-  # live map, and the map frees the live map it keeps for the next menu.
+  # Megabytes of free address space, as Mod_Framework.memory reads it, below which a menu keeps its
+  # picture of the map instead of a live map, and frees the live map the menu before left or the map
+  # keeps for the next menu.
   #
   # A game of 2 GB address space closed in the game's own code as a menu built a live map with
   # about 600 MB of it left (issue 60).
@@ -238,8 +233,7 @@ module MGQ_MpAsync
   #
   # @return [String] The description after a semicolon, "" when the DLL cannot tell.
   def self.memory_usage
-    usage = MGQ_Multiplayer::Bridge.call(MEMORY_USAGE_TOPIC)
-    line = usage.is_a?(Hash) ? usage["line"].to_s : ""
+    line = MGQ_Multiplayer::Bridge.call(MEMORY_USAGE_TOPIC).to_s
     line.empty? ? "" : "; #{line}"
   rescue => e
     log("asking the DLL for the memory the game uses failed: #{e.class}: #{e.message}") unless @memory_usage_failed
@@ -268,9 +262,8 @@ module MGQ_MpAsync
 
   # Gives a menu the live map in place of its picture of the map, for menus whose background is that
   # picture while the world runs: the live map the menu before left, the one kept while the player
-  # was back on the map, or a new one, while the address space has LIVE_MAP_FREE_MB free and a free
-  # block of LIVE_MAP_BLOCK_MB. Menus with a background of their own keep it, and so do the menus of
-  # PICTURE_SCENES.
+  # was back on the map, or a new one, while the address space has LIVE_MAP_FREE_MB free. Menus with
+  # a background of their own keep it, and so do the menus of PICTURE_SCENES.
   #
   # @param scene [Scene_MenuBase] The menu.
   # @param background [Sprite, nil] The menu's background.
@@ -310,7 +303,7 @@ module MGQ_MpAsync
   # Reports whether the game has the room for a live map, logging when it has not.
   #
   # @param scene [Scene_MenuBase] The menu the live map would show behind.
-  # @return [Boolean] Whether it has, true when the DLL cannot tell.
+  # @return [Boolean] Whether it has, true when the Mod Framework cannot tell.
   def self.room_for_live_map?(scene)
     short = memory_short
     return true unless short
@@ -319,22 +312,19 @@ module MGQ_MpAsync
     false
   end
 
-  # Tells what memory a live map lacks now: LIVE_MAP_FREE_MB of free address space, or a free block
-  # of LIVE_MAP_BLOCK_MB.
+  # Tells what memory a live map lacks now: LIVE_MAP_FREE_MB of free address space, as
+  # Mod_Framework.memory reads it.
   #
-  # @return [String, nil] What is short, for the log; nil while nothing is or the DLL cannot tell.
+  # @return [String, nil] What is short, for the log; nil while nothing is or the Mod Framework
+  #   cannot tell, as on JoiPlay.
   def self.memory_short
-    usage = MGQ_Multiplayer::Bridge.call(MEMORY_USAGE_TOPIC)
-    return nil unless usage.is_a?(Hash)
+    reading = Mod_Framework.memory
+    free = reading.is_a?(Hash) ? reading["free"] : nil
+    return nil unless free.is_a?(Integer) && free < LIVE_MAP_FREE_MB
 
-    free = usage["free_mb"]
-    largest = usage["largest_free_mb"]
-    return "#{free} MB of address space is free, a live map needs #{LIVE_MAP_FREE_MB}" if free.is_a?(Integer) && free < LIVE_MAP_FREE_MB
-    return "the largest free block of the address space is #{largest} MB, a live map needs #{LIVE_MAP_BLOCK_MB}" if largest.is_a?(Integer) && largest < LIVE_MAP_BLOCK_MB
-
-    nil
+    "#{free} MB of address space is free, a live map needs #{LIVE_MAP_FREE_MB}"
   rescue => e
-    log_once(:memory_short, "asking the DLL for the free address space failed: #{e.class}: #{e.message}")
+    log_once(:memory_short, "asking the Mod Framework for the free address space failed: #{e.class}: #{e.message}")
     nil
   end
 

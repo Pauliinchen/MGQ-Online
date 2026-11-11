@@ -2,6 +2,7 @@
 #  loader_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Checked the gate against the Mod Framework version the mod requires, whichever it is
 #      Paulinchen  2026-11-06: Stood in for stay_off, which the stages test covers
 #                            - Dropped the sweeps of the code for old names and the guard of the formats
 #      Paulinchen  2026-11-05: Dropped the raid pools' beaten markers from the formats kept, which the DLL reads now
@@ -265,11 +266,12 @@ ensure
   Mod_Framework.available = framework_dll
 end
 
+required = LoaderTestGate::MOD_FRAMEWORK_REQUIRED
 check("a booted framework older than the mod needs keeps the mod off, logged once",
-      gate_with("0.0.9", true), [false, ["Monster Girl Quest! Online is off: it needs the Mod Framework 0.1.0 or newer, and the one installed is 0.0.9"]])
+      gate_with("0.0.9", true), [false, ["Monster Girl Quest! Online is off: it needs the Mod Framework #{required} or newer, and the one installed is 0.0.9"]])
 check("one whose DLL does not run keeps the mod off, logged once",
-      gate_with("0.1.0", false), [false, ["Monster Girl Quest! Online is off: the Mod Framework 0.1.0 runs without its DLL"]])
-check("one new enough with its DLL lets the mod run and writes nothing", gate_with("0.1.0", true), [true, []])
+      gate_with(required, false), [false, ["Monster Girl Quest! Online is off: the Mod Framework #{required} runs without its DLL"]])
+check("one new enough with its DLL lets the mod run and writes nothing", gate_with(required, true), [true, []])
 
 # The rest of this file writes no log.
 MGQ_Multiplayer::Log.define_singleton_method(:write) { |_message| }

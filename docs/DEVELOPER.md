@@ -150,7 +150,7 @@ relay (Node) -- battle server (Ruby + the game's scripts + MGQOnline.ServerCore.
 - The game's Ruby reads file names in the system's code page, so the DLL lists the Patch folder's scripts in UTF-8.
 - The game's plugins load after the Patch folder and define methods anew (`Scene_Battle#battle_start` and `#turn_start`, `Window_BattleLog#add_text`, the Yanfly plugin's `command_101`, `Game_Party#battle_members`, `Window_BattleStatus`), which drops a hook installed before them. Such hooks go in once the first scene starts (a `SceneManager.run` hook), and a method wrapped twice keeps each wrap under its own name.
 - Marshal data from another game can run code. Only plain numbers and texts cross between games, never save data, and a starting save is checked for classes before Marshal reads it.
-- The game is a 32-bit process: it runs out of a free block of the size it asks for long before its address space runs out.
+- The game is a 32-bit process: it ends without a word once a picture finds no room in its address space, which is why the live map behind menus weighs the free address space (see [The world never pauses](#the-world-never-pauses)).
 
 ## The scripts in the game
 
@@ -314,7 +314,7 @@ In single player the map stops behind menus, battles and story scenes. In a worl
 
 - Behind every screen but the map, title and game over, the map updates without the player moving and without its main event. Commands that would reach the player (messages, choices, transfers, battles, shops, scripts, music, `HELD_CODES`) yield until the map runs them again; an event that starts by touch or autoruns only marks itself.
 - The field music refresh is left to the map, since it would cut into a battle's music.
-- **The live map behind menus** shows only while the largest free block of address space is at least 64 MB; a 32-bit game runs out of a block of the size it asks for long before its free space as a whole (140 MB largest of about 600 MB free in the in-game tests). The crashes in RGSS301.dll behind menus (issues 42 to 70) were not a lack of memory but a sprite or window left on a viewport the game freed, which the Mod Framework now moves off first. A menu passes its live map to the next menu, so no second spriteset is built.
+- **The live map behind menus** shows only while at least 768 MB of address space is free, as the Mod Framework reads it (`Mod_Framework.memory`); a game of 2 GB address space closed as a menu built a live map with about 600 MB left (issue 60). The crashes in RGSS301.dll behind menus (issues 42 to 70) were not a lack of memory but a sprite or window left on a viewport the game freed, which the Mod Framework now moves off first. A menu passes its live map to the next menu, so no second spriteset is built.
 - Between the map and menus the freeze and transition are skipped, since even a zero-frame transition takes about 117 ms in which the world stands still. Battles, story scenes and the title keep their fades.
 
 ## Parties and the map
