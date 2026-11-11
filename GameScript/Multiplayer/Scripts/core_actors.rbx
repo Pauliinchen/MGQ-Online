@@ -2,6 +2,8 @@
 #  core_actors.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Let the owner check and pay the gold and item costs of their character in a co-op battle
+#                            - Converted a co-op character's damage into gold against the gold its owner sent with the turn's commands
 #      Paulinchen  2026-11-08: Built a rebuilt character with the game's own setup and changers, in the steps C# gives
 #                            - Traded nothing of a rebuilt character's equipment with the player's bag
 #      Paulinchen  2026-11-07: Dropped the hero of a replaced Luka, which named another mod
@@ -35,6 +37,112 @@ module MGQ_MpActors
 
   # What starts this script's lines in the log.
   LOG_TAG = "actors"
+
+  # The gold each player's game sent with this turn's commands, by world seat, see hold_gold.
+  @held_gold = {}
+
+  # Reports whether a character's owner pays its gold and item costs from their own bag: another
+  # player's character in a co-op battle while its owner is still in it.
+  #
+  # @param battler [Game_Battler] The character.
+  # @return [Boolean] Whether its owner pays.
+  def self.owner_pays?(battler)
+    battler.is_a?(Game_MpActor) && MGQ_MpBattlesSync.coop? && MGQ_MpBattlesSync.guests_in.include?(battler.mp_seat)
+  end
+
+  # Runs a block whose gold and item changes belong to a character's owner, see the bag hooks of
+  # battles_sync_live.rbx: another player's character in a co-op battle, else nobody.
+  #
+  # @param battler [Game_Battler, nil] Whose bag pays or gains.
+  # @yieldreturn [Object] What the block returns.
+  # @return [Object] What the block returned.
+  def self.for_owner(battler)
+    outer = @owner
+    @owner = battler.is_a?(Game_MpActor) && MGQ_MpBattlesSync.coop? ? battler : nil
+    yield
+  ensure
+    @owner = outer
+  end
+
+  # Names the character whose owner's bag the running block of for_owner changes.
+  #
+  # @return [Game_MpActor, nil] The character, nil outside for_owner or for one of this game.
+  def self.owner
+    @owner
+  end
+
+  # Reports whether this player's game sends its gold with this turn's commands: in a co-op battle
+  # when one of its own characters turns damage into gold now, or one of their actions this turn
+  # adds a state that does, so the game running the battle converts against the owner's gold.
+  #
+  # @return [Boolean] Whether it sends it.
+  def self.gold_used?
+    $game_party.battle_members.any? do |actor|
+      next false if actor.is_a?(Game_MpActor)
+
+      actor.damage_gold_convert || actor.actions.any? { |action| adds_gold_convert?(action) }
+    end
+  rescue => e
+    log_once([:gold_used, e.class.name], "could not tell whether this turn uses the gold, it goes without: #{e.class}: #{e.message}")
+    false
+  end
+
+  # Reports whether an action or a skill chained after it adds a state that turns damage into gold.
+  #
+  # @param action [Game_Action, nil] The action.
+  # @return [Boolean] Whether it does.
+  def self.adds_gold_convert?(action)
+    while action
+      item = action.item
+      return true if item && item.effects.any? { |effect| gold_convert_state?(effect) }
+
+      action = action.respond_to?(:chain_action) ? action.chain_action : nil
+    end
+    false
+  end
+
+  # Reports whether an effect adds a state that turns damage into gold. An effect of state 0 adds
+  # the user's attack states, which no state of the database stands for.
+  #
+  # @param effect [RPG::UsableItem::Effect] The effect.
+  # @return [Boolean] Whether it does.
+  def self.gold_convert_state?(effect)
+    return false unless effect.code == Game_Battler::EFFECT_ADD_STATE && effect.data_id != 0
+
+    state = $data_states[effect.data_id]
+    state ? state.features.any? { |feature| feature.code == NWFeature::FEATURE_BATTLER_ABILITY && feature.data_id == NWFeature::Battler::DAMAGE_GOLD_CONVERT } : false
+  end
+
+  # Keeps the gold a player's game sent with this turn's commands, which their characters' damage
+  # converts against.
+  #
+  # @param seat [Integer] The player's world seat.
+  # @param gold [Integer] Their gold.
+  def self.hold_gold(seat, gold)
+    @held_gold[seat] = gold
+  end
+
+  # Tells the gold a player's game sent with this turn's commands, less what the battle took of it
+  # since.
+  #
+  # @param seat [Integer] The player's world seat.
+  # @return [Integer, nil] The gold, nil when none came this turn.
+  def self.held_gold(seat)
+    @held_gold[seat]
+  end
+
+  # Takes a change of a player's gold into the gold held for them, never below 0.
+  #
+  # @param seat [Integer] The player's world seat.
+  # @param amount [Integer] The change.
+  def self.change_held_gold(seat, amount)
+    @held_gold[seat] = [@held_gold[seat] + amount, 0].max if @held_gold[seat]
+  end
+
+  # Forgets the gold the players sent, as a command phase opens and their next commands come.
+  def self.forget_gold
+    @held_gold.clear
+  end
 
   # Describes characters for the log.
   #
@@ -585,10 +693,80 @@ class Game_MpActor < Game_Actor
     usable_item_conditions_met?(item)
   end
 
-  # Uses up nothing of the player's bag for an item of the owner's.
+  # Checks the costs the character can pay: in a co-op battle its owner's game checked the gold and
+  # items as they chose the action, and a character without its owner in the battle has no bag to
+  # pay them from.
   #
-  # @param _item [RPG::Item] The item.
-  def consume_item(_item)
+  # @param values [Hash] The costs by kind, such as :MP, :GOLD and :ITEM.
+  # @return [Boolean] Whether the character can pay them.
+  def skill_cost_payable_h?(values)
+    return super unless MGQ_MpBattlesSync.coop?
+    return super(values.reject { |key, _| key == :GOLD || key == :ITEM }) if MGQ_MpActors.owner_pays?(self)
+
+    values.fetch(:GOLD, 0) <= 0 && values.fetch(:ITEM, []).empty? && super
+  end
+
+  # Lets a skill go without the items it needs while the owner's game, which checked them, is in the
+  # co-op battle.
+  #
+  # @param item_id [Integer] The item the skill needs.
+  # @return [Boolean] Whether the character goes without it.
+  def need_item_ignore?(item_id)
+    MGQ_MpActors.owner_pays?(self) || super
+  end
+
+  # Pays a skill's costs, the gold and items from the owner's bag in a co-op battle.
+  #
+  # @param skill [RPG::Skill] The skill.
+  # @param values [Hash] The costs by kind.
+  def pay_skill_cost_h(skill, values)
+    MGQ_MpActors.for_owner(self) { super(skill, values) }
+  end
+
+  # Uses up an item from the owner's bag in a co-op battle. Elsewhere it uses up nothing of the
+  # player's bag, and the battle's stream tells the owner's game.
+  #
+  # @param item [RPG::Item] The item.
+  def consume_item(item)
+    MGQ_MpActors.for_owner(self) { super(item) } if MGQ_MpBattlesSync.coop?
+  end
+
+  # Gives the gold the damage drains to the owner's bag in a co-op battle.
+  #
+  # @param damage [Integer] The damage.
+  # @param item [RPG::UsableItem] The skill or item that dealt it.
+  # @return [Integer] The damage.
+  def apply_damage_gold_drain(damage, item)
+    MGQ_MpActors.for_owner(self) { super(damage, item) }
+  end
+
+  # Turns damage into gold of the owner's in a co-op battle, against the gold their game sent with
+  # this turn's commands. Without that gold the character takes the full damage and loses none.
+  #
+  # @param damage [Integer] The damage.
+  # @param item [RPG::UsableItem] The skill or item that dealt it.
+  # @return [Integer] The damage left.
+  def apply_damage_gold_convert(damage, item)
+    return super unless MGQ_MpBattlesSync.coop? && damage_gold_convert && !item.damage.recover?
+
+    seat = mp_seat
+    gold = MGQ_MpActors.owner_pays?(self) ? MGQ_MpActors.held_gold(seat) : nil
+    unless gold
+      why = MGQ_MpActors.owner_pays?(self) ? "#{owner}'s gold did not come this turn" : "#{owner} is not in the battle"
+      MGQ_MpActors.log_once([:gold_convert, seat, MGQ_MpBattlesSync.battle_id, MGQ_MpBattlesSync.turn], "#{log_name} took the full damage: #{why}")
+      return damage
+    end
+
+    runner_gold = $game_party.gold
+    begin
+      MGQ_MpGame.set($game_party, :gold, gold)
+      left = MGQ_MpActors.for_owner(self) { super(damage, item) }
+    ensure
+      MGQ_MpGame.set($game_party, :gold, runner_gold)
+    end
+    MGQ_MpActors.log("#{log_name} turned #{damage} damage into gold of seat #{seat}: #{gold - MGQ_MpActors.held_gold(seat)} lost, " \
+                     "#{MGQ_MpActors.held_gold(seat)} left, #{left} damage taken")
+    left
   end
 
   # Trades nothing with the player's bag, where the game puts what a character takes off and takes

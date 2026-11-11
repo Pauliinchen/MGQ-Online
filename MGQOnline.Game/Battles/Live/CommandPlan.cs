@@ -2,6 +2,7 @@
 //  CommandPlan.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-11: Read the gold a co-op guest sends with its commands
 //      Paulinchen  2026-10-30: Created
 //
 //----------------------------------------------------------------
@@ -33,6 +34,11 @@ public static class CommandPlan
     /// The most skills chained after one action, far more than any skill type's chain of the game allows.
     /// </summary>
     public const int MaxChain = 16;
+
+    /// <summary>
+    /// The most gold a party holds, the game's NWConst::Party::MAX_MONEY.
+    /// </summary>
+    public const int MaxGold = 999_999_999;
 
     /// <summary>
     /// What the host knows of the game when it reads commands: nothing, since commands name kinds,
@@ -75,6 +81,19 @@ public static class CommandPlan
 
         return plan;
     }
+
+    /// <summary>
+    /// Reads the gold a co-op guest sent with its commands for a turn that converts damage into gold.
+    /// </summary>
+    /// <remarks>The host's game converts against it; anything but a whole number the game's party can
+    /// hold would break the host's battle for every player.</remarks>
+    /// <param name="body">The commands: their list, the order of the guest's places, then the gold.</param>
+    /// <returns>The gold, from 0 to <see cref="MaxGold"/>; <see langword="null"/> when none came or it
+    /// is no such number.</returns>
+    public static int? Gold(ReadOnlySpan<byte> body) =>
+        WireReader.Parse(body, NoGame) is { Count: > 2 } values && values[2] is WireInteger { Value: var gold } && gold >= 0 && gold <= MaxGold
+            ? (int)gold
+            : null;
 
     /// <summary>
     /// Checks one command and the skills chained after it, the chain cut at its first link that is no

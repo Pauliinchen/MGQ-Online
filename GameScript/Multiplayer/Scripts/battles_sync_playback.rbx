@@ -2,6 +2,7 @@
 #  battles_sync_playback.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Changed the party's gold and items as the host's battle changed them for the player's own characters
 #      Paulinchen  2026-11-05: Made the game's objects of the values the DLL read of the host's stream, and left out a send the DLL did not check
 #                            - Gave a state the host added or took away its counters through the game's own reset and erase
 #      Paulinchen  2026-10-30: Read whether the guest fell behind the host's stream from the DLL
@@ -267,8 +268,8 @@ module MGQ_MpBattlesSync
         call(scene, *args)
       when "emerge"
         emerge(scene, *args)
-      when "item_used"
-        use_up(*args)
+      when "bag"
+        bag(*args)
       when /\Alog\./
         log_window(scene).send(method, *args)
       when "popup"
@@ -406,29 +407,23 @@ module MGQ_MpBattlesSync
       MGQ_MpBattlesSync.log_once(:take_encounter, "could not take how the battle began: #{e.class}: #{e.message}")
     end
 
-    # Uses up an item one of this game's own characters used in the host's battle, which the host's
-    # game leaves to the owner's bag.
+    # Changes the party's gold or items as the host's battle changed them for one of this game's own
+    # characters, which the host's game leaves to the owner's bag: a cost, an item used up, a steal,
+    # a drain or a conversion of damage into gold.
     #
-    # @param battler [Game_Battler, nil] The guest's battler who used it.
-    # @param item [RPG::Item, nil] The item.
-    def self.use_up(battler, item)
-      return unless battler && item.is_a?(RPG::Item) && battler.actor? && !battler.is_a?(Game_MpActor)
+    # @param battler [Game_Battler, nil] The guest's battler the change was for.
+    # @param what [RPG::Item, RPG::Weapon, RPG::Armor, String, nil] The item, or "gold".
+    # @param amount [Integer] The change, below 0 for a loss.
+    def self.bag(battler, what, amount)
+      return unless battler && battler.actor? && !battler.is_a?(Game_MpActor) && amount.is_a?(Integer) && amount != 0
+      return unless what == "gold" || what.is_a?(RPG::Item) || what.is_a?(RPG::Weapon) || what.is_a?(RPG::Armor)
 
-      before = $game_party.item_number(item) rescue nil
-      $game_party.consume_item(item)
-      log_used_up(battler, item, before)
-    end
-
-    # Logs an item used up as the host's battle used it.
-    #
-    # @param battler [Game_Battler] The guest's battler who used it.
-    # @param item [RPG::Item] The item.
-    # @param before [Integer, nil] How many the party had before.
-    def self.log_used_up(battler, item, before)
-      MGQ_MpBattlesSync.log("used up item #{item.id} #{item.name} (#{before.inspect} -> #{$game_party.item_number(item)}), " \
-                            "which #{MGQ_MpBattlesSync.named(battler)} used in the host's battle")
-    rescue
-      MGQ_MpBattlesSync.log("used up item #{item.id}, which #{MGQ_MpBattlesSync.named(battler)} used in the host's battle")
+      gold = what == "gold"
+      before = gold ? $game_party.gold : $game_party.item_number(what)
+      gold ? $game_party.gain_gold(amount) : $game_party.gain_item(what, amount)
+      after = gold ? $game_party.gold : $game_party.item_number(what)
+      named = gold ? "gold" : "#{what.class.name.split('::').last.downcase} #{what.id} #{what.name}"
+      MGQ_MpBattlesSync.log("#{amount > 0 ? 'gained' : 'paid'} #{amount.abs} #{named} (#{before} -> #{after}) for #{MGQ_MpBattlesSync.named(battler)} in the host's battle")
     end
 
     # Starts an animation a battler started by itself on the host, outside the battle's own showing

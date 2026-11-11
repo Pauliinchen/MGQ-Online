@@ -2,6 +2,7 @@
 #  battle_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Stood in for the gold a co-op turn sends, which none of the battle tests use
 #      Paulinchen  2026-11-08: Dropped the status window's name drawing, which the scripts no longer hook
 #      Paulinchen  2026-11-06: Stood in for UI.confirm and read the waiting box's lines from the wait
 #      Paulinchen  2026-11-05: Kept each message sent as the scripts hand it instead of as a copy of the DLL's codec writes it
@@ -244,8 +245,12 @@ class Game_Enemy < Game_Battler
   def dead?; exist? && death_state?; end
   def death_state?; @dead || Array(@states).include?(1) ? true : false; end
 end
-# Stands in for core_actors.rbx, whose builds are the characters' ids.
+# Stands in for core_actors.rbx, whose builds are the characters' ids, and whose turns never send
+# the party's gold.
 module MGQ_MpActors
+  def self.gold_used?; false; end
+  def self.hold_gold(_seat, _gold); end
+  def self.forget_gold; end
   module Builds
     # A character of a build.
     Member = Struct.new(:actor_id)

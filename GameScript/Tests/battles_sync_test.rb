@@ -2,6 +2,7 @@
 #  battles_sync_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Dropped the check of the items used up, which only checked the party's stand-in
 #      Paulinchen  2026-11-06: Reached the Mod Framework's engine under its own name
 #                            - Read the waiting box's lines from the wait and asked to leave through UI.confirm, leaving how it looks to the in-game suite
 #      Paulinchen  2026-11-06: Checked that a target window follows the enemies another player's action takes and closes once none is left
@@ -73,11 +74,10 @@ class Game_Enemy
   def actor?; false; end
   def states; []; end
 end
-# The party, noting the ids of the items it uses up in $consumed.
+# The party, with the time stop the playback sets.
 class Game_Party
   attr_accessor :od_turn, :od_user
   def name; "Party"; end
-  def consume_item(item); ($consumed ||= []) << item.id; end
 end
 # A battler's action result, with the damage it took.
 class Game_ActionResult
@@ -221,14 +221,6 @@ playback.sprite_effect(monster, :collapse)
 check("a PvP opponent stays as a silhouette", monster.sprite_effect_type, :whiten)
 check("and no player of the other side is offered as a recruit", $game_troop.dead_enemies, [monster])
 sync.finish
-
-# Items the host's battle used up of the guest's bag.
-$consumed = []
-playback.use_up(Game_Actor.new(1), $data_items[3])
-playback.use_up(Game_MpActor.new(MGQ_MpActors::Builds::Member.new(2), "Friend"), $data_items[4])
-playback.use_up(Game_Actor.new(1), $data_skills[3])
-playback.use_up(nil, $data_items[5])
-check("the guest uses up the items its own characters used, and nothing else", $consumed, [3])
 
 # Takes events through the DLL's intake of the host's stream, as one send.
 #

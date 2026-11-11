@@ -2,6 +2,8 @@
 #  battles_sync_live.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Handed every change of the gold and items of another player's character in a co-op battle to its owner's bag
+#                            - Forgot the gold the players sent as a command phase opens
 #      Paulinchen  2026-11-06: Kept the target windows on the battlers left and closed one that lists nobody
 #      Paulinchen  2026-11-05: Started a guest's party and troop as the game starts them, through MGQ_MpBattlers
 #      Paulinchen  2026-10-30: Kept the host's waits for its guests and the battle's endings in the DLL
@@ -106,7 +108,7 @@ module MGQ_MpBattlesSync
       return if @installed
       @installed = true
 
-      installed = [:battle_log, :messages, :pictures, :audio, :battlers, :course, :ending, :live, :calls, :targets].select do |group|
+      installed = [:battle_log, :messages, :pictures, :audio, :battlers, :bag, :course, :ending, :live, :calls, :targets].select do |group|
         begin
           send(group)
           true
@@ -155,7 +157,8 @@ module MGQ_MpBattlesSync
       end
     end
 
-    # Records animations, sprite effects, the skill name and the items a guest's character uses up.
+    # Records animations, sprite effects, the skill name and, outside a co-op battle, the items a
+    # guest's character uses up.
     def self.battlers
       ANIMATION_SETTERS.each do |name|
         kind = "battler.#{name.to_s.chomp('=')}"
@@ -177,9 +180,23 @@ module MGQ_MpBattlesSync
       record_before(Game_Unit, :display_skill_name=) do |unit, args|
         ["skill_name", unit.equal?($game_party) ? "party" : "troop", args[0]]
       end
-      # The host's game uses up nothing of a guest's bag, so the guest's own game is told.
+      # Outside a co-op battle the host's game uses up nothing of a guest's bag, so the guest's own
+      # game is told.
       record_before(Game_MpActor, :consume_item) do |battler, args|
-        ["item_used", battler, args[0]] if args[0].is_a?(RPG::Item) && args[0].consumable
+        ["bag", battler, args[0], -1] if !MGQ_MpBattlesSync.coop? && args[0].is_a?(RPG::Item) && args[0].consumable
+      end
+    end
+
+    # Hands every change of the party's gold and items made for another player's character in a
+    # co-op battle (see MGQ_MpActors.for_owner) to its owner's bag instead of this game's.
+    def self.bag
+      MGQ_MpHooks.around(Game_Party, :gain_gold, "battles_sync_live bag") do |party, args, original|
+        owner = MGQ_MpActors.owner
+        owner && party.equal?($game_party) ? Live.to_owner(owner, "gold", args[0]) : original.call
+      end
+      MGQ_MpHooks.around(Game_Party, :gain_item, "battles_sync_live bag") do |party, args, original|
+        owner = MGQ_MpActors.owner
+        owner && party.equal?($game_party) ? Live.to_owner(owner, args[0], args[1]) : original.call
       end
     end
 
@@ -491,6 +508,29 @@ module MGQ_MpBattlesSync
         MGQ_MpBattlesSync.log("the host still waits for #{seats.empty? ? 'nobody' : seats.map { |seat| MGQ_MpBattlesSync.who(seat) }.join(', ')}")
       end
       (Array(waiting["seats"]) - [MGQ_MpBattlesSync.own_seat]).map { |seat| MGQ_MpBattlesSync.seat_name(seat) }
+    end
+
+    # Hands a change of the party's gold or items made for another player's character in a co-op
+    # battle to its owner's bag, which the owner's game changes as the stream tells it (see
+    # Playback.bag); this game's party keeps its own. The gold the owner sent this turn follows the
+    # change. A change for an owner no longer in the battle is dropped.
+    #
+    # @param owner [Game_MpActor] The character whose owner's bag it is.
+    # @param what [RPG::BaseItem, String, nil] The item, or "gold".
+    # @param amount [Integer] The change, below 0 for a loss.
+    # @return [nil] Always.
+    def self.to_owner(owner, what, amount)
+      return nil if what.nil? || amount == 0
+
+      seat = owner.mp_seat
+      if MGQ_MpActors.owner_pays?(owner) && Recorder.active?
+        Recorder.event("bag", owner, what, amount)
+        MGQ_MpActors.change_held_gold(seat, amount) if what == "gold"
+      else
+        MGQ_MpBattlesSync.log_once([:bag_dropped, MGQ_MpBattlesSync.battle_id, seat],
+                                   "dropped the changes of #{owner.owner}'s gold and items for #{MGQ_MpBattlesSync.named(owner)}: #{owner.owner} is not in the battle")
+      end
+      nil
     end
 
     # Forgets whom the host told it waits for, as a battle begins, so an earlier battle's word
@@ -805,6 +845,8 @@ module MGQ_MpBattlesSync
     def self.open_phase(scene)
       return unless phase("open")
 
+      # The gold the players sent counts until here, through the turn's end skills and forced actions.
+      MGQ_MpActors.forget_gold
       MGQ_MpBattlesSync.log("command phase of turn #{MGQ_MpBattlesSync.turn + 1} opened, #{guests_text} in")
       MGQ_MpBattlesSync.mode.settle(scene)
       # Everyone chooses now, the host too, which a guest done choosing sees while its turn waits.

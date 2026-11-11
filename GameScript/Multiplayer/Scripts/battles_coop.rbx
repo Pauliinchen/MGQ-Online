@@ -2,6 +2,7 @@
 #  battles_coop.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Put what another player's character steals or gets into its owner's bag
 #      Paulinchen  2026-11-08: Named the characters in the battle's status window through the Mod Framework's row patch instead of drawing them
 #      Paulinchen  2026-11-06: Read the player's own color in the status window through the Mod Framework's UI.color_now
 #                            - Dropped RAID_PLAYERS, which the DLL's CoopMatchmaking keeps
@@ -2383,7 +2384,8 @@ module MGQ_MpBattlesCoop
   end
 
   # Keeps the other players' characters out of the Library all saves share, which counts each
-  # character's battles, defeats and steals by its id: those belong to their owners' games. The
+  # character's battles, defeats and steals by its id: those belong to their owners' games, as do
+  # the items they steal or get, which go into their owners' bags (see MGQ_MpActors.for_owner). The
   # battle's end also stands the player's own fallen characters up, see stand_up.
   def self.install_counts
     if BattleManager.respond_to?(:battle_end)
@@ -2406,10 +2408,15 @@ module MGQ_MpBattlesCoop
     end
     [:item_effect_steal, :item_effect_force_steal].select { |name| Game_Enemy.method_defined?(name) }.each do |name|
       MGQ_MpHooks.around(Game_Enemy, name, "battles_coop") do |enemy, args, original|
-        next original.call if MGQ_MpBattlesCoop.counted?(args[0])
+        next MGQ_MpActors.for_owner(args[0]) { original.call } if MGQ_MpBattlesCoop.counted?(args[0])
 
         MGQ_MpBattlesCoop.note_uncounted("steal", args[0], enemy)
-        MGQ_MpBattlesCoop.uncounted { original.call }
+        MGQ_MpBattlesCoop.uncounted { MGQ_MpActors.for_owner(args[0]) { original.call } }
+      end
+    end
+    if Game_Battler.method_defined?(:item_one_use_effect_get_item)
+      MGQ_MpHooks.around(Game_Battler, :item_one_use_effect_get_item, "battles_coop") do |_target, args, original|
+        MGQ_MpActors.for_owner(args[0]) { original.call }
       end
     end
     return unless defined?(Game_Library) && Game_Library.method_defined?(:count_up_actor_data)

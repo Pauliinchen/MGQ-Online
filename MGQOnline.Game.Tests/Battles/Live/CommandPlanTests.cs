@@ -2,6 +2,7 @@
 //  CommandPlanTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-11: Checked that the host takes only gold a party holds from a guest
 //      Paulinchen  2026-11-06: Dropped the checks that replayed recorded cases
 //      Paulinchen  2026-10-30: Created
 //
@@ -17,7 +18,8 @@ using MGQOnline.Game.Battles.Wire;
 namespace MGQOnline.Game.Tests.Battles.Live;
 
 /// <summary>
-/// Covers the host's plan of a guest's commands: a chain cut to its length and a random target.
+/// Covers the host's plan of a guest's commands: a chain cut to its length, a random target and the
+/// gold sent with them.
 /// </summary>
 public sealed class CommandPlanTests
 {
@@ -47,5 +49,20 @@ public sealed class CommandPlanTests
 
         Assert.Equal(-1, commands[0]!.Target);
         Assert.Null(commands[1]);
+    }
+
+    /// <summary>
+    /// Asserts that the gold a guest sends is read, and that text or more gold than a party holds is
+    /// not, since the host's conversion of damage into gold would fail on it.
+    /// </summary>
+    [Fact]
+    public void Gold_SentWithTheCommands_TakesOnlyGoldAPartyHolds()
+    {
+        static int? GoldOf(WireValue gold) =>
+            CommandPlan.Gold(Encoding.UTF8.GetBytes(WireWriter.Line(new WireList(), WireNil.Value, gold)));
+
+        Assert.Equal(100_000, GoldOf(new WireInteger(100_000)));
+        Assert.Null(GoldOf(new WireString("100000")));
+        Assert.Null(GoldOf(new WireInteger(CommandPlan.MaxGold + 1L)));
     }
 }

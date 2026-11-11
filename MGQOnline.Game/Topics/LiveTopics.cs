@@ -2,6 +2,7 @@
 //  LiveTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-11: Answered the gold a co-op guest sends with its commands
 //      Paulinchen  2026-11-05: Took the recording's events and values, and the Backline's Frontline, as values and gave the stream's lines as values
 //      Paulinchen  2026-10-30: Handed the session to the co-op battles' joins
 //                            - Answered a co-op battle's side and stream kinds
@@ -137,7 +138,8 @@ public static class LiveTopics
     /// <c>several</c>, <c>owners</c> (each place's owner's seat, nil for none), <c>skills</c> and
     /// <c>items</c> (the tables' sizes) in; <c>places</c> out, per place nil (the computer's
     /// actions stay), an empty list (taken away) or each command as [kind, id, target, chain] (nil
-    /// for one the host cannot read); nil for commands that do not read.
+    /// for one the host cannot read), and <c>gold</c>, the gold a co-op guest sent (see
+    /// <see cref="CommandPlan.Gold"/>, nil for none); nil for commands that do not read.
     /// </summary>
     public const string Plan = "live.plan";
 
@@ -275,11 +277,13 @@ public static class LiveTopics
     private static RubyHash? PlanOf(LiveSession session, TeamSides sides, RubyHash fields)
     {
         List<int?> owners = fields["owners"].AsArray().Select(owner => owner.IsNil ? null : (int?)owner.AsInt()).ToList();
-        List<List<PlannedCommand?>?>? plan = CommandPlan.Plan(fields["body"].AsBytes().Span, fields["seat"].IsNil ? null : fields["seat"].AsInt(),
+        ReadOnlySpan<byte> body = fields["body"].AsBytes().Span;
+        List<List<PlannedCommand?>?>? plan = CommandPlan.Plan(body, fields["seat"].IsNil ? null : fields["seat"].AsInt(),
             fields["several"].AsBool(), owners, seat => session.TeamDuel ? sides.HeirOf(seat) : null, fields["skills"].AsInt(), fields["items"].AsInt());
         return plan is null ? null : new RubyHash
         {
             { "places", new RubyArray(plan.Select(place => place is null ? RubyNil.Value : (RubyValue)new RubyArray(place.Select(Command)))) },
+            { "gold", CommandPlan.Gold(body) is int gold ? gold : RubyNil.Value },
         };
     }
 

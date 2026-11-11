@@ -2,6 +2,7 @@
 #  battles_sync.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Sent a co-op guest's gold with the commands of a turn that converts damage into gold, and kept it on the host for that turn
 #      Paulinchen  2026-11-08: Gave its UI ids the mgq_online_ prefix
 #      Paulinchen  2026-11-06: Showed the waiting box as a hud of the Mod Framework's UI layer above the battle's windows and asked to leave through UI.confirm
 #      Paulinchen  2026-11-05: Read a message's number as a number and sent the last number taken in its field
@@ -998,7 +999,8 @@ module MGQ_MpBattlesSync
 
     # Writes the guest's commands: for every party member, its actions, an empty list when it has
     # none, such as after a failed escape, and nil for the other players' characters in a co-op
-    # battle; then the order of the guest's places, which a swap with their Backline changed.
+    # battle; then the order of the guest's places, which a swap with their Backline changed; then,
+    # in a co-op battle whose turn uses it (see MGQ_MpActors.gold_used?), the party's gold.
     #
     # @return [String] The commands.
     def self.build
@@ -1009,8 +1011,9 @@ module MGQ_MpBattlesSync
         actor.actions.select(&:item).map { |action| chained_command(action) }
       end
       order = MGQ_MpBattlesSync.mode.own_order
-      @built = "#{summary($game_party.battle_members, commands)}#{order ? "; order #{order.join(', ')}" : ''}"
-      Wire.write(order ? [commands, order] : [commands])
+      gold = MGQ_MpBattlesSync.coop? && MGQ_MpActors.gold_used? ? $game_party.gold : nil
+      @built = "#{summary($game_party.battle_members, commands)}#{order ? "; order #{order.join(', ')}" : ''}#{gold ? "; gold #{gold}" : ''}"
+      Wire.write(gold ? [commands, order, gold] : order ? [commands, order] : [commands])
     end
 
     # Writes an action as a command, followed by the skills chained after it when it has any.
@@ -1077,7 +1080,8 @@ module MGQ_MpBattlesSync
     # duel those of a player who left, which they took over, and which commands name a skill or item
     # and a target the host's turn reads. A character the guest named none for keeps what the
     # computer chose. In a co-op battle the guest's swaps come first, so the commands find the
-    # characters the guest sees.
+    # characters the guest sees, and the gold the guest sent is kept for the turn (see
+    # MGQ_MpActors.hold_gold).
     #
     # @param body [String] The commands.
     # @param seat [Integer, nil] The guest's world seat in a co-op battle, whose characters take them.
@@ -1096,6 +1100,8 @@ module MGQ_MpBattlesSync
                                                       "owners" => battlers.map { |battler| battler.respond_to?(:mp_seat) && battler.mp_seat.is_a?(Integer) ? battler.mp_seat : nil },
                                                       "skills" => $data_skills.size, "items" => $data_items.size)
       places = plan.is_a?(Hash) ? Array(plan["places"]) : []
+      gold = MGQ_MpBattlesSync.coop? && plan.is_a?(Hash) ? plan["gold"] : nil
+      MGQ_MpActors.hold_gold(seat, gold) if gold
       given = []
       battlers.each_with_index do |battler, index|
         entries = places[index]
@@ -1103,7 +1109,7 @@ module MGQ_MpBattlesSync
       end
       MGQ_MpBattlesSync.log("gave the commands of #{MGQ_MpBattlesSync.who(seat)} for turn #{MGQ_MpBattlesSync.turn + 1}: " \
                             "#{given.empty? ? 'none for their characters' : given.join('; ')}" +
-                            (values[1] ? "; order #{Array(values[1]).join(', ')}" : ""))
+                            (values[1] ? "; order #{Array(values[1]).join(', ')}" : "") + (gold ? "; gold #{gold}" : ""))
     rescue => e
       MGQ_MpBattlesSync.log_once([:commands, e.class.name], "could not give the commands of #{MGQ_MpBattlesSync.who(seat)}: #{e.class}: #{e.message}; the computer's kept")
     end
@@ -1190,8 +1196,8 @@ module MGQ_MpBattlesSync
     # Reports whether a character may be commanded to use a skill or an item: a skill it has, or
     # one of no skill type, as attacking, guarding and struggling are, and an item a battle allows.
     #
-    # The owner's bag is not known here, so their own game uses an item up as the host's stream
-    # tells it, see Playback.use_up.
+    # The owner's bag is not known here, so their own game uses an item up as the host's stream's
+    # "bag" event tells it, see Playback.bag.
     #
     # @param battler [Game_Battler] The character.
     # @param item [RPG::UsableItem] The skill or item.

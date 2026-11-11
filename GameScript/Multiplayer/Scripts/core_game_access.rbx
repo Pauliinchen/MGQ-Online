@@ -2,6 +2,7 @@
 #  core_game_access.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Named the party's gold
 #      Paulinchen  2026-11-06: Named the battle's target windows
 #      Paulinchen  2026-11-05: Dropped the counters of a state, which the game's own reset and erase give
 #                            - Named the frames left of the screen's fade in
@@ -128,6 +129,10 @@ module MGQ_MpGame
     # $game_party: the companions of the player's own party and castle, which its include_actors
     # replaces with a story's temporary party while one plays.
     :include_actors => :@include_actors,
+
+    # $game_party: its gold, which a co-op battle's host sets to another player's for a moment, so
+    # the game's own conversion of damage into gold reads theirs.
+    :gold => :@gold,
 
     # BattleManager, SceneManager and DataManager.
     :retry_data => :@retry_data,
