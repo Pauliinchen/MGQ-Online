@@ -2,6 +2,7 @@
 #  world_catchup_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Expected no job or race items in the snapshot, which the DLL reads from the events database, and listed a job item among the key items
 #      Paulinchen  2026-11-10: Checked that a look whose question a quiet look answered asks the DLL nothing until the story changes
 #      Paulinchen  2026-11-05: Answered the DLL's catch-up topics with fixed values per case instead of from the catch-up engine of engine.rb, and checked what the scripts send and what they do with each action, leaving the engine's decisions to the C# tests
 #                            - Answered the story's part with fixed values per progress
@@ -156,9 +157,9 @@ check("a player the relay puts on a track of their own at their part's checkpoin
 check("whose story events are held", [catchup.holds_story?, catchup.refusal_text], [true, "Reach level 25 to continue the story."])
 check("the DLL notes the checkpoint taken for the open world",
       [noted["checkpoint"], noted["world"], noted["mode"]], ["1", "w1", "behind"])
-check("with the story values the catch-up reads, the roster with each base level and cap, and the counts of its items and of every job or race item",
-      [noted["own"], noted["roster"], noted["items"], noted["unlocks"]],
-      [{ "s" => [4, 500], "v" => [[1001, 18], [1032, 5]], "ss" => [] }, [[1, 1, 12, 9999], [16, 16, 20, 9999]], { "i501" => 0, "i502" => 0, "i600" => 2, "i616" => 0 }, [616]])
+check("with the story values the catch-up reads, the roster with each base level and cap, and the counts of its items",
+      [noted["own"], noted["roster"], noted["items"]],
+      [{ "s" => [4, 500], "v" => [[1001, 18], [1032, 5]], "ss" => [] }, [[1, 1, 12, 9999], [16, 16, 20, 9999]], { "i501" => 0, "i502" => 0, "i600" => 2 }])
 check("and the world's summary, its companion sharing and the start levels of its shared companions",
       [noted["summary"]["part"], noted["sharing"], noted["starts"], noted["encounters"]], ["2", "off", [], true])
 check("the save keeps the notes the DLL answered", notes.call, { "world" => "w1", "checkpoint" => "1" })
@@ -469,7 +470,7 @@ $game_map.map_id = 3
 
 # The World overview's Unlocks page lists what the DLL answers, named from the game's data and
 # sorted by level, then kind and name.
-$data_items[622] = RPG::Item.new(622, "Soul of the Warrior God", "[Job] Allows access to advanced Warrior jobs.", false)
+$data_items[622] = RPG::Item.new(622, "Soul of the Warrior God", "[Job] Allows access to advanced Warrior jobs.")
 new_game({ 1001 => 9 }, [], 10)
 frames(1)
 relay({ "rev" => 31, "wrev" => 31, "p" => 9, "part" => "1" }, packed({ 1001 => 9 }))
@@ -482,8 +483,8 @@ check("the Unlocks page asks the DLL with the snapshot", answers.asked("catchup.
 check("and lists what it answers by level, a Makina the game lacks left out",
       unlocks.map { |unlock| [unlock.level, unlock.kind, unlock.name, unlock.got, unlock.due, unlock.id] },
       [[6, :makina, "Auto Crossbow", false, true, 700], [7, :companion, "Slime", true, false, 77], [25, :story, "Part 1", false, false, nil], [30, :makina, "Bio Blaster", false, false, 701]])
-check("moving on from a part lists the key items and job items first, then skills and items",
-      unlocks[2].gains.map { |gain| [gain.kind, gain.name, gain.amount] }, [[:key, "Pass", 1], [:unlock, "Soul of the Warrior God", 1], [:skill, "Angel Dance", 1], [:item, "Herb", 2]])
+check("moving on from a part lists the key items first, job items among them, then skills and items",
+      unlocks[2].gains.map { |gain| [gain.kind, gain.name, gain.amount] }, [[:key, "Pass", 1], [:key, "Soul of the Warrior God", 1], [:skill, "Angel Dance", 1], [:item, "Herb", 2]])
 
 # A Makina the player gets is found for the world, so every other player gets it by level; one held
 # before is noted at the next look at everything.

@@ -2,6 +2,7 @@
 //  StoryTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-11: Checked that a Raid look owes the untranslated game's job items by the events database
 //      Paulinchen  2026-11-08: Moved to the MGQOnline.Multiplayer namespace
 //      Paulinchen  2026-11-06: Wrote the story mapping out instead of reading a recorded one
 //      Paulinchen  2026-11-05: Expected the self switch rules as rows, refused a write the tracks' texts name and read the sites of an earlier release's save
@@ -150,6 +151,42 @@ public sealed class StoryTopicsTests
         RubyHash keys = Call(CatchupTopics.KeysTopic, RubyNil.Value).AsHash();
 
         Assert.Equal(330L, keys["orb_event"].AsLong());
+    }
+
+    /// <summary>
+    /// Asserts that a Raid look of the untranslated game owes a job item a reward row gave behind its
+    /// event's own self switch to a player who holds none, found by the events database's tag
+    /// 【転職用】, and nothing to a player who holds one.
+    /// </summary>
+    [Fact]
+    public void Catchup_OwesTheUntranslatedGamesJobItemsByTheEventsDatabase()
+    {
+        GameEvents events = TinyEvents.Of(new TinyGame()
+            .Entry("Data/Items.rvdata2", "RPG::Item", 601, ("name", "商人の証"), ("itype_id", 2), ("description", "【転職用】所持していれば「商人」に転職できる"))
+            .Entry("Data/Items.rvdata2", "RPG::Item", 602, ("name", "薬草"), ("itype_id", 1), ("description", "【道具】HPを回復する")));
+        _topics.Events = () => events;
+        CatchupTopics.Register(_context, () => _topics.Catchup, () => _topics.ClassicParty);
+        _topics.FetchMapping = (_, _) => JsonDocument.Parse("""
+            {"rev": 9, "tables": {"rewards": [
+              {"kind": "item", "id": 601, "amount": 1, "site": "map:36:18:1", "part": null, "step": null, "side": null, "marks": [["ss", 36, 18, "A"]], "ran": true},
+              {"kind": "item", "id": 602, "amount": 1, "site": "map:36:19:1", "part": null, "step": null, "side": null, "marks": [["ss", 36, 19, "A"]], "ran": true}]}, "index": null}
+            """);
+        Call(StoryTopics.EnterTopic, new RubyHash { { "world", "w1" }, { "fresh", false }, { "level", RubyNil.Value } });
+        Drain(1);
+        Drain(2);
+        RubyArray Gives(long held)
+        {
+            var own = new RubyHash { { "s", new RubyArray() }, { "v", new RubyArray() }, { "ss", new RubyArray { new RubyArray { 36, 18, "A" }, new RubyArray { 36, 19, "A" } } } };
+            RubyHash answer = Call(CatchupTopics.CheckTopic, new RubyHash
+            {
+                { "world", "w1" }, { "mode", "world" }, { "look", "tick" }, { "audit", true }, { "own", own }, { "told", own },
+                { "roster", new RubyArray { new RubyArray { 1, 1, 10, RubyNil.Value } } }, { "items", new RubyHash { { "i601", held }, { "i602", 0 } } },
+            }).AsHash();
+            return new RubyArray(answer["actions"].AsArray().Where(action => action.AsArray()[0].AsText() == "give"));
+        }
+
+        Assert.Equal(new RubyArray { new RubyArray { "give", "i", 601, 1, "g:map:36:18:1:i601:owed", true } }, Gives(0));
+        Assert.Empty(Gives(1));
     }
 
     /// <summary>

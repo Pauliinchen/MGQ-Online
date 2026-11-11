@@ -2,6 +2,7 @@
 //  CatchupLook.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-11: Took the items unlocking a job or race from the events database instead of the snapshot
 //      Paulinchen  2026-11-07: Gave a Classic member following a leader past the Great Decision the rows of the leader's side
 //      Paulinchen  2026-11-05: Named the chest a replay plays as [kind, key], and the site of a join, a setting and a replay as plain values
 //                            - Ran the catch-up of a Classic party's member as one look in the engine's Classic settings
@@ -55,8 +56,8 @@ namespace MGQOnline.Game.Catchup;
 /// The snapshot carries "world" (the open world's id), "ledger" (the save's notes, once after a
 /// load), "mode" ("world", "behind" or nil), "own", "told" and "before" (stories: "s" the switches
 /// on, "v" [id, value] each, "ss" the self switches on), "roster" ([id, persona, base level, cap]
-/// each), "items" (counts by "i", "w" or "a" and the id), "worn", "unlocks" (the items unlocking a
-/// job or race), "pick" (the side the save notes the player took along in
+/// each), "items" (counts by "i", "w" or "a" and the id), "worn", "pick" (the side the save notes
+/// the player took along in
 /// Iliasville: "alice" or "ilias", "" for a save of another player's starting save, nil while
 /// unknown), "encounters", "summary" (the world's summary),
 /// "sharing", "starts" ([companion, start level] each) and "start" (the story markers where the
@@ -164,10 +165,6 @@ internal sealed class CatchupLook
     /// </summary>
     private readonly HashSet<string> _worn = new(StringComparer.Ordinal);
 
-    /// <summary>
-    /// The items that unlock a job or a race.
-    /// </summary>
-    private readonly HashSet<long> _unlockIds = [];
 
     /// <summary>
     /// The switches of every choice's outcomes, each player's own in a Raid World.
@@ -295,7 +292,6 @@ internal sealed class CatchupLook
         }
 
         _worn.UnionWith(Texts(request["worn"]));
-        _unlockIds.UnionWith(Numbers(request["unlocks"]));
 
 
         _encounters = request["encounters"] is RubyBool { Flag: true };
@@ -1612,7 +1608,7 @@ internal sealed class CatchupLook
     /// <param name="told">The world's story.</param>
     private void RestockUnlockItems(StoryValues story, StoryValues? told)
     {
-        foreach (CatchupReward row in _tables.Rewards.Where(row => row.Kind == "item" && row.Ran && OwnSwitchMark(row.Place) && _unlockIds.Contains(row.Id)))
+        foreach (CatchupReward row in _tables.Rewards.Where(row => row.Kind == "item" && row.Ran && OwnSwitchMark(row.Place) && _tables.UnlockItems.Contains(row.Id)))
         {
             if (BeforeLog(row.Place) && PassedAny(row.Place, story, told) && _items.TryGetValue("i" + row.Id, out long count) && count == 0)
             {
@@ -1664,7 +1660,7 @@ internal sealed class CatchupLook
                 continue;
             }
 
-            if (!_items.ContainsKey(item) || (row.Kind == "item" && _unlockIds.Contains(row.Id)) || Held(item))
+            if (!_items.ContainsKey(item) || (row.Kind == "item" && _tables.UnlockItems.Contains(row.Id)) || Held(item))
             {
                 continue;
             }

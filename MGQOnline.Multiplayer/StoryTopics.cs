@@ -2,6 +2,7 @@
 //  StoryTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-11: Handed the catch-up the items unlocking a job or race from the events database
 //      Paulinchen  2026-11-08: Moved to the MGQOnline.Multiplayer namespace
 //      Paulinchen  2026-11-05: Left reading a frozen fight back to the frozen fights' own topics, which read every fight they take
 //                            - Handed the game's events to the list lookup, which reads the maps that differ from the game's own data
@@ -140,7 +141,8 @@ internal sealed partial class StoryTopics : IStoryTrackHost
 
     /// <summary>
     /// Gets the catch-up's tables the story mapping came with, with the items an event of the game
-    /// takes away from the events database; <see langword="null"/> before the mapping came.
+    /// takes away and those unlocking a job or race from the events database; <see langword="null"/>
+    /// before the mapping came.
     /// </summary>
     internal CatchupTables? Catchup
     {
@@ -151,9 +153,10 @@ internal sealed partial class StoryTopics : IStoryTrackHost
                 return null;
             }
 
-            if (tables.TakenItems.Count == 0 && Events().Store is { IsUsable: true } store)
+            if ((tables.TakenItems.Count == 0 || tables.UnlockItems.Count == 0) && Events().Store is { IsUsable: true } store)
             {
                 tables.NoteItemsTaken(store.ItemsTaken());
+                tables.NoteUnlockItems(store.UnlockItems());
             }
 
             return tables;

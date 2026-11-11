@@ -2,6 +2,7 @@
 #  world_catchup.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Left the items unlocking a job or race to the DLL, which reads them from the events database in every game language
 #      Paulinchen  2026-11-10: Left out the DLL's look while its question stays the one a quiet look last answered after a look at the roster's growth, and found the counted items once per revision of the mapping
 #      Paulinchen  2026-11-05: Named and read sites as plain values
 #                            - Added the world's shared companions through a topic, their ids as numbers
@@ -181,8 +182,8 @@ module MGQ_MpWorldCatchup
 
   # Something moving on from a part brings along.
   #
-  # @!attribute kind [Symbol] :key (a key item), :unlock (an item that unlocks a job or race),
-  #   :skill or :item.
+  # @!attribute kind [Symbol] :key (a key item, items unlocking a job or race among them), :skill or
+  #   :item.
   # @!attribute id [Integer] The item or skill.
   # @!attribute item_kind [String, nil] "i", "w" or "a" for an item, nil for a skill.
   # @!attribute amount [Integer] How many.
@@ -191,11 +192,7 @@ module MGQ_MpWorldCatchup
   Gain = Struct.new(:kind, :id, :item_kind, :amount, :name, :icon)
 
   # The order the gains of a move on are listed in.
-  GAIN_ORDER = [:key, :unlock, :skill, :item]
-
-  # The tag at the start of an item's description that tells it unlocks a job or a race, in the
-  # translation and the untranslated game.
-  UNLOCK_ITEM_TAG = /\A\s*[\[［](Job|Race|職業|種族)/
+  GAIN_ORDER = [:key, :skill, :item]
 
   # The game's script calls an actor change of the DLL's answers may name, which alone run.
   ACTOR_CALLS = [:persona_change, :level_adjust, :change_actor_ability, :force_change_equip, :change_actor_equip_stone, :set_actor_had]
@@ -583,7 +580,7 @@ module MGQ_MpWorldCatchup
     comps = world ? world["comps"].to_a : []
     {
       "mode" => MGQ_MpWorldStory.mode ? MGQ_MpWorldStory.mode.to_s : nil, "own" => keys ? values(story_now) : nil, "told" => @world_told, "roster" => roster_entries,
-      "items" => item_counts, "worn" => worn_items, "unlocks" => unlock_ids, "pick" => pick_now,
+      "items" => item_counts, "worn" => worn_items, "pick" => pick_now,
       "encounters" => !$game_system.encounter_disabled, "summary" => world, "sharing" => sharing.to_s, "starts" => comps.map { |id| [id, start_level(id)] },
       "log" => (log = MGQ_MpWorldStory.log_story) && keys ? values(log) : nil,
     }
@@ -650,8 +647,7 @@ module MGQ_MpWorldCatchup
     end.compact
   end
 
-  # Counts the items the DLL's catch-up reads (see keys) and those that unlock a job or a race that
-  # the game has.
+  # Counts the items the DLL's catch-up reads (see keys).
   #
   # @return [Hash{String => Integer}] The counts by "i<id>", "w<id>" or "a<id>".
   def self.item_counts
@@ -667,7 +663,7 @@ module MGQ_MpWorldCatchup
     return @counted if @counted && @counted_rev == @keys_rev
 
     found = {}
-    ((keys ? keys["items"] : []) + unlock_ids.map { |id| "i#{id}" }).each do |key|
+    (keys ? keys["items"] : []).each do |key|
       item = found.key?(key) ? nil : MGQ_MpGame.item(key[0, 1], key[1..-1].to_i)
       found[key.dup.freeze] = item if item
     end
@@ -695,12 +691,6 @@ module MGQ_MpWorldCatchup
     nil
   end
 
-  # Lists the items of the game that unlock a job or a race, see unlock_item?.
-  #
-  # @return [Array<Integer>] The items.
-  def self.unlock_ids
-    @unlock_ids ||= ($data_items || []).select { |item| unlock_item?(item) }.map { |item| item.id }
-  end
 
   # Calls a catch-up topic of the DLL with the open world and, once after a load, the save's notes,
   # and keeps the notes it answers; forgets the question a quiet look kept, since the call may change
@@ -1106,13 +1096,7 @@ module MGQ_MpWorldCatchup
     item = MGQ_MpGame.item(kind, id)
     return nil unless item
 
-    sort = if kind == "i" && item.respond_to?(:key_item?) && item.key_item?
-             :key
-           elsif item.description.to_s =~ UNLOCK_ITEM_TAG
-             :unlock
-           else
-             :item
-           end
+    sort = kind == "i" && item.respond_to?(:key_item?) && item.key_item? ? :key : :item
     Gain.new(sort, id, kind, 0, item.name.to_s, item.icon_index.to_i)
   end
 
@@ -1187,13 +1171,6 @@ module MGQ_MpWorldCatchup
     keys["makina"].each { |id| gained($data_items[id], 1) if $data_items[id] && $game_party.item_number($data_items[id]) > 0 }
   end
 
-  # Reports whether an item unlocks a job or a race.
-  #
-  # @param item [RPG::BaseItem, nil] The item.
-  # @return [Boolean] Whether it does.
-  def self.unlock_item?(item)
-    item.is_a?(RPG::Item) && item.description.to_s =~ UNLOCK_ITEM_TAG ? true : false
-  end
 
   # Logs what the story gave the player at once.
   #

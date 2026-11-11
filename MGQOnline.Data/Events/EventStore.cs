@@ -2,6 +2,7 @@
 //  EventStore.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-11: Listed the items that unlock a job or a race
 //      Paulinchen  2026-11-05: Listed the items, weapons and armors an event takes away
 //                            - Read the variable of the extended choices' answers from the meta table
 //                            - Listed the battlefuck events once per store
@@ -487,6 +488,12 @@ public sealed class EventStore : IDisposable
     public IReadOnlyList<string> ItemsTaken() =>
         [.. Ids("SELECT DISTINCT (code - 126) * 1000000 + p0 FROM commands WHERE code BETWEEN 126 AND 128 AND p1 = 1 AND p2 = 0 ORDER BY 1")
             .Select(code => string.Create(CultureInfo.InvariantCulture, $"{"iwa"[code / 1000000]}{code % 1000000}"))];
+
+    /// <summary>
+    /// Lists the items that unlock a job or a race when used.
+    /// </summary>
+    /// <returns>Their ids in order; none for a foreign store.</returns>
+    public IReadOnlyList<int> UnlockItems() => Ids($"SELECT id FROM items WHERE kind = {(int)ItemKind.Item} AND unlock_class <> {(int)UnlockClass.None} ORDER BY id");
 
     /// <summary>
     /// Reads the branches of a Show Choices command or an extended choice's script command.

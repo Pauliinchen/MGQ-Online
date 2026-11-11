@@ -143,9 +143,9 @@ internal static partial class IdFlags
     private static partial Regex ScratchName();
 
     /// <summary>
-    /// The tag at the start of an item's description that tells it unlocks a job or a race:
-    /// world_catchup.rbx's UNLOCK_ITEM_TAG, with 【転職用】, the untranslated game's tag of the items
-    /// the translation tags [Job].
+    /// The tag at the start of an item's description that tells it unlocks a job or a race: [Job] or
+    /// [Race], 職業 or 種族 in either kind of bracket, and 【転職用】, the untranslated game's tag of the
+    /// items the translation tags [Job].
     /// </summary>
     /// <returns>The pattern.</returns>
     [GeneratedRegex(@"\A[ \t\r\n\f\v]*(?:[\[［](?:Job|職業)|【転職用】|(?<race>[\[［](?:Race|種族)))", RegexOptions.CultureInvariant)]

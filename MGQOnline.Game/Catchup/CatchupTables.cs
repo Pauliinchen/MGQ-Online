@@ -2,6 +2,7 @@
 //  CatchupTables.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-11: Kept the items unlocking a job or race, as the events database lists them
 //      Paulinchen  2026-11-05: Dropped the counts of prizes, which the story replay hands over after the log
 //                            - Kept the items an event of the game takes away, which the reward repair never gives back
 //      Paulinchen  2026-11-01: Kept which players the companions of the Alice and Ilias choice may join
@@ -117,6 +118,12 @@ public sealed class CatchupTables
     public IReadOnlySet<string> TakenItems { get; private set; } = new HashSet<string>(StringComparer.Ordinal);
 
     /// <summary>
+    /// Gets the items that unlock a job or a race, from the events database
+    /// (<see cref="NoteUnlockItems"/>).
+    /// </summary>
+    public IReadOnlySet<long> UnlockItems { get; private set; } = new HashSet<long>();
+
+    /// <summary>
     /// Gets the least a variable holds once a companion is in the roster.
     /// </summary>
     public IReadOnlyList<CompanionValue> CompanionValues { get; private set; } = [];
@@ -216,6 +223,18 @@ public sealed class CatchupTables
         if (TakenItems.Count == 0)
         {
             TakenItems = new HashSet<string>(items, StringComparer.Ordinal);
+        }
+    }
+
+    /// <summary>
+    /// Keeps the items that unlock a job or a race, as the events database lists them, once.
+    /// </summary>
+    /// <param name="items">The items' ids.</param>
+    public void NoteUnlockItems(IEnumerable<int> items)
+    {
+        if (UnlockItems.Count == 0)
+        {
+            UnlockItems = new HashSet<long>(items.Select(id => (long)id));
         }
     }
 

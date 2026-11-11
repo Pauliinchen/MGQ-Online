@@ -2,6 +2,7 @@
 #  world_overview_pages.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Listed the items unlocking a job or race among the key items, as the catch-up names them
 #      Paulinchen  2026-11-09: Lined the labels' column up by every entry's label, folded ones too, measured by the Mod Framework
 #                            - Lined the Unlocks page's grid up in a grid of the Mod Framework
 #                            - Showed the head's values with their captions as fields of the Mod Framework
@@ -343,9 +344,9 @@ module MGQ_MpWorldOverview
     texts.each_with_index.inject([]) { |lines, (text, index)| lines + (index > 0 ? [[:gap]] : []) + [[:text, text]] }
   end
 
-  # Lays a level out for the pane: what it brings in groups half a line apart, the key items and the
-  # items that unlock a job or a race first, then moving on, the companions, the skills, the Makina and
-  # the other items; a note every one of them shares stands once in the title.
+  # Lays a level out for the pane: what it brings in groups half a line apart, the key items first,
+  # then moving on, the companions, the skills, the Makina and the other items; a note every one of
+  # them shares stands once in the title.
   #
   # @param entry [Level] The level.
   # @return [Pane] The pane.
@@ -367,7 +368,7 @@ module MGQ_MpWorldOverview
         groups[:makina] << PaneItem.new(unlock.icon, nil, unlock.name, note, unlock.got)
       end
     end
-    kinds = [:key, :unlock, :story, :companion, :skill, :makina, :item].map { |kind| groups[kind] }.reject(&:empty?)
+    kinds = [:key, :story, :companion, :skill, :makina, :item].map { |kind| groups[kind] }.reject(&:empty?)
     title = LEVEL_HEADING % entry.level
     title = LEVEL_PASSED % title if entry.got
     notes = kinds.flatten.map { |item| item.note }.uniq

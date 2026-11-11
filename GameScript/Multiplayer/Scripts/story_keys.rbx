@@ -2,6 +2,7 @@
 #  story_keys.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Found the items unlocking a job or race as the key items the game makes them, without a tag of their own
 #      Paulinchen  2026-11-08: Asked the DLL which classes of keys are shared in a story, side switches included
 #      Paulinchen  2026-11-06: Logged a full batch once, without the frame in its key
 #      Paulinchen  2026-11-05: Handed the DLL every key as [kind, key], every value as itself and every site as [kind, ...], and looked self switches up in the rows of rules it hands, so only the DLL writes and reads the tracks' texts
@@ -1268,8 +1269,8 @@ module MGQ_MpStoryKeys
   end
 
   # Reports whether an item is a found item, which a run that gives or uses it up hands over even
-  # where it changed no shared key: a key item the game does not tag as a plain item, ores and CDs
-  # among them, or an item unlocking a job or a race.
+  # where it changed no shared key: a key item the game does not tag as a plain item, ores, CDs and
+  # the items unlocking a job or a race among them.
   #
   # @param item [RPG::BaseItem, nil] The item.
   # @return [Boolean] Whether it is.
@@ -1277,7 +1278,7 @@ module MGQ_MpStoryKeys
     return false unless defined?(RPG::Item) && item.is_a?(RPG::Item)
 
     described = item.respond_to?(:description) ? item.description.to_s : ""
-    (item.key_item? && described !~ PLAIN_ITEM_TAG) || (defined?(MGQ_MpWorldCatchup) && MGQ_MpWorldCatchup.unlock_item?(item)) ? true : false
+    item.key_item? && described !~ PLAIN_ITEM_TAG ? true : false
   end
 
   # Lets a change of what the party holds happen, and notes how many of a found item it gave or used
