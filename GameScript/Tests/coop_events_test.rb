@@ -2,7 +2,8 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-11: Checked that a sort whose values the DLL names over many rounds still sorts the list
+#      Paulinchen  2026-11-11: Checked that a story common event that runs by itself waits for a watched telling's story and during a follow, as a story event of the map does
+#                            - Checked that a sort whose values the DLL names over many rounds still sorts the list
 #      Paulinchen  2026-11-06: Kept the screen of choices open through the script's open_screen
 #                            - Set the sorts of its own lists, answered a Classic member's play with fixed values and dropped the Classic catch-up checks that replayed recorded answers
 #      Paulinchen  2026-11-05: Answered the scopes of a Classic party and the companion filter with fixed values instead of from copies of the C# rules
@@ -1415,12 +1416,14 @@ check("the end of the map's main event ends the telling, so a later message, suc
 # Whether the world is a Raid World, from $raid.
 module MGQ_MpWorld; def self.raid?; $raid; end; end
 # The world's story: the player's track from $track, the tellings the relay told of on it from
-# $tellings, by seat, and whether the player's story events wait for it from $await_world.
+# $tellings, by seat, whether the player's story events wait for it from $await_world, and for
+# the story of Teller's telling they watched from $await_teller.
 module MGQ_MpWorldStory
   def self.track; $track; end
   def self.telling_of(seat); $tellings[seat]; end
   def self.awaits_world?; $await_world ? true : false; end
-  def self.awaits_teller?; false; end
+  def self.awaits_teller?; $await_teller ? true : false; end
+  def self.watched_teller; "Teller"; end
 end
 $track = "world"
 $tellings = {}
@@ -1710,6 +1713,19 @@ check("story events wait for the world's story, without a word",
 check("talks run meanwhile", MGQ_MpCoopEvents.hand_over(behind_talk), false)
 $await_world = false
 check("once it came, they start", [MGQ_MpCoopEvents.hand_over(behind_story), $game_map.setup_autorun_common_event], [false, behind_common])
+
+# Once the telling the player watched ended and nobody tells here, their story waits for the
+# world's story of it, the story that runs by itself too, or they would play the scene again.
+$await_teller = true
+$notices.clear
+$log.clear
+held = [MGQ_MpCoopEvents.hand_over(behind_story), $game_map.setup_autorun_common_event]
+2.times { $game_map.setup_autorun_common_event }
+check("until the world's story of a telling the player watched arrived, their story events wait, those that run by themselves too, logged once",
+      [held, $notices, $log.grep(/kept common event \S+ that runs by itself from starting: the world's story of the telling the player watched \(Teller\) has not arrived yet/).size],
+      [[true, nil], ["Waiting for Teller's story . . ."], 1])
+$await_teller = false
+check("once it arrived, they start", [MGQ_MpCoopEvents.hand_over(behind_story), $game_map.setup_autorun_common_event], [false, behind_common])
 $data_common_events[4] = nil
 raw($game_switches)[70] = false
 
@@ -1812,6 +1828,18 @@ check("the player follows as soon as they are free, the pages asked for naming w
       [$game_player.reserved, $tells.asked("pages.next").last["giving_way"].nil?, $game_message.texts], [[432, 0, 0, 2], false, []])
 $tells.set("gather.take", nil)
 check("and starts no story event on the way either", [MGQ_MpCoopEvents.hand_over(own_copy), MGQ_MpCoop::Scope.teller], [true, teller])
+# The teller seen on another map than the one the follow names is no teller of the player's
+# anymore, and the follow alone still holds their story, the story that runs by itself too.
+follow_common = RPG::CommonEvent.new([c(101, "", 0, 0, 2), c(121, 60, 60, 0)])
+follow_common.switch_id = 70
+$data_common_events[4] = follow_common
+raw($game_switches)[70] = true
+teller.state["map"] = "9"
+check("a follow whose teller stands elsewhere still holds the player's story, the story that runs by itself too",
+      [MGQ_MpCoop::Scope.teller, MGQ_MpCoopEvents.hand_over(own_copy), $game_map.setup_autorun_common_event], [nil, true, nil])
+teller.state["map"] = "432"
+$data_common_events[4] = nil
+raw($game_switches)[70] = false
 $game_player.perform_transfer
 calls.call("follow" => { "id" => "t", "name" => "Teller", "place" => [432, 0, 0, 2] })
 $tells.set("pages.next", "show" => { "page" => "m.1", "face" => "", "index" => 0, "background" => 0, "position" => 2, "lines" => ["Moved line"] },

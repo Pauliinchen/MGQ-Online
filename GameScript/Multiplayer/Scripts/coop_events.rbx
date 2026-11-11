@@ -2,7 +2,8 @@
 #  coop_events.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-11: Handed a sort the values the DLL names until it names no new one, and logged why an ask gave no answer
+#      Paulinchen  2026-11-11: Kept a story common event that runs by itself under the same holds as a story event of the map, through one shared check
+#                            - Handed a sort the values the DLL names until it names no new one, and logged why an ask gave no answer
 #      Paulinchen  2026-11-05: Took the self switches a sort needs as the game keys them
 #                            - Told whether the player's story scene plays as true or false
 #                            - Asked the DLL's one decision whether a list is the player's own, a Pocket Castle resident's or a resumed raid fight's, and whether a telling moves the world's story on
@@ -1172,11 +1173,9 @@ module MGQ_MpCoopEvents
   end
 
   # Keeps a member's story event from starting: only the leader starts story, in their own game.
-  # In a Raid World only while another player tells the story on the map, while the player follows
-  # a teller's story to where it moved them (held_following), while the player's story is behind
-  # the world's and the event would end their part (held_behind?), or until the world's story came
-  # (awaits_world_story). Called when the map's main event would start it. A new game's opening never starts while world_opening.rbx runs
-  # its setup without its scene.
+  # In a Raid World only while another player tells the story on the map, or while a hold of
+  # story_hold lasts, which keep_held tells of. A new game's opening never starts while
+  # world_opening.rbx runs its setup without its scene.
   #
   # An event that runs by itself is left to the teller's own game, which runs it on its map.
   #
@@ -1184,15 +1183,16 @@ module MGQ_MpCoopEvents
   # @return [Boolean] Whether it is the teller's, so it must not run here.
   def self.hand_over(event)
     return true if defined?(MGQ_MpWorldOpening) && MGQ_MpWorldOpening.holds?(event)
-    return awaits_world_story(event) if defined?(MGQ_MpWorldStory) && MGQ_MpWorldStory.awaits_world? && kind(event) == :story
-    return true if behind? && kind(event) == :story && held_behind?(event)
+    return false unless kind(event) == :story
 
-    follow = MGQ_MpCoopGather.follow_taken
-    return held_following(event, follow) if follow && kind(event) == :story
+    hold = story_hold(event.list || [], event, "story event #{event.id} on map #{$game_map.map_id}")
+    if hold
+      keep_held(event, hold[0], hold[1])
+      return true
+    end
 
     lead = MGQ_MpCoop::Scope.teller
-    return awaits_told_story?(event) unless lead.is_a?(MGQ_MpOverworldSync::Peers::Peer)
-    return false unless kind(event) == :story
+    return false unless lead.is_a?(MGQ_MpOverworldSync::Peers::Peer)
     unless following?
       log_once([:own_story, $game_map.map_id, event.id, lead.state["id"].to_s], "story event #{event.id} on map #{$game_map.map_id} runs in the player's own game: not synced with #{MGQ_MpOverworldSync.who(lead)}, the player plays their own story")
       return false
@@ -1211,6 +1211,69 @@ module MGQ_MpCoopEvents
   rescue => e
     log("keeping a story event from starting failed: #{e.class}: #{e.message}")
     false
+  end
+
+  # Finds the first hold that keeps story from starting, the same for a story event of the map and
+  # a story common event that runs by itself: until the world's story came since the world opened
+  # or a save loaded (MGQ_MpWorldStory.awaits_world?), while the player's story is behind the
+  # world's and the list would end their part (leaving_part), while the player follows a teller's
+  # story to where it moved them (MGQ_MpCoopGather.follow_taken), and, with no teller on the map,
+  # until the world's story of a telling the player watched arrived (MGQ_MpWorldStory.awaits_teller?).
+  # Logs once per site that story may start while the player is behind and it stays in their part.
+  #
+  # Every hold lapses by itself: the two waits have frame limits and the DLL ends the follow.
+  #
+  # @param list [Array<RPG::EventCommand>] The commands, sorted as story.
+  # @param event [Game_Event, nil] The event whose page the list is, nil for a common event.
+  # @param site [String] What would start, for the log, such as "common event 12".
+  # @return [Array(Symbol, String), nil] The hold, :world, :behind, :following or :teller, and why;
+  #   nil for none.
+  def self.story_hold(list, event, site)
+    world = defined?(MGQ_MpWorldStory)
+    return [:world, "the world's story has not come yet"] if world && MGQ_MpWorldStory.awaits_world?
+
+    if behind?
+      why = leaving_part(list, event)
+      return [:behind, "the player's story is behind the world's and #{why}"] if why
+
+      log_once([:behind_runs, site], "#{site} may start while the player's story is behind the world's: it moves nothing past the end of their part")
+    end
+    follow = MGQ_MpCoopGather.follow_taken
+    return [:following, "the player follows #{follow[:name]}'s story to map #{follow[:place][0]}"] if follow
+    return nil unless world && MGQ_MpWorldStory.awaits_teller? && !MGQ_MpCoop::Scope.teller.is_a?(MGQ_MpOverworldSync::Peers::Peer)
+
+    teller = MGQ_MpWorldStory.watched_teller
+    [:teller, "the world's story of the telling the player watched#{teller ? " (#{teller})" : ''} has not arrived yet"]
+  end
+
+  # Tells of a story event of the map a hold keeps from starting, see story_hold. The player hears
+  # the level that moves them on, or whose telling their story waits for, once per event in
+  # REFUSE_FRAMES, since an event the player stands on starts again with every step; one behind
+  # that runs by itself waits silently, so a teleport onto its map cannot loop. The waits for the
+  # world's story and for a follow are only logged, once per event: they last a moment, and the
+  # line above the player's head says whom they join.
+  #
+  # @param event [Game_Event] The story event.
+  # @param hold [Symbol] The hold, see story_hold.
+  # @param reason [String] Why it holds.
+  def self.keep_held(event, hold, reason)
+    map = $game_map.map_id
+    case hold
+    when :world, :following
+      log_once([hold, map, event.id], "kept event #{event.id} on map #{map} from starting: #{reason}")
+    when :behind
+      if event.trigger == 3
+        log_once([:behind_autorun, map, event.id], "kept event #{event.id} on map #{map} that runs by itself from starting: #{reason}")
+      elsif !refused_lately?([map, event.id])
+        log("kept story event #{event.id} on map #{map} from starting: #{reason}")
+        MGQ_MpOverworldSync.notice(MGQ_MpWorldCatchup.refusal_text)
+      end
+    when :teller
+      unless refused_lately?([:await, map, event.id])
+        log("kept story event #{event.id} on map #{map} from starting: #{reason}")
+        MGQ_MpOverworldSync.notice(format(AWAIT_TOLD_TEXT, MGQ_MpWorldStory.watched_teller || "another player"))
+      end
+    end
   end
 
   # Reports whether the player's game keeps its own copy of a teller's story event that runs by
@@ -1294,82 +1357,6 @@ module MGQ_MpCoopEvents
     answer && answer["moves"] == true ? true : false
   end
 
-  # Keeps a story event from starting while the player's story is behind the world's and the event
-  # would move it past the end of their part (see leaving_part): one they start tells the level that
-  # moves them on, once per event in REFUSE_FRAMES, and one that runs by itself waits silently, so a
-  # teleport onto its map cannot loop.
-  #
-  # @param event [Game_Event] The story event.
-  # @return [Boolean] Whether it must not run.
-  def self.held_behind?(event)
-    why = leaving_part(event.list || [], event)
-    unless why
-      log_once([:behind_runs, $game_map.map_id, event.id], "story event #{event.id} on map #{$game_map.map_id} may start while the player's story is behind the world's: it moves nothing past the end of their part")
-      return false
-    end
-    if event.trigger == 3
-      log_once([:behind_autorun, $game_map.map_id, event.id], "kept event #{event.id} on map #{$game_map.map_id} that runs by itself from starting: the player's story is behind the world's and #{why}")
-      return true
-    end
-
-    return true if refused_lately?([$game_map.map_id, event.id])
-
-    log("kept story event #{event.id} on map #{$game_map.map_id} from starting: the player's story is behind the world's and #{why}")
-    MGQ_MpOverworldSync.notice(MGQ_MpWorldCatchup.refusal_text)
-    true
-  end
-
-  # Keeps a story event from starting in a Raid World while the world's story has not come since
-  # the world opened or a save loaded, see MGQ_MpWorldStory.awaits_world?. Logged once per event and
-  # never noticed, since it lasts a moment.
-  #
-  # @param event [Game_Event] The story event.
-  # @return [Boolean] Always true: it must not run yet.
-  def self.awaits_world_story(event)
-    log_once([:await_world, $game_map.map_id, event.id], "kept event #{event.id} on map #{$game_map.map_id} from starting: the world's story has not come yet")
-    true
-  end
-
-  # Keeps a story event from starting while the player follows a teller's story to where it moved
-  # them, see MGQ_MpCoopGather.follow_taken: the player's own copy of that story would otherwise
-  # start while the teller's state says they tell nothing, as it does between the story's events.
-  # Logged once per event and never noticed, since the line above the player's head says whom they
-  # join.
-  #
-  # @param event [Game_Event] The story event.
-  # @param follow [Hash] The follow, see MGQ_MpCoopGather.follow_taken.
-  # @return [Boolean] Always true: it must not run.
-  def self.held_following(event, follow)
-    log_once([:following, $game_map.map_id, event.id],
-             "kept event #{event.id} on map #{$game_map.map_id} from starting: the player follows #{follow[:name]}'s story to map #{follow[:place][0]}")
-    true
-  end
-
-  # Keeps a story event from starting in a Raid World while the world's story of a telling the
-  # player watched on the map has not arrived yet, see MGQ_MpWorldStory.awaits_teller?.
-  #
-  # @param event [Game_Event] The event.
-  # @return [Boolean] Whether it must not run yet.
-  def self.awaits_told_story?(event)
-    return false unless defined?(MGQ_MpWorldStory) && MGQ_MpWorldStory.awaits_teller? && kind(event) == :story
-
-    tell_await(event)
-    true
-  end
-
-  # Tells the player that their story event waits for the world's story of a telling they watched,
-  # once per event in REFUSE_FRAMES, since an event the player stands on starts again with every
-  # step.
-  #
-  # @param event [Game_Event] The story event.
-  def self.tell_await(event)
-    return if refused_lately?([:await, $game_map.map_id, event.id])
-
-    teller = MGQ_MpWorldStory.watched_teller
-    log("kept story event #{event.id} on map #{$game_map.map_id} from starting: the world's story of the telling the player watched#{teller ? " (#{teller})" : ''} has not arrived yet")
-    MGQ_MpOverworldSync.notice(format(AWAIT_TOLD_TEXT, teller || "another player"))
-  end
-
   # Tells the member that only the teller moves the story on, once per event in REFUSE_FRAMES,
   # since an event the player stands on starts again with every step.
   #
@@ -1406,29 +1393,26 @@ module MGQ_MpCoopEvents
     MGQ_Multiplayer::Bridge.frame_number - since.to_i >= frames
   end
 
-  # Reports whether a common event that runs by itself is left to the teller's game, or held while
-  # the player's story is behind a Raid World's.
+  # Reports whether a story common event that runs by itself is held, as a story event of the map
+  # is (see story_hold), or left to the teller's game. A hold is logged once per common event and
+  # never noticed.
   #
   # @param common [RPG::CommonEvent] The common event.
   # @return [Boolean] Whether it is.
   def self.leave_to_leader?(common)
-    story = lambda { kind_of(common.list || []) == :story }
-    if defined?(MGQ_MpWorldStory) && MGQ_MpWorldStory.awaits_world? && story.call
-      log_once([:await_world_common, common.respond_to?(:id) ? common.id : "?"], "kept common event #{common.respond_to?(:id) ? common.id : '?'} that runs by itself from starting: the world's story has not come yet")
-      return true
-    end
-    why = behind? && story.call ? leaving_part(common.list || []) : nil
-    if why
-      log_once([:behind_common, common.respond_to?(:id) ? common.id : "?"], "kept common event #{common.respond_to?(:id) ? common.id : '?'} that runs by itself from starting: the player's story is behind the world's and #{why}")
+    list = common.list || []
+    return false unless kind_of(list) == :story
+
+    id = common.respond_to?(:id) ? common.id : "?"
+    hold = story_hold(list, nil, "common event #{id}")
+    if hold
+      log_once([:held_common, id, hold[0]], "kept common event #{id} that runs by itself from starting: #{hold[1]}")
       return true
     end
 
     lead = MGQ_MpCoop::Scope.teller
-    left = lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && following? && story.call
-    if left
-      id = common.respond_to?(:id) ? common.id : "?"
-      log_once([:common, id, lead.state["id"].to_s], "kept common event #{id} that runs by itself from starting: it is story, which #{MGQ_MpOverworldSync.who(lead)}'s game runs")
-    end
+    left = lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && following?
+    log_once([:common, id, lead.state["id"].to_s], "kept common event #{id} that runs by itself from starting: it is story, which #{MGQ_MpOverworldSync.who(lead)}'s game runs") if left
     left
   rescue
     false
