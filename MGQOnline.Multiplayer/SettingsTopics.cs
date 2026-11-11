@@ -2,6 +2,7 @@
 //  SettingsTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-11: Dropped the slot to resume, since the single player settings no longer restart the game
 //      Paulinchen  2026-11-08: Moved to the MGQOnline.Multiplayer namespace
 //      Paulinchen  2026-11-05: Handed the chat's size, the slot to resume and the switches as values, read from the texts every release wrote, and took a whole number or a switch to keep
 //      Paulinchen  2026-10-23: Shared the state of Player.ini with the lists of worlds
@@ -73,7 +74,6 @@ internal static class SettingsTopics
     private static readonly Dictionary<string, Func<string, RubyValue>> Values = new(StringComparer.Ordinal)
     {
         ["chat_size"] = SizeOf,
-        ["resume_slot"] = SlotOf,
         ["sp_raid_bosses"] = FlagOf,
         ["leader_hud"] = FlagOf,
         ["sp_leader_hud"] = FlagOf,
@@ -174,15 +174,6 @@ internal static class SettingsTopics
         string[] parts = text.Split('x');
         return parts.Length == 2 && WorldFields.ToI(parts[0]) is > 0 and var width && WorldFields.ToI(parts[1]) is > 0 and var height ? new RubyArray { width, height } : RubyNil.Value;
     }
-
-    /// <summary>
-    /// Reads the slot a game kept for a restart was last saved to or loaded from: a number for a
-    /// save slot, the name of an autosave.
-    /// </summary>
-    /// <param name="text">The text.</param>
-    /// <returns>The slot's number, else the text.</returns>
-    private static RubyValue SlotOf(string text) =>
-        text.Length > 0 && text.All(char.IsAsciiDigit) && long.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out long slot) ? slot : text;
 
     /// <summary>
     /// Reads a switch as Player.ini keeps it, 1 or 0.

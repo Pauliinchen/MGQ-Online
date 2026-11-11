@@ -2,6 +2,7 @@
 #  Multiplayer.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-11: Dropped the action after a restart that went on from the game kept for the single player settings
 #      Paulinchen  2026-11-07: Greyed the title's Multiplayer command while the mod cannot run, through the Mod Framework's disabled:
 #                            - Dropped the hand-over of the 0.6.9 settings to the Mod Framework, which players pick again once
 #      Paulinchen  2026-11-06: Told the player in the game's message box where to get the Mod Framework when it is not installed
@@ -542,10 +543,6 @@ module MGQ_Multiplayer
     # update of the mod.
     OPEN_ACTION = "multiplayer.open"
 
-    # The Mod Framework's action after a restart that goes on from the game kept for it, see
-    # MGQ_MpSinglePlayer.restart.
-    RESUME_ACTION = "multiplayer.resume"
-
     # The Mod Framework's action after a restart that takes a Discord invite taken during the game
     # again, its join secret the value, see MGQ_MpWorld::Invite.receive.
     INVITE_ACTION = "multiplayer.invite"
@@ -586,7 +583,6 @@ module MGQ_Multiplayer
       ::Mod_Framework::Run.on_close(TAG) { MGQ_Multiplayer.closing($!) }
       ::Mod_Framework::Mods.after_restart(REJOIN_ACTION, TAG) { |world| MGQ_Multiplayer::Stages.rejoin(world) }
       ::Mod_Framework::Mods.after_restart(OPEN_ACTION, TAG) { |_value| MGQ_Multiplayer::Stages.open_worlds }
-      ::Mod_Framework::Mods.after_restart(RESUME_ACTION, TAG) { |_value| MGQ_Multiplayer::Stages.enter("the game kept for a restart") }
       ::Mod_Framework::Mods.after_restart(INVITE_ACTION, TAG) { |code| MGQ_Multiplayer::Stages.invite(code) }
       ::Mod_Framework::Run.on_start(TAG, :first => true) { MGQ_Multiplayer::Stages.load_title }
     end

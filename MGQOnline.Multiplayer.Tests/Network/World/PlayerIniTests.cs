@@ -2,6 +2,7 @@
 //  PlayerIniTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-11: Dropped the slot to resume from the settings handed as values
 //      Paulinchen  2026-11-08: Moved to the MGQOnline.Multiplayer namespace
 //      Paulinchen  2026-11-05: Covered the chat's size, the slot to resume and the switches handed as values
 //      Paulinchen  2026-10-23: Created
@@ -162,24 +163,21 @@ public sealed class PlayerIniTests : IDisposable
 
     /// <summary>
     /// Asserts that the settings the scripts read as values come from the texts a Player.ini of an
-    /// earlier release keeps, a switch kept as true written as 1, and a slot kept as a number reading
-    /// back as one, a name as its text.
+    /// earlier release keeps, and a switch kept as true is written as 1.
     /// </summary>
     [Fact]
-    public void Topics_HandTheChatSizeTheSlotAndTheSwitchesAsValues()
+    public void Topics_HandTheChatSizeAndTheSwitchesAsValues()
     {
-        File.WriteAllText(_path, "id=abc\nchat_size=450x8\nresume_slot=3\nleader_hud=0\n");
+        File.WriteAllText(_path, "id=abc\nchat_size=450x8\nleader_hud=0\n");
         var context = new BridgeContext(1, new NoLog());
         SettingsTopics.Register(context, Open());
 
         var kept = (RubyHash)((RubyHash)Call(context, SettingsTopics.StateTopic, RubyNil.Value)["value"])["values"];
-        var saved = (RubyHash)((RubyHash)Call(context, SettingsTopics.ChangeTopic, new RubyHash { { "resume_slot", 2 }, { "party_box_small", true } })["value"])["values"];
-        var autosave = (RubyHash)((RubyHash)Call(context, SettingsTopics.ChangeTopic, new RubyHash { { "resume_slot", "auto" } })["value"])["values"];
+        var saved = (RubyHash)((RubyHash)Call(context, SettingsTopics.ChangeTopic, new RubyHash { { "party_box_small", true } })["value"])["values"];
 
-        Assert.Equal((new RubyArray { 450, 8 }, (RubyValue)3, (RubyValue)false), (kept["chat_size"], kept["resume_slot"], kept["leader_hud"]));
-        Assert.Equal((2L, true), (saved["resume_slot"].AsLong(), saved["party_box_small"].AsBool()));
-        Assert.Equal("auto", autosave["resume_slot"].AsText());
-        Assert.Equal("id=abc\nchat_size=450x8\nleader_hud=0\nparty_box_small=1\nresume_slot=auto\n", File.ReadAllText(_path));
+        Assert.Equal((new RubyArray { 450, 8 }, (RubyValue)false), (kept["chat_size"], kept["leader_hud"]));
+        Assert.True(saved["party_box_small"].AsBool());
+        Assert.Equal("id=abc\nchat_size=450x8\nleader_hud=0\nparty_box_small=1\n", File.ReadAllText(_path));
     }
 
     /// <summary>
