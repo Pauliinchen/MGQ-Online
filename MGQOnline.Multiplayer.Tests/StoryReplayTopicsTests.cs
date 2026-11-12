@@ -2,6 +2,8 @@
 //  StoryReplayTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-12: Counted failed replays in place of replays that ran out of time
+//                            - Covered a run given up after its third replay ran out of time, its count kept in the save, and a save that keeps no counts
 //      Paulinchen  2026-11-11: Named the inputs by their commands' codes and numbers, and took runs without the shapes of the player's lists
 //                            - Checked that an earlier release's entry takes the opener's answers by their new names, a number at its Input Number
 //                            - Entered the story without a level, as the scripts now do
@@ -462,6 +464,68 @@ public sealed class StoryReplayTopicsTests
 
         Assert.Equal(new RubyHash { { "waits", "derived:map:1:7:1" } }, Call(StoryTopics.ReplayDeriveTopic, request));
         Assert.Equal(new RubyArray { derived }, Call(StoryTopics.ReplayDueTopic, new RubyHash { { "values", new RubyArray { Row(Variable(1001), 5) } } }));
+    }
+
+    /// <summary>
+    /// Asserts that a page of the player's history whose replay fails is tried again when what it
+    /// read changes, its count kept in a save made while it waits to be taken, and that after the
+    /// third failure it is never due nor derived again (U26: the Queen's Cup final froze the game in
+    /// each session it was retried, and a script error restaged it on every change of its reads).
+    /// </summary>
+    [Fact]
+    public void Done_GivesUpARunAfterItsThirdReplayFailed()
+    {
+        RubyHash request = new() { { "site", Page(1, 7, 1) }, { "closes", new RubyArray { Self(1, 7, "A") } }, { "party", true } };
+        RubyHash derived = Call(StoryTopics.ReplayDeriveTopic, request).AsHash();
+        Call(StoryTopics.ReplayQueueTopic, derived);
+        RubyValue Due(int story) => Call(StoryTopics.ReplayDueTopic, new RubyHash { { "values", new RubyArray { Row(Variable(1001), story) } } });
+        void Fail(int story)
+        {
+            Take(derived, [Row(Self(1, 7, "A"), false), Row(Variable(1001), story)]);
+            Call(StoryTopics.ReplayDoneTopic, new RubyHash
+            {
+                { "entry", derived }, { "reached", false }, { "failed", true }, { "before", new RubyArray() }, { "reads", new RubyArray { Row(Variable(1001), story) } },
+                { "had", new RubyArray() }, { "has", new RubyArray() },
+            });
+        }
+
+        Fail(3);
+        RubyValue dueAgain = Due(4);
+        RubyValue reloaded = Call(StoryTopics.ReplayLogTopic, new RubyHash { { "log", Call(StoryTopics.ReplayLogSaveTopic, RubyNil.Value) }, { "place", RubyNil.Value } });
+        Fail(4);
+        Due(5);
+        Fail(5);
+
+        Assert.Equal(new RubyArray { derived }, dueAgain);
+        Assert.Equal(new RubyArray { derived }, reloaded);
+        Assert.Equal(new RubyArray(), Due(6));
+        Assert.Equal(new RubyHash { { "waits", "derived:map:1:7:1" } }, Call(StoryTopics.ReplayDeriveTopic, request));
+        Assert.Equal("pending", Take(derived, [Row(Self(1, 7, "A"), false), Row(Variable(1001), 6)])["do"].AsText());
+    }
+
+    /// <summary>
+    /// Asserts that the log of a save made before failed replays were counted loads with its steps
+    /// and waiting runs, and that a replay that kept its changes before it failed counts as
+    /// replayed, so its gains are not given twice.
+    /// </summary>
+    [Fact]
+    public void Log_ReadsASaveWithoutCountsOfFailedReplays()
+    {
+        RubyHash entry = Entry();
+        Call(StoryTopics.ReplayDoneTopic, new RubyHash
+        {
+            { "entry", entry }, { "reached", true }, { "failed", true }, { "before", new RubyArray { Row(Self(1, 7, "A"), false), Row(Switch(2045), true) } },
+            { "reads", new RubyArray() }, { "had", new RubyArray() }, { "has", new RubyArray() },
+        });
+        Call(StoryTopics.ReplayQueueTopic, OtherMembers(entry));
+        RubyHash saved = Call(StoryTopics.ReplayLogSaveTopic, RubyNil.Value).AsHash();
+        bool counted = saved.Remove("failures");
+
+        RubyValue queued = Call(StoryTopics.ReplayLogTopic, new RubyHash { { "log", saved }, { "place", RubyNil.Value } });
+
+        Assert.True(counted);
+        Assert.Equal(new RubyArray { OtherMembers(entry) }, queued);
+        Assert.Equal("done", Take(entry, [])["do"].AsText());
     }
 
     /// <summary>

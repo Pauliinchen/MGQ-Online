@@ -2,8 +2,9 @@
 #  story_replay_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-12: Checked that a replay whose companion the world holds back still ends, on the game's own Queen's Cup final
-#                            - Checked that a replay that never ends stops and keeps nothing
+#      Paulinchen  2026-11-12: Checked that a replay that raises tells the DLL it failed, as one past the time limit does
+#                            - Checked that a replay that loops or waits past the time limit stops within it, keeps nothing and tells the DLL so
+#                            - Checked that a replay whose companion the world holds back still ends, on the game's own Queen's Cup final
 #                            - Gave the party's stand-in its members and roster, and the interpreter's labels, actor checks and joins
 #      Paulinchen  2026-11-11: Dressed the party's member in socketed gear, and checked that the DLL hears what the player holds only after a replay read it
 #                            - Named the inputs by their commands' codes and numbers, a number at its Input Number, and dropped the shapes a take handed over
@@ -520,16 +521,6 @@ broken = replay(["map", 624, 211, 1])
 check("a replay that raises leaves the save as it was",
       [broken.state, $game_party.item_number(606), $game_switches[2046], $game_variables[300], $log.last.include?("broken")], [:failed, 0, false, 2, true])
 
-# A replay that never ends, a label and a jump back to it, stops at the bound of its commands as
-# failed, keeps nothing and logs one line naming where it stood.
-new_game
-page(624, 212, [c(126, 606, 0, 0, 1), c(121, 2046, 2046, 0), c(118, "Loop"), c(119, "Loop")])
-lines = logged_lines { Timeout.timeout(60) { $endless = replay(["map", 624, 212, 1]) } }
-check("a replay that never ends stops as failed and keeps nothing",
-      [$endless.state, $game_party.item_number(606), $game_switches[2046]], [:failed, 0, false])
-check("with one line naming the place it stood at",
-      [lines.size, lines[0].to_s.include?("failed, nothing kept") && lines[0].include?('at ["map", 624, 212, 1] place 3')], [1, true])
-
 check("a plain interpreter still runs the mod's hooks", lambda {
   $hooked.clear
   interpreter = Game_Interpreter.new
@@ -661,6 +652,35 @@ choice = Struct.new(:choices, :choice_cancel_type)
 check("a choice hands no cancel, or its own branch after the labels",
       [replay.send(:choices_of, choice.new(["Yes", "No"], 0)), replay.send(:choices_of, choice.new(["Sword", "Shield"], 3))],
       [[["Yes", "No"], [0, 1], nil], [["Sword", "Shield"], [0, 1, 2], 2]])
+
+# A replay that never ends stops once its step ran past the time limit, keeps nothing, logs one line
+# naming where it stood and tells the DLL it failed: a label loop that never yields, which only the
+# commands' look at the clock sees, and a script that waits for a switch the replay never brings,
+# which only the resumes' look sees. A replay that raises tells the DLL it failed too, so the DLL
+# counts it and does not retry it on every change of what it read.
+MGQ_MpStoryReplay.send(:remove_const, :STEP_SECONDS)
+MGQ_MpStoryReplay.const_set(:STEP_SECONDS, 0.2)
+fake.answer("story.replay_take") { |_request| { "do" => "replay", "page" => 1 } }
+fake.answer("story.replay_done") { |request| done << request; { "notice" => nil } }
+page(624, 212, [c(126, 606, 0, 0, 1), c(121, 2046, 2046, 0), c(118, "Loop"), c(119, "Loop")])
+page(624, 213, [c(126, 606, 0, 0, 1), c(121, 2046, 2046, 0), c(355, "Fiber.yield until $game_switches[9]")])
+[[212, "a label loop that never yields", 'ran 0.2 s without ending, at ["map", 624, 212, 1] place'],
+ [213, "a script that waits for what the replay never brings", 'waited 0.2 s without ending, at ["map", 624, 213, 1]']].each do |event, shape, where|
+  new_game
+  done.clear
+  began = Time.now
+  lines = logged_lines { Timeout.timeout(10) { MGQ_MpStoryReplay.receive(entry.merge("id" => "e#{event}", "site" => ["map", 624, event, 1], "inputs" => [])); MGQ_MpStoryReplay.update } }
+  check("#{shape} stops within the time limit, keeps nothing and tells the DLL it failed",
+        [Time.now - began < 0.7, $game_party.item_number(606), $game_switches[2046], done.last["reached"], done.last["failed"]], [true, 0, false, false, true])
+  check("with one line naming where it stood", lines.grep(/failed, nothing kept/).map { |line| line.include?(where) }, [true])
+end
+MGQ_MpStoryReplay.send(:remove_const, :STEP_SECONDS)
+MGQ_MpStoryReplay.const_set(:STEP_SECONDS, 5)
+new_game
+MGQ_MpStoryReplay.receive(entry.merge("id" => "e211", "site" => ["map", 624, 211, 1], "inputs" => []))
+MGQ_MpStoryReplay.update
+check("a replay that raises tells the DLL it failed", [done.last["reached"], done.last["failed"]], [false, true])
+fake.answer("story.replay_done") { |request| done << request; { "notice" => "Ana opened a chest for the party: Makina." } }
 
 # A run that waits, as for a lock, is taken again once the DLL names it due.
 new_game

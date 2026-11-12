@@ -2,7 +2,9 @@
 #  story_replay.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-12: Took a companion the world holds back out of the party a replay keeps, and put back the member they benched
+#      Paulinchen  2026-11-12: Told the DLL that a replay failed, by a script error too, not only that it ran out of time
+#                            - Stopped a replay step after five seconds instead of after a count of commands or resumes, and told the DLL a replay stopped so
+#                            - Took a companion the world holds back out of the party a replay keeps, and put back the member they benched
 #                            - Failed a replay step that runs too many commands, instead of freezing the game
 #                            - Took one waiting run a frame
 #      Paulinchen  2026-11-11: Named each input by its command's code and number among its list's commands of that code, so games of different languages name the same command
@@ -123,14 +125,17 @@ module MGQ_MpStoryReplay
   # The code of a script's continuation line.
   SCRIPT_LINE = 655
 
-  # How often a replay's fiber resumes at most in one go, far past any list the game's events walk,
-  # so a list that waits for something the replay never brings cannot hang the game.
-  MAX_RESUMES = 100_000
+  # How many seconds one step of a replay runs at most. A step draws no frame, so a list that loops
+  # or waits for something the replay never brings must stop well before the game looks frozen; the
+  # slowest real replay logged took 0.77 s with its commit, which this limit leaves out.
+  STEP_SECONDS = 5
 
-  # How many commands one step of a replay runs at most, far past any page and the common events it
-  # calls. A count reads the same on every machine, so a slow one never fails a replay a fast one
-  # keeps; it also stops a loop that never yields, which MAX_RESUMES never sees.
-  MAX_COMMANDS = 200_000
+  # How many commands a replay runs between two looks at the clock, so a loop that never yields
+  # stops about a tenth of a second past the limit at most.
+  CLOCK_COMMANDS = 100
+
+  # Stops a replay step that ran past STEP_SECONDS.
+  class TimeUp < StandardError; end
 
   # The command codes the replay leaves out, those the generator's gate (ReplayChannels.cs) classes
   # as the presentation or the opener's play alone: scrolling text, the timer, the battle music, the
@@ -533,15 +538,15 @@ module MGQ_MpStoryReplay
   end
 
   # Tells the DLL a replay ended: one it kept reached its step and answers its notice, any other
-  # waits.
+  # waits; one that failed, at the time limit or by a script error, says so, which the DLL counts.
   #
   # @param state [Hash] The replay, its entry, and what committing measured.
   def self.finish(state)
     replay = state[:replay]
     reads = replay.reads.map { |(kind, key), value| [kind, key, value] }
     reads << [HOLDINGS, nil, holdings_read] if replay.own_holdings?
-    answer = MGQ_Multiplayer::Bridge.call(DONE_TOPIC, "entry" => state[:entry], "reached" => replay.committed?, "before" => state[:before] || [],
-                                                      "reads" => reads, "had" => state[:had] || [], "has" => state[:has] || [])
+    answer = MGQ_Multiplayer::Bridge.call(DONE_TOPIC, "entry" => state[:entry], "reached" => replay.committed?, "failed" => replay.state == :failed,
+                                                      "before" => state[:before] || [], "reads" => reads, "had" => state[:had] || [], "has" => state[:has] || [])
     notice(answer, state[:had])
   end
 
@@ -1858,7 +1863,7 @@ module MGQ_MpStoryReplay
       MGQ_MpStoryReplay.choice_at(site, list, interpreter ? interpreter.place : index)
     end
 
-    # Runs a command, its inputs named by its place, and stops the step once it ran MAX_COMMANDS.
+    # Runs a command, its inputs named by its place, and stops the step once it ran past STEP_SECONDS.
     #
     # @param site [Array] The command's list.
     # @param list [Array<RPG::EventCommand>] The list's commands.
@@ -1867,7 +1872,7 @@ module MGQ_MpStoryReplay
     # @yield Runs the command.
     def at(site, list, index, interpreter)
       @commands += 1
-      raise "it ran #{MAX_COMMANDS} commands without ending, at #{site} place #{index}" if @commands > MAX_COMMANDS
+      raise TimeUp, "it ran #{STEP_SECONDS} s without ending, at #{site} place #{index}" if @commands % CLOCK_COMMANDS == 0 && Time.now > @deadline
 
       @places.push([site, list, index, interpreter])
       begin
@@ -2121,6 +2126,7 @@ module MGQ_MpStoryReplay
       @state = :running
       @commands = 0
       began = Time.now
+      @deadline = began + STEP_SECONDS
       swapped { drive }
       commit if reached?
       @seconds = @seconds.to_f + (Time.now - began)
@@ -2146,13 +2152,13 @@ module MGQ_MpStoryReplay
     # Resumes the fiber, answering the message as the message window would, until the list ends or
     # an answer is missing.
     def drive
-      MAX_RESUMES.times do
+      loop do
         return if $game_message.busy? && !answer_message
         return @state = :done unless @interpreter.running?
+        raise TimeUp, "it waited #{STEP_SECONDS} s without ending, at #{@site}" if Time.now > @deadline
 
         @interpreter.update
       end
-      raise "it did not end after #{MAX_RESUMES} resumes"
     end
 
     # Answers the message as the message window does: text is shown and closed; a choice, a number,

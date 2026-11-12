@@ -2,6 +2,8 @@
 //  StoryTopics.Replay.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-12: Counted every failed replay, by a script error too, not only one that ran out of time
+//                            - Counted a replay that ran out of time and left its run waiting for good after the third
 //      Paulinchen  2026-11-11: Found the choices of a run by their code and number, without the shapes of the player's lists
 //                            - Named the inputs of an earlier release's entry anew as it is taken, and handed the whole record along
 //      Paulinchen  2026-11-10: Derived no entry of a page whose entry waits in the log already
@@ -141,9 +143,10 @@ internal sealed partial class StoryTopics
 
     /// <summary>
     /// The topic that takes a replay ending: {"entry", "reached" (whether it reached the step's
-    /// writes), "before" (the rows of the value the replay found of each key of the step), "reads" (the
-    /// rows of the player's own things it read), "had" and "has" (what the player held before
-    /// and after: [[key, amount, name, sum], ...])}. Answers {"notice"} (nil for none).
+    /// writes), "failed" (whether it stopped at the scripts' time limit or by a script error),
+    /// "before" (the rows of the value the replay found of each key of the step), "reads" (the rows
+    /// of the player's own things it read), "had" and "has" (what the player held before and after:
+    /// [[key, amount, name, sum], ...])}. Answers {"notice"} (nil for none).
     /// </summary>
     public const string ReplayDoneTopic = "story.replay_done";
 
@@ -673,7 +676,8 @@ internal sealed partial class StoryTopics
 
         if (_log.Pending.Any(run => run.Entry.Id == entry.Id))
         {
-            return new RubyHash { { "do", "pending" }, { "why", "it waits until one of the player's own things it read changes" } };
+            string waits = _log.GivenUp(entry.Id) ? $"its replay failed {RunLog.FailuresAllowed} times" : "it waits until one of the player's own things it read changes";
+            return new RubyHash { { "do", "pending" }, { "why", waits } };
         }
 
         if (entry.Site.IsDrop)
@@ -806,8 +810,12 @@ internal sealed partial class StoryTopics
 
     /// <summary>
     /// Answers <see cref="ReplayDoneTopic"/>: logs a replay that reached the step's writes and
-    /// tells its notice, or keeps one that did not waiting.
+    /// tells its notice, or keeps one that did not waiting, counting one that failed.
     /// </summary>
+    /// <remarks>
+    /// A replay can fail after it kept its changes, so "reached" wins over "failed"; replaying it
+    /// again would give the player its gains twice.
+    /// </remarks>
     /// <param name="request">The replay's end.</param>
     /// <returns>{"notice"}.</returns>
     private RubyHash ReplayDone(RubyHash request)
@@ -815,8 +823,18 @@ internal sealed partial class StoryTopics
         ReplayEntry entry = ReplayEntry.Read(request["entry"]);
         if (request["reached"] is not RubyBool { Flag: true })
         {
-            _log.Pend(entry, StoryPlain.ThingTextsOf(request["reads"]));
-            Log.Write($"replay: entry {entry.Id} of {entry.Site} did not reach its step and waits");
+            Dictionary<string, string> reads = StoryPlain.ThingTextsOf(request["reads"]);
+            if (request["failed"] is not RubyBool { Flag: true })
+            {
+                _log.Pend(entry, reads);
+                Log.Write($"replay: entry {entry.Id} of {entry.Site} did not reach its step and waits");
+                return new RubyHash { { "notice", RubyNil.Value } };
+            }
+
+            int count = _log.Failed(entry, reads);
+            Log.Write(count < RunLog.FailuresAllowed
+                ? $"replay: entry {entry.Id} of {entry.Site} failed ({count} of {RunLog.FailuresAllowed} times) and waits"
+                : $"replay: entry {entry.Id} of {entry.Site} failed {count} times and is given up; only the player's own run of its event takes its step");
             return new RubyHash { { "notice", RubyNil.Value } };
         }
 

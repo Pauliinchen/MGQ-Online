@@ -2,6 +2,8 @@
 //  RunLog.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-12: Counted every failed replay of a run, by a script error too, not only one that ran out of time
+//                            - Counted the replays of a run that ran out of time, in the save too, and gave the run up after the third
 //      Paulinchen  2026-11-10: Told whether a run waits to be taken or for the player's own things
 //      Paulinchen  2026-11-09: Kept the track number of each claim and dropped the steps the save passed on the world's track
 //      Paulinchen  2026-11-05: Counted a battle's drops done only once their own entry claimed them
@@ -118,6 +120,11 @@ public sealed class RunLog
     public const int Version = 2;
 
     /// <summary>
+    /// How many replays of a run may fail before the log gives the run up.
+    /// </summary>
+    public const int FailuresAllowed = 3;
+
+    /// <summary>
     /// The steps, oldest first.
     /// </summary>
     private readonly List<RunStep> _steps = [];
@@ -136,6 +143,15 @@ public sealed class RunLog
     /// The number of the last entry of a track the log took, by the track's stream.
     /// </summary>
     private readonly Dictionary<string, long> _cursors = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// How many replays of a run failed, by its entry id.
+    /// </summary>
+    /// <remarks>
+    /// Kept apart from the waiting runs, since a run that is due again leaves them until it is
+    /// replayed, and its count must survive that.
+    /// </remarks>
+    private readonly Dictionary<string, int> _failures = new(StringComparer.Ordinal);
 
     /// <summary>
     /// Initializes a log.
@@ -199,6 +215,7 @@ public sealed class RunLog
             if (step.Claim(waiting.Entry))
             {
                 _pending.Remove(waiting);
+                _failures.Remove(waiting.Entry.Id);
             }
         }
     }
@@ -218,6 +235,22 @@ public sealed class RunLog
     public bool Claims(ReplayEntry entry)
     {
         ArgumentNullException.ThrowIfNull(entry);
+        if (!ClaimsStep(entry))
+        {
+            return false;
+        }
+
+        _failures.Remove(entry.Id);
+        return true;
+    }
+
+    /// <summary>
+    /// Takes the step that makes a run handed to the player done already, see <see cref="Claims"/>.
+    /// </summary>
+    /// <param name="entry">The run's entry.</param>
+    /// <returns>Whether it is done.</returns>
+    private bool ClaimsStep(ReplayEntry entry)
+    {
         if (entry.Site.IsDrop)
         {
             RunStep? drop = _steps.Find(step => step.Claims.ContainsValue(entry.Id));
@@ -250,6 +283,7 @@ public sealed class RunLog
     {
         ArgumentNullException.ThrowIfNull(entry);
         _pending.RemoveAll(run => run.Entry.Id == entry.Id);
+        _failures.Remove(entry.Id);
         _steps.Add(RunStep.Of(entry.Site, before, entry));
     }
 
@@ -295,6 +329,33 @@ public sealed class RunLog
     }
 
     /// <summary>
+    /// Counts a failed replay of a run, and keeps the run waiting for one of the player's own
+    /// things; once <see cref="FailuresAllowed"/> replays failed, the run is given up.
+    /// </summary>
+    /// <remarks>
+    /// A run given up stays waiting, so the catch-up never derives it again and the player's own
+    /// run of its site still claims it, but it is never due again.
+    /// </remarks>
+    /// <param name="entry">The run's entry.</param>
+    /// <param name="reads">The player's own things the replay read, each with the value it read.</param>
+    /// <returns>How many of its replays failed.</returns>
+    public int Failed(ReplayEntry entry, IReadOnlyDictionary<string, string> reads)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+        int count = _failures.GetValueOrDefault(entry.Id) + 1;
+        _failures[entry.Id] = count;
+        Pend(entry, reads);
+        return count;
+    }
+
+    /// <summary>
+    /// Reports whether a run is given up, see <see cref="Failed"/>.
+    /// </summary>
+    /// <param name="id">The run's entry id.</param>
+    /// <returns>Whether it is.</returns>
+    public bool GivenUp(string id) => _failures.GetValueOrDefault(id) >= FailuresAllowed;
+
+    /// <summary>
     /// Reports whether a run waits: to be taken, or for one of the player's own things.
     /// </summary>
     /// <param name="id">The run's entry id.</param>
@@ -302,20 +363,21 @@ public sealed class RunLog
     public bool Waits(string id) => _queued.Exists(queued => queued.Id == id) || _pending.Exists(run => run.Entry.Id == id);
 
     /// <summary>
-    /// Lists the player's own things the waiting runs read.
+    /// Lists the player's own things the waiting runs read, but those given up.
     /// </summary>
     /// <returns>Their names, each once, in order.</returns>
-    public IReadOnlyList<string> PendingReads() => [.. _pending.SelectMany(run => run.Reads.Keys).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)];
+    public IReadOnlyList<string> PendingReads() => [.. _pending.Where(run => !GivenUp(run.Entry.Id)).SelectMany(run => run.Reads.Keys).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)];
 
     /// <summary>
-    /// Puts the waiting runs one of whose reads changed first in the queue, to be tried again.
+    /// Puts the waiting runs one of whose reads changed first in the queue, to be tried again, but
+    /// those given up.
     /// </summary>
     /// <param name="current">Reads a thing's value now, <see langword="null"/> for none known.</param>
     /// <returns>Their entries, oldest first.</returns>
     public IReadOnlyList<ReplayEntry> Due(Func<string, string?> current)
     {
         ArgumentNullException.ThrowIfNull(current);
-        List<PendingRun> due = _pending.FindAll(run => run.Reads.Any(read => current(read.Key) is { } now && now != read.Value));
+        List<PendingRun> due = _pending.FindAll(run => !GivenUp(run.Entry.Id) && run.Reads.Any(read => current(read.Key) is { } now && now != read.Value));
         _pending.RemoveAll(due.Contains);
         ReplayEntry[] entries = [.. due.Select(run => run.Entry)];
         _queued.RemoveAll(queued => Array.Exists(entries, entry => entry.Id == queued.Id));
@@ -332,7 +394,12 @@ public sealed class RunLog
     {
         ArgumentNullException.ThrowIfNull(reset);
         _steps.RemoveAll(step => step.Before.Any(key => reset.MovesBack(key.Key, key.Value)));
-        _pending.RemoveAll(run => run.Entry.Keys.Any(key => reset.MovesBack(key.Key, key.Value)));
+        foreach (PendingRun dropped in _pending.FindAll(run => run.Entry.Keys.Any(key => reset.MovesBack(key.Key, key.Value))))
+        {
+            _pending.Remove(dropped);
+            _failures.Remove(dropped.Entry.Id);
+        }
+
         if (StartPlace is null)
         {
             return;
@@ -362,7 +429,7 @@ public sealed class RunLog
     /// <summary>
     /// Writes the log as the save keeps it.
     /// </summary>
-    /// <returns>{"version", "start" ([markers] or nil), "steps" ([[site, {key => before}, {stream => entry}, {stream => number}], ...]), "pending" ([[entry, {thing => value}], ...]), "queued" ([entry, ...]), "cursors" ({stream => number})}.</returns>
+    /// <returns>{"version", "start" ([markers] or nil), "steps" ([[site, {key => before}, {stream => entry}, {stream => number}], ...]), "pending" ([[entry, {thing => value}], ...]), "queued" ([entry, ...]), "cursors" ({stream => number}), "failures" ({entry id => count})}.</returns>
     public RubyHash Write() => new()
     {
         { "version", Version },
@@ -371,11 +438,12 @@ public sealed class RunLog
         { "pending", new RubyArray(_pending.Select(run => (RubyValue)new RubyArray { run.Entry.Write(), TextsOf(run.Reads) })) },
         { "queued", new RubyArray(_queued.Select(entry => (RubyValue)entry.Write())) },
         { "cursors", CursorsHash() },
+        { "failures", NumbersHash(_failures.ToDictionary(pair => pair.Key, pair => (long)pair.Value, StringComparer.Ordinal)) },
     };
 
     /// <summary>
     /// Reads a log as the save keeps it, see <see cref="Write"/>; a step a save kept without track
-    /// numbers reads with none.
+    /// numbers reads with none, and a log kept without counts of failed replays with none.
     /// </summary>
     /// <param name="value">The log.</param>
     /// <returns>The log.</returns>
@@ -411,6 +479,14 @@ public sealed class RunLog
         foreach ((string stream, long number) in NumbersOf(saved["cursors"]))
         {
             log._cursors[stream] = number;
+        }
+
+        if (!saved["failures"].IsNil)
+        {
+            foreach ((string id, long count) in NumbersOf(saved["failures"]))
+            {
+                log._failures[id] = (int)count;
+            }
         }
 
         return log;
