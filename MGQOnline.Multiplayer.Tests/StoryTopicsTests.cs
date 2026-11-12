@@ -2,6 +2,7 @@
 //  StoryTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-12: Checked that the world's Queen's Cup won is laid over the player's own last step in the Arena
 //      Paulinchen  2026-11-11: Checked that a Raid look owes the untranslated game's job items by the events database
 //                            - Checked that the relay hears the level of the catch-up's look, a visiting companion and the cap as the catch-up counts them
 //      Paulinchen  2026-11-08: Moved to the MGQOnline.Multiplayer namespace
@@ -253,9 +254,10 @@ public sealed class StoryTopicsTests
     /// Asserts that a whole track and the pushes after it are laid over the player's story in the
     /// game's order: a kept key the track never wrote goes to its default, a key the player's own
     /// unanswered write held keeps their value while a later push of it comes, the chest flags are
-    /// the player's, a Queen's Cup step the track just wrote stays where it plays, a frozen fight's
-    /// held value wins until the fight is won, and the affection kept higher and the unlock held
-    /// stay and go to the relay again. Only writes that change the player's story come back.
+    /// the player's, a Queen's Cup step the track just wrote stays where it plays while the world's
+    /// Cup won is laid over the player's own last step in the Arena, a frozen fight's held value wins
+    /// until the fight is won, and the affection kept higher and the unlock held stay and go to the
+    /// relay again. Only writes that change the player's story come back.
     /// </summary>
     [Fact]
     public void Lay_LaysTheRelaysTakeOverThePlayersStoryInTheGamesOrder()
@@ -317,12 +319,12 @@ public sealed class StoryTopicsTests
 
         Call(context, FreezeTopics.Won, new RubyHash { { "troop", 870 } });
         Call(context, FreezeTopics.State, player);
-        relay.Tell(world, """track {"t":"push","track":"world","rev":7,"prev":6,"keys":{"v1075":"n20"}}""");
+        relay.Tell(world, """track {"t":"push","track":"world","rev":7,"prev":6,"keys":{"v1052":"n6","v1075":"n20"}}""");
         WaitFor(() => Drain(context, frame++).Any(entry => entry.Topic == StoryTopics.StatusEvent && entry.Payload.AsHash()["pending"].AsBool()), "the push after the win");
         Call(context, StoryTopics.TakeTopic, RubyNil.Value);
         RubyHash won = Call(context, StoryTopics.LayTopic, new RubyHash
         {
-            { "values", new RubyArray { new RubyArray { 1, 1075, 16 } } }, { "map", 484 }, { "x", 31 }, { "unlocks", new RubyArray { 445 } },
+            { "values", new RubyArray { new RubyArray { 1, 1052, 5 }, new RubyArray { 1, 1075, 16 } } }, { "map", 483 }, { "x", 31 }, { "unlocks", new RubyArray { 445 } },
         }).AsHash();
         session.Close();
 
@@ -335,7 +337,7 @@ public sealed class StoryTopicsTests
             },
             laid["writes"]);
         Assert.Contains("""["v3005","n40","game"],["s445","1","game"]""", asked, StringComparison.Ordinal);
-        Assert.Equal(new RubyArray { new RubyArray { 1, 1075, 20 } }, won["writes"]);
+        Assert.Equal(new RubyArray { new RubyArray { 1, 1052, 6 }, new RubyArray { 1, 1075, 20 } }, won["writes"]);
     }
 
     /// <summary>

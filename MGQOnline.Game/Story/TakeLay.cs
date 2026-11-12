@@ -2,6 +2,7 @@
 //  TakeLay.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-12: Laid the world's value of a local step once it is past every one of the player's own steps, and told each step held or passed
 //      Paulinchen  2026-11-11: Created
 //
 //----------------------------------------------------------------
@@ -19,7 +20,18 @@ namespace MGQOnline.Game.Story;
 /// <param name="Writes">The writes that change the player's story, in the order the game makes them.</param>
 /// <param name="Freezes">The frozen fights the take brought, each by its key, the last value of a troop winning.</param>
 /// <param name="Requests">The player's own values the take would have lowered, asked of the relay again.</param>
-public sealed record LaidTake(IReadOnlyList<KeyValuePair<StoryKey, string>> Writes, IReadOnlyList<KeyValuePair<StoryKey, string>> Freezes, IReadOnlyList<StoryWrite> Requests);
+/// <param name="Steps">The local steps the take met where they stay the player's own, each held or passed.</param>
+public sealed record LaidTake(IReadOnlyList<KeyValuePair<StoryKey, string>> Writes, IReadOnlyList<KeyValuePair<StoryKey, string>> Freezes, IReadOnlyList<StoryWrite> Requests,
+    IReadOnlyList<LocalStepLaid> Steps);
+
+/// <summary>
+/// A local step of the player's that a take met where it stays theirs.
+/// </summary>
+/// <param name="Key">The variable.</param>
+/// <param name="Own">The player's own step.</param>
+/// <param name="World">The world's value, <see langword="null"/> for one that is no whole number.</param>
+/// <param name="Passed">Whether the world's value was laid, being past every own step.</param>
+public sealed record LocalStepLaid(StoryKey Key, long Own, long? World, bool Passed);
 
 /// <summary>
 /// Lays a take of the relay over the player's story (<see cref="StoryTake"/>): a whole track over
@@ -91,6 +103,11 @@ public sealed class TakeLay
     private readonly List<StoryWrite> requests = [];
 
     /// <summary>
+    /// The local steps held or passed so far.
+    /// </summary>
+    private readonly List<LocalStepLaid> steps = [];
+
+    /// <summary>
     /// Initializes a lay over the player's story.
     /// </summary>
     /// <param name="table">The story mapping's table.</param>
@@ -113,7 +130,8 @@ public sealed class TakeLay
     /// Lays a take over the player's story. A whole track writes every key the mapping keeps, one it
     /// never wrote at its default, but not the keys the player's own unanswered requests wrote; then
     /// the player's chest flags and the keys after it. A key a frozen fight holds takes its held value; a
-    /// local step the player plays where it stays theirs, a value below the player's own of a key
+    /// local step the player plays where it stays theirs unless the relay's value is past every one
+    /// of its steps, such as the Queen's Cup won, a value below the player's own of a key
     /// the whole world keeps going only up, such as affection, and an unlock the player holds, such
     /// as the second accessory slot, stay the player's, the latter two asked of the relay again.
     /// </summary>
@@ -125,7 +143,7 @@ public sealed class TakeLay
     /// <param name="map">The map the player stands on.</param>
     /// <param name="x">The player's x on it, <see langword="null"/> without a player.</param>
     /// <param name="unlocks">The switches the game turns on for good and never off.</param>
-    /// <returns>The writes, the frozen fights and the requests.</returns>
+    /// <returns>The writes, the frozen fights, the requests and the local steps held or passed.</returns>
     public static LaidTake Lay(StoryTake take, StoryTable table, IReadOnlyDictionary<StoryKey, string?> story, IReadOnlyDictionary<StoryKey, string> frozen,
         int map, int? x, IReadOnlySet<int> unlocks)
     {
@@ -141,7 +159,7 @@ public sealed class TakeLay
         }
 
         lay.PutAll(take.Keys);
-        return new LaidTake(lay.writes, [.. lay.freezes], lay.requests);
+        return new LaidTake(lay.writes, [.. lay.freezes], lay.requests, lay.steps);
     }
 
     /// <summary>
@@ -236,7 +254,7 @@ public sealed class TakeLay
         }
 
         text = frozen.GetValueOrDefault(key) ?? text;
-        if (key.Kind == StoryKeyKind.Variable && (LocalStep(key) || KeptHigher(key, text)))
+        if (key.Kind == StoryKeyKind.Variable && (LocalStep(key, text) || KeptHigher(key, text)))
         {
             return;
         }
@@ -257,18 +275,34 @@ public sealed class TakeLay
 
     /// <summary>
     /// Reports whether a variable's step stays the player's own where they stand, as the Queen's
-    /// Cup's tournament steps where it plays (the story mapping's local steps).
+    /// Cup's tournament steps where it plays (the story mapping's local steps), unless the relay's
+    /// value is past every one of its steps, such as the Cup won, which no own step reaches.
     /// </summary>
     /// <param name="key">The variable.</param>
+    /// <param name="text">The relay's value.</param>
     /// <returns>Whether it does.</returns>
-    private bool LocalStep(StoryKey key)
+    private bool LocalStep(StoryKey key, string text)
     {
-        if (x is not { } at || table.LocalSteps.FirstOrDefault(steps => steps.Variable == key.Id) is not { } local)
+        if (x is not { } at || table.LocalSteps.FirstOrDefault(rule => rule.Variable == key.Id) is not { } local)
         {
             return false;
         }
 
-        return local.Steps.Contains(Whole(Now(key)) ?? 0) && local.Places.Any(place => place.Map == map && at >= place.FromX);
+        long own = Whole(Now(key)) ?? 0;
+        if (!local.Steps.Contains(own) || !local.Places.Any(place => place.Map == map && at >= place.FromX))
+        {
+            return false;
+        }
+
+        if (Now(key) == text)
+        {
+            return true;
+        }
+
+        long? world = Whole(text);
+        bool passed = world > local.Steps.Max();
+        steps.Add(new LocalStepLaid(key, own, world, passed));
+        return !passed;
     }
 
     /// <summary>

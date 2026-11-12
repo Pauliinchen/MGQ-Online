@@ -2,6 +2,7 @@
 //  StoryTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-12: Logged each local step a take held or passed with the variable, both values and the map
 //      Paulinchen  2026-11-11: Laid the relay's take over the player's story and asked the relay again for the values the player keeps
 //                            - Told the main story's progress of the whole track waiting, which the opening reads before it is taken
 //                            - Handed the catch-up the items unlocking a job or race from the events database
@@ -800,8 +801,8 @@ internal sealed partial class StoryTopics : IStoryTrackHost
     }
 
     /// <summary>
-    /// Answers <see cref="LayTopic"/> by <see cref="TakeLay"/>, and asks the relay again for the
-    /// values the player keeps.
+    /// Answers <see cref="LayTopic"/> by <see cref="TakeLay"/>, logs each local step it held or
+    /// passed, and asks the relay again for the values the player keeps.
     /// </summary>
     /// <param name="request">{"values", "map", "x", "unlocks"}.</param>
     /// <returns>{"writes", "freezes"}, nil without a take or a mapping.</returns>
@@ -833,7 +834,16 @@ internal sealed partial class StoryTopics : IStoryTrackHost
         }
 
         HashSet<int> unlocks = [.. request["unlocks"].AsArray().Select(id => id.AsInt())];
-        LaidTake laid = TakeLay.Lay(take, table, story, frozen, request["map"].AsInt(), request["x"] is RubyInteger x ? x.AsInt() : null, unlocks);
+        int map = request["map"].AsInt();
+        LaidTake laid = TakeLay.Lay(take, table, story, frozen, map, request["x"] is RubyInteger x ? x.AsInt() : null, unlocks);
+        foreach (LocalStepLaid step in laid.Steps)
+        {
+            string world = step.World?.ToString(CultureInfo.InvariantCulture) ?? "no number";
+            Log.Write(step.Passed
+                ? $"story track: took the world's {step.Key} = {world} over the player's own step {step.Own} on map {map}, past every own step"
+                : $"story track: kept the player's own step {step.Own} of {step.Key} on map {map} over the world's {world}");
+        }
+
         if (laid.Requests.Count > 0)
         {
             Log.Write($"story track: kept the player's {string.Join(", ", laid.Requests.Select(write => write.Key))} over the relay's lower value and asked the relay for it again");
