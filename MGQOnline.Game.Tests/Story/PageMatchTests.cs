@@ -2,6 +2,7 @@
 //  PageMatchTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-12: Read no item the receiver holds
 //      Paulinchen  2026-11-11: Named the choices by their code and number, without the shapes of the receiver's lists
 //      Paulinchen  2026-11-01: Covered a choice whose answers differ only in what they take
 //                            - Covered finding a choice by its place among the kept commands, after a text and in a list of another shape, and answers that jump
@@ -227,9 +228,6 @@ public sealed class PageMatchTests
 
         /// <inheritdoc />
         public bool SelfSwitch(int map, int eventId, string letter) => _on.Contains(string.Create(CultureInfo.InvariantCulture, $"ss{map}.{eventId}.{letter}"));
-
-        /// <inheritdoc />
-        public bool HasItem(int item) => false;
 
         /// <inheritdoc />
         public bool InParty(int actor) => false;

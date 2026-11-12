@@ -2,7 +2,10 @@
 //  StoryReplayTopicsTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-12: Counted failed replays in place of replays that ran out of time
+//      Paulinchen  2026-11-12: Covered the replay of a found item's page and of a page that needs an item, neither waiting on what the receiver holds
+//                            - Covered a save of 0.7.0.1 whose run waited on an item the player held
+//                            - Covered a save of 0.7.0 whose run waited on everything the player held
+//                            - Counted failed replays in place of replays that ran out of time
 //                            - Covered a run given up after its third replay ran out of time, its count kept in the save, and a save that keeps no counts
 //      Paulinchen  2026-11-11: Named the inputs by their commands' codes and numbers, and took runs without the shapes of the player's lists
 //                            - Checked that an earlier release's entry takes the opener's answers by their new names, a number at its Input Number
@@ -71,7 +74,8 @@ public sealed class StoryReplayTopicsTests
     /// takes a side along, which turns 300 on and gives a potion; the Medal King, whose common event
     /// 140 turns 300 on and gives a potion; a trade like the Fortune Teller's, whose first answer
     /// takes a wrist, gives the permit and turns B on; and a text that asks a number, then a choice
-    /// between the world's 303 and 304, a draw and the world's 305.
+    /// between the world's 303 and 304, a draw and the world's 305; and a talk whose first page gives
+    /// the found item 665, while its second, once the party holds it, turns 300 on and gives a potion.
     /// </summary>
     public StoryReplayTopicsTests()
     {
@@ -101,7 +105,8 @@ public sealed class StoryReplayTopicsTests
             .MapEvent(1, 14, 7, 0, new TinyPage([
                 C(101, "", 0, 0, 2), C(401, "How many?"), C(103, 200, 2),
                 C(102, "Yes", 2), C(402, 0, "Yes"), At(121, 1, 303, 303, 0), At(0, 1), C(402, 1, "No"), At(121, 1, 304, 304, 0), At(0, 1), C(404),
-                C(122, 201, 201, 0, 2, 1, 6), C(121, 305, 305, 0)])));
+                C(122, 201, 201, 0, 2, 1, 6), C(121, 305, 305, 0)]))
+            .MapEvent(1, 15, 8, 0, new TinyPage([C(126, 665, 0, 0, 1)]), new TinyPage([C(121, 300, 300, 0), C(126, 1, 0, 0, 1)], Item: 665)));
         topics.Events = () => events;
         Call(StoryTopics.MappingTopic, "w1");
         Drain(1);
@@ -318,6 +323,24 @@ public sealed class StoryReplayTopicsTests
     }
 
     /// <summary>
+    /// Asserts that a replay never waits on what the receiver holds through a page's item condition
+    /// (user decision 2026-11-12): the page that needs the item is replayed as the opener's game
+    /// showed it, and the page that gives it is replayed too, as the opener's game passed over the
+    /// later page that needs it.
+    /// </summary>
+    [Fact]
+    public void Take_PicksThePageOfAnItemConditionAsTheOpenersGameDid()
+    {
+        RubyHash needsItem = OtherMembers(Ran([Change(Switch(300), false, true)], site: Page(1, 15, 2)).AsHash());
+        RubyHash givesItem = OtherMembers(Ran([], site: Page(1, 15, 1), found: [new RubyArray { 665, 1 }]).AsHash());
+
+        RubyHash Replay(int page) => new() { { "do", "replay" }, { "page", page }, { "sibling", false }, { "inputs", new RubyArray() }, { "recorded", new RubyArray() } };
+
+        Assert.Equal(Replay(2), Take(needsItem, []));
+        Assert.Equal(Replay(1), Take(givesItem, []));
+    }
+
+    /// <summary>
     /// Asserts that a replay that reached the step tells the one notice and is logged, so the save's
     /// log, read back at the next load, knows the entry as done.
     /// </summary>
@@ -526,6 +549,31 @@ public sealed class StoryReplayTopicsTests
         Assert.True(counted);
         Assert.Equal(new RubyArray { OtherMembers(entry) }, queued);
         Assert.Equal("done", Take(entry, [])["do"].AsText());
+    }
+
+    /// <summary>
+    /// Asserts that a save of 0.7.0 whose run waited on everything the player held, and one of
+    /// 0.7.0.1 whose run waited on an item the player held besides a key, load with those runs
+    /// waiting to be taken once more, since no replay waits on what the player holds anymore (user
+    /// decision 2026-11-12).
+    /// </summary>
+    [Fact]
+    public void Load_TakesARunThatWaitedOnWhatThePlayerHeldOnceMore()
+    {
+        Call(StoryTopics.ReplayQueueTopic, Entry());
+        Call(StoryTopics.ReplayQueueTopic, OtherMembers(Entry()));
+        RubyHash saved = Call(StoryTopics.ReplayLogSaveTopic, RubyNil.Value).AsHash();
+        RubyArray written = saved["queued"].AsArray();
+        saved["pending"] = new RubyArray
+        {
+            new RubyArray { written[0], new RubyHash { { "holdings", "0123456789ABCDEF" } } },
+            new RubyArray { written[1], new RubyHash { { "item514", "0" }, { "ss1.7.A", "0" } } },
+        };
+        saved["queued"] = new RubyArray();
+
+        RubyValue queued = Call(StoryTopics.ReplayLogTopic, new RubyHash { { "log", saved }, { "place", RubyNil.Value } });
+
+        Assert.Equal(new RubyArray { Entry(), OtherMembers(Entry()) }, queued);
     }
 
     /// <summary>

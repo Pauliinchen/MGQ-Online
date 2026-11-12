@@ -2,6 +2,7 @@
 //  PageMatch.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-12: Picked a replay's page without reading what the receiver holds, as the opener's game picked it
 //      Paulinchen  2026-11-11: Found a choice by its code and its number among its list's commands of that code, in a list of any shape
 //                            - Named an input of an earlier release's entry by its command's code and number
 //      Paulinchen  2026-11-05: Told whether a run's page calls a common event
@@ -26,17 +27,10 @@ namespace MGQOnline.Game.Story;
 
 /// <summary>
 /// The values a replay reads to pick its page: those of <see cref="IPageState"/>, and the party's
-/// items and members a page's conditions check.
+/// members a page's conditions check.
 /// </summary>
 public interface IReplayState : IPageState
 {
-    /// <summary>
-    /// Tells whether the party holds an item.
-    /// </summary>
-    /// <param name="item">The item.</param>
-    /// <returns>Whether it does.</returns>
-    bool HasItem(int item);
-
     /// <summary>
     /// Tells whether an actor is in the party.
     /// </summary>
@@ -113,7 +107,7 @@ public sealed class PageMatch(EventStore store)
                 : new PagePick(PickResult.NoPage, 0);
         }
 
-        PageRow? shown = PagesOf(site).Where(page => Holds(page, state)).Select(page => (PageRow?)page).LastOrDefault();
+        PageRow? shown = PagesOf(site).Where(page => Holds(page, site, state)).Select(page => (PageRow?)page).LastOrDefault();
         if (shown is not { } page)
         {
             return new PagePick(PickResult.NoPage, 0);
@@ -340,17 +334,25 @@ public sealed class PageMatch(EventStore store)
     }
 
     /// <summary>
-    /// Tells whether a page's conditions hold, as <c>Game_Event#conditions_met?</c> checks them.
+    /// Tells whether a page's conditions hold for a replay, as <c>Game_Event#conditions_met?</c>
+    /// checks them, but an item the page needs counts as held up to the run's page and as not held
+    /// after it.
     /// </summary>
+    /// <remarks>
+    /// A replay never waits on what the receiver holds (user decision 2026-11-12), and the opener's
+    /// game passed over each later page, so a later page that needs the item a run's page gives, the
+    /// game's "already got it" page, never takes the place of that run.
+    /// </remarks>
     /// <param name="page">The page.</param>
+    /// <param name="site">Where the run started.</param>
     /// <param name="state">The values.</param>
     /// <returns>Whether they do.</returns>
-    private static bool Holds(PageRow page, IReplayState state) =>
+    private static bool Holds(PageRow page, ReplaySite site, IReplayState state) =>
         (page.CondSwitch1 is not { } first || state.Switch(first))
         && (page.CondSwitch2 is not { } second || state.Switch(second))
         && (page.CondVariable is not { } variable || state.Variable(variable) >= page.CondValue)
         && (page.CondSelfSwitch is not { } letter || state.SelfSwitch(page.MapId, page.EventId, letter))
-        && (page.CondItem is not { } item || state.HasItem(item))
+        && (page.CondItem is null || page.PageNo <= site.PageNo)
         && (page.CondActor is not { } actor || state.InParty(actor));
 
     /// <summary>

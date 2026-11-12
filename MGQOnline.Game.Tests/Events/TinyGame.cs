@@ -2,6 +2,7 @@
 //  TinyGame.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-12: Wrote the item a page needs the party to hold
 //      Paulinchen  2026-10-31: Wrote the game's scripts
 //      Paulinchen  2026-10-30: Wrote entries of named parts with a note, features or effects
 //      Paulinchen  2026-10-28: Wrote troops, named database entries, further map folders and common event ids unlike their places
@@ -27,7 +28,8 @@ namespace MGQOnline.Game.Tests.Events;
 /// <param name="Trigger">How it starts: 0 by the action button, 3 by itself.</param>
 /// <param name="Switch1">The switch it needs on, <see langword="null"/> for none.</param>
 /// <param name="SelfSwitch">The self switch it needs on, <see langword="null"/> for none.</param>
-internal sealed record TinyPage(object[][] Commands, int Trigger = 0, int? Switch1 = null, string? SelfSwitch = null);
+/// <param name="Item">The item it needs the party to hold, <see langword="null"/> for none.</param>
+internal sealed record TinyPage(object[][] Commands, int Trigger = 0, int? Switch1 = null, string? SelfSwitch = null, int? Item = null);
 
 /// <summary>
 /// A game of a few events and common events, written as the game's RPG objects in Marshal, for the
@@ -426,7 +428,9 @@ internal sealed class TinyGame : IGameDataFiles
                 ("switch1_valid", () => w.Bool(pages[place].Switch1 is not null)),
                 ("switch1_id", () => w.Int(pages[place].Switch1 ?? 1)),
                 ("self_switch_valid", () => w.Bool(pages[place].SelfSwitch is not null)),
-                ("self_switch_ch", () => w.Text(pages[place].SelfSwitch ?? "A")))),
+                ("self_switch_ch", () => w.Text(pages[place].SelfSwitch ?? "A")),
+                ("item_valid", () => w.Bool(pages[place].Item is not null)),
+                ("item_id", () => w.Int(pages[place].Item ?? 1)))),
             ("trigger", () => w.Int(pages[place].Trigger)),
             ("list", () => w.List(pages[place].Commands))))));
 

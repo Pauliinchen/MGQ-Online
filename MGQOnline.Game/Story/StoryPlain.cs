@@ -2,6 +2,8 @@
 //  StoryPlain.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-12: Dropped the read of an item the player holds
+//                            - Dropped the read of everything the player holds
 //      Paulinchen  2026-11-11: Left a whole track's keys and held keys out of a take, which the DLL lays itself
 //                            - Named a command's place by its code and its number among its list's commands of that code
 //                            - Read the place an earlier release named an input by, its place among its list's kept commands
@@ -14,7 +16,6 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Numerics;
-using System.Security.Cryptography;
 using System.Text;
 using MGQOnline.Bridge.Ruby;
 using MGQOnline.Game.Topics;
@@ -33,9 +34,8 @@ namespace MGQOnline.Game.Story;
 /// or a Float as <c>{"float" => text}</c> (<see cref="MessageFields.FloatKey"/>) for a variable; the
 /// fight's Hash, or false once it ended, for a frozen fight (see <see cref="FrozenFightText"/>); nil
 /// for a value no story carries. Keys with values go as
-/// rows, <c>[kind, key, value]</c>. The things a replay reads besides keys take the same shape with
-/// kind "item" or "actor" (an id, the value whether the player holds it or has them in the party)
-/// or "holdings" (no key, the value what the player holds, see <see cref="HoldingsDigest"/>). A
+/// rows, <c>[kind, key, value]</c>. A companion a replay reads takes the same shape with kind
+/// "actor" (an id, the value whether the player has them in the party). A
 /// site, where a write or a run came from, is <c>["map", map, event, page from 1]</c>,
 /// <c>["ce", common event]</c>, <c>["game"]</c> or <c>["game", what]</c> (a part of the game, such
 /// as "troop" or "catchup"), or <c>["list"]</c> for a list of no site; a command's place, where an
@@ -65,19 +65,9 @@ public static class StoryPlain
     public const int FreezeKind = 3;
 
     /// <summary>
-    /// The kind of an item a replay reads.
-    /// </summary>
-    public const string ItemKind = "item";
-
-    /// <summary>
     /// The kind of a companion a replay reads.
     /// </summary>
     public const string ActorKind = "actor";
-
-    /// <summary>
-    /// The kind of what the player holds, which a replay reads as a whole.
-    /// </summary>
-    public const string HoldingsKind = "holdings";
 
     /// <summary>
     /// How a switch or self switch that is on is written.
@@ -480,24 +470,15 @@ public static class StoryPlain
     /// <summary>
     /// Writes a thing a replay reads of the player's own as the scripts name it.
     /// </summary>
-    /// <param name="name">The thing as the save's log names it: a key's name, <c>item&lt;id&gt;</c>,
-    /// <c>actor&lt;id&gt;</c> or <c>holdings</c>.</param>
+    /// <param name="name">The thing as the save's log names it: a key's name or <c>actor&lt;id&gt;</c>.</param>
     /// <returns><c>[kind, key]</c>, see <see cref="StoryPlain"/>.</returns>
     /// <exception cref="RubyValueException">The name is no such thing.</exception>
     public static RubyArray ThingOf(string name)
     {
         ArgumentNullException.ThrowIfNull(name);
-        if (name == HoldingsKind)
+        if (name.StartsWith(ActorKind, StringComparison.Ordinal) && int.TryParse(name.AsSpan(ActorKind.Length), NumberStyles.None, CultureInfo.InvariantCulture, out int id))
         {
-            return [HoldingsKind, RubyNil.Value];
-        }
-
-        foreach (string kind in (string[])[ItemKind, ActorKind])
-        {
-            if (name.StartsWith(kind, StringComparison.Ordinal) && int.TryParse(name.AsSpan(kind.Length), NumberStyles.None, CultureInfo.InvariantCulture, out int id))
-            {
-                return [kind, id];
-            }
+            return [ActorKind, id];
         }
 
         return StoryKey.TryParse(name, out StoryKey key) ? Plain(key) : throw new RubyValueException($"{name} is nothing a replay reads.");
@@ -508,8 +489,8 @@ public static class StoryPlain
     /// keeps it, with its value as a text there.
     /// </summary>
     /// <param name="rows"><c>[[kind, key, value], ...]</c>, nil for none.</param>
-    /// <returns>Each thing's value by its name: a key's as the tracks write it, an item's or companion's
-    /// <see cref="OnText"/> or <see cref="OffText"/>, the holdings' digest.</returns>
+    /// <returns>Each thing's value by its name: a key's as the tracks write it, a companion's
+    /// <see cref="OnText"/> or <see cref="OffText"/>.</returns>
     /// <exception cref="RubyValueException">A row is no such thing.</exception>
     public static Dictionary<string, string> ThingTextsOf(RubyValue rows)
     {
@@ -520,11 +501,8 @@ public static class StoryPlain
             RubyArray fields = row is RubyArray { Count: 3 } found ? found : throw new RubyValueException($"{row} is no row, which is [kind, key, value].");
             switch (fields[0])
             {
-                case RubyString kind when kind.AsText() == HoldingsKind:
-                    texts[HoldingsKind] = HoldingsDigest(fields[2]);
-                    break;
-                case RubyString kind when kind.AsText() is ItemKind or ActorKind:
-                    texts[string.Create(CultureInfo.InvariantCulture, $"{kind.AsText()}{fields[1].AsInt()}")] = fields[2] is RubyBool { Flag: true } ? OnText : OffText;
+                case RubyString kind when kind.AsText() == ActorKind:
+                    texts[string.Create(CultureInfo.InvariantCulture, $"{ActorKind}{fields[1].AsInt()}")] = fields[2] is RubyBool { Flag: true } ? OnText : OffText;
                     break;
                 default:
                     StoryKey key = KeyOf(fields[0], fields[1]);
@@ -534,18 +512,6 @@ public static class StoryPlain
         }
 
         return texts;
-    }
-
-    /// <summary>
-    /// Sums up what the player holds in one text, which a waiting run's read of their holdings
-    /// compares: a script's check of the party, such as a chest's lock, reads no key.
-    /// </summary>
-    /// <param name="holdings">What the player holds as the scripts hand it over, any plain value.</param>
-    /// <returns>The digest.</returns>
-    public static string HoldingsDigest(RubyValue holdings)
-    {
-        ArgumentNullException.ThrowIfNull(holdings);
-        return Convert.ToHexString(SHA256.HashData(RubyMarshal.Write(holdings)).AsSpan(0, 8));
     }
 
     /// <summary>

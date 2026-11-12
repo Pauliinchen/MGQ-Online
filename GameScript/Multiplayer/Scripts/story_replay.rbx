@@ -2,7 +2,9 @@
 #  story_replay.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-12: Told the DLL that a replay failed, by a script error too, not only that it ran out of time
+#      Paulinchen  2026-11-12: Read no item the player holds for the DLL, which picks a replay's page without one
+#                            - Passed a check of what the party holds that the record lacks, and let a run wait only on keys and on a companion checked in the party
+#                            - Told the DLL that a replay failed, by a script error too, not only that it ran out of time
 #                            - Logged a replay's time with its staging, split into staging, run and commit, the commit into its compare and merge, with the garbage collections of each
 #                            - Stopped a replay step after five seconds instead of after a count of commands or resumes, and told the DLL a replay stopped so
 #                            - Took a companion the world holds back out of the party a replay keeps, and put back the member they benched
@@ -56,7 +58,8 @@
 # replay costs the receiver nothing: it takes back only what it gave. An input the
 # record lacks is the receiver's own: a choice is asked of them on the choices' screen; a number, an
 # item or a present takes what the game's window starts with (user decision 2026-11-06); a battle
-# counts as won; any other input reads their own game.
+# counts as won; a check of what the party holds passes (user decision 2026-11-12); any other input
+# reads their own game.
 #
 # The record names each input by the place of its command, see input_at, which the opener's game
 # records by, and by what it read; values are whole numbers, a yes or no 1 or 0.
@@ -90,9 +93,6 @@ module MGQ_MpStoryReplay
 
   # The field of $game_system the save keeps the DLL's log in.
   LOG_FIELD = :@mgq_mp_replay_log
-
-  # The kind of the player's own things a run reads that stands for what they hold, see holdings_read.
-  HOLDINGS = "holdings"
 
   # Frames between two asks whether a waiting run is due again, two seconds.
   DUE_FRAMES = 120
@@ -177,12 +177,14 @@ module MGQ_MpStoryReplay
   BRANCH_INPUTS = { 2 => "branch", 7 => "branch", 8 => "branch", 9 => "branch", 10 => "branch", 11 => "key" }.freeze
 
   # The conditional branches among BRANCH_INPUTS that check what the party holds: gold, items,
-  # weapons and armors.
+  # weapons and armors, which pass where the opener's record lacks them.
   HOLDING_BRANCHES = [7, 8, 9, 10].freeze
 
-  # The conditional branches the game answers from the receiver's own party: a companion's state and
-  # a script.
-  PARTY_BRANCHES = [4, 12].freeze
+  # The conditional branch that checks a companion.
+  ACTOR_BRANCH = 4
+
+  # The check of ACTOR_BRANCH whether the companion is in the party.
+  IN_PARTY = 0
 
   # The game data a Control Variables command reads whose value is an input: the counts of an item,
   # a weapon and an armor the party holds.
@@ -193,9 +195,6 @@ module MGQ_MpStoryReplay
 
   # The party's gold among the game data of another kind, whose value is an input too.
   GOLD_DATA = 2
-
-  # The game data of a companion a Control Variables command reads, from the receiver's own actors.
-  ACTOR_DATA = 3
 
   # The map's methods that change its display, which the replay leaves out, and its refresh, which
   # would read the replay's view into the receiver's events.
@@ -545,7 +544,7 @@ module MGQ_MpStoryReplay
   def self.finish(state)
     replay = state[:replay]
     reads = replay.reads.map { |(kind, key), value| [kind, key, value] }
-    reads << [HOLDINGS, nil, holdings_read] if replay.own_holdings?
+    reads.concat(replay.actors_read.map { |id| ["actor", id, own_value("actor", id)] })
     answer = MGQ_Multiplayer::Bridge.call(DONE_TOPIC, "entry" => state[:entry], "reached" => replay.committed?, "failed" => replay.state == :failed,
                                                       "before" => state[:before] || [], "reads" => reads, "had" => state[:had] || [], "has" => state[:has] || [])
     notice(answer, state[:had])
@@ -625,17 +624,14 @@ module MGQ_MpStoryReplay
   end
 
   # Reads one of the player's own things as the DLL names it (StoryPlain in the DLL): a key's value,
-  # whether the player holds an item ("item") or has a companion in the party ("actor"), and what
-  # they hold ("holdings", see holdings_read).
+  # or whether the player has a companion in the party ("actor").
   #
-  # @param kind [Integer, String] The key's kind, "item", "actor" or "holdings".
-  # @param key [Integer, Array, nil] The key or id, nil for the holdings.
+  # @param kind [Integer, String] The key's kind, or "actor".
+  # @param key [Integer, Array] The key or id.
   # @return [Object] Its value.
   def self.own_value(kind, key)
     case kind
-    when "item" then $data_items[key.to_i] && $game_party.has_item?($data_items[key.to_i]) ? true : false
     when "actor" then $game_party.members.any? { |actor| actor.id == key.to_i }
-    when HOLDINGS then holdings_read
     else MGQ_MpStoryKeys.plain_of(kind, MGQ_MpStoryKeys.value_of(kind, key))
     end
   end
@@ -672,14 +668,6 @@ module MGQ_MpStoryReplay
       data = defined?(NWConst::Library::MEDAL_DATA) ? NWConst::Library::MEDAL_DATA[id] : nil
       ["m#{id}", 1, data ? data[:title].to_s : "Medal #{id}", false]
     end
-  end
-
-  # Lists what the player holds as a waiting run's read of their holdings compares it, which the DLL
-  # sums up: a script's check of the party reads no key.
-  #
-  # @return [Array] Each thing's key and amount, then each companion's id and level.
-  def self.holdings_read
-    holdings.map { |key, amount| [key, amount] } + [$game_party.members.map { |actor| [actor.id, actor.base_level] }]
   end
 
   # Finds the icon of the first item a replay gave, for its notice.
@@ -1574,21 +1562,20 @@ module MGQ_MpStoryReplay
     end
 
     # Reads a key press from the record, and the checks the replay follows the opener through: what
-    # the party holds and the event's own self switches, so the receiver gets what the opener got.
-    # A self switch of the run's step reads the receiver's own, which tells whether they took the
-    # step already. Any other branch as the game does, noting a check of the receiver's own party.
+    # the party holds and the event's own self switches, so the receiver gets what the opener got. A
+    # check of what the party holds that the record lacks passes, so a replay never waits on what
+    # the receiver holds. A self switch of the run's step reads the receiver's own, which tells
+    # whether they took the step already. Any other branch as the game does, noting a check whether
+    # a companion is in the party, which a waiting run waits on.
     def command_111
       kind = BRANCH_INPUTS[@params[0]]
       unless kind
-        @replay.read_own_holdings if PARTY_BRANCHES.include?(@params[0])
+        @replay.read_own_actor(@params[1]) if @params[0] == ACTOR_BRANCH && @params[2] == IN_PARTY
         return game(:command_111)
       end
 
       own = own_branch
-      opener = @replay.flag(kind) do
-        @replay.read_own_holdings if HOLDING_BRANCHES.include?(@params[0])
-        own
-      end
+      opener = @replay.flag(kind) { HOLDING_BRANCHES.include?(@params[0]) || own }
       @branch[@indent] = step_switch? ? own : opener
       command_skip unless @branch[@indent]
     end
@@ -1599,7 +1586,7 @@ module MGQ_MpStoryReplay
     end
 
     # Reads what the party holds as the opener's record holds it, and any other game data as the
-    # game does, noting a read of the receiver's own holdings or companions.
+    # game does; a count the record lacks is the receiver's own.
     #
     # @param type [Integer] The kind of game data.
     # @param param1 [Integer] Its first parameter.
@@ -1607,13 +1594,7 @@ module MGQ_MpStoryReplay
     # @return [Numeric] The value.
     def game_data_operand(type, param1, param2)
       own = game(:game_data_operand, type, param1, param2)
-      @replay.read_own_holdings if type == ACTOR_DATA
-      return own unless MGQ_MpStoryReplay.holding_read?(type, param1)
-
-      @replay.input("holding") do
-        @replay.read_own_holdings
-        own
-      end
+      MGQ_MpStoryReplay.holding_read?(type, param1) ? @replay.input("holding") { own } : own
     end
 
     # Reads the map at a place from the record, or from the receiver's own map without one.
@@ -1781,7 +1762,7 @@ module MGQ_MpStoryReplay
       @commands = 0
       @cost = Cost.new
       @own_way = false
-      @own_holdings = false
+      @actors_read = []
       @committed = false
       @state = :running
       @list = bind(entry)
@@ -1833,17 +1814,19 @@ module MGQ_MpStoryReplay
       step
     end
 
-    # Notes that the replay read the receiver's own holdings or companions, which a waiting run's read
-    # of their holdings stands for.
-    def read_own_holdings
-      @own_holdings = true
+    # Notes a companion whose place in the receiver's party the replay checked, which a waiting run
+    # waits on.
+    #
+    # @param id [Integer] The companion.
+    def read_own_actor(id)
+      @actors_read << id unless @actors_read.include?(id)
     end
 
-    # Reports whether the replay read the receiver's own holdings or companions.
+    # Lists the companions whose place in the receiver's party the replay checked, see read_own_actor.
     #
-    # @return [Boolean] Whether it did.
-    def own_holdings?
-      @own_holdings
+    # @return [Array<Integer>] Their ids.
+    def actors_read
+      @actors_read
     end
 
     # Notes a companion whose join the world holds back (MGQ_MpWorldCatchup.hold_join?): they join

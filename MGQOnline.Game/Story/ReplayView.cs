@@ -2,6 +2,7 @@
 //  ReplayView.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-12: Read no item the receiver holds
 //      Paulinchen  2026-10-31: Created
 //
 //----------------------------------------------------------------
@@ -35,9 +36,6 @@ public sealed class ReplayView(IReadOnlyDictionary<StoryKey, string> start, IRep
     /// <inheritdoc />
     public bool SelfSwitch(int map, int eventId, string letter) =>
         start.TryGetValue(StoryKey.SelfSwitch(map, eventId, letter), out string? value) ? value == "1" : own.SelfSwitch(map, eventId, letter);
-
-    /// <inheritdoc />
-    public bool HasItem(int item) => own.HasItem(item);
 
     /// <inheritdoc />
     public bool InParty(int actor) => own.InParty(actor);

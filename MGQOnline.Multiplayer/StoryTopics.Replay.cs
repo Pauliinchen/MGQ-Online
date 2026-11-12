@@ -2,7 +2,8 @@
 //  StoryTopics.Replay.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-12: Counted every failed replay, by a script error too, not only one that ran out of time
+//      Paulinchen  2026-11-12: Picked a replay's page without asking for an item the player holds
+//                            - Counted every failed replay, by a script error too, not only one that ran out of time
 //                            - Counted a replay that ran out of time and left its run waiting for good after the third
 //      Paulinchen  2026-11-11: Found the choices of a run by their code and number, without the shapes of the player's lists
 //                            - Named the inputs of an earlier release's entry anew as it is taken, and handed the whole record along
@@ -130,7 +131,7 @@ internal sealed partial class StoryTopics
 
     /// <summary>
     /// The topic that takes a run handed to the player: {"entry", "values" (the rows of the player's
-    /// own things asked for: keys, items, companions and holdings, see <see cref="StoryPlain"/>)}.
+    /// own things asked for: keys and companions, see <see cref="StoryPlain"/>)}.
     /// Answers {"do"=>"done"},
     /// {"needs"=>[[kind, key], ...]}, {"do"=>"pending", "why"}, {"do"=>"replay", "page" (from 1, nil for
     /// a common event), "sibling", "inputs" (the entry's, less the answers of the choices that are
@@ -966,9 +967,6 @@ internal sealed partial class StoryTopics
 
         /// <inheritdoc />
         public bool SelfSwitch(int map, int eventId, string letter) => Read(StoryKey.SelfSwitch(map, eventId, letter).ToString()) == StoryPlain.OnText;
-
-        /// <inheritdoc />
-        public bool HasItem(int item) => Read(string.Create(CultureInfo.InvariantCulture, $"{StoryPlain.ItemKind}{item}")) == StoryPlain.OnText;
 
         /// <inheritdoc />
         public bool InParty(int actor) => Read(string.Create(CultureInfo.InvariantCulture, $"{StoryPlain.ActorKind}{actor}")) == StoryPlain.OnText;

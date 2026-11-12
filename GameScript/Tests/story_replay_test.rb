@@ -2,7 +2,8 @@
 #  story_replay_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-12: Checked that a replay that raises tells the DLL it failed, as one past the time limit does
+#      Paulinchen  2026-11-12: Checked that a check of an item the record lacks passes and that a check of a companion in the party is read alone
+#                            - Checked that a replay that raises tells the DLL it failed, as one past the time limit does
 #                            - Checked that a replay logs its time with its staging, split by part
 #                            - Checked that a replay that loops or waits past the time limit stops within it, keeps nothing and tells the DLL so
 #                            - Checked that a replay whose companion the world holds back still ends, on the game's own Queen's Cup final
@@ -690,7 +691,7 @@ new_game
 MGQ_MpStoryReplay.receive(entry.merge("id" => "e211", "site" => ["map", 624, 211, 1], "inputs" => []))
 MGQ_MpStoryReplay.update
 check("a replay that raises tells the DLL it failed", [done.last["reached"], done.last["failed"]], [false, true])
-fake.answer("story.replay_done") { |request| done << request; { "notice" => "Ana opened a chest for the party: Makina." } }
+fake.answer("story.replay_done") { |request| done << request; { "notice" => request["reached"] ? "Ana opened a chest for the party: Makina." : nil } }
 
 # A run that waits, as for a lock, is taken again once the DLL names it due.
 new_game
@@ -699,7 +700,7 @@ MGQ_MpStoryReplay.receive(entry)
 MGQ_MpStoryReplay.update
 waited = [$game_party.item_number(606), MGQ_MpStoryReplay.waiting]
 fake.answer("story.replay_take") { |_request| { "do" => "replay", "page" => 1 } }
-fake.answer("story.replay_due") { |request| request["values"].any? { |kind, _key, _value| kind == "holdings" } ? [entry] : { "needs" => [["holdings", nil]] } }
+fake.answer("story.replay_due") { |request| request["values"].any? { |kind, _key, _value| kind == "actor" } ? [entry] : { "needs" => [["actor", 1]] } }
 MGQ_MpStoryReplay.instance_variable_set(:@due_at, -MGQ_MpStoryReplay::DUE_FRAMES)
 MGQ_MpStoryReplay.update
 check("a run that waits is dropped from the queue, and replayed once the DLL names it due", [waited, $game_party.item_number(606)], [[0, []], 1])
@@ -748,20 +749,26 @@ check("a guest keeps the chest's A and 2045 a replay wrote in their own story", 
 module MGQ_MpCoopStory; def self.guest?; false; end; end
 
 # A receiver asked the Fortune Teller's trade who answers Decline is done with their own answer, so
-# the question does not come back. Their record lacks the opener's check of the wrist, so their own
-# wrist decides, and the DLL hears what they hold, which a run that waits on it compares.
+# the question does not come back. Their record lacks the opener's check of the wrist, which passes
+# as if they held it (user decision 2026-11-12), so they are asked the trade without one.
 new_game
 $notices = []
 done.clear
-$game_party.gain_item(1734, 1)
 MGQ_MpStoryReplay.receive(entry.merge("id" => "e7", "site" => ["map", 51, 23, 1], "keys" => [[2, [51, 23, "B"], false]], "inputs" => TRADED.first(1)))
 MGQ_MpStoryReplay.update
 $asked[3].call(1)
-check("a receiver who declines the trade they are asked is done with their answer, which gave nothing",
+check("a receiver without the wrist whose record lacks the opener's check of it is asked the trade as if they held it, and is done with Decline",
       [done.last["reached"], $game_party.item_number(610), $game_party.item_number(1734), $game_self_switches[[51, 23, "B"]], MGQ_MpStoryReplay.waiting],
-      [true, 0, 1, false, []])
-check("a check of an item the record lacks hands the DLL what the receiver holds, with each companion's id and level",
-      done.last["reads"].assoc("holdings"), ["holdings", nil, [["g", 0], ["c1", 1], [[1, 12]]]])
+      [true, 0, 0, false, []])
+
+# A check whether a companion is in the party, as Rami's page 6:20:2 makes, is the one thing of
+# the receiver's party a run that missed its step waits on.
+page(6, 20, [c(111, 4, 56, 0), c(123, "A", 0, indent: 1), c(412)])
+new_game
+MGQ_MpStoryReplay.receive(entry.merge("id" => "e12", "site" => ["map", 6, 20, 1], "keys" => [[2, [6, 20, "A"], false]], "inputs" => []))
+MGQ_MpStoryReplay.update
+check("a replay that checks whether a companion missing from the party is in it waits on that companion alone",
+      [done.last["reached"], done.last["reads"]], [false, [["actor", 56, false]]])
 
 # A receiver asked the trade who answers Trade, as the opener did, goes the opener's way: a later
 # check of their own that fails leaves the run waiting instead of done.
@@ -774,7 +781,6 @@ MGQ_MpStoryReplay.update
 $asked[3].call(0)
 check("a receiver who answers as the opener did and fails a later check of their own is not done",
       [done.last["reached"], $game_party.item_number(612), $game_self_switches[[51, 25, "B"]]], [false, 0, false])
-check("and a replay that read only a switch of the receiver hands the DLL no read of what they hold", done.last["reads"].assoc("holdings"), nil)
 fake.answer("story.replay_take") { |_request| { "do" => "replay", "page" => 1 } }
 
 # A replay of a run that used up a key item takes the receiver's too, though a replay costs nothing

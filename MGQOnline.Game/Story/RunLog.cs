@@ -2,7 +2,9 @@
 //  RunLog.cs
 //
 //  Changelog:
-//      Paulinchen  2026-11-12: Counted every failed replay of a run, by a script error too, not only one that ran out of time
+//      Paulinchen  2026-11-12: Tried a waiting run of an older save that read an item the player held once more
+//                            - Tried a waiting run of an older save that read everything the player held once more
+//                            - Counted every failed replay of a run, by a script error too, not only one that ran out of time
 //                            - Counted the replays of a run that ran out of time, in the save too, and gave the run up after the third
 //      Paulinchen  2026-11-10: Told whether a run waits to be taken or for the player's own things
 //      Paulinchen  2026-11-09: Kept the track number of each claim and dropped the steps the save passed on the world's track
@@ -123,6 +125,17 @@ public sealed class RunLog
     /// How many replays of a run may fail before the log gives the run up.
     /// </summary>
     public const int FailuresAllowed = 3;
+
+    /// <summary>
+    /// The read of everything the player held, which logs of 0.7.0 keep with each waiting run.
+    /// </summary>
+    private const string EarlierHoldingsRead = "holdings";
+
+    /// <summary>
+    /// The start of a read of an item the player held, such as "item514", which logs of earlier
+    /// releases keep with a run that waited on a page's item condition.
+    /// </summary>
+    private const string EarlierItemRead = "item";
 
     /// <summary>
     /// The steps, oldest first.
@@ -443,7 +456,8 @@ public sealed class RunLog
 
     /// <summary>
     /// Reads a log as the save keeps it, see <see cref="Write"/>; a step a save kept without track
-    /// numbers reads with none, and a log kept without counts of failed replays with none.
+    /// numbers reads with none, a log kept without counts of failed replays with none, and a run that
+    /// waited on everything the player held or on an item they held waits to be taken once more.
     /// </summary>
     /// <param name="value">The log.</param>
     /// <returns>The log.</returns>
@@ -468,7 +482,16 @@ public sealed class RunLog
         foreach (RubyValue run in saved["pending"].AsArray())
         {
             RubyArray fields = run.AsArray();
-            log._pending.Add(new PendingRun(ReplayEntry.Read(fields[0]), DictionaryOf(fields[1])));
+            ReplayEntry entry = ReplayEntry.Read(fields[0]);
+            Dictionary<string, string> reads = DictionaryOf(fields[1]);
+            if (reads.Keys.Any(read => read == EarlierHoldingsRead || read.StartsWith(EarlierItemRead, StringComparison.Ordinal)))
+            {
+                log._queued.Add(entry);
+            }
+            else
+            {
+                log._pending.Add(new PendingRun(entry, reads));
+            }
         }
 
         foreach (RubyValue entry in saved["queued"].AsArray())
