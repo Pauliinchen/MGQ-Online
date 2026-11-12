@@ -20,9 +20,9 @@
     <ZipFile>$(MSBuildProjectDirectory)\bin\$(Configuration)\MGQ-Online-$(Version).zip</ZipFile>
   </PropertyGroup>
 
-  <!-- NativeAOT's compiler at 10.0.14, which fixes advisory GHSA-p3jp-9v83-76w9; the SDK brings an
-       older one. -->
-  <ItemGroup>
+  <!-- NativeAOT's compiler at least at 10.0.14, which fixes advisory GHSA-p3jp-9v83-76w9. An SDK
+       with a newer runtime keeps its own compiler: an older compiler refuses a newer runtime. -->
+  <ItemGroup Condition="$([MSBuild]::VersionLessThan('$(BundledNETCoreAppPackageVersion)', '10.0.14'))">
     <KnownILCompilerPack Update="Microsoft.DotNet.ILCompiler" ILCompilerPackVersion="10.0.14" />
   </ItemGroup>
 
