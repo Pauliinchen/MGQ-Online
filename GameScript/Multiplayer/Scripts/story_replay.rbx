@@ -2,7 +2,9 @@
 #  story_replay.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-11-12: Read no item the player holds for the DLL, which picks a replay's page without one
+#      Paulinchen  2026-11-12: Ran a replay on the player's own holdings and undid a run it does not keep from one copy, instead of merging a staged copy back
+#                            - Ran a replay that asks the player again from its start with the answer and the inputs its earlier run read
+#                            - Read no item the player holds for the DLL, which picks a replay's page without one
 #                            - Passed a check of what the party holds that the record lacks, and let a run wait only on keys and on a companion checked in the party
 #                            - Told the DLL that a replay failed, by a script error too, not only that it ran out of time
 #                            - Logged a replay's time with its staging, split into staging, run and commit, the commit into its compare and merge, with the garbage collections of each
@@ -49,7 +51,9 @@
 #
 # The replay works at the engine's objects. While its fiber runs, the world's and the game's work
 # keys live in a view that only the replay sees and that is dropped at its end; the receiver's own
-# keys and holdings are staged, and the replay keeps them only once it finished and reached its step;
+# keys are staged, and the replay keeps them only once it finished and reached its step; it changes
+# the receiver's holdings in place, from a copy taken at its start that undoes a run it does not
+# keep, so a replay that asks the receiver is undone and runs again from its start with the answer;
 # the screen, the message, the player, the timer, the map's display and events, the sound and the
 # scenes are stand-ins or closed; and every input (a choice, a number, an item, a present, a random
 # draw, a read of the player's or an event's position, the timer, a key press, a battle's outcome,
@@ -70,7 +74,7 @@
 # the one notice from what the player held before and after. The save keeps the DLL's log of the
 # steps its game took, with the runs that wait to be taken, so a save keeps what was handed to it.
 #
-# It must never break the game, so a failing replay stops, drops what it staged and logs.
+# It must never break the game, so a failing replay stops, undoes what it changed and logs.
 module MGQ_MpStoryReplay
   extend MGQ_MpLog
 
@@ -204,9 +208,6 @@ module MGQ_MpStoryReplay
   # The reads of the map that are inputs: what kind of map the opener stood on.
   MAP_READS = [:field?].freeze
 
-  # The map's vehicles in the order Game_Map keeps them.
-  VEHICLE_TYPES = [:boat, :ship, :airship].freeze
-
   # The move route commands that turn a switch on, off, and run a script (Game_Character's
   # ROUTE_SWITCH_ON, ROUTE_SWITCH_OFF and ROUTE_SCRIPT).
   ROUTE_SWITCH_ON = 27
@@ -237,8 +238,10 @@ module MGQ_MpStoryReplay
   #   (the open world's kept keys when missing); :own_write, a block called with each write of the
   #   receiver's own keys it keeps, such as a borrowing guest's keep_own; :page, the page of the run's
   #   event the receiver's game picked, from 1, the run's own when missing; :around_commit, a block
-  #   called with the replay and a block that keeps what it did, to measure what changed; :recorded,
-  #   the opener's whole record when "inputs" lacks the answers asked of the receiver.
+  #   called with the replay and a block that keeps what it did, to measure what changed; :holdings,
+  #   a block that reads what the receiver holds, which each run of the replay notes at its start
+  #   (Replay#had); :recorded, the opener's whole record when "inputs" lacks the answers asked of the
+  #   receiver.
   # @return [Replay, nil] The replay: done, asking or failed; nil for a site the game does not have.
   def self.play(entry, options = {})
     return refuse("a replay asked for #{entry['site']} while #{@current.site} runs") if @current
@@ -516,7 +519,7 @@ module MGQ_MpStoryReplay
   #   choices asked of the player; nil when the entry holds it.
   def self.start(entry, page, recorded = nil)
     state = { :entry => entry }
-    replay = play(entry, :view => view_test, :own_write => own_write, :page => page, :recorded => recorded,
+    replay = play(entry, :view => view_test, :own_write => own_write, :page => page, :recorded => recorded, :holdings => lambda { holdings },
                          :around_commit => lambda { |kept, keep| committing(state, kept, keep) })
     return log("entry #{entry['id']} of #{entry['site']} could not be replayed") unless replay
 
@@ -524,15 +527,16 @@ module MGQ_MpStoryReplay
     replay.state == :asking ? ask_player(state) : finish(state)
   end
 
-  # Measures what a replay keeps: the step's keys and what the player holds just before, and what
-  # they hold just after, so values the game changed while the replay waited count for neither.
+  # Measures what a replay keeps: the step's keys just before, what the player held as its kept run
+  # began, which ran in this frame, and what they hold just after, so values the game changed while
+  # the replay waited for an answer count for neither.
   #
   # @param state [Hash] The replay's entry, which takes :before, :had and :has.
   # @param replay [Replay] The replay.
   # @param keep [Proc] Keeps what the replay did.
   def self.committing(state, replay, keep)
     state[:before] = Array(state[:entry]["keys"]).map { |kind, key, _value| [kind, key, own_value(kind, key)] }
-    state[:had] = holdings
+    state[:had] = replay.had
     keep.call
     state[:has] = holdings + medals_of(replay.medals)
   end
@@ -787,13 +791,13 @@ module MGQ_MpStoryReplay
       values && !values.empty? ? values.shift : nil
     end
 
-    # Adds the receiver's answer to a command's input, which the replay takes next.
+    # Adds a value to a command's input, taken after the values it holds already.
     #
     # @param at [Array] The command.
     # @param kind [String] What it read.
-    # @param value [Integer] The answer.
-    def add(at, kind, value)
-      (@values[[at, kind]] ||= []).unshift(value)
+    # @param value [Object] The value.
+    def push(at, kind, value)
+      (@values[[at, kind]] ||= []) << value
     end
   end
 
@@ -1133,24 +1137,6 @@ module MGQ_MpStoryReplay
       {}
     end
 
-    # The vehicles as the replay stages them.
-    #
-    # @return [Array<Game_Vehicle>] The boat, the ship and the airship.
-    def vehicles
-      @replay.vehicles
-    end
-
-    # A vehicle as the replay stages it.
-    #
-    # @param type [Symbol] :boat, :ship or :airship.
-    # @return [Game_Vehicle, nil] The vehicle, nil for another type.
-    def vehicle(type)
-      index = VEHICLE_TYPES.index(type)
-      index ? vehicles[index] : nil
-    end
-
-    VEHICLE_TYPES.each_with_index { |type, index| define_method(type) { vehicles[index] } }
-
     MAP_CLOSED.each { |name| define_method(name) { |*_args| nil } }
 
     MAP_READS.each do |name|
@@ -1176,16 +1162,15 @@ module MGQ_MpStoryReplay
     end
   end
 
-  # A replay's time and garbage collections by part, each summed over its steps, for its log line.
+  # A replay's time and garbage collections by part, each summed over its runs and steps, for its log
+  # line.
   #
   # A collection is charged to whichever part triggers it, often one after the part that allocated,
   # so the line names the collections next to each part's time.
   class Cost
-    # The parts the replay's whole time is made of.
-    WHOLE = [:staging, :run, :commit].freeze
-
-    # Every part the log line names; the compare and the merge lie within the commit.
-    PARTS = (WHOLE + [:compare, :merge]).freeze
+    # The parts the replay's whole time is made of: the snapshot of the holdings with the note of
+    # what the receiver holds, the run, the commit and the rollback.
+    PARTS = [:snapshot, :run, :commit, :rollback].freeze
 
     # Starts with no time spent.
     def initialize
@@ -1206,34 +1191,30 @@ module MGQ_MpStoryReplay
       @collections[part] += GC.count - collections
     end
 
-    # The replay's whole time: its staging, its run and its commit.
+    # The replay's whole time, every part's.
     #
     # @return [Float] The time in milliseconds.
     def total_ms
-      WHOLE.inject(0.0) { |sum, part| sum + @seconds[part] } * 1000
+      PARTS.inject(0.0) { |sum, part| sum + @seconds[part] } * 1000
     end
 
-    # Names each part's time and collections, such as "staging 120.4 ms/1 gc, run 30.2 ms/0 gc,
-    # commit 261.4 ms/2 gc: compare 80.1 ms/0 gc, merge 150.3 ms/1 gc".
+    # Names each part's time and collections, such as "snapshot 22.4 ms/0 gc, run 30.2 ms/0 gc,
+    # commit 1.3 ms/0 gc, rollback 0.0 ms/0 gc".
     #
     # @return [String] The parts.
     def to_s
-      texts = PARTS.map { |part| format("%s %.1f ms/%d gc", part, @seconds[part] * 1000, @collections[part]) }
-      "#{texts[0, 3].join(', ')}: #{texts[3, 2].join(', ')}"
+      PARTS.map { |part| format("%s %.1f ms/%d gc", part, @seconds[part] * 1000, @collections[part]) }.join(", ")
     end
   end
 
-  # The receiver's holdings as a replay sees them: the party, the actors, the library and the map's
-  # vehicles, copied in one piece as a save copies them, so what they share stays shared. The replay
-  # changes the copy; its commit merges the changes into the receiver's objects.
-  class Stage
-    # The staged party, actors, library and vehicles.
-    attr_reader :objects
-
-    # Copies the receiver's holdings.
+  # The receiver's holdings as a run of a replay began: the party, the actors, the library and the
+  # map's vehicles, dumped in one piece as a save writes them, so what they share stays shared. The
+  # run changes the receiver's own objects; a run that is not kept is undone from the dump.
+  class Snapshot
+    # Dumps the receiver's holdings.
     def initialize
-      @base = Marshal.dump(Stage.real)
-      @objects = Marshal.load(@base)
+      @roots = Snapshot.real
+      @dump = Marshal.dump(@roots)
     end
 
     # The receiver's holdings.
@@ -1243,233 +1224,38 @@ module MGQ_MpStoryReplay
       [$game_party, $game_actors, $game_library, $game_map ? $game_map.vehicles : nil]
     end
 
-    # Copies the holdings anew as they were staged.
+    # Reports whether the holdings differ from the dump.
     #
-    # @return [Array] The party, the actors, the library and the map's vehicles at the replay's start.
-    def base
-      Marshal.load(@base)
+    # @return [Boolean] Whether they do; true for holdings that cannot be dumped.
+    def changed?
+      Marshal.dump(Snapshot.real) != @dump
+    rescue StandardError
+      true
     end
 
-    # Merges what the replay changed into the receiver's holdings as they are now, nothing when the
-    # copy is as it was staged.
+    # Puts the holdings back as dumped, the way a save loads them: the party, the actors and the
+    # library each take every field of their copy, and each vehicle its copy's, so the map's sprites
+    # keep their vehicles.
     #
-    # @param cost [Cost] Takes the compare's time and the merge's apart.
-    def commit(cost)
-      @unchanged = cost.measure(:compare) { Marshal.dump(@objects) == @base rescue false }
-      return if @unchanged
-
-      cost.measure(:merge) do
-        base = self.base
-        Stage.real.each_with_index { |real, index| Merge.into(base[index], @objects[index], real) }
-      end
+    # The objects within get the copy's identities, which keeps every object they share one object;
+    # so the game's cache of who wears each unique item (CacheUniq) is emptied.
+    def restore
+      copy = Marshal.load(@dump)
+      $game_party, $game_actors, $game_library = @roots[0, 3]
+      @roots[0, 3].each_with_index { |root, index| Snapshot.fill(root, copy[index]) }
+      Array(@roots[3]).each_with_index { |vehicle, index| Snapshot.fill(vehicle, copy[3][index]) }
+      CacheUniq.init if defined?(CacheUniq)
     end
 
-    # Reports whether the commit found the copy as it was staged and merged nothing.
+    # Gives an object every field of its copy and drops the fields its copy lacks.
     #
-    # @return [Boolean] Whether it did.
-    def unchanged?
-      @unchanged == true
-    end
-  end
+    # @param real [Object, nil] The object, nil for none.
+    # @param copy [Object, nil] Its copy.
+    def self.fill(real, copy)
+      return unless real && copy
 
-  # Merges what a replay changed in its copy of objects into the receiver's objects, field by field,
-  # so what the game changed meanwhile stays: a field the replay left alone keeps the receiver's
-  # value, a number both changed takes the replay's difference too, a list of plain values both
-  # changed in size takes the replay's additions and removals, and any other field the replay
-  # changed takes the replay's value.
-  module Merge
-    # A slot that holds nothing: a missing key, field or place.
-    ABSENT = Object.new.freeze
-
-    # The values compared by value and taken whole.
-    PLAIN = [Numeric, String, Symbol, TrueClass, FalseClass, NilClass].freeze
-
-    # Merges one object's changes into the receiver's object of the same class.
-    #
-    # @param base [Object] The object as the replay copied it.
-    # @param ours [Object] The replay's copy at its end.
-    # @param real [Object, nil] The receiver's object now.
-    def self.into(base, ours, real)
-      return unless real && merged?(base, ours, real) && !same?(base, ours)
-
-      merge(base, ours, real, {})
-    end
-
-    # Tells the value a slot of the receiver's takes.
-    #
-    # @param base [Object] The slot as the replay copied it, ABSENT for none.
-    # @param ours [Object] The replay's slot at its end.
-    # @param real [Object] The receiver's slot now.
-    # @param seen [Hash] The receiver's objects merged already.
-    # @return [Object] The value, the receiver's own object for one merged in place.
-    def self.value(base, ours, real, seen)
-      return real if same?(base, ours)
-      return sum(base, ours, real) if counted?(base, ours, real) && !same?(base, real)
-      return ours unless merged?(base, ours, real)
-
-      merge(base, ours, real, seen)
-      real
-    end
-
-    # Merges an object's changes in place: its keys, places or members, then its fields.
-    #
-    # @param base [Object] The object as copied.
-    # @param ours [Object] The replay's copy.
-    # @param real [Object] The receiver's object.
-    # @param seen [Hash] The receiver's objects merged already, which a cycle reaches again.
-    def self.merge(base, ours, real, seen)
-      return if seen[real.object_id]
-
-      seen[real.object_id] = true
-      if ours.is_a?(Hash) then merge_hash(base, ours, real, seen)
-      elsif ours.is_a?(Array) then merge_array(base, ours, real, seen)
-      elsif ours.is_a?(Struct) then ours.members.each { |name| put(real, name, value(base[name], ours[name], real[name], seen)) }
-      end
-      merge_fields(base, ours, real, seen)
-    end
-
-    # Merges a hash's keys.
-    #
-    # @param base [Hash] The hash as copied.
-    # @param ours [Hash] The replay's copy.
-    # @param real [Hash] The receiver's hash.
-    # @param seen [Hash] The objects merged already.
-    def self.merge_hash(base, ours, real, seen)
-      (base.keys | ours.keys).each do |key|
-        slot = value(base.key?(key) ? base[key] : ABSENT, ours.key?(key) ? ours[key] : ABSENT, real.key?(key) ? real[key] : ABSENT, seen)
-        slot.equal?(ABSENT) ? real.delete(key) : put(real, key, slot)
-      end
-    end
-
-    # Merges a list: one of plain values whose size the replay changed by the values it added and
-    # removed, any other place by place.
-    #
-    # @param base [Array] The list as copied.
-    # @param ours [Array] The replay's copy.
-    # @param real [Array] The receiver's list.
-    # @param seen [Hash] The objects merged already.
-    def self.merge_array(base, ours, real, seen)
-      if base.size != ours.size && (base + ours).all? { |item| plain?(item) }
-        kept = without(real, without(base, ours))
-        return real.replace(kept + without(ours, base))
-      end
-
-      places = (0...[base.size, ours.size, real.size].max).map { |index| value(at(base, index), at(ours, index), at(real, index), seen) }
-      real.replace(places.reject { |slot| slot.equal?(ABSENT) })
-    end
-
-    # Merges an object's fields.
-    #
-    # @param base [Object] The object as copied.
-    # @param ours [Object] The replay's copy.
-    # @param real [Object] The receiver's object.
-    # @param seen [Hash] The objects merged already.
-    def self.merge_fields(base, ours, real, seen)
-      (base.instance_variables | ours.instance_variables).each do |name|
-        slot = value(field(base, name), field(ours, name), field(real, name), seen)
-        if slot.equal?(ABSENT)
-          real.send(:remove_instance_variable, name) if real.instance_variable_defined?(name)
-        elsif !slot.equal?(field(real, name))
-          real.instance_variable_set(name, slot)
-        end
-      end
-    end
-
-    # Sets a key or member unless it holds the value already.
-    #
-    # @param real [Hash, Struct] The receiver's object.
-    # @param key [Object] The key or member.
-    # @param slot [Object] The value.
-    def self.put(real, key, slot)
-      real[key] = slot unless slot.equal?(real[key])
-    end
-
-    # Reads a field.
-    #
-    # @param object [Object] The object.
-    # @param name [Symbol] The field.
-    # @return [Object] Its value, ABSENT for none.
-    def self.field(object, name)
-      object.instance_variable_defined?(name) ? object.instance_variable_get(name) : ABSENT
-    end
-
-    # Reads a place of a list.
-    #
-    # @param list [Array] The list.
-    # @param index [Integer] The place.
-    # @return [Object] Its value, ABSENT past the end.
-    def self.at(list, index)
-      index < list.size ? list[index] : ABSENT
-    end
-
-    # Takes values out of a list, each once.
-    #
-    # @param list [Array] The list.
-    # @param taken [Array] The values.
-    # @return [Array] The list without them.
-    def self.without(list, taken)
-      left = list.dup
-      taken.each do |item|
-        index = left.index(item)
-        left.delete_at(index) if index
-      end
-      left
-    end
-
-    # Reports whether three slots hold numbers or nothing, which add up.
-    #
-    # @param slots [Array] The slots.
-    # @return [Boolean] Whether they do.
-    def self.counted?(*slots)
-      slots.all? { |slot| slot.equal?(ABSENT) || slot.is_a?(Numeric) }
-    end
-
-    # Adds the replay's difference to the receiver's number.
-    #
-    # @param base [Numeric] The number as copied, ABSENT for none.
-    # @param ours [Numeric] The replay's number, ABSENT for none.
-    # @param real [Numeric] The receiver's number, ABSENT for none.
-    # @return [Numeric] The sum, ABSENT where the replay removed the slot and nothing is left.
-    def self.sum(base, ours, real)
-      total = [real, ours].map { |slot| slot.equal?(ABSENT) ? 0 : slot }.inject(:+) - (base.equal?(ABSENT) ? 0 : base)
-      ours.equal?(ABSENT) && total == 0 ? ABSENT : total
-    end
-
-    # Reports whether the replay's object merges into the receiver's in place: both of the copied
-    # object's class, with keys, places, members or fields to merge.
-    #
-    # @param base [Object] The slot as copied.
-    # @param ours [Object] The replay's slot.
-    # @param real [Object] The receiver's slot.
-    # @return [Boolean] Whether it does.
-    def self.merged?(base, ours, real)
-      return false if plain?(ours) || base.equal?(ABSENT) || ours.equal?(ABSENT) || real.equal?(ABSENT)
-      return false unless base.class == ours.class && ours.class == real.class
-
-      ours.is_a?(Hash) || ours.is_a?(Array) || ours.is_a?(Struct) || !ours.instance_variables.empty?
-    end
-
-    # Reports whether a value is plain, compared by value and taken whole.
-    #
-    # @param value [Object] The value.
-    # @return [Boolean] Whether it is.
-    def self.plain?(value)
-      PLAIN.any? { |kind| value.is_a?(kind) }
-    end
-
-    # Reports whether two slots hold the same: plain values by value, objects by their contents.
-    #
-    # @param one [Object] A slot, ABSENT for none.
-    # @param other [Object] Another slot, ABSENT for none.
-    # @return [Boolean] Whether they do.
-    def self.same?(one, other)
-      return true if one.equal?(other)
-      return false if one.equal?(ABSENT) || other.equal?(ABSENT)
-      return one.class == other.class && one == other if plain?(one) || plain?(other)
-
-      Marshal.dump(one) == Marshal.dump(other)
-    rescue TypeError
-      false
+      (real.instance_variables - copy.instance_variables).each { |name| real.send(:remove_instance_variable, name) }
+      copy.instance_variables.each { |name| real.instance_variable_set(name, copy.instance_variable_get(name)) }
     end
   end
 
@@ -1734,35 +1520,32 @@ module MGQ_MpStoryReplay
     # The receiver's own map, which the replay's stand-in hides.
     attr_reader :real_map
 
+    # What the receiver held as the replay's last run began, as the :holdings block reads it; nil
+    # without one.
+    attr_reader :had
+
     # Binds a run.
     #
     # @param entry [Hash] The run, see MGQ_MpStoryReplay.play.
-    # @param options [Hash] The view's test, the own writes' block, the page, the commit's measure
-    #   and the opener's whole record, see MGQ_MpStoryReplay.play.
+    # @param options [Hash] The view's test, the own writes' block, the page, the commit's measure,
+    #   the holdings' block and the opener's whole record, see MGQ_MpStoryReplay.play.
     def initialize(entry, options)
       site = entry["site"]
       @site = options[:page] && site[0] == "map" ? site[0, 3] + [options[:page]] : site
-      @record = Record.new(entry["inputs"] || [])
-      @opener = Record.new(options[:recorded] || entry["inputs"] || [])
-      @view = View.new(start_values(entry["start"]), options[:view] || method(:kept_key?))
+      @inputs = entry["inputs"] || []
+      @opener = Record.new(options[:recorded] || @inputs)
+      @start = entry["start"]
+      @test = options[:view] || method(:kept_key?)
       @keys = {}
       Array(entry["keys"]).each { |kind, key, _value| @keys[[kind, key]] = true }
       @own_write = options[:own_write]
       @around_commit = options[:around_commit]
-      @writes = []
-      @medals = []
-      @reads = {}
-      @places = []
-      @own = {}
-      @journal = []
-      @made = []
-      @reset = []
-      @gained = {}
+      @holdings = options[:holdings]
+      @drawn = []
+      @answers = Record.new([])
       @held = []
       @commands = 0
       @cost = Cost.new
-      @own_way = false
-      @actors_read = []
       @committed = false
       @state = :running
       @list = bind(entry)
@@ -1771,18 +1554,13 @@ module MGQ_MpStoryReplay
     # Starts the replay.
     #
     # @return [Replay, nil] The replay, nil for a run whose list the game does not have or whose
-    #   holdings cannot be staged.
+    #   holdings cannot be copied.
     def start
       return MGQ_MpStoryReplay.refuse("no list to replay at #{@site}") unless @list
 
-      @stage = @cost.measure(:staging) { staged }
-      return MGQ_MpStoryReplay.refuse("the holdings could not be staged for #{@site}") unless @stage
-
       Interpreter.unhook
-      @screen = Game_Screen.new
-      @message = Game_Message.new
-      @interpreter = Interpreter.new(0, self)
-      @interpreter.setup(@list, @event_id)
+      return MGQ_MpStoryReplay.refuse("the holdings could not be copied for #{@site}") unless begin_run
+
       step
     end
 
@@ -1793,25 +1571,23 @@ module MGQ_MpStoryReplay
       @committed
     end
 
-    # The vehicles as the replay stages them.
-    #
-    # @return [Array<Game_Vehicle>] The vehicles.
-    def vehicles
-      @stage.objects[3] || []
-    end
-
-    # Answers the question the replay waits on, and runs on.
+    # Answers the question the replay waits on, and runs the replay again from its start, which
+    # takes the answer at its question.
     #
     # @param value [Object] The answer, one of the question's "values".
     # @return [Replay] The replay.
     def answer(value)
       return self unless @state == :asking
 
-      opener = @opener.take(@question["at"], "choice")
-      @own_way ||= opener.nil? || opener.to_s != value.to_s
-      @record.add(@question["at"], "choice", value)
+      at = @question["at"]
+      opener = @opener.take(at, "choice")
+      @answers.push(at, "choice", [value, opener.nil? || opener.to_s != value.to_s])
       @question = nil
-      step
+      MGQ_MpStoryReplay.log("restarted #{@site} with the player's answer #{value} at #{at}")
+      return step if begin_run
+
+      @state = :failed
+      self
     end
 
     # Notes a companion whose place in the receiver's party the replay checked, which a waiting run
@@ -1830,8 +1606,9 @@ module MGQ_MpStoryReplay
     end
 
     # Notes a companion whose join the world holds back (MGQ_MpWorldCatchup.hold_join?): they join
-    # the staged party, so the event sees what it waits for and runs to its end, and leave it again
-    # before the replay keeps its changes.
+    # the party, so the event sees what it waits for and runs to its end, and leave it again before
+    # the replay keeps its changes. The note outlasts a run that is undone, so the next run asks
+    # the DLL no more.
     #
     # @param main [Integer] The companion's main persona.
     def hold_back(main)
@@ -1861,14 +1638,16 @@ module MGQ_MpStoryReplay
       @state == :done || @state == :failed
     end
 
-    # Reads an input: the record's value of the command running now, else the receiver's own.
+    # Reads an input: the record's value of the command running now, else the receiver's own, which
+    # a later run of the replay takes as it was (see drawn).
     #
     # @param kind [String] What is read, see MGQ_MpStoryReplay.input_at.
     # @yieldreturn [Object] The receiver's own value.
     # @return [Object] The value.
     def input(kind)
-      value = @record.take(at_now, kind)
-      value.nil? ? yield : value
+      at = at_now
+      value = @record.take(at, kind)
+      value.nil? ? drawn(at, kind, yield) : value
     end
 
     # Reads a yes or no input, which the record holds as 1 or 0.
@@ -1877,8 +1656,10 @@ module MGQ_MpStoryReplay
     # @yieldreturn [Boolean] The receiver's own answer.
     # @return [Boolean] The answer.
     def flag(kind)
-      value = @record.take(at_now, kind)
-      value.nil? ? yield : value != 0
+      at = at_now
+      value = @record.take(at, kind)
+      value = drawn(at, kind, yield ? 1 : 0) if value.nil?
+      value != 0
     end
 
     # Names the command running now, the deepest one.
@@ -2022,14 +1803,88 @@ module MGQ_MpStoryReplay
 
     private
 
-    # Stages the receiver's holdings for the replay, see Stage.
+    # Begins a run of the replay from its start: dumps the receiver's holdings for an undo, notes
+    # what they hold and their party's order, and starts the record, the view, what the run noted
+    # and the interpreter anew. The record holds the opener's inputs, then every input an earlier run
+    # read of the receiver's own, so a run after an answer goes the earlier run's way up to the
+    # question, which takes the answer.
     #
-    # @return [Stage, nil] The stage, nil when they cannot be copied.
-    def staged
-      Stage.new
+    # @return [Boolean] Whether it began; false when the holdings cannot be dumped.
+    def begin_run
+      @snapshot = @cost.measure(:snapshot) do
+        @had = @holdings ? @holdings.call : nil
+        snapshot
+      end
+      return false unless @snapshot
+
+      @party_order = $game_party.actors.to_a
+      @record = Record.new(@inputs + @drawn)
+      @view = View.new(start_values(@start), @test)
+      @writes = []
+      @medals = []
+      @reads = {}
+      @places = []
+      @own = {}
+      @journal = []
+      @made = []
+      @reset = []
+      @gained = {}
+      @actors_read = []
+      @own_way = false
+      @keeping = false
+      @screen = Game_Screen.new
+      @message = Game_Message.new
+      @interpreter = Interpreter.new(0, self)
+      @interpreter.setup(@list, @event_id)
+      true
+    end
+
+    # Dumps the receiver's holdings, see Snapshot.
+    #
+    # @return [Snapshot, nil] The snapshot, nil when they cannot be dumped.
+    def snapshot
+      Snapshot.new
     rescue => e
-      MGQ_MpStoryReplay.log("staging the holdings failed: #{e.class}: #{e.message}")
+      MGQ_MpStoryReplay.log("copying the holdings for #{@site} failed: #{e.class}: #{e.message}")
       nil
+    end
+
+    # Notes an input the record lacks as the receiver's own value gave it, which a later run takes
+    # after the record's.
+    #
+    # @param at [Array] The command, see MGQ_MpStoryReplay.input_at.
+    # @param kind [String] What it read.
+    # @param value [Object] The value, a yes or no as 1 or 0.
+    # @return [Object] The value.
+    def drawn(at, kind, value)
+      @drawn << [at, 0, kind, value] unless value.nil?
+      value
+    end
+
+    # Takes the receiver's answer to a choice from the answers they gave, and goes their own way
+    # from there when it differs from the opener's.
+    #
+    # @param at [Array] The choice, see MGQ_MpStoryReplay.choice_at.
+    # @return [Object, nil] The answer, nil for none given.
+    def answered(at)
+      value, own_way = @answers.take(at, "choice")
+      @own_way ||= own_way == true
+      value
+    end
+
+    # Undoes what the run changed of the receiver's holdings.
+    #
+    # @return [String] What it did, for the log.
+    def roll_back
+      @cost.measure(:rollback) do
+        next "nothing to roll back" unless @snapshot.changed?
+
+        @snapshot.restore
+        "rolled back"
+      end
+    rescue => e
+      MGQ_MpStoryReplay.log("rolling back the holdings of #{@site} FAILED: #{e.class}: #{e.message}")
+      "its roll back failed"
     end
 
     # Reports whether the replay finished and wrote one of its step's keys, finished a run that names
@@ -2041,8 +1896,8 @@ module MGQ_MpStoryReplay
       @state == :done && (@keys.empty? || @own_way || @writes.any? { |kind, key, _value, _viewed| step_key?(kind, key) })
     end
 
-    # Keeps what the replay did: its holdings merged into the receiver's, then its own keys' writes
-    # in order, while it still counts as running, so no run of the player's notes them.
+    # Keeps what the replay did: the companions held back taken out of the party, then its own keys'
+    # writes in order, while it still counts as running, so no run of the player's notes them.
     def commit
       MGQ_MpStoryReplay.current = self
       keep = lambda { keep_changes }
@@ -2052,26 +1907,26 @@ module MGQ_MpStoryReplay
       MGQ_MpStoryReplay.current = nil
     end
 
-    # Applies the staged holdings, without the companions held back, and the own keys' changes to
-    # the receiver's objects.
+    # Takes the companions held back out of the party and applies the own keys' changes to the
+    # receiver's objects.
     def keep_changes
       take_back_held
-      @stage.commit(@cost)
+      @keeping = true
       @journal.each { |change| keep_change(*change) }
       $game_map.need_refresh = true unless @writes.empty?
     end
 
-    # Takes the companions held back (hold_back) out of the staged party, and puts back in their
-    # places the members the run benched to make room, while one of them still stood in the party.
+    # Takes the companions held back (hold_back) out of the party, and puts back in their places the
+    # members the run benched to make room, while one of them still stood in the party.
     def take_back_held
       return if @held.empty?
 
-      party = @stage.objects[0]
+      party = $game_party
       joined = @held.any? { |main| party.exist_party_actor_id?(main) }
       @held.each { |main| party.remove_actor(main) }
       return unless joined
 
-      @stage.base[0].actors.to_a.each_with_index do |id, place|
+      @party_order.each_with_index do |id, place|
         party.actors.set(party.actors.to_a.insert(place, id)) if party.exist_stand_actor_id?(id)
       end
     end
@@ -2154,8 +2009,10 @@ module MGQ_MpStoryReplay
     end
 
     # Runs the replay's fiber with every stand-in in place, until it ends or asks, commits it once
-    # it finished and reached its step, and logs what the replay cost once it ended, its staging
-    # with it, split by part (see Cost).
+    # it finished and reached its step, and undoes its run of the receiver's holdings otherwise: a
+    # run that missed its step, failed, or asks the receiver, which runs again once answered. Logs
+    # what the replay cost once it ended, every run of it, split by part (see Cost), or that it
+    # waits for the answer.
     #
     # @return [Replay] The replay.
     def step
@@ -2163,14 +2020,22 @@ module MGQ_MpStoryReplay
       @commands = 0
       @deadline = Time.now + STEP_SECONDS
       @cost.measure(:run) { swapped { drive } }
-      @cost.measure(:commit) { commit } if reached?
-      if @state == :done
+      if reached?
+        @cost.measure(:commit) { commit }
+      else
+        @rolled = roll_back
+      end
+      if @state == :asking
+        @interpreter = nil
+        MGQ_MpStoryReplay.log("the replay of #{@site} waits for the player's answer, #{@rolled}")
+      else
         MGQ_MpStoryReplay.log(format("replayed %s: %d writes, %d reads in %.1f ms (%s), %s", @site, @writes.size, @reads.size, @cost.total_ms, @cost, outcome))
       end
       self
     rescue => e
       @state = :failed
-      MGQ_MpStoryReplay.log("the replay of #{@site} failed#{@committed ? '' : ', nothing kept'}: #{e.class}: #{e.message}")
+      kept = @keeping ? " while keeping its keys, its holdings kept" : ", nothing kept, #{roll_back}"
+      MGQ_MpStoryReplay.log("the replay of #{@site} failed#{kept}: #{e.class}: #{e.message}")
       self
     end
 
@@ -2178,9 +2043,7 @@ module MGQ_MpStoryReplay
     #
     # @return [String] The outcome.
     def outcome
-      return "its step not reached, nothing kept" unless @committed
-
-      @stage.unchanged? ? "kept, holdings unchanged" : "kept"
+      @committed ? "kept" : "its step not reached, #{@rolled}"
     end
 
     # Resumes the fiber, answering the message as the message window would, until the list ends or
@@ -2197,7 +2060,8 @@ module MGQ_MpStoryReplay
 
     # Answers the message as the message window does: text is shown and closed; a choice, a number,
     # an item, an extended choice or a present is answered from the record; a choice the record
-    # lacks is asked, any other input the record lacks takes what the game's window starts with.
+    # lacks takes the receiver's answer, and is asked of them without one; any other input the
+    # record lacks takes what the game's window starts with.
     #
     # @return [Boolean] Whether the message was answered; false while the receiver is asked.
     def answer_message
@@ -2211,7 +2075,9 @@ module MGQ_MpStoryReplay
 
       at = %w(choice number item).include?(kind) ? message_now : at_now
       value = @record.take(at, kind)
-      value = window_start(at, kind, message) if value.nil? && kind != "choice"
+      if value.nil?
+        value = kind == "choice" ? answered(at) : drawn(at, kind, window_start(at, kind, message))
+      end
       return ask(at, message, lines) if value.nil?
 
       apply(kind, message, value)
@@ -2327,13 +2193,12 @@ module MGQ_MpStoryReplay
       message.present_actor_id = 0
     end
 
-    # Puts the stand-ins and the staged holdings in place while a block runs, and the receiver's
+    # Puts the stand-ins in place while a block runs, and the receiver's
     # objects back after it, with the medals the replay gained taken off the popup.
     #
     # @yield Runs the replay.
     def swapped
-      saved = [$game_switches, $game_variables, $game_self_switches, $game_message, $game_player, $game_timer, $game_map,
-               $game_party, $game_actors, $game_library]
+      saved = [$game_switches, $game_variables, $game_self_switches, $game_message, $game_player, $game_timer, $game_map]
       medals = medal_list
       medals_before = medals ? medals.size : 0
       @real_map = saved[6]
@@ -2343,7 +2208,6 @@ module MGQ_MpStoryReplay
       $game_switches, $game_variables, $game_self_switches = keys
       $game_message = @message
       $game_player, $game_timer, $game_map = stand_ins
-      $game_party, $game_actors, $game_library = @stage.objects[0..2]
       yield
     ensure
       if MGQ_MpStoryReplay.current.equal?(self)
@@ -2362,8 +2226,7 @@ module MGQ_MpStoryReplay
       [$game_switches, $game_variables, $game_self_switches].each_with_index do |found, kind|
         made(kind, found) unless found.equal?(keys[kind])
       end
-      $game_switches, $game_variables, $game_self_switches, $game_message, $game_player, $game_timer, $game_map,
-        $game_party, $game_actors, $game_library = saved
+      $game_switches, $game_variables, $game_self_switches, $game_message, $game_player, $game_timer, $game_map = saved
     end
 
     # The medals the game pops up, which gain_medal fills.

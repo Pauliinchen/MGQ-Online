@@ -1356,9 +1356,9 @@ module MGQ_MpWorldCatchup
   # A replay's join in a Raid World waits for the world's companion sharing and the join's level,
   # which the world's shared companions bring later (the one companion filter in the DLL); one of a
   # replay that went the player's own way is the player's own and waits for its gate.
-  # During a replay, a held join counts after the run: the companion joins the staged party, so an
-  # event that loops until they are in the party still ends, and the replay takes them back before
-  # it keeps its changes (MGQ_MpStoryReplay::Replay#hold_back), asking the DLL once per replay.
+  # During a replay, a held join counts after the run: the companion joins the party, so an event
+  # that loops until they are in the party still ends, and the replay takes them back before it
+  # keeps its changes (MGQ_MpStoryReplay::Replay#hold_back), asking the DLL once per replay.
   # Called before the game adds a companion to the party.
   #
   # @param actor_id [Integer] The companion, in any persona.

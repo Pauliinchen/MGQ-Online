@@ -2,6 +2,7 @@
 #  coop_squad.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-12: Lifted the Raid World's team cap while a story replay runs on the team
 #      Paulinchen  2026-11-11: Kept the squad read last while the DLL answers that it is unchanged
 #      Paulinchen  2026-11-08: Colored the party edit screen's rows through the Mod Framework's row patch instead of drawing them
 #                            - Greyed the formation list's rows past the squad through the row patch instead of drawing them
@@ -548,17 +549,25 @@ module MGQ_MpCoopSquad
   # leaves the items that raise the party size without effect there.
   #
   # A story's temporary party is its own standby list, so a cap on it would drop characters from
-  # the story.
+  # the story; a story replay runs on the team itself, where the cap would ask the player whom to
+  # remove for a companion the story adds.
   #
   # @param party [Game_Party] The party asked.
   # @param max [Integer] The game's party_member_max.
   # @return [Integer] The team's size of the Raid World's rules or less in a Raid World, else the
   #   game's.
   def self.party_member_max(party, max)
-    return max if @capped.nil? || !@capped.equal?(party) || party.temp_actors_use?
+    return max if @capped.nil? || !@capped.equal?(party) || party.temp_actors_use? || replaying?
 
     cap = raid? ? team_cap : nil
     cap ? [max, cap].min : max
+  end
+
+  # Reports whether a story replay runs.
+  #
+  # @return [Boolean] Whether one does.
+  def self.replaying?
+    defined?(MGQ_MpStoryReplay) && MGQ_MpStoryReplay.running? ? true : false
   end
 
   # Reports whether a battle fights with the player's own squad of a Raid World: a battle of their

@@ -2,7 +2,10 @@
 #  story_replay_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-11-12: Checked that a check of an item the record lacks passes and that a check of a companion in the party is read alone
+#      Paulinchen  2026-11-12: Checked that a replay undone after it changed the party's order and the gear a companion wears leaves both as they were
+#                            - Checked that a replay that asks runs again on its first run's draw, and that a join held back before it asks reaches the DLL once
+#                            - Checked that a replay logs its time split into its snapshot, run, commit and rollback
+#                            - Checked that a check of an item the record lacks passes and that a check of a companion in the party is read alone
 #                            - Checked that a replay that raises tells the DLL it failed, as one past the time limit does
 #                            - Checked that a replay logs its time with its staging, split by part
 #                            - Checked that a replay that loops or waits past the time limit stops within it, keeps nothing and tells the DLL so
@@ -353,14 +356,14 @@ check("a Makina chest replayed for a receiver whose 2045 is off gives the Makina
 check("and neither the receiver's map nor the mod's hooks on the interpreter saw it", [$game_self_switches[[3, 23, "A"]], $hooked], [false, []])
 check("the replay notes the receiver's own keys it read", done.reads, { [0, 2045] => false })
 
-# The replay's log line counts its staging in its time and splits the time into staging, the run and
-# the commit, the commit into its compare and its merge, so a slow replay shows the part it pays for.
+# The replay's log line splits its time into the snapshot of the holdings, the run, the commit and a
+# rollback, so a slow replay shows the part it pays for.
 new_game
 line = logged_lines { replay(["map", 215, 23, 1]) }.grep(/replayed /).first.to_s
 times = Hash[line.scan(/(\w+) (\d+\.\d) ms/).map { |part, ms| [part, ms.to_f] }]
-whole = times.values_at("staging", "run", "commit").compact.inject(0.0, :+)
-check("a replay that keeps the Makina logs its time with its staging, split by part",
-      [times.keys, (times["in"] - whole).abs < 0.2, line.end_with?(", kept")], [%w(in staging run commit compare merge), true, true])
+whole = times.values_at("snapshot", "run", "commit", "rollback").compact.inject(0.0, :+)
+check("a replay that keeps the Makina logs its time split by part",
+      [times.keys, (times["in"] - whole).abs < 0.2, line.end_with?(", kept")], [%w(in snapshot run commit rollback), true, true])
 
 # A companion joining in a replay: the catch-up's look before the join reads the whole story the
 # replay stands in for, the receiver's own.
@@ -513,16 +516,21 @@ replay(["map", 419, 40, 1], "keys" => [[2, [419, 40, "A"], false]])
 check("its retry gives each once", [$game_party.item_number(606), $game_actors[5].love, $game_switches[2046], $game_variables[300], $game_self_switches[[419, 40, "A"]]],
       [1, 3, true, 4, true])
 
-# A replay that waits for the receiver's answer while the game gains gold: the game's gold stays
-# beside the replay's.
+# A replay that waits for the receiver's answer while the game gains gold: the receiver holds
+# nothing of it meanwhile, and once answered it runs again from its start on the draw its first run
+# made, so the game's gold stays beside the replay's.
 new_game
-page(624, 210, [c(125, 0, 0, 100), c(102, ["Yes", "No"], 2), c(402, 0, "Yes"), c(126, 77, 0, 0, 1, indent: 1), c(404)])
+page(624, 210, [c(125, 0, 0, 100), c(122, 300, 300, 0, 2, 1, 1000), c(102, ["Yes", "No"], 2), c(402, 0, "Yes"), c(126, 77, 0, 0, 1, indent: 1), c(404)])
+srand(7)
+first_draw = 1 + rand(1000)
+srand(7)
 waiting = replay(["map", 624, 210, 1])
 meanwhile = [waiting.state, $game_party.gold]
 $game_party.gain_gold(50)
+srand(8)
 waiting.answer(0)
-check("a replay that waits gives nothing yet, and once it ends the gold the game gained meanwhile stays beside its gift",
-      [meanwhile, $game_party.gold, $game_party.item_number(77)], [[:asking, 0], 150, 1])
+check("a replay that waits gives nothing yet, and once it ends on its first draw the gold the game gained meanwhile stays beside its gift",
+      [meanwhile, $game_party.gold, $game_party.item_number(77), $game_variables[300]], [[:asking, 0], 150, 1, first_draw])
 
 # A replay that raises leaves the save as it was.
 new_game
@@ -531,6 +539,26 @@ page(624, 211, [c(126, 606, 0, 0, 1), c(121, 2046, 2046, 0), c(122, 300, 300, 0,
 broken = replay(["map", 624, 211, 1])
 check("a replay that raises leaves the save as it was",
       [broken.state, $game_party.item_number(606), $game_switches[2046], $game_variables[300], $log.last.include?("broken")], [:failed, 0, false, 2, true])
+
+# A replay that benches a member, adds another, sells a piece of enchanted gear, strips a companion
+# and then raises is undone exactly: the party in its order, and the gear the companion wears still
+# the very piece the party's list holds, as the game keeps worn unique gear in the list (script 179).
+Enchanted = Struct.new(:id, :enchant)
+new_game
+$game_party.instance_variable_set(:@actors, Members.new([1, 2, 3]))
+$game_party.instance_variable_set(:@include_actors, [1, 2, 3])
+gear = [Enchanted.new(901, "Fire"), Enchanted.new(902, "Ice"), Enchanted.new(903, "Wind")]
+$game_party.instance_variable_set(:@enchants, gear)
+$game_actors[5].instance_variable_set(:@equips, [gear[1]])
+$game_actors[5].love = 2
+page(624, 214, [c(355, "delete_actor_ex(2)"), c(355, "add_actor_ex(4)"), c(355, "$game_party.instance_variable_get(:@enchants).shift"),
+                c(355, "$game_actors[5].instance_variable_get(:@equips).clear"), c(126, 606, 0, 0, 1), c(355, "$game_actors[5].love += 3"), c(355, "raise 'broken'")])
+replay(["map", 624, 214, 1])
+enchants = $game_party.instance_variable_get(:@enchants)
+check("a replay that changed the party's order, its gear and a companion and then raised is undone exactly",
+      [$game_party.actors.to_a, $game_party.instance_variable_get(:@include_actors), enchants.map(&:id),
+       $game_actors[5].instance_variable_get(:@equips)[0].equal?(enchants[1]), $game_party.item_number(606), $game_actors[5].love],
+      [[1, 2, 3], [1, 2, 3], [901, 902, 903], true, 0, 2])
 
 check("a plain interpreter still runs the mod's hooks", lambda {
   $hooked.clear
@@ -1101,6 +1129,22 @@ if File.file?(GAME_MAP)
   check("the held companion is out of the party it keeps, the others as they were",
         [$game_party.actors.to_a, $game_party.instance_variable_get(:@include_actors)], [[1, 4, 7], [1, 4, 7, 9]])
   check("the DLL was asked once, and one line tells the join left out", [holds.size, lines.grep(/left out the join of 19/).size], [1, 1])
+
+  # A replay that holds a join back and then asks the receiver: the party holds nothing of it while
+  # they are asked, and the run after the answer keeps the gift without the companion, the DLL asked
+  # once, as the opener's way since the join came before the answer.
+  page(483, 90, [c(355, "add_actor_ex(19)"), c(102, ["Yes", "No"], 2), c(402, 0, "Yes"), c(126, 77, 0, 0, 1, indent: 1), c(404)])
+  new_game
+  holds.clear
+  $game_party.instance_variable_set(:@actors, Members.new([1, 4, 7]))
+  $game_party.instance_variable_set(:@include_actors, [1, 4, 7])
+  MGQ_MpStoryReplay.receive("id" => "e490", "site" => ["map", 483, 90, 1], "stream" => "world", "scope" => "world", "opener" => "Ana", "keys" => [],
+                            "place" => nil, "start" => [], "inputs" => [], "derived" => false)
+  MGQ_MpStoryReplay.update
+  asking = $game_party.actors.to_a
+  $asked[3].call(0)
+  check("a replay that holds a join back and then asks holds nothing meanwhile, and keeps its gift without the companion, the DLL asked once",
+        [asking, holds.size, holds.first["own_way"], $game_party.actors.to_a, $game_party.item_number(77), done.last["reached"]], [[1, 4, 7], 1, false, [1, 4, 7], 1, true])
 else
   puts "skip a replay whose companion the world holds back still ends: BATTLE_GAME_DIR names no game folder with Data/Map483.rvdata2"
 end

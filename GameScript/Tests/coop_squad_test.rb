@@ -2,6 +2,7 @@
 #  coop_squad_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-12: Checked that a story replay sees the game's party size
 #      Paulinchen  2026-11-11: Checked that the squad read last holds while the DLL answers none
 #      Paulinchen  2026-11-08: Checked the looks the party edit screen's rows take through the Mod Framework's row patch
 #                            - Checked the looks of the formation list's rows in place of its drawing
@@ -363,6 +364,11 @@ $game_party.temp = false
 check("and so does the team until it is fitted again", $game_party.party_member_max, 10)
 MGQ_MpOverworldSync.tick(true)
 check("which sends a companion who joined meanwhile to standby", [$game_party.actors, $game_party.standby, $game_party.party_member_max], [[1, 2, 3, 4], [5, 6, 7, 8, 9], 4])
+# Stands in for the story replay, which runs while $replaying is set.
+module MGQ_MpStoryReplay; def self.running?; $replaying; end; end
+$replaying = true
+check("a story replay sees the game's size, so a companion its story adds asks nobody to leave", $game_party.party_member_max, 10)
+$replaying = false
 check("the companions a team past its cap leaves out are the DLL's, told the team, the cap, Luka and whether he may leave",
       [squad.past_cap([2, 3, 4, 5, 1, 6], 4, false), $rule_answers.asked("squad.past_cap").last],
       [[1, 6], { "team" => [2, 3, 4, 5, 1, 6], "luka" => [1], "cap" => 4, "keep_luka" => false }])
