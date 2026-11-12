@@ -79,7 +79,7 @@ When the server needs a newer release of MGQ Online, the mod asks the framework 
 
 ## Worlds
 
-Pick **Multiplayer** below *Continue* on the title screen; it is greyed while the mod cannot run, and the log says why. The first time, the game asks for the name the others see, unless the Discord mod knows yours. Names and passwords are typed on the keyboard; with a gamepad, the game's letters appear.
+Pick **Multiplayer** below *Continue* on the title screen; it is greyed while the mod cannot run, and the log says why. With a Mod Framework older than 0.1.1, it offers the framework update instead. The first time, the game asks for the name the others see, unless the Discord mod knows yours. Names and passwords are typed on the keyboard; with a gamepad, the game's letters appear.
 
 Each world keeps its own saves, Library, medals and affection in `Patch\Multiplayer\Worlds`, so your own game stays untouched. Going back to the title screen leaves the world.
 
@@ -439,7 +439,8 @@ Your games meet at the mod's **server**, which passes their data on. Every game 
 | Message or problem | What to do |
 |---|---|
 | "Monster Girl Quest! Online needs the Mod Framework, which is not installed." | The game started without the Mod Framework, so the mod stays off. Download the framework from the [website](https://mgqonline.org/mods), close the game, extract it into the folder that contains `Game.exe` and start the game again. |
-| *Multiplayer* on the title is greyed | The mod cannot run: the Mod Framework is older than 0.1.1 or runs without its DLL, or the mod's `Multiplayer.dll` did not start. Today's log in the `Logs` folder says which. Update the framework, or install MGQ Online again. |
+| *Multiplayer* on the title is greyed | The mod cannot run: the Mod Framework runs without its DLL, or the mod's `Multiplayer.dll` did not start. Today's log in the `Logs` folder says which. Install the Mod Framework again, or MGQ Online. |
+| *Multiplayer* says it needs a newer Mod Framework | Your Mod Framework is older than 0.1.1. Pick *Update and restart*: the game closes, the framework updates and the game starts again in the Multiplayer menu. If it says Mod Framework 0.1.1 is not available yet, start the game again later to check again. |
 | *Multiplayer* says a new version is out | Pick *Update and restart* in the Mod Framework's question: the game closes, the mod updates and the game starts again in the Multiplayer menu. A Discord invite, or the return to a world after its mods were installed, asks the same while the mod is outdated; after updating, enter the world again yourself. If the game cannot start after an update, download the release again and extract it over the old one. |
 | "This version cannot play online. Update it at the title." | The server turned your version away while you played in a world. Go back to the title: it asks the Mod Framework's question about the update at once. |
 | "The server could not be reached" | Your internet connection is down, or something such as a firewall blocks the game from going online. |

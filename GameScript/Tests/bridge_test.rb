@@ -2,6 +2,7 @@
 #  bridge_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-12: Took framework_too_old? along with framework_gap, which asks it
 #      Paulinchen  2026-11-11: Checked the mod off beside an older Mod Framework without naming the version it requires
 #      Paulinchen  2026-11-06: Took half_loaded? along with available?, which asks it
 #                            - Checked the bytes that cross against Marshal's own instead of recorded dumps
@@ -76,6 +77,7 @@ MGQ_Multiplayer.module_eval(source[/  MOD_FRAMEWORK_REQUIRED = .*\n/])
 MGQ_Multiplayer.module_eval(source[/  def self\.available\?\n.*?\n  end\n/m])
 MGQ_Multiplayer.module_eval(source[/  def self\.half_loaded\?\n.*?\n  end\n/m])
 MGQ_Multiplayer.module_eval(source[/  def self\.framework_ready\?\n.*?\n  end\n/m])
+MGQ_Multiplayer.module_eval(source[/  def self\.framework_too_old\?\n.*?\n  end\n/m])
 MGQ_Multiplayer.module_eval(source[/  def self\.framework_gap\n.*?\n  end\n/m])
 MGQ_Multiplayer.module_eval(source[/  def self\.start\n.*?\n  end\n/m])
 MGQ_Multiplayer.module_eval(source[/  def self\.open_dll\n.*?\n  end\n/m])

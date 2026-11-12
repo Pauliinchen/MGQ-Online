@@ -2,6 +2,7 @@
 #  Multiplayer.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-12: Offered the Mod Framework update on Multiplayer when only the framework is older than the mod needs
 #      Paulinchen  2026-11-11: Required the Mod Framework 0.1.1, whose memory reading the live map weighs by
 #                            - Dropped the action after a restart that went on from the game kept for the single player settings
 #      Paulinchen  2026-11-07: Greyed the title's Multiplayer command while the mod cannot run, through the Mod Framework's disabled:
@@ -287,13 +288,31 @@ module MGQ_Multiplayer
     return "the Mod Framework is not installed" unless defined?(::Mod_Framework)
 
     framework = ::Mod_Framework
-    unless framework.respond_to?(:at_least?) && framework.at_least?(MOD_FRAMEWORK_REQUIRED)
+    if framework_too_old?
       booted = framework.const_defined?(:VERSION, false) ? framework::VERSION : "of an unknown version"
       return "it needs the Mod Framework #{MOD_FRAMEWORK_REQUIRED} or newer, and the one installed is #{booted}"
     end
     return "the Mod Framework #{framework::VERSION} runs without its DLL" unless framework.respond_to?(:available?) && framework.available?
 
     nil
+  end
+
+  # Tells whether a booted Mod Framework is older than the mod needs.
+  #
+  # @return [Boolean] Whether it is older than MOD_FRAMEWORK_REQUIRED, false without the framework.
+  def self.framework_too_old?
+    return false unless defined?(::Mod_Framework)
+
+    !(::Mod_Framework.respond_to?(:at_least?) && ::Mod_Framework.at_least?(MOD_FRAMEWORK_REQUIRED))
+  end
+
+  # Tells whether updating the Mod Framework is all the mod needs to run, which picking Multiplayer
+  # then offers.
+  #
+  # @return [Boolean] Whether the mod's DLL started, every script loaded and the framework is older
+  #   than MOD_FRAMEWORK_REQUIRED.
+  def self.framework_update_needed?
+    @available == true && !half_loaded? && framework_too_old?
   end
 
   # Writes why the mod stays off though its DLL started: the Mod Framework it needs does not run.
@@ -548,6 +567,18 @@ module MGQ_Multiplayer
     # again, its join secret the value, see MGQ_MpWorld::Invite.receive.
     INVITE_ACTION = "multiplayer.invite"
 
+    # The Mod Framework's slug on the website, by which it finds its own update.
+    FRAMEWORK_SLUG = "mod-framework"
+
+    # The Mod Framework's name in its question while its lists do not know it.
+    FRAMEWORK_TITLE = "Mod Framework"
+
+    # The sentence before the Mod Framework's question about its own update.
+    OLD_FRAMEWORK_REASON = "Multiplayer needs a newer Mod Framework."
+
+    # What the title shows while the Mod Framework fetches its lists before it can ask.
+    FRAMEWORK_LOOKUP_TEXT = "Looking up the Mod Framework update on the website."
+
     # What the log says once, when the Mod Framework is missing.
     NO_FRAMEWORK = "Monster Girl Quest! Online needs the Mod Framework #{MOD_FRAMEWORK_REQUIRED} or newer, which is not installed"
 
@@ -579,7 +610,7 @@ module MGQ_Multiplayer
 
       @staged = true
       Log.write("loading as a Title mod of the Mod Framework: the title part as the game starts, the rest as the player enters the game")
-      ::Mod_Framework::Mods.title_command(COMMAND, :after => :continue, :disabled => lambda { |_window| !MGQ_Multiplayer.available? }) { |_window| MGQ_Multiplayer::Stages.open_worlds }
+      ::Mod_Framework::Mods.title_command(COMMAND, :after => :continue, :disabled => lambda { |_window| !MGQ_Multiplayer.available? && !MGQ_Multiplayer.framework_update_needed? }) { |_window| MGQ_Multiplayer::Stages.open_worlds }
       ::Mod_Framework::Mods.on_enter(TAG) { MGQ_Multiplayer::Stages.load_rest }
       ::Mod_Framework::Run.on_close(TAG) { MGQ_Multiplayer.closing($!) }
       ::Mod_Framework::Mods.after_restart(REJOIN_ACTION, TAG) { |world| MGQ_Multiplayer::Stages.rejoin(world) }
@@ -633,9 +664,37 @@ module MGQ_Multiplayer
     end
 
     # Opens the world screen from the title's Multiplayer command, or after the restart an update
-    # of the mod made.
+    # of the mod made; asks for the Mod Framework's update instead while only the framework is too
+    # old.
+    #
+    # @return [Symbol, nil] :off while the framework's update is asked, see update_framework;
+    #   otherwise what the world screen answers.
     def self.open_worlds
+      return update_framework(SceneManager.scene) if MGQ_Multiplayer.framework_update_needed?
+
       MGQ_MpWorld.open_world_screen(SceneManager.scene) if load_world
+    end
+
+    # Asks the Mod Framework to update itself to MOD_FRAMEWORK_REQUIRED and start the game again
+    # into the world screen, the title's commands waiting for the answer.
+    #
+    # Framework 0.1.0 gives a command's window the keys back at once unless its block answers :off,
+    # since its question is no root that would hold them.
+    #
+    # @param scene [Scene_Title] The title screen.
+    # @return [Symbol] :off, so the framework leaves the title's commands to the answer.
+    def self.update_framework(scene)
+      commands = MGQ_MpGame.get(scene, :command_window)
+      commands.deactivate if commands && !commands.disposed?
+      have = ::Mod_Framework::VERSION
+      Log.write("asking the Mod Framework to update itself from #{have} to #{MOD_FRAMEWORK_REQUIRED}, which Multiplayer needs")
+      asked = ::Mod_Framework::Mods.require(FRAMEWORK_SLUG, MOD_FRAMEWORK_REQUIRED, :have => have, :title => FRAMEWORK_TITLE,
+                                            :reason => OLD_FRAMEWORK_REASON, :action => OPEN_ACTION) do |result|
+        Log.write("the Mod Framework update to #{MOD_FRAMEWORK_REQUIRED}: #{result}")
+        commands.activate if result != :restarting && commands && !commands.disposed?
+      end
+      ::Mod_Framework.toast(FRAMEWORK_LOOKUP_TEXT, :severity => :info) if asked == :waiting
+      :off
     end
 
     # Enters a world again after the restart the Mod Framework made for its mods.

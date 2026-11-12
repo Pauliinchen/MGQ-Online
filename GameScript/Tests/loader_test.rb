@@ -2,6 +2,7 @@
 #  loader_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-12: Took framework_too_old? along with framework_gap, which asks it
 #      Paulinchen  2026-11-11: Checked the gate against the Mod Framework version the mod requires, whichever it is
 #      Paulinchen  2026-11-06: Stood in for stay_off, which the stages test covers
 #                            - Dropped the sweeps of the code for old names and the guard of the formats
@@ -240,7 +241,7 @@ module LoaderTestGate
   module Log; def self.write(line); LINES << line; end; end
 end
 LoaderTestGate.module_eval(source[/  MOD_FRAMEWORK_REQUIRED = .*\n/])
-%w[available? half_loaded? framework_ready? framework_gap log_framework_gap].each do |name|
+%w[available? half_loaded? framework_ready? framework_too_old? framework_gap log_framework_gap].each do |name|
   LoaderTestGate.module_eval(source[/  def self\.#{Regexp.escape(name)}\n.*?\n  end\n/m])
 end
 

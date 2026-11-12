@@ -2,6 +2,7 @@
 #  stages_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-12: Checked that Multiplayer offers the update of a Mod Framework 0.1.0 while only the framework keeps the mod off
 #      Paulinchen  2026-11-11: Expected the Mod Framework version the mod requires, whichever it is, in the line without the framework
 #      Paulinchen  2026-11-07: Checked that the title's Multiplayer command is greyed through disabled: only while the mod cannot run
 #      Paulinchen  2026-11-06: Checked that a script that did not load keeps the mod off, its hooks asleep, and tells the player once
@@ -52,11 +53,31 @@ MGQ_Multiplayer.module_eval(source[/  HALF_LOADED_MESSAGE = .*\n/])
 MGQ_Multiplayer.module_eval(source[/  HALF_LOADED_SECONDS = .*\n/])
 MGQ_Multiplayer.module_eval(source[/  def self\.half_loaded\?\n.*?\n  end\n/m])
 MGQ_Multiplayer.module_eval(source[/  def self\.stay_off\n.*?\n  end\n/m])
+MGQ_Multiplayer.module_eval(source[/  def self\.framework_too_old\?\n.*?\n  end\n/m])
+MGQ_Multiplayer.module_eval(source[/  def self\.framework_update_needed\?\n.*?\n  end\n/m])
 MGQ_Multiplayer.module_eval(source[/  module Stages\n.*?\n  end\n/m])
 Mod_Framework.define_singleton_method(:toast) { |text, options = {}| $calls << [:toast, text, options]; nil }
 
 # Stands in for the game's scenes.
 module SceneManager; def self.scene; :title; end; end
+
+# Stands in for the title's commands, which a pick turns off and an answer gives back.
+class StandInCommands
+  # Whether the commands take the input.
+  attr_reader :active
+
+  # Makes them take the input.
+  def initialize; @active = true; end
+  # Lets them take the input.
+  def activate; @active = true; end
+  # Stops them taking the input.
+  def deactivate; @active = false; end
+  # Answers that they are still shown.
+  def disposed?; false; end
+end
+
+# Stands in for the reach into the game's private fields: the title's commands are $commands.
+module MGQ_MpGame; def self.get(_object, field); field == :command_window ? $commands : nil; end; end
 
 # Puts the stages back as they were before the game started.
 def fresh_stages
@@ -183,6 +204,65 @@ Dir.mktmpdir do |game|
     Mod_Framework::Mods.instance_variable_set(:@enter_blocks, [])
     Mod_Framework::Mods.enter("New Game")
     check("a game entered without the mod loads none of its rest and its hooks sleep", [$loaded, $asleep.call], [%w[core_hooks ui], true])
+
+    # A Mod Framework 0.1.0, older than the mod needs, while the mod's own DLL started and every
+    # script loaded, with Mods.require as 0.1.0 has it: it asks, or waits for the mod lists.
+    fresh_stages
+    $log.clear
+    $commands = StandInCommands.new
+    asked = []
+    waiting = []
+    $answer = :declined
+    framework_version = Mod_Framework::VERSION
+    Mod_Framework.send(:remove_const, :VERSION)
+    Mod_Framework.const_set(:VERSION, "0.1.0")
+    Mod_Framework::Mods.define_singleton_method(:require) do |name, version, options = {}, &done|
+      asked << [name, version, options]
+      if $answer == :waiting
+        waiting << done
+        next :waiting
+      end
+      done.call($answer)
+      $answer
+    end
+    MGQ_Multiplayer.define_singleton_method(:available?) { false }
+    MGQ_Multiplayer.instance_variable_set(:@available, true)
+    Mod_Framework::Mods.instance_variable_set(:@commands, [])
+    MGQ_Multiplayer::Stages.boot
+    _name, options, picked = Mod_Framework::Mods.commands.first
+    greyed = options[:disabled].call(:window)
+    MGQ_Multiplayer.instance_variable_set(:@available, false)
+    greyed_without_dll = options[:disabled].call(:window)
+    MGQ_Multiplayer.instance_variable_set(:@available, true)
+    check("with an old framework the command stays on, but greyed once the mod's own DLL did not start", [greyed, greyed_without_dll], [false, true])
+
+    required = MGQ_Multiplayer::MOD_FRAMEWORK_REQUIRED
+    answer = picked.call(:window)
+    check("picking it asks the framework for its own update, which opens the world screen after the restart, and loads no world screen",
+          [asked.last, answer, $loaded.include?("world")],
+          [["mod-framework", required, { :have => "0.1.0", :title => "Mod Framework", :reason => "Multiplayer needs a newer Mod Framework.", :action => "multiplayer.open" }],
+           :off, false])
+    check("going back gives the title's commands the input again, and the log tells both",
+          [$commands.active, $log.last(2)],
+          [true, ["asking the Mod Framework to update itself from 0.1.0 to #{required}, which Multiplayer needs", "the Mod Framework update to #{required}: declined"]])
+
+    $answer = :waiting
+    $calls.clear
+    picked.call(:window)
+    looking = [$commands.active, $calls.select { |call| call.is_a?(Array) && call[0] == :toast }]
+    waiting.shift.call(:restarting)
+    check("while the mod lists load the title says the update is looked up, and an update that restarts keeps the commands off",
+          [looking, $commands.active], [[false, [[:toast, "Looking up the Mod Framework update on the website.", { :severity => :info }]]], false])
+
+    $answer = :unavailable
+    $commands = StandInCommands.new
+    Mod_Framework::Mods.restarts["multiplayer.open"].call(nil)
+    check("the restart after an update of only MGQ Online asks the same instead of opening the world screen",
+          [asked.length, asked.last[0], $calls.any? { |call| call.is_a?(Array) && call[0] == :world_screen }, $commands.active], [3, "mod-framework", false, true])
+    Mod_Framework.send(:remove_const, :VERSION)
+    Mod_Framework.const_set(:VERSION, framework_version)
+    MGQ_Multiplayer.define_singleton_method(:available?) { true }
+    MGQ_Multiplayer.instance_variable_set(:@available, nil)
 
     # A script of the rest that did not load, such as an old copy the Mod Framework refused, while
     # the player starts a New Game.
