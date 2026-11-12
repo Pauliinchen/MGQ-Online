@@ -2,6 +2,7 @@
 //  gate.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-12: Raised the lowest version served while MIN_VERSION names none to 0.7.1
 //      Paulinchen  2026-11-08: Answered every request to the retired mod catalog with the update refusal
 //      Paulinchen  2026-11-06: Held the PvP rooms older games ask for to X-MGQ-Features, so those games get the update refusal
 //                            - Named the lowest version the relay serves in X-MGQ-Min-Version beside a refusal of a game too old for it
@@ -54,7 +55,7 @@ const FULL_LIST_FEATURES = Object.freeze(["web", "admin"]);
 /**
  * The lowest version the relay serves unless its MIN_VERSION setting names another.
  */
-export const DEFAULT_MIN_VERSION = "0.7.0";
+export const DEFAULT_MIN_VERSION = "0.7.1";
 
 /**
  * The HTTP status of a game too old for the relay, on every route but the world rooms.

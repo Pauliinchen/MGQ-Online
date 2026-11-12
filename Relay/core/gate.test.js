@@ -2,6 +2,7 @@
 //  gate.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-12: Tested that a released 0.7.0.1 game gets the update answer on every route under the default lowest 0.7.1
 //      Paulinchen  2026-11-08: Tested that every request to the retired mod catalog gets the update answer, the World Admin tool's and the website's too
 //      Paulinchen  2026-11-06: Expected the lowest version the relay serves beside each refusal of a game too old for it
 //                            - Dropped the tests of requests naming no version and of the PvP rooms
@@ -57,8 +58,8 @@ test("the routes games and the World Admin tool use and the world rooms ask for 
 });
 
 test("every request to the retired mod catalog gets the update answer, whoever asks", () => {
-  const refused = { status: UPDATE_STATUS, reason: UPDATE_NEEDED, socket: false, code: null, minimum: "0.7.0" };
-  for (const [path, features, version] of [["/v1/mods", null, null], ["/v1/mods/levelcap/file", "raid,keys,tracks,settings", "0.7.0"], ["/v1/mods/levelcap/options", "admin", "0.0.0-dev"], ["/v1/mods", "web", "0.0.0-dev"]]) {
+  const refused = { status: UPDATE_STATUS, reason: UPDATE_NEEDED, socket: false, code: null, minimum: "0.7.1" };
+  for (const [path, features, version] of [["/v1/mods", null, null], ["/v1/mods/levelcap/file", "raid,keys,tracks,settings", "0.7.1"], ["/v1/mods/levelcap/options", "admin", "0.0.0-dev"], ["/v1/mods", "web", "0.0.0-dev"]]) {
     assert.deepEqual(updateRefusal(at(path), features, version), refused, `${path} for ${features}`);
   }
 });
@@ -81,12 +82,12 @@ test("versions are read with their build data and suffix, only 0.0.0-dev counts 
   assert.ok(compareVersions([0, 5, 10], [0, 6]) < 0);
 });
 
-test("the lowest version comes from the setting by its numbers, or 0.7.0 when it is unset, no version or the development stamp", () => {
-  assert.deepEqual(minVersionOf("0.7.1"), [0, 7, 1]);
+test("the lowest version comes from the setting by its numbers, or 0.7.1 when it is unset, no version or the development stamp", () => {
+  assert.deepEqual(minVersionOf("0.7.2"), [0, 7, 2]);
   assert.deepEqual(minVersionOf("0.7.0-beta"), [0, 7, 0]);
 
   for (const setting of [undefined, "", "soon", "0.0.0-dev"]) {
-    assert.deepEqual(minVersionOf(setting), [0, 7, 0], String(setting));
+    assert.deepEqual(minVersionOf(setting), [0, 7, 1], String(setting));
   }
 });
 
@@ -94,7 +95,7 @@ test("a game is too old without the features a route asks for, or with a version
   assert.equal(tooOld(GATE.features, null, null), true, "a game before 0.6.0");
   assert.equal(tooOld(GATE.features, " ", null), true, "an empty header counts as none");
   assert.equal(tooOld(GATE.features, "raid", "0.5.9"), true);
-  assert.equal(tooOld(GATE.features, "raid", "0.7.0+abc"), false);
+  assert.equal(tooOld(GATE.features, "raid", "0.7.1+abc"), false);
   assert.equal(tooOld(GATE.features, "raid", "0.6.9", "0.7.0"), true);
   assert.equal(tooOld(GATE.features, "raid", "0.0.0-dev", "0.7.0"), false);
   assert.equal(tooOld(GATE.features, "raid", "0.0.0-dev+abc", "0.7.0"), false);
@@ -112,30 +113,30 @@ test("a game that names no version is turned away", () => {
 });
 
 test("a world room refuses with 400 and the update code, any other route with 426, each naming the lowest version", () => {
-  assert.deepEqual(updateRefusal(at(`/v1/world/${WORLD}`), null, null), { status: WORLD_ROOM_UPDATE_STATUS, reason: UPDATE_NEEDED, socket: true, code: WORLD_ROOM_UPDATE_CODE, minimum: "0.7.0" });
+  assert.deepEqual(updateRefusal(at(`/v1/world/${WORLD}`), null, null), { status: WORLD_ROOM_UPDATE_STATUS, reason: UPDATE_NEEDED, socket: true, code: WORLD_ROOM_UPDATE_CODE, minimum: "0.7.1" });
   assert.deepEqual([WORLD_ROOM_UPDATE_STATUS, WORLD_ROOM_UPDATE_CODE], [400, "update"], "released games stop at a 400 with a code they do not know and show an update hint");
   assert.deepEqual(updateRefusal(at(`/v1/world/${WORLD}`), "raid", "0.6.9", "0.7.1"), { status: 400, reason: UPDATE_NEEDED, socket: true, code: "update", minimum: "0.7.1" });
-  assert.deepEqual(updateRefusal(at("/v1/trades"), null, null), { status: 426, reason: "Update MGQ Online to play online.", socket: false, code: null, minimum: "0.7.0" });
-  assert.deepEqual(updateRefusal(at("/v1/worlds"), null, "0.5.3"), { status: 426, reason: UPDATE_NEEDED, socket: false, code: null, minimum: "0.7.0" });
+  assert.deepEqual(updateRefusal(at("/v1/trades"), null, null), { status: 426, reason: "Update MGQ Online to play online.", socket: false, code: null, minimum: "0.7.1" });
+  assert.deepEqual(updateRefusal(at("/v1/worlds"), null, "0.5.3"), { status: 426, reason: UPDATE_NEEDED, socket: false, code: null, minimum: "0.7.1" });
   assert.deepEqual(refusalHeaders(updateRefusal(at(`/v1/world/${WORLD}`), "raid", "0.6.9", "0.7.1")), { "X-MGQ-Refusal": "update", "X-MGQ-Min-Version": "0.7.1" }, "the game asks the update for the lowest version");
-  assert.deepEqual(refusalHeaders(updateRefusal(at("/v1/worlds"), null, "0.5.3", "0.0.0-dev")), { "X-MGQ-Min-Version": "0.7.0" }, "a lowest set to the development stamp names the default");
-  assert.deepEqual(updateRefusal(at("/v1/worlds"), null, null), { status: 426, reason: UPDATE_NEEDED, socket: false, code: null, minimum: "0.7.0" }, "a game before 0.6.0 or an older World Admin tool build");
-  assert.deepEqual(updateRefusal(at(`/v1/worlds/${WORLD}/raid`), null, "0.0.0-dev"), { status: 426, reason: UPDATE_NEEDED, socket: false, code: null, minimum: "0.7.0" }, "the version alone is not enough");
+  assert.deepEqual(refusalHeaders(updateRefusal(at("/v1/worlds"), null, "0.5.3", "0.0.0-dev")), { "X-MGQ-Min-Version": "0.7.1" }, "a lowest set to the development stamp names the default");
+  assert.deepEqual(updateRefusal(at("/v1/worlds"), null, null), { status: 426, reason: UPDATE_NEEDED, socket: false, code: null, minimum: "0.7.1" }, "a game before 0.6.0 or an older World Admin tool build");
+  assert.deepEqual(updateRefusal(at(`/v1/worlds/${WORLD}/raid`), null, "0.0.0-dev"), { status: 426, reason: UPDATE_NEEDED, socket: false, code: null, minimum: "0.7.1" }, "the version alone is not enough");
   assert.equal(updateRefusal(at("/v1/worlds"), "admin", "0.0.0-dev", "0.9.0"), null, "the World Admin tool");
   assert.equal(updateRefusal(at(`/v1/worlds/${WORLD}/raid/route/clear`), "admin", "0.0.0-dev", "0.7.0"), null, "the World Admin tool on a Raid World admin route");
 });
 
-test("under the default lowest 0.7.0, a released 0.6.9.2 game gets the update answer on every route it uses, and 0.7.0 passes", () => {
+test("under the default lowest 0.7.1, a released 0.7.0.1 game gets the update answer on every route it uses, and 0.7.1 passes", () => {
   const routes = [`/v1/worlds`, `/v1/worlds/${WORLD}/raid`, `/v1/worlds/${WORLD}/story`, `/v1/worlds/${WORLD}/bosses`, `/v1/worlds/${WORLD}/battles`, "/v1/trades", "/v1/reports", "/v1/story-mapping",
     `/v1/raid-design/${"ab".repeat(32)}`];
   for (const path of routes) {
-    assert.deepEqual(updateRefusal(at(path), "raid,keys,tracks,settings", "0.6.9.2"), { status: UPDATE_STATUS, reason: UPDATE_NEEDED, socket: false, code: null, minimum: "0.7.0" }, path);
-    assert.equal(updateRefusal(at(path), "raid,keys,tracks,settings", "0.7.0"), null, path);
+    assert.deepEqual(updateRefusal(at(path), "raid,keys,tracks,settings", "0.7.0.1"), { status: UPDATE_STATUS, reason: UPDATE_NEEDED, socket: false, code: null, minimum: "0.7.1" }, path);
+    assert.equal(updateRefusal(at(path), "raid,keys,tracks,settings", "0.7.1"), null, path);
   }
 
-  assert.deepEqual(updateRefusal(at(`/v1/world/${WORLD}`), "raid,keys,tracks,settings", "0.6.9.2"),
-    { status: WORLD_ROOM_UPDATE_STATUS, reason: UPDATE_NEEDED, socket: true, code: WORLD_ROOM_UPDATE_CODE, minimum: "0.7.0" }, "the world room");
-  assert.equal(updateRefusal(at(`/v1/world/${WORLD}`), "raid,keys,tracks,settings", "0.7.0"), null, "0.7.0's world room");
+  assert.deepEqual(updateRefusal(at(`/v1/world/${WORLD}`), "raid,keys,tracks,settings", "0.7.0.1"),
+    { status: WORLD_ROOM_UPDATE_STATUS, reason: UPDATE_NEEDED, socket: true, code: WORLD_ROOM_UPDATE_CODE, minimum: "0.7.1" }, "the world room");
+  assert.equal(updateRefusal(at(`/v1/world/${WORLD}`), "raid,keys,tracks,settings", "0.7.1"), null, "0.7.1's world room");
 });
 
 test("only the website and the World Admin tool read the world list with every world's mods", () => {

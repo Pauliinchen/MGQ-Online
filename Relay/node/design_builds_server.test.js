@@ -2,6 +2,7 @@
 //  design_builds_server.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-12: Named 0.7.1 as the version of the games
 //      Paulinchen  2026-11-06: Ran over SQLite stores in memory
 //      Paulinchen  2026-11-05: Sent the auth key in its header
 //                            - Named the version of a current game with the game
@@ -35,7 +36,7 @@ const A = { "X-MGQ-Designer": DESIGNERS.A.key, "X-MGQ-Features": "designer", "X-
 /**
  * The headers of a game that reads compiled format 3.
  */
-const GAME = { [FEATURES_HEADER]: "raid,keys", [VERSION_HEADER]: "0.7.0", "X-MGQ-Design-Reader": "3" };
+const GAME = { [FEATURES_HEADER]: "raid,keys", [VERSION_HEADER]: "0.7.1", "X-MGQ-Design-Reader": "3" };
 
 /**
  * The auth key of the tests' worlds.
@@ -139,14 +140,14 @@ async function finished(address, id) {
 async function raidWorld(relay, address, room) {
   const created = await fetch(`http://${address}/v1/worlds`, {
     method: "POST",
-    headers: { [FEATURES_HEADER]: "raid", [VERSION_HEADER]: "0.7.0", [PLAYER_HEADER]: "c0".repeat(16) },
+    headers: { [FEATURES_HEADER]: "raid", [VERSION_HEADER]: "0.7.1", [PLAYER_HEADER]: "c0".repeat(16) },
     body: JSON.stringify({ id: room, name: "Raid Designs", seats: 4, playerName: "Creator", authHash: await sha256Hex(AUTH), lock: { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(40) }, type: "raid" }),
   });
   assert.equal(created.status, 201);
   await relay.bossesOf(room).report("watcher", "Lilith", { battle: "b1", seq: 1, delta: 0.5, max: 900 });
 
   const heard = [];
-  const socket = new WebSocket(`ws://${address}/v1/world/${room}?name=Watcher`, { headers: { [PLAYER_HEADER]: "57".repeat(16), [AUTH_HEADER]: AUTH, [FEATURES_HEADER]: "raid,keys", [VERSION_HEADER]: "0.7.0" } });
+  const socket = new WebSocket(`ws://${address}/v1/world/${room}?name=Watcher`, { headers: { [PLAYER_HEADER]: "57".repeat(16), [AUTH_HEADER]: AUTH, [FEATURES_HEADER]: "raid,keys", [VERSION_HEADER]: "0.7.1" } });
   socket.on("message", (data) => heard.push(data.toString()));
   await new Promise((resolve, reject) => {
     socket.once("open", resolve);

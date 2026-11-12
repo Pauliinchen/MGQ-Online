@@ -2,6 +2,7 @@
 //  server.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-12: Named 0.7.1 as the version of the games and the lowest version served while the setting names none
 //      Paulinchen  2026-11-08: Tested the update refusal on every route of the retired mod catalog in place of its routes
 //      Paulinchen  2026-11-06: Tested that a 0.6.9.2 game asking for a PvP room gets the update refusal
 //                            - Expected the lowest version the relay serves beside a refusal of a game too old for it
@@ -130,7 +131,7 @@ const LOG = { info: (line) => logged.info.push(line), error: (line) => logged.er
  * The headers a current game, which keeps a Raid World's story key by key, sends on its directory
  * requests and world rooms.
  */
-const GAME = Object.freeze({ [FEATURES_HEADER]: "raid,keys", [VERSION_HEADER]: "0.7.0" });
+const GAME = Object.freeze({ [FEATURES_HEADER]: "raid,keys", [VERSION_HEADER]: "0.7.1" });
 
 /**
  * The header a released game that names no version sends.
@@ -512,7 +513,7 @@ test("every game reads the release control, the admins set it, and the gate take
   const release = (headers, body) => fetch(`${relayBase}/admin/release`, body ? { method: "POST", headers, body: JSON.stringify(body) } : { headers });
 
   const read = await fetch(`${relayBase}/release`);
-  assert.deepEqual([read.status, await read.json()], [200, { current: null, min: "0.7.0", repo: RELEASE_REPO }], "open to a game of any version, without headers");
+  assert.deepEqual([read.status, await read.json()], [200, { current: null, min: "0.7.1", repo: RELEASE_REPO }], "open to a game of any version, without headers");
   assert.deepEqual([(await release({ [PLAYER_HEADER]: CREATOR })).status, (await release({ [PLAYER_HEADER]: CREATOR }, { min: "0.6.5" })).status], [403, 403]);
   assert.equal((await release({ [PLAYER_HEADER]: ADMIN }, { current: "0.6.4", min: "0.6.5" })).status, 400);
 
@@ -522,7 +523,7 @@ test("every game reads the release control, the admins set it, and the gate take
     assert.deepEqual((await set.json()).updatedBy, admin);
     assert.ok(logged.info.some((line) => line.endsWith(`admin ${admin} set the release: current unset -> 0.6.8, min unset -> 0.6.5 (0.6.5 served)`)));
     assert.deepEqual([(await fetch(directoryBase, { headers: UNNAMED })).status, (await gameFetch(directoryBase, { headers: { [VERSION_HEADER]: "0.6.5" } })).status], [426, 200], "a game naming none");
-    assert.deepEqual(await (await release({ [PLAYER_HEADER]: ADMIN })).json(), { current: "0.6.8", min: "0.6.5", repo: RELEASE_REPO, envMin: "0.7.0", updatedAt: now, updatedBy: admin });
+    assert.deepEqual(await (await release({ [PLAYER_HEADER]: ADMIN })).json(), { current: "0.6.8", min: "0.6.5", repo: RELEASE_REPO, envMin: "0.7.1", updatedAt: now, updatedBy: admin });
   } finally {
     assert.equal((await release({ [PLAYER_HEADER]: ADMIN }, { current: null, min: null })).status, 200);
   }
@@ -1035,13 +1036,13 @@ test("a game without X-MGQ-Features, or naming a version below the lowest, is tu
 
   assert.deepEqual(await world({}), worldUpdate, "a game before 0.6.0 stops at a 400 with a code it does not know");
   assert.deepEqual(await world({ ...GAME, [VERSION_HEADER]: "0.5.9+abc" }), worldUpdate);
-  const current = await world({ ...GAME, [VERSION_HEADER]: "0.7.0+abc" });
+  const current = await world({ ...GAME, [VERSION_HEADER]: "0.7.1+abc" });
   assert.equal(await current.first, "seat 0");
   current.socket.close();
 
   const trades = directoryBase.replace("/v1/worlds", "/v1/trades");
   const listing = await fetch(`${trades}?world=${room}`, { headers: { [PLAYER_HEADER]: playerKey(80) } });
-  assert.deepEqual([listing.status, await listing.json(), listing.headers.get("X-MGQ-Min-Version")], [426, { error: UPDATE_NEEDED }, "0.7.0"]);
+  assert.deepEqual([listing.status, await listing.json(), listing.headers.get("X-MGQ-Min-Version")], [426, { error: UPDATE_NEEDED }, "0.7.1"]);
 
   assert.equal((await fetch(directoryBase)).status, 426, "a game before 0.6.0 or an older World Admin tool build");
   assert.equal((await fetch(`${directoryBase}/${room}/raid`, { headers: { [PLAYER_HEADER]: ADMIN, [VERSION_HEADER]: "0.0.0-dev" } })).status, 426, "the Raid World admin routes ask for X-MGQ-Features too");
@@ -1333,7 +1334,7 @@ test("the creator or an admin edits a world over HTTP", async () => {
 test("the admins' stats count the world rooms with their players and the game versions in them", async () => {
   const room = roomId(200);
   await makeWorld(room, 4);
-  const newer = await open(`${worldBase}${room}?name=Newer`, { ...GAME, [VERSION_HEADER]: "0.7.1", [PLAYER_HEADER]: playerKey(91), [AUTH_HEADER]: AUTH });
+  const newer = await open(`${worldBase}${room}?name=Newer`, { ...GAME, [VERSION_HEADER]: "0.7.2", [PLAYER_HEADER]: playerKey(91), [AUTH_HEADER]: AUTH });
   const current = await sit(room, 92);
   await until(async () => (await listed(room)).online === 2);
   const stats = async (headers) => fetch(`${directoryBase.replace("/worlds", "")}/admin/stats`, { headers });
@@ -1342,7 +1343,7 @@ test("the admins' stats count the world rooms with their players and the game ve
   assert.equal(answer.status, 200);
   const body = await answer.json();
   assert.deepEqual(body.worlds.find((world) => world.id === room), { id: room, name: `World ${room.slice(-3)}`, type: "classic", seats: 4, players: 2 });
-  assert.deepEqual([body.versions["0.7.1"], body.versions["0.7.0"]], [1, 1]);
+  assert.deepEqual([body.versions["0.7.2"], body.versions["0.7.1"]], [1, 1]);
   assert.ok(body.players.worlds >= 2 && body.players.total === body.players.worlds);
   assert.deepEqual([body.battles, body.battleServer, typeof body.memory.rss, body.startedAt], [{ tracked: 0, served: 0 }, null, "number", new Date(1_000_000).toISOString()]);
   assert.equal((await stats({ [PLAYER_HEADER]: CREATOR })).status, 403, "only admins read them");
@@ -1356,7 +1357,7 @@ test("every route of the retired mod catalog answers the update refusal, a curre
   const base = directoryBase.replace("/v1/worlds", "/v1/mods");
   for (const [path, method] of [["", "GET"], ["/levelcap/file", "GET"], ["/levelcap/options", "POST"]]) {
     const answer = await gameFetch(`${base}${path}`, { method, headers: { [PLAYER_HEADER]: ADMIN }, ...(method === "POST" ? { body: "{}" } : {}) });
-    assert.deepEqual([answer.status, await answer.json(), answer.headers.get("X-MGQ-Min-Version")], [426, { error: UPDATE_NEEDED }, "0.7.0"], `${method} ${path}`);
+    assert.deepEqual([answer.status, await answer.json(), answer.headers.get("X-MGQ-Min-Version")], [426, { error: UPDATE_NEEDED }, "0.7.1"], `${method} ${path}`);
   }
 });
 

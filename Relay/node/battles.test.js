@@ -2,6 +2,7 @@
 //  battles.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-12: Named 0.7.1 as the version of the games
 //      Paulinchen  2026-11-11: Covered the log of a served boss report the relay refuses and of the pool defeats
 //      Paulinchen  2026-11-06: Ran over SQLite stores in memory
 //                            - Read the derived index from the mapping's summary
@@ -55,7 +56,7 @@ const PING_REPLY = Object.freeze({ ok: true, boot_seconds: 1.5, battles: 0, busy
 /**
  * What a current game names in X-MGQ-Features and X-MGQ-Version.
  */
-const GAME = Object.freeze({ [FEATURES_HEADER]: "raid,keys", [VERSION_HEADER]: "0.7.0" });
+const GAME = Object.freeze({ [FEATURES_HEADER]: "raid,keys", [VERSION_HEADER]: "0.7.1" });
 
 /**
  * The rates the tests leave unlimited.

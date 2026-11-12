@@ -2,6 +2,7 @@
 //  designs_socket.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-12: Named 0.7.1 as the version of the game
 //      Paulinchen  2026-11-06: Ran over SQLite stores in memory
 //      Paulinchen  2026-11-05: Tested a world room's address beside the designer socket, as the PvP rooms are gone
 //                            - Named the version of a current game on the game's room
@@ -170,7 +171,7 @@ test("an unlisted key and an outdated designer are closed with 4403 and 4426", a
 
 test("another design path refuses the upgrade, and the game's world rooms still answer as before", async () => {
   await assert.rejects(connect(headersOf(DESIGNERS.A), "/v1/designs/me"), /refused with 404/);
-  await assert.rejects(connect({ [FEATURES_HEADER]: "raid,keys", [VERSION_HEADER]: "0.7.0" }, "/v1/world/not-a-room"), /refused with 400/);
+  await assert.rejects(connect({ [FEATURES_HEADER]: "raid,keys", [VERSION_HEADER]: "0.7.1" }, "/v1/world/not-a-room"), /refused with 400/);
 });
 
 test("a removed designer's socket closes with 4403", async () => {

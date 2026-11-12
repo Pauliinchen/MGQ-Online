@@ -2,6 +2,7 @@
 //  releases.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-12: Tested 0.7.1 as the lowest release while the setting names none
 //      Paulinchen  2026-11-06: Ran over SQLite stores in memory
 //                            - Dropped the test of the comparison of versions, which the gate tests
 //      Paulinchen  2026-11-05: Tested 0.7.0 as the lowest release while the setting names none
@@ -81,7 +82,7 @@ test("the release control serves the MIN_VERSION setting and no current release 
   const control = await new ReleaseControl(openSqliteStores(":memory:").releases, { envMin: "0.6.7" }).load();
   assert.deepEqual(control.view(), { current: null, min: "0.6.7", repo: RELEASE_REPO });
   assert.deepEqual(control.adminView(), { current: null, min: "0.6.7", repo: RELEASE_REPO, envMin: "0.6.7", updatedAt: null, updatedBy: null });
-  assert.equal(new ReleaseControl(openSqliteStores(":memory:").releases).min, "0.7.0", "without the setting, the gate's default");
+  assert.equal(new ReleaseControl(openSqliteStores(":memory:").releases).min, "0.7.1", "without the setting, the gate's default");
   assert.deepEqual(handleReleaseRequest(control, "GET", new URL("https://relay.test/v1/release")), { status: 200, body: control.view() });
   assert.equal(handleReleaseRequest(control, "POST", new URL("https://relay.test/v1/release")).status, 404);
 });
