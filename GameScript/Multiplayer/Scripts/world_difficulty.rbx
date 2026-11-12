@@ -2,6 +2,8 @@
 #  world_difficulty.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-12: Worked the enemies' rates out through the game's own call of their common event, which world mods hook
+#                            - Logged each boss battle's enemies with their max HP, ATK, DEF and actions per turn once its start ran
 #      Paulinchen  2026-11-07: Asked the rules in C# whether a fight has values of its own and whether the game may be put on the world's difficulty
 #      Paulinchen  2026-10-23: Worked the enemies' rates out as the multiplayer's own writes, which never go to the relay as the player's
 #      Paulinchen  2026-10-09: Created
@@ -35,8 +37,13 @@ module MGQ_MpWorldDifficulty
   # Frames between two looks whether the game plays on the world's difficulty.
   CHECK_FRAMES = 30
 
-  # How often the enemy rates' common event is stepped at most, which runs to its end in one step.
-  MAX_STEPS = 4
+  # How often the call of the enemy rates' common event is stepped at most: it ends after three
+  # steps, four when the common event calls the Labyrinth's common event 900.
+  MAX_STEPS = 5
+
+  # The variables the enemy rates' common event writes that a boss battle's line shows: the rates
+  # of max HP, ATK, DEF and AGI (41-44), of the states (45) and variable 48.
+  RATE_VARIABLES = [41, 42, 43, 44, 45, 48]
 
   extend MGQ_MpLog
 
@@ -45,6 +52,9 @@ module MGQ_MpWorldDifficulty
 
   # Frames since the last look whether the game plays on the world's difficulty.
   @frames = 0
+
+  # Whether the battle set up last still waits for its line of the enemies' numbers.
+  @battle_unlogged = false
 
   # Tells the difficulty the open Raid World sets for every player.
   #
@@ -103,15 +113,17 @@ module MGQ_MpWorldDifficulty
     false
   end
 
-  # Runs the game's own common event that works the enemies' rates out from the difficulty, as its
+  # Calls the game's own common event that works the enemies' rates out from the difficulty, as its
   # own difficulty choice does right after setting it; what it writes is the multiplayer's own
   # (MGQ_MpStoryKeys.applying), as every game of the world works its rates out itself.
+  #
+  # The call goes through the game's interpreter, since a world mod that changes the rates
+  # (Difficulty Overhaul) hooks that call and every game of the world must end on the same rates.
   def self.work_out_rates
-    event = $data_common_events && $data_common_events[APPLY_EVENT]
-    return unless event
+    return unless $data_common_events && $data_common_events[APPLY_EVENT]
 
     interpreter = Game_Interpreter.new
-    interpreter.setup(event.list)
+    interpreter.setup([command(117, [APPLY_EVENT], 0)])
     steps = 0
     applying do
       while interpreter.running? && steps < MAX_STEPS
@@ -168,6 +180,43 @@ module MGQ_MpWorldDifficulty
     log("taking the relay's difficulty failed: #{e.class}: #{e.message}")
   end
 
+  # Notes that a battle was set up, whose line of the enemies' numbers is still to come.
+  def self.battle_set_up
+    @battle_unlogged = true
+  end
+
+  # Logs the enemies' numbers of a boss battle, once per battle as its first command phase opens,
+  # after the battle's start ran common event 112 again: the troop, this game's part in the
+  # battle, the enemy rates and each enemy's max HP, ATK, DEF and actions per turn.
+  #
+  # The actions per turn are the game's least and most, never a draw, which would use up the
+  # battle's random numbers.
+  def self.log_boss_battle
+    return unless @battle_unlogged
+
+    @battle_unlogged = false
+    troop = MGQ_MpGame.get($game_troop, :troop_id)
+    return unless defined?(MGQ_MpRaidBosses) && MGQ_MpRaidBosses.battle?(troop)
+
+    enemies = $game_troop.members.map do |enemy|
+      "enemy #{enemy.enemy_id} HP #{enemy.mhp} ATK #{enemy.atk} DEF #{enemy.def} actions #{enemy.min_action_times}-#{enemy.max_action_times}"
+    end
+    log("boss battle of troop #{troop} (#{battle_role}): rates #{RATE_VARIABLES.join(',')} = #{RATE_VARIABLES.map { |id| $game_variables[id] }.join('/')}; #{enemies.join('; ')}")
+  rescue => e
+    log("logging the boss battle's enemies failed: #{e.class}: #{e.message}")
+  end
+
+  # Tells this game's part in the battle running.
+  #
+  # @return [String] "served" for a battle the battle server hosts, "host", "guest" or "alone".
+  def self.battle_role
+    return "alone" unless defined?(MGQ_MpBattlesSync)
+    return "served" if MGQ_MpBattlesSync.served?
+    return "host" if MGQ_MpBattlesSync.host?
+
+    MGQ_MpBattlesSync.guest? ? "guest" : "alone"
+  end
+
   # Changes the command an interpreter is about to run in a Raid World with a difficulty: the
   # game's own difficulty choice sets the world's instead. Called before every event command.
   #
@@ -186,27 +235,23 @@ module MGQ_MpWorldDifficulty
 
     log("the game's own difficulty choice was called: #{own_values? ? 'left out while a fight has its own values set' : "the world sets #{MGQ_MpWorld.difficulty_name(world)} instead"}")
     MGQ_MpOverworldSync.notice("The world sets the difficulty: #{MGQ_MpWorld.difficulty_name(world)}.")
-    MGQ_MpGame.set(interpreter, :list, replaced_list(list, index, world))
+    apply("the game's own difficulty choice was called")
+    MGQ_MpGame.set(interpreter, :list, replaced_list(list, index))
   rescue => e
     log("changing the difficulty's command failed: #{e.class}: #{e.message}")
   end
 
-  # Copies an event's commands with the call of the game's difficulty choice replaced: by
-  # the world's difficulty and the enemies' rates worked out from it while no fight has values of
-  # its own set, else by nothing.
+  # Copies an event's commands with the call of the game's difficulty choice replaced by a comment,
+  # as the world's difficulty is set already.
+  #
+  # The interpreters that run the opening and a story replay call common events without the game's
+  # call, which world mods hook, so the call is never left to them.
   #
   # @param list [Array<RPG::EventCommand>] The commands.
   # @param index [Integer] Where the call is.
-  # @param world [Integer] The world's difficulty.
   # @return [Array<RPG::EventCommand>] The commands.
-  def self.replaced_list(list, index, world)
-    call = list[index]
-    instead = if own_values?
-                [command(108, ["The world sets the difficulty."], call.indent)]
-              else
-                [command(122, [VARIABLE, VARIABLE, 0, 0, world], call.indent), command(117, [APPLY_EVENT], call.indent)]
-              end
-    list[0...index] + instead + list[(index + 1)..-1]
+  def self.replaced_list(list, index)
+    list[0...index] + [command(108, ["The world sets the difficulty."], list[index].indent)] + list[(index + 1)..-1]
   end
 
   # Makes an event command.
@@ -241,6 +286,11 @@ begin
   # duel's end calls too to put the game back.
   MGQ_MpHooks.after(DataManager.singleton_class, :load_game_without_rescue, "world_difficulty") { |_index| MGQ_MpWorldDifficulty.loaded(:load) }
   MGQ_MpHooks.after(DataManager.singleton_class, :setup_new_game, "world_difficulty") { MGQ_MpWorldDifficulty.loaded(:new_game) }
+
+  # A boss battle's enemies are logged as its first command phase opens, which every game of a
+  # live battle reaches, the guest too, whose battle start the host's stream replaces.
+  MGQ_MpHooks.after(BattleManager.singleton_class, :setup, "world_difficulty") { |*_args| MGQ_MpWorldDifficulty.battle_set_up }
+  MGQ_MpHooks.after(Scene_Battle, :start_party_command_selection, "world_difficulty") { MGQ_MpWorldDifficulty.log_boss_battle }
 rescue => e
   MGQ_MpWorldDifficulty.log("hooks FAILED: #{e.class}: #{e.message}")
 end

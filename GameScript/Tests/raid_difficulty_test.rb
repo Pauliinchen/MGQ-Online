@@ -2,6 +2,9 @@
 #  raid_difficulty_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-12: Ran events in a stand-in of the game's interpreter with its fiber and called common events through its command_117
+#                            - Checked that a world mod hooking the call of the enemy rates' common event sets the rates on load, new game and the opening
+#                            - Checked the line a boss battle's enemies are logged with
 #      Paulinchen  2026-11-07: Answered whether a fight has values of its own and whether the difficulty is due with fixed values and checked what the script asks
 #      Paulinchen  2026-11-05: Left the forms' fields to the DLL's tests, checking what the edit form hands over and reads back
 #                            - Put the worlds on this PC as the DLL tells them
@@ -38,7 +41,8 @@
 # world_save_distribution.rbx); the world's difficulty on load, new game and the relay's push, set
 # over the game's own choice and the Reaper's change, while a fight the DLL tells has values of its
 # own keeps them (world_difficulty.rbx; RaidDifficultyTests own when); and these values each Raid
-# World player's own in the story (story_state.rbx).
+# World player's own in the story (story_state.rbx); the line a boss battle's enemies are logged
+# with (world_difficulty.rbx).
 
 require_relative "support"
 require_relative "rules_support"
@@ -80,42 +84,88 @@ class Game_Switches; def initialize; @data = []; end; def [](id); @data[id] || f
 class Game_Variables; def initialize; @data = []; end; def [](id); @data[id] || 0; end; def []=(id, value); @data[id] = value; end; end
 # Stands in for the map, whose update the difficulty's look hooks into.
 class Game_Map; def update(_main = false); end; end
+# Stands in for the battle's scene, whose first command phase logs a boss battle's enemies.
+class Scene_Battle; def start_party_command_selection; end; end
+# Stands in for the battle's setup.
+module BattleManager; def self.setup(_troop_id, _can_escape = true, _can_lose = false); end; end
+# Stands in for an enemy with its numbers.
+Game_Enemy = Struct.new(:enemy_id, :mhp, :atk, :def, :min_action_times, :max_action_times)
+# Stands in for the battle's enemies and their troop.
+class Game_Troop; attr_accessor :members; def setup(troop_id); @troop_id = troop_id; end; end
+# Stands in for the story's boss battles: troop 609.
+module MGQ_MpRaidBosses; def self.battle?(troop_id); troop_id == 609; end; end
 $quiet = true
 # The map's interpreter, running while a test says an event runs.
 class MapInterpreter; def running?; !$quiet; end; end
 
-# Runs an event's commands as the game's interpreter does, as far as the tests need: a variable set
-# to a constant (122), a common event's call (117), a script line (355) and a picture's erase (235).
+# Stands in for RGSS3's interpreter, as far as the tests need: its fiber, a variable set to a
+# constant (122), a common event's call (117), a script line (355) and a picture's erase (235).
 class Game_Interpreter
-  # Starts running an event's commands.
-  #
-  # @param list [Array<RPG::EventCommand>] The commands.
-  def setup(list, _event_id = 0); @list = list; @index = 0; @running = true; end
-  # Answers whether the event still runs.
-  def running?; @running; end
+  # Starts the interpreter at a call depth with no list.
+  def initialize(depth = 0); @depth = depth; @list = nil; @index = 0; end
+  # Takes a list to run in a fiber of its own.
+  def setup(list, event_id = 0); @list = list; @index = 0; @event_id = event_id; @fiber = Fiber.new { run }; end
+  # Answers whether the list still runs.
+  def running?; !@fiber.nil?; end
+  # Runs the list on until it waits.
+  def update; @fiber.resume if @fiber; end
+  # Answers that the event is on the current map.
+  def same_map?; true; end
 
-  # Runs the event's commands to its end.
-  def update
+  # Runs the list's commands to their end, then waits a last time and ends.
+  def run
     while @list[@index]
       execute_command
       @index += 1
     end
-    @running = false
+    Fiber.yield
+    @fiber = nil
   end
 
-  # Runs the command at the event's place.
+  # Runs the command at the interpreter's place, when the stand-in knows it.
   def execute_command
     command = @list[@index]
-    case command.code
-    when 122 then $game_variables[command.parameters[0]] = command.parameters[4]
-    when 117
-      child = Game_Interpreter.new
-      child.setup($data_common_events[command.parameters[0]].list)
-      child.update
-    when 355 then eval(command.parameters[0])
-    when 235 then $erased << command.parameters[0]
-    end
+    @params = command.parameters
+    @indent = command.indent
+    method_name = "command_#{command.code}"
+    send(method_name) if respond_to?(method_name)
   end
+
+  # Sets a variable to a constant.
+  def command_122; $game_variables[@params[0]] = @params[4]; end
+  # Runs a script line.
+  def command_355; eval(@params[0]); end
+  # Erases a picture.
+  def command_235; $erased << @params[0]; end
+
+  # Runs a common event in a child interpreter.
+  def command_117
+    child = Game_Interpreter.new(@depth + 1)
+    child.setup($data_common_events[@params[0]].list, same_map? ? @event_id : 0)
+    child.run
+  end
+end
+
+# Stands in for a world mod that changes the enemy rates the way Difficulty Overhaul does: after
+# the game's call of the enemy rates' common event, it writes the max HP rate over.
+class Game_Interpreter
+  alias world_mod_command_117 command_117
+  # Calls a common event, then writes the world mod's max HP rate after the enemy rates' one.
+  def command_117
+    world_mod_command_117
+    $game_variables[41] = WORLD_MOD_HP_RATE if @params[0] == 112
+  end
+end
+# The max HP rate the world mod writes.
+WORLD_MOD_HP_RATE = 180
+
+# Runs an event's commands to their end, as the map's updates do.
+#
+# @param interpreter [Game_Interpreter] The interpreter.
+# @param list [Array<RPG::EventCommand>] The commands.
+def run_event(interpreter, list)
+  interpreter.setup(list)
+  10.times { interpreter.update if interpreter.running? }
 end
 # Stands in for the game's saves, whose loads and new games the world's difficulty hooks into.
 module DataManager
@@ -148,7 +198,7 @@ module MGQ_Multiplayer
   # Stands in for a path in the game's folder, keeping it as it is.
   def self.path(name); name; end
   # Stands in for the log, which prints each line.
-  module Log; def self.write(message); puts "  log: #{message}"; end; end
+  module Log; def self.write(message); ($logged ||= []) << message; puts "  log: #{message}"; end; end
   # Stands in for the player, named Me.
   module Player; def self.share; end; def self.name; "Me"; end; end
   # Stands in for the ini files, which live in $ini by path.
@@ -176,6 +226,7 @@ load_script "world_save_distribution"
 load_script "ui_online"
 load_script "world"
 load_script "story_state"
+load_script "world_opening"
 load_script "world_difficulty"
 open_rules_bridge
 
@@ -206,10 +257,11 @@ check("the DLL tells a development build once", [MGQ_MpWorld.dev_build?, MGQ_MpW
 $dev_build = nil
 MGQ_MpWorld.instance_variable_set(:@dev_build, false)
 
-# The game's state: the enemy rates' common event notes each time it works them out.
+# The game's state: the enemy rates' common event notes each time it works them out and sets the
+# game's max HP rate, which the world mod writes over.
 $rates = []
 $data_common_events = []
-$data_common_events[112] = RPG::CommonEvent.new([RPG::EventCommand.new(355, 0, ["$rates << $game_variables[902]"])])
+$data_common_events[112] = RPG::CommonEvent.new([RPG::EventCommand.new(355, 0, ["$rates << $game_variables[902]"]), RPG::EventCommand.new(122, 0, [41, 41, 0, 0, 300])])
 $game_switches = Game_Switches.new
 $game_variables = Game_Variables.new
 $game_party = Struct.new(:in_battle).new(false)
@@ -235,10 +287,12 @@ check("and so does a Classic world", [$game_variables[902], $rates], [3, []])
 # A Raid World on HARD puts a loaded save and a new game on it.
 MGQ_MpWorld.instance_variable_set(:@world, raid_world)
 DataManager.load_game_without_rescue(0)
-check("a save loaded in a Raid World plays on its difficulty, the enemy rates worked out at once", [$game_variables[902], $rates], [1, [1]])
+check("a save loaded in a Raid World plays on its difficulty, the enemy rates worked out at once through the game's call, which the world mod hooks",
+      [$game_variables[902], $rates, $game_variables[41]], [1, [1], WORLD_MOD_HP_RATE])
 $game_variables[902] = -2
+$game_variables[41] = 0
 DataManager.setup_new_game
-check("and so does a new game", [$game_variables[902], $rates], [1, [1, 1]])
+check("and so does a new game", [$game_variables[902], $rates, $game_variables[41]], [1, [1, 1], WORLD_MOD_HP_RATE])
 
 $own_values = true
 $game_switches[28] = true
@@ -284,31 +338,48 @@ $data_common_events[146] = RPG::CommonEvent.new([RPG::EventCommand.new(117, 0, [
 $erased = []
 intro = [RPG::EventCommand.new(122, 0, [92, 92, 0, 0, 100]), RPG::EventCommand.new(117, 1, [110]), RPG::EventCommand.new(122, 0, [903, 903, 0, 0, -3])]
 interpreter = Game_Interpreter.new
-interpreter.setup(intro)
-interpreter.update
+run_event(interpreter, intro)
 check("the new game's difficulty choice sets the world's instead and works the rates out, the rest of the event as it was",
       [$game_variables[902], $game_variables[92], $game_variables[903], $rates.last, $notices.last], [4, 100, -3, 4, "The world sets the difficulty: PARADOX."])
 check("the event's own commands stay as the game has them", intro.map { |command| command.code }, [122, 117, 122])
 $game_variables[902] = 0
+$game_variables[41] = 0
+run_event(Game_MpOpeningInterpreter.new, intro)
+check("the opening of a world past its start, whose interpreter calls common events itself, ends on the world mod's rates too",
+      [$game_variables[902], $game_variables[41]], [4, WORLD_MOD_HP_RATE])
+$game_variables[902] = 0
 reaper = [RPG::EventCommand.new(117, 0, [146])]
-interpreter.setup(reaper)
-interpreter.update
+run_event(interpreter, reaper)
 check("the Reaper's difficulty change runs, its call of the choice setting the world's, and erases the Reaper's picture", [$game_variables[902], $erased, reaper.map { |command| command.parameters[0] }], [4, [5], [146]])
 $own_values = true
 $game_variables[902] = 0
 rates = $rates.size
-interpreter.setup([RPG::EventCommand.new(117, 0, [110])])
-interpreter.update
+run_event(interpreter, [RPG::EventCommand.new(117, 0, [110])])
 check("but never while the game has its own values set", [$game_variables[902], $rates.size], [0, rates])
 $own_values = false
 raid_world.instance_variable_set(:@difficulty, nil)
-interpreter.setup([RPG::EventCommand.new(117, 0, [110])])
-interpreter.update
+run_event(interpreter, [RPG::EventCommand.new(117, 0, [110])])
 check("a Raid World that sets no difficulty leaves the choice to the player", $game_variables[902], -2)
 MGQ_MpWorld.instance_variable_set(:@world, plain_world)
-interpreter.setup([RPG::EventCommand.new(122, 0, [902, 902, 0, 0, 0]), RPG::EventCommand.new(117, 0, [110])])
-interpreter.update
+run_event(interpreter, [RPG::EventCommand.new(122, 0, [902, 902, 0, 0, 0]), RPG::EventCommand.new(117, 0, [110])])
 check("as does a Classic world", $game_variables[902], -2)
+
+# A boss battle's enemies are logged once, as its first command phase opens.
+$game_troop = Game_Troop.new
+$game_troop.members = [Game_Enemy.new(177, 216000, 850, 246, 2, 2), Game_Enemy.new(40, 900, 30, 20, 1, 2)]
+[41, 42, 43, 44, 45, 48].zip([180, 250, 150, 200, 100, 125]).each { |id, rate| $game_variables[id] = rate }
+scene = Scene_Battle.new
+$logged = []
+BattleManager.setup(609)
+$game_troop.setup(609)
+2.times { scene.start_party_command_selection }
+BattleManager.setup(12)
+$game_troop.setup(12)
+scene.start_party_command_selection
+check("a boss battle logs its enemies' numbers in one line once, another battle none",
+      $logged.grep(/boss battle/),
+      ["world difficulty: boss battle of troop 609 (alone): rates 41,42,43,44,45,48 = 180/250/150/200/100/125; " \
+       "enemy 177 HP 216000 ATK 850 DEF 246 actions 2-2; enemy 40 HP 900 ATK 30 DEF 20 actions 1-2"])
 
 # The story: the difficulty and the fights' own values are each Raid World player's own, as its
 # story mapping keeps no row of them.
