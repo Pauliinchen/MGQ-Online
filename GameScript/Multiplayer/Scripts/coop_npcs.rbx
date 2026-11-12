@@ -2,6 +2,7 @@
 #  coop_npcs.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-12: Skipped an event's own movement through a hook that builds no arguments or lambda per event and frame
 #      Paulinchen  2026-11-05: Handed the DLL the events of the map as values
 #      Paulinchen  2026-10-30: Left the Map Owner's sends and the follower's checks to the DLL, and read the events to follow when they changed
 #      Paulinchen  2026-10-23: Left the events to the player's own game while it runs an event the player plays, then placed them
@@ -366,7 +367,7 @@ end
 
 begin
   # An event moves on its own, unless the Map Owner's game moves it.
-  MGQ_MpHooks.around(Game_Event, :update_self_movement, "coop_npcs") { |_event, _args, original| original.call unless MGQ_MpCoopNpcs.following? }
+  MGQ_MpHooks.skip(Game_Event, :update_self_movement, "coop_npcs") { MGQ_MpCoopNpcs.following? }
 
   # Whether an event collides with a character on a tile, another player sharing the map included
   # while the event walks on its own. A story moves its events on routes it waits for, which a

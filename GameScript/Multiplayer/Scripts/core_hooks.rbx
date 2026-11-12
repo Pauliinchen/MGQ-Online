@@ -2,6 +2,7 @@
 #  core_hooks.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-12: Added skip, a hook that only skips a method and builds no arguments or lambda per call
 #      Paulinchen  2026-10-31: Kept the game's own method of each hooked one, which plain names
 #      Paulinchen  2026-10-30: Let every hook stand aside while the mod sleeps
 #      Paulinchen  2026-10-12: Let around run the original with other arguments
@@ -38,7 +39,7 @@ module MGQ_MpHooks
   # The game's own method of each hooked method by method: the name of the first alias a wrap made.
   @plain ||= {}
 
-  # How many methods around wrapped, which names each one's original.
+  # How many methods around and skip wrapped, which names each one's original.
   @arounds ||= 0
 
   # The body of each script's wrap by method and script, in a cell the wrap reads, so a script
@@ -175,11 +176,8 @@ module MGQ_MpHooks
       return
     end
 
-    original = :"mgq_mp_hooks_around_#{@arounds + 1}_#{name.to_s.gsub(/[?!=]/, '_')}"
+    original = keep_original(owner, name)
     was_private = owner.private_method_defined?(name)
-    owner.send(:alias_method, original, name)
-    @plain[[owner, name]] ||= original
-    @arounds += 1
     cell = [body]
     owner.send(:define_method, name) do |*args, &block|
       next send(original, *args, &block) if MGQ_MpHooks.asleep?
@@ -189,6 +187,59 @@ module MGQ_MpHooks
     owner.send(:private, name) if was_private
     @bodies[key] = cell
     count(script, 1, owner, name)
+  end
+
+  # Skips a game method without arguments while a block says so, returning a fallback instead, for
+  # a hook that only guards. A script registering again replaces its block, and skip and around
+  # wraps of one method nest in the order they were registered.
+  #
+  # Unlike around it builds no argument list or lambda per call, which counts for a method the game
+  # calls for every event of the map every frame.
+  #
+  # @param owner [Module] The class that has the method, the singleton class for a module's method.
+  # @param name [Symbol] The method, which takes no arguments; one that does is refused and logged.
+  # @param script [String] Who registers, which a second registration of replaces.
+  # @param fallback [Object] What the method returns while it is skipped.
+  # @yieldparam object [Object] The object the method runs on.
+  # @yieldreturn [Boolean] Whether the game's method is skipped now.
+  def self.skip(owner, name, script, fallback = nil, &skipped)
+    key = [owner, name, script]
+    if (cell = @bodies[key])
+      cell[0] = skipped
+      log("#{script} wrapped #{owner}##{name} again")
+      return
+    end
+    unless owner.instance_method(name).arity == 0
+      log("#{script} could not skip #{owner}##{name}: it takes arguments")
+      return
+    end
+
+    original = keep_original(owner, name)
+    was_private = owner.private_method_defined?(name)
+    cell = [skipped]
+    owner.send(:define_method, name) do
+      next send(original) if MGQ_MpHooks.asleep?
+
+      cell[0].call(self) ? fallback : send(original)
+    end
+    owner.send(:private, name) if was_private
+    @bodies[key] = cell
+    count(script, 1, owner, name)
+  end
+
+  # Keeps a method as it stands under a new alias before around or skip wraps it.
+  #
+  # Both count with @arounds, so a skip and an around of one method never share an alias.
+  #
+  # @param owner [Module] The class that has the method.
+  # @param name [Symbol] The method.
+  # @return [Symbol] The alias.
+  def self.keep_original(owner, name)
+    original = :"mgq_mp_hooks_around_#{@arounds + 1}_#{name.to_s.gsub(/[?!=]/, '_')}"
+    owner.send(:alias_method, original, name)
+    @plain[[owner, name]] ||= original
+    @arounds += 1
+    original
   end
 
   # Names the game's own method of a hooked method, which runs it without any script's hooks.

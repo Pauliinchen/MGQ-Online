@@ -2,6 +2,7 @@
 #  coop_npcs_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-12: Checked that a follower skips each event's own movement without allocating
 #      Paulinchen  2026-11-05: Expected the events of the map handed over as values
 #      Paulinchen  2026-10-30: Checked the frame told to the DLL, the events handed to it and those it gives to follow, and left its rules to MGQOnline.Game.Tests
 #      Paulinchen  2026-10-23: Handed the Map Owner's events to the route past the DLL's map gate
@@ -40,7 +41,7 @@ class Game_Map; def update(main = false); end; end
 class Game_Event
   attr_accessor :move_route_forcing, :priority
   def initialize; @priority = 1; end
-  def update_self_movement; end
+  def update_self_movement; $moved += 1; end
   def collide_with_characters?(x, y); x == 9; end
   def near_the_player?; false; end
   def move_toward_player; end
@@ -207,3 +208,16 @@ MGQ_MpCoopNpcs.targets[1] = [9, 9, 8, 0]
 $running = false
 MGQ_MpCoopNpcs.follow
 check("once it ended, the events stand where the Map Owner's do at once", [MGQ_MpCoopNpcs.following?, standing.x, standing.y, standing.direction], [true, 9, 9, 8])
+
+# Every standing event of the map runs its own movement each frame, about 300 on the world map, so a
+# follower's game skips it without allocating.
+$moved = 0
+moving = Game_Event.new
+moving.update_self_movement
+$resuming = true
+moving.update_self_movement
+$resuming = false
+check("a follower's event stands while the Map Owner's game moves it, and walks on its own otherwise", $moved, 1)
+allocated = GC.stat(:total_allocated_objects)
+1000.times { moving.update_self_movement }
+check("and skipping it allocates no object per call", (GC.stat(:total_allocated_objects) - allocated) / 1000, 0)

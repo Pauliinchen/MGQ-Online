@@ -2,6 +2,7 @@
 #  hooks_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-12: Checked skip, its nesting with around and its refusal of a method with arguments
 #      Paulinchen  2026-10-31: Checked that the game's own method of a hooked one runs without the hooks
 #      Paulinchen  2026-10-30: Checked that the hooks stand aside while the mod sleeps
 #      Paulinchen  2026-10-12: Checked around with other arguments
@@ -128,6 +129,27 @@ $log.clear
 MGQ_MpHooks.report
 check("and counts it once", $log.grep(/hooks: late: follows 0, wraps 1 game method\(s\): wraps Scene_Late#value\z/).size, 1)
 
+# A hook that only skips a method without arguments, such as an event's own movement.
+# A game class whose method a hook skips and wraps.
+class Scene_Skip
+  def step; $calls << :step; :stepped; end
+  def walk(steps); steps; end
+end
+$skipping = false
+MGQ_MpHooks.skip(Scene_Skip, :step, "first", :stood) { |_scene| $skipping }
+MGQ_MpHooks.around(Scene_Skip, :step, "second") { |_scene, _args, original| [original.call] }
+$calls.clear
+ran = Scene_Skip.new.step
+$skipping = true
+check("skip runs the game's method while its block says no and returns the fallback while it says yes, inside an around registered later",
+      [ran, Scene_Skip.new.step, $calls], [[:stepped], [:stood], [:step]])
+MGQ_MpHooks.skip(Scene_Skip, :step, "first", :stood) { |_scene| !$skipping }
+check("a script registering again replaces its block, and the game's own method stays plain",
+      [Scene_Skip.new.step, Scene_Skip.new.send(MGQ_MpHooks.plain(Scene_Skip, :step))], [[:stepped], :stepped])
+MGQ_MpHooks.skip(Scene_Skip, :walk, "first") { true }
+check("a method with arguments is refused and logged",
+      [Scene_Skip.new.walk(3), $log.grep(/first could not skip Scene_Skip#walk: it takes arguments/).size], [3, 1])
+
 # Holding the player: no moving, no menu, while any script says so.
 # Stands in for the map's player, always movable.
 class Game_Player; def movable?; true; end; end
@@ -152,8 +174,8 @@ check("and the release too", $log.grep(/player free again, released by one/).siz
 $calls.clear
 $asleep = true
 MGQ_MpHooks.sleep_while { $asleep }
-check("while asleep a before and after hook and an around stand aside, the methods run as the game's",
-      [Scene_Test.new.update(2), Scene_Late.new.value, $calls], [4, 1, [[:update, 2]]])
+check("while asleep a before and after hook, an around and a skip stand aside, the methods run as the game's",
+      [Scene_Test.new.update(2), Scene_Late.new.value, Scene_Skip.new.step, $calls], [4, 1, :stepped, [[:update, 2], :step]])
 $asleep = false
 $calls.clear
 check("awake they run again", [Scene_Test.new.update(2), Scene_Late.new.value, $calls.size], [4, 2, 5])
