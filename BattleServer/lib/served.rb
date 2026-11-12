@@ -2,6 +2,7 @@
 #  served.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-12: Ended a battle whose relay closed its channel between two updates of its scene
 #      Paulinchen  2026-11-11: Took the message skip key and the battle's result over from the removed battles by request
 #                            - Counted the frames the setup took into the wait for the players
 #      Paulinchen  2026-11-05: Took the starter's mod options as the values the core read from the setup
@@ -69,8 +70,8 @@ module ServedBattle
     attr_accessor :paced
 
     # Puts the server's battle hosting in place, once the game and MGQ Online loaded: the message
-    # skip key held, the first of every choice, how the battle ended, each frame lasting
-    # FRAME_SECONDS, and the windows and sprites updated less while the battle waits for its players. MGQ Online's live host takes the players' commands and keeps the battle's
+    # skip key held, the first of every choice, how the battle ended, the battle ended once its relay
+    # closed its channel, each frame lasting FRAME_SECONDS, and the windows and sprites updated less while the battle waits for its players. MGQ Online's live host takes the players' commands and keeps the battle's
     # course. Wrapped as MGQ Online's hooks are (see Boot::Wrap), since they wrap the same methods.
     #
     # @param log [IO] Where MGQ Online's log goes.
@@ -114,6 +115,12 @@ module ServedBattle
         ServedBattle.pace
         # The world sync tick is left out below, so the players kept away count down their grace here.
         MGQ_MpOverworldSync::Peers.tick if MGQ_MpBattlesServed.server?
+      end
+      # Nobody plays a battle whose relay closed its channel. It ends between two updates of its
+      # scene, never inside an action, whose waits draw frames too.
+      wrap.around(Scene_Battle, :update, :served) do |scene, original, args, _block|
+        original.call(*args)
+        ServedBattle.end_when_closed(scene)
       end
       # The battle's course runs every frame; only what it shows waits for the next drawn frame.
       wrap.around(Scene_Base, :update_all_windows, :served) { |_scene, original, args, _block| original.call(*args) if ServedBattle.drawing? }
@@ -175,7 +182,7 @@ module ServedBattle
     # @param battle_id [String] The battle's id.
     # @param setup_text [String] What the starter sent, see MGQ_MpBattlesServed.setup_text.
     # @param mods [Array] The world's mods the starter runs, see ServedMods.fetch.
-    # @return [Hash] :result (:victory, :defeat, :escape, :abort or the scene the battle left for),
+    # @return [Hash] :result (:victory, :defeat, :escape, :closed or the scene the battle left for),
     #   :turns and :frames.
     # @raise [Refused] For a setup the server cannot read.
     def run(bridge, battle_id, setup_text, mods = [])
@@ -214,6 +221,19 @@ module ServedBattle
     # @param result [Integer] 0 for a victory, 1 for an escape, 2 for a defeat.
     def take_result(result)
       @result = RESULTS[result] || result
+    end
+
+    # Ends the battle the way the game aborts one once the relay closed its channel, see
+    # Online::Bridge#closed?.
+    #
+    # @param scene [Scene_Battle] The battle.
+    def end_when_closed(scene)
+      return unless Online.bridge&.closed?
+      return if scene.scene_changing? || BattleManager.battle_end?
+
+      MGQ_MpBattlesSync.log("the relay closed battle #{MGQ_MpBattlesSync.battle_id}, the server ends it")
+      BattleManager.process_abort
+      @result = :closed
     end
 
     # Reads a setup and refuses one the server cannot host, as the core checks it

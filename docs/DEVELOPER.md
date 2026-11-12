@@ -561,7 +561,7 @@ A co-op battle of two or more players goes to the relay's battle server where th
 - The setup is checked on the server against the scripts' and game data's fingerprints and its mods; refused or unanswered, the starter hosts as before. A lasting refusal (no server, other scripts or data, no core) stops asking for the session.
 - **The starter stands in for the server in the world room**, since the server sits in none: requests to join go to the server through it.
 - The server leaves out the recruit roll after a victory, since each player's game offers its own.
-- Each served battle runs in a sandboxed child with the relay's battle lifetime as its CPU time.
+- Each served battle runs in a sandboxed child with the relay's battle lifetime as its CPU time, and ends once the relay closes its channel or 10 minutes past that lifetime.
 
 ## Trades
 

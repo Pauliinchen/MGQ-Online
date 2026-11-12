@@ -2,6 +2,7 @@
 #  framework_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-12: Checked that a served battle ends once the relay closes its channel
 #      Paulinchen  2026-11-11: Checked that the server's wait for an invited player who never comes counts from the serve
 #                            - Loaded a world's mods from a stand-in website into the served battle, their run wrappers set up and the database read again
 #                            - Hosted a served Raid World battle against a pooled boss in the server's order, up to its report
@@ -17,8 +18,9 @@
 # DLL, MGQ Online counts as available and loads every script, the database is the game's, nothing
 # reaches the game folder's saves, and with BATTLE_CORE_LIBRARY a served Raid World battle against a
 # pooled boss fights its pool at its tier and reports the kill, with world mods from a stand-in
-# website whose SceneManager.run wrappers set up their battle hooks. Skipped without such a game
-# folder, since the game's files never go into the repository.
+# website whose SceneManager.run wrappers set up their battle hooks, and the next battle ends once the
+# relay closes its channel. Skipped without such a game folder, since the game's files never go into
+# the repository.
 
 require "tmpdir"
 require_relative "support"
@@ -93,16 +95,21 @@ if library
   # the player's blow kills the boss.
   bridge = Online::Bridge.new
   bridge.push("in", player.seat)
-  ready = MGQ_Multiplayer::Bridge.call("message.write", "fields" => { "battle" => "ready", "bid" => battle_id }, "body" => "")
   Boot::Wrap.around(Online.singleton_class, :send_to, :test) do |_online, original, args, _block|
     sent = original.call(*args)
-    bridge.push("message", player.seat, ready) if args[1] == "ready"
+    if args[1] == "ready"
+      ready = MGQ_Multiplayer::Bridge.call("message.write", "fields" => { "battle" => "ready", "bid" => args[2] }, "body" => "")
+      bridge.push("message", player.seat, ready)
+    end
     sent
   end
   # Frames run unpaced here, so the frames since the serve are the seconds up to hosting, the
   # database read again among them, plus the frames drawn after it.
-  served_at = hosted_at = roster_frames = nil
+  served_at = hosted_at = roster_frames = closed_at = nil
   drawn = 0
+  # A battle that runs on after its relay closed stops here instead of running until the enemies
+  # beat the idle party.
+  ran_on = 600
   Boot::Wrap.around(MGQ_MpBattlesServed.singleton_class, :host, :test) do |_served, original, args, _block|
     hosted_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     drawn = 0
@@ -110,6 +117,7 @@ if library
   end
   Boot::Wrap.around(Graphics.singleton_class, :update, :test) do |_graphics, original, args, _block|
     drawn += 1
+    raise "the battle ran on after the relay closed its channel" if closed_at && Graphics.frame_count - closed_at > ran_on
     original.call(*args)
   end
   Boot::Wrap.around(MGQ_MpBattlesCoop.singleton_class, :start_battle, :test) do |_coop, original, args, _block|
@@ -117,7 +125,15 @@ if library
     original.call(*args)
   end
   stats = nil
-  Boot::Wrap.around(Scene_Battle, :start_party_command_selection, :test) do |_scene, _original, _args, _block|
+  Boot::Wrap.around(Scene_Battle, :start_party_command_selection, :test) do |_scene, original, args, _block|
+    # In the next battle the relay closes the channel at the first command phase.
+    if closed_at == false
+      closed_at = Graphics.frame_count
+      bridge.push("closed", 0)
+      bridge.close
+    end
+    next original.call(*args) if closed_at
+
     boss = $game_troop.members[0]
     stats = %i[def mdf mhp].map { |stat| [boss.send(stat), boss.send(MGQ_MpHooks.plain(Game_Enemy, stat))] }
     boss.hp = 0
@@ -193,6 +209,27 @@ if library
   reports << bridge.reports.pop until bridge.reports.empty?
   check("the battle reports the kill of the pool through the relay's connection",
         reports.map { |key, _battle, text| [key, text.split("\t")[3]] }.last, ["Adramelech", "1"])
+
+  # The relay closes the channel of the next battle, against a Slime Girl the idle party outlasts, at
+  # its first command phase, as on the relay's restart: the server's battle ends once the turn it
+  # started is over, the way the game aborts one, never in the middle of an action.
+  ends = 0
+  Boot::Wrap.around(BattleManager.singleton_class, :battle_end, :test) do |_manager, original, args, _block|
+    ends += 1
+    original.call(*args)
+  end
+  $game_troop.setup(1)
+  MGQ_MpOverworldSync::Me.take_seat(1)
+  MGQ_MpRaidPool.define_singleton_method(:served_fields) { nil }
+  setup = MGQ_MpBattlesServed.setup_text([player, absent], nil)
+  MGQ_MpRaidPool.singleton_class.send(:remove_method, :served_fields)
+  bridge = Online::Bridge.new
+  bridge.push("in", player.seat)
+  closed_at = false
+  outcome = ServedBattle.run(bridge, "b0000000000000002", setup, mods)
+  check("a battle whose relay closed its channel ends after the turn it was in, once, as closed",
+        [outcome[:result], ends, closed_at.is_a?(Integer), outcome[:turns]], [:closed, 1, true, 1])
+  check("and the server logs why", online_log.string.lines.grep(/the relay closed battle b0000000000000002, the server ends it/).size, 1)
 end
 
 check("the database is the game's", [$data_actors.size > 1000, $data_troops.size > 1000], [true, true])

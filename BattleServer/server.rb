@@ -2,6 +2,7 @@
 #  server.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-12: Ended a co-op battle's child that runs past the time the relay keeps its battle
 #      Paulinchen  2026-11-11: Removed the battles by request, which no client sends, and ended at once in a game folder without MGQ Online
 #      Paulinchen  2026-11-08: Downloaded a co-op battle's mods from the website's catalog instead of the relay's
 #      Paulinchen  2026-11-05: Read a co-op battle's mods through ServedMods, which reads them without the game's scripts
@@ -58,6 +59,11 @@ module BattleServer
   # ends instead of taking a core: as long as the relay keeps such a battle (BATTLE_LIMITS.lifetimeMs in Relay/core/battles.js), since it runs at the game's
   # pace while its players choose.
   SERVED_CPU_SECONDS = 2 * 60 * 60
+
+  # Seconds a child that hosts an MGQ Online co-op battle may run: as long as the relay keeps such a
+  # battle (BATTLE_LIMITS.lifetimeMs in Relay/core/battles.js) plus 10 minutes, so a battle the relay
+  # never closed still ends while it sleeps out its frames or waits for its players.
+  SERVED_SECONDS = 2 * 60 * 60 + 10 * 60
 
   # CPU seconds past its limit a child has to end its battle before the system kills it.
   CPU_GRACE_SECONDS = 10
@@ -142,6 +148,7 @@ module BattleServer
           $stdout.reopen(child_output)
           $stderr.reopen(child_output)
           limit_cpu(SERVED_CPU_SECONDS)
+          limit_time(SERVED_SECONDS)
           # A co-op battle's mods come before the sandbox, which reaches neither the network nor
           # the cache.
           first = client.gets(MAX_REQUEST)
@@ -178,6 +185,22 @@ module BattleServer
       @bridge.put(@out_of_cpu_line) if @bridge && @out_of_cpu_line
     ensure
       Process.exit!(1)
+    end
+
+    # Limits how long the calling child runs: past the limit it ends its battle as failed and exits,
+    # whatever the battle waits for.
+    #
+    # @param seconds [Numeric] The seconds it may run.
+    # @return [Thread] The thread that ends it.
+    def limit_time(seconds)
+      @time_seconds = seconds
+      Thread.new do
+        sleep(seconds)
+        $stderr.puts("battle #{@battle_id || 'none'} ran past its #{seconds} seconds and ends")
+        @bridge.put(@out_of_time_line) if @bridge && @out_of_time_line
+      ensure
+        Process.exit!(1)
+      end
     end
 
     # Logs how a child ended, with its battle, once it did.
@@ -314,8 +337,9 @@ module BattleServer
       bridge.tell("op" => "serving")
       @battle_id = battle_id
       @bridge = bridge
-      # The thread the CPU limit's signal starts may not call the core, so its line is written now.
+      # The threads the limits start may not call the core, so their lines are written now.
       @out_of_cpu_line = bridge.line_of("op" => "end", "result" => "failed", "error" => "the battle used up its #{@cpu_seconds} CPU seconds") if @cpu_seconds
+      @out_of_time_line = bridge.line_of("op" => "end", "result" => "failed", "error" => "the battle ran past its #{@time_seconds} seconds") if @time_seconds
       $stderr.puts("battle #{battle_id} started")
       outcome = ServedBattle.run(bridge, battle_id, setup, mods)
       $stderr.puts(format("battle %s: %s after %d turns, %.0f s, %.0f CPU s", battle_id, outcome[:result], outcome[:turns], clock - started, cpu_seconds))
