@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-12: Told the DLL that a replay failed, by a script error too, not only that it ran out of time
+#                            - Logged a replay's time with its staging, split into staging, run and commit, the commit into its compare and merge, with the garbage collections of each
 #                            - Stopped a replay step after five seconds instead of after a count of commands or resumes, and told the DLL a replay stopped so
 #                            - Took a companion the world holds back out of the party a replay keeps, and put back the member they benched
 #                            - Failed a replay step that runs too many commands, instead of freezing the game
@@ -1187,6 +1188,53 @@ module MGQ_MpStoryReplay
     end
   end
 
+  # A replay's time and garbage collections by part, each summed over its steps, for its log line.
+  #
+  # A collection is charged to whichever part triggers it, often one after the part that allocated,
+  # so the line names the collections next to each part's time.
+  class Cost
+    # The parts the replay's whole time is made of.
+    WHOLE = [:staging, :run, :commit].freeze
+
+    # Every part the log line names; the compare and the merge lie within the commit.
+    PARTS = (WHOLE + [:compare, :merge]).freeze
+
+    # Starts with no time spent.
+    def initialize
+      @seconds = Hash.new(0.0)
+      @collections = Hash.new(0)
+    end
+
+    # Runs a block and adds its time and garbage collections to a part.
+    #
+    # @param part [Symbol] One of PARTS.
+    # @return [Object] What the block returns.
+    def measure(part)
+      began = Time.now
+      collections = GC.count
+      yield
+    ensure
+      @seconds[part] += Time.now - began
+      @collections[part] += GC.count - collections
+    end
+
+    # The replay's whole time: its staging, its run and its commit.
+    #
+    # @return [Float] The time in milliseconds.
+    def total_ms
+      WHOLE.inject(0.0) { |sum, part| sum + @seconds[part] } * 1000
+    end
+
+    # Names each part's time and collections, such as "staging 120.4 ms/1 gc, run 30.2 ms/0 gc,
+    # commit 261.4 ms/2 gc: compare 80.1 ms/0 gc, merge 150.3 ms/1 gc".
+    #
+    # @return [String] The parts.
+    def to_s
+      texts = PARTS.map { |part| format("%s %.1f ms/%d gc", part, @seconds[part] * 1000, @collections[part]) }
+      "#{texts[0, 3].join(', ')}: #{texts[3, 2].join(', ')}"
+    end
+  end
+
   # The receiver's holdings as a replay sees them: the party, the actors, the library and the map's
   # vehicles, copied in one piece as a save copies them, so what they share stays shared. The replay
   # changes the copy; its commit merges the changes into the receiver's objects.
@@ -1216,12 +1264,16 @@ module MGQ_MpStoryReplay
 
     # Merges what the replay changed into the receiver's holdings as they are now, nothing when the
     # copy is as it was staged.
-    def commit
-      @unchanged = (Marshal.dump(@objects) == @base rescue false)
+    #
+    # @param cost [Cost] Takes the compare's time and the merge's apart.
+    def commit(cost)
+      @unchanged = cost.measure(:compare) { Marshal.dump(@objects) == @base rescue false }
       return if @unchanged
 
-      base = self.base
-      Stage.real.each_with_index { |real, index| Merge.into(base[index], @objects[index], real) }
+      cost.measure(:merge) do
+        base = self.base
+        Stage.real.each_with_index { |real, index| Merge.into(base[index], @objects[index], real) }
+      end
     end
 
     # Reports whether the commit found the copy as it was staged and merged nothing.
@@ -1727,6 +1779,7 @@ module MGQ_MpStoryReplay
       @gained = {}
       @held = []
       @commands = 0
+      @cost = Cost.new
       @own_way = false
       @own_holdings = false
       @committed = false
@@ -1741,7 +1794,7 @@ module MGQ_MpStoryReplay
     def start
       return MGQ_MpStoryReplay.refuse("no list to replay at #{@site}") unless @list
 
-      @stage = staged
+      @stage = @cost.measure(:staging) { staged }
       return MGQ_MpStoryReplay.refuse("the holdings could not be staged for #{@site}") unless @stage
 
       Interpreter.unhook
@@ -2020,7 +2073,7 @@ module MGQ_MpStoryReplay
     # the receiver's objects.
     def keep_changes
       take_back_held
-      @stage.commit
+      @stage.commit(@cost)
       @journal.each { |change| keep_change(*change) }
       $game_map.need_refresh = true unless @writes.empty?
     end
@@ -2118,20 +2171,18 @@ module MGQ_MpStoryReplay
     end
 
     # Runs the replay's fiber with every stand-in in place, until it ends or asks, commits it once
-    # it finished and reached its step, and logs how long a replay took once it ended, which the
-    # story step's cost is measured by.
+    # it finished and reached its step, and logs what the replay cost once it ended, its staging
+    # with it, split by part (see Cost).
     #
     # @return [Replay] The replay.
     def step
       @state = :running
       @commands = 0
-      began = Time.now
-      @deadline = began + STEP_SECONDS
-      swapped { drive }
-      commit if reached?
-      @seconds = @seconds.to_f + (Time.now - began)
+      @deadline = Time.now + STEP_SECONDS
+      @cost.measure(:run) { swapped { drive } }
+      @cost.measure(:commit) { commit } if reached?
       if @state == :done
-        MGQ_MpStoryReplay.log(format("replayed %s: %d writes, %d reads in %.1f ms, %s", @site, @writes.size, @reads.size, @seconds * 1000, outcome))
+        MGQ_MpStoryReplay.log(format("replayed %s: %d writes, %d reads in %.1f ms (%s), %s", @site, @writes.size, @reads.size, @cost.total_ms, @cost, outcome))
       end
       self
     rescue => e

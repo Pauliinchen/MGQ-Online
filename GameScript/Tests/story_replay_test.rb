@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-12: Checked that a replay that raises tells the DLL it failed, as one past the time limit does
+#                            - Checked that a replay logs its time with its staging, split by part
 #                            - Checked that a replay that loops or waits past the time limit stops within it, keeps nothing and tells the DLL so
 #                            - Checked that a replay whose companion the world holds back still ends, on the game's own Queen's Cup final
 #                            - Gave the party's stand-in its members and roster, and the interpreter's labels, actor checks and joins
@@ -350,6 +351,15 @@ check("a Makina chest replayed for a receiver whose 2045 is off gives the Makina
       [done.state, $game_party.item_number(606), $game_switches[2045], $game_self_switches[[215, 23, "A"]]], [:done, 1, true, true])
 check("and neither the receiver's map nor the mod's hooks on the interpreter saw it", [$game_self_switches[[3, 23, "A"]], $hooked], [false, []])
 check("the replay notes the receiver's own keys it read", done.reads, { [0, 2045] => false })
+
+# The replay's log line counts its staging in its time and splits the time into staging, the run and
+# the commit, the commit into its compare and its merge, so a slow replay shows the part it pays for.
+new_game
+line = logged_lines { replay(["map", 215, 23, 1]) }.grep(/replayed /).first.to_s
+times = Hash[line.scan(/(\w+) (\d+\.\d) ms/).map { |part, ms| [part, ms.to_f] }]
+whole = times.values_at("staging", "run", "commit").compact.inject(0.0, :+)
+check("a replay that keeps the Makina logs its time with its staging, split by part",
+      [times.keys, (times["in"] - whole).abs < 0.2, line.end_with?(", kept")], [%w(in staging run commit compare merge), true, true])
 
 # A companion joining in a replay: the catch-up's look before the join reads the whole story the
 # replay stands in for, the receiver's own.
