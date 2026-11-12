@@ -2,6 +2,9 @@
 #  story_replay.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-12: Took a companion the world holds back out of the party a replay keeps, and put back the member they benched
+#                            - Failed a replay step that runs too many commands, instead of freezing the game
+#                            - Took one waiting run a frame
 #      Paulinchen  2026-11-11: Named each input by its command's code and number among its list's commands of that code, so games of different languages name the same command
 #                            - Named a number or item input by the command the interpreter stands at, as a choice
 #                            - Handed the DLL no shapes of the player's lists, which a choice's name no longer needs
@@ -123,6 +126,11 @@ module MGQ_MpStoryReplay
   # How often a replay's fiber resumes at most in one go, far past any list the game's events walk,
   # so a list that waits for something the replay never brings cannot hang the game.
   MAX_RESUMES = 100_000
+
+  # How many commands one step of a replay runs at most, far past any page and the common events it
+  # calls. A count reads the same on every machine, so a slow one never fails a replay a fast one
+  # keeps; it also stops a loop that never yields, which MAX_RESUMES never sees.
+  MAX_COMMANDS = 200_000
 
   # The command codes the replay leaves out, those the generator's gate (ReplayChannels.cs) classes
   # as the presentation or the opener's play alone: scrolling text, the timer, the battle music, the
@@ -402,17 +410,14 @@ module MGQ_MpStoryReplay
     @waiting
   end
 
-  # Takes the runs that wait, one at a time, while the player stands free on the map, and asks now
-  # and then whether a waiting run is due again. Called after the map's update.
+  # Takes the oldest run that waits, one a frame so a queue of runs never holds one frame, while the
+  # player stands free on the map, and asks now and then whether a waiting run is due again. Called
+  # after the map's update.
   def self.update
     return unless free?
 
     due if MGQ_Multiplayer::Bridge.frame_number - @due_at >= DUE_FRAMES
-    until @waiting.empty? || @asking
-      break unless take(@waiting.first)
-
-      @waiting.shift
-    end
+    @waiting.shift unless @waiting.empty? || @asking || !take(@waiting.first)
   rescue => e
     log_once([:update, e.class], "taking a run failed: #{e.class}: #{e.message}")
   end
@@ -1197,13 +1202,20 @@ module MGQ_MpStoryReplay
       [$game_party, $game_actors, $game_library, $game_map ? $game_map.vehicles : nil]
     end
 
+    # Copies the holdings anew as they were staged.
+    #
+    # @return [Array] The party, the actors, the library and the map's vehicles at the replay's start.
+    def base
+      Marshal.load(@base)
+    end
+
     # Merges what the replay changed into the receiver's holdings as they are now, nothing when the
     # copy is as it was staged.
     def commit
       @unchanged = (Marshal.dump(@objects) == @base rescue false)
       return if @unchanged
 
-      base = Marshal.load(@base)
+      base = self.base
       Stage.real.each_with_index { |real, index| Merge.into(base[index], @objects[index], real) }
     end
 
@@ -1708,6 +1720,8 @@ module MGQ_MpStoryReplay
       @made = []
       @reset = []
       @gained = {}
+      @held = []
+      @commands = 0
       @own_way = false
       @own_holdings = false
       @committed = false
@@ -1774,6 +1788,23 @@ module MGQ_MpStoryReplay
       @own_holdings
     end
 
+    # Notes a companion whose join the world holds back (MGQ_MpWorldCatchup.hold_join?): they join
+    # the staged party, so the event sees what it waits for and runs to its end, and leave it again
+    # before the replay keeps its changes.
+    #
+    # @param main [Integer] The companion's main persona.
+    def hold_back(main)
+      @held << main unless @held.include?(main)
+    end
+
+    # Reports whether the replay noted a companion as held back, see hold_back.
+    #
+    # @param main [Integer] The companion's main persona.
+    # @return [Boolean] Whether it did.
+    def held_back?(main)
+      @held.include?(main)
+    end
+
     # Reports whether the receiver answered a question of the replay otherwise than the opener did,
     # or one the opener's record lacks, so the replay goes the receiver's own way.
     #
@@ -1827,7 +1858,7 @@ module MGQ_MpStoryReplay
       MGQ_MpStoryReplay.choice_at(site, list, interpreter ? interpreter.place : index)
     end
 
-    # Runs a command, its inputs named by its place.
+    # Runs a command, its inputs named by its place, and stops the step once it ran MAX_COMMANDS.
     #
     # @param site [Array] The command's list.
     # @param list [Array<RPG::EventCommand>] The list's commands.
@@ -1835,10 +1866,15 @@ module MGQ_MpStoryReplay
     # @param interpreter [Interpreter] The interpreter that runs it.
     # @yield Runs the command.
     def at(site, list, index, interpreter)
+      @commands += 1
+      raise "it ran #{MAX_COMMANDS} commands without ending, at #{site} place #{index}" if @commands > MAX_COMMANDS
+
       @places.push([site, list, index, interpreter])
-      yield
-    ensure
-      @places.pop
+      begin
+        yield
+      ensure
+        @places.pop
+      end
     end
 
     # Names a list for the record: the run's own, or the common event it is.
@@ -1975,11 +2011,28 @@ module MGQ_MpStoryReplay
       MGQ_MpStoryReplay.current = nil
     end
 
-    # Applies the staged holdings and the own keys' changes to the receiver's objects.
+    # Applies the staged holdings, without the companions held back, and the own keys' changes to
+    # the receiver's objects.
     def keep_changes
+      take_back_held
       @stage.commit
       @journal.each { |change| keep_change(*change) }
       $game_map.need_refresh = true unless @writes.empty?
+    end
+
+    # Takes the companions held back (hold_back) out of the staged party, and puts back in their
+    # places the members the run benched to make room, while one of them still stood in the party.
+    def take_back_held
+      return if @held.empty?
+
+      party = @stage.objects[0]
+      joined = @held.any? { |main| party.exist_party_actor_id?(main) }
+      @held.each { |main| party.remove_actor(main) }
+      return unless joined
+
+      @stage.base[0].actors.to_a.each_with_index do |id, place|
+        party.actors.set(party.actors.to_a.insert(place, id)) if party.exist_stand_actor_id?(id)
+      end
     end
 
     # Applies one change of the receiver's own keys.
@@ -2066,6 +2119,7 @@ module MGQ_MpStoryReplay
     # @return [Replay] The replay.
     def step
       @state = :running
+      @commands = 0
       began = Time.now
       swapped { drive }
       commit if reached?

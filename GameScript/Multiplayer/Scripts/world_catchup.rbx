@@ -2,6 +2,7 @@
 #  world_catchup.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-12: Let a companion the world holds back join a replay's party until its end, which takes them back, so an event that waits for them still ends
 #      Paulinchen  2026-11-11: Left the items unlocking a job or race to the DLL, which reads them from the events database in every game language
 #      Paulinchen  2026-11-10: Left out the DLL's look while its question stays the one a quiet look last answered after a look at the roster's growth, and found the counted items once per revision of the mapping
 #      Paulinchen  2026-11-05: Named and read sites as plain values
@@ -1355,6 +1356,9 @@ module MGQ_MpWorldCatchup
   # A replay's join in a Raid World waits for the world's companion sharing and the join's level,
   # which the world's shared companions bring later (the one companion filter in the DLL); one of a
   # replay that went the player's own way is the player's own and waits for its gate.
+  # During a replay, a held join counts after the run: the companion joins the staged party, so an
+  # event that loops until they are in the party still ends, and the replay takes them back before
+  # it keeps its changes (MGQ_MpStoryReplay::Replay#hold_back), asking the DLL once per replay.
   # Called before the game adds a companion to the party.
   #
   # @param actor_id [Integer] The companion, in any persona.
@@ -1364,14 +1368,34 @@ module MGQ_MpWorldCatchup
 
     main = MGQ_MpStoryState.main_id(actor_id)
     return false if MGQ_MpStoryState.in_roster?(main)
+
+    replay = defined?(MGQ_MpStoryReplay) && MGQ_MpStoryReplay.respond_to?(:running?) && MGQ_MpStoryReplay.running? ? MGQ_MpStoryReplay.current : nil
+    return false if replay && replay.held_back?(main)
+    return false unless join_held?(actor_id, main, replay)
+    return true unless replay
+
+    replay.hold_back(main)
+    false
+  rescue => e
+    log("holding back a companion failed: #{e.class}: #{e.message}")
+    false
+  end
+
+  # Decides whether a join is held, see hold_join?: refused, waiting for its gate, or refused for a
+  # member of a Classic party.
+  #
+  # @param actor_id [Integer] The companion, in any persona.
+  # @param main [Integer] The companion's main persona.
+  # @param replay [MGQ_MpStoryReplay::Replay, nil] The replay that runs, nil for none.
+  # @return [Boolean] Whether it is.
+  def self.join_held?(actor_id, main, replay)
     return defined?(MGQ_MpCoopStory) && MGQ_MpCoopStory.refuses_join?(main, joining_site) ? true : false unless active?
     return false if keys.nil?
 
-    replaying = defined?(MGQ_MpStoryReplay) && MGQ_MpStoryReplay.respond_to?(:running?) && MGQ_MpStoryReplay.running?
-    own_way = replaying && MGQ_MpStoryReplay.current.respond_to?(:own_way?) && MGQ_MpStoryReplay.current.own_way? ? true : false
-    own_event = own_way || (!replaying && MGQ_MpWorldStory.mode == :world && defined?(MGQ_MpCoopEvents) && MGQ_MpCoopEvents.telling?)
+    own_way = replay && replay.own_way? ? true : false
+    own_event = own_way || (!replay && MGQ_MpWorldStory.mode == :world && defined?(MGQ_MpCoopEvents) && MGQ_MpCoopEvents.telling?)
     answer = call(HOLD_TOPIC, "actor" => main, "site" => joining_site, "scope_only" => !own_event, "own" => values(story_now), "roster" => roster_entries,
-                              "replay" => replaying ? true : false, "own_way" => own_way, "sharing" => MGQ_MpWorld.companion_sharing.to_s, "start" => start_level(main))
+                              "replay" => replay ? true : false, "own_way" => own_way, "sharing" => MGQ_MpWorld.companion_sharing.to_s, "start" => start_level(main))
     return false unless answer
 
     run(answer["actions"])
@@ -1382,9 +1406,6 @@ module MGQ_MpWorldCatchup
 
     notice([:held, main], "#{actor_name(actor_id)} joins you once you reach level #{gate}.")
     true
-  rescue => e
-    log("holding back a companion failed: #{e.class}: #{e.message}")
-    false
   end
 
   # Names the list a join comes from: the run a replay plays, else the map's page that runs.

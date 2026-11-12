@@ -2,6 +2,9 @@
 #  story_replay_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-12: Checked that a replay whose companion the world holds back still ends, on the game's own Queen's Cup final
+#                            - Checked that a replay that never ends stops and keeps nothing
+#                            - Gave the party's stand-in its members and roster, and the interpreter's labels, actor checks and joins
 #      Paulinchen  2026-11-11: Dressed the party's member in socketed gear, and checked that the DLL hears what the player holds only after a replay read it
 #                            - Named the inputs by their commands' codes and numbers, a number at its Input Number, and dropped the shapes a take handed over
 #                            - Checked that a receiver whose translation merged two text boxes takes the opener's number, choice, draw and battle
@@ -40,6 +43,7 @@
 # nothing until it finished and reached its step, and another player's battle drop gives its item.
 
 require "json"
+require "timeout"
 require_relative "support"
 
 $log = []
@@ -147,21 +151,33 @@ module BattleManager
   def self.event_proc=(proc); @event_proc = proc; end
   def self.battle_end(result); @event_proc.call(result) if @event_proc; @event_proc = nil; end
 end
-# Stands in for the party: items by id, gold and its unlock level.
+# Stands in for the party's members, as script 148's Member keeps the ids.
+class Members < Array; def set(ids); replace(ids); end; end
+# Stands in for the party: items by id, gold, its unlock level, and its members and roster as
+# script 153 adds, removes and finds them.
 class Game_Party
   attr_accessor :unlock_level
-  attr_reader :gold
-  def initialize; @items = Hash.new(0); @gold = 0; @unlock_level = 0; end
+  attr_reader :gold, :actors
+  def initialize; @items = Hash.new(0); @gold = 0; @unlock_level = 0; @actors = Members.new; @include_actors = []; end
+  def add_actor(id); add_stand_actor(id); @actors.set(@actors | [id]); end
+  def add_stand_actor(id); @include_actors |= [id]; end
+  def remove_actor(id); @include_actors.delete(id); @actors.delete(id); end
+  def persona_change(_id); end
+  def exist_party_actor_id?(id); @actors.include?(id); end
+  def exist_party_persona_id?(id); @actors.include?(id); end
+  def exist_stand_actor_id?(id); @include_actors.include?(id) && !@actors.include?(id); end
   def gain_item(item, amount); @items[item.respond_to?(:id) ? item.id : item] += amount; end
   def lose_item(item, amount); gain_item(item.id, -amount); end
   def gain_gold(amount); @gold += amount; end
   def item_number(id); @items[id]; end
   def in_battle; false; end
 end
-# Stands in for a companion: their affection and what a present raises it by.
+# Stands in for a companion: their id, level, affection and what a present raises it by.
 class Game_Actor
   attr_accessor :love
   def initialize(id); @id = id; @love = 0; end
+  def id; @id; end
+  def base_level; 10; end
   def present_loveup(_item_id); 5; end
 end
 # Stands in for the actors, each made when first asked for (script 029).
@@ -208,6 +224,7 @@ class Game_Interpreter
              when 0 then $game_switches[@params[1]] == (@params[2] == 0)
              when 1 then $game_variables[@params[1]] == @params[3]
              when 2 then @event_id > 0 && $game_self_switches[[@map_id, @event_id, @params[1]]] == (@params[2] == 0)
+             when 4 then $game_party.exist_party_persona_id?(@params[1])
              when 7 then $game_party.gold >= @params[1]
              when 8 then $game_party.item_number(@params[1]) > 0
              when 11 then Input.press?(@params[1])
@@ -218,6 +235,8 @@ class Game_Interpreter
   end
   def command_411; command_skip if @branch[@indent]; end
   def command_115; @index = @list.size; end
+  def command_118; end
+  def command_119; @list.each_with_index { |command, i| return @index = i if command.code == 118 && command.parameters[0] == @params[0] }; end
   def command_117; common_event = $data_common_events[@params[0]]; return unless common_event; child = Game_Interpreter.new(@depth + 1); child.setup(common_event.list, same_map? ? @event_id : 0); child.run; end
   def command_121; (@params[0]..@params[1]).each { |id| $game_switches[id] = @params[2] == 0 }; end
   def command_122
@@ -251,6 +270,8 @@ class Game_Interpreter
   def command_355; script = @list[@index].parameters[0] + "\n"; while next_event_code == 655; @index += 1; script += @list[@index].parameters[0] + "\n"; end; eval(script); end
   def unlock_level; $game_party.unlock_level; end
   def gain_medal(id); $game_library.gain_medal(id); end
+  def add_actor_ex(id); $game_party.persona_change(id); $game_party.add_actor(id) unless $game_party.exist_party_actor_id?(id); end
+  def delete_actor_ex(id); $game_party.remove_actor(id); end
   def ex_choice_add(name, id, e = "true", disable = 0); $game_message.ex_choice_item.push([name, id, e, disable]); end
   def ex_choice_show(cancel = -1, row_max = 14, pos = [0, 0]); $game_message.ex_choice_setting = [cancel, row_max, pos]; wait_for_message; end
   def present_start(actor_id)
@@ -498,6 +519,16 @@ page(624, 211, [c(126, 606, 0, 0, 1), c(121, 2046, 2046, 0), c(122, 300, 300, 0,
 broken = replay(["map", 624, 211, 1])
 check("a replay that raises leaves the save as it was",
       [broken.state, $game_party.item_number(606), $game_switches[2046], $game_variables[300], $log.last.include?("broken")], [:failed, 0, false, 2, true])
+
+# A replay that never ends, a label and a jump back to it, stops at the bound of its commands as
+# failed, keeps nothing and logs one line naming where it stood.
+new_game
+page(624, 212, [c(126, 606, 0, 0, 1), c(121, 2046, 2046, 0), c(118, "Loop"), c(119, "Loop")])
+lines = logged_lines { Timeout.timeout(60) { $endless = replay(["map", 624, 212, 1]) } }
+check("a replay that never ends stops as failed and keeps nothing",
+      [$endless.state, $game_party.item_number(606), $game_switches[2046]], [:failed, 0, false])
+check("with one line naming the place it stood at",
+      [lines.size, lines[0].to_s.include?("failed, nothing kept") && lines[0].include?('at ["map", 624, 212, 1] place 3')], [1, true])
 
 check("a plain interpreter still runs the mod's hooks", lambda {
   $hooked.clear
@@ -930,3 +961,110 @@ MGQ_MpStoryReplay.update
 check("another player's battle drop gives the receiver its key item, and the DLL its notice",
       [$game_party.item_number(511), done.last["reached"], done.last["had"].assoc("i511"), done.last["has"].assoc("i511"), $notices, MGQ_MpStoryReplay.waiting],
       [1, true, nil, ["i511", 1, "Silver Key", false], ["Ana won a battle drop for everyone: Silver Key."], []])
+
+# The Queen's Cup final (map 483, event 86, page 1) read from the game folder BATTLE_GAME_DIR names,
+# as the C# tests over real game data do: after its second battle it loops back to a label until
+# the companion it adds (19) stands in the party. A Raid World holds that join back from a replay
+# below the join's level, so the replay lets the event see the join, runs to the event's end and
+# takes the companion back before it keeps its changes. The cycle (v912 1) keeps the companion in
+# the page, so the take-back is what leaves them out.
+GAME_MAP = File.join(ENV["BATTLE_GAME_DIR"].to_s, "Data", "Map483.rvdata2")
+
+# Reads a page's commands from a map file of the game, into the stand-ins of this file: a move
+# route as RPG::MoveRoute, any other object of the game's (music, sound, a move's command of the
+# route editor's list) as nil, since a replay leaves those out.
+#
+# @param path [String] The map file.
+# @param event [Integer] The event.
+# @param page [Integer] The page, from 1.
+# @return [Array<RPG::EventCommand>] The commands.
+def real_page(path, event, page)
+  raw = with_game_classes do
+    map = Marshal.load(File.binread(path))
+    commands = map.instance_variable_get(:@events)[event].instance_variable_get(:@pages)[page - 1].instance_variable_get(:@list)
+    commands.map { |command| [:code, :indent, :parameters].map { |field| command.instance_variable_get(:"@#{field}") } }
+  end
+  raw.map { |code, indent, params| c(code, *params.map { |value| real_value(value) }, indent: indent) }
+end
+
+# Runs a block with the game's own RPG classes in place of this file's stand-ins, each made empty as
+# Marshal first names it, so a map file of the game loads.
+#
+# @yield Loads the file.
+# @return [Object] What the block returns.
+def with_game_classes
+  saved = RPG.constants.map { |name| [name, RPG.send(:remove_const, name)] }
+  [:Table, :Color, :Tone].each { |name| Object.const_set(name, Class.new { def self._load(_bytes); new; end }) unless Object.const_defined?(name) }
+  begin
+    yield
+  rescue ArgumentError => e
+    path = e.message[/undefined class\/module (\S+)/, 1]
+    raise unless path
+
+    path.split("::").inject(Object) { |scope, name| scope.const_defined?(name, false) ? scope.const_get(name) : scope.const_set(name, Class.new) }
+    retry
+  end
+ensure
+  RPG.constants.each { |name| RPG.send(:remove_const, name) }
+  saved.each { |name, value| RPG.const_set(name, value) }
+end
+
+# Turns a parameter of the game's file into the stand-ins, see real_page.
+#
+# @param value [Object] The parameter.
+# @return [Object] The stand-in's value.
+def real_value(value)
+  case value
+  when Integer, String, true, false, nil then value
+  when Array then value.map { |item| real_value(item) }
+  else
+    return nil unless value.class.name == "RPG::MoveRoute"
+
+    moves = value.instance_variable_get(:@list).map { |move| RPG::MoveCommand.new(move.instance_variable_get(:@code), real_value(move.instance_variable_get(:@parameters))) }
+    RPG::MoveRoute.new(moves, value.instance_variable_get(:@wait))
+  end
+end
+
+if File.file?(GAME_MAP)
+  # A Raid World whose story the player follows, sharing every companion, which the replay's join
+  # asks about.
+  module MGQ_MpWorldStory; def self.active?; true; end; def self.mode; :world; end; def self.world_id; "w1"; end; end
+  # The world's companion sharing.
+  module MGQ_MpWorld; def self.companion_sharing; :all; end; end
+  # The party's companions as their ids in the party stand.
+  class Game_Party; def members; @actors.map { |id| Member.new(id, "Companion #{id}", 10, [], []) }; end; end
+  $data_actors = []
+  load_script "world_catchup"
+  fake.answer("story.classes") { |_request| classic_table_hash }
+  MGQ_MpStoryKeys.load_raid
+  fake.answer("catchup.keys") { |_request| { "switches" => [], "variables" => [], "selves" => [], "items" => [], "makina" => [], "parts" => [], "orb_event" => 0 } }
+  holds = []
+  # The DLL refuses the join of a replay, as for a player below the join's level 60.
+  fake.answer("catchup.hold_join") do |request|
+    holds << request
+    next { "actions" => [] } unless request["replay"]
+
+    { "actions" => [["log", "left out the join of {actor:#{request['actor']}} a replay hands out: the world's companion sharing (all) brings them once the player's level reaches 60"]],
+      "refused" => true }
+  end
+  fake.answer("story.replay_take") { |_request| { "do" => "replay", "page" => 1 } }
+  fake.answer("story.replay_due") { |_request| [] }
+  fake.answer("story.replay_done") { |request| done << request; nil }
+  $maps[483] = RPG::Map.new({ 86 => RPG::Event.new([RPG::Page.new(real_page(GAME_MAP, 86, 1))]) })
+
+  new_game
+  $notices = []
+  $game_variables[912] = 1
+  $game_party.instance_variable_set(:@actors, Members.new([1, 4, 7]))
+  $game_party.instance_variable_set(:@include_actors, [1, 4, 7, 9])
+  MGQ_MpStoryReplay.receive("id" => "e483", "site" => ["map", 483, 86, 1], "stream" => "world", "scope" => "world", "opener" => "Ana", "keys" => [[1, 1002, 0]],
+                            "place" => nil, "start" => [[1, 1052, 5]], "inputs" => [], "derived" => false)
+  lines = logged_lines { Timeout.timeout(60) { MGQ_MpStoryReplay.update } }
+  check("a replay whose companion the world holds back still ends, and keeps its step's story, item and medal",
+        [done.last["reached"], $game_variables[1002], $game_party.item_number(539), $game_library.medals.include?(33)], [true, 24, 1, true])
+  check("the held companion is out of the party it keeps, the others as they were",
+        [$game_party.actors.to_a, $game_party.instance_variable_get(:@include_actors)], [[1, 4, 7], [1, 4, 7, 9]])
+  check("the DLL was asked once, and one line tells the join left out", [holds.size, lines.grep(/left out the join of 19/).size], [1, 1])
+else
+  puts "skip a replay whose companion the world holds back still ends: BATTLE_GAME_DIR names no game folder with Data/Map483.rvdata2"
+end
